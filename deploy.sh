@@ -15,9 +15,13 @@ echo "========================================================"
 echo "🚀 Deploying MBA HUB to TerraMaster NAS (${NAS_HOST})"
 echo "========================================================"
 
-# Prepare SSH command
+# Prepare SSH command with dedicated key or password
+KEY_PATH="$HOME/.ssh/id_ed25519_mbahub"
 SSH_BASE="ssh -p ${NAS_PORT} -o StrictHostKeyChecking=no"
-if [ -n "${NAS_PASSWORD}" ]; then
+
+if [ -f "${KEY_PATH}" ]; then
+  SSH_CMD="${SSH_BASE} -i ${KEY_PATH} ${NAS_USER}@${NAS_HOST}"
+elif [ -n "${NAS_PASSWORD}" ]; then
   SSH_CMD="sshpass -p '${NAS_PASSWORD}' ${SSH_BASE} -o PubkeyAuthentication=no -o PreferredAuthentications=password ${NAS_USER}@${NAS_HOST}"
 else
   SSH_CMD="${SSH_BASE} ${NAS_USER}@${NAS_HOST}"
