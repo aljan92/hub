@@ -8,18 +8,25 @@ set -e
 NAS_HOST="${NAS_HOST:-192.168.178.141}"
 NAS_PORT="${NAS_PORT:-22}"
 NAS_USER="${NAS_USER:-aljan92}"
+NAS_PASSWORD="${NAS_PASSWORD:-}"
 NAS_PATH="${NAS_DEPLOY_PATH:-/Volume1/docker/mba-hub}"
 
 echo "========================================================"
 echo "🚀 Deploying MBA HUB to TerraMaster NAS (${NAS_HOST})"
 echo "========================================================"
 
-# Check if SSH key auth or password works
-echo "📡 Checking SSH connection to ${NAS_USER}@${NAS_HOST}:${NAS_PORT}..."
+# Prepare SSH command
+SSH_BASE="ssh -p ${NAS_PORT} -o StrictHostKeyChecking=no"
+if [ -n "${NAS_PASSWORD}" ]; then
+  SSH_CMD="sshpass -p '${NAS_PASSWORD}' ${SSH_BASE} -o PubkeyAuthentication=no -o PreferredAuthentications=password ${NAS_USER}@${NAS_HOST}"
+else
+  SSH_CMD="${SSH_BASE} ${NAS_USER}@${NAS_HOST}"
+fi
 
-SSH_CMD="ssh -p ${NAS_PORT} -o StrictHostKeyChecking=no ${NAS_USER}@${NAS_HOST}"
+echo "📡 Connecting to ${NAS_USER}@${NAS_HOST}:${NAS_PORT}..."
 
-${SSH_CMD} << EOF
+${SSH_CMD} << 'EOF'
+  NAS_PATH="${NAS_DEPLOY_PATH:-/Volume1/docker/mba-hub}"
   echo "📦 Ensuring deployment directory exists at ${NAS_PATH}..."
   mkdir -p ${NAS_PATH}
   cd ${NAS_PATH}
@@ -32,11 +39,22 @@ ${SSH_CMD} << EOF
     git clone https://github.com/aljan92/hub.git .
   fi
 
-  echo "🐳 Building and starting Docker containers with Docker Compose..."
-  docker compose pull || true
-  docker compose up -d --build --remove-orphans
+  echo "🐳 Building and starting Docker containers..."
+  if command -v docker-compose &> /dev/null; then
+    docker-compose pull || true
+    docker-compose up -d --build --remove-orphans
+  elif docker compose version &> /dev/null; then
+    docker compose pull || true
+    docker compose up -d --build --remove-orphans
+  else
+    echo "⚠️ Neither docker compose nor docker-compose found! Trying docker run..."
+    docker build -t mba-hub .
+    docker stop mba_hub_app 2>/dev/null || true
+    docker rm mba_hub_app 2>/dev/null || true
+    docker run -d --name mba_hub_app --restart unless-stopped -p 3000:3000 -v ./data:/app/data mba-hub
+  fi
 
-  echo "✅ MBA HUB is live on http://${NAS_HOST}:3000"
+  echo "✅ MBA HUB is live on http://192.168.178.141:3000"
 EOF
 
 echo "🎉 Deployment completed successfully!"
