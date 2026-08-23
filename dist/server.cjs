@@ -42281,59 +42281,78 @@ var LLMService = class {
     }
   }
   /**
-   * Test LLM connection, verify model, and fetch account usage
+   * Test LLM connection without sending chat tokens:
+   * Uses OpenRouter /auth/key endpoint or OpenAI /models endpoint to verify the key instantly & safely
    */
   static async testConnection(customKey, customModel) {
     const settings = loadSettings();
     const key = (customKey || settings.openRouterApiKey).trim();
-    const rawModel = customModel || settings.llmModel || "anthropic/claude-3-5-sonnet";
-    const model = this.normalizeModelId(rawModel);
+    const isDirectOpenAI = settings.llmProvider === "openai";
     if (!key) {
       return { success: false, latencyMs: 0, error: "Kein API Key hinterlegt" };
     }
     const start = Date.now();
     try {
-      const isDirectOpenAI = settings.llmProvider === "openai";
-      const url = isDirectOpenAI ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${key}`,
-          "HTTP-Referer": "https://mba-hub.local",
-          "X-Title": "MBA HUB"
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: "Ping" }],
-          max_tokens: 5
-        }),
-        signal: AbortSignal.timeout(2e4)
-      });
-      const latencyMs = Date.now() - start;
-      if (res.ok) {
-        let creditsInfo = {};
-        if (!isDirectOpenAI) {
-          creditsInfo = await this.getCredits(key);
+      if (!isDirectOpenAI) {
+        const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
+          headers: {
+            "Authorization": `Bearer ${key}`,
+            "HTTP-Referer": "https://mba-hub.local",
+            "X-Title": "MBA HUB"
+          },
+          signal: AbortSignal.timeout(15e3)
+        });
+        const latencyMs = Date.now() - start;
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && json?.data) {
+          const d = json.data;
+          const usageStr = d.usage !== void 0 ? `Verbrauch: $${Number(d.usage).toFixed(4)}` : "";
+          const remStr = d.limit_remaining !== void 0 && d.limit_remaining !== null ? ` | Restlimit: $${Number(d.limit_remaining).toFixed(2)}` : d.limit ? ` | Limit: $${Number(d.limit).toFixed(2)}` : "";
+          const labelStr = d.label ? `[${d.label}] ` : "";
+          return {
+            success: true,
+            latencyMs,
+            details: `${labelStr}OpenRouter Key g\xFCltig \u2713 ${usageStr}${remStr}`,
+            usage: d.usage,
+            limitRemaining: d.limit_remaining
+          };
         }
-        const usageStr = creditsInfo.usage !== void 0 ? `Verbrauch: $${creditsInfo.usage.toFixed(4)}` : "";
-        const remStr = creditsInfo.limitRemaining !== void 0 && creditsInfo.limitRemaining !== null ? ` | Restlimit: $${creditsInfo.limitRemaining.toFixed(2)}` : "";
+        if (res.status === 401 || res.status === 403) {
+          return {
+            success: false,
+            latencyMs,
+            error: json?.error?.message || "Ung\xFCltiger OpenRouter API Key (401 Unauthorized)"
+          };
+        }
         return {
-          success: true,
+          success: false,
           latencyMs,
-          details: `Modell "${model}" aktiv \u2713 ${usageStr}${remStr}`,
-          usage: creditsInfo.usage,
-          limitRemaining: creditsInfo.limitRemaining
+          error: json?.error?.message || `HTTP ${res.status}: OpenRouter Authentifizierungsfehler`
+        };
+      } else {
+        const res = await fetch("https://api.openai.com/v1/models", {
+          headers: {
+            "Authorization": `Bearer ${key}`
+          },
+          signal: AbortSignal.timeout(15e3)
+        });
+        const latencyMs = Date.now() - start;
+        if (res.ok) {
+          return {
+            success: true,
+            latencyMs,
+            details: "OpenAI API Key g\xFCltig (Modell-Katalog erreichbar) \u2713"
+          };
+        }
+        const data = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          latencyMs,
+          error: data?.error?.message || `HTTP ${res.status}: Ung\xFCltiger OpenAI API Key`
         };
       }
-      const data = await res.json().catch(() => ({}));
-      return {
-        success: false,
-        latencyMs,
-        error: data?.error?.message || `HTTP ${res.status}: Modell "${model}" nicht gefunden oder nicht verf\xFCgbar.`
-      };
     } catch (err) {
-      return { success: false, latencyMs: Date.now() - start, error: err.message || "Timeout" };
+      return { success: false, latencyMs: Date.now() - start, error: err.message || "Timeout bei der Verbindung zu OpenRouter" };
     }
   }
   /**

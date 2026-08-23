@@ -152,7 +152,8 @@ export class LLMService {
   }
 
   /**
-   * Test LLM connection, verify model, and fetch account usage
+   * Test LLM connection without sending chat tokens:
+   * Uses OpenRouter /auth/key endpoint or OpenAI /models endpoint to verify the key instantly & safely
    */
   static async testConnection(customKey?: string, customModel?: string): Promise<{ 
     success: boolean; 
@@ -164,8 +165,7 @@ export class LLMService {
   }> {
     const settings = loadSettings();
     const key = (customKey || settings.openRouterApiKey).trim();
-    const rawModel = customModel || settings.llmModel || 'anthropic/claude-3-5-sonnet';
-    const model = this.normalizeModelId(rawModel);
+    const isDirectOpenAI = settings.llmProvider === 'openai';
 
     if (!key) {
       return { success: false, latencyMs: 0, error: 'Kein API Key hinterlegt' };
@@ -173,54 +173,77 @@ export class LLMService {
 
     const start = Date.now();
     try {
-      const isDirectOpenAI = settings.llmProvider === 'openai';
-      const url = isDirectOpenAI ? 'https://api.openai.com/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+      if (!isDirectOpenAI) {
+        // OpenRouter: Query official auth/key endpoint (fast, 0 tokens, returns live usage & limits)
+        const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
+          headers: {
+            'Authorization': `Bearer ${key}`,
+            'HTTP-Referer': 'https://mba-hub.local',
+            'X-Title': 'MBA HUB'
+          },
+          signal: AbortSignal.timeout(15000)
+        });
 
-      // 1. Test ping with model
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${key}`,
-          'HTTP-Referer': 'https://mba-hub.local',
-          'X-Title': 'MBA HUB'
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: 'Ping' }],
-          max_tokens: 5,
-        }),
-        signal: AbortSignal.timeout(20000)
-      });
+        const latencyMs = Date.now() - start;
+        const json = await res.json().catch(() => ({}));
 
-      const latencyMs = Date.now() - start;
-      if (res.ok) {
-        // Query credits in parallel
-        let creditsInfo: any = {};
-        if (!isDirectOpenAI) {
-          creditsInfo = await this.getCredits(key);
+        if (res.ok && json?.data) {
+          const d = json.data;
+          const usageStr = d.usage !== undefined ? `Verbrauch: $${Number(d.usage).toFixed(4)}` : '';
+          const remStr = d.limit_remaining !== undefined && d.limit_remaining !== null 
+            ? ` | Restlimit: $${Number(d.limit_remaining).toFixed(2)}` 
+            : (d.limit ? ` | Limit: $${Number(d.limit).toFixed(2)}` : '');
+          const labelStr = d.label ? `[${d.label}] ` : '';
+
+          return {
+            success: true,
+            latencyMs,
+            details: `${labelStr}OpenRouter Key gültig ✓ ${usageStr}${remStr}`,
+            usage: d.usage,
+            limitRemaining: d.limit_remaining,
+          };
         }
 
-        const usageStr = creditsInfo.usage !== undefined ? `Verbrauch: $${creditsInfo.usage.toFixed(4)}` : '';
-        const remStr = creditsInfo.limitRemaining !== undefined && creditsInfo.limitRemaining !== null ? ` | Restlimit: $${creditsInfo.limitRemaining.toFixed(2)}` : '';
+        if (res.status === 401 || res.status === 403) {
+          return {
+            success: false,
+            latencyMs,
+            error: json?.error?.message || 'Ungültiger OpenRouter API Key (401 Unauthorized)',
+          };
+        }
 
-        return { 
-          success: true, 
-          latencyMs, 
-          details: `Modell "${model}" aktiv ✓ ${usageStr}${remStr}`,
-          usage: creditsInfo.usage,
-          limitRemaining: creditsInfo.limitRemaining
+        return {
+          success: false,
+          latencyMs,
+          error: json?.error?.message || `HTTP ${res.status}: OpenRouter Authentifizierungsfehler`,
+        };
+      } else {
+        // Direct OpenAI: Query /models endpoint (fast, 0 tokens)
+        const res = await fetch('https://api.openai.com/v1/models', {
+          headers: {
+            'Authorization': `Bearer ${key}`,
+          },
+          signal: AbortSignal.timeout(15000)
+        });
+
+        const latencyMs = Date.now() - start;
+        if (res.ok) {
+          return {
+            success: true,
+            latencyMs,
+            details: 'OpenAI API Key gültig (Modell-Katalog erreichbar) ✓',
+          };
+        }
+
+        const data = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          latencyMs,
+          error: data?.error?.message || `HTTP ${res.status}: Ungültiger OpenAI API Key`,
         };
       }
-
-      const data = await res.json().catch(() => ({}));
-      return { 
-        success: false, 
-        latencyMs, 
-        error: data?.error?.message || `HTTP ${res.status}: Modell "${model}" nicht gefunden oder nicht verfügbar.` 
-      };
     } catch (err: any) {
-      return { success: false, latencyMs: Date.now() - start, error: err.message || 'Timeout' };
+      return { success: false, latencyMs: Date.now() - start, error: err.message || 'Timeout bei der Verbindung zu OpenRouter' };
     }
   }
 
