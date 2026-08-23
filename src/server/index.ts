@@ -9,8 +9,7 @@ import { fileURLToPath } from 'url';
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentDir = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const server = http.createServer(app);
@@ -132,7 +131,7 @@ app.post('/api/v1/trademark/check', async (req, res) => {
 });
 
 // Serve Static Frontend in Production
-const clientDistPath = path.resolve(__dirname, 'client');
+const clientDistPath = path.resolve(currentDir, 'client');
 const fallbackDistPath = path.resolve(process.cwd(), 'dist/client');
 const staticPath = fs.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
 
