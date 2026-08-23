@@ -24,7 +24,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   llmProvider: (process.env.LLM_PROVIDER as 'openrouter' | 'openai') || 'openrouter',
   llmModel: process.env.LLM_MODEL || 'anthropic/claude-3-5-sonnet',
   ideogramApiKey: process.env.IDEOGRAM_API_KEY || '',
-  ideogramModel: process.env.IDEOGRAM_MODEL || 'V_2_TURBO',
+  ideogramModel: process.env.IDEOGRAM_MODEL || 'V_4',
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || '',
   vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || '',
   supabaseUrl: process.env.SUPABASE_URL || '',

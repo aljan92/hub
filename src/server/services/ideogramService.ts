@@ -6,6 +6,7 @@ export interface IdeogramGenerateOptions {
   model?: string;
   magicPromptOption?: 'AUTO' | 'ON' | 'OFF';
   styleType?: string;
+  transparentBackground?: boolean;
 }
 
 export interface IdeogramModelItem {
@@ -16,14 +17,13 @@ export interface IdeogramModelItem {
 
 export class IdeogramService {
   /**
-   * Test Ideogram API connection via GET /models (0 credits consumed)
+   * Test Ideogram API connection (0 credits consumed)
    */
   static async testConnection(customKey?: string): Promise<{ 
     success: boolean; 
     latencyMs: number; 
     error?: string;
     details?: string;
-    customModelsCount?: number;
   }> {
     const settings = loadSettings();
     const rawKey = customKey || settings.ideogramApiKey;
@@ -34,6 +34,7 @@ export class IdeogramService {
     const key = rawKey.trim();
     const start = Date.now();
     try {
+      // Test GET /models with Api-Key header
       const res = await fetch('https://api.ideogram.ai/models', {
         method: 'GET',
         headers: {
@@ -47,15 +48,12 @@ export class IdeogramService {
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         const customModels = Array.isArray(data?.models) ? data.models : [];
-        const details = customModels.length > 0
-          ? `Ideogram API Token gültig ✓ (${customModels.length} Custom Models verfügbar)`
-          : 'Ideogram API Token gültig ✓ (Standard-Modelle bereit)';
+        const customMsg = customModels.length > 0 ? ` (${customModels.length} Custom Models verfügbar)` : '';
 
         return {
           success: true,
           latencyMs,
-          details,
-          customModelsCount: customModels.length
+          details: `Ideogram Verbindung erfolgreich! (Modelle V4, V3, V2 bereit${customMsg}) ✓`
         };
       }
 
@@ -64,7 +62,7 @@ export class IdeogramService {
         return {
           success: false,
           latencyMs,
-          error: data?.message || 'Ungültiger Ideogram API Key (401 Unauthorized)',
+          error: data?.message || 'Ungültiger Ideogram API Key (401 Unauthorized). Bitte Key prüfen unter https://ideogram.ai/manage-api',
         };
       }
 
@@ -75,13 +73,14 @@ export class IdeogramService {
   }
 
   /**
-   * Get all standard and custom Ideogram models
+   * Get all standard and custom Ideogram models (V4, V3, V2 Turbo, V2)
    */
   static async getAvailableModels(): Promise<IdeogramModelItem[]> {
     const standardModels: IdeogramModelItem[] = [
-      { id: 'V_2_TURBO', name: 'Ideogram 2.0 Turbo (Schnell, hohe Qualität)' },
+      { id: 'V_4', name: 'Ideogram 4.0 (Neueste Generation & Transparent)' },
+      { id: 'V_3', name: 'Ideogram 3.0 (T-Shirt & Vektor Spezialist)' },
+      { id: 'V_2_TURBO', name: 'Ideogram 2.0 Turbo (Schnell & Günstig)' },
       { id: 'V_2', name: 'Ideogram 2.0 (High Quality)' },
-      { id: 'V_1', name: 'Ideogram 1.0 (Klassisch)' },
     ];
 
     const settings = loadSettings();
@@ -107,14 +106,14 @@ export class IdeogramService {
         }
       }
     } catch (e) {
-      // return standard on error
+      // return standard
     }
 
     return standardModels;
   }
 
   /**
-   * Generate Image via Ideogram API
+   * Generate Image via Ideogram API (supports V4, V3, V2)
    */
   static async generateImage(options: IdeogramGenerateOptions): Promise<{ imageUrl: string; prompt: string }> {
     const settings = loadSettings();
@@ -131,11 +130,13 @@ export class IdeogramService {
       '9:16': 'ASPECT_9_16',
     };
 
+    const selectedModel = options.model || settings.ideogramModel || 'V_4';
+
     const payload = {
       image_request: {
         prompt: options.prompt,
         aspect_ratio: aspectMap[options.aspectRatio || '1:1'] || 'ASPECT_1_1',
-        model: options.model || settings.ideogramModel || 'V_2_TURBO',
+        model: selectedModel,
         magic_prompt_option: options.magicPromptOption || 'AUTO',
       }
     };

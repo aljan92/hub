@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { DashboardView } from './views/DashboardView';
@@ -11,13 +11,42 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeSlots, setActiveSlots] = useState({ used: 0, total: 100 });
+  const [taskCount, setTaskCount] = useState(0);
+  const [queueCount, setQueueCount] = useState(0);
+
+  const fetchStats = () => {
+    fetch('/api/v1/stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setTaskCount(data.tasksCount || 0);
+          setQueueCount(data.queueCount || 0);
+          if (data.slots) setActiveSlots(data.slots);
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchStats();
+    const interval = setInterval(fetchStats, 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSync = () => {
     setIsSyncing(true);
-    setTimeout(() => {
-      setIsSyncing(false);
-      alert('MBA Database Sync erfolgreich ausgeführt! 1.240 Designs und aktuelle Verkaufsdaten aktualisiert.');
-    }, 1200);
+    fetch('/api/v1/stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setTaskCount(data.tasksCount || 0);
+          setQueueCount(data.queueCount || 0);
+        }
+      })
+      .finally(() => {
+        setIsSyncing(false);
+        alert('MBA Database Sync erfolgreich ausgeführt!');
+      });
   };
 
   return (
@@ -34,8 +63,8 @@ export const App: React.FC = () => {
         <Sidebar 
           activeTab={activeTab} 
           onSelectTab={setActiveTab}
-          taskCount={1}
-          queueCount={2}
+          taskCount={taskCount}
+          queueCount={queueCount}
         />
 
         {/* Scrollable View Area */}

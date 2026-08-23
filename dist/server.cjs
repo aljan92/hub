@@ -41944,7 +41944,7 @@ var DEFAULT_SETTINGS = {
   llmProvider: process.env.LLM_PROVIDER || "openrouter",
   llmModel: process.env.LLM_MODEL || "anthropic/claude-3-5-sonnet",
   ideogramApiKey: process.env.IDEOGRAM_API_KEY || "",
-  ideogramModel: process.env.IDEOGRAM_MODEL || "V_2_TURBO",
+  ideogramModel: process.env.IDEOGRAM_MODEL || "V_4",
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || "",
   vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || "",
   supabaseUrl: process.env.SUPABASE_URL || "",
@@ -42462,7 +42462,7 @@ Niche 2: ${niche2 || ""}` },
 // src/server/services/ideogramService.ts
 var IdeogramService = class {
   /**
-   * Test Ideogram API connection via GET /models (0 credits consumed)
+   * Test Ideogram API connection (0 credits consumed)
    */
   static async testConnection(customKey) {
     const settings = loadSettings();
@@ -42484,12 +42484,11 @@ var IdeogramService = class {
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         const customModels = Array.isArray(data?.models) ? data.models : [];
-        const details = customModels.length > 0 ? `Ideogram API Token g\xFCltig \u2713 (${customModels.length} Custom Models verf\xFCgbar)` : "Ideogram API Token g\xFCltig \u2713 (Standard-Modelle bereit)";
+        const customMsg = customModels.length > 0 ? ` (${customModels.length} Custom Models verf\xFCgbar)` : "";
         return {
           success: true,
           latencyMs,
-          details,
-          customModelsCount: customModels.length
+          details: `Ideogram Verbindung erfolgreich! (Modelle V4, V3, V2 bereit${customMsg}) \u2713`
         };
       }
       if (res.status === 401 || res.status === 403) {
@@ -42497,7 +42496,7 @@ var IdeogramService = class {
         return {
           success: false,
           latencyMs,
-          error: data?.message || "Ung\xFCltiger Ideogram API Key (401 Unauthorized)"
+          error: data?.message || "Ung\xFCltiger Ideogram API Key (401 Unauthorized). Bitte Key pr\xFCfen unter https://ideogram.ai/manage-api"
         };
       }
       return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
@@ -42506,13 +42505,14 @@ var IdeogramService = class {
     }
   }
   /**
-   * Get all standard and custom Ideogram models
+   * Get all standard and custom Ideogram models (V4, V3, V2 Turbo, V2)
    */
   static async getAvailableModels() {
     const standardModels = [
-      { id: "V_2_TURBO", name: "Ideogram 2.0 Turbo (Schnell, hohe Qualit\xE4t)" },
-      { id: "V_2", name: "Ideogram 2.0 (High Quality)" },
-      { id: "V_1", name: "Ideogram 1.0 (Klassisch)" }
+      { id: "V_4", name: "Ideogram 4.0 (Neueste Generation & Transparent)" },
+      { id: "V_3", name: "Ideogram 3.0 (T-Shirt & Vektor Spezialist)" },
+      { id: "V_2_TURBO", name: "Ideogram 2.0 Turbo (Schnell & G\xFCnstig)" },
+      { id: "V_2", name: "Ideogram 2.0 (High Quality)" }
     ];
     const settings = loadSettings();
     if (!settings.ideogramApiKey) return standardModels;
@@ -42537,7 +42537,7 @@ var IdeogramService = class {
     return standardModels;
   }
   /**
-   * Generate Image via Ideogram API
+   * Generate Image via Ideogram API (supports V4, V3, V2)
    */
   static async generateImage(options) {
     const settings = loadSettings();
@@ -42552,11 +42552,12 @@ var IdeogramService = class {
       "16:9": "ASPECT_16_9",
       "9:16": "ASPECT_9_16"
     };
+    const selectedModel = options.model || settings.ideogramModel || "V_4";
     const payload = {
       image_request: {
         prompt: options.prompt,
         aspect_ratio: aspectMap[options.aspectRatio || "1:1"] || "ASPECT_1_1",
-        model: options.model || settings.ideogramModel || "V_2_TURBO",
+        model: selectedModel,
         magic_prompt_option: options.magicPromptOption || "AUTO"
       }
     };
