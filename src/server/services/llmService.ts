@@ -26,6 +26,13 @@ let cachedModels: OpenRouterModelItem[] = [];
 let lastModelsFetch = 0;
 
 export class LLMService {
+  public static normalizeModelId(model: string): string {
+    const trimmed = model.trim();
+    if (trimmed === 'anthropic/claude-3.5-sonnet') return 'anthropic/claude-3-5-sonnet';
+    if (trimmed === 'anthropic/claude-3.5-sonnet-20241022') return 'anthropic/claude-3-5-sonnet-20241022';
+    return trimmed;
+  }
+
   private static getBaseUrlAndHeaders(): { url: string; headers: Record<string, string>; model: string } {
     const settings = loadSettings();
     const isDirectOpenAI = settings.llmProvider === 'openai';
@@ -44,10 +51,11 @@ export class LLMService {
       headers['X-Title'] = 'MBA HUB';
     }
 
+    const rawModel = settings.llmModel || 'anthropic/claude-3-5-sonnet';
     return {
       url,
       headers,
-      model: settings.llmModel || 'anthropic/claude-3.5-sonnet'
+      model: this.normalizeModelId(rawModel)
     };
   }
 
@@ -156,7 +164,8 @@ export class LLMService {
   }> {
     const settings = loadSettings();
     const key = (customKey || settings.openRouterApiKey).trim();
-    const model = customModel || settings.llmModel || 'anthropic/claude-3.5-sonnet';
+    const rawModel = customModel || settings.llmModel || 'anthropic/claude-3-5-sonnet';
+    const model = this.normalizeModelId(rawModel);
 
     if (!key) {
       return { success: false, latencyMs: 0, error: 'Kein API Key hinterlegt' };
@@ -181,7 +190,7 @@ export class LLMService {
           messages: [{ role: 'user', content: 'Ping' }],
           max_tokens: 5,
         }),
-        signal: AbortSignal.timeout(10000)
+        signal: AbortSignal.timeout(20000)
       });
 
       const latencyMs = Date.now() - start;

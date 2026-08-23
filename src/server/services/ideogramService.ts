@@ -25,7 +25,7 @@ export class IdeogramService {
       const res = await fetch('https://api.ideogram.ai/generate', {
         method: 'POST',
         headers: {
-          'Api-Key': key,
+          'Api-Key': key.trim(),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -33,7 +33,7 @@ export class IdeogramService {
             prompt: ''
           }
         }),
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(25000)
       });
 
       const latencyMs = Date.now() - start;
@@ -41,7 +41,7 @@ export class IdeogramService {
       // 401 means invalid key
       if (res.status === 401 || res.status === 403) {
         const data = await res.json().catch(() => ({}));
-        return { success: false, latencyMs, error: data?.message || 'Ungültiger API Token (Access Denied)' };
+        return { success: false, latencyMs, error: data?.message || 'Ungültiger Ideogram API Token (Access Denied)' };
       }
 
       // 400 with prompt validation error proves auth is 100% valid
@@ -51,7 +51,14 @@ export class IdeogramService {
 
       return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
     } catch (err: any) {
-      return { success: false, latencyMs: Date.now() - start, error: err.message || 'Timeout' };
+      const isTimeout = err.name === 'TimeoutError' || err.message?.includes('timeout') || err.message?.includes('aborted');
+      return { 
+        success: false, 
+        latencyMs: Date.now() - start, 
+        error: isTimeout 
+          ? 'Ideogram Timeout (25s): Verbindung zum Ideogram Server konnte nicht rechtzeitig aufgebaut werden.'
+          : (err.message || 'Verbindungsfehler')
+      };
     }
   }
 

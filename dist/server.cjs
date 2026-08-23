@@ -41941,7 +41941,7 @@ var import_path = __toESM(require("path"), 1);
 var DEFAULT_SETTINGS = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
   llmProvider: process.env.LLM_PROVIDER || "openrouter",
-  llmModel: process.env.LLM_MODEL || "anthropic/claude-3.5-sonnet",
+  llmModel: process.env.LLM_MODEL || "anthropic/claude-3-5-sonnet",
   ideogramApiKey: process.env.IDEOGRAM_API_KEY || "",
   ideogramModel: process.env.IDEOGRAM_MODEL || "V_2_TURBO",
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || "",
@@ -42174,6 +42174,12 @@ var TrademarkService = class {
 var cachedModels = [];
 var lastModelsFetch = 0;
 var LLMService = class {
+  static normalizeModelId(model) {
+    const trimmed = model.trim();
+    if (trimmed === "anthropic/claude-3.5-sonnet") return "anthropic/claude-3-5-sonnet";
+    if (trimmed === "anthropic/claude-3.5-sonnet-20241022") return "anthropic/claude-3-5-sonnet-20241022";
+    return trimmed;
+  }
   static getBaseUrlAndHeaders() {
     const settings = loadSettings();
     const isDirectOpenAI = settings.llmProvider === "openai";
@@ -42186,10 +42192,11 @@ var LLMService = class {
       headers["HTTP-Referer"] = "https://mba-hub.local";
       headers["X-Title"] = "MBA HUB";
     }
+    const rawModel = settings.llmModel || "anthropic/claude-3-5-sonnet";
     return {
       url,
       headers,
-      model: settings.llmModel || "anthropic/claude-3.5-sonnet"
+      model: this.normalizeModelId(rawModel)
     };
   }
   /**
@@ -42279,7 +42286,8 @@ var LLMService = class {
   static async testConnection(customKey, customModel) {
     const settings = loadSettings();
     const key = (customKey || settings.openRouterApiKey).trim();
-    const model = customModel || settings.llmModel || "anthropic/claude-3.5-sonnet";
+    const rawModel = customModel || settings.llmModel || "anthropic/claude-3-5-sonnet";
+    const model = this.normalizeModelId(rawModel);
     if (!key) {
       return { success: false, latencyMs: 0, error: "Kein API Key hinterlegt" };
     }
@@ -42300,7 +42308,7 @@ var LLMService = class {
           messages: [{ role: "user", content: "Ping" }],
           max_tokens: 5
         }),
-        signal: AbortSignal.timeout(1e4)
+        signal: AbortSignal.timeout(2e4)
       });
       const latencyMs = Date.now() - start;
       if (res.ok) {
@@ -42447,7 +42455,7 @@ var IdeogramService = class {
       const res = await fetch("https://api.ideogram.ai/generate", {
         method: "POST",
         headers: {
-          "Api-Key": key,
+          "Api-Key": key.trim(),
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -42455,19 +42463,24 @@ var IdeogramService = class {
             prompt: ""
           }
         }),
-        signal: AbortSignal.timeout(8e3)
+        signal: AbortSignal.timeout(25e3)
       });
       const latencyMs = Date.now() - start;
       if (res.status === 401 || res.status === 403) {
         const data = await res.json().catch(() => ({}));
-        return { success: false, latencyMs, error: data?.message || "Ung\xFCltiger API Token (Access Denied)" };
+        return { success: false, latencyMs, error: data?.message || "Ung\xFCltiger Ideogram API Token (Access Denied)" };
       }
       if (res.status === 400 || res.ok) {
         return { success: true, latencyMs };
       }
       return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
     } catch (err) {
-      return { success: false, latencyMs: Date.now() - start, error: err.message || "Timeout" };
+      const isTimeout = err.name === "TimeoutError" || err.message?.includes("timeout") || err.message?.includes("aborted");
+      return {
+        success: false,
+        latencyMs: Date.now() - start,
+        error: isTimeout ? "Ideogram Timeout (25s): Verbindung zum Ideogram Server konnte nicht rechtzeitig aufgebaut werden." : err.message || "Verbindungsfehler"
+      };
     }
   }
   /**

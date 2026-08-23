@@ -22,7 +22,7 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: AppSettings = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
   llmProvider: (process.env.LLM_PROVIDER as 'openrouter' | 'openai') || 'openrouter',
-  llmModel: process.env.LLM_MODEL || 'anthropic/claude-3.5-sonnet',
+  llmModel: process.env.LLM_MODEL || 'anthropic/claude-3-5-sonnet',
   ideogramApiKey: process.env.IDEOGRAM_API_KEY || '',
   ideogramModel: process.env.IDEOGRAM_MODEL || 'V_2_TURBO',
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || '',
