@@ -50650,6 +50650,36 @@ app.get("/api/v1/llm/credits", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+app.get("/api/v1/credits", async (req, res) => {
+  try {
+    const [openrouter, vectorizer, ideogram] = await Promise.all([
+      LLMService.getCredits(),
+      VectorizerService.testConnection(),
+      IdeogramService.testConnection()
+    ]);
+    res.json({
+      success: true,
+      openrouter: {
+        usage: openrouter.usage,
+        limit: openrouter.limit,
+        limitRemaining: openrouter.limitRemaining,
+        isFreeTier: openrouter.isFreeTier,
+        hasKey: !openrouter.error
+      },
+      vectorizer: {
+        credits: vectorizer.creditsRemaining,
+        details: vectorizer.details,
+        hasKey: vectorizer.success
+      },
+      ideogram: {
+        status: ideogram.success ? "Aktiv" : ideogram.error ? "Fehler" : "Offline",
+        hasKey: ideogram.success
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 app.post("/api/v1/connectors/test", async (req, res) => {
   const { connector, credentials } = req.body;
   try {
