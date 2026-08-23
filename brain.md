@@ -1,6 +1,6 @@
 # 🧠 MBA HUB — Projekt-Brain & Master-Architektur
 
-> **Status:** Konzeption abgeschlossen / Bereit für Phase 1  
+> **Status:** Phase 1 & 2 implementiert (Live auf NAS)  
 > **Projekt:** MBA Hub (Merch By Amazon Automation & Hub Platform)  
 > **Ziel-Umgebung:** Docker auf TerraMaster NAS (TOS 6.0) / Docker Compose  
 > **Letzte Aktualisierung:** 2026-08-23

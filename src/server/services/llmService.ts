@@ -13,6 +13,18 @@ export interface ListingResult {
   reuseBackgroundPrediction?: string;
 }
 
+export interface OpenRouterModelItem {
+  id: string;
+  name: string;
+  contextLength?: number;
+  promptPrice?: string;
+  completionPrice?: string;
+  description?: string;
+}
+
+let cachedModels: OpenRouterModelItem[] = [];
+let lastModelsFetch = 0;
+
 export class LLMService {
   private static getBaseUrlAndHeaders(): { url: string; headers: Record<string, string>; model: string } {
     const settings = loadSettings();
@@ -24,7 +36,7 @@ export class LLMService {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${settings.openRouterApiKey}`,
+      'Authorization': `Bearer ${settings.openRouterApiKey.trim()}`,
     };
 
     if (!isDirectOpenAI) {
@@ -40,11 +52,110 @@ export class LLMService {
   }
 
   /**
-   * Test LLM connection & model availability
+   * Fetch all models from OpenRouter dynamically
    */
-  static async testConnection(customKey?: string, customModel?: string): Promise<{ success: boolean; latencyMs: number; error?: string }> {
+  static async getAvailableModels(): Promise<OpenRouterModelItem[]> {
+    const now = Date.now();
+    if (cachedModels.length > 0 && now - lastModelsFetch < 1000 * 60 * 30) {
+      return cachedModels;
+    }
+
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/models', {
+        headers: {
+          'HTTP-Referer': 'https://mba-hub.local',
+          'X-Title': 'MBA HUB'
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.data)) {
+          const list: OpenRouterModelItem[] = data.data.map((m: any) => ({
+            id: m.id,
+            name: m.name || m.id,
+            contextLength: m.context_length,
+            promptPrice: m.pricing?.prompt ? `$${(parseFloat(m.pricing.prompt) * 1000000).toFixed(2)}/M` : undefined,
+            completionPrice: m.pricing?.completion ? `$${(parseFloat(m.pricing.completion) * 1000000).toFixed(2)}/M` : undefined,
+            description: m.description,
+          }));
+
+          // Sort prioritizing top vision & reasoning models
+          const topKeywords = ['claude-3.5-sonnet', 'claude-3-5-sonnet', 'gpt-4o', 'gemini-2.0-flash', 'gemini-2.5', 'llama-3.2'];
+          list.sort((a, b) => {
+            const aIsTop = topKeywords.some(k => a.id.toLowerCase().includes(k));
+            const bIsTop = topKeywords.some(k => b.id.toLowerCase().includes(k));
+            if (aIsTop && !bIsTop) return -1;
+            if (!aIsTop && bIsTop) return 1;
+            return a.name.localeCompare(b.name);
+          });
+
+          cachedModels = list;
+          lastModelsFetch = now;
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('[LLMService] Failed to fetch dynamic models list:', err);
+    }
+
+    // Curated Fallback if offline
+    return [
+      { id: 'anthropic/claude-3.5-sonnet', name: 'Anthropic: Claude 3.5 Sonnet' },
+      { id: 'anthropic/claude-3.5-sonnet:beta', name: 'Anthropic: Claude 3.5 Sonnet (Beta)' },
+      { id: 'openai/gpt-4o', name: 'OpenAI: GPT-4o' },
+      { id: 'openai/gpt-4o-mini', name: 'OpenAI: GPT-4o Mini' },
+      { id: 'google/gemini-2.0-flash-001', name: 'Google: Gemini 2.0 Flash' },
+      { id: 'meta-llama/llama-3.2-11b-vision-instruct', name: 'Meta: Llama 3.2 11B Vision' },
+    ];
+  }
+
+  /**
+   * Check OpenRouter credit balance & usage
+   */
+  static async getCredits(customKey?: string): Promise<{ usage?: number; limit?: number; limitRemaining?: number; isFreeTier?: boolean; error?: string }> {
     const settings = loadSettings();
     const key = customKey || settings.openRouterApiKey;
+    if (!key) return { error: 'Kein API Key' };
+
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
+        headers: {
+          'Authorization': `Bearer ${key.trim()}`,
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const d = json?.data;
+        return {
+          usage: d?.usage,
+          limit: d?.limit,
+          limitRemaining: d?.limit_remaining,
+          isFreeTier: d?.is_free_tier,
+        };
+      }
+      return { error: `HTTP ${res.status}` };
+    } catch (err: any) {
+      return { error: err.message || 'Timeout' };
+    }
+  }
+
+  /**
+   * Test LLM connection, verify model, and fetch account usage
+   */
+  static async testConnection(customKey?: string, customModel?: string): Promise<{ 
+    success: boolean; 
+    latencyMs: number; 
+    error?: string;
+    details?: string;
+    usage?: number;
+    limitRemaining?: number;
+  }> {
+    const settings = loadSettings();
+    const key = (customKey || settings.openRouterApiKey).trim();
     const model = customModel || settings.llmModel || 'anthropic/claude-3.5-sonnet';
 
     if (!key) {
@@ -56,6 +167,7 @@ export class LLMService {
       const isDirectOpenAI = settings.llmProvider === 'openai';
       const url = isDirectOpenAI ? 'https://api.openai.com/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
 
+      // 1. Test ping with model
       const res = await fetch(url, {
         method: 'POST',
         headers: {
@@ -66,18 +178,38 @@ export class LLMService {
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: 'user', content: 'Say OK' }],
+          messages: [{ role: 'user', content: 'Ping' }],
           max_tokens: 5,
         }),
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(10000)
       });
 
       const latencyMs = Date.now() - start;
       if (res.ok) {
-        return { success: true, latencyMs };
+        // Query credits in parallel
+        let creditsInfo: any = {};
+        if (!isDirectOpenAI) {
+          creditsInfo = await this.getCredits(key);
+        }
+
+        const usageStr = creditsInfo.usage !== undefined ? `Verbrauch: $${creditsInfo.usage.toFixed(4)}` : '';
+        const remStr = creditsInfo.limitRemaining !== undefined && creditsInfo.limitRemaining !== null ? ` | Restlimit: $${creditsInfo.limitRemaining.toFixed(2)}` : '';
+
+        return { 
+          success: true, 
+          latencyMs, 
+          details: `Modell "${model}" aktiv ✓ ${usageStr}${remStr}`,
+          usage: creditsInfo.usage,
+          limitRemaining: creditsInfo.limitRemaining
+        };
       }
+
       const data = await res.json().catch(() => ({}));
-      return { success: false, latencyMs, error: data?.error?.message || `HTTP ${res.status}` };
+      return { 
+        success: false, 
+        latencyMs, 
+        error: data?.error?.message || `HTTP ${res.status}: Modell "${model}" nicht gefunden oder nicht verfügbar.` 
+      };
     } catch (err: any) {
       return { success: false, latencyMs: Date.now() - start, error: err.message || 'Timeout' };
     }
@@ -119,7 +251,7 @@ Style Preset: ${stylePreset}`;
           temperature: 0.7,
           max_tokens: 250,
         }),
-        signal: AbortSignal.timeout(12000)
+        signal: AbortSignal.timeout(15000)
       });
 
       if (!res.ok) {

@@ -11,33 +11,42 @@ import {
   Image as ImageIcon,
   Sparkles,
   RefreshCw,
-  AlertCircle,
   ShieldAlert,
   ShieldCheck,
-  Search
+  Search,
+  DollarSign,
+  Info
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [testResults, setTestResults] = useState<Record<string, { testing?: boolean; success?: boolean; latencyMs?: number; error?: string }>>({});
+  const [testResults, setTestResults] = useState<Record<string, { testing?: boolean; success?: boolean; latencyMs?: number; error?: string; details?: string }>>({});
 
   // Settings State
   const [openRouterApiKey, setOpenRouterApiKey] = useState('');
   const [llmProvider, setLlmProvider] = useState<'openrouter' | 'openai'>('openrouter');
   const [llmModel, setLlmModel] = useState('anthropic/claude-3.5-sonnet');
+  const [availableModels, setAvailableModels] = useState<{ id: string; name: string; promptPrice?: string; completionPrice?: string }[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelSearch, setModelSearch] = useState('');
+
   const [ideogramApiKey, setIdeogramApiKey] = useState('');
   const [ideogramModel, setIdeogramModel] = useState('V_2_TURBO');
+
   const [vectorizerApiKey, setVectorizerApiKey] = useState('');
   const [vectorizerApiSecret, setVectorizerApiSecret] = useState('');
+
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseServiceRoleKey, setSupabaseServiceRoleKey] = useState('');
+
   const [nasHost, setNasHost] = useState('192.168.178.141');
   const [nasUser, setNasUser] = useState('aljan92');
   const [autoSlotFillHour, setAutoSlotFillHour] = useState(4);
 
-  // Load existing settings on mount
+  // Load existing settings and models on mount
   useEffect(() => {
+    // 1. Settings
     fetch('/api/v1/settings')
       .then(res => res.json())
       .then(data => {
@@ -58,7 +67,23 @@ export const SettingsView: React.FC = () => {
         }
       })
       .catch(err => console.warn('[Settings] Failed to fetch settings:', err));
+
+    // 2. Fetch all dynamic OpenRouter models
+    fetchModels();
   }, []);
+
+  const fetchModels = () => {
+    setLoadingModels(true);
+    fetch('/api/v1/llm/models')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.models)) {
+          setAvailableModels(data.models);
+        }
+      })
+      .catch(err => console.warn('[Settings] Failed to fetch models:', err))
+      .finally(() => setLoadingModels(false));
+  };
 
   const handleSave = async () => {
     setLoading(true);
@@ -111,6 +136,7 @@ export const SettingsView: React.FC = () => {
           success: data.success,
           latencyMs: data.latencyMs,
           error: data.error,
+          details: data.details,
         }
       }));
     } catch (err: any) {
@@ -125,8 +151,14 @@ export const SettingsView: React.FC = () => {
     }
   };
 
+  // Filter models based on search query
+  const filteredModels = availableModels.filter(m => 
+    m.name.toLowerCase().includes(modelSearch.toLowerCase()) || 
+    m.id.toLowerCase().includes(modelSearch.toLowerCase())
+  );
+
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -134,7 +166,7 @@ export const SettingsView: React.FC = () => {
             <SettingsIcon className="w-6 h-6 mr-2 text-primary-400" />
             Einstellungen &amp; API-Schlüssel
           </h2>
-          <p className="text-sm text-slate-400">Verwalte Konnektoren, teste deine API-Keys live und konfiguriere Automationsregeln.</p>
+          <p className="text-sm text-slate-400">Verwalte Konnektoren, teste deine API-Keys live und wähle aus über 400+ KI-Modellen.</p>
         </div>
 
         <button
@@ -148,12 +180,13 @@ export const SettingsView: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* 1. LLM & Vision (OpenRouter / OpenAI) */}
+        
+        {/* 1. OpenRouter / OpenAI LLM Card */}
         <div className="glass-card p-5 rounded-2xl space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
               <Cpu className="w-4 h-4 mr-2 text-accent-cyan" />
-              LLM Vision &amp; Listing Generator
+              OpenRouter / OpenAI LLM
             </h3>
             <button
               onClick={() => runTest('openrouter', { apiKey: openRouterApiKey, model: llmModel })}
@@ -166,17 +199,24 @@ export const SettingsView: React.FC = () => {
           </div>
 
           {testResults['openrouter'] && !testResults['openrouter'].testing && (
-            <div className={`p-2.5 rounded-xl text-xs flex items-center justify-between border ${
+            <div className={`p-3 rounded-xl text-xs flex flex-col space-y-1 border ${
               testResults['openrouter'].success 
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
                 : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
             }`}>
-              <span className="flex items-center">
-                {testResults['openrouter'].success ? <ShieldCheck className="w-4 h-4 mr-1.5" /> : <ShieldAlert className="w-4 h-4 mr-1.5" />}
-                {testResults['openrouter'].success ? 'LLM API erreichbar & Modell aktiv ✓' : testResults['openrouter'].error}
-              </span>
-              {testResults['openrouter'].latencyMs !== undefined && (
-                <span className="font-mono text-[10px]">{testResults['openrouter'].latencyMs}ms</span>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center font-semibold">
+                  {testResults['openrouter'].success ? <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" /> : <ShieldAlert className="w-4 h-4 mr-1.5 shrink-0" />}
+                  {testResults['openrouter'].success ? 'OpenRouter API verbunden ✓' : testResults['openrouter'].error}
+                </span>
+                {testResults['openrouter'].latencyMs !== undefined && (
+                  <span className="font-mono text-[10px]">{testResults['openrouter'].latencyMs}ms</span>
+                )}
+              </div>
+              {testResults['openrouter'].details && (
+                <div className="text-[11px] opacity-90 pl-5 font-mono">
+                  {testResults['openrouter'].details}
+                </div>
               )}
             </div>
           )}
@@ -192,22 +232,45 @@ export const SettingsView: React.FC = () => {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Vision &amp; Listing Modell</label>
+          {/* Model Selector & Search */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-slate-300">
+                Vision &amp; Listing Modell ({availableModels.length} verfügbar)
+              </label>
+              <button onClick={fetchModels} className="text-[11px] text-accent-cyan hover:underline flex items-center">
+                <RefreshCw className={`w-2.5 h-2.5 mr-1 ${loadingModels ? 'animate-spin' : ''}`} />
+                Modelliste aktualisieren
+              </button>
+            </div>
+
+            {/* Quick Model Filter */}
+            <input
+              type="text"
+              value={modelSearch}
+              onChange={(e) => setModelSearch(e.target.value)}
+              placeholder="Modelle filtern (z.B. claude, gpt, flash, llama)..."
+              className="w-full bg-slate-950 border border-slate-800/90 rounded-lg px-3 py-1.5 text-[11px] text-slate-300 focus:border-primary-500 focus:outline-none"
+            />
+
             <select
               value={llmModel}
               onChange={(e) => setLlmModel(e.target.value)}
               className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:border-primary-500 focus:outline-none"
             >
-              <option value="anthropic/claude-3.5-sonnet">Anthropic: Claude 3.5 Sonnet (Empfohlen für Vision &amp; SEO)</option>
-              <option value="openai/gpt-4o">OpenAI: GPT-4o</option>
-              <option value="google/gemini-2.0-flash">Google: Gemini 2.0 Flash (Ultra schnell &amp; günstig)</option>
-              <option value="openai/gpt-4o-mini">OpenAI: GPT-4o-mini</option>
+              {filteredModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} ({m.id}) {m.promptPrice ? `• ${m.promptPrice}` : ''}
+                </option>
+              ))}
             </select>
+            <div className="text-[10px] text-slate-500 font-mono">
+              Aktuell gewählt: <strong>{llmModel}</strong>
+            </div>
           </div>
         </div>
 
-        {/* 2. Productor Trademark API */}
+        {/* 2. Productor Trademark API Card */}
         <div className="glass-card p-5 rounded-2xl space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
@@ -231,8 +294,8 @@ export const SettingsView: React.FC = () => {
                 : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
             }`}>
               <span className="flex items-center">
-                {testResults['productor'].success ? <ShieldCheck className="w-4 h-4 mr-1.5" /> : <ShieldAlert className="w-4 h-4 mr-1.5" />}
-                {testResults['productor'].success ? 'USPTO / EUIPO / DPMA Endpoints online ✓' : testResults['productor'].error}
+                {testResults['productor'].success ? <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" /> : <ShieldAlert className="w-4 h-4 mr-1.5 shrink-0" />}
+                {testResults['productor'].success ? 'USPTO / EUIPO / DPMA Endpoints online (Echter Batch-Search OK) ✓' : testResults['productor'].error}
               </span>
               {testResults['productor'].latencyMs !== undefined && (
                 <span className="font-mono text-[10px]">{testResults['productor'].latencyMs}ms</span>
@@ -241,22 +304,22 @@ export const SettingsView: React.FC = () => {
           )}
 
           <p className="text-xs text-slate-400 leading-relaxed">
-            Die Productor-API-Konnektoren für USPTO, EUIPO und DPMA sind vorkonfiguriert und sichern deine Designs automatisch gegen Nizza-Klassen (25, 9, 21, 20 etc.) ab.
+            Die Productor-API sichert alle Quotes und Listings automatisch gegen Nizza-Klassen (25 Bekleidung, 9 PopSockets/Cases, 21 Tassen etc.) ab.
           </p>
 
-          <div className="text-[11px] font-mono text-slate-400 bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
-            <div>✓ USPTO Batch Search (classes=25,9,18,20...)</div>
-            <div>✓ EUIPO Batch Search (classes=25,9,16,21...)</div>
+          <div className="text-[11px] font-mono text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
+            <div>✓ USPTO Batch Search (classes=25,9,18,20,35,16,24,41,40,21)</div>
+            <div>✓ EUIPO Batch Search (classes=25,9,16,41,21)</div>
             <div>✓ DPMA Live Search (German Trademark)</div>
           </div>
         </div>
 
-        {/* 3. Ideogram 3.0 & Vectorizer.ai */}
+        {/* 3. Ideogram 3.0 Card */}
         <div className="glass-card p-5 rounded-2xl space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
-              <Sparkles className="w-4 h-4 mr-2 text-primary-400" />
-              Ideogram 3.0 &amp; Vectorizer.ai
+              <ImageIcon className="w-4 h-4 mr-2 text-primary-400" />
+              Ideogram 3.0 API
             </h3>
             <button
               onClick={() => runTest('ideogram', { apiKey: ideogramApiKey })}
@@ -264,7 +327,7 @@ export const SettingsView: React.FC = () => {
               className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-3 h-3 ${testResults['ideogram']?.testing ? 'animate-spin text-primary-400' : ''}`} />
-              <span>Ideogram testen</span>
+              <span>Verbindung testen</span>
             </button>
           </div>
 
@@ -275,8 +338,8 @@ export const SettingsView: React.FC = () => {
                 : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
             }`}>
               <span className="flex items-center">
-                {testResults['ideogram'].success ? <ShieldCheck className="w-4 h-4 mr-1.5" /> : <ShieldAlert className="w-4 h-4 mr-1.5" />}
-                {testResults['ideogram'].success ? 'Ideogram API verbunden ✓' : testResults['ideogram'].error}
+                {testResults['ideogram'].success ? <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" /> : <ShieldAlert className="w-4 h-4 mr-1.5 shrink-0" />}
+                {testResults['ideogram'].success ? 'Ideogram API Token verifiziert (0 Credits verbraucht) ✓' : testResults['ideogram'].error}
               </span>
               {testResults['ideogram'].latencyMs !== undefined && (
                 <span className="font-mono text-[10px]">{testResults['ideogram'].latencyMs}ms</span>
@@ -285,7 +348,7 @@ export const SettingsView: React.FC = () => {
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Ideogram API Key</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Ideogram API Token</label>
             <input
               type="password"
               value={ideogramApiKey}
@@ -295,9 +358,63 @@ export const SettingsView: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/60">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Standard Modell</label>
+            <select
+              value={ideogramModel}
+              onChange={(e) => setIdeogramModel(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:border-primary-500 focus:outline-none"
+            >
+              <option value="V_2_TURBO">Ideogram 2.0 Turbo (Schnell &amp; Günstig)</option>
+              <option value="V_2">Ideogram 2.0 (High Quality)</option>
+              <option value="V_1">Ideogram 1.0</option>
+            </select>
+          </div>
+        </div>
+
+        {/* 4. Vectorizer.ai Card (Dedicated) */}
+        <div className="glass-card p-5 rounded-2xl space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
+              <Sparkles className="w-4 h-4 mr-2 text-accent-cyan" />
+              Vectorizer.ai API
+            </h3>
+            <button
+              onClick={() => runTest('vectorizer', { apiKey: vectorizerApiKey, apiSecret: vectorizerApiSecret })}
+              disabled={testResults['vectorizer']?.testing || !vectorizerApiKey || !vectorizerApiSecret}
+              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${testResults['vectorizer']?.testing ? 'animate-spin text-accent-cyan' : ''}`} />
+              <span>Verbindung testen</span>
+            </button>
+          </div>
+
+          {testResults['vectorizer'] && !testResults['vectorizer'].testing && (
+            <div className={`p-3 rounded-xl text-xs flex flex-col space-y-1 border ${
+              testResults['vectorizer'].success 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center font-semibold">
+                  {testResults['vectorizer'].success ? <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" /> : <ShieldAlert className="w-4 h-4 mr-1.5 shrink-0" />}
+                  {testResults['vectorizer'].success ? 'Vectorizer.ai Account verbunden ✓' : testResults['vectorizer'].error}
+                </span>
+                {testResults['vectorizer'].latencyMs !== undefined && (
+                  <span className="font-mono text-[10px]">{testResults['vectorizer'].latencyMs}ms</span>
+                )}
+              </div>
+              {testResults['vectorizer'].details && (
+                <div className="text-[11px] opacity-90 pl-5 font-mono">
+                  {testResults['vectorizer'].details}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Vectorizer Key</label>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">API Key (ID)</label>
               <input
                 type="password"
                 value={vectorizerApiKey}
@@ -307,7 +424,7 @@ export const SettingsView: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Vectorizer Secret</label>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">API Secret</label>
               <input
                 type="password"
                 value={vectorizerApiSecret}
@@ -319,7 +436,7 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* 4. Supabase Sync & NAS Settings */}
+        {/* 5. Supabase MBA Database Card (With Read + Write Verification) */}
         <div className="glass-card p-5 rounded-2xl space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
@@ -328,26 +445,33 @@ export const SettingsView: React.FC = () => {
             </h3>
             <button
               onClick={() => runTest('supabase', { url: supabaseUrl, key: supabaseServiceRoleKey })}
-              disabled={testResults['supabase']?.testing || !supabaseUrl}
+              disabled={testResults['supabase']?.testing || !supabaseUrl || !supabaseServiceRoleKey}
               className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-3 h-3 ${testResults['supabase']?.testing ? 'animate-spin text-emerald-400' : ''}`} />
-              <span>DB testen</span>
+              <span>Lesen &amp; Schreiben testen</span>
             </button>
           </div>
 
           {testResults['supabase'] && !testResults['supabase'].testing && (
-            <div className={`p-2.5 rounded-xl text-xs flex items-center justify-between border ${
+            <div className={`p-3 rounded-xl text-xs flex flex-col space-y-1 border ${
               testResults['supabase'].success 
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
                 : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
             }`}>
-              <span className="flex items-center">
-                {testResults['supabase'].success ? <ShieldCheck className="w-4 h-4 mr-1.5" /> : <ShieldAlert className="w-4 h-4 mr-1.5" />}
-                {testResults['supabase'].success ? 'Supabase verbunden (mba_designs Tabelle bereit) ✓' : testResults['supabase'].error}
-              </span>
-              {testResults['supabase'].latencyMs !== undefined && (
-                <span className="font-mono text-[10px]">{testResults['supabase'].latencyMs}ms</span>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center font-semibold">
+                  {testResults['supabase'].success ? <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" /> : <ShieldAlert className="w-4 h-4 mr-1.5 shrink-0" />}
+                  {testResults['supabase'].success ? 'Supabase Lese- & Schreibtest bestanden ✓' : testResults['supabase'].error}
+                </span>
+                {testResults['supabase'].latencyMs !== undefined && (
+                  <span className="font-mono text-[10px]">{testResults['supabase'].latencyMs}ms</span>
+                )}
+              </div>
+              {testResults['supabase'].details && (
+                <div className="text-[11px] opacity-90 pl-5 font-mono">
+                  {testResults['supabase'].details}
+                </div>
               )}
             </div>
           )}
@@ -364,7 +488,7 @@ export const SettingsView: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Supabase Service Role Key</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Supabase Service Role Key (für Schreibzugriff)</label>
             <input
               type="password"
               value={supabaseServiceRoleKey}
@@ -374,6 +498,48 @@ export const SettingsView: React.FC = () => {
             />
           </div>
         </div>
+
+        {/* 6. NAS & Slot-Filling Settings Card */}
+        <div className="glass-card p-5 rounded-2xl space-y-4">
+          <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
+            <Server className="w-4 h-4 mr-2 text-accent-amber" />
+            TerraMaster TOS 6.0 &amp; Automation
+          </h3>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">NAS Host IP</label>
+              <input
+                type="text"
+                value={nasHost}
+                onChange={(e) => setNasHost(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 focus:border-primary-500 focus:outline-none font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">SSH Benutzer</label>
+              <input
+                type="text"
+                value={nasUser}
+                onChange={(e) => setNasUser(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 focus:border-primary-500 focus:outline-none font-mono"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Auto Slot-Fill Uhrzeit (Uhr)</label>
+            <input
+              type="number"
+              min="0"
+              max="23"
+              value={autoSlotFillHour}
+              onChange={(e) => setAutoSlotFillHour(Number(e.target.value))}
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 focus:border-primary-500 focus:outline-none"
+            />
+          </div>
+        </div>
+
       </div>
     </div>
   );

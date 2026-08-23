@@ -42171,6 +42171,8 @@ var TrademarkService = class {
 };
 
 // src/server/services/llmService.ts
+var cachedModels = [];
+var lastModelsFetch = 0;
 var LLMService = class {
   static getBaseUrlAndHeaders() {
     const settings = loadSettings();
@@ -42178,7 +42180,7 @@ var LLMService = class {
     const url = isDirectOpenAI ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
     const headers = {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${settings.openRouterApiKey}`
+      "Authorization": `Bearer ${settings.openRouterApiKey.trim()}`
     };
     if (!isDirectOpenAI) {
       headers["HTTP-Referer"] = "https://mba-hub.local";
@@ -42191,11 +42193,92 @@ var LLMService = class {
     };
   }
   /**
-   * Test LLM connection & model availability
+   * Fetch all models from OpenRouter dynamically
+   */
+  static async getAvailableModels() {
+    const now = Date.now();
+    if (cachedModels.length > 0 && now - lastModelsFetch < 1e3 * 60 * 30) {
+      return cachedModels;
+    }
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/models", {
+        headers: {
+          "HTTP-Referer": "https://mba-hub.local",
+          "X-Title": "MBA HUB"
+        },
+        signal: AbortSignal.timeout(1e4)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.data)) {
+          const list = data.data.map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            contextLength: m.context_length,
+            promptPrice: m.pricing?.prompt ? `$${(parseFloat(m.pricing.prompt) * 1e6).toFixed(2)}/M` : void 0,
+            completionPrice: m.pricing?.completion ? `$${(parseFloat(m.pricing.completion) * 1e6).toFixed(2)}/M` : void 0,
+            description: m.description
+          }));
+          const topKeywords = ["claude-3.5-sonnet", "claude-3-5-sonnet", "gpt-4o", "gemini-2.0-flash", "gemini-2.5", "llama-3.2"];
+          list.sort((a, b) => {
+            const aIsTop = topKeywords.some((k) => a.id.toLowerCase().includes(k));
+            const bIsTop = topKeywords.some((k) => b.id.toLowerCase().includes(k));
+            if (aIsTop && !bIsTop) return -1;
+            if (!aIsTop && bIsTop) return 1;
+            return a.name.localeCompare(b.name);
+          });
+          cachedModels = list;
+          lastModelsFetch = now;
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn("[LLMService] Failed to fetch dynamic models list:", err);
+    }
+    return [
+      { id: "anthropic/claude-3.5-sonnet", name: "Anthropic: Claude 3.5 Sonnet" },
+      { id: "anthropic/claude-3.5-sonnet:beta", name: "Anthropic: Claude 3.5 Sonnet (Beta)" },
+      { id: "openai/gpt-4o", name: "OpenAI: GPT-4o" },
+      { id: "openai/gpt-4o-mini", name: "OpenAI: GPT-4o Mini" },
+      { id: "google/gemini-2.0-flash-001", name: "Google: Gemini 2.0 Flash" },
+      { id: "meta-llama/llama-3.2-11b-vision-instruct", name: "Meta: Llama 3.2 11B Vision" }
+    ];
+  }
+  /**
+   * Check OpenRouter credit balance & usage
+   */
+  static async getCredits(customKey) {
+    const settings = loadSettings();
+    const key = customKey || settings.openRouterApiKey;
+    if (!key) return { error: "Kein API Key" };
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
+        headers: {
+          "Authorization": `Bearer ${key.trim()}`
+        },
+        signal: AbortSignal.timeout(8e3)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const d = json?.data;
+        return {
+          usage: d?.usage,
+          limit: d?.limit,
+          limitRemaining: d?.limit_remaining,
+          isFreeTier: d?.is_free_tier
+        };
+      }
+      return { error: `HTTP ${res.status}` };
+    } catch (err) {
+      return { error: err.message || "Timeout" };
+    }
+  }
+  /**
+   * Test LLM connection, verify model, and fetch account usage
    */
   static async testConnection(customKey, customModel) {
     const settings = loadSettings();
-    const key = customKey || settings.openRouterApiKey;
+    const key = (customKey || settings.openRouterApiKey).trim();
     const model = customModel || settings.llmModel || "anthropic/claude-3.5-sonnet";
     if (!key) {
       return { success: false, latencyMs: 0, error: "Kein API Key hinterlegt" };
@@ -42214,17 +42297,33 @@ var LLMService = class {
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: "user", content: "Say OK" }],
+          messages: [{ role: "user", content: "Ping" }],
           max_tokens: 5
         }),
-        signal: AbortSignal.timeout(8e3)
+        signal: AbortSignal.timeout(1e4)
       });
       const latencyMs = Date.now() - start;
       if (res.ok) {
-        return { success: true, latencyMs };
+        let creditsInfo = {};
+        if (!isDirectOpenAI) {
+          creditsInfo = await this.getCredits(key);
+        }
+        const usageStr = creditsInfo.usage !== void 0 ? `Verbrauch: $${creditsInfo.usage.toFixed(4)}` : "";
+        const remStr = creditsInfo.limitRemaining !== void 0 && creditsInfo.limitRemaining !== null ? ` | Restlimit: $${creditsInfo.limitRemaining.toFixed(2)}` : "";
+        return {
+          success: true,
+          latencyMs,
+          details: `Modell "${model}" aktiv \u2713 ${usageStr}${remStr}`,
+          usage: creditsInfo.usage,
+          limitRemaining: creditsInfo.limitRemaining
+        };
       }
       const data = await res.json().catch(() => ({}));
-      return { success: false, latencyMs, error: data?.error?.message || `HTTP ${res.status}` };
+      return {
+        success: false,
+        latencyMs,
+        error: data?.error?.message || `HTTP ${res.status}: Modell "${model}" nicht gefunden oder nicht verf\xFCgbar.`
+      };
     } catch (err) {
       return { success: false, latencyMs: Date.now() - start, error: err.message || "Timeout" };
     }
@@ -42257,7 +42356,7 @@ Style Preset: ${stylePreset}`;
           temperature: 0.7,
           max_tokens: 250
         }),
-        signal: AbortSignal.timeout(12e3)
+        signal: AbortSignal.timeout(15e3)
       });
       if (!res.ok) {
         throw new Error(`LLM error: ${res.statusText}`);
@@ -42335,7 +42434,7 @@ Niche 2: ${niche2 || ""}` },
 // src/server/services/ideogramService.ts
 var IdeogramService = class {
   /**
-   * Test Ideogram API connection
+   * Test Ideogram API connection without spending generation credits
    */
   static async testConnection(customKey) {
     const settings = loadSettings();
@@ -42345,15 +42444,28 @@ var IdeogramService = class {
     }
     const start = Date.now();
     try {
-      const res = await fetch("https://api.ideogram.ai/manage/user", {
-        headers: { "Api-Key": key },
+      const res = await fetch("https://api.ideogram.ai/generate", {
+        method: "POST",
+        headers: {
+          "Api-Key": key,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          image_request: {
+            prompt: ""
+          }
+        }),
         signal: AbortSignal.timeout(8e3)
       });
       const latencyMs = Date.now() - start;
-      if (res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        return { success: false, latencyMs, error: data?.message || "Ung\xFCltiger API Token (Access Denied)" };
+      }
+      if (res.status === 400 || res.ok) {
         return { success: true, latencyMs };
       }
-      return { success: false, latencyMs, error: `Ideogram API HTTP ${res.status}` };
+      return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
     } catch (err) {
       return { success: false, latencyMs: Date.now() - start, error: err.message || "Timeout" };
     }
@@ -42389,7 +42501,7 @@ var IdeogramService = class {
         "Content-Type": "application/json"
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(45e3)
+      signal: AbortSignal.timeout(6e4)
     });
     if (!res.ok) {
       const errBody = await res.text();
@@ -42410,18 +42522,18 @@ var IdeogramService = class {
 // src/server/services/vectorizerService.ts
 var VectorizerService = class {
   /**
-   * Test Vectorizer.ai API credentials
+   * Test Vectorizer.ai API credentials and query account details
    */
   static async testConnection(customKey, customSecret) {
     const settings = loadSettings();
     const key = customKey || settings.vectorizerApiKey;
     const secret = customSecret || settings.vectorizerApiSecret;
     if (!key || !secret) {
-      return { success: false, latencyMs: 0, error: "API Key oder Secret fehlt" };
+      return { success: false, latencyMs: 0, error: "API Key (ID) oder API Secret fehlt" };
     }
     const start = Date.now();
     try {
-      const auth = Buffer.from(`${key}:${secret}`).toString("base64");
+      const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
       const res = await fetch("https://vectorizer.ai/api/v1/account", {
         headers: {
           "Authorization": `Basic ${auth}`
@@ -42429,10 +42541,24 @@ var VectorizerService = class {
         signal: AbortSignal.timeout(8e3)
       });
       const latencyMs = Date.now() - start;
-      if (res.ok || res.status === 200 || res.status === 400) {
-        return { success: true, latencyMs };
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const credits = data?.credits?.remaining ?? data?.credits;
+        return {
+          success: true,
+          latencyMs,
+          creditsRemaining: credits,
+          details: credits !== void 0 ? `Guthaben: ${credits} Credits` : "Account verbunden"
+        };
       }
-      return { success: false, latencyMs, error: `Vectorizer API HTTP ${res.status}` };
+      if (res.status === 401) {
+        return {
+          success: false,
+          latencyMs,
+          error: data?.error?.message || "Ung\xFCltige Vectorizer.ai Zugangsdaten (401)"
+        };
+      }
+      return { success: false, latencyMs, error: data?.error?.message || `HTTP ${res.status}` };
     } catch (err) {
       return { success: false, latencyMs: Date.now() - start, error: err.message || "Timeout" };
     }
@@ -42447,7 +42573,7 @@ var VectorizerService = class {
     if (!key || !secret) {
       throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
     }
-    const auth = Buffer.from(`${key}:${secret}`).toString("base64");
+    const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
     const formData = new FormData();
     formData.append("image.url", imageUrl);
     formData.append("mode", "production");
@@ -50323,26 +50449,67 @@ if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and b
 // src/server/services/supabaseService.ts
 var SupabaseService = class {
   /**
-   * Test Supabase connection & schema verification
+   * Test Supabase connection: verifies both READ and WRITE (INSERT/DELETE) permissions on mba_designs
    */
   static async testConnection(customUrl, customKey) {
     const settings = loadSettings();
     const url = customUrl || settings.supabaseUrl;
     const key = customKey || settings.supabaseServiceRoleKey;
     if (!url || !key) {
-      return { success: false, latencyMs: 0, error: "Supabase URL oder Service Role Key fehlt" };
+      return {
+        success: false,
+        latencyMs: 0,
+        error: "Supabase URL oder Service Role Key fehlt",
+        canRead: false,
+        canWrite: false
+      };
     }
     const start = Date.now();
     try {
-      const supabase = createClient(url, key, { auth: { persistSession: false } });
-      const { count, error } = await supabase.from("mba_designs").select("*", { count: "exact", head: true });
-      const latencyMs = Date.now() - start;
-      if (error) {
-        return { success: false, latencyMs, error: error.message };
+      const supabase = createClient(url.trim(), key.trim(), { auth: { persistSession: false } });
+      const { count, error: readError } = await supabase.from("mba_designs").select("*", { count: "exact", head: true });
+      if (readError) {
+        return {
+          success: false,
+          latencyMs: Date.now() - start,
+          error: `Lesefehler: ${readError.message}`,
+          canRead: false,
+          canWrite: false
+        };
       }
-      return { success: true, latencyMs, rowCount: count || 0 };
+      const pingId = `__health_test_ping_${Date.now()}__`;
+      const { error: writeError } = await supabase.from("mba_designs").upsert({
+        design_id: pingId,
+        title_us: "MBA Hub Health Ping Test",
+        status: "HEALTH_CHECK"
+      });
+      if (writeError) {
+        return {
+          success: false,
+          latencyMs: Date.now() - start,
+          error: `Lesen OK (${count || 0} Zeilen), aber Schreiben verweigert (RLS/Key Fehler): ${writeError.message}`,
+          canRead: true,
+          canWrite: false
+        };
+      }
+      await supabase.from("mba_designs").delete().eq("design_id", pingId);
+      const latencyMs = Date.now() - start;
+      return {
+        success: true,
+        latencyMs,
+        rowCount: count || 0,
+        canRead: true,
+        canWrite: true,
+        details: `Vollzugriff (Lesen & Schreiben): ${count || 0} Designs in mba_designs`
+      };
     } catch (err) {
-      return { success: false, latencyMs: Date.now() - start, error: err.message || "Supabase timeout" };
+      return {
+        success: false,
+        latencyMs: Date.now() - start,
+        error: err.message || "Supabase Timeout",
+        canRead: false,
+        canWrite: false
+      };
     }
   }
 };
@@ -50431,6 +50598,22 @@ app.post("/api/v1/settings", (req, res) => {
     const updated = saveSettings(req.body);
     broadcast("SETTINGS_UPDATED", { timestamp: Date.now() });
     res.json({ success: true, settings: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.get("/api/v1/llm/models", async (req, res) => {
+  try {
+    const models = await LLMService.getAvailableModels();
+    res.json({ success: true, models });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.get("/api/v1/llm/credits", async (req, res) => {
+  try {
+    const credits = await LLMService.getCredits();
+    res.json({ success: true, ...credits });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

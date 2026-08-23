@@ -2,21 +2,27 @@ import { loadSettings } from './settingsService';
 
 export class VectorizerService {
   /**
-   * Test Vectorizer.ai API credentials
+   * Test Vectorizer.ai API credentials and query account details
    */
-  static async testConnection(customKey?: string, customSecret?: string): Promise<{ success: boolean; latencyMs: number; error?: string }> {
+  static async testConnection(customKey?: string, customSecret?: string): Promise<{ 
+    success: boolean; 
+    latencyMs: number; 
+    error?: string; 
+    creditsRemaining?: number;
+    details?: string;
+  }> {
     const settings = loadSettings();
     const key = customKey || settings.vectorizerApiKey;
     const secret = customSecret || settings.vectorizerApiSecret;
 
     if (!key || !secret) {
-      return { success: false, latencyMs: 0, error: 'API Key oder Secret fehlt' };
+      return { success: false, latencyMs: 0, error: 'API Key (ID) oder API Secret fehlt' };
     }
 
     const start = Date.now();
     try {
-      const auth = Buffer.from(`${key}:${secret}`).toString('base64');
-      // Ping vectorizer endpoint
+      const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString('base64');
+      
       const res = await fetch('https://vectorizer.ai/api/v1/account', {
         headers: {
           'Authorization': `Basic ${auth}`,
@@ -25,11 +31,27 @@ export class VectorizerService {
       });
 
       const latencyMs = Date.now() - start;
-      if (res.ok || res.status === 200 || res.status === 400) {
-        // Even 400 means auth passed
-        return { success: true, latencyMs };
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        const credits = data?.credits?.remaining ?? data?.credits;
+        return { 
+          success: true, 
+          latencyMs, 
+          creditsRemaining: credits,
+          details: credits !== undefined ? `Guthaben: ${credits} Credits` : 'Account verbunden' 
+        };
       }
-      return { success: false, latencyMs, error: `Vectorizer API HTTP ${res.status}` };
+
+      if (res.status === 401) {
+        return { 
+          success: false, 
+          latencyMs, 
+          error: data?.error?.message || 'Ungültige Vectorizer.ai Zugangsdaten (401)' 
+        };
+      }
+
+      return { success: false, latencyMs, error: data?.error?.message || `HTTP ${res.status}` };
     } catch (err: any) {
       return { success: false, latencyMs: Date.now() - start, error: err.message || 'Timeout' };
     }
@@ -47,7 +69,7 @@ export class VectorizerService {
       throw new Error('Vectorizer.ai Credentials fehlen in den Einstellungen.');
     }
 
-    const auth = Buffer.from(`${key}:${secret}`).toString('base64');
+    const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString('base64');
     const formData = new FormData();
     formData.append('image.url', imageUrl);
     formData.append('mode', 'production');

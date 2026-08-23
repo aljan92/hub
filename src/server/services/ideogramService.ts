@@ -10,7 +10,7 @@ export interface IdeogramGenerateOptions {
 
 export class IdeogramService {
   /**
-   * Test Ideogram API connection
+   * Test Ideogram API connection without spending generation credits
    */
   static async testConnection(customKey?: string): Promise<{ success: boolean; latencyMs: number; error?: string }> {
     const settings = loadSettings();
@@ -21,17 +21,35 @@ export class IdeogramService {
 
     const start = Date.now();
     try {
-      // Test GET /user/manage or simple ping
-      const res = await fetch('https://api.ideogram.ai/manage/user', {
-        headers: { 'Api-Key': key },
+      // Sending an empty prompt payload to test authentication without spending credits
+      const res = await fetch('https://api.ideogram.ai/generate', {
+        method: 'POST',
+        headers: {
+          'Api-Key': key,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image_request: {
+            prompt: ''
+          }
+        }),
         signal: AbortSignal.timeout(8000)
       });
 
       const latencyMs = Date.now() - start;
-      if (res.ok) {
+      
+      // 401 means invalid key
+      if (res.status === 401 || res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        return { success: false, latencyMs, error: data?.message || 'Ungültiger API Token (Access Denied)' };
+      }
+
+      // 400 with prompt validation error proves auth is 100% valid
+      if (res.status === 400 || res.ok) {
         return { success: true, latencyMs };
       }
-      return { success: false, latencyMs, error: `Ideogram API HTTP ${res.status}` };
+
+      return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
     } catch (err: any) {
       return { success: false, latencyMs: Date.now() - start, error: err.message || 'Timeout' };
     }
@@ -71,7 +89,7 @@ export class IdeogramService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(45000)
+      signal: AbortSignal.timeout(60000)
     });
 
     if (!res.ok) {

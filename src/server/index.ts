@@ -148,6 +148,25 @@ app.post('/api/v1/settings', (req, res) => {
   }
 });
 
+// 2.1 Dynamic LLM Models & Credits
+app.get('/api/v1/llm/models', async (req, res) => {
+  try {
+    const models = await LLMService.getAvailableModels();
+    res.json({ success: true, models });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/v1/llm/credits', async (req, res) => {
+  try {
+    const credits = await LLMService.getCredits();
+    res.json({ success: true, ...credits });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 3. Connectors Live Health & Test Endpoints
 app.post('/api/v1/connectors/test', async (req, res) => {
   const { connector, credentials } = req.body;
