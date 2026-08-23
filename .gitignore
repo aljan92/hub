@@ -14,6 +14,10 @@ out/
 .env.production
 .env.development
 
+# Documentation & notes (local private only)
+*.md
+docs/
+
 # Runtime data and persistence
 data/
 *.sqlite
