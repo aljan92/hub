@@ -41934,6 +41934,7 @@ var import_path2 = __toESM(require("path"), 1);
 var import_fs2 = __toESM(require("fs"), 1);
 var import_dotenv = __toESM(require_main(), 1);
 var import_url = require("url");
+var import_child_process = require("child_process");
 
 // src/server/services/settingsService.ts
 var import_fs = __toESM(require("fs"), 1);
@@ -50632,6 +50633,36 @@ app.post("/api/v1/settings", (req, res) => {
     res.json({ success: true, settings: updated });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/system/update", async (req, res) => {
+  try {
+    console.log("[System Update] Starting 1-Click self-update from GitHub...");
+    (0, import_child_process.execSync)("curl -sL https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1", {
+      cwd: process.cwd(),
+      timeout: 45e3
+    });
+    const hostRepoPath = import_path2.default.resolve(process.cwd(), "host_repo");
+    if (import_fs2.default.existsSync(hostRepoPath)) {
+      try {
+        (0, import_child_process.execSync)("curl -sL https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1", {
+          cwd: hostRepoPath,
+          timeout: 45e3
+        });
+      } catch (e) {
+      }
+    }
+    res.json({
+      success: true,
+      message: "Update erfolgreich installiert. Dashboard startet in 3 Sekunden neu..."
+    });
+    setTimeout(() => {
+      console.log("[System Update] Restarting container process now with fresh bundle...");
+      process.exit(0);
+    }, 1500);
+  } catch (err) {
+    console.error("[System Update] Failed:", err);
+    res.status(500).json({ success: false, error: err.message || "Update fehlgeschlagen" });
   }
 });
 app.get("/api/v1/llm/models", async (req, res) => {

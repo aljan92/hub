@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 import { loadSettings, saveSettings, AppSettings } from './services/settingsService';
 import { TrademarkService } from './services/trademarkService';
@@ -145,6 +146,46 @@ app.post('/api/v1/settings', (req, res) => {
     res.json({ success: true, settings: updated });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2.0 1-Click System Update directly from GitHub
+app.post('/api/v1/system/update', async (req, res) => {
+  try {
+    console.log('[System Update] Starting 1-Click self-update from GitHub...');
+
+    // 1. Download & extract updated distribution in app directory
+    execSync('curl -sL https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1', {
+      cwd: process.cwd(),
+      timeout: 45000
+    });
+
+    // 2. Also update host_repo if mounted
+    const hostRepoPath = path.resolve(process.cwd(), 'host_repo');
+    if (fs.existsSync(hostRepoPath)) {
+      try {
+        execSync('curl -sL https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1', {
+          cwd: hostRepoPath,
+          timeout: 45000
+        });
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Update erfolgreich installiert. Dashboard startet in 3 Sekunden neu...'
+    });
+
+    // Exit process cleanly so Docker (restart: unless-stopped) reloads the updated app
+    setTimeout(() => {
+      console.log('[System Update] Restarting container process now with fresh bundle...');
+      process.exit(0);
+    }, 1500);
+  } catch (err: any) {
+    console.error('[System Update] Failed:', err);
+    res.status(500).json({ success: false, error: err.message || 'Update fehlgeschlagen' });
   }
 });
 
