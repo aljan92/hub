@@ -8,11 +8,23 @@ export interface IdeogramGenerateOptions {
   styleType?: string;
 }
 
+export interface IdeogramModelItem {
+  id: string;
+  name: string;
+  isCustom?: boolean;
+}
+
 export class IdeogramService {
   /**
-   * Test Ideogram API connection without spending generation credits
+   * Test Ideogram API connection via GET /models (0 credits consumed)
    */
-  static async testConnection(customKey?: string): Promise<{ success: boolean; latencyMs: number; error?: string }> {
+  static async testConnection(customKey?: string): Promise<{ 
+    success: boolean; 
+    latencyMs: number; 
+    error?: string;
+    details?: string;
+    customModelsCount?: number;
+  }> {
     const settings = loadSettings();
     const rawKey = customKey || settings.ideogramApiKey;
     if (!rawKey || !rawKey.trim()) {
@@ -22,71 +34,87 @@ export class IdeogramService {
     const key = rawKey.trim();
     const start = Date.now();
     try {
-      // Test 1: Standard Ideogram Api-Key header
-      const res = await fetch('https://api.ideogram.ai/generate', {
-        method: 'POST',
+      const res = await fetch('https://api.ideogram.ai/models', {
+        method: 'GET',
         headers: {
           'Api-Key': key,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          image_request: {
-            prompt: ''
-          }
-        }),
-        signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(15000)
       });
 
       const latencyMs = Date.now() - start;
-      
-      // 400 with prompt validation error proves auth passed 100%
-      if (res.status === 400 || res.ok) {
-        return { success: true, latencyMs };
+
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const customModels = Array.isArray(data?.models) ? data.models : [];
+        const details = customModels.length > 0
+          ? `Ideogram API Token gültig ✓ (${customModels.length} Custom Models verfügbar)`
+          : 'Ideogram API Token gültig ✓ (Standard-Modelle bereit)';
+
+        return {
+          success: true,
+          latencyMs,
+          details,
+          customModelsCount: customModels.length
+        };
       }
 
       if (res.status === 401 || res.status === 403) {
-        // Test 2: Try Authorization Bearer header as fallback
-        const resBearer = await fetch('https://api.ideogram.ai/generate', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${key}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            image_request: {
-              prompt: ''
-            }
-          }),
-          signal: AbortSignal.timeout(15000)
-        });
-
-        if (resBearer.status === 400 || resBearer.ok) {
-          return { success: true, latencyMs: Date.now() - start };
-        }
-
         const data = await res.json().catch(() => ({}));
-        return { 
-          success: false, 
-          latencyMs, 
-          error: data?.message || 'Access denied: Bitte erstelle einen API Token unter https://ideogram.ai/manage-api' 
+        return {
+          success: false,
+          latencyMs,
+          error: data?.message || 'Ungültiger Ideogram API Key (401 Unauthorized)',
         };
       }
 
       return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
     } catch (err: any) {
-      const isTimeout = err.name === 'TimeoutError' || err.message?.includes('timeout') || err.message?.includes('aborted');
-      return { 
-        success: false, 
-        latencyMs: Date.now() - start, 
-        error: isTimeout 
-          ? 'Ideogram Timeout (25s): Verbindung zum Ideogram Server konnte nicht rechtzeitig aufgebaut werden.'
-          : (err.message || 'Verbindungsfehler')
-      };
+      return { success: false, latencyMs: Date.now() - start, error: err.message || 'Timeout bei der Verbindung zu Ideogram' };
     }
   }
 
   /**
-   * Generate Image via Ideogram 3.0 API
+   * Get all standard and custom Ideogram models
+   */
+  static async getAvailableModels(): Promise<IdeogramModelItem[]> {
+    const standardModels: IdeogramModelItem[] = [
+      { id: 'V_2_TURBO', name: 'Ideogram 2.0 Turbo (Schnell, hohe Qualität)' },
+      { id: 'V_2', name: 'Ideogram 2.0 (High Quality)' },
+      { id: 'V_1', name: 'Ideogram 1.0 (Klassisch)' },
+    ];
+
+    const settings = loadSettings();
+    if (!settings.ideogramApiKey) return standardModels;
+
+    try {
+      const res = await fetch('https://api.ideogram.ai/models', {
+        headers: { 'Api-Key': settings.ideogramApiKey.trim() },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.models)) {
+          const custom = data.models
+            .filter((m: any) => m.is_available_for_generation !== false)
+            .map((m: any) => ({
+              id: m.model_id || m.name,
+              name: `Custom: ${m.name || m.model_id}`,
+              isCustom: true,
+            }));
+          return [...standardModels, ...custom];
+        }
+      }
+    } catch (e) {
+      // return standard on error
+    }
+
+    return standardModels;
+  }
+
+  /**
+   * Generate Image via Ideogram API
    */
   static async generateImage(options: IdeogramGenerateOptions): Promise<{ imageUrl: string; prompt: string }> {
     const settings = loadSettings();
@@ -115,7 +143,7 @@ export class IdeogramService {
     const res = await fetch('https://api.ideogram.ai/generate', {
       method: 'POST',
       headers: {
-        'Api-Key': key,
+        'Api-Key': key.trim(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),

@@ -33,6 +33,11 @@ export const SettingsView: React.FC = () => {
 
   const [ideogramApiKey, setIdeogramApiKey] = useState('');
   const [ideogramModel, setIdeogramModel] = useState('V_2_TURBO');
+  const [availableIdeogramModels, setAvailableIdeogramModels] = useState<{ id: string; name: string }[]>([
+    { id: 'V_2_TURBO', name: 'Ideogram 2.0 Turbo (Schnell, hohe Qualität)' },
+    { id: 'V_2', name: 'Ideogram 2.0 (High Quality)' },
+    { id: 'V_1', name: 'Ideogram 1.0 (Klassisch)' },
+  ]);
 
   const [vectorizerApiKey, setVectorizerApiKey] = useState('');
   const [vectorizerApiSecret, setVectorizerApiSecret] = useState('');
@@ -70,6 +75,16 @@ export const SettingsView: React.FC = () => {
 
     // 2. Fetch all dynamic OpenRouter models
     fetchModels();
+
+    // 3. Fetch all dynamic Ideogram models
+    fetch('/api/v1/ideogram/models')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.models)) {
+          setAvailableIdeogramModels(data.models);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const fetchModels = () => {
@@ -365,9 +380,11 @@ export const SettingsView: React.FC = () => {
               onChange={(e) => setIdeogramModel(e.target.value)}
               className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:border-primary-500 focus:outline-none"
             >
-              <option value="V_2_TURBO">Ideogram 2.0 Turbo (Schnell &amp; Günstig)</option>
-              <option value="V_2">Ideogram 2.0 (High Quality)</option>
-              <option value="V_1">Ideogram 1.0</option>
+              {availableIdeogramModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} ({m.id})
+                </option>
+              ))}
             </select>
           </div>
         </div>

@@ -249,6 +249,16 @@ app.get('/api/v1/llm/credits', async (req, res) => {
   }
 });
 
+// 2.2 Ideogram Dynamic Models
+app.get('/api/v1/ideogram/models', async (req, res) => {
+  try {
+    const models = await IdeogramService.getAvailableModels();
+    res.json({ success: true, models });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 2.2 Unified Credits Overview for Header & Dashboard
 app.get('/api/v1/credits', async (req, res) => {
   try {

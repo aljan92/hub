@@ -42462,7 +42462,7 @@ Niche 2: ${niche2 || ""}` },
 // src/server/services/ideogramService.ts
 var IdeogramService = class {
   /**
-   * Test Ideogram API connection without spending generation credits
+   * Test Ideogram API connection via GET /models (0 credits consumed)
    */
   static async testConnection(customKey) {
     const settings = loadSettings();
@@ -42473,59 +42473,71 @@ var IdeogramService = class {
     const key = rawKey.trim();
     const start = Date.now();
     try {
-      const res = await fetch("https://api.ideogram.ai/generate", {
-        method: "POST",
+      const res = await fetch("https://api.ideogram.ai/models", {
+        method: "GET",
         headers: {
-          "Api-Key": key,
-          "Content-Type": "application/json"
+          "Api-Key": key
         },
-        body: JSON.stringify({
-          image_request: {
-            prompt: ""
-          }
-        }),
-        signal: AbortSignal.timeout(25e3)
+        signal: AbortSignal.timeout(15e3)
       });
       const latencyMs = Date.now() - start;
-      if (res.status === 400 || res.ok) {
-        return { success: true, latencyMs };
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const customModels = Array.isArray(data?.models) ? data.models : [];
+        const details = customModels.length > 0 ? `Ideogram API Token g\xFCltig \u2713 (${customModels.length} Custom Models verf\xFCgbar)` : "Ideogram API Token g\xFCltig \u2713 (Standard-Modelle bereit)";
+        return {
+          success: true,
+          latencyMs,
+          details,
+          customModelsCount: customModels.length
+        };
       }
       if (res.status === 401 || res.status === 403) {
-        const resBearer = await fetch("https://api.ideogram.ai/generate", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${key}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            image_request: {
-              prompt: ""
-            }
-          }),
-          signal: AbortSignal.timeout(15e3)
-        });
-        if (resBearer.status === 400 || resBearer.ok) {
-          return { success: true, latencyMs: Date.now() - start };
-        }
         const data = await res.json().catch(() => ({}));
         return {
           success: false,
           latencyMs,
-          error: data?.message || "Access denied: Bitte erstelle einen API Token unter https://ideogram.ai/manage-api"
+          error: data?.message || "Ung\xFCltiger Ideogram API Key (401 Unauthorized)"
         };
       }
       return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
     } catch (err) {
-      const isTimeout = err.name === "TimeoutError" || err.message?.includes("timeout") || err.message?.includes("aborted");
-      return {
-        success: false,
-        latencyMs: Date.now() - start,
-        error: isTimeout ? "Ideogram Timeout (25s): Verbindung zum Ideogram Server konnte nicht rechtzeitig aufgebaut werden." : err.message || "Verbindungsfehler"
-      };
+      return { success: false, latencyMs: Date.now() - start, error: err.message || "Timeout bei der Verbindung zu Ideogram" };
     }
   }
   /**
-   * Generate Image via Ideogram 3.0 API
+   * Get all standard and custom Ideogram models
+   */
+  static async getAvailableModels() {
+    const standardModels = [
+      { id: "V_2_TURBO", name: "Ideogram 2.0 Turbo (Schnell, hohe Qualit\xE4t)" },
+      { id: "V_2", name: "Ideogram 2.0 (High Quality)" },
+      { id: "V_1", name: "Ideogram 1.0 (Klassisch)" }
+    ];
+    const settings = loadSettings();
+    if (!settings.ideogramApiKey) return standardModels;
+    try {
+      const res = await fetch("https://api.ideogram.ai/models", {
+        headers: { "Api-Key": settings.ideogramApiKey.trim() },
+        signal: AbortSignal.timeout(1e4)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.models)) {
+          const custom = data.models.filter((m) => m.is_available_for_generation !== false).map((m) => ({
+            id: m.model_id || m.name,
+            name: `Custom: ${m.name || m.model_id}`,
+            isCustom: true
+          }));
+          return [...standardModels, ...custom];
+        }
+      }
+    } catch (e) {
+    }
+    return standardModels;
+  }
+  /**
+   * Generate Image via Ideogram API
    */
   static async generateImage(options) {
     const settings = loadSettings();
@@ -42551,7 +42563,7 @@ var IdeogramService = class {
     const res = await fetch("https://api.ideogram.ai/generate", {
       method: "POST",
       headers: {
-        "Api-Key": key,
+        "Api-Key": key.trim(),
         "Content-Type": "application/json"
       },
       body: JSON.stringify(payload),
@@ -50717,6 +50729,14 @@ app.get("/api/v1/llm/credits", async (req, res) => {
   try {
     const credits = await LLMService.getCredits();
     res.json({ success: true, ...credits });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.get("/api/v1/ideogram/models", async (req, res) => {
+  try {
+    const models = await IdeogramService.getAvailableModels();
+    res.json({ success: true, models });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
