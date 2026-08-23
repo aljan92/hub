@@ -20,7 +20,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, activeSlots }) => {
   const [credits, setCredits] = useState<{
-    openrouter?: { usage?: number; limitRemaining?: number; limit?: number; hasKey?: boolean };
+    openrouter?: { usage?: number; limitRemaining?: number; balanceRemaining?: number; totalCredits?: number; limit?: number; hasKey?: boolean };
     vectorizer?: { credits?: number; details?: string; hasKey?: boolean };
   } | null>(null);
 
@@ -49,19 +49,27 @@ export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, activeSlots }
   const remainingSlots = Math.max(0, activeSlots.total - activeSlots.used);
   const percentage = Math.round((activeSlots.used / activeSlots.total) * 100) || 0;
 
-  // Format OpenRouter string: Rest & Used
+  // Format OpenRouter string: Verfügbares Guthaben & Verbrauch
   const getOpenRouterText = () => {
     if (!credits?.openrouter) return 'Aktiv';
-    const usage = credits.openrouter.usage !== undefined ? `$${Number(credits.openrouter.usage).toFixed(2)}` : null;
-    const remaining = credits.openrouter.limitRemaining !== undefined && credits.openrouter.limitRemaining !== null
-      ? `$${Number(credits.openrouter.limitRemaining).toFixed(2)}`
+    const available = credits.openrouter.balanceRemaining !== undefined && credits.openrouter.balanceRemaining !== null
+      ? `$${Number(credits.openrouter.balanceRemaining).toFixed(2)}`
+      : (credits.openrouter.limitRemaining !== undefined && credits.openrouter.limitRemaining !== null
+        ? `$${Number(credits.openrouter.limitRemaining).toFixed(2)}`
+        : null);
+
+    const usage = credits.openrouter.usage !== undefined 
+      ? `$${Number(credits.openrouter.usage).toFixed(2)}` 
       : null;
 
-    if (remaining !== null && usage !== null) {
-      return `${remaining} Rest • ${usage} Used`;
+    if (available !== null && usage !== null) {
+      return `${available} frei • ${usage} used`;
+    }
+    if (available !== null) {
+      return `${available} frei`;
     }
     if (usage !== null) {
-      return `${usage} Used`;
+      return `${usage} used`;
     }
     return 'Aktiv';
   };

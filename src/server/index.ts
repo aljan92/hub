@@ -259,7 +259,7 @@ app.get('/api/v1/ideogram/models', async (req, res) => {
   }
 });
 
-// 2.2 Unified Credits Overview for Header & Dashboard
+// 2.3 Unified Credits Overview for Header & Dashboard
 app.get('/api/v1/credits', async (req, res) => {
   try {
     const [openrouter, vectorizer, ideogram] = await Promise.all([
@@ -274,6 +274,8 @@ app.get('/api/v1/credits', async (req, res) => {
         usage: openrouter.usage,
         limit: openrouter.limit,
         limitRemaining: openrouter.limitRemaining,
+        balanceRemaining: openrouter.balanceRemaining,
+        totalCredits: openrouter.totalCredits,
         isFreeTier: openrouter.isFreeTier,
         hasKey: !openrouter.error
       },

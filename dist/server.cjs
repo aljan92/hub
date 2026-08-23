@@ -42257,26 +42257,53 @@ var LLMService = class {
    */
   static async getCredits(customKey) {
     const settings = loadSettings();
-    const key = customKey || settings.openRouterApiKey;
+    const key = (customKey || settings.openRouterApiKey).trim();
     if (!key) return { error: "Kein API Key" };
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
-        headers: {
-          "Authorization": `Bearer ${key.trim()}`
-        },
-        signal: AbortSignal.timeout(8e3)
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const d = json?.data;
-        return {
-          usage: d?.usage,
-          limit: d?.limit,
-          limitRemaining: d?.limit_remaining,
-          isFreeTier: d?.is_free_tier
-        };
+      const [authRes, creditsRes] = await Promise.all([
+        fetch("https://openrouter.ai/api/v1/auth/key", {
+          headers: { "Authorization": `Bearer ${key}` },
+          signal: AbortSignal.timeout(8e3)
+        }),
+        fetch("https://openrouter.ai/api/v1/credits", {
+          headers: { "Authorization": `Bearer ${key}` },
+          signal: AbortSignal.timeout(8e3)
+        })
+      ]);
+      let usage;
+      let limit;
+      let limitRemaining;
+      let totalCredits;
+      let balanceRemaining;
+      let isFreeTier;
+      if (authRes.ok) {
+        const authJson = await authRes.json();
+        const d = authJson?.data;
+        usage = d?.usage;
+        limit = d?.limit;
+        limitRemaining = d?.limit_remaining;
+        isFreeTier = d?.is_free_tier;
       }
-      return { error: `HTTP ${res.status}` };
+      if (creditsRes.ok) {
+        const creditsJson = await creditsRes.json();
+        const cd = creditsJson?.data;
+        if (cd) {
+          totalCredits = cd.total_credits;
+          const totalUsage = cd.total_usage || 0;
+          if (totalCredits !== void 0) {
+            balanceRemaining = Math.max(0, totalCredits - totalUsage);
+          }
+        }
+      }
+      const finalAvailable = balanceRemaining ?? limitRemaining;
+      return {
+        usage,
+        limit,
+        limitRemaining: finalAvailable,
+        totalCredits,
+        balanceRemaining: finalAvailable,
+        isFreeTier
+      };
     } catch (err) {
       return { error: err.message || "Timeout" };
     }
@@ -50755,6 +50782,8 @@ app.get("/api/v1/credits", async (req, res) => {
         usage: openrouter.usage,
         limit: openrouter.limit,
         limitRemaining: openrouter.limitRemaining,
+        balanceRemaining: openrouter.balanceRemaining,
+        totalCredits: openrouter.totalCredits,
         isFreeTier: openrouter.isFreeTier,
         hasKey: !openrouter.error
       },

@@ -122,30 +122,69 @@ export class LLMService {
   /**
    * Check OpenRouter credit balance & usage
    */
-  static async getCredits(customKey?: string): Promise<{ usage?: number; limit?: number; limitRemaining?: number; isFreeTier?: boolean; error?: string }> {
+  static async getCredits(customKey?: string): Promise<{ 
+    usage?: number; 
+    limit?: number; 
+    limitRemaining?: number; 
+    totalCredits?: number;
+    balanceRemaining?: number;
+    isFreeTier?: boolean; 
+    error?: string 
+  }> {
     const settings = loadSettings();
-    const key = customKey || settings.openRouterApiKey;
+    const key = (customKey || settings.openRouterApiKey).trim();
     if (!key) return { error: 'Kein API Key' };
 
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
-        headers: {
-          'Authorization': `Bearer ${key.trim()}`,
-        },
-        signal: AbortSignal.timeout(8000)
-      });
+      const [authRes, creditsRes] = await Promise.all([
+        fetch('https://openrouter.ai/api/v1/auth/key', {
+          headers: { 'Authorization': `Bearer ${key}` },
+          signal: AbortSignal.timeout(8000)
+        }),
+        fetch('https://openrouter.ai/api/v1/credits', {
+          headers: { 'Authorization': `Bearer ${key}` },
+          signal: AbortSignal.timeout(8000)
+        })
+      ]);
 
-      if (res.ok) {
-        const json = await res.json();
-        const d = json?.data;
-        return {
-          usage: d?.usage,
-          limit: d?.limit,
-          limitRemaining: d?.limit_remaining,
-          isFreeTier: d?.is_free_tier,
-        };
+      let usage: number | undefined;
+      let limit: number | undefined;
+      let limitRemaining: number | undefined;
+      let totalCredits: number | undefined;
+      let balanceRemaining: number | undefined;
+      let isFreeTier: boolean | undefined;
+
+      if (authRes.ok) {
+        const authJson = await authRes.json();
+        const d = authJson?.data;
+        usage = d?.usage;
+        limit = d?.limit;
+        limitRemaining = d?.limit_remaining;
+        isFreeTier = d?.is_free_tier;
       }
-      return { error: `HTTP ${res.status}` };
+
+      if (creditsRes.ok) {
+        const creditsJson = await creditsRes.json();
+        const cd = creditsJson?.data;
+        if (cd) {
+          totalCredits = cd.total_credits;
+          const totalUsage = cd.total_usage || 0;
+          if (totalCredits !== undefined) {
+            balanceRemaining = Math.max(0, totalCredits - totalUsage);
+          }
+        }
+      }
+
+      const finalAvailable = balanceRemaining ?? limitRemaining;
+
+      return {
+        usage,
+        limit,
+        limitRemaining: finalAvailable,
+        totalCredits,
+        balanceRemaining: finalAvailable,
+        isFreeTier,
+      };
     } catch (err: any) {
       return { error: err.message || 'Timeout' };
     }
