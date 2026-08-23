@@ -1,19 +1,5 @@
-# Multi-stage Dockerfile for MBA HUB (Node.js 22 + Playwright / Chromium)
-FROM node:22-bookworm-slim AS builder
-
-WORKDIR /app
-
-# Install dependencies
-COPY package*.json tsconfig.json vite.config.ts tailwind.config.js postcss.config.js ./
-RUN npm ci
-
-# Copy source code and build client & server
-COPY src/ ./src/
-COPY public/ ./public/
-RUN npm run build
-
-# Production Runtime
-FROM node:22-bookworm-slim
+# Lightweight, universal Dockerfile for MBA HUB (optimized for TerraMaster NAS TOS 6.0)
+FROM node:22-alpine
 
 WORKDIR /app
 
@@ -21,26 +7,15 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 
-# Install runtime dependencies for canvas, image processing & chromium
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    git \
-    fonts-liberation \
-    libnss3 \
-    libxss1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    && rm -rf /var/lib/apt/lists/*
-
+# Install dependencies
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 
-# Copy compiled assets from builder
-COPY --from=builder /app/dist ./dist
+# Copy pre-compiled production build & assets
+COPY dist ./dist
+COPY public ./public
 
-# Create persistence data directory
+# Ensure data directory exists
 RUN mkdir -p /app/data
 
 EXPOSE 3000

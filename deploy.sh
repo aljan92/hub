@@ -17,7 +17,7 @@ echo "========================================================"
 
 # Prepare SSH command with dedicated key or password
 KEY_PATH="$HOME/.ssh/id_ed25519_mbahub"
-SSH_BASE="ssh -p ${NAS_PORT} -o StrictHostKeyChecking=no"
+SSH_BASE="ssh -p ${NAS_PORT} -o StrictHostKeyChecking=no -o IdentitiesOnly=yes"
 
 if [ -f "${KEY_PATH}" ]; then
   SSH_CMD="${SSH_BASE} -i ${KEY_PATH} ${NAS_USER}@${NAS_HOST}"
