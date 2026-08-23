@@ -132,11 +132,15 @@ app.post('/api/v1/trademark/check', async (req, res) => {
 });
 
 // Serve Static Frontend in Production
-const clientDistPath = path.resolve(__dirname, '../client');
-if (fs.existsSync(clientDistPath)) {
-  app.use(express.static(clientDistPath));
+const clientDistPath = path.resolve(__dirname, 'client');
+const fallbackDistPath = path.resolve(process.cwd(), 'dist/client');
+const staticPath = fs.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
+
+if (fs.existsSync(staticPath)) {
+  console.log(`📂 Serving static frontend from ${staticPath}`);
+  app.use(express.static(staticPath));
   app.get('*', (req, res) => {
-    res.sendFile(path.join(clientDistPath, 'index.html'));
+    res.sendFile(path.join(staticPath, 'index.html'));
   });
 }
 
