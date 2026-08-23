@@ -175,22 +175,40 @@ app.post('/api/v1/settings', (req, res) => {
 // 2.0 1-Click System Update directly from GitHub
 app.post('/api/v1/system/update', async (req, res) => {
   try {
-    console.log('[System Update] Starting 1-Click self-update from GitHub...');
+    console.log('[System Update] Starting 1-Click self-update from GitHub via native Node.js stream...');
 
-    // 1. Download & extract updated distribution in app directory
-    execSync('curl -sL https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1', {
+    // 1. Download tarball natively using Node.js fetch (No curl required)
+    const response = await fetch('https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz');
+    if (!response.ok) {
+      throw new Error(`GitHub Download fehlgeschlagen: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    // Save to temp file
+    const tempTarPath = path.resolve(process.cwd(), '.temp_update.tar.gz');
+    fs.writeFileSync(tempTarPath, buffer);
+
+    // 2. Extract using built-in tar
+    execSync(`tar -xzf "${tempTarPath}" --strip-components=1`, {
       cwd: process.cwd(),
       timeout: 45000
     });
 
-    // 2. Also update host_repo if mounted
+    // Cleanup temp file
+    try { fs.unlinkSync(tempTarPath); } catch (e) {}
+
+    // 3. Also update host_repo if mounted
     const hostRepoPath = path.resolve(process.cwd(), 'host_repo');
     if (fs.existsSync(hostRepoPath)) {
       try {
-        execSync('curl -sL https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1', {
+        fs.writeFileSync(tempTarPath, buffer);
+        execSync(`tar -xzf "${tempTarPath}" --strip-components=1`, {
           cwd: hostRepoPath,
           timeout: 45000
         });
+        try { fs.unlinkSync(tempTarPath); } catch (e) {}
       } catch (e) {
         // ignore
       }

@@ -50660,18 +50660,35 @@ app.post("/api/v1/settings", (req, res) => {
 });
 app.post("/api/v1/system/update", async (req, res) => {
   try {
-    console.log("[System Update] Starting 1-Click self-update from GitHub...");
-    (0, import_child_process.execSync)("curl -sL https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1", {
+    console.log("[System Update] Starting 1-Click self-update from GitHub via native Node.js stream...");
+    const response = await fetch("https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz");
+    if (!response.ok) {
+      throw new Error(`GitHub Download fehlgeschlagen: HTTP ${response.status} ${response.statusText}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const tempTarPath = import_path2.default.resolve(process.cwd(), ".temp_update.tar.gz");
+    import_fs2.default.writeFileSync(tempTarPath, buffer);
+    (0, import_child_process.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
+    try {
+      import_fs2.default.unlinkSync(tempTarPath);
+    } catch (e) {
+    }
     const hostRepoPath = import_path2.default.resolve(process.cwd(), "host_repo");
     if (import_fs2.default.existsSync(hostRepoPath)) {
       try {
-        (0, import_child_process.execSync)("curl -sL https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1", {
+        import_fs2.default.writeFileSync(tempTarPath, buffer);
+        (0, import_child_process.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });
+        try {
+          import_fs2.default.unlinkSync(tempTarPath);
+        } catch (e) {
+        }
       } catch (e) {
       }
     }
