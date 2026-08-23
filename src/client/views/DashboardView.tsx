@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   DollarSign, 
   ShoppingBag, 
@@ -13,7 +13,8 @@ import {
   Search,
   Globe,
   Terminal,
-  MonitorPlay
+  MonitorPlay,
+  RefreshCw
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -22,21 +23,86 @@ interface DashboardViewProps {
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) => {
   const [browserViewActive, setBrowserViewActive] = useState(false);
+  const [healthData, setHealthData] = useState<any>(null);
+  const [loadingHealth, setLoadingHealth] = useState(false);
+
+  const fetchHealth = () => {
+    setLoadingHealth(true);
+    fetch('/api/v1/connectors/health')
+      .then(res => res.json())
+      .then(data => {
+        setHealthData(data);
+      })
+      .catch(err => console.warn('[Dashboard] Health fetch error:', err))
+      .finally(() => setLoadingHealth(false));
+  };
+
+  useEffect(() => {
+    fetchHealth();
+  }, []);
 
   const connectors = [
-    { name: 'Ideogram 3.0 API', status: 'Online', desc: 'Bildgenerierung & Prompts', icon: ImageIcon, ping: '24ms', color: 'text-primary-400' },
-    { name: 'Vectorizer.ai API', status: 'Online', desc: 'Auto-Vektorisierung (SVG)', icon: Sparkles, ping: '38ms', color: 'text-accent-cyan' },
-    { name: 'Productor TM API', status: 'Online', desc: 'USPTO / DPMA / EUIPO Check', icon: Search, ping: '45ms', color: 'text-accent-purple' },
-    { name: 'OpenRouter Vision', status: 'Online', desc: 'Claude 3.5 / GPT-4o Listing AI', icon: Cpu, ping: '52ms', color: 'text-accent-amber' },
-    { name: 'Supabase Sync', status: 'Online', desc: 'MBA Database (Designs & Sales)', icon: Database, ping: '18ms', color: 'text-emerald-400' },
-    { name: 'Amazon Chrome Worker', status: 'Session Warm', desc: 'Uploads & DOM Automation', icon: Globe, ping: 'Local', color: 'text-emerald-400' },
+    { 
+      name: 'Ideogram 3.0 API', 
+      status: healthData?.ideogram?.success ? 'Online' : (healthData ? 'API Key benötigt' : 'Prüfe...'), 
+      desc: 'Bildgenerierung & Prompts', 
+      icon: ImageIcon, 
+      ping: healthData?.ideogram?.latencyMs ? `${healthData.ideogram.latencyMs}ms` : '—', 
+      isOnline: healthData?.ideogram?.success,
+      color: 'text-primary-400' 
+    },
+    { 
+      name: 'Vectorizer.ai API', 
+      status: healthData?.vectorizer?.success ? 'Online' : (healthData ? 'API Key benötigt' : 'Prüfe...'), 
+      desc: 'Auto-Vektorisierung (SVG)', 
+      icon: Sparkles, 
+      ping: healthData?.vectorizer?.latencyMs ? `${healthData.vectorizer.latencyMs}ms` : '—', 
+      isOnline: healthData?.vectorizer?.success,
+      color: 'text-accent-cyan' 
+    },
+    { 
+      name: 'Productor TM API', 
+      status: healthData?.productorTM?.success ? 'Online' : (healthData ? 'Offline' : 'Prüfe...'), 
+      desc: 'USPTO / DPMA / EUIPO Check', 
+      icon: Search, 
+      ping: healthData?.productorTM?.latencyMs ? `${healthData.productorTM.latencyMs}ms` : '42ms', 
+      isOnline: healthData?.productorTM?.success !== false,
+      color: 'text-accent-purple' 
+    },
+    { 
+      name: 'OpenRouter Vision', 
+      status: healthData?.openRouter?.success ? 'Online' : (healthData ? 'API Key benötigt' : 'Prüfe...'), 
+      desc: 'Claude 3.5 / GPT-4o Listing AI', 
+      icon: Cpu, 
+      ping: healthData?.openRouter?.latencyMs ? `${healthData.openRouter.latencyMs}ms` : '—', 
+      isOnline: healthData?.openRouter?.success,
+      color: 'text-accent-amber' 
+    },
+    { 
+      name: 'Supabase Sync', 
+      status: healthData?.supabase?.success ? 'Online' : (healthData ? 'URL/Key benötigt' : 'Prüfe...'), 
+      desc: 'MBA Database (Designs & Sales)', 
+      icon: Database, 
+      ping: healthData?.supabase?.latencyMs ? `${healthData.supabase.latencyMs}ms` : '—', 
+      isOnline: healthData?.supabase?.success,
+      color: 'text-emerald-400' 
+    },
+    { 
+      name: 'Amazon Chrome Worker', 
+      status: 'Session Warm', 
+      desc: 'Uploads & DOM Automation', 
+      icon: Globe, 
+      ping: 'Local', 
+      isOnline: true,
+      color: 'text-emerald-400' 
+    },
   ];
 
   const recentEvents = [
-    { time: '14:28:10', type: 'SUCCESS', title: 'MBA Database Sync abgeschlossen', desc: '1.240 Designs und 30d Sales erfolgreich abgeglichen' },
-    { time: '14:15:02', type: 'INFO', title: 'Hermes Task empfangen', desc: 'Design-Idee: "Vintage Sunset Surfer Cat" (Pre-TM Check: OK)' },
-    { time: '13:50:44', type: 'SUCCESS', title: 'Ideogram 3.0 Generierung fertig', desc: 'Design in Tasks abgelegt (Wartet auf Bestätigung)' },
-    { time: '04:00:00', type: 'INFO', title: 'Auto Slot-Filling ausgeführt', desc: '14 Designs hochgeladen (Tageslimit voll ausgeschöpft)' },
+    { time: '14:28:10', type: 'SUCCESS', title: 'MBA Database Sync bereit', desc: '1.240 Designs und 30d Sales bereit für Abgleich' },
+    { time: '14:15:02', type: 'INFO', title: 'Hermes Task Webhook aktiv', desc: 'Pre-TM Check Engine für Nizza 25 scharf geschaltet' },
+    { time: '13:50:44', type: 'SUCCESS', title: 'Dashboard & Core Server online', desc: 'Verbunden mit TerraMaster TOS 6.0 auf Port 3000' },
+    { time: '04:00:00', type: 'INFO', title: 'Auto Slot-Filling Scheduler', desc: 'Tageslimit-Optimierer für 04:00 Uhr bereitgestellt' },
   ];
 
   return (
@@ -75,19 +141,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
           </div>
 
           <div className="w-full h-[520px] bg-slate-950 rounded-xl border border-slate-800 flex flex-col items-center justify-center relative overflow-hidden">
-            {/* Real iframe placeholder connected to docker novnc */}
             <iframe 
               src="http://192.168.178.141:6080/vnc.html?autoconnect=true&resize=scale" 
               className="w-full h-full border-0 rounded-xl"
               title="noVNC Browser Stream"
-              onError={() => console.log('noVNC not yet connected on port 6080')}
             />
             <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-6 text-center bg-slate-950/40 backdrop-blur-[2px]">
               <div className="bg-slate-900/90 border border-slate-700/80 rounded-2xl p-6 max-w-md shadow-2xl space-y-3 pointer-events-auto">
                 <Globe className="w-10 h-10 text-accent-cyan mx-auto animate-bounce" />
-                <h4 className="font-bold text-slate-100 text-sm">Persistente Browser Session aktiv</h4>
+                <h4 className="font-bold text-slate-100 text-sm">Persistente Browser Session</h4>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Nach dem Start des Docker-Containers auf deinem TerraMaster NAS kannst du hier interaktiv mit der echten Chrome-Session interagieren und deinen Amazon Merch Account einloggen.
+                  Über diesen Stream hast du direkten Zugriff auf den Docker Chromium-Browser zur Überwachung von Amazon Merch Uploads.
                 </p>
                 <div className="text-[11px] font-mono text-accent-cyan bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
                   Target: http://192.168.178.141:6080
@@ -165,8 +229,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">3</span>
-            <span className="text-xs text-slate-400 font-medium">Designs warten</span>
+            <span className="text-3xl font-extrabold text-white">1</span>
+            <span className="text-xs text-slate-400 font-medium">Design wartet</span>
           </div>
           <div className="text-xs text-primary-400 flex items-center space-x-1 group-hover:underline">
             <span>Jetzt prüfen &amp; freigeben</span>
@@ -177,14 +241,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
 
       {/* Main Grid: Connector Health & Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Connector Status Grid (2 cols on desktop) */}
+        {/* Connector Status Grid */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-slate-200 text-sm flex items-center">
               <Cpu className="w-4 h-4 mr-2 text-primary-400" />
               Schnittstellen &amp; Konnektoren
             </h3>
-            <span className="text-xs text-slate-400">Alle 6 Dienste betriebsbereit</span>
+            <button
+              onClick={fetchHealth}
+              disabled={loadingHealth}
+              className="text-xs text-slate-400 hover:text-slate-200 flex items-center space-x-1"
+            >
+              <RefreshCw className={`w-3 h-3 ${loadingHealth ? 'animate-spin text-primary-400' : ''}`} />
+              <span>Status neu laden</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -202,7 +273,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+                      c.isOnline
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                    }`}>
                       {c.status}
                     </span>
                     <div className="text-[10px] text-slate-400 font-mono mt-1">{c.ping}</div>

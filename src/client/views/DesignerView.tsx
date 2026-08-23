@@ -9,8 +9,7 @@ import {
   Tag, 
   Type, 
   Layers,
-  CheckCircle2,
-  AlertCircle
+  Wand2
 } from 'lucide-react';
 
 export const DesignerView: React.FC = () => {
@@ -19,31 +18,90 @@ export const DesignerView: React.FC = () => {
   const [quote, setQuote] = useState('Powered by Caffeine and Chaos');
   const [stylePreset, setStylePreset] = useState('vintage-distressed');
   const [aspectRatio, setAspectRatio] = useState('1:1');
+  const [generatedPrompt, setGeneratedPrompt] = useState(
+    'T-shirt graphic design of "Powered by Caffeine and Chaos", retro vintage 1970s distressed aesthetic, vector illustration, isolated on clean solid background, bold typography, warm color palette, commercial merchandise print ready.'
+  );
+
   const [isCheckingTM, setIsCheckingTM] = useState(false);
-  const [tmResult, setTmResult] = useState<{ safe: boolean; details?: string } | null>(null);
+  const [tmResult, setTmResult] = useState<{ safe: boolean; details?: string; blocked?: string[] } | null>(null);
+  const [isOptimizingPrompt, setIsOptimizingPrompt] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Generated prompt preview
-  const generatedPrompt = `T-shirt graphic design of "${quote}", retro vintage 1970s distressed aesthetic, vector illustration, isolated on clean solid background, bold typography, warm color palette, highly detailed, commercial merchandise print ready.`;
-
-  const handlePreTMCheck = () => {
+  // 1. Live Trademark Pre-Check against USPTO / EUIPO / DPMA
+  const handlePreTMCheck = async () => {
+    if (!quote) return;
     setIsCheckingTM(true);
-    setTimeout(() => {
-      setIsCheckingTM(false);
-      if (quote.toLowerCase().includes('nike') || quote.toLowerCase().includes('disney')) {
-        setTmResult({ safe: false, details: 'Klasse 25 Live Treffer gefunden! Ablehnung empfohlen.' });
-      } else {
-        setTmResult({ safe: true, details: 'Nizza Klasse 25 (Clothing): Keine Schutzrechte auf die Quote gefunden.' });
+    try {
+      const res = await fetch('/api/v1/trademark/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quote, locale: 'en' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTmResult({
+          safe: !data.hasInfringementClass25,
+          details: data.message,
+          blocked: data.blockedProducts,
+        });
       }
-    }, 600);
+    } catch (err: any) {
+      setTmResult({
+        safe: false,
+        details: 'Fehler bei der Verbindung zum Trademark-Server.',
+      });
+    } finally {
+      setIsCheckingTM(false);
+    }
   };
 
-  const handleGenerate = () => {
+  // 2. Optimize Prompt with LLM (OpenRouter / OpenAI)
+  const handleOptimizePrompt = async () => {
+    setIsOptimizingPrompt(true);
+    try {
+      const res = await fetch('/api/v1/designer/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ niche1, niche2, quote, stylePreset }),
+      });
+      const data = await res.json();
+      if (data.success && data.prompt) {
+        setGeneratedPrompt(data.prompt);
+      }
+    } catch (err) {
+      console.warn('Prompt optimization failed:', err);
+    } finally {
+      setIsOptimizingPrompt(false);
+    }
+  };
+
+  // 3. Generate Design via Ideogram 3.0 API & Place in Tasks
+  const handleGenerate = async () => {
     setIsGenerating(true);
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/v1/designer/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: generatedPrompt,
+          aspectRatio,
+          niche1,
+          niche2,
+          quote,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert('🎉 Design erfolgreich generiert! Es wartet nun im Menü "Tasks" auf deine Prüfung & Freigabe.');
+      } else {
+        alert(`Fehler: ${data.error || 'Generierung fehlgeschlagen'}`);
+      }
+    } catch (err: any) {
+      alert(`Netzwerkfehler: ${err.message}`);
+    } finally {
       setIsGenerating(false);
-      alert('Design-Task erfolgreich an Ideogram 3.0 übermittelt! Das Bild wird nach Fertigstellung im Tab "Tasks" abgelegt.');
-    }, 1200);
+    }
   };
 
   return (
@@ -55,7 +113,7 @@ export const DesignerView: React.FC = () => {
             <Sparkles className="w-6 h-6 mr-2 text-primary-400" />
             Designer &amp; Prompt Generator
           </h2>
-          <p className="text-sm text-slate-400">Erstelle optimierte Ideogram 3.0 Prompts mit automatischem Trademark-Precheck.</p>
+          <p className="text-sm text-slate-400">Erstelle optimierte Ideogram 3.0 Prompts mit echtem Trademark-Precheck.</p>
         </div>
       </div>
 
@@ -143,6 +201,11 @@ export const DesignerView: React.FC = () => {
                 <div>
                   <div className="font-bold">{tmResult.safe ? 'Trademark Check bestanden ✓' : 'Trademark Konflikt erkannt!'}</div>
                   <div className="text-[11px] opacity-90 mt-0.5">{tmResult.details}</div>
+                  {tmResult.blocked && tmResult.blocked.length > 0 && (
+                    <div className="text-[10px] text-amber-300 mt-1">
+                      Gesperrte Produkte: {tmResult.blocked.join(', ')}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -183,14 +246,28 @@ export const DesignerView: React.FC = () => {
         {/* Right Output & Action Preview (5 cols) */}
         <div className="lg:col-span-5 space-y-5">
           <div className="glass-card p-5 rounded-2xl space-y-4">
-            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
-              <Layers className="w-4 h-4 mr-2 text-primary-400" />
-              Generierter Ideogram 3.0 Prompt
-            </h3>
-
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 font-mono text-xs text-slate-300 leading-relaxed max-h-56 overflow-y-auto">
-              {generatedPrompt}
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
+                <Layers className="w-4 h-4 mr-2 text-primary-400" />
+                Ideogram 3.0 Prompt
+              </h3>
+              <button
+                type="button"
+                onClick={handleOptimizePrompt}
+                disabled={isOptimizingPrompt}
+                className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-primary-600/20 text-primary-300 border border-primary-500/30 flex items-center space-x-1 hover:bg-primary-600/30 transition-colors disabled:opacity-50"
+              >
+                <Wand2 className={`w-3 h-3 ${isOptimizingPrompt ? 'animate-spin' : ''}`} />
+                <span>Prompt per KI optimieren</span>
+              </button>
             </div>
+
+            <textarea
+              value={generatedPrompt}
+              onChange={(e) => setGeneratedPrompt(e.target.value)}
+              rows={5}
+              className="w-full bg-slate-950 p-4 rounded-xl border border-slate-800/80 font-mono text-xs text-slate-300 leading-relaxed focus:border-primary-500 focus:outline-none resize-none"
+            />
 
             <div className="space-y-2 pt-2">
               <div className="flex items-center justify-between text-xs text-slate-400">
@@ -211,7 +288,7 @@ export const DesignerView: React.FC = () => {
               {isGenerating ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Sende an Ideogram...</span>
+                  <span>Sende an Ideogram 3.0...</span>
                 </>
               ) : (
                 <>

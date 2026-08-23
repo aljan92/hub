@@ -1,0 +1,77 @@
+import fs from 'fs';
+import path from 'path';
+
+export interface AppSettings {
+  openRouterApiKey: string;
+  llmProvider: 'openrouter' | 'openai';
+  llmModel: string;
+  ideogramApiKey: string;
+  ideogramModel: string;
+  vectorizerApiKey: string;
+  vectorizerApiSecret: string;
+  supabaseUrl: string;
+  supabaseServiceRoleKey: string;
+  productorUsptoAuth: string;
+  productorEuipoAuth: string;
+  productorDpmaAuth: string;
+  nasHost: string;
+  nasUser: string;
+  autoSlotFillHour: number;
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
+  llmProvider: (process.env.LLM_PROVIDER as 'openrouter' | 'openai') || 'openrouter',
+  llmModel: process.env.LLM_MODEL || 'anthropic/claude-3.5-sonnet',
+  ideogramApiKey: process.env.IDEOGRAM_API_KEY || '',
+  ideogramModel: process.env.IDEOGRAM_MODEL || 'V_2_TURBO',
+  vectorizerApiKey: process.env.VECTORIZER_API_KEY || '',
+  vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || '',
+  supabaseUrl: process.env.SUPABASE_URL || '',
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  productorUsptoAuth: process.env.PRODUCTOR_USPTO_AUTH || 'Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==',
+  productorEuipoAuth: process.env.PRODUCTOR_EUIPO_AUTH || 'Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ==',
+  productorDpmaAuth: process.env.PRODUCTOR_DPMA_AUTH || 'Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm',
+  nasHost: process.env.NAS_HOST || '192.168.178.141',
+  nasUser: process.env.NAS_USER || 'aljan92',
+  autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4,
+};
+
+function getSettingsFilePath(): string {
+  const dataDir = path.resolve(process.cwd(), 'data');
+  if (!fs.existsSync(dataDir)) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+    } catch (e) {
+      // ignore
+    }
+  }
+  return path.join(dataDir, 'settings.json');
+}
+
+export function loadSettings(): AppSettings {
+  const filePath = getSettingsFilePath();
+  if (fs.existsSync(filePath)) {
+    try {
+      const fileData = fs.readFileSync(filePath, 'utf-8');
+      const parsed = JSON.parse(fileData);
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    } catch (err) {
+      console.error('[Settings] Error reading settings.json:', err);
+    }
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
+export function saveSettings(newSettings: Partial<AppSettings>): AppSettings {
+  const current = loadSettings();
+  const merged = { ...current, ...newSettings };
+  const filePath = getSettingsFilePath();
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
+    console.log('[Settings] Settings successfully saved to', filePath);
+  } catch (err) {
+    console.error('[Settings] Error saving settings.json:', err);
+  }
+  return merged;
+}

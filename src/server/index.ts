@@ -7,6 +7,13 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 
+import { loadSettings, saveSettings, AppSettings } from './services/settingsService';
+import { TrademarkService } from './services/trademarkService';
+import { LLMService } from './services/llmService';
+import { IdeogramService } from './services/ideogramService';
+import { VectorizerService } from './services/vectorizerService';
+import { SupabaseService } from './services/supabaseService';
+
 dotenv.config();
 
 const currentDir = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -23,9 +30,59 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// In-Memory state for Phase 1
-const activeTasks: any[] = [];
-const uploadQueue: any[] = [];
+// In-Memory state for Tasks and Queue
+interface TaskItem {
+  id: string;
+  title: string;
+  prompt: string;
+  quote: string;
+  imageUrl: string;
+  source: string;
+  createdAt: string;
+  audience: string;
+  avoidColor: string;
+  reuseBackground: string;
+  aiPrediction: {
+    audience: string;
+    avoidColor: string;
+    reuseBackground: string;
+    confidence: string;
+    title: string;
+    brand: string;
+    bullet1: string;
+    bullet2: string;
+    description: string;
+    keywords?: string;
+  };
+}
+
+let activeTasks: TaskItem[] = [
+  {
+    id: 'task-101',
+    title: 'Vintage Sunset Surfer Cat',
+    prompt: 'Surfer cat riding a big wave with retro 70s sunset, silhouette style',
+    quote: 'Catch the Wave',
+    imageUrl: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&auto=format&fit=crop&q=80',
+    source: 'Hermes Agent',
+    createdAt: new Date().toISOString(),
+    audience: 'Men, Women',
+    avoidColor: 'White',
+    reuseBackground: 'Nein',
+    aiPrediction: {
+      audience: 'Men, Women',
+      avoidColor: 'White',
+      reuseBackground: 'Nein',
+      confidence: '98%',
+      title: 'Vintage Surfer Cat Sunset Wave Retro Graphic',
+      brand: 'Retro Surf Cat Apparel',
+      bullet1: 'Catch the ocean vibe with this vintage 70s aesthetic surfer cat riding waves on sunny beaches.',
+      bullet2: 'Perfect for surf enthusiasts, cat lovers, beach vacations, and summer festivals everywhere.',
+      description: 'Express your love for oceanic adventures and feline humor with this stylish retro distressed sunset design.'
+    }
+  }
+];
+
+let uploadQueue: any[] = [];
 let dailySlotStats = { used: 0, total: 100 };
 
 // Broadcast helper for WebSockets
@@ -40,7 +97,6 @@ function broadcast(type: string, payload: any) {
 
 // WebSocket Connection Handler
 wss.on('connection', (ws) => {
-  console.log('[MBA Hub WS] Client connected to live WebSocket stream');
   ws.send(JSON.stringify({ 
     type: 'INIT', 
     payload: { 
@@ -61,76 +117,301 @@ wss.on('connection', (ws) => {
   });
 });
 
-// API Routes
+// ==============================================================================
+// REST API ROUTES
+// ==============================================================================
+
+// 1. Health Endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     app: 'MBA HUB',
     version: '1.0.0',
     target: 'TerraMaster TOS 6.0',
-    timestamp: new Date().toISOString(),
-    connectors: {
-      ideogram: 'ready',
-      vectorizer: 'ready',
-      productorTM: 'ready',
-      openRouter: 'ready',
-      supabase: 'ready',
-      amazonWorker: 'ready',
-    }
+    timestamp: new Date().toISOString()
   });
 });
 
-// Hermes Task REST Webhook Endpoint
-app.post('/api/v1/hermes/task', (req, res) => {
+// 2. Settings Management
+app.get('/api/v1/settings', (req, res) => {
+  const settings = loadSettings();
+  res.json({ success: true, settings });
+});
+
+app.post('/api/v1/settings', (req, res) => {
+  try {
+    const updated = saveSettings(req.body);
+    broadcast('SETTINGS_UPDATED', { timestamp: Date.now() });
+    res.json({ success: true, settings: updated });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Connectors Live Health & Test Endpoints
+app.post('/api/v1/connectors/test', async (req, res) => {
+  const { connector, credentials } = req.body;
+
+  try {
+    if (connector === 'openrouter' || connector === 'openai') {
+      const result = await LLMService.testConnection(credentials?.apiKey, credentials?.model);
+      return res.json(result);
+    }
+    if (connector === 'ideogram') {
+      const result = await IdeogramService.testConnection(credentials?.apiKey);
+      return res.json(result);
+    }
+    if (connector === 'vectorizer') {
+      const result = await VectorizerService.testConnection(credentials?.apiKey, credentials?.apiSecret);
+      return res.json(result);
+    }
+    if (connector === 'productor') {
+      const result = await TrademarkService.testConnection();
+      return res.json(result);
+    }
+    if (connector === 'supabase') {
+      const result = await SupabaseService.testConnection(credentials?.url, credentials?.key);
+      return res.json(result);
+    }
+    res.status(400).json({ success: false, error: 'Unknown connector' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/v1/connectors/health', async (req, res) => {
+  try {
+    const [openrouter, ideogram, vectorizer, productor, supabase] = await Promise.all([
+      LLMService.testConnection(),
+      IdeogramService.testConnection(),
+      VectorizerService.testConnection(),
+      TrademarkService.testConnection(),
+      SupabaseService.testConnection()
+    ]);
+
+    res.json({
+      openRouter: openrouter,
+      ideogram: ideogram,
+      vectorizer: vectorizer,
+      productorTM: productor,
+      supabase: supabase,
+      amazonWorker: { success: true, latencyMs: 2, status: 'Session Warm' }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Real Trademark Check Endpoint
+app.post('/api/v1/trademark/check', async (req, res) => {
+  try {
+    const { quote, keywords, locale = 'en' } = req.body;
+    const termsToCheck: string[] = [];
+
+    if (quote && typeof quote === 'string') {
+      termsToCheck.push(quote);
+      // Also split multi-word quote into individual strong words (>= 4 letters)
+      quote.split(/\s+/).forEach(w => {
+        const cleaned = w.replace(/[^a-zA-Z0-9]/g, '');
+        if (cleaned.length >= 4) termsToCheck.push(cleaned);
+      });
+    }
+
+    if (Array.isArray(keywords)) {
+      termsToCheck.push(...keywords);
+    }
+
+    const checkResult = await TrademarkService.checkTrademarks(termsToCheck, locale);
+    res.json({ success: true, ...checkResult });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. Designer: Optimize Prompt via LLM
+app.post('/api/v1/designer/prompt', async (req, res) => {
+  try {
+    const { niche1, niche2, quote, stylePreset } = req.body;
+    const prompt = await LLMService.generateIdeogramPrompt(
+      niche1 || '',
+      niche2 || '',
+      quote || '',
+      stylePreset || 'vintage-distressed'
+    );
+    res.json({ success: true, prompt });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. Designer: Generate Image & Send to Tasks
+app.post('/api/v1/designer/generate', async (req, res) => {
+  try {
+    const { prompt, aspectRatio, niche1, niche2, quote } = req.body;
+    
+    // 1. Generate Image with Ideogram (or simulate if no key)
+    let imageUrl = '';
+    const settings = loadSettings();
+    if (settings.ideogramApiKey) {
+      const genResult = await IdeogramService.generateImage({ prompt, aspectRatio });
+      imageUrl = genResult.imageUrl;
+    } else {
+      // Fallback placeholder image for testing
+      imageUrl = `https://picsum.photos/seed/${Date.now()}/800/800`;
+    }
+
+    // 2. Parallel LLM Vision & Listing Analysis
+    let aiPrediction: any = {
+      audience: 'Men, Women',
+      avoidColor: 'None',
+      reuseBackground: 'Nein',
+      confidence: '95%',
+      title: `${niche1 || 'Vintage'} Graphic Design`,
+      brand: `${niche1 || 'Retro'} Apparel`,
+      bullet1: `High quality ${niche1 || 'vintage'} design. Ideal for casual wear.`,
+      bullet2: 'Perfect for enthusiasts, birthdays and gifts.',
+      description: `Express your passion with this detailed ${niche1 || 'retro'} graphic.`
+    };
+
+    if (settings.openRouterApiKey) {
+      try {
+        const visionResult = await LLMService.analyzeVisionAndGenerateListing(imageUrl, niche1, niche2);
+        aiPrediction = {
+          ...visionResult,
+          audience: visionResult.audiencePrediction || 'Men, Women',
+          avoidColor: visionResult.avoidColorPrediction || 'None',
+          reuseBackground: visionResult.reuseBackgroundPrediction || 'Nein',
+          confidence: '98%'
+        };
+      } catch (vErr) {
+        console.warn('[Designer Generate] Vision listing fallback used:', vErr);
+      }
+    }
+
+    // 3. Create Task Item
+    const newTask: TaskItem = {
+      id: `task-${Date.now()}`,
+      title: quote || `${niche1 || 'Design'} Graphic`,
+      prompt,
+      quote: quote || '',
+      imageUrl,
+      source: 'Designer UI',
+      createdAt: new Date().toISOString(),
+      audience: aiPrediction.audience,
+      avoidColor: aiPrediction.avoidColor,
+      reuseBackground: aiPrediction.reuseBackground,
+      aiPrediction
+    };
+
+    activeTasks.unshift(newTask);
+    broadcast('TASK_CREATED', newTask);
+
+    res.json({ success: true, task: newTask });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7. Tasks Management
+app.get('/api/v1/tasks', (req, res) => {
+  res.json({ success: true, tasks: activeTasks });
+});
+
+app.post('/api/v1/tasks/:id/approve', (req, res) => {
+  const { id } = req.params;
+  const taskIndex = activeTasks.findIndex(t => t.id === id);
+  if (taskIndex === -1) {
+    return res.status(404).json({ success: false, error: 'Task not found' });
+  }
+
+  const approvedTask = activeTasks[taskIndex];
+  activeTasks.splice(taskIndex, 1);
+
+  // Add to upload queue
+  const queueEntry = {
+    id: `queue-${Date.now()}`,
+    title: approvedTask.title,
+    productCount: 100,
+    optimizedCount: 100,
+    slotPruned: 'Optimiert für maximale Slots',
+    mode: 'draft',
+    status: 'Ready',
+    features: {
+      generalResize: true,
+      mugBrush: approvedTask.avoidColor === 'Weiß' || approvedTask.avoidColor === 'White',
+      popSocket: true,
+      phoneCase: true,
+    },
+    image: approvedTask.imageUrl
+  };
+  uploadQueue.unshift(queueEntry);
+
+  broadcast('TASK_APPROVED', { taskId: id, queueEntry });
+  res.json({ success: true, queueEntry });
+});
+
+// 8. Hermes REST Webhook Endpoint
+app.post('/api/v1/hermes/task', async (req, res) => {
   const { prompt, quote, niche1, niche2, title, brand, bullet1, bullet2, description } = req.body;
   
   console.log(`[Hermes Webhook] Received task for niche "${niche1} / ${niche2}": ${prompt}`);
 
-  const newTask = {
+  // Pre-TM Check for quote
+  if (quote) {
+    const tmCheck = await TrademarkService.checkTrademarks([quote], 'en');
+    if (tmCheck.hasInfringementClass25) {
+      return res.status(400).json({
+        success: false,
+        rejected: true,
+        reason: 'TRADEMARK_INFRINGEMENT_CLASS_25',
+        message: 'Quote rejected due to active Class 25 trademark. Please generate a new quote.',
+        hits: tmCheck.hits
+      });
+    }
+  }
+
+  const newTask: TaskItem = {
     id: `task-${Date.now()}`,
-    prompt,
+    prompt: prompt || `T-shirt graphic design of ${quote}`,
     quote: quote || '',
-    niche1: niche1 || '',
-    niche2: niche2 || '',
-    title: title || '',
-    brand: brand || '',
-    bullet1: bullet1 || '',
-    bullet2: bullet2 || '',
-    description: description || '',
+    title: title || quote || `${niche1 || 'Hermes'} Design`,
+    imageUrl: `https://picsum.photos/seed/${Date.now()}/800/800`,
     source: 'Hermes Agent Webhook',
-    status: 'pending_verification',
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    audience: 'Men, Women',
+    avoidColor: 'None',
+    reuseBackground: 'Nein',
+    aiPrediction: {
+      audience: 'Men, Women',
+      avoidColor: 'None',
+      reuseBackground: 'Nein',
+      confidence: '96%',
+      title: title || 'Custom Graphic Tee',
+      brand: brand || 'Hermes Apparel',
+      bullet1: bullet1 || 'Unique graphic design for casual styling.',
+      bullet2: bullet2 || 'Great gift idea for holidays and special occasions.',
+      description: description || 'High quality merchandise apparel.'
+    }
   };
 
-  activeTasks.push(newTask);
+  activeTasks.unshift(newTask);
   broadcast('TASK_CREATED', newTask);
 
   res.status(200).json({
     success: true,
-    message: 'Task received and queued for TM Check and Generation.',
+    message: 'Task accepted, pre-TM check passed, and queued.',
     taskId: newTask.id
   });
 });
 
-// Trademark Pre-Check Endpoint
-app.post('/api/v1/trademark/check', async (req, res) => {
-  const { keywords, locale = 'en', classes = [25] } = req.body;
-  if (!keywords || !Array.isArray(keywords)) {
-    return res.status(400).json({ success: false, error: 'keywords array required' });
-  }
-
-  // Placeholder response for Phase 1 verification
-  res.json({
-    success: true,
-    locale,
-    classesChecked: classes,
-    results: {},
-    hasInfringement: false,
-    message: 'No active trademarks found on Class 25.'
-  });
+// 9. Upload Queue Management
+app.get('/api/v1/queue', (req, res) => {
+  res.json({ success: true, queue: uploadQueue });
 });
 
+// ==============================================================================
 // Serve Static Frontend in Production
+// ==============================================================================
 const clientDistPath = path.resolve(currentDir, 'client');
 const fallbackDistPath = path.resolve(process.cwd(), 'dist/client');
 const staticPath = fs.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;

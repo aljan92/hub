@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   CheckSquare, 
   Sparkles, 
@@ -11,46 +11,55 @@ import {
   Eye, 
   Edit3,
   Sliders,
-  Scissors
+  Scissors,
+  RefreshCw
 } from 'lucide-react';
 
 export const TasksView: React.FC = () => {
-  const [tasks, setTasks] = useState([
-    {
-      id: 'task-101',
-      title: 'Vintage Sunset Surfer Cat',
-      prompt: 'Surfer cat riding a big wave with retro 70s sunset, silhouette style',
-      quote: 'Catch the Wave',
-      imageUrl: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&auto=format&fit=crop&q=80',
-      source: 'Hermes Agent',
-      createdAt: 'Vor 12 Minuten',
-      // User selections
-      audience: 'Men, Women',
-      avoidColor: 'White',
-      reuseBackground: 'Nein',
-      // AI Parallel Predictions
-      aiPrediction: {
-        audience: 'Men, Women',
-        avoidColor: 'White',
-        reuseBackground: 'Nein',
-        confidence: '98%',
-        title: 'Vintage Surfer Cat Sunset Wave Retro Graphic',
-        brand: 'Retro Surf Cat Apparel',
-        bullet1: 'Catch the ocean vibe with this vintage 70s aesthetic surfer cat riding waves on sunny beaches.',
-        bullet2: 'Perfect for surf enthusiasts, cat lovers, beach vacations, and summer festivals everywhere.',
-        description: 'Express your love for oceanic adventures and feline humor with this stylish retro distressed sunset design.'
-      }
-    }
-  ]);
-
-  const [selectedTaskId, setSelectedTaskId] = useState('task-101');
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string>('');
   const [autoLoopEnabled, setAutoLoopEnabled] = useState(false);
+
+  const fetchTasks = () => {
+    setLoading(true);
+    fetch('/api/v1/tasks')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.tasks)) {
+          setTasks(data.tasks);
+          if (data.tasks.length > 0 && !selectedTaskId) {
+            setSelectedTaskId(data.tasks[0].id);
+          }
+        }
+      })
+      .catch(err => console.warn('[Tasks] Fetch error:', err))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
 
   const activeTask = tasks.find(t => t.id === selectedTaskId) || tasks[0];
 
-  const handleApprove = (taskId: string) => {
-    alert(`Task ${taskId} freigegeben! Bild wird an Vectorizer.ai gesendet, druckfertig skaliert und in die Queue eingereiht.`);
-    setTasks(tasks.filter(t => t.id !== taskId));
+  const handleApprove = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/v1/tasks/${taskId}/approve`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('🎉 Task freigegeben! Das Design wurde in die Upload-Queue verschoben.');
+        setTasks(prev => prev.filter(t => t.id !== taskId));
+        if (tasks.length > 1) {
+          const next = tasks.find(t => t.id !== taskId);
+          if (next) setSelectedTaskId(next.id);
+        }
+      }
+    } catch (err) {
+      alert('Fehler beim Freigeben des Tasks.');
+    }
   };
 
   return (
@@ -97,8 +106,11 @@ export const TasksView: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left: Task List / Thumbnail (4 cols) */}
           <div className="lg:col-span-4 space-y-4">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Wartende Designs ({tasks.length})
+            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
+              <span>Wartende Designs ({tasks.length})</span>
+              <button onClick={fetchTasks} className="hover:text-slate-200">
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              </button>
             </div>
 
             {tasks.map((task) => (
@@ -113,15 +125,15 @@ export const TasksView: React.FC = () => {
                   <img
                     src={task.imageUrl}
                     alt={task.title}
-                    className="w-20 h-20 rounded-xl object-cover border border-slate-800 shrink-0"
+                    className="w-20 h-20 rounded-xl object-cover border border-slate-800 shrink-0 bg-slate-950"
                   />
-                  <div className="space-y-1">
+                  <div className="space-y-1 overflow-hidden">
                     <span className="px-2 py-0.5 text-[10px] font-semibold bg-primary-500/10 text-primary-400 rounded-full border border-primary-500/20">
                       {task.source}
                     </span>
-                    <h4 className="font-bold text-sm text-slate-100 line-clamp-1">{task.title}</h4>
-                    <p className="text-xs text-slate-400 line-clamp-1">Quote: &quot;{task.quote}&quot;</p>
-                    <div className="text-[10px] text-slate-400">{task.createdAt}</div>
+                    <h4 className="font-bold text-sm text-slate-100 truncate">{task.title}</h4>
+                    {task.quote && <p className="text-xs text-slate-400 truncate">Quote: &quot;{task.quote}&quot;</p>}
+                    <div className="text-[10px] text-slate-500">ID: {task.id}</div>
                   </div>
                 </div>
               </div>
@@ -134,9 +146,9 @@ export const TasksView: React.FC = () => {
               <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
                 {/* Header Info */}
                 <div className="flex items-start justify-between">
-                  <div>
+                  <div className="space-y-1">
                     <h3 className="text-lg font-bold text-slate-100">{activeTask.title}</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">{activeTask.prompt}</p>
+                    <p className="text-xs text-slate-400">{activeTask.prompt}</p>
                   </div>
                   <span className="px-3 py-1 text-xs font-mono font-semibold bg-accent-cyan/10 text-accent-cyan rounded-lg border border-accent-cyan/20">
                     {activeTask.id}
@@ -155,7 +167,7 @@ export const TasksView: React.FC = () => {
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-200">1. Welche Zielgruppe betrifft das Design?</span>
                       <span className="text-[11px] text-accent-cyan font-mono flex items-center">
-                        <Bot className="w-3 h-3 mr-1" /> KI-Vorschlag: Men, Women
+                        <Bot className="w-3 h-3 mr-1" /> KI-Vorschlag: {activeTask.aiPrediction?.audience || 'Men, Women'}
                       </span>
                     </div>
                     <div className="flex gap-2">
@@ -183,7 +195,7 @@ export const TasksView: React.FC = () => {
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-200">2. Welche Produktfarbe sollte vermieden werden?</span>
                       <span className="text-[11px] text-accent-cyan font-mono flex items-center">
-                        <Bot className="w-3 h-3 mr-1" /> KI-Vorschlag: White (Weißer Tassen-Brush nötig)
+                        <Bot className="w-3 h-3 mr-1" /> KI-Vorschlag: {activeTask.aiPrediction?.avoidColor || 'Keine'}
                       </span>
                     </div>
                     <div className="flex gap-2">
@@ -211,7 +223,7 @@ export const TasksView: React.FC = () => {
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-200">3. Wird die Hintergrundfarbe als Design-Element wiederverwendet?</span>
                       <span className="text-[11px] text-accent-cyan font-mono flex items-center">
-                        <Bot className="w-3 h-3 mr-1" /> KI-Vorschlag: Nein (Auto-Freistellung oben-links)
+                        <Bot className="w-3 h-3 mr-1" /> KI-Vorschlag: {activeTask.aiPrediction?.reuseBackground || 'Nein'}
                       </span>
                     </div>
                     <div className="flex gap-2">
@@ -223,7 +235,7 @@ export const TasksView: React.FC = () => {
                             setTasks([...tasks]);
                           }}
                           className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all ${
-                            activeTask.reuseBackground.startsWith(val.slice(0, 2))
+                            activeTask.reuseBackground?.startsWith(val.slice(0, 2))
                               ? 'bg-primary-600 text-white border-primary-500 shadow-sm'
                               : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                           }`}
@@ -242,13 +254,13 @@ export const TasksView: React.FC = () => {
                       <Sparkles className="w-3.5 h-3.5 mr-1.5 text-accent-cyan" />
                       Erstelltes Amazon Listing (OpenRouter Vision AI)
                     </span>
-                    <span className="text-[10px] text-emerald-400 font-mono">Trademark Clean ✓</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">Confidence: {activeTask.aiPrediction?.confidence || '98%'} ✓</span>
                   </div>
                   <div className="text-xs space-y-1 text-slate-300">
-                    <div><strong className="text-slate-400">Title:</strong> {activeTask.aiPrediction.title}</div>
-                    <div><strong className="text-slate-400">Brand:</strong> {activeTask.aiPrediction.brand}</div>
-                    <div><strong className="text-slate-400">Bullet 1:</strong> {activeTask.aiPrediction.bullet1}</div>
-                    <div><strong className="text-slate-400">Bullet 2:</strong> {activeTask.aiPrediction.bullet2}</div>
+                    <div><strong className="text-slate-400">Title:</strong> {activeTask.aiPrediction?.title}</div>
+                    <div><strong className="text-slate-400">Brand:</strong> {activeTask.aiPrediction?.brand}</div>
+                    <div><strong className="text-slate-400">Bullet 1:</strong> {activeTask.aiPrediction?.bullet1}</div>
+                    <div><strong className="text-slate-400">Bullet 2:</strong> {activeTask.aiPrediction?.bullet2}</div>
                   </div>
                 </div>
 
@@ -259,7 +271,7 @@ export const TasksView: React.FC = () => {
                     className="px-6 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-lg shadow-emerald-500/20 flex items-center space-x-2 transition-all active:scale-98"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Freigeben &amp; Vektorisieren</span>
+                    <span>Freigeben &amp; In Queue verschieben</span>
                   </button>
                 </div>
               </div>
