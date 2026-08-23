@@ -21,16 +21,19 @@ interface DashboardViewProps {
   onNavigateTab: (tab: any) => void;
 }
 
+let moduleCachedHealth: any = null;
+
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) => {
   const [browserViewActive, setBrowserViewActive] = useState(false);
-  const [healthData, setHealthData] = useState<any>(null);
+  const [healthData, setHealthData] = useState<any>(moduleCachedHealth);
   const [loadingHealth, setLoadingHealth] = useState(false);
 
-  const fetchHealth = () => {
-    setLoadingHealth(true);
+  const fetchHealth = (forceSpinner = false) => {
+    if (forceSpinner) setLoadingHealth(true);
     fetch('/api/v1/connectors/health')
       .then(res => res.json())
       .then(data => {
+        moduleCachedHealth = data;
         setHealthData(data);
       })
       .catch(err => console.warn('[Dashboard] Health fetch error:', err))
@@ -38,7 +41,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
   };
 
   useEffect(() => {
-    fetchHealth();
+    fetchHealth(moduleCachedHealth === null);
   }, []);
 
   const connectors = [

@@ -231,7 +231,11 @@ app.post('/api/v1/connectors/test', async (req, res) => {
   }
 });
 
-app.get('/api/v1/connectors/health', async (req, res) => {
+// Background Health Caching
+let cachedHealthData: any = null;
+let lastHealthCheckTime = 0;
+
+async function refreshHealthData() {
   try {
     const [openrouter, ideogram, vectorizer, productor, supabase] = await Promise.all([
       LLMService.testConnection(),
@@ -241,14 +245,31 @@ app.get('/api/v1/connectors/health', async (req, res) => {
       SupabaseService.testConnection()
     ]);
 
-    res.json({
+    cachedHealthData = {
       openRouter: openrouter,
       ideogram: ideogram,
       vectorizer: vectorizer,
       productorTM: productor,
       supabase: supabase,
       amazonWorker: { success: true, latencyMs: 2, status: 'Session Warm' }
-    });
+    };
+    lastHealthCheckTime = Date.now();
+    broadcast('HEALTH_UPDATED', cachedHealthData);
+  } catch (err) {
+    console.warn('[Health Check] Background error:', err);
+  }
+}
+
+// Start background monitor immediately & refresh every 60s
+refreshHealthData();
+setInterval(refreshHealthData, 60000);
+
+app.get('/api/v1/connectors/health', async (req, res) => {
+  try {
+    if (!cachedHealthData) {
+      await refreshHealthData();
+    }
+    res.json(cachedHealthData);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

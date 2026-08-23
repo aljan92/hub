@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layers, Activity, Server, RefreshCw, Cpu, Sparkles, Image as ImageIcon, DollarSign } from 'lucide-react';
+import { Layers, Activity, Server, RefreshCw, Cpu, Sparkles } from 'lucide-react';
 
 interface HeaderProps {
   onSync: () => void;
@@ -11,7 +11,6 @@ export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, activeSlots }
   const [credits, setCredits] = useState<{
     openrouter?: { usage?: number; limitRemaining?: number; limit?: number; hasKey?: boolean };
     vectorizer?: { credits?: number; details?: string; hasKey?: boolean };
-    ideogram?: { status?: string; hasKey?: boolean };
   } | null>(null);
 
   const fetchCredits = () => {
@@ -33,6 +32,23 @@ export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, activeSlots }
 
   const remainingSlots = Math.max(0, activeSlots.total - activeSlots.used);
   const percentage = Math.round((activeSlots.used / activeSlots.total) * 100) || 0;
+
+  // Format OpenRouter string: Rest & Used
+  const getOpenRouterText = () => {
+    if (!credits?.openrouter) return 'Aktiv';
+    const usage = credits.openrouter.usage !== undefined ? `$${Number(credits.openrouter.usage).toFixed(2)}` : null;
+    const remaining = credits.openrouter.limitRemaining !== undefined && credits.openrouter.limitRemaining !== null
+      ? `$${Number(credits.openrouter.limitRemaining).toFixed(2)}`
+      : null;
+
+    if (remaining !== null && usage !== null) {
+      return `${remaining} Rest • ${usage} Used`;
+    }
+    if (usage !== null) {
+      return `${usage} Used`;
+    }
+    return 'Aktiv';
+  };
 
   return (
     <header className="h-16 border-b border-slate-800/80 bg-surface/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">
@@ -56,36 +72,23 @@ export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, activeSlots }
 
       {/* Center Status & Live API Credits */}
       <div className="flex items-center space-x-2 sm:space-x-3 overflow-x-auto py-1">
-        {/* OpenRouter Credits */}
+        {/* OpenRouter Credits (Rest & Used) */}
         {credits?.openrouter?.hasKey && (
-          <div className="flex items-center space-x-1.5 bg-slate-900/80 border border-accent-amber/30 px-2.5 py-1.5 rounded-xl text-xs font-mono">
+          <div className="flex items-center space-x-1.5 bg-slate-900/90 border border-accent-amber/30 px-3 py-1.5 rounded-xl text-xs font-mono">
             <Cpu className="w-3.5 h-3.5 text-accent-amber shrink-0" />
             <span className="text-slate-400 text-[11px]">OR:</span>
-            <span className="font-bold text-accent-amber">
-              {credits.openrouter.limitRemaining !== undefined && credits.openrouter.limitRemaining !== null
-                ? `$${Number(credits.openrouter.limitRemaining).toFixed(2)}`
-                : (credits.openrouter.usage !== undefined ? `$${Number(credits.openrouter.usage).toFixed(2)} (used)` : 'Aktiv')}
-            </span>
+            <span className="font-bold text-accent-amber">{getOpenRouterText()}</span>
           </div>
         )}
 
         {/* Vectorizer.ai Credits */}
         {credits?.vectorizer?.hasKey && (
-          <div className="flex items-center space-x-1.5 bg-slate-900/80 border border-accent-cyan/30 px-2.5 py-1.5 rounded-xl text-xs font-mono">
+          <div className="flex items-center space-x-1.5 bg-slate-900/90 border border-accent-cyan/30 px-3 py-1.5 rounded-xl text-xs font-mono">
             <Sparkles className="w-3.5 h-3.5 text-accent-cyan shrink-0" />
             <span className="text-slate-400 text-[11px]">Vec:</span>
             <span className="font-bold text-accent-cyan">
               {credits.vectorizer.credits !== undefined ? `${credits.vectorizer.credits} Cr` : 'Aktiv'}
             </span>
-          </div>
-        )}
-
-        {/* Ideogram Status */}
-        {credits?.ideogram?.hasKey && (
-          <div className="flex items-center space-x-1.5 bg-slate-900/80 border border-primary-500/30 px-2.5 py-1.5 rounded-xl text-xs font-mono hidden md:flex">
-            <ImageIcon className="w-3.5 h-3.5 text-primary-400 shrink-0" />
-            <span className="text-slate-400 text-[11px]">Ideo:</span>
-            <span className="font-bold text-primary-300">{credits.ideogram.status || 'Aktiv'}</span>
           </div>
         )}
 

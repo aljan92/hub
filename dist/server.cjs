@@ -50708,7 +50708,9 @@ app.post("/api/v1/connectors/test", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.get("/api/v1/connectors/health", async (req, res) => {
+var cachedHealthData = null;
+var lastHealthCheckTime = 0;
+async function refreshHealthData() {
   try {
     const [openrouter, ideogram, vectorizer, productor, supabase] = await Promise.all([
       LLMService.testConnection(),
@@ -50717,14 +50719,28 @@ app.get("/api/v1/connectors/health", async (req, res) => {
       TrademarkService.testConnection(),
       SupabaseService.testConnection()
     ]);
-    res.json({
+    cachedHealthData = {
       openRouter: openrouter,
       ideogram,
       vectorizer,
       productorTM: productor,
       supabase,
       amazonWorker: { success: true, latencyMs: 2, status: "Session Warm" }
-    });
+    };
+    lastHealthCheckTime = Date.now();
+    broadcast("HEALTH_UPDATED", cachedHealthData);
+  } catch (err) {
+    console.warn("[Health Check] Background error:", err);
+  }
+}
+refreshHealthData();
+setInterval(refreshHealthData, 6e4);
+app.get("/api/v1/connectors/health", async (req, res) => {
+  try {
+    if (!cachedHealthData) {
+      await refreshHealthData();
+    }
+    res.json(cachedHealthData);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
