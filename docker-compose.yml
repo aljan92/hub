@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  mba-hub:
+    build: .
+    container_name: mba_hub_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - IDEOGRAM_API_KEY=${IDEOGRAM_API_KEY:-}
+      - VECTORIZER_API_KEY=${VECTORIZER_API_KEY:-}
+      - VECTORIZER_API_SECRET=${VECTORIZER_API_SECRET:-}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+    volumes:
+      - ./data:/app/data
+      - ./data/chrome-profile:/app/data/chrome-profile
+
+volumes:
+  hub_data:

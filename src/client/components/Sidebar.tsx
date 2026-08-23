@@ -1,0 +1,129 @@
+import React from 'react';
+import { 
+  LayoutDashboard, 
+  Sparkles, 
+  CheckSquare, 
+  UploadCloud, 
+  Settings as SettingsIcon,
+  Bot
+} from 'lucide-react';
+
+export type ActiveTab = 'dashboard' | 'designer' | 'tasks' | 'queue' | 'settings';
+
+interface SidebarProps {
+  activeTab: ActiveTab;
+  onSelectTab: (tab: ActiveTab) => void;
+  taskCount: number;
+  queueCount: number;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ 
+  activeTab, 
+  onSelectTab, 
+  taskCount, 
+  queueCount 
+}) => {
+  const navItems = [
+    {
+      id: 'dashboard' as ActiveTab,
+      label: 'Dashboard',
+      icon: LayoutDashboard,
+      description: 'Status & Statistiken',
+    },
+    {
+      id: 'designer' as ActiveTab,
+      label: 'Designer',
+      icon: Sparkles,
+      description: 'Prompt Generator & KI',
+    },
+    {
+      id: 'tasks' as ActiveTab,
+      label: 'Tasks',
+      icon: CheckSquare,
+      badge: taskCount > 0 ? taskCount : undefined,
+      badgeColor: 'bg-primary-500 text-white',
+      description: 'Human-in-the-Loop',
+    },
+    {
+      id: 'queue' as ActiveTab,
+      label: 'Queue',
+      icon: UploadCloud,
+      badge: queueCount > 0 ? queueCount : undefined,
+      badgeColor: 'bg-accent-cyan text-slate-900',
+      description: 'Upload & Slot-Filling',
+    },
+    {
+      id: 'settings' as ActiveTab,
+      label: 'Settings',
+      icon: SettingsIcon,
+      description: 'APIs & Produktregeln',
+    },
+  ];
+
+  return (
+    <aside className="w-64 border-r border-slate-800/80 bg-surface/80 backdrop-blur-md flex flex-col justify-between p-4 shrink-0">
+      <div className="space-y-1">
+        <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          Navigation
+        </div>
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => onSelectTab(item.id)}
+              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-left transition-all duration-200 group ${
+                isActive
+                  ? 'bg-primary-600/15 text-white font-semibold border border-primary-500/30 shadow-sm shadow-primary-500/10'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`p-2 rounded-lg transition-colors ${
+                  isActive 
+                    ? 'bg-primary-500 text-white shadow-md shadow-primary-500/30' 
+                    : 'bg-slate-800 text-slate-400 group-hover:text-slate-200 group-hover:bg-slate-700'
+                }`}>
+                  <Icon className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-sm">{item.label}</div>
+                  <div className="text-[10px] text-slate-400 font-normal">{item.description}</div>
+                </div>
+              </div>
+
+              {item.badge !== undefined && (
+                <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${item.badgeColor}`}>
+                  {item.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Hermes Status Widget at bottom of Sidebar */}
+      <div className="mt-auto pt-4 border-t border-slate-800/80">
+        <div className="p-3.5 rounded-xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800/80 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs font-semibold text-slate-200 flex items-center">
+                <Bot className="w-3.5 h-3.5 mr-1 text-primary-400" />
+                Hermes Agent
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-emerald-400 font-medium">MCP Active</span>
+          </div>
+          <p className="text-[11px] text-slate-400 leading-snug">
+            Empfängt Design-Ideen &amp; liefert Pre-TM Checks in Echtzeit.
+          </p>
+          <div className="text-[10px] font-mono text-slate-400 bg-slate-950/80 px-2 py-1 rounded border border-slate-800/60 truncate">
+            Port: 8085 / MCP
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+};

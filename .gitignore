@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build outputs
+dist/
+build/
+out/
+
+# Environment and secrets
+.env
+.env.local
+.env.production
+.env.development
+
+# Runtime data and persistence
+data/
+*.sqlite
+*.sqlite-journal
+*.log
+
+# Reference archives (local only)
+Erweiterungen und Programme /
+*.zip
+*.tar.gz
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
