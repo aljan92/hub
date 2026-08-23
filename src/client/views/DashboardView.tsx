@@ -14,7 +14,8 @@ import {
   Globe,
   Terminal,
   MonitorPlay,
-  RefreshCw
+  RefreshCw,
+  FolderSync
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -22,14 +23,20 @@ interface DashboardViewProps {
 }
 
 let moduleCachedHealth: any = null;
+let moduleCachedStats: any = null;
+let moduleCachedActivity: any[] = [];
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) => {
   const [browserViewActive, setBrowserViewActive] = useState(false);
   const [healthData, setHealthData] = useState<any>(moduleCachedHealth);
+  const [statsData, setStatsData] = useState<any>(moduleCachedStats);
+  const [activityEvents, setActivityEvents] = useState<any[]>(moduleCachedActivity);
   const [loadingHealth, setLoadingHealth] = useState(false);
 
-  const fetchHealth = (forceSpinner = false) => {
+  const fetchDashboardData = (forceSpinner = false) => {
     if (forceSpinner) setLoadingHealth(true);
+    
+    // 1. Health
     fetch('/api/v1/connectors/health')
       .then(res => res.json())
       .then(data => {
@@ -38,21 +45,52 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
       })
       .catch(err => console.warn('[Dashboard] Health fetch error:', err))
       .finally(() => setLoadingHealth(false));
+
+    // 2. Stats
+    fetch('/api/v1/stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          moduleCachedStats = data;
+          setStatsData(data);
+        }
+      })
+      .catch(() => {});
+
+    // 3. Activity
+    fetch('/api/v1/activity')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.activity)) {
+          moduleCachedActivity = data.activity;
+          setActivityEvents(data.activity);
+        }
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
-    fetchHealth(moduleCachedHealth === null);
+    fetchDashboardData(moduleCachedHealth === null);
   }, []);
 
   const connectors = [
     { 
-      name: 'Ideogram 3.0 API', 
-      status: healthData?.ideogram?.success ? 'Online' : (healthData ? 'API Key benötigt' : 'Prüfe...'), 
-      desc: 'Bildgenerierung & Prompts', 
-      icon: ImageIcon, 
-      ping: healthData?.ideogram?.latencyMs ? `${healthData.ideogram.latencyMs}ms` : '—', 
-      isOnline: healthData?.ideogram?.success,
-      color: 'text-primary-400' 
+      name: 'OpenRouter Vision', 
+      status: healthData?.openRouter?.success ? 'Online' : (healthData ? 'API Key benötigt' : 'Prüfe...'), 
+      desc: 'Claude 3.5 / GPT-4o Listing AI', 
+      icon: Cpu, 
+      ping: healthData?.openRouter?.latencyMs ? `${healthData.openRouter.latencyMs}ms` : '—', 
+      isOnline: healthData?.openRouter?.success,
+      color: 'text-accent-amber' 
+    },
+    { 
+      name: 'Productor TM API', 
+      status: healthData?.productorTM?.success ? 'Online' : (healthData ? 'Offline' : 'Prüfe...'), 
+      desc: 'USPTO / DPMA / EUIPO Check', 
+      icon: Search, 
+      ping: healthData?.productorTM?.latencyMs ? `${healthData.productorTM.latencyMs}ms` : '62ms', 
+      isOnline: healthData?.productorTM?.success !== false,
+      color: 'text-accent-purple' 
     },
     { 
       name: 'Vectorizer.ai API', 
@@ -64,22 +102,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
       color: 'text-accent-cyan' 
     },
     { 
-      name: 'Productor TM API', 
-      status: healthData?.productorTM?.success ? 'Online' : (healthData ? 'Offline' : 'Prüfe...'), 
-      desc: 'USPTO / DPMA / EUIPO Check', 
-      icon: Search, 
-      ping: healthData?.productorTM?.latencyMs ? `${healthData.productorTM.latencyMs}ms` : '42ms', 
-      isOnline: healthData?.productorTM?.success !== false,
-      color: 'text-accent-purple' 
-    },
-    { 
-      name: 'OpenRouter Vision', 
-      status: healthData?.openRouter?.success ? 'Online' : (healthData ? 'API Key benötigt' : 'Prüfe...'), 
-      desc: 'Claude 3.5 / GPT-4o Listing AI', 
-      icon: Cpu, 
-      ping: healthData?.openRouter?.latencyMs ? `${healthData.openRouter.latencyMs}ms` : '—', 
-      isOnline: healthData?.openRouter?.success,
-      color: 'text-accent-amber' 
+      name: 'Ideogram 3.0 API', 
+      status: healthData?.ideogram?.success ? 'Online' : (healthData ? 'Token prüfen' : 'Prüfe...'), 
+      desc: 'Bildgenerierung & Prompts', 
+      icon: ImageIcon, 
+      ping: healthData?.ideogram?.latencyMs ? `${healthData.ideogram.latencyMs}ms` : '—', 
+      isOnline: healthData?.ideogram?.success,
+      color: 'text-primary-400' 
     },
     { 
       name: 'Supabase Sync', 
@@ -99,13 +128,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
       isOnline: true,
       color: 'text-emerald-400' 
     },
-  ];
-
-  const recentEvents = [
-    { time: '14:28:10', type: 'SUCCESS', title: 'MBA Database Sync bereit', desc: '1.240 Designs und 30d Sales bereit für Abgleich' },
-    { time: '14:15:02', type: 'INFO', title: 'Hermes Task Webhook aktiv', desc: 'Pre-TM Check Engine für Nizza 25 scharf geschaltet' },
-    { time: '13:50:44', type: 'SUCCESS', title: 'Dashboard & Core Server online', desc: 'Verbunden mit TerraMaster TOS 6.0 auf Port 3000' },
-    { time: '04:00:00', type: 'INFO', title: 'Auto Slot-Filling Scheduler', desc: 'Tageslimit-Optimierer für 04:00 Uhr bereitgestellt' },
   ];
 
   return (
@@ -131,7 +153,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
         </div>
       </div>
 
-      {/* Embedded noVNC Stream Modal / Accordion */}
+      {/* Embedded noVNC Stream Modal */}
       {browserViewActive && (
         <div className="glass-panel p-5 rounded-2xl border border-accent-cyan/40 shadow-2xl relative overflow-hidden animate-fadeIn">
           <div className="flex items-center justify-between mb-3">
@@ -176,7 +198,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">100</span>
+            <span className="text-3xl font-extrabold text-white">
+              {statsData?.slots ? statsData.slots.total - statsData.slots.used : 100}
+            </span>
             <span className="text-xs text-slate-400 font-medium">/ 100 verfügbar</span>
           </div>
           <div className="flex items-center text-xs text-emerald-400 space-x-1">
@@ -185,38 +209,45 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
           </div>
         </div>
 
-        {/* 30d Sales Card */}
+        {/* MBA Synced Designs / Sales Card */}
         <div className="glass-card p-5 rounded-2xl space-y-3">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">30-Tage Verkäufe</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Synchronisierte Designs</span>
             <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
               <ShoppingBag className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">342</span>
-            <span className="text-xs text-slate-400 font-medium">Units sold</span>
+            <span className="text-3xl font-extrabold text-white">
+              {statsData?.designsCount !== undefined ? statsData.designsCount : '0'}
+            </span>
+            <span className="text-xs text-slate-400 font-medium">Designs in DB</span>
           </div>
           <div className="text-xs text-slate-400">
-            Aus <strong className="text-slate-200">1.240</strong> synchronisierten Designs
+            {statsData?.hasSupabase ? 'Supabase MBA Database verbunden ✓' : 'Supabase in Settings verbinden'}
           </div>
         </div>
 
-        {/* 30d Royalties Card */}
-        <div className="glass-card p-5 rounded-2xl space-y-3">
+        {/* Upload Queue Count Card */}
+        <div 
+          onClick={() => onNavigateTab('queue')}
+          className="glass-card p-5 rounded-2xl space-y-3 cursor-pointer hover:border-accent-cyan/40 group"
+        >
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">30-Tage Royalties</span>
-            <div className="p-2 rounded-lg bg-primary-500/10 text-primary-400">
-              <DollarSign className="w-4 h-4" />
+            <span className="text-xs font-semibold uppercase tracking-wider">Upload-Queue</span>
+            <div className="p-2 rounded-lg bg-accent-cyan/10 text-accent-cyan group-hover:scale-110 transition-transform">
+              <FolderSync className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">$ 1.482,50</span>
+            <span className="text-3xl font-extrabold text-white">
+              {statsData?.queueCount !== undefined ? statsData.queueCount : 0}
+            </span>
+            <span className="text-xs text-slate-400 font-medium">Bereit für Upload</span>
           </div>
-          <div className="text-xs text-slate-400 flex items-center justify-between">
-            <span>€ 840,20</span>
-            <span>£ 215,00</span>
-            <span>¥ 18.400</span>
+          <div className="text-xs text-accent-cyan flex items-center space-x-1 group-hover:underline">
+            <span>Zur Warteschlange</span>
+            <ExternalLink className="w-3 h-3 ml-0.5" />
           </div>
         </div>
 
@@ -232,8 +263,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">1</span>
-            <span className="text-xs text-slate-400 font-medium">Design wartet</span>
+            <span className="text-3xl font-extrabold text-white">
+              {statsData?.tasksCount !== undefined ? statsData.tasksCount : 0}
+            </span>
+            <span className="text-xs text-slate-400 font-medium">Offene Aufgaben</span>
           </div>
           <div className="text-xs text-primary-400 flex items-center space-x-1 group-hover:underline">
             <span>Jetzt prüfen &amp; freigeben</span>
@@ -252,7 +285,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
               Schnittstellen &amp; Konnektoren
             </h3>
             <button
-              onClick={fetchHealth}
+              onClick={() => fetchDashboardData(true)}
               disabled={loadingHealth}
               className="text-xs text-slate-400 hover:text-slate-200 flex items-center space-x-1"
             >
@@ -298,19 +331,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
               <Terminal className="w-4 h-4 mr-2 text-accent-cyan" />
               Aktivitäts-Log
             </h3>
-            <span className="text-xs text-slate-400">Live Stream</span>
+            <span className="text-xs text-slate-400">Live Server Events</span>
           </div>
 
           <div className="glass-card p-4 rounded-2xl space-y-3.5 max-h-[340px] overflow-y-auto">
-            {recentEvents.map((evt, idx) => (
-              <div key={idx} className="flex items-start space-x-3 text-xs pb-3 border-b border-slate-800/60 last:border-0 last:pb-0">
-                <span className="font-mono text-[11px] text-slate-400 shrink-0 mt-0.5">{evt.time}</span>
-                <div className="space-y-0.5">
-                  <div className="font-semibold text-slate-200">{evt.title}</div>
-                  <div className="text-slate-400 text-[11px] leading-snug">{evt.desc}</div>
+            {activityEvents.length === 0 ? (
+              <div className="text-center py-8 text-xs text-slate-500">Noch keine Events protokolliert.</div>
+            ) : (
+              activityEvents.map((evt, idx) => (
+                <div key={idx} className="flex items-start space-x-3 text-xs pb-3 border-b border-slate-800/60 last:border-0 last:pb-0">
+                  <span className="font-mono text-[11px] text-slate-400 shrink-0 mt-0.5">{evt.time}</span>
+                  <div className="space-y-0.5">
+                    <div className="font-semibold text-slate-200">{evt.title}</div>
+                    <div className="text-slate-400 text-[11px] leading-snug">{evt.desc}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

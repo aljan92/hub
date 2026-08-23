@@ -1,60 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   UploadCloud, 
   Play, 
   Clock, 
-  ToggleLeft, 
-  ToggleRight, 
-  Layers, 
-  Scissors, 
   Coffee, 
   Smartphone, 
   CheckCircle2, 
-  AlertTriangle,
-  Settings as SettingsIcon,
-  Trash2
+  Trash2,
+  FolderOpen
 } from 'lucide-react';
 
 export const QueueView: React.FC = () => {
   const [globalMode, setGlobalMode] = useState<'live' | 'draft'>('draft');
   const [isUploading, setIsUploading] = useState(false);
+  const [queueItems, setQueueItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const [queueItems, setQueueItems] = useState([
-    {
-      id: 'q-1',
-      title: 'Vintage Sunset Surfer Cat',
-      productCount: 102,
-      optimizedCount: 100,
-      slotPruned: '2 Marktplätze (US Zip Hoodie) abgewählt um in 100 Slots zu passen',
-      mode: 'draft',
-      status: 'Ready',
-      features: {
-        generalResize: true,
-        mugBrush: true,
-        popSocket: true,
-        phoneCase: true,
-      },
-      image: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=300&auto=format&fit=crop&q=80'
-    },
-    {
-      id: 'q-2',
-      title: 'Retro Synthwave Mountain Cyberpunk',
-      productCount: 84,
-      optimizedCount: 84,
-      slotPruned: 'Passt vollständig in freie Slots',
-      mode: 'draft',
-      status: 'Ready',
-      features: {
-        generalResize: true,
-        mugBrush: false,
-        popSocket: true,
-        phoneCase: true,
-      },
-      image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=300&auto=format&fit=crop&q=80'
-    }
-  ]);
+  const fetchQueue = () => {
+    setLoading(true);
+    fetch('/api/v1/queue')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.queue)) {
+          setQueueItems(data.queue);
+        }
+      })
+      .catch(err => console.warn('[Queue] Fetch error:', err))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchQueue();
+  }, []);
 
   const handleStartQueue = () => {
+    if (queueItems.length === 0) return;
     setIsUploading(true);
     setTimeout(() => {
       setIsUploading(false);
@@ -125,62 +105,63 @@ export const QueueView: React.FC = () => {
           Warteschlangen-Einträge ({queueItems.length})
         </div>
 
-        {queueItems.map((item) => (
-          <div key={item.id} className="glass-card p-5 rounded-2xl space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              {/* Item Info */}
-              <div className="flex items-center space-x-4">
-                <img
-                  src={item.image}
-                  alt={item.title}
-                  className="w-16 h-16 rounded-xl object-cover border border-slate-800 shrink-0"
-                />
-                <div>
-                  <h4 className="font-bold text-sm text-slate-100">{item.title}</h4>
-                  <div className="flex flex-wrap items-center gap-2 mt-1">
-                    <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 rounded-md border border-emerald-500/20">
-                      {item.status}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      Produkte: <strong className="text-slate-200">{item.optimizedCount}</strong> (von {item.productCount})
-                    </span>
+        {queueItems.length === 0 ? (
+          <div className="glass-panel rounded-2xl p-12 text-center space-y-3">
+            <FolderOpen className="w-12 h-12 text-slate-600 mx-auto" />
+            <h3 className="text-base font-bold text-slate-200">Die Upload-Queue ist aktuell leer</h3>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              Sobald du generierte Designs im Menü <strong>Tasks</strong> freigibst oder Hermes Aufgaben übergibt, erscheinen sie hier bereit für den automatischen Amazon Merch Upload.
+            </p>
+          </div>
+        ) : (
+          queueItems.map((item) => (
+            <div key={item.id} className="glass-card p-5 rounded-2xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                {/* Item Info */}
+                <div className="flex items-center space-x-4">
+                  <img
+                    src={item.image}
+                    alt={item.title}
+                    className="w-16 h-16 rounded-xl object-cover border border-slate-800 shrink-0 bg-slate-950"
+                  />
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-100">{item.title}</h4>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 rounded-md border border-emerald-500/20">
+                        {item.status}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        Produkte: <strong className="text-slate-200">{item.optimizedCount || 100}</strong>
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Optimization Badges */}
-              <div className="flex items-center space-x-3">
-                <div className="flex items-center space-x-1.5 text-xs text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
-                  {item.features.mugBrush && (
-                    <span className="flex items-center text-accent-amber" title="Schwarzer Brush für weiße Tasse aktiv">
-                      <Coffee className="w-3.5 h-3.5 mr-1" /> Mug Brush
+                {/* Optimization Badges */}
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-1.5 text-xs text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                    {item.features?.mugBrush && (
+                      <span className="flex items-center text-accent-amber" title="Schwarzer Brush für weiße Tasse aktiv">
+                        <Coffee className="w-3.5 h-3.5 mr-1" /> Mug Brush
+                      </span>
+                    )}
+                    <span className="text-slate-600">•</span>
+                    <span className="flex items-center text-accent-cyan" title="Auto Resizing für PopSockets & Phone Cases">
+                      <Smartphone className="w-3.5 h-3.5 mr-1" /> General Resize
                     </span>
-                  )}
-                  <span className="text-slate-600">•</span>
-                  <span className="flex items-center text-accent-cyan" title="Auto Resizing für PopSockets & Phone Cases">
-                    <Smartphone className="w-3.5 h-3.5 mr-1" /> General Resize
-                  </span>
-                </div>
+                  </div>
 
-                <button
-                  onClick={() => setQueueItems(queueItems.filter(q => q.id !== item.id))}
-                  className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                  <button
+                    onClick={() => setQueueItems(queueItems.filter(q => q.id !== item.id))}
+                    className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
-
-            {/* Slot-Filling Optimization Reason Box */}
-            <div className="bg-slate-950/70 p-3 rounded-xl border border-slate-800/80 text-xs flex items-center justify-between text-slate-400">
-              <span className="flex items-center">
-                <Scissors className="w-3.5 h-3.5 mr-1.5 text-primary-400" />
-                Slot-Optimizer Anpassung: <strong className="text-slate-300 ml-1">{item.slotPruned}</strong>
-              </span>
-              <span className="text-[11px] font-mono text-emerald-400">Optimal fit ✓</span>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );

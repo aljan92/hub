@@ -57,34 +57,37 @@ interface TaskItem {
   };
 }
 
-let activeTasks: TaskItem[] = [
+let activeTasks: TaskItem[] = [];
+let uploadQueue: any[] = [];
+let dailySlotStats = { used: 0, total: 100 };
+
+interface ActivityEvent {
+  time: string;
+  type: 'SUCCESS' | 'INFO' | 'WARNING';
+  title: string;
+  desc: string;
+}
+
+let activityLog: ActivityEvent[] = [
   {
-    id: 'task-101',
-    title: 'Vintage Sunset Surfer Cat',
-    prompt: 'Surfer cat riding a big wave with retro 70s sunset, silhouette style',
-    quote: 'Catch the Wave',
-    imageUrl: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&auto=format&fit=crop&q=80',
-    source: 'Hermes Agent',
-    createdAt: new Date().toISOString(),
-    audience: 'Men, Women',
-    avoidColor: 'White',
-    reuseBackground: 'Nein',
-    aiPrediction: {
-      audience: 'Men, Women',
-      avoidColor: 'White',
-      reuseBackground: 'Nein',
-      confidence: '98%',
-      title: 'Vintage Surfer Cat Sunset Wave Retro Graphic',
-      brand: 'Retro Surf Cat Apparel',
-      bullet1: 'Catch the ocean vibe with this vintage 70s aesthetic surfer cat riding waves on sunny beaches.',
-      bullet2: 'Perfect for surf enthusiasts, cat lovers, beach vacations, and summer festivals everywhere.',
-      description: 'Express your love for oceanic adventures and feline humor with this stylish retro distressed sunset design.'
-    }
+    time: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    type: 'SUCCESS',
+    title: 'MBA Hub Core gestartet',
+    desc: 'Server läuft autark auf TerraMaster TOS 6.0'
   }
 ];
 
-let uploadQueue: any[] = [];
-let dailySlotStats = { used: 0, total: 100 };
+function logActivity(title: string, desc: string, type: 'SUCCESS' | 'INFO' | 'WARNING' = 'INFO') {
+  const event: ActivityEvent = {
+    time: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    type,
+    title,
+    desc
+  };
+  activityLog.unshift(event);
+  if (activityLog.length > 50) activityLog.pop();
+  broadcast('ACTIVITY_LOG', event);
+}
 
 // Broadcast helper for WebSockets
 function broadcast(type: string, payload: any) {
@@ -122,7 +125,7 @@ wss.on('connection', (ws) => {
 // REST API ROUTES
 // ==============================================================================
 
-// 1. Health Endpoint
+// 1. Health & Activity Endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -131,6 +134,26 @@ app.get('/api/health', (req, res) => {
     target: 'TerraMaster TOS 6.0',
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/api/v1/activity', (req, res) => {
+  res.json({ success: true, activity: activityLog });
+});
+
+app.get('/api/v1/stats', async (req, res) => {
+  try {
+    const supabaseTest = await SupabaseService.testConnection();
+    res.json({
+      success: true,
+      tasksCount: activeTasks.length,
+      queueCount: uploadQueue.length,
+      slots: dailySlotStats,
+      designsCount: supabaseTest.rowCount || 0,
+      hasSupabase: supabaseTest.success
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // 2. Settings Management

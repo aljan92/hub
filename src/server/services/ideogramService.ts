@@ -14,18 +14,19 @@ export class IdeogramService {
    */
   static async testConnection(customKey?: string): Promise<{ success: boolean; latencyMs: number; error?: string }> {
     const settings = loadSettings();
-    const key = customKey || settings.ideogramApiKey;
-    if (!key) {
+    const rawKey = customKey || settings.ideogramApiKey;
+    if (!rawKey || !rawKey.trim()) {
       return { success: false, latencyMs: 0, error: 'Kein Ideogram API Key hinterlegt' };
     }
 
+    const key = rawKey.trim();
     const start = Date.now();
     try {
-      // Sending an empty prompt payload to test authentication without spending credits
+      // Test 1: Standard Ideogram Api-Key header
       const res = await fetch('https://api.ideogram.ai/generate', {
         method: 'POST',
         headers: {
-          'Api-Key': key.trim(),
+          'Api-Key': key,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -38,15 +39,37 @@ export class IdeogramService {
 
       const latencyMs = Date.now() - start;
       
-      // 401 means invalid key
-      if (res.status === 401 || res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        return { success: false, latencyMs, error: data?.message || 'Ungültiger Ideogram API Token (Access Denied)' };
-      }
-
-      // 400 with prompt validation error proves auth is 100% valid
+      // 400 with prompt validation error proves auth passed 100%
       if (res.status === 400 || res.ok) {
         return { success: true, latencyMs };
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        // Test 2: Try Authorization Bearer header as fallback
+        const resBearer = await fetch('https://api.ideogram.ai/generate', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            image_request: {
+              prompt: ''
+            }
+          }),
+          signal: AbortSignal.timeout(15000)
+        });
+
+        if (resBearer.status === 400 || resBearer.ok) {
+          return { success: true, latencyMs: Date.now() - start };
+        }
+
+        const data = await res.json().catch(() => ({}));
+        return { 
+          success: false, 
+          latencyMs, 
+          error: data?.message || 'Access denied: Bitte erstelle einen API Token unter https://ideogram.ai/manage-api' 
+        };
       }
 
       return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };

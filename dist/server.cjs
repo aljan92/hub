@@ -42466,16 +42466,17 @@ var IdeogramService = class {
    */
   static async testConnection(customKey) {
     const settings = loadSettings();
-    const key = customKey || settings.ideogramApiKey;
-    if (!key) {
+    const rawKey = customKey || settings.ideogramApiKey;
+    if (!rawKey || !rawKey.trim()) {
       return { success: false, latencyMs: 0, error: "Kein Ideogram API Key hinterlegt" };
     }
+    const key = rawKey.trim();
     const start = Date.now();
     try {
       const res = await fetch("https://api.ideogram.ai/generate", {
         method: "POST",
         headers: {
-          "Api-Key": key.trim(),
+          "Api-Key": key,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -42486,12 +42487,32 @@ var IdeogramService = class {
         signal: AbortSignal.timeout(25e3)
       });
       const latencyMs = Date.now() - start;
-      if (res.status === 401 || res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        return { success: false, latencyMs, error: data?.message || "Ung\xFCltiger Ideogram API Token (Access Denied)" };
-      }
       if (res.status === 400 || res.ok) {
         return { success: true, latencyMs };
+      }
+      if (res.status === 401 || res.status === 403) {
+        const resBearer = await fetch("https://api.ideogram.ai/generate", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${key}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            image_request: {
+              prompt: ""
+            }
+          }),
+          signal: AbortSignal.timeout(15e3)
+        });
+        if (resBearer.status === 400 || resBearer.ok) {
+          return { success: true, latencyMs: Date.now() - start };
+        }
+        const data = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          latencyMs,
+          error: data?.message || "Access denied: Bitte erstelle einen API Token unter https://ideogram.ai/manage-api"
+        };
       }
       return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
     } catch (err) {
@@ -50559,33 +50580,17 @@ var HOST = process.env.HOST || "0.0.0.0";
 app.use((0, import_cors.default)());
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ extended: true, limit: "50mb" }));
-var activeTasks = [
-  {
-    id: "task-101",
-    title: "Vintage Sunset Surfer Cat",
-    prompt: "Surfer cat riding a big wave with retro 70s sunset, silhouette style",
-    quote: "Catch the Wave",
-    imageUrl: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&auto=format&fit=crop&q=80",
-    source: "Hermes Agent",
-    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    audience: "Men, Women",
-    avoidColor: "White",
-    reuseBackground: "Nein",
-    aiPrediction: {
-      audience: "Men, Women",
-      avoidColor: "White",
-      reuseBackground: "Nein",
-      confidence: "98%",
-      title: "Vintage Surfer Cat Sunset Wave Retro Graphic",
-      brand: "Retro Surf Cat Apparel",
-      bullet1: "Catch the ocean vibe with this vintage 70s aesthetic surfer cat riding waves on sunny beaches.",
-      bullet2: "Perfect for surf enthusiasts, cat lovers, beach vacations, and summer festivals everywhere.",
-      description: "Express your love for oceanic adventures and feline humor with this stylish retro distressed sunset design."
-    }
-  }
-];
+var activeTasks = [];
 var uploadQueue = [];
 var dailySlotStats = { used: 0, total: 100 };
+var activityLog = [
+  {
+    time: (/* @__PURE__ */ new Date()).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    type: "SUCCESS",
+    title: "MBA Hub Core gestartet",
+    desc: "Server l\xE4uft autark auf TerraMaster TOS 6.0"
+  }
+];
 function broadcast(type, payload) {
   const message = JSON.stringify({ type, payload, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   wss.clients.forEach((client) => {
@@ -50621,6 +50626,24 @@ app.get("/api/health", (req, res) => {
     target: "TerraMaster TOS 6.0",
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
+});
+app.get("/api/v1/activity", (req, res) => {
+  res.json({ success: true, activity: activityLog });
+});
+app.get("/api/v1/stats", async (req, res) => {
+  try {
+    const supabaseTest = await SupabaseService.testConnection();
+    res.json({
+      success: true,
+      tasksCount: activeTasks.length,
+      queueCount: uploadQueue.length,
+      slots: dailySlotStats,
+      designsCount: supabaseTest.rowCount || 0,
+      hasSupabase: supabaseTest.success
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 app.get("/api/v1/settings", (req, res) => {
   const settings = loadSettings();
