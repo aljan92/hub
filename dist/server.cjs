@@ -215700,7 +215700,7 @@ var SyncEngine = class {
     return "";
   }
   /**
-   * Execute in-browser FindListings query using Session 1 authentication cookies and Coral Request format
+   * Execute in-browser FindListings query using Session 1 authentication cookies and Coral Request format with 429 retry backoff
    */
   static async fetchListingsPage(page, accountId, pageToken = [], statuses = ALL_STATUSES) {
     return await page.evaluate(async ({ accountId: accountId2, pageToken: pageToken2, statuses: statuses2, url }) => {
@@ -215717,20 +215717,32 @@ var SyncEngine = class {
         pageToken: pageToken2 || [],
         __type: "com.amazon.merch.search#FindListingsRequest"
       };
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body),
-        credentials: "include"
-      });
-      if (!resp.ok) {
+      const sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
+      let retries = 0;
+      let backoff = 1500;
+      while (retries < 10) {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(body),
+          credentials: "include"
+        });
+        if (resp.ok) return await resp.json();
+        if (resp.status === 429 || resp.url?.includes("merch.amazon.com/429")) {
+          console.log(`[FindListings] Rate limited (429), warte ${backoff}ms (Versuch ${retries + 1}/10)...`);
+          await sleep2(backoff);
+          backoff = Math.min(backoff * 1.5, 8e3);
+          retries++;
+          continue;
+        }
+        if (resp.url?.includes("signin") || resp.status === 404) throw new Error("LoggedOut");
         const errText = await resp.text().catch(() => "");
         throw new Error(`FindListings HTTP ${resp.status}: ${errText || resp.statusText}`);
       }
-      return await resp.json();
+      throw new Error("FindListings: Rate limit retries exceeded");
     }, { accountId, pageToken, statuses, url: FIND_LISTINGS_URL });
   }
   /**
@@ -215994,7 +216006,7 @@ var SyncEngine = class {
         }
         if (!json.pageToken || json.pageToken.length === 0) break;
         pageToken = json.pageToken;
-        await this.sleep(300);
+        await this.sleep(600);
       }
       this.addLog(`[Quick Update Produkte] ${allResults.length} Eintr\xE4ge von Amazon geladen. Mappe auf Supabase...`, "info");
       const mapped = this.mapListingsToSupabase(allResults);
@@ -216043,7 +216055,7 @@ var SyncEngine = class {
         this.addLog(`[Full Refresh] Bisher ${allResults.length} Eintr\xE4ge gesammelt...`, "info");
         if (!json.pageToken || json.pageToken.length === 0) break;
         pageToken = json.pageToken;
-        await this.sleep(400);
+        await this.sleep(1e3);
       }
       this.addLog(`[Full Refresh] Mappe ${allResults.length} Eintr\xE4ge auf Supabase Schema...`, "info");
       const mapped = this.mapListingsToSupabase(allResults);
