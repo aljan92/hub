@@ -1,26 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  DollarSign, 
   ShoppingBag, 
   UploadCloud, 
   CheckCircle2, 
   ExternalLink,
-  ShieldCheck,
-  Cpu,
-  Database,
-  Image as ImageIcon,
-  Sparkles,
-  Search,
-  Globe,
+  Sparkles, 
   Terminal,
   MonitorPlay,
-  RefreshCw,
   FolderSync,
-  Play,
-  Power
+  ArrowRight
 } from 'lucide-react';
 
 import { BrowserScreencast } from '../components/BrowserScreencast';
+import { ConnectorTopology } from '../components/ConnectorTopology';
 
 interface DashboardViewProps {
   onNavigateTab: (tab: any) => void;
@@ -28,13 +20,13 @@ interface DashboardViewProps {
 
 let moduleCachedHealth: any = null;
 let moduleCachedStats: any = null;
-let moduleCachedActivity: any[] = [];
+let moduleCachedSyncState: any = null;
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) => {
   const [browserViewActive, setBrowserViewActive] = useState(false);
   const [healthData, setHealthData] = useState<any>(moduleCachedHealth);
   const [statsData, setStatsData] = useState<any>(moduleCachedStats);
-  const [activityEvents, setActivityEvents] = useState<any[]>(moduleCachedActivity);
+  const [syncState, setSyncState] = useState<any>(moduleCachedSyncState);
   const [loadingHealth, setLoadingHealth] = useState(false);
 
   const fetchDashboardData = (forceSpinner = false) => {
@@ -61,13 +53,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
       })
       .catch(() => {});
 
-    // 3. Activity
-    fetch('/api/v1/activity')
+    // 3. Sync State
+    fetch('/api/v1/sync/state')
       .then(res => res.json())
       .then(data => {
-        if (data.success && Array.isArray(data.activity)) {
-          moduleCachedActivity = data.activity;
-          setActivityEvents(data.activity);
+        if (data.success && data.state) {
+          moduleCachedSyncState = data.state;
+          setSyncState(data.state);
         }
       })
       .catch(() => {});
@@ -75,64 +67,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
 
   useEffect(() => {
     fetchDashboardData(moduleCachedHealth === null);
+    const interval = setInterval(() => fetchDashboardData(false), 10000);
+    return () => clearInterval(interval);
   }, []);
-
-  const connectors = [
-    { 
-      name: 'OpenRouter Vision', 
-      status: healthData?.openRouter?.success ? 'Online' : (healthData ? 'API Key benötigt' : 'Prüfe...'), 
-      desc: 'Claude 3.5 / GPT-4o Listing AI', 
-      icon: Cpu, 
-      ping: healthData?.openRouter?.latencyMs ? `${healthData.openRouter.latencyMs}ms` : '—', 
-      isOnline: healthData?.openRouter?.success,
-      color: 'text-accent-amber' 
-    },
-    { 
-      name: 'Productor TM API', 
-      status: healthData?.productorTM?.success ? 'Online' : (healthData ? 'Offline' : 'Prüfe...'), 
-      desc: 'USPTO / DPMA / EUIPO Check', 
-      icon: Search, 
-      ping: healthData?.productorTM?.latencyMs ? `${healthData.productorTM.latencyMs}ms` : '62ms', 
-      isOnline: healthData?.productorTM?.success !== false,
-      color: 'text-accent-purple' 
-    },
-    { 
-      name: 'Vectorizer.ai API', 
-      status: healthData?.vectorizer?.success ? 'Online' : (healthData ? 'API Key benötigt' : 'Prüfe...'), 
-      desc: 'Auto-Vektorisierung (SVG)', 
-      icon: Sparkles, 
-      ping: healthData?.vectorizer?.latencyMs ? `${healthData.vectorizer.latencyMs}ms` : '—', 
-      isOnline: healthData?.vectorizer?.success,
-      color: 'text-accent-cyan' 
-    },
-    { 
-      name: 'Ideogram 3.0 API', 
-      status: healthData?.ideogram?.success ? 'Online' : (healthData ? 'Token prüfen' : 'Prüfe...'), 
-      desc: 'Bildgenerierung & Prompts', 
-      icon: ImageIcon, 
-      ping: healthData?.ideogram?.latencyMs ? `${healthData.ideogram.latencyMs}ms` : '—', 
-      isOnline: healthData?.ideogram?.success,
-      color: 'text-primary-400' 
-    },
-    { 
-      name: 'Supabase Sync', 
-      status: healthData?.supabase?.success ? 'Online' : (healthData ? 'URL/Key benötigt' : 'Prüfe...'), 
-      desc: 'MBA Database (Designs & Sales)', 
-      icon: Database, 
-      ping: healthData?.supabase?.latencyMs ? `${healthData.supabase.latencyMs}ms` : '—', 
-      isOnline: healthData?.supabase?.success,
-      color: 'text-emerald-400' 
-    },
-    { 
-      name: 'Amazon Chrome Worker', 
-      status: 'Session Warm', 
-      desc: 'Uploads & DOM Automation', 
-      icon: Globe, 
-      ping: 'Local', 
-      isOnline: true,
-      color: 'text-emerald-400' 
-    },
-  ];
 
   return (
     <div className="space-y-6">
@@ -140,7 +77,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-100 tracking-tight">Systemübersicht &amp; Dashboard</h2>
-          <p className="text-sm text-slate-400">Echtzeit-Metriken, Konnektor-Status und Upload-Kontrolle auf deinem NAS.</p>
+          <p className="text-sm text-slate-400">Echtzeit-Metriken, Konnektor-Topologie und Upload-Kontrolle auf deinem NAS.</p>
         </div>
         <div className="flex items-center space-x-3">
           <button
@@ -258,80 +195,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
         </div>
       </div>
 
-      {/* Main Grid: Connector Health & Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Connector Status Grid */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-slate-200 text-sm flex items-center">
-              <Cpu className="w-4 h-4 mr-2 text-primary-400" />
-              Schnittstellen &amp; Konnektoren
-            </h3>
-            <button
-              onClick={() => fetchDashboardData(true)}
-              disabled={loadingHealth}
-              className="text-xs text-slate-400 hover:text-slate-200 flex items-center space-x-1"
-            >
-              <RefreshCw className={`w-3 h-3 ${loadingHealth ? 'animate-spin text-primary-400' : ''}`} />
-              <span>Status neu laden</span>
-            </button>
-          </div>
+      {/* Interactive System Architecture & Connector Topology Schema */}
+      <ConnectorTopology 
+        healthData={healthData}
+        syncState={syncState}
+        onNavigateTab={onNavigateTab}
+        onRefreshHealth={() => fetchDashboardData(true)}
+        isLoading={loadingHealth}
+      />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {connectors.map((c, i) => {
-              const Icon = c.icon;
-              return (
-                <div key={i} className="glass-card p-4 rounded-xl flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className={`p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 ${c.color}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="font-semibold text-sm text-slate-100">{c.name}</div>
-                      <div className="text-xs text-slate-400">{c.desc}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
-                      c.isOnline
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                    }`}>
-                      {c.status}
-                    </span>
-                    <div className="text-[10px] text-slate-400 font-mono mt-1">{c.ping}</div>
-                  </div>
-                </div>
-              );
-            })}
+      {/* Quick Navigation Banner to System Logs */}
+      <div 
+        onClick={() => onNavigateTab('logs')}
+        className="glass-card p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-slate-800/80 hover:border-accent-cyan/40 cursor-pointer transition-all group bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-slate-900/90"
+      >
+        <div className="flex items-center space-x-3">
+          <div className="p-2.5 rounded-xl bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20 group-hover:scale-110 transition-transform">
+            <Terminal className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-sm font-bold text-slate-100 group-hover:text-accent-cyan transition-colors flex items-center space-x-2">
+              <span>System- &amp; Aktivitäts-Logs Konsole</span>
+              <span className="px-2 py-0.5 text-[10px] rounded-full bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30 font-semibold">
+                Live Terminal
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Vollständige Fehleranalysen, Synchronisierungs-Verläufe und Echtzeit-Serverereignisse im separaten Menü aufrufen.
+            </p>
           </div>
         </div>
 
-        {/* Live Activity Feed */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-slate-200 text-sm flex items-center">
-              <Terminal className="w-4 h-4 mr-2 text-accent-cyan" />
-              Aktivitäts-Log
-            </h3>
-            <span className="text-xs text-slate-400">Live Server Events</span>
-          </div>
-
-          <div className="glass-card p-4 rounded-2xl space-y-3.5 max-h-[340px] overflow-y-auto">
-            {activityEvents.length === 0 ? (
-              <div className="text-center py-8 text-xs text-slate-500">Noch keine Events protokolliert.</div>
-            ) : (
-              activityEvents.map((evt, idx) => (
-                <div key={idx} className="flex items-start space-x-3 text-xs pb-3 border-b border-slate-800/60 last:border-0 last:pb-0">
-                  <span className="font-mono text-[11px] text-slate-400 shrink-0 mt-0.5">{evt.time}</span>
-                  <div className="space-y-0.5">
-                    <div className="font-semibold text-slate-200">{evt.title}</div>
-                    <div className="text-slate-400 text-[11px] leading-snug">{evt.desc}</div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+        <div className="flex items-center space-x-2 text-xs font-semibold text-accent-cyan group-hover:underline shrink-0">
+          <span>Log-Terminal öffnen</span>
+          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
         </div>
       </div>
     </div>

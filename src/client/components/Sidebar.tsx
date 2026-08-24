@@ -4,12 +4,13 @@ import {
   Sparkles, 
   CheckSquare, 
   UploadCloud, 
-  Database,
+  Database, 
+  Terminal,
   Settings as SettingsIcon,
   Bot
 } from 'lucide-react';
 
-export type ActiveTab = 'dashboard' | 'designer' | 'tasks' | 'queue' | 'database' | 'settings';
+export type ActiveTab = 'dashboard' | 'designer' | 'tasks' | 'queue' | 'database' | 'logs' | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -29,7 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'dashboard' as ActiveTab,
       label: 'Dashboard',
       icon: LayoutDashboard,
-      description: 'Status & Statistiken',
+      description: 'Status & Topologie',
     },
     {
       id: 'designer' as ActiveTab,
@@ -58,6 +59,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Database',
       icon: Database,
       description: 'MBA ⇄ Supabase Sync',
+    },
+    {
+      id: 'logs' as ActiveTab,
+      label: 'Logs',
+      icon: Terminal,
+      description: 'Live-Protokoll & Fehler',
     },
     {
       id: 'settings' as ActiveTab,

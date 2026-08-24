@@ -6,6 +6,7 @@ import { DesignerView } from './views/DesignerView';
 import { TasksView } from './views/TasksView';
 import { QueueView } from './views/QueueView';
 import { DatabaseView } from './views/DatabaseView';
+import { LogsView } from './views/LogsView';
 import { SettingsView } from './views/SettingsView';
 
 export const App: React.FC = () => {
@@ -75,6 +76,7 @@ export const App: React.FC = () => {
             {activeTab === 'tasks' && <TasksView />}
             {activeTab === 'queue' && <QueueView />}
             {activeTab === 'database' && <DatabaseView />}
+            {activeTab === 'logs' && <LogsView />}
             {activeTab === 'settings' && <SettingsView />}
           </div>
         </main>
