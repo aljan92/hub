@@ -993,22 +993,36 @@ export class SyncEngine {
             const domain = marketplaceDomains[ad.market?.toLowerCase()] || 'amazon.com';
             const detailUrl = `https://www.${domain}/dp/${parent.asin}`;
 
-            const html = await page.evaluate(async (url: string) => {
-              const res = await fetch(url, {
-                headers: {
-                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-                },
-                credentials: 'include'
-              });
-              if (!res.ok) return '';
-              return await res.text();
-            }, detailUrl);
+            const response = await fetch(detailUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Cache-Control': 'no-cache'
+              }
+            });
+
+            if (response.status === 404) {
+              this.addLog(`[ASIN Scanner] Produkt ${parent.asin} (${ad.market}) nicht gefunden (404). Parent-ASIN gesetzt.`, 'warn');
+              ad.asin = parent.asin;
+              continue;
+            }
+
+            const html = await response.text();
+
+            // Detect CAPTCHA or Robot Check
+            if (html.includes('/errors/validateCaptcha') || html.includes('Robot Check') || response.status === 503 || response.status === 403) {
+              this.addLog(`[ASIN Scanner] ⚠️ Amazon Rate-Limit / Captcha für ${parent.asin} (${ad.market}). Pausiere...`, 'warn');
+              await this.sleep(3000);
+              continue;
+            }
 
             if (html) {
               const matchDimensionMap = html.match(/"dimensionToAsinMap"\s*:\s*({[^}]+})/);
               const matchAsinToDimension = html.match(/"asinToDimension"\s*:\s*({[^}]+})/);
               const matchSelectedVar = html.match(/"selectedVariationASIN"\s*:\s*"([A-Z0-9]{10})"/);
               const matchDataAsin = html.match(/data-defaultAsin="([A-Z0-9]{10})"/);
+              const matchDataCsa = html.match(/data-csa-c-item-id="([A-Z0-9]{10})"/);
               const matchFallbackAsin = html.match(/"asin"\s*:\s*"([A-Z0-9]{10})"/);
 
               let resolvedChild: string | null = null;
@@ -1036,15 +1050,20 @@ export class SyncEngine {
                 resolvedChild = matchDataAsin[1];
               }
 
+              if (!resolvedChild && matchDataCsa && matchDataCsa[1] && matchDataCsa[1] !== parent.asin) {
+                resolvedChild = matchDataCsa[1];
+              }
+
               if (!resolvedChild && matchFallbackAsin && matchFallbackAsin[1] && matchFallbackAsin[1] !== parent.asin) {
                 resolvedChild = matchFallbackAsin[1];
               }
 
               if (resolvedChild) {
                 ad.asin = resolvedChild;
-                this.addLog(`[ASIN Scanner] Child ASIN aufgelöst für ${parent.asin} (${ad.market}): ${resolvedChild} ✓`, 'success');
+                this.addLog(`[ASIN Scanner] ✓ Child-ASIN aufgelöst für ${ad.type} (${ad.market}): ${parent.asin} ➔ ${resolvedChild}`, 'success');
               } else {
                 ad.asin = parent.asin;
+                this.addLog(`[ASIN Scanner] Keine abweichende Child-ASIN für ${ad.type} (${ad.market}) gefunden. Verwende ${parent.asin}.`, 'info');
               }
             } else {
               ad.asin = parent.asin;
@@ -1052,8 +1071,9 @@ export class SyncEngine {
           } catch (e: any) {
             errors++;
             ad.asin = parent.asin;
+            this.addLog(`[ASIN Scanner] Fehler bei ${parent.asin} (${ad.market}): ${e.message}`, 'error');
           }
-          await this.sleep(1500);
+          await this.sleep(1800 + Math.random() * 800);
         }
 
         await supabase.from('mba_designs').update({
