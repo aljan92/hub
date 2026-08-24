@@ -69,6 +69,7 @@ function findChromiumExecutable(): string | undefined {
 export class BrowserSessionService {
   private static context: BrowserContext | null = null;
   private static sessions: Map<BrowserSessionType, ActiveSession> = new Map();
+  private static latestFrames: Map<BrowserSessionType, { data: string; metadata: any }> = new Map();
   private static frameBroadcasters: ((session: BrowserSessionType, base64Data: string, metadata: any) => void)[] = [];
   private static isInitializing = false;
 
@@ -85,6 +86,12 @@ export class BrowserSessionService {
    */
   static onFrame(callback: (session: BrowserSessionType, base64Data: string, metadata: any) => void) {
     this.frameBroadcasters.push(callback);
+    // Send latest known frames immediately to new listener
+    for (const [type, frame] of this.latestFrames.entries()) {
+      try {
+        callback(type, frame.data, frame.metadata);
+      } catch {}
+    }
   }
 
   /**
@@ -176,6 +183,21 @@ export class BrowserSessionService {
   static async getSession(type: BrowserSessionType): Promise<ActiveSession> {
     let session = this.sessions.get(type);
     if (session && !session.page.isClosed()) {
+      // Send latest frame immediately to client
+      const cached = this.latestFrames.get(type);
+      if (cached) {
+        for (const broadcaster of this.frameBroadcasters) {
+          broadcaster(type, cached.data, cached.metadata);
+        }
+      } else {
+        session.page.screenshot({ type: 'jpeg', quality: 80 }).then(buf => {
+          const b64 = buf.toString('base64');
+          BrowserSessionService.latestFrames.set(type, { data: b64, metadata: {} });
+          for (const broadcaster of this.frameBroadcasters) {
+            broadcaster(type, b64, {});
+          }
+        }).catch(() => {});
+      }
       return session;
     }
 
@@ -246,6 +268,8 @@ export class BrowserSessionService {
         try {
           await session.cdp.send('Page.screencastFrameAck', { sessionId });
         } catch {}
+
+        BrowserSessionService.latestFrames.set(type, { data, metadata });
 
         for (const broadcaster of this.frameBroadcasters) {
           broadcaster(type, data, metadata);

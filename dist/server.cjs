@@ -215665,9 +215665,10 @@ function findChromiumExecutable() {
   }
   return void 0;
 }
-var BrowserSessionService = class {
+var BrowserSessionService = class _BrowserSessionService {
   static context = null;
   static sessions = /* @__PURE__ */ new Map();
+  static latestFrames = /* @__PURE__ */ new Map();
   static frameBroadcasters = [];
   static isInitializing = false;
   static getProfileDir() {
@@ -215682,6 +215683,12 @@ var BrowserSessionService = class {
    */
   static onFrame(callback) {
     this.frameBroadcasters.push(callback);
+    for (const [type3, frame] of this.latestFrames.entries()) {
+      try {
+        callback(type3, frame.data, frame.metadata);
+      } catch {
+      }
+    }
   }
   /**
    * Ensure browser context is launched with macOS stealth settings
@@ -215760,6 +215767,21 @@ var BrowserSessionService = class {
   static async getSession(type3) {
     let session2 = this.sessions.get(type3);
     if (session2 && !session2.page.isClosed()) {
+      const cached = this.latestFrames.get(type3);
+      if (cached) {
+        for (const broadcaster of this.frameBroadcasters) {
+          broadcaster(type3, cached.data, cached.metadata);
+        }
+      } else {
+        session2.page.screenshot({ type: "jpeg", quality: 80 }).then((buf) => {
+          const b64 = buf.toString("base64");
+          _BrowserSessionService.latestFrames.set(type3, { data: b64, metadata: {} });
+          for (const broadcaster of this.frameBroadcasters) {
+            broadcaster(type3, b64, {});
+          }
+        }).catch(() => {
+        });
+      }
       return session2;
     }
     const context2 = await this.ensureContext();
@@ -215814,6 +215836,7 @@ var BrowserSessionService = class {
           await session2.cdp.send("Page.screencastFrameAck", { sessionId });
         } catch {
         }
+        _BrowserSessionService.latestFrames.set(type3, { data, metadata });
         for (const broadcaster of this.frameBroadcasters) {
           broadcaster(type3, data, metadata);
         }

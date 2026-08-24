@@ -40,6 +40,9 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
     activeSessionRef.current = activeSession;
   }, [activeSession]);
 
+  // Frame Cache per session for 0ms instant tab switching
+  const cachedFramesRef = useRef<Record<BrowserSessionType, string | null>>({ sync: null, upload: null });
+
   // FPS Counter
   useEffect(() => {
     const interval = setInterval(() => {
@@ -55,11 +58,11 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
   }, []);
 
   // Send WS Event helper
-  const sendWsEvent = useCallback((type: string, payload: any = {}) => {
+  const sendWsEvent = useCallback((type: string, payload: any = {}, explicitSession?: BrowserSessionType) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type,
-        session: activeSessionRef.current,
+        session: explicitSession || activeSessionRef.current,
         payload
       }));
     }
@@ -73,8 +76,9 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      // Trigger session initialization
-      sendWsEvent('BROWSER_INIT', {});
+      // Trigger session initialization for both sessions
+      sendWsEvent('BROWSER_INIT', {}, 'sync');
+      sendWsEvent('BROWSER_INIT', {}, 'upload');
     };
 
     ws.onmessage = (event) => {
@@ -82,6 +86,9 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
         const msg = JSON.parse(event.data);
         if (msg.type === 'BROWSER_FRAME') {
           const { session, data, metadata } = msg.payload;
+          if (session) {
+            cachedFramesRef.current[session as BrowserSessionType] = data;
+          }
           if (session === activeSessionRef.current && canvasRef.current) {
             const canvas = canvasRef.current;
             const ctx = canvas.getContext('2d');
@@ -106,11 +113,27 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
     };
   }, [sendWsEvent]);
 
-  // Switch session tab
+  // Switch session tab instantly with cached frame rendering
   const handleSessionChange = (newSession: BrowserSessionType) => {
     setActiveSession(newSession);
-    setHasReceivedFrame(false);
-    sendWsEvent('BROWSER_INIT');
+    activeSessionRef.current = newSession;
+
+    const cached = cachedFramesRef.current[newSession];
+    if (cached && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const img = new Image();
+        img.onload = () => {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          setHasReceivedFrame(true);
+        };
+        img.src = 'data:image/jpeg;base64,' + cached;
+      }
+    } else {
+      setHasReceivedFrame(false);
+    }
+    sendWsEvent('BROWSER_INIT', {}, newSession);
   };
 
   // Convert canvas event coordinates to remote 1440x900 browser coordinates with exact aspect ratio compensation
