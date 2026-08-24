@@ -6,6 +6,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Copy standalone pre-bundled server and pre-built frontend
 COPY dist ./dist
