@@ -172,7 +172,8 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
   };
 
   // Keyboard Input Dispatchers
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    e.stopPropagation();
     // Prevent standard browser shortcuts from intercepting
     if (['Tab', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
       e.preventDefault();
@@ -187,7 +188,8 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
     });
   };
 
-  const handleKeyUp = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyUp = (e: React.KeyboardEvent) => {
+    e.stopPropagation();
     sendWsEvent('BROWSER_KEY', {
       type: 'keyUp',
       key: e.key,
@@ -262,6 +264,7 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
 
   // Direct paste handler
   const handlePaste = (e: React.ClipboardEvent) => {
+    e.stopPropagation();
     const text = e.clipboardData.getData('text');
     if (text) {
       for (const char of text) {
@@ -277,9 +280,6 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
   return (
     <div 
       className="flex flex-col h-full bg-[#0d1117] rounded-xl border border-slate-800 overflow-hidden shadow-2xl focus:outline-none"
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
-      onKeyUp={handleKeyUp}
     >
       {/* Top Header & Session Selector */}
       <div className="flex flex-wrap items-center justify-between px-4 py-2.5 bg-slate-900/90 border-b border-slate-800 gap-3">
