@@ -209,22 +209,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
           </div>
         </div>
 
-        {/* MBA Synced Designs / Sales Card */}
-        <div className="glass-card p-5 rounded-2xl space-y-3">
+        {/* MBA Live Designs Card */}
+        <div 
+          onClick={() => onNavigateTab('database')}
+          className="glass-card p-5 rounded-2xl space-y-3 cursor-pointer hover:border-emerald-500/40 group"
+        >
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Synchronisierte Designs</span>
-            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+            <span className="text-xs font-semibold uppercase tracking-wider">Live Designs (Amazon)</span>
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:scale-110 transition-transform">
               <ShoppingBag className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
             <span className="text-3xl font-extrabold text-white">
-              {statsData?.designsCount !== undefined ? statsData.designsCount : '0'}
+              {statsData?.liveDesignsCount !== undefined ? statsData.liveDesignsCount.toLocaleString('de-DE') : (statsData?.designsCount || '0')}
             </span>
-            <span className="text-xs text-slate-400 font-medium">Designs in DB</span>
+            <span className="text-xs text-slate-400 font-medium">
+              {statsData?.designsCount ? `von ${statsData.designsCount.toLocaleString('de-DE')} gesamt` : 'Live auf Amazon'}
+            </span>
           </div>
-          <div className="text-xs text-slate-400">
-            {statsData?.hasSupabase ? 'Supabase MBA Database verbunden ✓' : 'Supabase in Settings verbinden'}
+          <div className="text-xs text-emerald-400 flex items-center space-x-1 group-hover:underline">
+            <span>Zur Database Engine</span>
+            <ExternalLink className="w-3 h-3 ml-0.5" />
           </div>
         </div>
 

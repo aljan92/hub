@@ -75,3 +75,13 @@ export function saveSettings(newSettings: Partial<AppSettings>): AppSettings {
   }
   return merged;
 }
+
+export function getSupabaseClient(): SupabaseClient | null {
+  const settings = loadSettings();
+  if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+    return null;
+  }
+  return createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), {
+    auth: { persistSession: false }
+  });
+}

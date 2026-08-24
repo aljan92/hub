@@ -4,11 +4,12 @@ import {
   Sparkles, 
   CheckSquare, 
   UploadCloud, 
+  Database,
   Settings as SettingsIcon,
   Bot
 } from 'lucide-react';
 
-export type ActiveTab = 'dashboard' | 'designer' | 'tasks' | 'queue' | 'settings';
+export type ActiveTab = 'dashboard' | 'designer' | 'tasks' | 'queue' | 'database' | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -51,6 +52,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: queueCount > 0 ? queueCount : undefined,
       badgeColor: 'bg-accent-cyan text-slate-900',
       description: 'Upload & Slot-Filling',
+    },
+    {
+      id: 'database' as ActiveTab,
+      label: 'Database',
+      icon: Database,
+      description: 'MBA ⇄ Supabase Sync',
     },
     {
       id: 'settings' as ActiveTab,

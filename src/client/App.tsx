@@ -5,6 +5,7 @@ import { DashboardView } from './views/DashboardView';
 import { DesignerView } from './views/DesignerView';
 import { TasksView } from './views/TasksView';
 import { QueueView } from './views/QueueView';
+import { DatabaseView } from './views/DatabaseView';
 import { SettingsView } from './views/SettingsView';
 
 export const App: React.FC = () => {
@@ -35,17 +36,16 @@ export const App: React.FC = () => {
 
   const handleSync = () => {
     setIsSyncing(true);
-    fetch('/api/v1/stats')
+    fetch('/api/v1/sync/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'quick_products' })
+    })
       .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setTaskCount(data.tasksCount || 0);
-          setQueueCount(data.queueCount || 0);
-        }
-      })
       .finally(() => {
         setIsSyncing(false);
-        alert('MBA Database Sync erfolgreich ausgeführt!');
+        fetchStats();
+        alert('MBA Quick Sync erfolgreich gestartet! Prüfe den Status im Tab "Database".');
       });
   };
 
@@ -74,6 +74,7 @@ export const App: React.FC = () => {
             {activeTab === 'designer' && <DesignerView />}
             {activeTab === 'tasks' && <TasksView />}
             {activeTab === 'queue' && <QueueView />}
+            {activeTab === 'database' && <DatabaseView />}
             {activeTab === 'settings' && <SettingsView />}
           </div>
         </main>

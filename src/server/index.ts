@@ -14,6 +14,7 @@ import { LLMService } from './services/llmService';
 import { IdeogramService } from './services/ideogramService';
 import { VectorizerService } from './services/vectorizerService';
 import { SupabaseService } from './services/supabaseService';
+import { SyncEngine } from './services/syncEngine';
 
 dotenv.config();
 
@@ -142,18 +143,102 @@ app.get('/api/v1/activity', (req, res) => {
 
 app.get('/api/v1/stats', async (req, res) => {
   try {
-    const supabaseTest = await SupabaseService.testConnection();
+    const [supabaseStats, syncState] = await Promise.all([
+      SupabaseService.getStats(),
+      Promise.resolve(SyncEngine.getState())
+    ]);
+
     res.json({
       success: true,
       tasksCount: activeTasks.length,
       queueCount: uploadQueue.length,
       slots: dailySlotStats,
-      designsCount: supabaseTest.rowCount || 0,
-      hasSupabase: supabaseTest.success
+      designsCount: supabaseStats.totalDesigns,
+      liveDesignsCount: supabaseStats.liveDesigns,
+      unresolvedAsinsCount: supabaseStats.unresolvedAsins,
+      sales30d: supabaseStats.sales30d,
+      royalties30dEur: supabaseStats.royalties30dEur,
+      royalties30dUsd: supabaseStats.royalties30dUsd,
+      hasSupabase: supabaseStats.totalDesigns > 0 || !!loadSettings().supabaseUrl
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// 2.0.1 Sync Engine Endpoints (Ported from mba-supabase-sync)
+app.get('/api/v1/sync/state', async (req, res) => {
+  try {
+    await SyncEngine.refreshDBStats();
+    res.json({ success: true, state: SyncEngine.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/sync/toggle-auto', (req, res) => {
+  const { enabled } = req.body;
+  SyncEngine.toggleAutoUpdate(!!enabled);
+  res.json({ success: true, state: SyncEngine.getState() });
+});
+
+app.post('/api/v1/sync/run', async (req, res) => {
+  const { type } = req.body;
+  try {
+    if (type === 'quick_products') {
+      SyncEngine.runSmartSync().catch(() => {});
+    } else if (type === 'full_products') {
+      SyncEngine.runFullReload().catch(() => {});
+    } else if (type === 'quick_listings') {
+      SyncEngine.runDeepScanNew().catch(() => {});
+    } else if (type === 'full_listings') {
+      SyncEngine.runDeepScanAll().catch(() => {});
+    } else if (type === 'quick_sales') {
+      SyncEngine.runSmartSalesSync().catch(() => {});
+    } else if (type === 'full_sales') {
+      SyncEngine.runFullSalesHistory().catch(() => {});
+    } else if (type === 'resolve_asins') {
+      SyncEngine.resolveChildAsinsBatch(10).catch(() => {});
+    } else {
+      return res.status(400).json({ success: false, error: 'Unbekannter Scan-Typ' });
+    }
+
+    res.json({ success: true, message: `Scan '${type}' gestartet.` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/sync/stop', (req, res) => {
+  SyncEngine.stopScan();
+  res.json({ success: true, message: 'Scan abgebrochen' });
+});
+
+app.post('/api/v1/sync/reset-sales', async (req, res) => {
+  try {
+    await SyncEngine.resetSalesData();
+    res.json({ success: true, message: 'Sales-Daten zurückgesetzt' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/sync/reset-asins', async (req, res) => {
+  try {
+    await SyncEngine.resetAsinResolutionStatus();
+    res.json({ success: true, message: 'ASIN-Status zurückgesetzt' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/v1/sync/logs', (req, res) => {
+  res.json({ success: true, logs: SyncEngine.getLogs() });
+});
+
+app.post('/api/v1/sync/logs/clear', (req, res) => {
+  SyncEngine.clearLogs();
+  res.json({ success: true });
 });
 
 // 2. Settings Management

@@ -10,6 +10,7 @@ export class SupabaseService {
     latencyMs: number; 
     error?: string; 
     rowCount?: number;
+    liveCount?: number;
     canRead: boolean;
     canWrite: boolean;
     details?: string;
@@ -33,15 +34,18 @@ export class SupabaseService {
       const supabase = createClient(url.trim(), key.trim(), { auth: { persistSession: false } });
       
       // 1. Test READ permission & Table existence
-      const { count, error: readError } = await supabase
-        .from('mba_designs')
-        .select('*', { count: 'exact', head: true });
+      const [allRes, liveRes] = await Promise.all([
+        supabase.from('mba_designs').select('*', { count: 'exact', head: true }),
+        supabase.from('mba_designs')
+          .select('design_id', { count: 'exact', head: true })
+          .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
+      ]);
 
-      if (readError) {
+      if (allRes.error) {
         return { 
           success: false, 
           latencyMs: Date.now() - start, 
-          error: `Lesefehler: ${readError.message}`,
+          error: `Lesefehler: ${allRes.error.message}`,
           canRead: false,
           canWrite: false
         };
@@ -58,10 +62,10 @@ export class SupabaseService {
         });
 
       if (writeError) {
-        return {
-          success: false,
-          latencyMs: Date.now() - start,
-          error: `Lesen OK (${count || 0} Zeilen), aber Schreiben verweigert (RLS/Key Fehler): ${writeError.message}`,
+        return { 
+          success: false, 
+          latencyMs: Date.now() - start, 
+          error: `Lesen OK (${allRes.count || 0} Zeilen), aber Schreiben verweigert (RLS/Key Fehler): ${writeError.message}`,
           canRead: true,
           canWrite: false
         };
@@ -71,13 +75,17 @@ export class SupabaseService {
       await supabase.from('mba_designs').delete().eq('design_id', pingId);
 
       const latencyMs = Date.now() - start;
+      const liveCount = liveRes.count || 0;
+      const totalCount = allRes.count || 0;
+
       return { 
         success: true, 
         latencyMs, 
-        rowCount: count || 0,
+        rowCount: totalCount,
+        liveCount,
         canRead: true,
         canWrite: true,
-        details: `Vollzugriff (Lesen & Schreiben): ${count || 0} Designs in mba_designs`
+        details: `Vollzugriff ✓ (${liveCount} Live Designs von ${totalCount} gesamt)`
       };
     } catch (err: any) {
       return { 
@@ -86,6 +94,79 @@ export class SupabaseService {
         error: err.message || 'Supabase Timeout',
         canRead: false,
         canWrite: false
+      };
+    }
+  }
+
+  /**
+   * Get accurate Live Designs, Total Designs and Sales stats from Supabase
+   */
+  static async getStats(): Promise<{
+    totalDesigns: number;
+    liveDesigns: number;
+    unresolvedAsins: number;
+    sales30d: number;
+    royalties30dEur: number;
+    royalties30dUsd: number;
+  }> {
+    const settings = loadSettings();
+    if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+      return {
+        totalDesigns: 0,
+        liveDesigns: 0,
+        unresolvedAsins: 0,
+        sales30d: 0,
+        royalties30dEur: 0,
+        royalties30dUsd: 0,
+      };
+    }
+
+    try {
+      const supabase = createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), { auth: { persistSession: false } });
+      
+      const [totalRes, liveRes, unresolvedRes, salesRes] = await Promise.all([
+        supabase.from('mba_designs').select('design_id', { count: 'exact', head: true }),
+        supabase.from('mba_designs')
+          .select('design_id', { count: 'exact', head: true })
+          .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING']),
+        supabase.from('mba_designs')
+          .select('design_id', { count: 'exact', head: true })
+          .or('asin_resolved.eq.false,asin_resolved.is.null')
+          .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING']),
+        supabase.from('mba_designs')
+          .select('sales_30d, royalties_30d_eur, royalties_30d_usd')
+          .gt('sales_30d', 0)
+          .limit(1000)
+      ]);
+
+      let sales30d = 0;
+      let royalties30dEur = 0;
+      let royalties30dUsd = 0;
+
+      if (salesRes.data && Array.isArray(salesRes.data)) {
+        for (const row of salesRes.data) {
+          sales30d += row.sales_30d || 0;
+          royalties30dEur += Number(row.royalties_30d_eur) || 0;
+          royalties30dUsd += Number(row.royalties_30d_usd) || 0;
+        }
+      }
+
+      return {
+        totalDesigns: totalRes.count || 0,
+        liveDesigns: liveRes.count || 0,
+        unresolvedAsins: unresolvedRes.count || 0,
+        sales30d,
+        royalties30dEur: Math.round(royalties30dEur * 100) / 100,
+        royalties30dUsd: Math.round(royalties30dUsd * 100) / 100,
+      };
+    } catch (e) {
+      return {
+        totalDesigns: 0,
+        liveDesigns: 0,
+        unresolvedAsins: 0,
+        sales30d: 0,
+        royalties30dEur: 0,
+        royalties30dUsd: 0,
       };
     }
   }
