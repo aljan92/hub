@@ -1,13 +1,21 @@
 import http from 'http';
+import fs from 'fs';
+
+function getDockerSocketPath(): string {
+  if (fs.existsSync('/var/run/docker.sock')) return '/var/run/docker.sock';
+  if (fs.existsSync('/run/docker.sock')) return '/run/docker.sock';
+  return '/var/run/docker.sock';
+}
 
 export class DockerService {
   /**
    * Restarts a container by name via Docker Unix socket
    */
   static async restartContainer(containerName: string): Promise<{ success: boolean; message: string }> {
+    const socketPath = getDockerSocketPath();
     return new Promise((resolve) => {
       const options = {
-        socketPath: '/var/run/docker.sock',
+        socketPath,
         path: `/v1.41/containers/${containerName}/restart?t=3`,
         method: 'POST',
         headers: {
@@ -50,9 +58,10 @@ export class DockerService {
    * Get container status (running/exited)
    */
   static async getContainerStatus(containerName: string): Promise<{ running: boolean; status: string }> {
+    const socketPath = getDockerSocketPath();
     return new Promise((resolve) => {
       const options = {
-        socketPath: '/var/run/docker.sock',
+        socketPath,
         path: `/v1.41/containers/${containerName}/json`,
         method: 'GET'
       };

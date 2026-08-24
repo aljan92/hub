@@ -1294,8 +1294,8 @@ var require_node = __commonJS({
           }
           break;
         case "FILE":
-          var fs3 = require("fs");
-          stream2 = new fs3.SyncWriteStream(fd2, { autoClose: false });
+          var fs4 = require("fs");
+          stream2 = new fs4.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -17727,8 +17727,8 @@ var require_node2 = __commonJS({
           }
           break;
         case "FILE":
-          var fs3 = require("fs");
-          stream2 = new fs3.SyncWriteStream(fd2, { autoClose: false });
+          var fs4 = require("fs");
+          stream2 = new fs4.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18446,8 +18446,8 @@ var require_node3 = __commonJS({
           }
           break;
         case "FILE":
-          var fs3 = require("fs");
-          stream2 = new fs3.SyncWriteStream(fd2, { autoClose: false });
+          var fs4 = require("fs");
+          stream2 = new fs4.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -19341,7 +19341,7 @@ var require_view = __commonJS({
     "use strict";
     var debug = require_src3()("express:view");
     var path3 = require("path");
-    var fs3 = require("fs");
+    var fs4 = require("fs");
     var dirname = path3.dirname;
     var basename = path3.basename;
     var extname = path3.extname;
@@ -19407,7 +19407,7 @@ var require_view = __commonJS({
     function tryStat(path4) {
       debug('stat "%s"', path4);
       try {
-        return fs3.statSync(path4);
+        return fs4.statSync(path4);
       } catch (e) {
         return void 0;
       }
@@ -20012,8 +20012,8 @@ var require_node4 = __commonJS({
           }
           break;
         case "FILE":
-          var fs3 = require("fs");
-          stream2 = new fs3.SyncWriteStream(fd2, { autoClose: false });
+          var fs4 = require("fs");
+          stream2 = new fs4.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -20186,7 +20186,7 @@ var require_types = __commonJS({
 var require_mime = __commonJS({
   "node_modules/mime/mime.js"(exports2, module2) {
     var path3 = require("path");
-    var fs3 = require("fs");
+    var fs4 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -20207,7 +20207,7 @@ var require_mime = __commonJS({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs3.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs4.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -20445,7 +20445,7 @@ var require_send = __commonJS({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs3 = require("fs");
+    var fs4 = require("fs");
     var mime = require_mime();
     var ms = require_ms5();
     var onFinished = require_on_finished();
@@ -20778,7 +20778,7 @@ var require_send = __commonJS({
       var i = 0;
       var self2 = this;
       debug('stat "%s"', path4);
-      fs3.stat(path4, function onstat(err, stat) {
+      fs4.stat(path4, function onstat(err, stat) {
         if (err && err.code === "ENOENT" && !extname(path4) && path4[path4.length - 1] !== sep) {
           return next(err);
         }
@@ -20793,7 +20793,7 @@ var require_send = __commonJS({
         }
         var p = path4 + "." + self2._extensions[i++];
         debug('stat "%s"', p);
-        fs3.stat(p, function(err2, stat) {
+        fs4.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20811,7 +20811,7 @@ var require_send = __commonJS({
         }
         var p = join(path4, self2._index[i]);
         debug('stat "%s"', p);
-        fs3.stat(p, function(err2, stat) {
+        fs4.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20823,7 +20823,7 @@ var require_send = __commonJS({
     SendStream.prototype.stream = function stream(path4, options) {
       var self2 = this;
       var res = this.res;
-      var stream2 = fs3.createReadStream(path4, options);
+      var stream2 = fs4.createReadStream(path4, options);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -27965,7 +27965,7 @@ var require_package = __commonJS({
 // node_modules/dotenv/lib/main.js
 var require_main = __commonJS({
   "node_modules/dotenv/lib/main.js"(exports2, module2) {
-    var fs3 = require("fs");
+    var fs4 = require("fs");
     var path3 = require("path");
     var os = require("os");
     var crypto2 = require("crypto");
@@ -28074,7 +28074,7 @@ var require_main = __commonJS({
       if (options && options.path && options.path.length > 0) {
         if (Array.isArray(options.path)) {
           for (const filepath of options.path) {
-            if (fs3.existsSync(filepath)) {
+            if (fs4.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -28084,7 +28084,7 @@ var require_main = __commonJS({
       } else {
         possibleVaultPath = path3.resolve(process.cwd(), ".env.vault");
       }
-      if (fs3.existsSync(possibleVaultPath)) {
+      if (fs4.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
@@ -28133,7 +28133,7 @@ var require_main = __commonJS({
       const parsedAll = {};
       for (const path4 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs3.readFileSync(path4, { encoding }));
+          const parsed = DotenvModule.parse(fs4.readFileSync(path4, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
@@ -41931,7 +41931,7 @@ var import_websocket_server = __toESM(require_websocket_server(), 1);
 // src/server/index.ts
 var import_cors = __toESM(require_lib3(), 1);
 var import_path2 = __toESM(require("path"), 1);
-var import_fs2 = __toESM(require("fs"), 1);
+var import_fs3 = __toESM(require("fs"), 1);
 var import_dotenv = __toESM(require_main(), 1);
 var import_url = require("url");
 var import_child_process = require("child_process");
@@ -51225,14 +51225,21 @@ var SyncEngine = class {
 
 // src/server/services/dockerService.ts
 var import_http = __toESM(require("http"), 1);
+var import_fs2 = __toESM(require("fs"), 1);
+function getDockerSocketPath() {
+  if (import_fs2.default.existsSync("/var/run/docker.sock")) return "/var/run/docker.sock";
+  if (import_fs2.default.existsSync("/run/docker.sock")) return "/run/docker.sock";
+  return "/var/run/docker.sock";
+}
 var DockerService = class {
   /**
    * Restarts a container by name via Docker Unix socket
    */
   static async restartContainer(containerName) {
+    const socketPath = getDockerSocketPath();
     return new Promise((resolve) => {
       const options = {
-        socketPath: "/var/run/docker.sock",
+        socketPath,
         path: `/v1.41/containers/${containerName}/restart?t=3`,
         method: "POST",
         headers: {
@@ -51270,9 +51277,10 @@ var DockerService = class {
    * Get container status (running/exited)
    */
   static async getContainerStatus(containerName) {
+    const socketPath = getDockerSocketPath();
     return new Promise((resolve) => {
       const options = {
-        socketPath: "/var/run/docker.sock",
+        socketPath,
         path: `/v1.41/containers/${containerName}/json`,
         method: "GET"
       };
@@ -51524,25 +51532,25 @@ app.post("/api/v1/system/update", async (req, res) => {
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const tempTarPath = import_path2.default.resolve(process.cwd(), ".temp_update.tar.gz");
-    import_fs2.default.writeFileSync(tempTarPath, buffer);
+    import_fs3.default.writeFileSync(tempTarPath, buffer);
     (0, import_child_process.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
     try {
-      import_fs2.default.unlinkSync(tempTarPath);
+      import_fs3.default.unlinkSync(tempTarPath);
     } catch (e) {
     }
     const hostRepoPath = import_path2.default.resolve(process.cwd(), "host_repo");
-    if (import_fs2.default.existsSync(hostRepoPath)) {
+    if (import_fs3.default.existsSync(hostRepoPath)) {
       try {
-        import_fs2.default.writeFileSync(tempTarPath, buffer);
+        import_fs3.default.writeFileSync(tempTarPath, buffer);
         (0, import_child_process.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });
         try {
-          import_fs2.default.unlinkSync(tempTarPath);
+          import_fs3.default.unlinkSync(tempTarPath);
         } catch (e) {
         }
       } catch (e) {
@@ -51854,8 +51862,8 @@ app.get("/api/v1/queue", (req, res) => {
 });
 var clientDistPath = import_path2.default.resolve(currentDir, "client");
 var fallbackDistPath = import_path2.default.resolve(process.cwd(), "dist/client");
-var staticPath = import_fs2.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
-if (import_fs2.default.existsSync(staticPath)) {
+var staticPath = import_fs3.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
+if (import_fs3.default.existsSync(staticPath)) {
   console.log(`\u{1F4C2} Serving static frontend from ${staticPath}`);
   app.use(import_express.default.static(staticPath));
   app.get("*", (req, res) => {
