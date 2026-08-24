@@ -215060,554 +215060,6 @@ var SupabaseService = class {
   }
 };
 
-// src/server/services/syncEngine.ts
-var MP_MAP = {
-  ATVPDKIKX0DER: "us",
-  A1PA6795UKMFR9: "de",
-  A1F83G8C2ARO7P: "gb",
-  A13V1IB3VIYZZH: "fr",
-  APJ6JRA9NG5V4: "it",
-  A1RKKUPIHCS9HS: "es",
-  A1VC38T7YXB528: "jp"
-};
-var VARIANT_PRODUCT_TYPES = /* @__PURE__ */ new Set([
-  "MUG",
-  "MUG_11OZ",
-  "MUG_15OZ",
-  "POP_SOCKET",
-  "POPSOCKET",
-  "POPSOCKETS_GRIP",
-  "TOTE_BAG",
-  "THROW_PILLOW",
-  "PHONE_CASE_APPLE_IPHONE",
-  "PHONE_CASE_SAMSUNG_GALAXY",
-  "PHONE_CASE_SAMSUNG",
-  "PHONE_CASE",
-  "IPHONE_CASE",
-  "SAMSUNG_CASE",
-  "TUMBLER",
-  "WATER_BOTTLE",
-  "HARDCOVER_JOURNAL"
-]);
-var SyncEngine = class {
-  static logs = [];
-  static state = {
-    isScanning: false,
-    activeScanType: null,
-    scanStatus: "ready",
-    lastStatusMessage: "Bereit",
-    autoUpdateEnabled: false,
-    lastPeriodicSync: null,
-    lastPeriodicSyncCount: 0,
-    lastQuickDesigns: null,
-    lastFullDesigns: null,
-    lastQuickListings: null,
-    lastFullListings: null,
-    lastQuickSales: null,
-    lastFullSalesAll: null,
-    lastAsinSync: null,
-    liveDesignsCount: 0,
-    unresolvedAsinsCount: 0
-  };
-  static shouldStop = false;
-  static autoUpdateTimer = null;
-  static asinResolveTimer = null;
-  static getLogs() {
-    return this.logs;
-  }
-  static clearLogs() {
-    this.logs = [];
-  }
-  static addLog(text2, type3 = "info") {
-    const entry = {
-      id: Math.random().toString(36).substring(2, 9),
-      timestamp: Date.now(),
-      text: text2,
-      type: type3
-    };
-    this.logs.unshift(entry);
-    if (this.logs.length > 500) {
-      this.logs.pop();
-    }
-  }
-  static getState() {
-    return { ...this.state };
-  }
-  static updateCounts(live, unresolved) {
-    this.state.liveDesignsCount = live;
-    this.state.unresolvedAsinsCount = unresolved;
-  }
-  static stopScan() {
-    this.shouldStop = true;
-    this.state.isScanning = false;
-    this.state.activeScanType = null;
-    this.state.scanStatus = "ready";
-    this.state.lastStatusMessage = "Scan manuell abgebrochen.";
-    this.addLog("Scan manuell abgebrochen.", "warn");
-  }
-  static toggleAutoUpdate(enabled) {
-    this.state.autoUpdateEnabled = enabled;
-    if (enabled) {
-      this.addLog("[Auto-Update] Hintergrund-Scheduler aktiviert (alle 15 Min).", "success");
-      this.startSchedulers();
-    } else {
-      this.addLog("[Auto-Update] Hintergrund-Scheduler deaktiviert.", "info");
-      this.stopSchedulers();
-    }
-  }
-  static startSchedulers() {
-    this.stopSchedulers();
-    this.autoUpdateTimer = setInterval(async () => {
-      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
-        try {
-          await this.runSmartSync();
-        } catch (e) {
-          this.addLog(`[Auto-Update] Fehler: ${e.message}`, "error");
-        }
-      }
-    }, 15 * 60 * 1e3);
-    this.asinResolveTimer = setInterval(async () => {
-      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
-        try {
-          await this.resolveChildAsinsBatch(5);
-        } catch (e) {
-        }
-      }
-    }, 60 * 1e3);
-  }
-  static stopSchedulers() {
-    if (this.autoUpdateTimer) clearInterval(this.autoUpdateTimer);
-    if (this.asinResolveTimer) clearInterval(this.asinResolveTimer);
-    this.autoUpdateTimer = null;
-    this.asinResolveTimer = null;
-  }
-  static sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-  /**
-   * Helper to query Supabase safely
-   */
-  static getSupabase() {
-    const supabase = getSupabaseClient();
-    if (!supabase) throw new Error("Supabase ist nicht konfiguriert (URL/Key fehlt).");
-    return supabase;
-  }
-  /**
-   * Fetch live and unresolved counts from Supabase
-   */
-  static async refreshDBStats() {
-    try {
-      const supabase = getSupabaseClient();
-      if (!supabase) return;
-      const [liveRes, unresolvedRes] = await Promise.all([
-        supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]),
-        supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"])
-      ]);
-      this.state.liveDesignsCount = liveRes.count || 0;
-      this.state.unresolvedAsinsCount = unresolvedRes.count || 0;
-    } catch (e) {
-    }
-  }
-  /**
-   * Map Amazon FindListings results to Supabase mba_designs schema
-   */
-  static mapListingsToSupabase(results) {
-    const designMap = /* @__PURE__ */ new Map();
-    for (const r of results) {
-      const dId = r.designId;
-      if (!dId) continue;
-      if (!designMap.has(dId)) {
-        designMap.set(dId, {
-          design_id: dId,
-          listing_id: r.listingId || null,
-          product_image_urn: r.productImageUrn || null,
-          asins: [],
-          asin_standard_tshirt_us: null,
-          price_standard_tshirt_us: null,
-          created_date: null,
-          updated_date: null,
-          estimated_expiration_date: null,
-          products_live_us: [],
-          products_live_de: [],
-          products_live_gb: [],
-          products_live_fr: [],
-          products_live_it: [],
-          products_live_es: [],
-          products_live_jp: [],
-          published_products: [],
-          status: null,
-          last_synced_at: (/* @__PURE__ */ new Date()).toISOString(),
-          _deleted_asins: []
-        });
-      }
-      const d = designMap.get(dId);
-      if (r.asin && !d.asins.includes(r.asin)) d.asins.push(r.asin);
-      const mp = r.marketplace?.toLowerCase() || (MP_MAP[r.marketplaceId] || "us");
-      const pt = r.productType?.toLowerCase() || r.productType || "";
-      const status = r.status || "";
-      const LIVE_STATUSES = /* @__PURE__ */ new Set(["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING", "published", "propagated", "locked", "timed_out", "publishing", "translating"]);
-      const isLive = status && LIVE_STATUSES.has(status);
-      if (isLive && pt) {
-        const key = `products_live_${mp}`;
-        if (d[key] && !d[key].includes(pt)) d[key].push(pt);
-      }
-      if (isLive && r.asin) {
-        d.published_products.push({ asin: r.asin, type: r.productType || pt.toUpperCase(), market: mp });
-      } else if (r.asin) {
-        d._deleted_asins.push(r.asin);
-      }
-      if (isLive && mp === "us" && (pt === "standard_tshirt" || pt === "STANDARD_TSHIRT")) {
-        d.asin_standard_tshirt_us = r.asin || d.asin_standard_tshirt_us;
-        if (r.listPrice) d.price_standard_tshirt_us = r.listPrice;
-      }
-      const safeDate = (v) => {
-        try {
-          if (!v) return null;
-          const dt = typeof v === "number" ? new Date(v * 1e3) : new Date(v);
-          return isNaN(dt.getTime()) ? null : dt.toISOString();
-        } catch (e) {
-          return null;
-        }
-      };
-      const created = safeDate(r.createdDate);
-      const updated = safeDate(r.updatedDate);
-      if (created && (!d.created_date || created < d.created_date)) d.created_date = created;
-      if (updated && (!d.updated_date || updated > d.updated_date)) d.updated_date = updated;
-      if (r.estimatedExpirationDate) d.estimated_expiration_date = safeDate(r.estimatedExpirationDate);
-      const STATUS_PRIORITY = { PUBLISHED: 100, PROPAGATED: 90, PUBLISHING: 80, REVIEW: 70, TRANSLATING: 60, DRAFT: 50, LOCKED: 40, TIMED_OUT: 30, DECLINED: 20, AMAZON_REJECTED: 15, DELETED: 10 };
-      if (status) {
-        const upper = status.toUpperCase();
-        const newPrio = STATUS_PRIORITY[upper] || 0;
-        const oldPrio = STATUS_PRIORITY[d.status] || 0;
-        if (newPrio > oldPrio) d.status = upper;
-      }
-      if (r.productImageUrn) d.product_image_urn = r.productImageUrn;
-    }
-    return Array.from(designMap.values());
-  }
-  /**
-   * Merge new design data with existing DB records before upserting (Never removes ASINs)
-   */
-  static async mergeAndUpsertDesigns(mapped) {
-    const supabase = this.getSupabase();
-    if (mapped.length === 0) return 0;
-    const designIds = mapped.map((m) => m.design_id);
-    const existing = /* @__PURE__ */ new Map();
-    for (let i = 0; i < designIds.length; i += 200) {
-      const batch = designIds.slice(i, i + 200);
-      const { data } = await supabase.from("mba_designs").select("design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins").in("design_id", batch);
-      if (data) data.forEach((d) => existing.set(d.design_id, d));
-    }
-    const merged = mapped.map((m) => {
-      const ex = existing.get(m.design_id);
-      if (!ex) {
-        return {
-          ...m,
-          ad_asins: this.buildAdAsins(m.published_products, [])
-        };
-      }
-      const allAsins = Array.from(/* @__PURE__ */ new Set([...ex.asins || [], ...m.asins || []]));
-      const prodMap = /* @__PURE__ */ new Map();
-      (ex.published_products || []).forEach((p) => prodMap.set(p.asin, p));
-      (m.published_products || []).forEach((p) => prodMap.set(p.asin, p));
-      if (m._deleted_asins) {
-        m._deleted_asins.forEach((asin) => prodMap.delete(asin));
-      }
-      const pubProducts = Array.from(prodMap.values());
-      return {
-        ...m,
-        asins: allAsins,
-        published_products: pubProducts,
-        asin_standard_tshirt_us: m.asin_standard_tshirt_us || ex.asin_standard_tshirt_us,
-        price_standard_tshirt_us: m.price_standard_tshirt_us || ex.price_standard_tshirt_us,
-        ad_asins: this.buildAdAsins(pubProducts, ex.ad_asins || [])
-      };
-    });
-    for (let i = 0; i < merged.length; i += 200) {
-      const chunk = merged.slice(i, i + 200);
-      const { error } = await supabase.from("mba_designs").upsert(chunk, { onConflict: "design_id" });
-      if (error) {
-        console.error("[SyncEngine] Error upserting designs chunk:", error);
-      }
-    }
-    await this.refreshDBStats();
-    return merged.length;
-  }
-  static buildAdAsins(publishedProducts, existingAdAsins = []) {
-    const existingMap = /* @__PURE__ */ new Map();
-    existingAdAsins.forEach((ad) => {
-      if (ad.type && ad.market) {
-        existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, ad.asin);
-      }
-    });
-    return publishedProducts.map((p) => {
-      const key = `${(p.type || "").toUpperCase()}_${(p.market || "").toLowerCase()}`;
-      const exAsin = existingMap.get(key);
-      if (VARIANT_PRODUCT_TYPES.has((p.type || "").toUpperCase())) {
-        if (exAsin && exAsin !== p.asin) {
-          return { asin: exAsin, type: p.type, market: p.market };
-        }
-        return { asin: null, type: p.type, market: p.market };
-      }
-      return { asin: p.asin, type: p.type, market: p.market };
-    });
-  }
-  /**
-   * Parse Product Config (US and International text data)
-   */
-  static parseTextData(designId, configData) {
-    if (!configData?.textData) return null;
-    const td = configData.textData;
-    const payload = { design_id: designId };
-    const usData = td["en"] || td["us"] || td["en-US"] || null;
-    if (usData) {
-      payload.title_us = usData.title || null;
-      payload.brand_us = usData.brandName || null;
-      payload.bullet_1_us = usData.bullets?.[0] || null;
-      payload.bullet_2_us = usData.bullets?.[1] || null;
-      payload.description_us = usData.description || null;
-    }
-    const other = {};
-    for (const [lang, data] of Object.entries(td)) {
-      if (lang === "en" || lang === "us" || lang === "en-US") continue;
-      other[lang] = {
-        title: data.title || null,
-        brand: data.brandName || null,
-        bullets: data.bullets || [],
-        description: data.description || null
-      };
-    }
-    if (Object.keys(other).length > 0) payload.text_data_other = other;
-    return payload;
-  }
-  /**
-   * 1. Run Smart Sync (Quick Update Products)
-   */
-  static async runSmartSync() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "quick_products";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Quick Update Produkte: Suche ge\xE4nderte Designs...";
-    this.addLog("[Quick Update Produkte] Starte Synchronisierung...", "info");
-    try {
-      const supabase = this.getSupabase();
-      const now = Date.now();
-      this.state.lastQuickDesigns = now;
-      this.state.lastPeriodicSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
-      this.state.lastPeriodicSyncCount = 0;
-      await this.refreshDBStats();
-      this.addLog(`[Quick Update Produkte] Beendet. Status aktuell (${this.state.liveDesignsCount} Live Designs in DB).`, "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
-      return { designCount: 0 };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Quick Update Produkte] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 2. Run Full Reload (Full Refresh Products)
-   */
-  static async runFullReload() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "full_products";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Full Refresh Produkte: Lade alle Seiten von Amazon...";
-    this.addLog("[Full Refresh Produkte] Starte vollst\xE4ndigen Scan aller Produkte...", "info");
-    try {
-      this.state.lastFullDesigns = Date.now();
-      await this.refreshDBStats();
-      this.addLog(`[Full Refresh Produkte] Beendet. ${this.state.liveDesignsCount} Live Designs verifiziert.`, "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
-      return { designCount: this.state.liveDesignsCount };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Full Refresh Produkte] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 3. Run Deep Scan New (Quick Update Listings)
-   */
-  static async runDeepScanNew() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "quick_listings";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Quick Update Listings: Suche fehlende Texte...";
-    this.addLog("[Quick Update Listings] Starte Text-Synchronisierung...", "info");
-    try {
-      this.state.lastQuickListings = Date.now();
-      await this.refreshDBStats();
-      this.addLog("[Quick Update Listings] Beendet.", "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = "Bereit";
-      return { processed: 0 };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Quick Update Listings] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 4. Run Deep Scan All (Full Refresh Listings)
-   */
-  static async runDeepScanAll() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "full_listings";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Full Refresh Listings: Lade Texte aller Designs...";
-    this.addLog("[Full Refresh Listings] Starte vollst\xE4ndige Text-Synchronisierung...", "info");
-    try {
-      this.state.lastFullListings = Date.now();
-      await this.refreshDBStats();
-      this.addLog("[Full Refresh Listings] Beendet.", "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = "Bereit";
-      return { processed: 0 };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Full Refresh Listings] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 5. Run Smart Sales Sync (Quick Sales)
-   */
-  static async runSmartSalesSync() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "quick_sales";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Quick Update Sales: Lade 30-Tage Verk\xE4ufe & Royalties...";
-    this.addLog("[Quick Update Sales] Starte 30-Tage Sales & Royalties Update...", "info");
-    try {
-      this.state.lastQuickSales = Date.now();
-      await this.refreshDBStats();
-      this.addLog("[Quick Update Sales] Beendet.", "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = "Bereit";
-      return { processed: 0 };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Quick Update Sales] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 6. Run Full Sales History Sync
-   */
-  static async runFullSalesHistory() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "full_sales";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Full Refresh Sales: Lade gesamte All-Time Sales History...";
-    this.addLog("[Full Refresh Sales] Starte All-Time Sales History Update...", "info");
-    try {
-      this.state.lastFullSalesAll = Date.now();
-      await this.refreshDBStats();
-      this.addLog("[Full Refresh Sales] Beendet.", "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = "Bereit";
-      return { processed: 0 };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Full Refresh Sales] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 7. Resolve Child ASINs Batch
-   */
-  static async resolveChildAsinsBatch(limit = 10) {
-    const supabase = this.getSupabase();
-    let processed = 0;
-    let errors2 = 0;
-    this.state.lastAsinSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
-    await this.refreshDBStats();
-    return { processed, errors: errors2 };
-  }
-  /**
-   * 8. Danger Zone: Reset Sales Data
-   */
-  static async resetSalesData() {
-    const supabase = this.getSupabase();
-    this.addLog("[Gefahrenzone] Setze alle Sales-Daten in Supabase zur\xFCck...", "warn");
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase.from("mba_designs").select("design_id").range(from, from + 999);
-      if (error || !data || data.length === 0) break;
-      const updates = data.map((d) => ({
-        design_id: d.design_id,
-        sales_30d: 0,
-        royalties_30d_usd: 0,
-        royalties_30d_eur: 0,
-        royalties_30d_gbp: 0,
-        royalties_30d_jpy: 0,
-        sales_total: 0,
-        royalties_total_usd: 0,
-        royalties_total_eur: 0,
-        royalties_total_gbp: 0,
-        royalties_total_jpy: 0,
-        sales_history_synced: false
-      }));
-      await supabase.from("mba_designs").upsert(updates);
-      from += 1e3;
-    }
-    this.addLog("[Gefahrenzone] Alle Sales-Daten erfolgreich zur\xFCckgesetzt! \u2713", "success");
-  }
-  /**
-   * 9. Danger Zone: Reset ASIN Resolution Status
-   */
-  static async resetAsinResolutionStatus() {
-    const supabase = this.getSupabase();
-    this.addLog("[Gefahrenzone] Setze ASIN-Aufl\xF6sungsstatus zur\xFCck...", "warn");
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase.from("mba_designs").select("design_id").range(from, from + 999);
-      if (error || !data || data.length === 0) break;
-      const updates = data.map((d) => ({
-        design_id: d.design_id,
-        asin_resolved: false
-      }));
-      await supabase.from("mba_designs").upsert(updates);
-      from += 1e3;
-    }
-    await this.refreshDBStats();
-    this.addLog("[Gefahrenzone] ASIN-Aufl\xF6sungsstatus erfolgreich zur\xFCckgesetzt! \u2713", "success");
-  }
-};
-
 // node_modules/playwright-core/index.mjs
 var import_index = __toESM2(require_playwright_core(), 1);
 var chromium = import_index.default.chromium;
@@ -216041,6 +215493,805 @@ var BrowserSessionService = class _BrowserSessionService {
         isStreaming: uploadSession?.isStreaming || false
       }
     };
+  }
+};
+
+// src/server/services/syncEngine.ts
+var MARKETPLACE_IDS = {
+  us: "ATVPDKIKX0DER",
+  de: "A1PA6795UKMFR9",
+  gb: "A1F83G8C2ARO7P",
+  fr: "A13V1IB3VIYZZH",
+  it: "APJ6JRA9NG5V4",
+  es: "A1RKKUPIHCS9HS",
+  jp: "A1VC38T7YXB528"
+};
+var MP_MAP = {
+  ATVPDKIKX0DER: "us",
+  A1PA6795UKMFR9: "de",
+  A1F83G8C2ARO7P: "gb",
+  A13V1IB3VIYZZH: "fr",
+  APJ6JRA9NG5V4: "it",
+  A1RKKUPIHCS9HS: "es",
+  A1VC38T7YXB528: "jp"
+};
+var VARIANT_PRODUCT_TYPES = /* @__PURE__ */ new Set([
+  "MUG",
+  "MUG_11OZ",
+  "MUG_15OZ",
+  "POP_SOCKET",
+  "POPSOCKET",
+  "POPSOCKETS_GRIP",
+  "TOTE_BAG",
+  "THROW_PILLOW",
+  "PHONE_CASE_APPLE_IPHONE",
+  "PHONE_CASE_SAMSUNG_GALAXY",
+  "PHONE_CASE_SAMSUNG",
+  "PHONE_CASE",
+  "IPHONE_CASE",
+  "SAMSUNG_CASE",
+  "TUMBLER",
+  "WATER_BOTTLE",
+  "HARDCOVER_JOURNAL"
+]);
+var ALL_STATUSES = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
+var FIND_LISTINGS_URL = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
+var PRODUCT_CONFIG_URL = "https://merch.amazon.com/api/productconfiguration/get?id=";
+var SyncEngine = class {
+  static logs = [];
+  static state = {
+    isScanning: false,
+    activeScanType: null,
+    scanStatus: "ready",
+    lastStatusMessage: "Bereit",
+    autoUpdateEnabled: false,
+    lastPeriodicSync: null,
+    lastPeriodicSyncCount: 0,
+    lastQuickDesigns: null,
+    lastFullDesigns: null,
+    lastQuickListings: null,
+    lastFullListings: null,
+    lastQuickSales: null,
+    lastFullSalesAll: null,
+    lastAsinSync: null,
+    liveDesignsCount: 0,
+    unresolvedAsinsCount: 0
+  };
+  static shouldStop = false;
+  static autoUpdateTimer = null;
+  static asinResolveTimer = null;
+  static getLogs() {
+    return this.logs;
+  }
+  static clearLogs() {
+    this.logs = [];
+  }
+  static addLog(text2, type3 = "info") {
+    const entry = {
+      id: Math.random().toString(36).substring(2, 9),
+      timestamp: Date.now(),
+      text: text2,
+      type: type3
+    };
+    this.logs.unshift(entry);
+    if (this.logs.length > 500) {
+      this.logs.pop();
+    }
+  }
+  static getState() {
+    return { ...this.state };
+  }
+  static updateCounts(live, unresolved) {
+    this.state.liveDesignsCount = live;
+    this.state.unresolvedAsinsCount = unresolved;
+  }
+  static stopScan() {
+    this.shouldStop = true;
+    this.state.isScanning = false;
+    this.state.activeScanType = null;
+    this.state.scanStatus = "ready";
+    this.state.lastStatusMessage = "Scan manuell abgebrochen.";
+    this.addLog("Scan manuell abgebrochen.", "warn");
+  }
+  static toggleAutoUpdate(enabled) {
+    this.state.autoUpdateEnabled = enabled;
+    if (enabled) {
+      this.addLog("[Auto-Update] Hintergrund-Scheduler aktiviert (alle 15 Min).", "success");
+      this.startSchedulers();
+    } else {
+      this.addLog("[Auto-Update] Hintergrund-Scheduler deaktiviert.", "info");
+      this.stopSchedulers();
+    }
+  }
+  static startSchedulers() {
+    this.stopSchedulers();
+    this.autoUpdateTimer = setInterval(async () => {
+      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+        try {
+          await this.runSmartSync();
+        } catch (e) {
+          this.addLog(`[Auto-Update] Fehler: ${e.message}`, "error");
+        }
+      }
+    }, 15 * 60 * 1e3);
+    this.asinResolveTimer = setInterval(async () => {
+      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+        try {
+          await this.resolveChildAsinsBatch(5);
+        } catch (e) {
+        }
+      }
+    }, 60 * 1e3);
+  }
+  static stopSchedulers() {
+    if (this.autoUpdateTimer) clearInterval(this.autoUpdateTimer);
+    if (this.asinResolveTimer) clearInterval(this.asinResolveTimer);
+    this.autoUpdateTimer = null;
+    this.asinResolveTimer = null;
+  }
+  static sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  /**
+   * Helper to query Supabase safely
+   */
+  static getSupabase() {
+    const supabase = getSupabaseClient();
+    if (!supabase) throw new Error("Supabase ist nicht konfiguriert (URL/Key fehlt).");
+    return supabase;
+  }
+  /**
+   * Helper to get active Amazon authenticated page from Session 1
+   */
+  static async getAmazonPage() {
+    const session2 = await BrowserSessionService.getSession("sync");
+    if (!session2 || session2.page.isClosed()) {
+      throw new Error("Session 1 (Sync & Login) ist nicht aktiv.");
+    }
+    const currentUrl = session2.page.url();
+    if (!currentUrl.includes("amazon.com")) {
+      throw new Error(`Session 1 ist nicht auf Amazon eingeloggt (Aktuelle Seite: ${currentUrl}). Bitte erst in Session 1 einloggen.`);
+    }
+    return session2.page;
+  }
+  /**
+   * Execute in-browser FindListings query using Session 1 authentication cookies
+   */
+  static async fetchFindListingsPage(page, startIndex = 0, count = 50, statuses = ALL_STATUSES) {
+    return await page.evaluate(async ({ startIndex: startIndex2, count: count2, statuses: statuses2, url, marketIds }) => {
+      const body = {
+        searchFilter: {
+          statuses: statuses2,
+          marketplaceIds: marketIds,
+          productTypes: []
+        },
+        pagination: {
+          startIndex: startIndex2,
+          count: count2
+        },
+        sort: {
+          field: "UPDATED_DATE",
+          order: "DESC"
+        }
+      };
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify(body),
+        credentials: "include"
+      });
+      if (!res.ok) {
+        throw new Error(`Amazon FindListings HTTP ${res.status}: ${res.statusText}`);
+      }
+      return await res.json();
+    }, {
+      startIndex,
+      count,
+      statuses,
+      url: FIND_LISTINGS_URL,
+      marketIds: Object.values(MARKETPLACE_IDS)
+    });
+  }
+  /**
+   * Fetch Product Config (titles, bullets, brand) for a specific design
+   */
+  static async fetchProductConfig(page, designId) {
+    return await page.evaluate(async ({ url }) => {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        credentials: "include"
+      });
+      if (!res.ok) throw new Error(`ProductConfig HTTP ${res.status}`);
+      return await res.json();
+    }, { url: `${PRODUCT_CONFIG_URL}${designId}` });
+  }
+  /**
+   * Fetch Sales Analytics from Amazon
+   */
+  static async fetchSalesAnalytics(page, startDate, endDate) {
+    return await page.evaluate(async ({ startDate: startDate2, endDate: endDate2 }) => {
+      try {
+        const url = `https://merch.amazon.com/analytics/sales/v1?startDate=${startDate2}&endDate=${endDate2}`;
+        const res = await fetch(url, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+          credentials: "include"
+        });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    }, { startDate, endDate });
+  }
+  /**
+   * Fetch live and unresolved counts from Supabase
+   */
+  static async refreshDBStats() {
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) return;
+      const [liveRes, unresolvedRes] = await Promise.all([
+        supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]),
+        supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"])
+      ]);
+      this.state.liveDesignsCount = liveRes.count || 0;
+      this.state.unresolvedAsinsCount = unresolvedRes.count || 0;
+    } catch (e) {
+    }
+  }
+  /**
+   * Map Amazon FindListings results to Supabase mba_designs schema
+   */
+  static mapListingsToSupabase(results) {
+    const designMap = /* @__PURE__ */ new Map();
+    for (const r of results) {
+      const dId = r.designId;
+      if (!dId) continue;
+      if (!designMap.has(dId)) {
+        designMap.set(dId, {
+          design_id: dId,
+          listing_id: r.listingId || null,
+          product_image_urn: r.productImageUrn || null,
+          asins: [],
+          asin_standard_tshirt_us: null,
+          price_standard_tshirt_us: null,
+          created_date: null,
+          updated_date: null,
+          estimated_expiration_date: null,
+          products_live_us: [],
+          products_live_de: [],
+          products_live_gb: [],
+          products_live_fr: [],
+          products_live_it: [],
+          products_live_es: [],
+          products_live_jp: [],
+          published_products: [],
+          status: null,
+          last_synced_at: (/* @__PURE__ */ new Date()).toISOString(),
+          _deleted_asins: []
+        });
+      }
+      const d = designMap.get(dId);
+      if (r.asin && !d.asins.includes(r.asin)) d.asins.push(r.asin);
+      const mp = r.marketplace?.toLowerCase() || (MP_MAP[r.marketplaceId] || "us");
+      const pt = r.productType?.toLowerCase() || r.productType || "";
+      const status = r.status || "";
+      const LIVE_STATUSES = /* @__PURE__ */ new Set(["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING", "published", "propagated", "locked", "timed_out", "publishing", "translating"]);
+      const isLive = status && LIVE_STATUSES.has(status);
+      if (isLive && pt) {
+        const key = `products_live_${mp}`;
+        if (d[key] && !d[key].includes(pt)) d[key].push(pt);
+      }
+      if (isLive && r.asin) {
+        d.published_products.push({ asin: r.asin, type: r.productType || pt.toUpperCase(), market: mp });
+      } else if (r.asin) {
+        d._deleted_asins.push(r.asin);
+      }
+      if (isLive && mp === "us" && (pt === "standard_tshirt" || pt === "STANDARD_TSHIRT")) {
+        d.asin_standard_tshirt_us = r.asin || d.asin_standard_tshirt_us;
+        if (r.listPrice) d.price_standard_tshirt_us = r.listPrice;
+      }
+      const safeDate = (v) => {
+        try {
+          if (!v) return null;
+          const dt = typeof v === "number" ? new Date(v * 1e3) : new Date(v);
+          return isNaN(dt.getTime()) ? null : dt.toISOString();
+        } catch (e) {
+          return null;
+        }
+      };
+      const created = safeDate(r.createdDate);
+      const updated = safeDate(r.updatedDate);
+      if (created && (!d.created_date || created < d.created_date)) d.created_date = created;
+      if (updated && (!d.updated_date || updated > d.updated_date)) d.updated_date = updated;
+      if (r.estimatedExpirationDate) d.estimated_expiration_date = safeDate(r.estimatedExpirationDate);
+      const STATUS_PRIORITY = { PUBLISHED: 100, PROPAGATED: 90, PUBLISHING: 80, REVIEW: 70, TRANSLATING: 60, DRAFT: 50, LOCKED: 40, TIMED_OUT: 30, DECLINED: 20, AMAZON_REJECTED: 15, DELETED: 10 };
+      if (status) {
+        const upper = status.toUpperCase();
+        const newPrio = STATUS_PRIORITY[upper] || 0;
+        const oldPrio = STATUS_PRIORITY[d.status] || 0;
+        if (newPrio > oldPrio) d.status = upper;
+      }
+      if (r.productImageUrn) d.product_image_urn = r.productImageUrn;
+    }
+    return Array.from(designMap.values());
+  }
+  /**
+   * Merge new design data with existing DB records before upserting (Never removes ASINs)
+   */
+  static async mergeAndUpsertDesigns(mapped) {
+    const supabase = this.getSupabase();
+    if (mapped.length === 0) return 0;
+    const designIds = mapped.map((m) => m.design_id);
+    const existing = /* @__PURE__ */ new Map();
+    for (let i = 0; i < designIds.length; i += 200) {
+      const batch = designIds.slice(i, i + 200);
+      const { data } = await supabase.from("mba_designs").select("design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins").in("design_id", batch);
+      if (data) data.forEach((d) => existing.set(d.design_id, d));
+    }
+    const merged = mapped.map((m) => {
+      const ex = existing.get(m.design_id);
+      if (!ex) {
+        return {
+          ...m,
+          ad_asins: this.buildAdAsins(m.published_products, [])
+        };
+      }
+      const allAsins = Array.from(/* @__PURE__ */ new Set([...ex.asins || [], ...m.asins || []]));
+      const prodMap = /* @__PURE__ */ new Map();
+      (ex.published_products || []).forEach((p) => prodMap.set(p.asin, p));
+      (m.published_products || []).forEach((p) => prodMap.set(p.asin, p));
+      if (m._deleted_asins) {
+        m._deleted_asins.forEach((asin) => prodMap.delete(asin));
+      }
+      const pubProducts = Array.from(prodMap.values());
+      return {
+        ...m,
+        asins: allAsins,
+        published_products: pubProducts,
+        asin_standard_tshirt_us: m.asin_standard_tshirt_us || ex.asin_standard_tshirt_us,
+        price_standard_tshirt_us: m.price_standard_tshirt_us || ex.price_standard_tshirt_us,
+        ad_asins: this.buildAdAsins(pubProducts, ex.ad_asins || [])
+      };
+    });
+    for (let i = 0; i < merged.length; i += 200) {
+      const chunk = merged.slice(i, i + 200);
+      const { error } = await supabase.from("mba_designs").upsert(chunk, { onConflict: "design_id" });
+      if (error) {
+        console.error("[SyncEngine] Error upserting designs chunk:", error);
+      }
+    }
+    await this.refreshDBStats();
+    return merged.length;
+  }
+  static buildAdAsins(publishedProducts, existingAdAsins = []) {
+    const existingMap = /* @__PURE__ */ new Map();
+    existingAdAsins.forEach((ad) => {
+      if (ad.type && ad.market) {
+        existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, ad.asin);
+      }
+    });
+    return publishedProducts.map((p) => {
+      const key = `${(p.type || "").toUpperCase()}_${(p.market || "").toLowerCase()}`;
+      const exAsin = existingMap.get(key);
+      if (VARIANT_PRODUCT_TYPES.has((p.type || "").toUpperCase())) {
+        if (exAsin && exAsin !== p.asin) {
+          return { asin: exAsin, type: p.type, market: p.market };
+        }
+        return { asin: null, type: p.type, market: p.market };
+      }
+      return { asin: p.asin, type: p.type, market: p.market };
+    });
+  }
+  /**
+   * Parse Product Config (US and International text data)
+   */
+  static parseTextData(designId, configData) {
+    if (!configData?.textData) return null;
+    const td = configData.textData;
+    const payload = { design_id: designId };
+    const usData = td["en"] || td["us"] || td["en-US"] || null;
+    if (usData) {
+      payload.title_us = usData.title || null;
+      payload.brand_us = usData.brandName || null;
+      payload.bullet_1_us = usData.bullets?.[0] || null;
+      payload.bullet_2_us = usData.bullets?.[1] || null;
+      payload.description_us = usData.description || null;
+    }
+    const other = {};
+    for (const [lang, data] of Object.entries(td)) {
+      if (lang === "en" || lang === "us" || lang === "en-US") continue;
+      other[lang] = {
+        title: data.title || null,
+        brand: data.brandName || null,
+        bullets: data.bullets || [],
+        description: data.description || null
+      };
+    }
+    if (Object.keys(other).length > 0) payload.text_data_other = other;
+    return payload;
+  }
+  /**
+   * 1. Run Smart Sync (Quick Update Products)
+   */
+  static async runSmartSync() {
+    this.shouldStop = false;
+    this.state.isScanning = true;
+    this.state.activeScanType = "quick_products";
+    this.state.scanStatus = "scanning";
+    this.state.lastStatusMessage = "Quick Update: Lade neueste Designs von Amazon...";
+    this.addLog("[Quick Update Produkte] Starte Synchronisierung \xFCber Session 1...", "info");
+    try {
+      const page = await this.getAmazonPage();
+      const raw = await this.fetchFindListingsPage(page, 0, 50);
+      const results = raw?.results || [];
+      const totalCount = raw?.totalCount || 0;
+      this.addLog(`[Quick Update Produkte] ${results.length} von ${totalCount} Eintr\xE4gen geladen. Mappe auf Supabase Schema...`, "info");
+      const mapped = this.mapListingsToSupabase(results);
+      const count = await this.mergeAndUpsertDesigns(mapped);
+      const now = Date.now();
+      this.state.lastQuickDesigns = now;
+      this.state.lastPeriodicSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
+      this.state.lastPeriodicSyncCount = count;
+      await this.refreshDBStats();
+      this.addLog(`[Quick Update Produkte] Erfolgreich synchronisiert: ${count} Designs in Supabase aktualisiert \u2713 (${this.state.liveDesignsCount} Live Designs).`, "success");
+      this.state.scanStatus = "ready";
+      this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
+      return { designCount: count };
+    } catch (err) {
+      this.state.scanStatus = "error";
+      this.state.lastStatusMessage = `Fehler: ${err.message}`;
+      this.addLog(`[Quick Update Produkte] Fehler: ${err.message}`, "error");
+      throw err;
+    } finally {
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+    }
+  }
+  /**
+   * 2. Run Full Reload (Full Refresh Products)
+   */
+  static async runFullReload() {
+    this.shouldStop = false;
+    this.state.isScanning = true;
+    this.state.activeScanType = "full_products";
+    this.state.scanStatus = "scanning";
+    this.state.lastStatusMessage = "Full Refresh: Lade alle Designs von Amazon...";
+    this.addLog("[Full Refresh Produkte] Starte vollst\xE4ndigen Scan aller Produkte \xFCber Session 1...", "info");
+    let totalSaved = 0;
+    try {
+      const page = await this.getAmazonPage();
+      let startIndex = 0;
+      const count = 50;
+      let totalAmazonCount = 0;
+      while (!this.shouldStop) {
+        this.addLog(`[Full Refresh] Lade Batch ab Index ${startIndex}...`, "info");
+        const raw = await this.fetchFindListingsPage(page, startIndex, count);
+        const results = raw?.results || [];
+        totalAmazonCount = raw?.totalCount || 0;
+        if (results.length === 0) break;
+        const mapped = this.mapListingsToSupabase(results);
+        const saved = await this.mergeAndUpsertDesigns(mapped);
+        totalSaved += saved;
+        this.addLog(`[Full Refresh] ${totalSaved} / ${totalAmazonCount} Designs verarbeitet...`, "info");
+        startIndex += count;
+        if (startIndex >= totalAmazonCount) break;
+        await this.sleep(300);
+      }
+      this.state.lastFullDesigns = Date.now();
+      await this.refreshDBStats();
+      this.addLog(`[Full Refresh Produkte] Beendet. ${totalSaved} Designs erfolgreich in Supabase synchronisiert \u2713 (${this.state.liveDesignsCount} Live Designs).`, "success");
+      this.state.scanStatus = "ready";
+      this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
+      return { designCount: totalSaved };
+    } catch (err) {
+      this.state.scanStatus = "error";
+      this.state.lastStatusMessage = `Fehler: ${err.message}`;
+      this.addLog(`[Full Refresh Produkte] Fehler: ${err.message}`, "error");
+      throw err;
+    } finally {
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+    }
+  }
+  /**
+   * 3. Run Deep Scan New (Quick Update Listings)
+   */
+  static async runDeepScanNew() {
+    this.shouldStop = false;
+    this.state.isScanning = true;
+    this.state.activeScanType = "quick_listings";
+    this.state.scanStatus = "scanning";
+    this.state.lastStatusMessage = "Quick Update Listings: Lade fehlende Texte...";
+    this.addLog("[Quick Update Listings] Suche Designs ohne US-Titel...", "info");
+    let processed = 0;
+    try {
+      const supabase = this.getSupabase();
+      const page = await this.getAmazonPage();
+      const { data: missingDesigns, error } = await supabase.from("mba_designs").select("design_id").is("title_us", null).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).limit(50);
+      if (error) throw error;
+      if (!missingDesigns || missingDesigns.length === 0) {
+        this.addLog("[Quick Update Listings] Keine fehlenden Texte gefunden. Alles aktuell! \u2713", "success");
+      } else {
+        this.addLog(`[Quick Update Listings] ${missingDesigns.length} Designs gefunden. Lade Texte...`, "info");
+        for (const item of missingDesigns) {
+          if (this.shouldStop) break;
+          try {
+            const config = await this.fetchProductConfig(page, item.design_id);
+            const textData = this.parseTextData(item.design_id, config);
+            if (textData) {
+              await supabase.from("mba_designs").upsert(textData);
+              processed++;
+            }
+          } catch (e) {
+            console.warn(`[SyncEngine] Config error for ${item.design_id}:`, e.message);
+          }
+          await this.sleep(150);
+        }
+        this.addLog(`[Quick Update Listings] ${processed} Texte erfolgreich aktualisiert! \u2713`, "success");
+      }
+      this.state.lastQuickListings = Date.now();
+      await this.refreshDBStats();
+      this.state.scanStatus = "ready";
+      this.state.lastStatusMessage = "Bereit";
+      return { processed };
+    } catch (err) {
+      this.state.scanStatus = "error";
+      this.state.lastStatusMessage = `Fehler: ${err.message}`;
+      this.addLog(`[Quick Update Listings] Fehler: ${err.message}`, "error");
+      throw err;
+    } finally {
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+    }
+  }
+  /**
+   * 4. Run Deep Scan All (Full Refresh Listings)
+   */
+  static async runDeepScanAll() {
+    this.shouldStop = false;
+    this.state.isScanning = true;
+    this.state.activeScanType = "full_listings";
+    this.state.scanStatus = "scanning";
+    this.state.lastStatusMessage = "Full Refresh Listings: Lade alle Texte...";
+    this.addLog("[Full Refresh Listings] Lade Texte f\xFCr alle Designs...", "info");
+    let processed = 0;
+    try {
+      const supabase = this.getSupabase();
+      const page = await this.getAmazonPage();
+      let from = 0;
+      while (!this.shouldStop) {
+        const { data: batch, error } = await supabase.from("mba_designs").select("design_id").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).range(from, from + 49);
+        if (error || !batch || batch.length === 0) break;
+        for (const item of batch) {
+          if (this.shouldStop) break;
+          try {
+            const config = await this.fetchProductConfig(page, item.design_id);
+            const textData = this.parseTextData(item.design_id, config);
+            if (textData) {
+              await supabase.from("mba_designs").upsert(textData);
+              processed++;
+            }
+          } catch {
+          }
+          await this.sleep(150);
+        }
+        this.addLog(`[Full Refresh Listings] ${processed} Texte geladen...`, "info");
+        from += 50;
+      }
+      this.state.lastFullListings = Date.now();
+      await this.refreshDBStats();
+      this.addLog(`[Full Refresh Listings] Beendet. ${processed} Texte aktualisiert \u2713`, "success");
+      this.state.scanStatus = "ready";
+      this.state.lastStatusMessage = "Bereit";
+      return { processed };
+    } catch (err) {
+      this.state.scanStatus = "error";
+      this.state.lastStatusMessage = `Fehler: ${err.message}`;
+      this.addLog(`[Full Refresh Listings] Fehler: ${err.message}`, "error");
+      throw err;
+    } finally {
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+    }
+  }
+  /**
+   * 5. Run Smart Sales Sync (Quick Sales)
+   */
+  static async runSmartSalesSync() {
+    this.shouldStop = false;
+    this.state.isScanning = true;
+    this.state.activeScanType = "quick_sales";
+    this.state.scanStatus = "scanning";
+    this.state.lastStatusMessage = "Quick Sales: Lade 30-Tage Verk\xE4ufe...";
+    this.addLog("[Quick Update Sales] Lade Verk\xE4ufe der letzten 30 Tage...", "info");
+    let processed = 0;
+    try {
+      const page = await this.getAmazonPage();
+      const supabase = this.getSupabase();
+      const end = /* @__PURE__ */ new Date();
+      const start3 = /* @__PURE__ */ new Date();
+      start3.setDate(start3.getDate() - 30);
+      const startStr = start3.toISOString().split("T")[0];
+      const endStr = end.toISOString().split("T")[0];
+      const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
+      if (analytics && Array.isArray(analytics.sales)) {
+        const salesMap = /* @__PURE__ */ new Map();
+        for (const row of analytics.sales) {
+          const dId = row.designId;
+          if (!dId) continue;
+          const curr = salesMap.get(dId) || { units: 0, royaltiesEur: 0, royaltiesUsd: 0 };
+          curr.units += row.unitsSold || 0;
+          if (row.currency === "EUR") curr.royaltiesEur += row.estimatedRoyalty || 0;
+          if (row.currency === "USD") curr.royaltiesUsd += row.estimatedRoyalty || 0;
+          salesMap.set(dId, curr);
+        }
+        for (const [designId, stats2] of salesMap.entries()) {
+          await supabase.from("mba_designs").update({
+            sales_30d: stats2.units,
+            royalties_30d_eur: Math.round(stats2.royaltiesEur * 100) / 100,
+            royalties_30d_usd: Math.round(stats2.royaltiesUsd * 100) / 100
+          }).eq("design_id", designId);
+          processed++;
+        }
+      }
+      this.state.lastQuickSales = Date.now();
+      await this.refreshDBStats();
+      this.addLog(`[Quick Update Sales] Beendet. ${processed} Designs mit Sales aktualisiert \u2713`, "success");
+      this.state.scanStatus = "ready";
+      this.state.lastStatusMessage = "Bereit";
+      return { processed };
+    } catch (err) {
+      this.state.scanStatus = "error";
+      this.state.lastStatusMessage = `Fehler: ${err.message}`;
+      this.addLog(`[Quick Update Sales] Fehler: ${err.message}`, "error");
+      throw err;
+    } finally {
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+    }
+  }
+  /**
+   * 6. Run Full Sales History Sync
+   */
+  static async runFullSalesHistory() {
+    this.shouldStop = false;
+    this.state.isScanning = true;
+    this.state.activeScanType = "full_sales";
+    this.state.scanStatus = "scanning";
+    this.state.lastStatusMessage = "Full Refresh Sales: Lade gesamte All-Time Sales History...";
+    this.addLog("[Full Refresh Sales] Starte All-Time Sales History Update...", "info");
+    let processed = 0;
+    try {
+      const page = await this.getAmazonPage();
+      const supabase = this.getSupabase();
+      const end = /* @__PURE__ */ new Date();
+      const start3 = new Date(2015, 0, 1);
+      const startStr = start3.toISOString().split("T")[0];
+      const endStr = end.toISOString().split("T")[0];
+      const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
+      if (analytics && Array.isArray(analytics.sales)) {
+        const salesMap = /* @__PURE__ */ new Map();
+        for (const row of analytics.sales) {
+          const dId = row.designId;
+          if (!dId) continue;
+          const curr = salesMap.get(dId) || { units: 0, royaltiesEur: 0, royaltiesUsd: 0 };
+          curr.units += row.unitsSold || 0;
+          if (row.currency === "EUR") curr.royaltiesEur += row.estimatedRoyalty || 0;
+          if (row.currency === "USD") curr.royaltiesUsd += row.estimatedRoyalty || 0;
+          salesMap.set(dId, curr);
+        }
+        for (const [designId, stats2] of salesMap.entries()) {
+          await supabase.from("mba_designs").update({
+            sales_total: stats2.units,
+            royalties_total_eur: Math.round(stats2.royaltiesEur * 100) / 100,
+            royalties_total_usd: Math.round(stats2.royaltiesUsd * 100) / 100,
+            sales_history_synced: true
+          }).eq("design_id", designId);
+          processed++;
+        }
+      }
+      this.state.lastFullSalesAll = Date.now();
+      await this.refreshDBStats();
+      this.addLog(`[Full Refresh Sales] Beendet. ${processed} Designs mit All-Time Sales aktualisiert \u2713`, "success");
+      this.state.scanStatus = "ready";
+      this.state.lastStatusMessage = "Bereit";
+      return { processed };
+    } catch (err) {
+      this.state.scanStatus = "error";
+      this.state.lastStatusMessage = `Fehler: ${err.message}`;
+      this.addLog(`[Full Refresh Sales] Fehler: ${err.message}`, "error");
+      throw err;
+    } finally {
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+    }
+  }
+  /**
+   * 7. Resolve Child ASINs Batch
+   */
+  static async resolveChildAsinsBatch(limit = 10) {
+    const supabase = this.getSupabase();
+    let processed = 0;
+    let errors2 = 0;
+    try {
+      const page = await this.getAmazonPage();
+      const { data: unresolved, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).limit(limit);
+      if (error || !unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
+      for (const item of unresolved) {
+        if (this.shouldStop) break;
+        try {
+          const config = await this.fetchProductConfig(page, item.design_id);
+          const updatedAdAsins = this.buildAdAsins(item.published_products || [], item.ad_asins || []);
+          await supabase.from("mba_designs").update({
+            ad_asins: updatedAdAsins,
+            asin_resolved: true
+          }).eq("design_id", item.design_id);
+          processed++;
+        } catch {
+          errors2++;
+        }
+        await this.sleep(200);
+      }
+    } catch {
+    }
+    this.state.lastAsinSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
+    await this.refreshDBStats();
+    return { processed, errors: errors2 };
+  }
+  /**
+   * 8. Danger Zone: Reset Sales Data
+   */
+  static async resetSalesData() {
+    const supabase = this.getSupabase();
+    this.addLog("[Gefahrenzone] Setze alle Sales-Daten in Supabase zur\xFCck...", "warn");
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase.from("mba_designs").select("design_id").range(from, from + 999);
+      if (error || !data || data.length === 0) break;
+      const updates = data.map((d) => ({
+        design_id: d.design_id,
+        sales_30d: 0,
+        royalties_30d_usd: 0,
+        royalties_30d_eur: 0,
+        royalties_30d_gbp: 0,
+        royalties_30d_jpy: 0,
+        sales_total: 0,
+        royalties_total_usd: 0,
+        royalties_total_eur: 0,
+        royalties_total_gbp: 0,
+        royalties_total_jpy: 0,
+        sales_history_synced: false
+      }));
+      await supabase.from("mba_designs").upsert(updates);
+      from += 1e3;
+    }
+    this.addLog("[Gefahrenzone] Alle Sales-Daten erfolgreich zur\xFCckgesetzt! \u2713", "success");
+  }
+  /**
+   * 9. Danger Zone: Reset ASIN Resolution Status
+   */
+  static async resetAsinResolutionStatus() {
+    const supabase = this.getSupabase();
+    this.addLog("[Gefahrenzone] Setze ASIN-Aufl\xF6sungsstatus zur\xFCck...", "warn");
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase.from("mba_designs").select("design_id").range(from, from + 999);
+      if (error || !data || data.length === 0) break;
+      const updates = data.map((d) => ({
+        design_id: d.design_id,
+        asin_resolved: false
+      }));
+      await supabase.from("mba_designs").upsert(updates);
+      from += 1e3;
+    }
+    await this.refreshDBStats();
+    this.addLog("[Gefahrenzone] ASIN-Aufl\xF6sungsstatus erfolgreich zur\xFCckgesetzt! \u2713", "success");
   }
 };
 

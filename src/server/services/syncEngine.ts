@@ -1,4 +1,5 @@
 import { getSupabaseClient, loadSettings } from './settingsService';
+import { BrowserSessionService } from './browserSessionService';
 
 export interface SyncLogEntry {
   id: string;
@@ -174,6 +175,98 @@ export class SyncEngine {
     const supabase = getSupabaseClient();
     if (!supabase) throw new Error('Supabase ist nicht konfiguriert (URL/Key fehlt).');
     return supabase;
+  }
+
+  /**
+   * Helper to get active Amazon authenticated page from Session 1
+   */
+  private static async getAmazonPage() {
+    const session = await BrowserSessionService.getSession('sync');
+    if (!session || session.page.isClosed()) {
+      throw new Error('Session 1 (Sync & Login) ist nicht aktiv.');
+    }
+    const currentUrl = session.page.url();
+    if (!currentUrl.includes('amazon.com')) {
+      throw new Error(`Session 1 ist nicht auf Amazon eingeloggt (Aktuelle Seite: ${currentUrl}). Bitte erst in Session 1 einloggen.`);
+    }
+    return session.page;
+  }
+
+  /**
+   * Execute in-browser FindListings query using Session 1 authentication cookies
+   */
+  private static async fetchFindListingsPage(page: any, startIndex = 0, count = 50, statuses: string[] = ALL_STATUSES) {
+    return await page.evaluate(async ({ startIndex, count, statuses, url, marketIds }) => {
+      const body = {
+        searchFilter: {
+          statuses,
+          marketplaceIds: marketIds,
+          productTypes: []
+        },
+        pagination: {
+          startIndex,
+          count
+        },
+        sort: {
+          field: "UPDATED_DATE",
+          order: "DESC"
+        }
+      };
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(body),
+        credentials: 'include'
+      });
+      if (!res.ok) {
+        throw new Error(`Amazon FindListings HTTP ${res.status}: ${res.statusText}`);
+      }
+      return await res.json();
+    }, { 
+      startIndex, 
+      count, 
+      statuses, 
+      url: FIND_LISTINGS_URL, 
+      marketIds: Object.values(MARKETPLACE_IDS) 
+    });
+  }
+
+  /**
+   * Fetch Product Config (titles, bullets, brand) for a specific design
+   */
+  private static async fetchProductConfig(page: any, designId: string) {
+    return await page.evaluate(async ({ url }) => {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'include'
+      });
+      if (!res.ok) throw new Error(`ProductConfig HTTP ${res.status}`);
+      return await res.json();
+    }, { url: `${PRODUCT_CONFIG_URL}${designId}` });
+  }
+
+  /**
+   * Fetch Sales Analytics from Amazon
+   */
+  private static async fetchSalesAnalytics(page: any, startDate: string, endDate: string) {
+    return await page.evaluate(async ({ startDate, endDate }) => {
+      try {
+        const url = `https://merch.amazon.com/analytics/sales/v1?startDate=${startDate}&endDate=${endDate}`;
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'include'
+        });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    }, { startDate, endDate });
   }
 
   /**
@@ -396,24 +489,29 @@ export class SyncEngine {
     this.state.isScanning = true;
     this.state.activeScanType = 'quick_products';
     this.state.scanStatus = 'scanning';
-    this.state.lastStatusMessage = 'Quick Update Produkte: Suche geänderte Designs...';
-    this.addLog('[Quick Update Produkte] Starte Synchronisierung...', 'info');
+    this.state.lastStatusMessage = 'Quick Update: Lade neueste Designs von Amazon...';
+    this.addLog('[Quick Update Produkte] Starte Synchronisierung über Session 1...', 'info');
 
     try {
-      const supabase = this.getSupabase();
-      
-      // In production with real Chrome session, this fetches from Amazon FindListings
-      // In standalone/mock-free state, we verify DB connection and record timestamp
+      const page = await this.getAmazonPage();
+      const raw = await this.fetchFindListingsPage(page, 0, 50);
+      const results = raw?.results || [];
+      const totalCount = raw?.totalCount || 0;
+
+      this.addLog(`[Quick Update Produkte] ${results.length} von ${totalCount} Einträgen geladen. Mappe auf Supabase Schema...`, 'info');
+      const mapped = this.mapListingsToSupabase(results);
+      const count = await this.mergeAndUpsertDesigns(mapped);
+
       const now = Date.now();
       this.state.lastQuickDesigns = now;
       this.state.lastPeriodicSync = new Date().toLocaleString('de-DE');
-      this.state.lastPeriodicSyncCount = 0;
+      this.state.lastPeriodicSyncCount = count;
 
       await this.refreshDBStats();
-      this.addLog(`[Quick Update Produkte] Beendet. Status aktuell (${this.state.liveDesignsCount} Live Designs in DB).`, 'success');
+      this.addLog(`[Quick Update Produkte] Erfolgreich synchronisiert: ${count} Designs in Supabase aktualisiert ✓ (${this.state.liveDesignsCount} Live Designs).`, 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
-      return { designCount: 0 };
+      return { designCount: count };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
@@ -433,16 +531,42 @@ export class SyncEngine {
     this.state.isScanning = true;
     this.state.activeScanType = 'full_products';
     this.state.scanStatus = 'scanning';
-    this.state.lastStatusMessage = 'Full Refresh Produkte: Lade alle Seiten von Amazon...';
-    this.addLog('[Full Refresh Produkte] Starte vollständigen Scan aller Produkte...', 'info');
+    this.state.lastStatusMessage = 'Full Refresh: Lade alle Designs von Amazon...';
+    this.addLog('[Full Refresh Produkte] Starte vollständigen Scan aller Produkte über Session 1...', 'info');
 
+    let totalSaved = 0;
     try {
+      const page = await this.getAmazonPage();
+      let startIndex = 0;
+      const count = 50;
+      let totalAmazonCount = 0;
+
+      while (!this.shouldStop) {
+        this.addLog(`[Full Refresh] Lade Batch ab Index ${startIndex}...`, 'info');
+        const raw = await this.fetchFindListingsPage(page, startIndex, count);
+        const results = raw?.results || [];
+        totalAmazonCount = raw?.totalCount || 0;
+
+        if (results.length === 0) break;
+
+        const mapped = this.mapListingsToSupabase(results);
+        const saved = await this.mergeAndUpsertDesigns(mapped);
+        totalSaved += saved;
+
+        this.addLog(`[Full Refresh] ${totalSaved} / ${totalAmazonCount} Designs verarbeitet...`, 'info');
+
+        startIndex += count;
+        if (startIndex >= totalAmazonCount) break;
+
+        await this.sleep(300);
+      }
+
       this.state.lastFullDesigns = Date.now();
       await this.refreshDBStats();
-      this.addLog(`[Full Refresh Produkte] Beendet. ${this.state.liveDesignsCount} Live Designs verifiziert.`, 'success');
+      this.addLog(`[Full Refresh Produkte] Beendet. ${totalSaved} Designs erfolgreich in Supabase synchronisiert ✓ (${this.state.liveDesignsCount} Live Designs).`, 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
-      return { designCount: this.state.liveDesignsCount };
+      return { designCount: totalSaved };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
@@ -462,16 +586,48 @@ export class SyncEngine {
     this.state.isScanning = true;
     this.state.activeScanType = 'quick_listings';
     this.state.scanStatus = 'scanning';
-    this.state.lastStatusMessage = 'Quick Update Listings: Suche fehlende Texte...';
-    this.addLog('[Quick Update Listings] Starte Text-Synchronisierung...', 'info');
+    this.state.lastStatusMessage = 'Quick Update Listings: Lade fehlende Texte...';
+    this.addLog('[Quick Update Listings] Suche Designs ohne US-Titel...', 'info');
 
+    let processed = 0;
     try {
+      const supabase = this.getSupabase();
+      const page = await this.getAmazonPage();
+
+      const { data: missingDesigns, error } = await supabase.from('mba_designs')
+        .select('design_id')
+        .is('title_us', null)
+        .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
+        .limit(50);
+
+      if (error) throw error;
+
+      if (!missingDesigns || missingDesigns.length === 0) {
+        this.addLog('[Quick Update Listings] Keine fehlenden Texte gefunden. Alles aktuell! ✓', 'success');
+      } else {
+        this.addLog(`[Quick Update Listings] ${missingDesigns.length} Designs gefunden. Lade Texte...`, 'info');
+        for (const item of missingDesigns) {
+          if (this.shouldStop) break;
+          try {
+            const config = await this.fetchProductConfig(page, item.design_id);
+            const textData = this.parseTextData(item.design_id, config);
+            if (textData) {
+              await supabase.from('mba_designs').upsert(textData);
+              processed++;
+            }
+          } catch (e: any) {
+            console.warn(`[SyncEngine] Config error for ${item.design_id}:`, e.message);
+          }
+          await this.sleep(150);
+        }
+        this.addLog(`[Quick Update Listings] ${processed} Texte erfolgreich aktualisiert! ✓`, 'success');
+      }
+
       this.state.lastQuickListings = Date.now();
       await this.refreshDBStats();
-      this.addLog('[Quick Update Listings] Beendet.', 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = 'Bereit';
-      return { processed: 0 };
+      return { processed };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
@@ -491,16 +647,46 @@ export class SyncEngine {
     this.state.isScanning = true;
     this.state.activeScanType = 'full_listings';
     this.state.scanStatus = 'scanning';
-    this.state.lastStatusMessage = 'Full Refresh Listings: Lade Texte aller Designs...';
-    this.addLog('[Full Refresh Listings] Starte vollständige Text-Synchronisierung...', 'info');
+    this.state.lastStatusMessage = 'Full Refresh Listings: Lade alle Texte...';
+    this.addLog('[Full Refresh Listings] Lade Texte für alle Designs...', 'info');
 
+    let processed = 0;
     try {
+      const supabase = this.getSupabase();
+      const page = await this.getAmazonPage();
+
+      let from = 0;
+      while (!this.shouldStop) {
+        const { data: batch, error } = await supabase.from('mba_designs')
+          .select('design_id')
+          .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
+          .range(from, from + 49);
+
+        if (error || !batch || batch.length === 0) break;
+
+        for (const item of batch) {
+          if (this.shouldStop) break;
+          try {
+            const config = await this.fetchProductConfig(page, item.design_id);
+            const textData = this.parseTextData(item.design_id, config);
+            if (textData) {
+              await supabase.from('mba_designs').upsert(textData);
+              processed++;
+            }
+          } catch {}
+          await this.sleep(150);
+        }
+
+        this.addLog(`[Full Refresh Listings] ${processed} Texte geladen...`, 'info');
+        from += 50;
+      }
+
       this.state.lastFullListings = Date.now();
       await this.refreshDBStats();
-      this.addLog('[Full Refresh Listings] Beendet.', 'success');
+      this.addLog(`[Full Refresh Listings] Beendet. ${processed} Texte aktualisiert ✓`, 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = 'Bereit';
-      return { processed: 0 };
+      return { processed };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
@@ -520,16 +706,50 @@ export class SyncEngine {
     this.state.isScanning = true;
     this.state.activeScanType = 'quick_sales';
     this.state.scanStatus = 'scanning';
-    this.state.lastStatusMessage = 'Quick Update Sales: Lade 30-Tage Verkäufe & Royalties...';
-    this.addLog('[Quick Update Sales] Starte 30-Tage Sales & Royalties Update...', 'info');
+    this.state.lastStatusMessage = 'Quick Sales: Lade 30-Tage Verkäufe...';
+    this.addLog('[Quick Update Sales] Lade Verkäufe der letzten 30 Tage...', 'info');
 
+    let processed = 0;
     try {
+      const page = await this.getAmazonPage();
+      const supabase = this.getSupabase();
+
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+
+      const startStr = start.toISOString().split('T')[0];
+      const endStr = end.toISOString().split('T')[0];
+
+      const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
+      if (analytics && Array.isArray(analytics.sales)) {
+        const salesMap = new Map<string, { units: number; royaltiesEur: number; royaltiesUsd: number }>();
+        for (const row of analytics.sales) {
+          const dId = row.designId;
+          if (!dId) continue;
+          const curr = salesMap.get(dId) || { units: 0, royaltiesEur: 0, royaltiesUsd: 0 };
+          curr.units += row.unitsSold || 0;
+          if (row.currency === 'EUR') curr.royaltiesEur += row.estimatedRoyalty || 0;
+          if (row.currency === 'USD') curr.royaltiesUsd += row.estimatedRoyalty || 0;
+          salesMap.set(dId, curr);
+        }
+
+        for (const [designId, stats] of salesMap.entries()) {
+          await supabase.from('mba_designs').update({
+            sales_30d: stats.units,
+            royalties_30d_eur: Math.round(stats.royaltiesEur * 100) / 100,
+            royalties_30d_usd: Math.round(stats.royaltiesUsd * 100) / 100
+          }).eq('design_id', designId);
+          processed++;
+        }
+      }
+
       this.state.lastQuickSales = Date.now();
       await this.refreshDBStats();
-      this.addLog('[Quick Update Sales] Beendet.', 'success');
+      this.addLog(`[Quick Update Sales] Beendet. ${processed} Designs mit Sales aktualisiert ✓`, 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = 'Bereit';
-      return { processed: 0 };
+      return { processed };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
@@ -552,13 +772,47 @@ export class SyncEngine {
     this.state.lastStatusMessage = 'Full Refresh Sales: Lade gesamte All-Time Sales History...';
     this.addLog('[Full Refresh Sales] Starte All-Time Sales History Update...', 'info');
 
+    let processed = 0;
     try {
+      const page = await this.getAmazonPage();
+      const supabase = this.getSupabase();
+
+      const end = new Date();
+      const start = new Date(2015, 0, 1);
+
+      const startStr = start.toISOString().split('T')[0];
+      const endStr = end.toISOString().split('T')[0];
+
+      const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
+      if (analytics && Array.isArray(analytics.sales)) {
+        const salesMap = new Map<string, { units: number; royaltiesEur: number; royaltiesUsd: number }>();
+        for (const row of analytics.sales) {
+          const dId = row.designId;
+          if (!dId) continue;
+          const curr = salesMap.get(dId) || { units: 0, royaltiesEur: 0, royaltiesUsd: 0 };
+          curr.units += row.unitsSold || 0;
+          if (row.currency === 'EUR') curr.royaltiesEur += row.estimatedRoyalty || 0;
+          if (row.currency === 'USD') curr.royaltiesUsd += row.estimatedRoyalty || 0;
+          salesMap.set(dId, curr);
+        }
+
+        for (const [designId, stats] of salesMap.entries()) {
+          await supabase.from('mba_designs').update({
+            sales_total: stats.units,
+            royalties_total_eur: Math.round(stats.royaltiesEur * 100) / 100,
+            royalties_total_usd: Math.round(stats.royaltiesUsd * 100) / 100,
+            sales_history_synced: true
+          }).eq('design_id', designId);
+          processed++;
+        }
+      }
+
       this.state.lastFullSalesAll = Date.now();
       await this.refreshDBStats();
-      this.addLog('[Full Refresh Sales] Beendet.', 'success');
+      this.addLog(`[Full Refresh Sales] Beendet. ${processed} Designs mit All-Time Sales aktualisiert ✓`, 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = 'Bereit';
-      return { processed: 0 };
+      return { processed };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
@@ -577,6 +831,33 @@ export class SyncEngine {
     const supabase = this.getSupabase();
     let processed = 0;
     let errors = 0;
+
+    try {
+      const page = await this.getAmazonPage();
+      const { data: unresolved, error } = await supabase.from('mba_designs')
+        .select('design_id, published_products, ad_asins')
+        .or('asin_resolved.eq.false,asin_resolved.is.null')
+        .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
+        .limit(limit);
+
+      if (error || !unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
+
+      for (const item of unresolved) {
+        if (this.shouldStop) break;
+        try {
+          const config = await this.fetchProductConfig(page, item.design_id);
+          const updatedAdAsins = this.buildAdAsins(item.published_products || [], item.ad_asins || []);
+          await supabase.from('mba_designs').update({
+            ad_asins: updatedAdAsins,
+            asin_resolved: true
+          }).eq('design_id', item.design_id);
+          processed++;
+        } catch {
+          errors++;
+        }
+        await this.sleep(200);
+      }
+    } catch {}
 
     this.state.lastAsinSync = new Date().toLocaleString('de-DE');
     await this.refreshDBStats();
