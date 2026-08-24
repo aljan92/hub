@@ -512,26 +512,43 @@ export class SyncEngine {
     return merged.length;
   }
 
+  /**
+   * Sanitizes raw ASIN string to extract the exact 10-char ASIN (e.g. 'MC_Assembly_1#B0FDKRXX21' -> 'B0FDKRXX21')
+   */
+  public static sanitizeAsin(val: any): string | null {
+    if (!val || typeof val !== 'string') return null;
+    const clean = val.trim();
+    // 1. Look for standard B0XXXXXXXX (10 chars)
+    const b0Match = clean.match(/(B0[A-Z0-9]{8})/i);
+    if (b0Match) return b0Match[1].toUpperCase();
+    // 2. Look for any 10-char alphanumeric ASIN
+    const genMatch = clean.match(/([A-Z0-9]{10})/);
+    if (genMatch) return genMatch[1].toUpperCase();
+    return clean;
+  }
+
   public static buildAdAsins(publishedProducts: any[], existingAdAsins: any[] = []) {
     const existingMap = new Map();
     existingAdAsins.forEach(ad => {
       if (ad.type && ad.market) {
-        existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, ad.asin);
+        const clean = SyncEngine.sanitizeAsin(ad.asin);
+        existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, clean);
       }
     });
 
     return publishedProducts.map(p => {
       const key = `${(p.type || '').toUpperCase()}_${(p.market || '').toLowerCase()}`;
       const exAsin = existingMap.get(key);
+      const cleanParentAsin = SyncEngine.sanitizeAsin(p.asin);
 
       if (VARIANT_PRODUCT_TYPES.has((p.type || '').toUpperCase())) {
-        if (exAsin && exAsin !== p.asin) {
+        if (exAsin && exAsin !== cleanParentAsin) {
           return { asin: exAsin, type: p.type, market: p.market };
         }
         return { asin: null, type: p.type, market: p.market };
       }
 
-      return { asin: p.asin, type: p.type, market: p.market };
+      return { asin: cleanParentAsin, type: p.type, market: p.market };
     });
   }
 
@@ -1029,7 +1046,9 @@ export class SyncEngine {
               if (matchDimensionMap && matchDimensionMap[1]) {
                 try {
                   const asinMap = JSON.parse(matchDimensionMap[1]);
-                  const asins = Object.values(asinMap).filter((a: any) => a && a !== parent.asin);
+                  const asins = Object.values(asinMap)
+                    .map((a: any) => SyncEngine.sanitizeAsin(a))
+                    .filter((a: any) => a && a !== parent.asin);
                   if (asins.length > 0) resolvedChild = asins[0] as string;
                 } catch {}
               }
@@ -1037,33 +1056,41 @@ export class SyncEngine {
               if (!resolvedChild && matchAsinToDimension && matchAsinToDimension[1]) {
                 try {
                   const asinMap = JSON.parse(matchAsinToDimension[1]);
-                  const asins = Object.keys(asinMap).filter((a: any) => a && a !== parent.asin);
+                  const asins = Object.keys(asinMap)
+                    .map((a: any) => SyncEngine.sanitizeAsin(a))
+                    .filter((a: any) => a && a !== parent.asin);
                   if (asins.length > 0) resolvedChild = asins[0] as string;
                 } catch {}
               }
 
-              if (!resolvedChild && matchSelectedVar && matchSelectedVar[1] && matchSelectedVar[1] !== parent.asin) {
-                resolvedChild = matchSelectedVar[1];
+              if (!resolvedChild && matchSelectedVar && matchSelectedVar[1]) {
+                const clean = SyncEngine.sanitizeAsin(matchSelectedVar[1]);
+                if (clean && clean !== parent.asin) resolvedChild = clean;
               }
 
-              if (!resolvedChild && matchDataAsin && matchDataAsin[1] && matchDataAsin[1] !== parent.asin) {
-                resolvedChild = matchDataAsin[1];
+              if (!resolvedChild && matchDataAsin && matchDataAsin[1]) {
+                const clean = SyncEngine.sanitizeAsin(matchDataAsin[1]);
+                if (clean && clean !== parent.asin) resolvedChild = clean;
               }
 
-              if (!resolvedChild && matchDataCsa && matchDataCsa[1] && matchDataCsa[1] !== parent.asin) {
-                resolvedChild = matchDataCsa[1];
+              if (!resolvedChild && matchDataCsa && matchDataCsa[1]) {
+                const clean = SyncEngine.sanitizeAsin(matchDataCsa[1]);
+                if (clean && clean !== parent.asin) resolvedChild = clean;
               }
 
-              if (!resolvedChild && matchFallbackAsin && matchFallbackAsin[1] && matchFallbackAsin[1] !== parent.asin) {
-                resolvedChild = matchFallbackAsin[1];
+              if (!resolvedChild && matchFallbackAsin && matchFallbackAsin[1]) {
+                const clean = SyncEngine.sanitizeAsin(matchFallbackAsin[1]);
+                if (clean && clean !== parent.asin) resolvedChild = clean;
               }
 
-              if (resolvedChild) {
-                ad.asin = resolvedChild;
-                this.addLog(`[ASIN Scanner] ✓ Child-ASIN aufgelöst für ${ad.type} (${ad.market}): ${parent.asin} ➔ ${resolvedChild}`, 'success');
+              const finalChildAsin = SyncEngine.sanitizeAsin(resolvedChild);
+
+              if (finalChildAsin && finalChildAsin !== parent.asin) {
+                ad.asin = finalChildAsin;
+                this.addLog(`[ASIN Scanner] ✓ Child-ASIN aufgelöst für ${ad.type} (${ad.market}): ${parent.asin} ➔ ${finalChildAsin}`, 'success');
               } else {
-                ad.asin = parent.asin;
-                this.addLog(`[ASIN Scanner] Keine abweichende Child-ASIN für ${ad.type} (${ad.market}) gefunden. Verwende ${parent.asin}.`, 'info');
+                ad.asin = SyncEngine.sanitizeAsin(parent.asin) || parent.asin;
+                this.addLog(`[ASIN Scanner] Keine abweichende Child-ASIN für ${ad.type} (${ad.market}) gefunden. Verwende ${ad.asin}.`, 'info');
               }
             } else {
               ad.asin = parent.asin;

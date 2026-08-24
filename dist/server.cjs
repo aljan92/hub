@@ -215526,7 +215526,7 @@ var VARIANT_PRODUCT_TYPES = /* @__PURE__ */ new Set([
 var ALL_STATUSES = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
 var FIND_LISTINGS_URL = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
 var PRODUCT_CONFIG_URL = "https://merch.amazon.com/api/productconfiguration/get?id=";
-var SyncEngine = class {
+var SyncEngine = class _SyncEngine {
   static logs = [];
   static state = {
     isScanning: false,
@@ -215919,23 +215919,37 @@ var SyncEngine = class {
     await this.refreshDBStats();
     return merged.length;
   }
+  /**
+   * Sanitizes raw ASIN string to extract the exact 10-char ASIN (e.g. 'MC_Assembly_1#B0FDKRXX21' -> 'B0FDKRXX21')
+   */
+  static sanitizeAsin(val) {
+    if (!val || typeof val !== "string") return null;
+    const clean = val.trim();
+    const b0Match = clean.match(/(B0[A-Z0-9]{8})/i);
+    if (b0Match) return b0Match[1].toUpperCase();
+    const genMatch = clean.match(/([A-Z0-9]{10})/);
+    if (genMatch) return genMatch[1].toUpperCase();
+    return clean;
+  }
   static buildAdAsins(publishedProducts, existingAdAsins = []) {
     const existingMap = /* @__PURE__ */ new Map();
     existingAdAsins.forEach((ad) => {
       if (ad.type && ad.market) {
-        existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, ad.asin);
+        const clean = _SyncEngine.sanitizeAsin(ad.asin);
+        existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, clean);
       }
     });
     return publishedProducts.map((p) => {
       const key = `${(p.type || "").toUpperCase()}_${(p.market || "").toLowerCase()}`;
       const exAsin = existingMap.get(key);
+      const cleanParentAsin = _SyncEngine.sanitizeAsin(p.asin);
       if (VARIANT_PRODUCT_TYPES.has((p.type || "").toUpperCase())) {
-        if (exAsin && exAsin !== p.asin) {
+        if (exAsin && exAsin !== cleanParentAsin) {
           return { asin: exAsin, type: p.type, market: p.market };
         }
         return { asin: null, type: p.type, market: p.market };
       }
-      return { asin: p.asin, type: p.type, market: p.market };
+      return { asin: cleanParentAsin, type: p.type, market: p.market };
     });
   }
   /**
@@ -216357,7 +216371,7 @@ var SyncEngine = class {
               if (matchDimensionMap && matchDimensionMap[1]) {
                 try {
                   const asinMap = JSON.parse(matchDimensionMap[1]);
-                  const asins = Object.values(asinMap).filter((a) => a && a !== parent.asin);
+                  const asins = Object.values(asinMap).map((a) => _SyncEngine.sanitizeAsin(a)).filter((a) => a && a !== parent.asin);
                   if (asins.length > 0) resolvedChild = asins[0];
                 } catch {
                 }
@@ -216365,29 +216379,34 @@ var SyncEngine = class {
               if (!resolvedChild && matchAsinToDimension && matchAsinToDimension[1]) {
                 try {
                   const asinMap = JSON.parse(matchAsinToDimension[1]);
-                  const asins = Object.keys(asinMap).filter((a) => a && a !== parent.asin);
+                  const asins = Object.keys(asinMap).map((a) => _SyncEngine.sanitizeAsin(a)).filter((a) => a && a !== parent.asin);
                   if (asins.length > 0) resolvedChild = asins[0];
                 } catch {
                 }
               }
-              if (!resolvedChild && matchSelectedVar && matchSelectedVar[1] && matchSelectedVar[1] !== parent.asin) {
-                resolvedChild = matchSelectedVar[1];
+              if (!resolvedChild && matchSelectedVar && matchSelectedVar[1]) {
+                const clean = _SyncEngine.sanitizeAsin(matchSelectedVar[1]);
+                if (clean && clean !== parent.asin) resolvedChild = clean;
               }
-              if (!resolvedChild && matchDataAsin && matchDataAsin[1] && matchDataAsin[1] !== parent.asin) {
-                resolvedChild = matchDataAsin[1];
+              if (!resolvedChild && matchDataAsin && matchDataAsin[1]) {
+                const clean = _SyncEngine.sanitizeAsin(matchDataAsin[1]);
+                if (clean && clean !== parent.asin) resolvedChild = clean;
               }
-              if (!resolvedChild && matchDataCsa && matchDataCsa[1] && matchDataCsa[1] !== parent.asin) {
-                resolvedChild = matchDataCsa[1];
+              if (!resolvedChild && matchDataCsa && matchDataCsa[1]) {
+                const clean = _SyncEngine.sanitizeAsin(matchDataCsa[1]);
+                if (clean && clean !== parent.asin) resolvedChild = clean;
               }
-              if (!resolvedChild && matchFallbackAsin && matchFallbackAsin[1] && matchFallbackAsin[1] !== parent.asin) {
-                resolvedChild = matchFallbackAsin[1];
+              if (!resolvedChild && matchFallbackAsin && matchFallbackAsin[1]) {
+                const clean = _SyncEngine.sanitizeAsin(matchFallbackAsin[1]);
+                if (clean && clean !== parent.asin) resolvedChild = clean;
               }
-              if (resolvedChild) {
-                ad.asin = resolvedChild;
-                this.addLog(`[ASIN Scanner] \u2713 Child-ASIN aufgel\xF6st f\xFCr ${ad.type} (${ad.market}): ${parent.asin} \u2794 ${resolvedChild}`, "success");
+              const finalChildAsin = _SyncEngine.sanitizeAsin(resolvedChild);
+              if (finalChildAsin && finalChildAsin !== parent.asin) {
+                ad.asin = finalChildAsin;
+                this.addLog(`[ASIN Scanner] \u2713 Child-ASIN aufgel\xF6st f\xFCr ${ad.type} (${ad.market}): ${parent.asin} \u2794 ${finalChildAsin}`, "success");
               } else {
-                ad.asin = parent.asin;
-                this.addLog(`[ASIN Scanner] Keine abweichende Child-ASIN f\xFCr ${ad.type} (${ad.market}) gefunden. Verwende ${parent.asin}.`, "info");
+                ad.asin = _SyncEngine.sanitizeAsin(parent.asin) || parent.asin;
+                this.addLog(`[ASIN Scanner] Keine abweichende Child-ASIN f\xFCr ${ad.type} (${ad.market}) gefunden. Verwende ${ad.asin}.`, "info");
               }
             } else {
               ad.asin = parent.asin;
