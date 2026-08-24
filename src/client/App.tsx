@@ -12,7 +12,7 @@ import { SettingsView } from './views/SettingsView';
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isSyncing, setIsSyncing] = useState(false);
-  const [activeSlots, setActiveSlots] = useState({ used: 0, total: 100 });
+  const [tier, setTier] = useState<number | undefined>(undefined);
   const [taskCount, setTaskCount] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
 
@@ -23,7 +23,7 @@ export const App: React.FC = () => {
         if (data.success) {
           setTaskCount(data.tasksCount || 0);
           setQueueCount(data.queueCount || 0);
-          if (data.slots) setActiveSlots(data.slots);
+          if (data.tier) setTier(data.tier);
         }
       })
       .catch(() => {});
@@ -56,7 +56,7 @@ export const App: React.FC = () => {
       <Header 
         onSync={handleSync}
         isSyncing={isSyncing}
-        activeSlots={activeSlots}
+        tier={tier}
       />
 
       {/* Main Workspace Layout (Sidebar + Content View) */}

@@ -113,13 +113,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
           </div>
           <div className="flex items-baseline space-x-2">
             <span className="text-3xl font-extrabold text-white">
-              {statsData?.slots ? statsData.slots.total - statsData.slots.used : 100}
+              {statsData?.slots ? Math.max(0, statsData.slots.total - statsData.slots.used) : 200}
             </span>
-            <span className="text-xs text-slate-400 font-medium">/ 100 verfügbar</span>
+            <span className="text-xs text-slate-400 font-medium">
+              / {statsData?.slots ? statsData.slots.total : 200} verfügbar
+            </span>
           </div>
           <div className="flex items-center text-xs text-emerald-400 space-x-1">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Bereit für Auto Slot-Filling (04:00 Uhr)</span>
+            <span>
+              {statsData?.slots 
+                ? `${statsData.slots.used} von ${statsData.slots.total} heute genutzt` 
+                : 'Bereit für Auto Slot-Filling (04:00 Uhr)'}
+            </span>
           </div>
         </div>
 
@@ -203,34 +209,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
         onRefreshHealth={() => fetchDashboardData(true)}
         isLoading={loadingHealth}
       />
-
-      {/* Quick Navigation Banner to System Logs */}
-      <div 
-        onClick={() => onNavigateTab('logs')}
-        className="glass-card p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-slate-800/80 hover:border-accent-cyan/40 cursor-pointer transition-all group bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-slate-900/90"
-      >
-        <div className="flex items-center space-x-3">
-          <div className="p-2.5 rounded-xl bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20 group-hover:scale-110 transition-transform">
-            <Terminal className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-slate-100 group-hover:text-accent-cyan transition-colors flex items-center space-x-2">
-              <span>System- &amp; Aktivitäts-Logs Konsole</span>
-              <span className="px-2 py-0.5 text-[10px] rounded-full bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30 font-semibold">
-                Live Terminal
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              Vollständige Fehleranalysen, Synchronisierungs-Verläufe und Echtzeit-Serverereignisse im separaten Menü aufrufen.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-2 text-xs font-semibold text-accent-cyan group-hover:underline shrink-0">
-          <span>Log-Terminal öffnen</span>
-          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-        </div>
-      </div>
     </div>
   );
 };

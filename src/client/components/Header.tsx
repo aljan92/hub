@@ -15,10 +15,10 @@ import {
 interface HeaderProps {
   onSync: () => void;
   isSyncing: boolean;
-  activeSlots: { used: number; total: number };
+  tier?: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, activeSlots }) => {
+export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, tier }) => {
   const [credits, setCredits] = useState<{
     openrouter?: { usage?: number; limitRemaining?: number; balanceRemaining?: number; totalCredits?: number; limit?: number; hasKey?: boolean };
     vectorizer?: { credits?: number; details?: string; hasKey?: boolean };
@@ -45,9 +45,6 @@ export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, activeSlots }
     const interval = setInterval(fetchCredits, 30000); // refresh every 30s
     return () => clearInterval(interval);
   }, []);
-
-  const remainingSlots = Math.max(0, activeSlots.total - activeSlots.used);
-  const percentage = Math.round((activeSlots.used / activeSlots.total) * 100) || 0;
 
   // Format OpenRouter string: Verfügbares Guthaben & Verbrauch
   const getOpenRouterText = () => {
@@ -148,29 +145,14 @@ export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, activeSlots }
             </div>
           )}
 
-          {/* Daily Slot Gauge */}
-          <div className="hidden lg:flex items-center space-x-3 bg-slate-900/70 border border-slate-800 rounded-xl px-3.5 py-1.5">
-            <Activity className="w-3.5 h-3.5 text-accent-cyan" />
-            <div className="flex flex-col">
-              <div className="flex items-center space-x-2 text-xs font-semibold">
-                <span className="text-slate-400">Slots:</span>
-                <span className="text-slate-100">{activeSlots.used} / {activeSlots.total} ({remainingSlots} frei)</span>
-              </div>
-              <div className="w-28 h-1 bg-slate-800 rounded-full mt-0.5 overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-accent-cyan to-primary-500 rounded-full transition-all duration-500"
-                  style={{ width: `${percentage}%` }}
-                />
-              </div>
+          {/* MBA Tier Badge */}
+          {tier && (
+            <div className="flex items-center space-x-1.5 bg-slate-900/90 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-slate-400 text-[11px]">Tier:</span>
+              <span className="font-bold text-emerald-400">{tier.toLocaleString('de-DE')}</span>
             </div>
-          </div>
-
-          {/* Server NAS IP */}
-          <div className="hidden xl:flex items-center space-x-1.5 text-xs font-medium text-slate-400 bg-slate-900/70 border border-slate-800 rounded-xl px-3 py-1.5">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <Server className="w-3.5 h-3.5 text-slate-400 ml-0.5" />
-            <span>NAS: <strong className="text-slate-200">192.168.178.141</strong></span>
-          </div>
+          )}
         </div>
 
         {/* Right Controls: 1-Click Update & Quick Sync */}

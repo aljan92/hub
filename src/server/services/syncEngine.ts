@@ -1181,4 +1181,74 @@ export class SyncEngine {
     await this.refreshDBStats();
     this.addLog('[Gefahrenzone] ASIN-Auflösungsstatus erfolgreich zurückgesetzt! ✓', 'success');
   }
+
+  private static cachedRatelimiter: {
+    data: { tier?: number; slots: { used: number; total: number; free: number } };
+    timestamp: number;
+  } | null = null;
+
+  /**
+   * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard
+   */
+  public static async fetchDashboardRatelimiter(page?: any): Promise<{
+    tier?: number;
+    slots: { used: number; total: number; free: number };
+  } | null> {
+    const now = Date.now();
+    if (this.cachedRatelimiter && (now - this.cachedRatelimiter.timestamp) < 45000) {
+      return this.cachedRatelimiter.data;
+    }
+
+    try {
+      const p = page || await this.getAmazonPage();
+
+      const result = await p.evaluate(async () => {
+        try {
+          const res = await fetch('https://merch.amazon.com/api/ratelimiter/metadata', {
+            credentials: 'include',
+            headers: { 'Accept': 'application/json' }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            return { type: 'api', data };
+          }
+        } catch (e) {}
+
+        // Fallback: Parse from Amazon Dashboard DOM
+        try {
+          const text = document.body.innerText || '';
+          const tierMatch = text.match(/Tier\s*:?\s*([0-9,.]+)/i);
+          const tier = tierMatch ? parseInt(tierMatch[1].replace(/[,.]/g, ''), 10) : null;
+          return { type: 'dom', data: { tier } };
+        } catch (e) {
+          return null;
+        }
+      });
+
+      if (result?.data) {
+        const d = result.data;
+        const used = d.dailyProduct?.count ?? d.dailyDesign?.count ?? 0;
+        const total = d.dailyProduct?.limit ?? d.dailyDesign?.limit ?? 100;
+        const tier = d.tier ?? d.maxProducts ?? d.totalProduct?.limit ?? d.tierLevel ?? null;
+
+        const payload = {
+          tier: typeof tier === 'number' ? tier : (tier ? parseInt(String(tier).replace(/[,.]/g, ''), 10) : undefined),
+          slots: {
+            used: Number(used) || 0,
+            total: Number(total) || 100,
+            free: Math.max(0, (Number(total) || 100) - (Number(used) || 0))
+          }
+        };
+
+        this.cachedRatelimiter = {
+          data: payload,
+          timestamp: now
+        };
+        return payload;
+      }
+    } catch (e) {
+      console.warn('[SyncEngine] fetchDashboardRatelimiter error:', e);
+    }
+    return this.cachedRatelimiter ? this.cachedRatelimiter.data : null;
+  }
 }

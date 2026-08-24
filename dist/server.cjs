@@ -216479,6 +216479,62 @@ var SyncEngine = class _SyncEngine {
     await this.refreshDBStats();
     this.addLog("[Gefahrenzone] ASIN-Aufl\xF6sungsstatus erfolgreich zur\xFCckgesetzt! \u2713", "success");
   }
+  static cachedRatelimiter = null;
+  /**
+   * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard
+   */
+  static async fetchDashboardRatelimiter(page) {
+    const now = Date.now();
+    if (this.cachedRatelimiter && now - this.cachedRatelimiter.timestamp < 45e3) {
+      return this.cachedRatelimiter.data;
+    }
+    try {
+      const p = page || await this.getAmazonPage();
+      const result2 = await p.evaluate(async () => {
+        try {
+          const res = await fetch("https://merch.amazon.com/api/ratelimiter/metadata", {
+            credentials: "include",
+            headers: { "Accept": "application/json" }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            return { type: "api", data };
+          }
+        } catch (e) {
+        }
+        try {
+          const text2 = document.body.innerText || "";
+          const tierMatch = text2.match(/Tier\s*:?\s*([0-9,.]+)/i);
+          const tier = tierMatch ? parseInt(tierMatch[1].replace(/[,.]/g, ""), 10) : null;
+          return { type: "dom", data: { tier } };
+        } catch (e) {
+          return null;
+        }
+      });
+      if (result2?.data) {
+        const d = result2.data;
+        const used = d.dailyProduct?.count ?? d.dailyDesign?.count ?? 0;
+        const total = d.dailyProduct?.limit ?? d.dailyDesign?.limit ?? 100;
+        const tier = d.tier ?? d.maxProducts ?? d.totalProduct?.limit ?? d.tierLevel ?? null;
+        const payload = {
+          tier: typeof tier === "number" ? tier : tier ? parseInt(String(tier).replace(/[,.]/g, ""), 10) : void 0,
+          slots: {
+            used: Number(used) || 0,
+            total: Number(total) || 100,
+            free: Math.max(0, (Number(total) || 100) - (Number(used) || 0))
+          }
+        };
+        this.cachedRatelimiter = {
+          data: payload,
+          timestamp: now
+        };
+        return payload;
+      }
+    } catch (e) {
+      console.warn("[SyncEngine] fetchDashboardRatelimiter error:", e);
+    }
+    return this.cachedRatelimiter ? this.cachedRatelimiter.data : null;
+  }
 };
 
 // src/server/index.ts
@@ -216581,15 +216637,18 @@ app.get("/api/v1/activity", (req, res) => {
 });
 app.get("/api/v1/stats", async (req, res) => {
   try {
-    const [supabaseStats, syncState] = await Promise.all([
+    const [supabaseStats, syncState, ratelimiter] = await Promise.all([
       SupabaseService.getStats(),
-      Promise.resolve(SyncEngine.getState())
+      Promise.resolve(SyncEngine.getState()),
+      SyncEngine.fetchDashboardRatelimiter()
     ]);
+    const liveSlots = ratelimiter?.slots || dailySlotStats;
     res.json({
       success: true,
       tasksCount: activeTasks.length,
       queueCount: uploadQueue.length,
-      slots: dailySlotStats,
+      slots: liveSlots,
+      tier: ratelimiter?.tier,
       designsCount: supabaseStats.totalDesigns,
       liveDesignsCount: supabaseStats.liveDesigns,
       unresolvedAsinsCount: supabaseStats.unresolvedAsins,

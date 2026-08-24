@@ -172,16 +172,20 @@ app.get('/api/v1/activity', (req, res) => {
 
 app.get('/api/v1/stats', async (req, res) => {
   try {
-    const [supabaseStats, syncState] = await Promise.all([
+    const [supabaseStats, syncState, ratelimiter] = await Promise.all([
       SupabaseService.getStats(),
-      Promise.resolve(SyncEngine.getState())
+      Promise.resolve(SyncEngine.getState()),
+      SyncEngine.fetchDashboardRatelimiter()
     ]);
+
+    const liveSlots = ratelimiter?.slots || dailySlotStats;
 
     res.json({
       success: true,
       tasksCount: activeTasks.length,
       queueCount: uploadQueue.length,
-      slots: dailySlotStats,
+      slots: liveSlots,
+      tier: ratelimiter?.tier,
       designsCount: supabaseStats.totalDesigns,
       liveDesignsCount: supabaseStats.liveDesigns,
       unresolvedAsinsCount: supabaseStats.unresolvedAsins,
