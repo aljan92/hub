@@ -215497,15 +215497,6 @@ var BrowserSessionService = class _BrowserSessionService {
 };
 
 // src/server/services/syncEngine.ts
-var MARKETPLACE_IDS = {
-  us: "ATVPDKIKX0DER",
-  de: "A1PA6795UKMFR9",
-  gb: "A1F83G8C2ARO7P",
-  fr: "A13V1IB3VIYZZH",
-  it: "APJ6JRA9NG5V4",
-  es: "A1RKKUPIHCS9HS",
-  jp: "A1VC38T7YXB528"
-};
 var MP_MAP = {
   ATVPDKIKX0DER: "us",
   A1PA6795UKMFR9: "de",
@@ -215632,6 +215623,7 @@ var SyncEngine = class {
   static sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+  static cachedAccountId = null;
   /**
    * Helper to query Supabase safely
    */
@@ -215661,69 +215653,87 @@ var SyncEngine = class {
     return session2.page;
   }
   /**
-   * Execute in-browser FindListings query using Session 1 authentication cookies and CSRF tokens
+   * Discover and cache Amazon Account-ID / ContentOwnerId
    */
-  static async fetchFindListingsPage(page, startIndex = 0, count = 50, statuses = ALL_STATUSES) {
-    return await page.evaluate(async ({ startIndex: startIndex2, count: count2, statuses: statuses2, url, marketIds }) => {
-      let csrfToken = "";
-      const cookieMatches = document.cookie.match(/(?:^|;\s*)(?:csrf-token|anti-csrftoken-a2z|session-id)=([^;]+)/);
-      if (cookieMatches) {
-        csrfToken = decodeURIComponent(cookieMatches[1]);
-      }
-      if (!csrfToken) {
-        const metaTag = document.querySelector('meta[name="csrf-token"], meta[name="anti-csrftoken-a2z"]');
-        if (metaTag) csrfToken = metaTag.getAttribute("content") || "";
-      }
-      if (!csrfToken && window.csrfToken) {
-        csrfToken = window.csrfToken;
-      }
-      if (!csrfToken && window.ue_csrf) {
-        csrfToken = window.ue_csrf;
-      }
-      const headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/plain, */*",
-        "X-Requested-With": "XMLHttpRequest"
-      };
-      if (csrfToken) {
-        headers["anti-csrftoken-a2z"] = csrfToken;
-        headers["csrf-token"] = csrfToken;
-        headers["x-csrf-token"] = csrfToken;
-        headers["x-amz-csrf-token"] = csrfToken;
-      }
-      const body = {
-        searchFilter: {
-          statuses: statuses2,
-          marketplaceIds: marketIds,
-          productTypes: []
-        },
-        pagination: {
-          startIndex: startIndex2,
-          count: count2
-        },
-        sort: {
-          field: "UPDATED_DATE",
-          order: "DESC"
+  static async getAccountId(page) {
+    if (this.cachedAccountId) return this.cachedAccountId;
+    const extracted = await page.evaluate(() => {
+      const mCookie = document.cookie.match(/(?:accountId|contentOwnerId)=([A-Z0-9]+)/i);
+      if (mCookie) return mCookie[1];
+      const scripts = Array.from(document.querySelectorAll("script")).map((s) => s.innerText).join(" ");
+      const m = scripts.match(/["'](?:accountId|contentOwnerId|ContentOwnerId)["']\s*:\s*["']([A-Z0-9]+)["']/i);
+      if (m) return m[1];
+      return null;
+    });
+    if (extracted) {
+      this.cachedAccountId = extracted;
+      this.addLog(`[Session 1] Amazon Account-ID erkannt: ${extracted} \u2713`, "info");
+      return extracted;
+    }
+    this.addLog("[Session 1] Ermittle Amazon Account-ID \xFCber Manage-Seite...", "info");
+    let capturedId = null;
+    const requestHandler = (req) => {
+      if (req.url().includes("FindListings")) {
+        try {
+          const json = req.postDataJSON();
+          if (json?.accountId) {
+            capturedId = json.accountId;
+          }
+        } catch {
         }
+      }
+    };
+    page.on("request", requestHandler);
+    try {
+      await page.goto("https://merch.amazon.com/manage/products", { waitUntil: "domcontentloaded", timeout: 3e4 });
+      let waitTime = 0;
+      while (!capturedId && waitTime < 6e3) {
+        await this.sleep(200);
+        waitTime += 200;
+      }
+    } finally {
+      page.off("request", requestHandler);
+    }
+    if (capturedId) {
+      this.cachedAccountId = capturedId;
+      this.addLog(`[Session 1] Amazon Account-ID erkannt: ${capturedId} \u2713`, "success");
+      return capturedId;
+    }
+    return "";
+  }
+  /**
+   * Execute in-browser FindListings query using Session 1 authentication cookies and Coral Request format
+   */
+  static async fetchListingsPage(page, accountId, pageToken = [], statuses = ALL_STATUSES) {
+    return await page.evaluate(async ({ accountId: accountId2, pageToken: pageToken2, statuses: statuses2, url }) => {
+      const body = {
+        pageSize: 500,
+        sortField: "DateUpdated",
+        sortOrder: "Descending",
+        status: statuses2,
+        marketplaces: null,
+        productTypes: null,
+        searchableOnRetail: null,
+        deleteReasonType: ["", "CONTENT_POLICY_VIOLATION", "INACTIVE_NO_SALES", "CONTENT_CREATOR"],
+        accountId: accountId2 || null,
+        pageToken: pageToken2 || [],
+        __type: "com.amazon.merch.search#FindListingsRequest"
       };
-      const res = await fetch(url, {
+      const resp = await fetch(url, {
         method: "POST",
-        headers,
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify(body),
         credentials: "include"
       });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        throw new Error(`Amazon FindListings HTTP ${res.status}: ${errText || res.statusText}`);
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        throw new Error(`FindListings HTTP ${resp.status}: ${errText || resp.statusText}`);
       }
-      return await res.json();
-    }, {
-      startIndex,
-      count,
-      statuses,
-      url: FIND_LISTINGS_URL,
-      marketIds: Object.values(MARKETPLACE_IDS)
-    });
+      return await resp.json();
+    }, { accountId, pageToken, statuses, url: FIND_LISTINGS_URL });
   }
   /**
    * Fetch Product Config (titles, bullets, brand) for a specific design
@@ -215958,11 +215968,38 @@ var SyncEngine = class {
     this.addLog("[Quick Update Produkte] Starte Synchronisierung \xFCber Session 1...", "info");
     try {
       const page = await this.getAmazonPage();
-      const raw = await this.fetchFindListingsPage(page, 0, 50);
-      const results = raw?.results || [];
-      const totalCount = raw?.totalCount || 0;
-      this.addLog(`[Quick Update Produkte] ${results.length} von ${totalCount} Eintr\xE4gen geladen. Mappe auf Supabase Schema...`, "info");
-      const mapped = this.mapListingsToSupabase(results);
+      const accountId = await this.getAccountId(page);
+      const supabase = this.getSupabase();
+      let pageToken = [];
+      const allResults = [];
+      const { data: latest } = await supabase.from("mba_designs").select("updated_date").order("updated_date", { ascending: false }).limit(1);
+      const lastUpdated = latest?.[0]?.updated_date || null;
+      for (let p = 0; p < 10; p++) {
+        if (this.shouldStop) break;
+        const json = await this.fetchListingsPage(page, accountId, pageToken);
+        if (!json.results || json.results.length === 0) break;
+        allResults.push(...json.results);
+        if (lastUpdated) {
+          const oldestInBatch = json.results[json.results.length - 1];
+          const oldestDate = oldestInBatch?.updatedDate;
+          const safeDate = (v) => {
+            try {
+              if (!v) return null;
+              const d = typeof v === "number" ? new Date(v * 1e3) : new Date(v);
+              return isNaN(d.getTime()) ? null : d.toISOString();
+            } catch (e) {
+              return null;
+            }
+          };
+          const oldestIso = safeDate(oldestDate);
+          if (oldestIso && oldestIso <= lastUpdated) break;
+        }
+        if (!json.pageToken || json.pageToken.length === 0) break;
+        pageToken = json.pageToken;
+        await this.sleep(300);
+      }
+      this.addLog(`[Quick Update Produkte] ${allResults.length} Eintr\xE4ge von Amazon geladen. Mappe auf Supabase...`, "info");
+      const mapped = this.mapListingsToSupabase(allResults);
       const count = await this.mergeAndUpsertDesigns(mapped);
       const now = Date.now();
       this.state.lastQuickDesigns = now;
@@ -215993,26 +216030,26 @@ var SyncEngine = class {
     this.state.scanStatus = "scanning";
     this.state.lastStatusMessage = "Full Refresh: Lade alle Designs von Amazon...";
     this.addLog("[Full Refresh Produkte] Starte vollst\xE4ndigen Scan aller Produkte \xFCber Session 1...", "info");
-    let totalSaved = 0;
     try {
       const page = await this.getAmazonPage();
-      let startIndex = 0;
-      const count = 50;
-      let totalAmazonCount = 0;
+      const accountId = await this.getAccountId(page);
+      let pageToken = [];
+      let pageNum = 0;
+      const allResults = [];
       while (!this.shouldStop) {
-        this.addLog(`[Full Refresh] Lade Batch ab Index ${startIndex}...`, "info");
-        const raw = await this.fetchFindListingsPage(page, startIndex, count);
-        const results = raw?.results || [];
-        totalAmazonCount = raw?.totalCount || 0;
-        if (results.length === 0) break;
-        const mapped = this.mapListingsToSupabase(results);
-        const saved = await this.mergeAndUpsertDesigns(mapped);
-        totalSaved += saved;
-        this.addLog(`[Full Refresh] ${totalSaved} / ${totalAmazonCount} Designs verarbeitet...`, "info");
-        startIndex += count;
-        if (startIndex >= totalAmazonCount) break;
-        await this.sleep(300);
+        pageNum++;
+        this.addLog(`[Full Refresh] Lade Seite ${pageNum} von Amazon (je 500 Eintr\xE4ge)...`, "info");
+        const json = await this.fetchListingsPage(page, accountId, pageToken);
+        if (!json.results || json.results.length === 0) break;
+        allResults.push(...json.results);
+        this.addLog(`[Full Refresh] Bisher ${allResults.length} Eintr\xE4ge gesammelt...`, "info");
+        if (!json.pageToken || json.pageToken.length === 0) break;
+        pageToken = json.pageToken;
+        await this.sleep(400);
       }
+      this.addLog(`[Full Refresh] Mappe ${allResults.length} Eintr\xE4ge auf Supabase Schema...`, "info");
+      const mapped = this.mapListingsToSupabase(allResults);
+      const totalSaved = await this.mergeAndUpsertDesigns(mapped);
       this.state.lastFullDesigns = Date.now();
       await this.refreshDBStats();
       this.addLog(`[Full Refresh Produkte] Beendet. ${totalSaved} Designs erfolgreich in Supabase synchronisiert \u2713 (${this.state.liveDesignsCount} Live Designs).`, "success");
