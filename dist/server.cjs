@@ -215520,8 +215520,7 @@ var VARIANT_PRODUCT_TYPES = /* @__PURE__ */ new Set([
   "THROW_PILLOW",
   "TOTE_BAG",
   "TUMBLER",
-  "WATER_BOTTLE",
-  "SOCCER_JERSEY"
+  "WATER_BOTTLE"
 ]);
 var ALL_STATUSES = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
 var FIND_LISTINGS_URL = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
