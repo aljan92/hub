@@ -12,6 +12,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY dist ./dist
 COPY public ./public
 COPY package.json ./
+COPY browsers.json ./
 
 EXPOSE 3000
 

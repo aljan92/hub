@@ -10,7 +10,7 @@
     "dev:client": "vite",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
-    "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:chromium-bidi --external:electron",
+    "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:chromium-bidi --external:electron && cp node_modules/playwright-core/browsers.json ./browsers.json && cp node_modules/playwright-core/browsers.json ./dist/browsers.json",
     "start": "NODE_ENV=production node dist/server.cjs",
     "deploy:nas": "./deploy.sh"
   },
