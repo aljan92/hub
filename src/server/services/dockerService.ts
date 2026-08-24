@@ -92,11 +92,11 @@ export class DockerService {
       await new Promise(r => setTimeout(r, 2500));
     }
 
-    // Launch Chrome on DISPLAY=:1, clean locks and open Amazon Merch Landing
+    // Launch Chrome on active DISPLAY (:99 for Selenium, :1, :0), clean locks and open Amazon Merch Landing
     const cmd = [
       "/bin/bash",
       "-c",
-      "export DISPLAY=:1; pkill -f chrome || true; pkill -f chromium || true; rm -f /root/.config/google-chrome/Singleton* /root/.config/chromium/Singleton* 2>/dev/null || true; (google-chrome --no-sandbox --disable-dev-shm-usage --disable-gpu --user-data-dir=/root/.config/google-chrome --start-maximized https://merch.amazon.com/landing || chromium-browser --no-sandbox --disable-dev-shm-usage --user-data-dir=/root/.config/google-chrome --start-maximized https://merch.amazon.com/landing) >/dev/null 2>&1 &"
+      "pkill -f chrome || true; pkill -f chromium || true; rm -f /home/seluser/.config/google-chrome/Singleton* /root/.config/google-chrome/Singleton* 2>/dev/null || true; for d in :99 :99.0 :1 :0; do (DISPLAY=$d google-chrome --no-sandbox --disable-dev-shm-usage --disable-gpu --start-maximized https://merch.amazon.com/landing >/dev/null 2>&1 &); done"
     ];
 
     const execRes = await this.execCommand(containerName, cmd);

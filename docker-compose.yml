@@ -25,38 +25,40 @@ services:
 
   # Chrome Session 1: Sync & Login (Passwortfreies noVNC auf Port 6080)
   chrome-sync:
-    image: dorowu/ubuntu-desktop-lxde-vnc:latest
+    image: selenium/standalone-chrome:latest
     container_name: mba_chrome_sync
     restart: unless-stopped
     security_opt:
       - seccomp:unconfined
     environment:
-      - HTTP_PASSWORD=
-      - VNC_PASSWORD=
-      - RESOLUTION=1600x900
+      - VNC_NO_PASSWORD=1
+      - SE_START_NO_VNC=true
+      - SE_VNC_PORT=7900
+      - START_XVFB=true
     volumes:
-      - ./data/chrome-profile:/root/.config/google-chrome
+      - ./data/chrome-profile:/home/seluser/.config/google-chrome
       - /dev/shm:/dev/shm
     ports:
-      - "6080:80"
+      - "6080:7900"
     shm_size: '2gb'
 
   # Chrome Session 2: Upload Worker (Passwortfreies noVNC auf Port 6081)
   chrome-upload:
-    image: dorowu/ubuntu-desktop-lxde-vnc:latest
+    image: selenium/standalone-chrome:latest
     container_name: mba_chrome_upload
     restart: unless-stopped
     security_opt:
       - seccomp:unconfined
     environment:
-      - HTTP_PASSWORD=
-      - VNC_PASSWORD=
-      - RESOLUTION=1600x900
+      - VNC_NO_PASSWORD=1
+      - SE_START_NO_VNC=true
+      - SE_VNC_PORT=7900
+      - START_XVFB=true
     volumes:
-      - ./data/chrome-profile:/root/.config/google-chrome
+      - ./data/chrome-profile:/home/seluser/.config/google-chrome
       - /dev/shm:/dev/shm
     ports:
-      - "6081:80"
+      - "6081:7900"
     shm_size: '2gb'
 
 volumes:
