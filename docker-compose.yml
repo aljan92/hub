@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # MBA HUB Core App
+  # MBA HUB Core App (Including Native CDP Mac Stealth Browser Engine)
   mba-hub:
     build: .
     container_name: mba_hub_app
@@ -21,50 +21,8 @@ services:
     volumes:
       - ./data:/app/data
       - ./data/chrome-profile:/app/data/chrome-profile
-      - /var/run/docker.sock:/var/run/docker.sock
-
-  # Chrome Session 1: Sync & Login (Passwortfreies noVNC auf Port 6080)
-  chrome-sync:
-    image: selenium/standalone-chrome:latest
-    container_name: mba_chrome_sync
-    restart: unless-stopped
-    security_opt:
-      - seccomp:unconfined
-    environment:
-      - SE_START_NO_VNC=true
-      - SE_NO_VNC_PORT=7900
-      - SE_VNC_PASSWORD=secret
-      - START_XVFB=true
-      - SE_NODE_SESSION_TIMEOUT=86400
-      - SE_NODE_MAX_SESSIONS=4
-    volumes:
-      - ./data/chrome-profile:/home/seluser/.config/google-chrome
-      - /dev/shm:/dev/shm
-    ports:
-      - "6080:7900"
-    shm_size: '2gb'
-
-  # Chrome Session 2: Upload Worker (Passwortfreies noVNC auf Port 6081)
-  chrome-upload:
-    image: selenium/standalone-chrome:latest
-    container_name: mba_chrome_upload
-    restart: unless-stopped
-    security_opt:
-      - seccomp:unconfined
-    environment:
-      - SE_START_NO_VNC=true
-      - SE_NO_VNC_PORT=7900
-      - SE_VNC_PASSWORD=secret
-      - START_XVFB=true
-      - SE_NODE_SESSION_TIMEOUT=86400
-      - SE_NODE_MAX_SESSIONS=4
-    volumes:
-      - ./data/chrome-profile:/home/seluser/.config/google-chrome
-      - /dev/shm:/dev/shm
-    ports:
-      - "6081:7900"
-    shm_size: '2gb'
 
 volumes:
   hub_data:
+
 

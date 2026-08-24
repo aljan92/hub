@@ -1,5 +1,5 @@
-# Zero-RUN Standalone Dockerfile for MBA HUB (100% immune to NAS procfs/runc build restrictions)
-FROM node:22-alpine
+# Zero-RUN Standalone Dockerfile for MBA HUB (Playwright Chromium & Mac Stealth Engine)
+FROM mcr.microsoft.com/playwright:v1.50.1-noble
 
 WORKDIR /app
 
@@ -15,3 +15,4 @@ COPY package.json ./
 EXPOSE 3000
 
 CMD ["node", "dist/server.cjs"]
+

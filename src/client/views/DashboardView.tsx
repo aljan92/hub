@@ -20,6 +20,8 @@ import {
   Power
 } from 'lucide-react';
 
+import { BrowserScreencast } from '../components/BrowserScreencast';
+
 interface DashboardViewProps {
   onNavigateTab: (tab: any) => void;
 }
@@ -30,45 +32,10 @@ let moduleCachedActivity: any[] = [];
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) => {
   const [browserViewActive, setBrowserViewActive] = useState(false);
-  const [activeSession, setActiveSession] = useState<'sync' | 'upload'>('sync');
-  const [iframeKey, setIframeKey] = useState(0);
   const [healthData, setHealthData] = useState<any>(moduleCachedHealth);
   const [statsData, setStatsData] = useState<any>(moduleCachedStats);
   const [activityEvents, setActivityEvents] = useState<any[]>(moduleCachedActivity);
   const [loadingHealth, setLoadingHealth] = useState(false);
-  const [restartingBrowser, setRestartingBrowser] = useState(false);
-  const [restartMessage, setRestartMessage] = useState<string | null>(null);
-
-  const nasHost = typeof window !== 'undefined' ? (window.location.hostname || '192.168.178.141') : '192.168.178.141';
-  const currentPort = activeSession === 'sync' ? 6080 : 6081;
-  const currentUrl = `http://${nasHost}:${currentPort}/?autoconnect=true&password=secret&resize=scale`;
-
-  const handleRestartBrowser = async () => {
-    setRestartingBrowser(true);
-    setRestartMessage(null);
-    try {
-      const res = await fetch('/api/v1/browser/restart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session: activeSession })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setRestartMessage(`✓ Chrome (${activeSession === 'sync' ? 'Session 1' : 'Session 2'}) wurde geöffnet / neugestartet!`);
-        setTimeout(() => {
-          setRestartMessage(null);
-        }, 3000);
-      } else {
-        setRestartMessage(`Info: ${data.message || 'Neustart nicht möglich'}`);
-        setTimeout(() => setRestartMessage(null), 5000);
-      }
-    } catch (err: any) {
-      setRestartMessage(`Fehler beim Starten von Chrome: ${err.message}`);
-      setTimeout(() => setRestartMessage(null), 5000);
-    } finally {
-      setRestartingBrowser(false);
-    }
-  };
 
   const fetchDashboardData = (forceSpinner = false) => {
     if (forceSpinner) setLoadingHealth(true);
@@ -180,124 +147,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
             onClick={() => setBrowserViewActive(!browserViewActive)}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold border transition-all ${
               browserViewActive 
-                ? 'bg-accent-cyan text-slate-900 border-accent-cyan font-bold shadow-lg shadow-accent-cyan/20'
+                ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-lg shadow-amber-500/20'
                 : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
             }`}
           >
             <MonitorPlay className="w-4 h-4" />
-            <span>{browserViewActive ? 'Browser Stream schließen' : 'Amazon Browser (noVNC)'}</span>
+            <span>{browserViewActive ? 'Browser Stream schließen' : 'Amazon Browser (Live Stream)'}</span>
           </button>
         </div>
       </div>
 
-      {/* Embedded noVNC Stream Panel (Directly inline in Dashboard) */}
+      {/* Embedded Native CDP Browser Screencast Panel */}
       {browserViewActive && (
-        <div className="glass-panel p-5 rounded-2xl border border-accent-cyan/40 shadow-2xl relative overflow-hidden animate-fadeIn space-y-4">
-          {/* Top Toolbar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-            <div className="flex items-center space-x-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-sm font-bold text-slate-100">Live Amazon Merch Browser Session (noVNC)</span>
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-slate-800 text-accent-cyan border border-slate-700">
-                Port {currentPort}
-              </span>
-            </div>
-
-            {/* Instance Selector Tabs & Tools */}
-            <div className="flex items-center space-x-2">
-              {/* Tab: Session 1 (Sync & Login) */}
-              <button
-                type="button"
-                onClick={() => { setActiveSession('sync'); setIframeKey(k => k + 1); }}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
-                  activeSession === 'sync'
-                    ? 'bg-primary-600/30 text-primary-300 border-primary-500/50 shadow-sm'
-                    : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-slate-200'
-                }`}
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Session 1: Sync &amp; Login (6080)</span>
-              </button>
-
-              {/* Tab: Session 2 (Upload Worker) */}
-              <button
-                type="button"
-                onClick={() => { setActiveSession('upload'); setIframeKey(k => k + 1); }}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
-                  activeSession === 'upload'
-                    ? 'bg-accent-cyan/20 text-accent-cyan border-accent-cyan/40 shadow-sm'
-                    : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-slate-200'
-                }`}
-              >
-                <UploadCloud className="w-3.5 h-3.5" />
-                <span>Session 2: Upload Worker (6081)</span>
-              </button>
-
-              {/* Action: Start / Restart Chrome */}
-              <button
-                type="button"
-                onClick={handleRestartBrowser}
-                disabled={restartingBrowser}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-all shadow-sm active:scale-95 disabled:opacity-50"
-                title="Startet oder startet die Chrome-Instanz frisch mit Amazon Merch neu"
-              >
-                <Play className={`w-3.5 h-3.5 fill-current ${restartingBrowser ? 'animate-spin' : ''}`} />
-                <span>{restartingBrowser ? 'Starte Chrome...' : 'Chrome starten / neu starten'}</span>
-              </button>
-
-              {/* Action: Reload Stream */}
-              <button
-                type="button"
-                onClick={() => setIframeKey(k => k + 1)}
-                className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors"
-                title="Stream neu laden"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Action: Open in Full New Tab */}
-              <a
-                href={currentUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex items-center"
-                title="In separatem Vollbild-Tab öffnen"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </div>
-          </div>
-
-          {/* Feedback Banner if restarting */}
-          {restartMessage && (
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2 animate-fadeIn">
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-              <span>{restartMessage}</span>
-            </div>
-          )}
-
-          {/* Description Subtext */}
-          <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-            <span>
-              {activeSession === 'sync'
-                ? '🔒 Session 1: Für den initialen Amazon-Login, 2FA/Passkey, Keep-Alive & den kontinuierlichen Supabase-Sync.'
-                : '🚀 Session 2: Für automatisierte Amazon Merch Uploads, General Resize & Slot-Filling.'}
-            </span>
-            <span className="font-mono text-[11px] text-slate-500">
-              http://{nasHost}:{currentPort}
-            </span>
-          </div>
-
-          {/* Live Interactive noVNC Frame directly inside Dashboard */}
-          <div className="w-full h-[550px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden relative shadow-inner">
-            <iframe 
-              key={iframeKey}
-              src={currentUrl} 
-              className="w-full h-full border-0 rounded-xl"
-              title={`noVNC Browser Stream - ${activeSession}`}
-              allow="clipboard-read; clipboard-write; fullscreen"
-            />
-          </div>
+        <div className="w-full h-[620px] rounded-2xl overflow-hidden shadow-2xl border border-slate-800 animate-fadeIn">
+          <BrowserScreencast />
         </div>
       )}
 

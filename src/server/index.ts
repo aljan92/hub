@@ -15,7 +15,7 @@ import { IdeogramService } from './services/ideogramService';
 import { VectorizerService } from './services/vectorizerService';
 import { SupabaseService } from './services/supabaseService';
 import { SyncEngine } from './services/syncEngine';
-import { DockerService } from './services/dockerService';
+import { BrowserSessionService } from './services/browserSessionService';
 
 dotenv.config();
 
@@ -101,6 +101,15 @@ function broadcast(type: string, payload: any) {
   });
 }
 
+// Stream CDP Screencast frames to all connected dashboard clients
+BrowserSessionService.onFrame((session, base64Data, metadata) => {
+  broadcast('BROWSER_FRAME', {
+    session,
+    data: base64Data,
+    metadata
+  });
+});
+
 // WebSocket Connection Handler
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ 
@@ -109,16 +118,33 @@ wss.on('connection', (ws) => {
       status: 'online', 
       slots: dailySlotStats,
       tasks: activeTasks.length,
-      queue: uploadQueue.length
+      queue: uploadQueue.length,
+      browserStatus: BrowserSessionService.getStatus()
     } 
   }));
 
-  ws.on('message', (data) => {
+  ws.on('message', async (data) => {
     try {
       const parsed = JSON.parse(data.toString());
-      console.log('[MBA Hub WS] Received client event:', parsed.type);
+      const { type, session, payload } = parsed;
+
+      if (type === 'BROWSER_INIT') {
+        await BrowserSessionService.getSession(session || 'sync');
+      } else if (type === 'BROWSER_MOUSE') {
+        await BrowserSessionService.dispatchMouseEvent(session || 'sync', payload);
+      } else if (type === 'BROWSER_KEY') {
+        await BrowserSessionService.dispatchKeyEvent(session || 'sync', payload);
+      } else if (type === 'BROWSER_NAVIGATE') {
+        await BrowserSessionService.navigate(session || 'sync', payload?.url);
+      } else if (type === 'BROWSER_RELOAD') {
+        await BrowserSessionService.reload(session || 'sync');
+      } else if (type === 'BROWSER_BACK') {
+        await BrowserSessionService.goBack(session || 'sync');
+      } else if (type === 'BROWSER_FORWARD') {
+        await BrowserSessionService.goForward(session || 'sync');
+      }
     } catch (err) {
-      console.error('[MBA Hub WS] Invalid message:', err);
+      console.error('[MBA Hub WS] Invalid message error:', err);
     }
   });
 });
@@ -242,32 +268,34 @@ app.post('/api/v1/sync/logs/clear', (req, res) => {
   res.json({ success: true });
 });
 
-// 2.0.2 Browser Container Management (Start / Restart Chrome)
+// 2.0.2 Native CDP Browser Management (Start / Restart / Navigate / Status)
 app.post('/api/v1/browser/restart', async (req, res) => {
   try {
     const { session } = req.body;
-    const containerName = session === 'upload' ? 'mba_chrome_upload' : 'mba_chrome_sync';
-    
-    logActivity('Browser', `Chrome Start/Restart für ${containerName} ausgeführt`);
-    const result = await DockerService.launchOrRestartChrome(containerName);
+    logActivity('Browser', `Chrome Neustart für Session ${session || 'sync'}`);
+    const result = await BrowserSessionService.restartSession(session || 'sync');
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-app.get('/api/v1/browser/status', async (req, res) => {
+app.get('/api/v1/browser/status', (req, res) => {
   try {
-    const [syncStatus, uploadStatus] = await Promise.all([
-      DockerService.getContainerStatus('mba_chrome_sync'),
-      DockerService.getContainerStatus('mba_chrome_upload')
-    ]);
-
     res.json({
       success: true,
-      sync: syncStatus,
-      upload: uploadStatus
+      ...BrowserSessionService.getStatus()
     });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/browser/navigate', async (req, res) => {
+  try {
+    const { session, url } = req.body;
+    const result = await BrowserSessionService.navigate(session || 'sync', url);
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
