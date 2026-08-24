@@ -13,6 +13,59 @@ interface ActiveSession {
   isStreaming: boolean;
 }
 
+function findChromiumExecutable(): string | undefined {
+  // 1. Direct environment variable
+  if (process.env.CHROME_BIN && fs.existsSync(process.env.CHROME_BIN)) {
+    return process.env.CHROME_BIN;
+  }
+
+  // 2. Search common Playwright directories (/ms-playwright, ~/.cache/ms-playwright, etc.)
+  const candidateDirs = [
+    process.env.PLAYWRIGHT_BROWSERS_PATH || '/ms-playwright',
+    path.join(process.env.HOME || '/root', '.cache', 'ms-playwright'),
+    path.join(process.env.HOME || '/root', 'Library', 'Caches', 'ms-playwright')
+  ];
+
+  for (const dir of candidateDirs) {
+    if (fs.existsSync(dir)) {
+      try {
+        const files: string[] = [];
+        const scan = (d: string, depth = 0) => {
+          if (depth > 4) return;
+          const items = fs.readdirSync(d, { withFileTypes: true });
+          for (const item of items) {
+            const p = path.join(d, item.name);
+            if (item.isDirectory()) scan(p, depth + 1);
+            else files.push(p);
+          }
+        };
+        scan(dir);
+
+        // Priority 1: chrome-headless-shell
+        const headlessShell = files.find(f => f.endsWith('/chrome-headless-shell') || f.endsWith('\\chrome-headless-shell.exe'));
+        if (headlessShell) return headlessShell;
+
+        // Priority 2: chrome / google-chrome
+        const chrome = files.find(f => f.endsWith('/chrome') || f.endsWith('Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing') || f.endsWith('\\chrome.exe'));
+        if (chrome) return chrome;
+      } catch {}
+    }
+  }
+
+  // 3. System installed Chromium / Google Chrome
+  const systemCandidates = [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser'
+  ];
+  for (const sc of systemCandidates) {
+    if (fs.existsSync(sc)) return sc;
+  }
+
+  return undefined;
+}
+
 export class BrowserSessionService {
   private static context: BrowserContext | null = null;
   private static sessions: Map<BrowserSessionType, ActiveSession> = new Map();
@@ -50,10 +103,12 @@ export class BrowserSessionService {
     try {
       const profileDir = this.getProfileDir();
       const macUserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+      const executablePath = findChromiumExecutable();
 
       console.log('[BrowserSession] Launching persistent Chromium with Mac Stealth profile:', profileDir);
+      console.log('[BrowserSession] Using executable path:', executablePath || 'Default Playwright auto-resolution');
 
-      this.context = await chromium.launchPersistentContext(profileDir, {
+      const launchOptions: any = {
         headless: true,
         viewport: { width: 1440, height: 900 },
         userAgent: macUserAgent,
@@ -71,7 +126,13 @@ export class BrowserSessionService {
           '--disable-gpu',
           '--disable-setuid-sandbox'
         ]
-      });
+      };
+
+      if (executablePath) {
+        launchOptions.executablePath = executablePath;
+      }
+
+      this.context = await chromium.launchPersistentContext(profileDir, launchOptions);
 
       // Inject Mac Stealth script to evade Amazon / AWS bot detection
       await this.context.addInitScript(() => {

@@ -215623,6 +215623,48 @@ var _android = import_index.default._android;
 // src/server/services/browserSessionService.ts
 var import_path67 = __toESM2(require("path"), 1);
 var import_fs72 = __toESM2(require("fs"), 1);
+function findChromiumExecutable() {
+  if (process.env.CHROME_BIN && import_fs72.default.existsSync(process.env.CHROME_BIN)) {
+    return process.env.CHROME_BIN;
+  }
+  const candidateDirs = [
+    process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright",
+    import_path67.default.join(process.env.HOME || "/root", ".cache", "ms-playwright"),
+    import_path67.default.join(process.env.HOME || "/root", "Library", "Caches", "ms-playwright")
+  ];
+  for (const dir of candidateDirs) {
+    if (import_fs72.default.existsSync(dir)) {
+      try {
+        const files = [];
+        const scan = (d, depth = 0) => {
+          if (depth > 4) return;
+          const items = import_fs72.default.readdirSync(d, { withFileTypes: true });
+          for (const item of items) {
+            const p = import_path67.default.join(d, item.name);
+            if (item.isDirectory()) scan(p, depth + 1);
+            else files.push(p);
+          }
+        };
+        scan(dir);
+        const headlessShell = files.find((f) => f.endsWith("/chrome-headless-shell") || f.endsWith("\\chrome-headless-shell.exe"));
+        if (headlessShell) return headlessShell;
+        const chrome2 = files.find((f) => f.endsWith("/chrome") || f.endsWith("Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing") || f.endsWith("\\chrome.exe"));
+        if (chrome2) return chrome2;
+      } catch {
+      }
+    }
+  }
+  const systemCandidates = [
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser"
+  ];
+  for (const sc of systemCandidates) {
+    if (import_fs72.default.existsSync(sc)) return sc;
+  }
+  return void 0;
+}
 var BrowserSessionService = class {
   static context = null;
   static sessions = /* @__PURE__ */ new Map();
@@ -215656,8 +215698,10 @@ var BrowserSessionService = class {
     try {
       const profileDir2 = this.getProfileDir();
       const macUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+      const executablePath = findChromiumExecutable();
       console.log("[BrowserSession] Launching persistent Chromium with Mac Stealth profile:", profileDir2);
-      this.context = await chromium.launchPersistentContext(profileDir2, {
+      console.log("[BrowserSession] Using executable path:", executablePath || "Default Playwright auto-resolution");
+      const launchOptions = {
         headless: true,
         viewport: { width: 1440, height: 900 },
         userAgent: macUserAgent,
@@ -215675,7 +215719,11 @@ var BrowserSessionService = class {
           "--disable-gpu",
           "--disable-setuid-sandbox"
         ]
-      });
+      };
+      if (executablePath) {
+        launchOptions.executablePath = executablePath;
+      }
+      this.context = await chromium.launchPersistentContext(profileDir2, launchOptions);
       await this.context.addInitScript(() => {
         Object.defineProperty(navigator, "webdriver", {
           get: () => void 0
