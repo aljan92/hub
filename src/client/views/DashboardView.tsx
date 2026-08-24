@@ -41,7 +41,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
 
   const nasHost = typeof window !== 'undefined' ? (window.location.hostname || '192.168.178.141') : '192.168.178.141';
   const currentPort = activeSession === 'sync' ? 6080 : 6081;
-  const currentUrl = `http://${nasHost}:${currentPort}/vnc.html?autoconnect=true&password=secret&resize=scale`;
+  const currentUrl = `http://${nasHost}:${currentPort}/?autoconnect=true&resize=scale`;
 
   const handleRestartBrowser = async () => {
     setRestartingBrowser(true);
@@ -54,17 +54,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
       });
       const data = await res.json();
       if (data.success) {
-        setRestartMessage(`✓ ${activeSession === 'sync' ? 'Session 1 (Sync)' : 'Session 2 (Upload)'} wurde gestartet / neugestartet!`);
+        setRestartMessage(`✓ Chrome (${activeSession === 'sync' ? 'Session 1' : 'Session 2'}) wurde geöffnet / neugestartet!`);
         setTimeout(() => {
-          setIframeKey(k => k + 1);
           setRestartMessage(null);
-        }, 2000);
+        }, 3000);
       } else {
         setRestartMessage(`Info: ${data.message || 'Neustart nicht möglich'}`);
         setTimeout(() => setRestartMessage(null), 5000);
       }
     } catch (err: any) {
-      setRestartMessage(`Fehler beim Neustart: ${err.message}`);
+      setRestartMessage(`Fehler beim Starten von Chrome: ${err.message}`);
       setTimeout(() => setRestartMessage(null), 5000);
     } finally {
       setRestartingBrowser(false);

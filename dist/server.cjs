@@ -51235,14 +51235,16 @@ var DockerService = class {
   /**
    * Execute a command inside a running Docker container via Docker socket
    */
-  static async execCommand(containerName, cmd) {
+  static async execCommand(containerName, cmd, user) {
     const socketPath = getDockerSocketPath();
     return new Promise((resolve) => {
-      const createPayload = JSON.stringify({
+      const payload = {
         AttachStdout: true,
         AttachStderr: true,
         Cmd: cmd
-      });
+      };
+      if (user) payload.User = user;
+      const createPayload = JSON.stringify(payload);
       const createReq = import_http.default.request({
         socketPath,
         path: `/v1.41/containers/${containerName}/exec`,
@@ -51293,7 +51295,7 @@ var DockerService = class {
     });
   }
   /**
-   * Launch or restart Chrome freshly on Display :1 inside container with Amazon Merch
+   * Launch or restart Chrome freshly on Display :99.0 inside container with Amazon Merch
    */
   static async launchOrRestartChrome(containerName) {
     const status = await this.getContainerStatus(containerName);
@@ -51305,16 +51307,20 @@ var DockerService = class {
     const cmd = [
       "/bin/bash",
       "-c",
-      "pkill -f chrome || true; pkill -f chromium || true; rm -f /home/seluser/.config/google-chrome/Singleton* /root/.config/google-chrome/Singleton* 2>/dev/null || true; for d in :99 :99.0 :1 :0; do (DISPLAY=$d google-chrome --no-sandbox --disable-dev-shm-usage --disable-gpu --start-maximized https://merch.amazon.com/dashboard >/dev/null 2>&1 &); done"
+      "pkill -f chrome || true; pkill -f chromium || true; rm -f /home/seluser/.config/google-chrome/Singleton* /root/.config/google-chrome/Singleton* 2>/dev/null || true; DISPLAY=:99.0 google-chrome --no-sandbox --disable-dev-shm-usage --disable-gpu --start-maximized https://merch.amazon.com/dashboard >/dev/null 2>&1 &"
     ];
-    const execRes = await this.execCommand(containerName, cmd);
+    const execRes = await this.execCommand(containerName, cmd, "seluser");
     if (execRes.success) {
       return {
         success: true,
         message: `Google Chrome wurde in ${containerName} aufgerufen und ge\xF6ffnet!`
       };
     }
-    return execRes;
+    return await this.execCommand(containerName, [
+      "/bin/bash",
+      "-c",
+      "su - seluser -c 'DISPLAY=:99.0 google-chrome --no-sandbox --disable-dev-shm-usage --start-maximized https://merch.amazon.com/dashboard &' || (export DISPLAY=:99.0; google-chrome --no-sandbox --disable-dev-shm-usage --start-maximized https://merch.amazon.com/dashboard &)"
+    ]);
   }
   /**
    * Restarts a container by name via Docker Unix socket

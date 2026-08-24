@@ -11,16 +11,18 @@ export class DockerService {
   /**
    * Execute a command inside a running Docker container via Docker socket
    */
-  static async execCommand(containerName: string, cmd: string[]): Promise<{ success: boolean; message: string }> {
+  static async execCommand(containerName: string, cmd: string[], user?: string): Promise<{ success: boolean; message: string }> {
     const socketPath = getDockerSocketPath();
 
     return new Promise((resolve) => {
       // 1. Create exec instance
-      const createPayload = JSON.stringify({
+      const payload: any = {
         AttachStdout: true,
         AttachStderr: true,
         Cmd: cmd
-      });
+      };
+      if (user) payload.User = user;
+      const createPayload = JSON.stringify(payload);
 
       const createReq = http.request({
         socketPath,
@@ -79,7 +81,7 @@ export class DockerService {
   }
 
   /**
-   * Launch or restart Chrome freshly on Display :1 inside container with Amazon Merch
+   * Launch or restart Chrome freshly on Display :99.0 inside container with Amazon Merch
    */
   static async launchOrRestartChrome(containerName: string): Promise<{ success: boolean; message: string }> {
     const status = await this.getContainerStatus(containerName);
@@ -88,25 +90,31 @@ export class DockerService {
     if (!status.running) {
       const restartRes = await this.restartContainer(containerName);
       if (!restartRes.success) return restartRes;
-      // Wait for X-Server / LXDE to initialize
+      // Wait for X-Server / XVFB to initialize
       await new Promise(r => setTimeout(r, 2500));
     }
 
-    // Launch Chrome on active DISPLAY (:99 for Selenium, :1, :0), clean locks and open Amazon Merch Dashboard
+    // Launch Chrome on active DISPLAY=:99.0 as user seluser
     const cmd = [
       "/bin/bash",
       "-c",
-      "pkill -f chrome || true; pkill -f chromium || true; rm -f /home/seluser/.config/google-chrome/Singleton* /root/.config/google-chrome/Singleton* 2>/dev/null || true; for d in :99 :99.0 :1 :0; do (DISPLAY=$d google-chrome --no-sandbox --disable-dev-shm-usage --disable-gpu --start-maximized https://merch.amazon.com/dashboard >/dev/null 2>&1 &); done"
+      "pkill -f chrome || true; pkill -f chromium || true; rm -f /home/seluser/.config/google-chrome/Singleton* /root/.config/google-chrome/Singleton* 2>/dev/null || true; DISPLAY=:99.0 google-chrome --no-sandbox --disable-dev-shm-usage --disable-gpu --start-maximized https://merch.amazon.com/dashboard >/dev/null 2>&1 &"
     ];
 
-    const execRes = await this.execCommand(containerName, cmd);
+    const execRes = await this.execCommand(containerName, cmd, "seluser");
     if (execRes.success) {
       return { 
         success: true, 
         message: `Google Chrome wurde in ${containerName} aufgerufen und geöffnet!` 
       };
     }
-    return execRes;
+
+    // Fallback without explicit user
+    return await this.execCommand(containerName, [
+      "/bin/bash",
+      "-c",
+      "su - seluser -c 'DISPLAY=:99.0 google-chrome --no-sandbox --disable-dev-shm-usage --start-maximized https://merch.amazon.com/dashboard &' || (export DISPLAY=:99.0; google-chrome --no-sandbox --disable-dev-shm-usage --start-maximized https://merch.amazon.com/dashboard &)"
+    ]);
   }
 
   /**
