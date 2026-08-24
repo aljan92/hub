@@ -153,39 +153,105 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
         </div>
       </div>
 
-      {/* Embedded noVNC Stream Modal */}
-      {browserViewActive && (
-        <div className="glass-panel p-5 rounded-2xl border border-accent-cyan/40 shadow-2xl relative overflow-hidden animate-fadeIn">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center space-x-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-sm font-bold text-slate-100">Live Amazon Merch Chrome Session (noVNC)</span>
-              <span className="text-[11px] text-slate-400 font-mono">Port 6080</span>
-            </div>
-            <span className="text-xs text-slate-400">Nutze dieses Fenster für den initialen Amazon Login &amp; 2FA / MFA</span>
-          </div>
+      {/* Embedded noVNC Stream Modal (Dual-Instance Switcher) */}
+      {browserViewActive && (() => {
+        const nasHost = window.location.hostname || '192.168.178.141';
+        const [activeSession, setActiveSession] = useState<'sync' | 'upload'>('sync');
+        const [iframeKey, setIframeKey] = useState(0);
 
-          <div className="w-full h-[520px] bg-slate-950 rounded-xl border border-slate-800 flex flex-col items-center justify-center relative overflow-hidden">
-            <iframe 
-              src="http://192.168.178.141:6080/vnc.html?autoconnect=true&resize=scale" 
-              className="w-full h-full border-0 rounded-xl"
-              title="noVNC Browser Stream"
-            />
-            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-6 text-center bg-slate-950/40 backdrop-blur-[2px]">
-              <div className="bg-slate-900/90 border border-slate-700/80 rounded-2xl p-6 max-w-md shadow-2xl space-y-3 pointer-events-auto">
-                <Globe className="w-10 h-10 text-accent-cyan mx-auto animate-bounce" />
-                <h4 className="font-bold text-slate-100 text-sm">Persistente Browser Session</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Über diesen Stream hast du direkten Zugriff auf den Docker Chromium-Browser zur Überwachung von Amazon Merch Uploads.
-                </p>
-                <div className="text-[11px] font-mono text-accent-cyan bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
-                  Target: http://192.168.178.141:6080
-                </div>
+        const currentPort = activeSession === 'sync' ? 6080 : 6081;
+        const currentUrl = `http://${nasHost}:${currentPort}/vnc.html?autoconnect=true&resize=scale`;
+
+        return (
+          <div className="glass-panel p-5 rounded-2xl border border-accent-cyan/40 shadow-2xl relative overflow-hidden animate-fadeIn space-y-4">
+            {/* Top Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+              <div className="flex items-center space-x-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-sm font-bold text-slate-100">Live Amazon Merch Browser Session (noVNC)</span>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-slate-800 text-accent-cyan border border-slate-700">
+                  Port {currentPort}
+                </span>
+              </div>
+
+              {/* Instance Selector Tabs & Tools */}
+              <div className="flex items-center space-x-2">
+                {/* Tab: Session 1 (Sync & Login) */}
+                <button
+                  type="button"
+                  onClick={() => { setActiveSession('sync'); setIframeKey(k => k + 1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                    activeSession === 'sync'
+                      ? 'bg-primary-600/30 text-primary-300 border-primary-500/50 shadow-sm'
+                      : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Session 1: Sync &amp; Login (6080)</span>
+                </button>
+
+                {/* Tab: Session 2 (Upload Worker) */}
+                <button
+                  type="button"
+                  onClick={() => { setActiveSession('upload'); setIframeKey(k => k + 1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                    activeSession === 'upload'
+                      ? 'bg-accent-cyan/20 text-accent-cyan border-accent-cyan/40 shadow-sm'
+                      : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>Session 2: Upload Worker (6081)</span>
+                </button>
+
+                {/* Action: Reload Stream */}
+                <button
+                  type="button"
+                  onClick={() => setIframeKey(k => k + 1)}
+                  className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors"
+                  title="Stream neu laden"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Action: Open in Full New Tab */}
+                <a
+                  href={currentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex items-center"
+                  title="In separatem Vollbild-Tab öffnen"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
               </div>
             </div>
+
+            {/* Description Subtext */}
+            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+              <span>
+                {activeSession === 'sync'
+                  ? '🔒 Session 1: Für den initialen Amazon-Login, 2FA/Passkey, Keep-Alive & den kontinuierlichen Supabase-Sync.'
+                  : '🚀 Session 2: Für automatisierte Amazon Merch Uploads, General Resize & Slot-Filling.'}
+              </span>
+              <span className="font-mono text-[11px] text-slate-500">
+                http://{nasHost}:{currentPort}
+              </span>
+            </div>
+
+            {/* Live Interactive noVNC Frame */}
+            <div className="w-full h-[600px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden relative shadow-inner">
+              <iframe 
+                key={iframeKey}
+                src={currentUrl} 
+                className="w-full h-full border-0 rounded-xl"
+                title={`noVNC Browser Stream - ${activeSession}`}
+                allow="clipboard-read; clipboard-write; fullscreen"
+              />
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Top Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
