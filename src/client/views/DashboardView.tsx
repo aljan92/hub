@@ -41,7 +41,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
 
   const nasHost = typeof window !== 'undefined' ? (window.location.hostname || '192.168.178.141') : '192.168.178.141';
   const currentPort = activeSession === 'sync' ? 6080 : 6081;
-  const currentUrl = `http://${nasHost}:${currentPort}/vnc.html?autoconnect=true&resize=scale`;
+  const currentUrl = `http://${nasHost}:${currentPort}/vnc.html?autoconnect=true&password=secret&resize=scale`;
 
   const handleRestartBrowser = async () => {
     setRestartingBrowser(true);

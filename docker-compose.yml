@@ -31,10 +31,12 @@ services:
     security_opt:
       - seccomp:unconfined
     environment:
-      - VNC_NO_PASSWORD=1
       - SE_START_NO_VNC=true
-      - SE_VNC_PORT=7900
+      - SE_NO_VNC_PORT=7900
+      - SE_VNC_PASSWORD=secret
       - START_XVFB=true
+      - SE_NODE_SESSION_TIMEOUT=86400
+      - SE_NODE_MAX_SESSIONS=4
     volumes:
       - ./data/chrome-profile:/home/seluser/.config/google-chrome
       - /dev/shm:/dev/shm
@@ -50,10 +52,12 @@ services:
     security_opt:
       - seccomp:unconfined
     environment:
-      - VNC_NO_PASSWORD=1
       - SE_START_NO_VNC=true
-      - SE_VNC_PORT=7900
+      - SE_NO_VNC_PORT=7900
+      - SE_VNC_PASSWORD=secret
       - START_XVFB=true
+      - SE_NODE_SESSION_TIMEOUT=86400
+      - SE_NODE_MAX_SESSIONS=4
     volumes:
       - ./data/chrome-profile:/home/seluser/.config/google-chrome
       - /dev/shm:/dev/shm
