@@ -23,46 +23,40 @@ services:
       - ./data/chrome-profile:/app/data/chrome-profile
       - /var/run/docker.sock:/var/run/docker.sock
 
-  # Chrome Session 1: Sync & Login (Passwortfrei auf Port 6080)
+  # Chrome Session 1: Sync & Login (Passwortfreies noVNC auf Port 6080)
   chrome-sync:
-    image: lscr.io/linuxserver/chromium:latest
+    image: dorowu/ubuntu-desktop-lxde-vnc:latest
     container_name: mba_chrome_sync
     restart: unless-stopped
     security_opt:
       - seccomp:unconfined
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Berlin
-      - CUSTOM_USER=
-      - PASSWORD=
-      - CHROME_CLI=https://merch.amazon.com/landing
+      - HTTP_PASSWORD=
+      - VNC_PASSWORD=
+      - RESOLUTION=1600x900
     volumes:
-      - ./data/chrome-profile:/config
+      - ./data/chrome-profile:/root/.config/google-chrome
       - /dev/shm:/dev/shm
     ports:
-      - "6080:3000"
+      - "6080:80"
     shm_size: '2gb'
 
-  # Chrome Session 2: Upload Worker (Passwortfrei auf Port 6081)
+  # Chrome Session 2: Upload Worker (Passwortfreies noVNC auf Port 6081)
   chrome-upload:
-    image: lscr.io/linuxserver/chromium:latest
+    image: dorowu/ubuntu-desktop-lxde-vnc:latest
     container_name: mba_chrome_upload
     restart: unless-stopped
     security_opt:
       - seccomp:unconfined
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Berlin
-      - CUSTOM_USER=
-      - PASSWORD=
-      - CHROME_CLI=https://merch.amazon.com/landing
+      - HTTP_PASSWORD=
+      - VNC_PASSWORD=
+      - RESOLUTION=1600x900
     volumes:
-      - ./data/chrome-profile:/config
+      - ./data/chrome-profile:/root/.config/google-chrome
       - /dev/shm:/dev/shm
     ports:
-      - "6081:3000"
+      - "6081:80"
     shm_size: '2gb'
 
 volumes:
