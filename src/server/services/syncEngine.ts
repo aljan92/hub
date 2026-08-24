@@ -48,11 +48,16 @@ const MP_MAP: Record<string, string> = {
 };
 
 const VARIANT_PRODUCT_TYPES = new Set([
-  'MUG', 'MUG_11OZ', 'MUG_15OZ',
+  // Drinkware
+  'MUG', 'MUG_11OZ', 'MUG_15OZ', 'TRAVEL_MUG', 'TUMBLER', 'WATER_BOTTLE', 'CAN_COOLER',
+  // Headwear
+  'BASEBALL_HAT', 'BASEBALL_CAP', 'HAT', 'CAP', 'TRUCKER_HAT', 'BEANIE', 'DAD_HAT',
+  // Mobile / PopSockets
   'POP_SOCKET', 'POPSOCKET', 'POPSOCKETS_GRIP',
-  'TOTE_BAG', 'THROW_PILLOW',
   'PHONE_CASE_APPLE_IPHONE', 'PHONE_CASE_SAMSUNG_GALAXY', 'PHONE_CASE_SAMSUNG', 'PHONE_CASE', 'IPHONE_CASE', 'SAMSUNG_CASE',
-  'TUMBLER', 'WATER_BOTTLE', 'HARDCOVER_JOURNAL'
+  // Home, Office & Accessories
+  'TOTE_BAG', 'THROW_PILLOW', 'PILLOW', 'HARDCOVER_JOURNAL', 'JOURNAL', 'DESK_PAD', 'MOUSE_PAD', 'MOUSEPAD',
+  'STICKER', 'MAGNET', 'APRON', 'POSTER', 'CANVAS_PRINT'
 ]);
 
 const ALL_STATUSES = ['DRAFT', 'TRANSLATING', 'REVIEW', 'DECLINED', 'AMAZON_REJECTED', 'PUBLISHING', 'TIMED_OUT', 'PROPAGATED', 'PUBLISHED', 'DELETED', 'LOCKED'];
@@ -929,6 +934,16 @@ export class SyncEngine {
     let processed = 0;
     let errors = 0;
 
+    const marketplaceDomains: Record<string, string> = {
+      'us': 'amazon.com',
+      'de': 'amazon.de',
+      'gb': 'amazon.co.uk',
+      'fr': 'amazon.fr',
+      'it': 'amazon.it',
+      'es': 'amazon.es',
+      'jp': 'amazon.co.jp'
+    };
+
     try {
       const page = await this.getAmazonPage();
       const { data: unresolved, error } = await supabase.from('mba_designs')
@@ -941,20 +956,97 @@ export class SyncEngine {
 
       for (const item of unresolved) {
         if (this.shouldStop) break;
-        try {
-          const config = await this.fetchProductConfig(page, item.design_id);
-          const updatedAdAsins = this.buildAdAsins(item.published_products || [], item.ad_asins || []);
-          await supabase.from('mba_designs').update({
-            ad_asins: updatedAdAsins,
-            asin_resolved: true
-          }).eq('design_id', item.design_id);
-          processed++;
-        } catch {
-          errors++;
+        const pubProducts: any[] = item.published_products || [];
+        const newAdAsins: any[] = this.buildAdAsins(pubProducts, item.ad_asins || []);
+
+        const toResolve: { ad: any; parent: any }[] = [];
+        for (const ad of newAdAsins) {
+          if (!VARIANT_PRODUCT_TYPES.has((ad.type || '').toUpperCase())) continue;
+          const parent = pubProducts.find(p => (p.type || '').toUpperCase() === (ad.type || '').toUpperCase() && (p.market || '').toLowerCase() === (ad.market || '').toLowerCase());
+          if (!parent || !parent.asin) continue;
+          if (!ad.asin || ad.asin === parent.asin) {
+            toResolve.push({ ad, parent });
+          }
         }
-        await this.sleep(200);
+
+        for (const { ad, parent } of toResolve) {
+          if (this.shouldStop) break;
+          try {
+            const domain = marketplaceDomains[ad.market?.toLowerCase()] || 'amazon.com';
+            const detailUrl = `https://www.${domain}/dp/${parent.asin}`;
+
+            const html = await page.evaluate(async (url: string) => {
+              const res = await fetch(url, {
+                headers: {
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                },
+                credentials: 'include'
+              });
+              if (!res.ok) return '';
+              return await res.text();
+            }, detailUrl);
+
+            if (html) {
+              const matchDimensionMap = html.match(/"dimensionToAsinMap"\s*:\s*({[^}]+})/);
+              const matchAsinToDimension = html.match(/"asinToDimension"\s*:\s*({[^}]+})/);
+              const matchSelectedVar = html.match(/"selectedVariationASIN"\s*:\s*"([A-Z0-9]{10})"/);
+              const matchDataAsin = html.match(/data-defaultAsin="([A-Z0-9]{10})"/);
+              const matchFallbackAsin = html.match(/"asin"\s*:\s*"([A-Z0-9]{10})"/);
+
+              let resolvedChild: string | null = null;
+              if (matchDimensionMap && matchDimensionMap[1]) {
+                try {
+                  const asinMap = JSON.parse(matchDimensionMap[1]);
+                  const asins = Object.values(asinMap).filter((a: any) => a && a !== parent.asin);
+                  if (asins.length > 0) resolvedChild = asins[0] as string;
+                } catch {}
+              }
+
+              if (!resolvedChild && matchAsinToDimension && matchAsinToDimension[1]) {
+                try {
+                  const asinMap = JSON.parse(matchAsinToDimension[1]);
+                  const asins = Object.keys(asinMap).filter((a: any) => a && a !== parent.asin);
+                  if (asins.length > 0) resolvedChild = asins[0] as string;
+                } catch {}
+              }
+
+              if (!resolvedChild && matchSelectedVar && matchSelectedVar[1] && matchSelectedVar[1] !== parent.asin) {
+                resolvedChild = matchSelectedVar[1];
+              }
+
+              if (!resolvedChild && matchDataAsin && matchDataAsin[1] && matchDataAsin[1] !== parent.asin) {
+                resolvedChild = matchDataAsin[1];
+              }
+
+              if (!resolvedChild && matchFallbackAsin && matchFallbackAsin[1] && matchFallbackAsin[1] !== parent.asin) {
+                resolvedChild = matchFallbackAsin[1];
+              }
+
+              if (resolvedChild) {
+                ad.asin = resolvedChild;
+                this.addLog(`[ASIN Scanner] Child ASIN aufgelöst für ${parent.asin} (${ad.market}): ${resolvedChild} ✓`, 'success');
+              } else {
+                ad.asin = parent.asin;
+              }
+            } else {
+              ad.asin = parent.asin;
+            }
+          } catch (e: any) {
+            errors++;
+            ad.asin = parent.asin;
+          }
+          await this.sleep(1500);
+        }
+
+        await supabase.from('mba_designs').update({
+          ad_asins: newAdAsins,
+          asin_resolved: true
+        }).eq('design_id', item.design_id);
+        processed++;
       }
-    } catch {}
+    } catch (err: any) {
+      console.warn('[SyncEngine] ASIN batch error:', err.message);
+    }
 
     this.state.lastAsinSync = new Date().toLocaleString('de-DE');
     await this.refreshDBStats();
