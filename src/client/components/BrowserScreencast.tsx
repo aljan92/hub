@@ -245,6 +245,35 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
     }
   };
 
+  // Handle direct text send helper (for passwords, 2FA codes, or long strings)
+  const [directText, setDirectText] = useState('');
+  const handleSendDirectText = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!directText) return;
+    for (const char of directText) {
+      sendWsEvent('BROWSER_KEY', {
+        type: 'keyDown',
+        key: char,
+        text: char
+      });
+    }
+    setDirectText('');
+  };
+
+  // Direct paste handler
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const text = e.clipboardData.getData('text');
+    if (text) {
+      for (const char of text) {
+        sendWsEvent('BROWSER_KEY', {
+          type: 'keyDown',
+          key: char,
+          text: char
+        });
+      }
+    }
+  };
+
   return (
     <div 
       className="flex flex-col h-full bg-[#0d1117] rounded-xl border border-slate-800 overflow-hidden shadow-2xl focus:outline-none"
@@ -390,13 +419,20 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
       >
         <canvas
           ref={canvasRef}
+          tabIndex={0}
           width={1440}
           height={900}
-          onMouseDown={handleMouseDown}
+          onMouseDown={(e) => {
+            canvasRef.current?.focus();
+            handleMouseDown(e);
+          }}
           onMouseUp={handleMouseUp}
           onMouseMove={handleMouseMove}
           onWheel={handleWheel}
-          className="w-full h-full object-contain max-h-full"
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
+          onPaste={handlePaste}
+          className="w-full h-full object-contain max-h-full outline-none focus:ring-1 focus:ring-amber-500/50"
         />
 
         {/* Loading / Connecting Overlay */}
@@ -415,15 +451,29 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
         )}
       </div>
 
-      {/* Footer Info Bar */}
-      <div className="flex items-center justify-between px-4 py-1.5 bg-slate-950 border-t border-slate-800/80 text-[11px] text-slate-400">
-        <div className="flex items-center gap-2">
-          <span>💡 Klicke und tippe direkt in den Bildschirm, um deinen Amazon-Login oder 2FA durchzuführen.</span>
-        </div>
-        <div className="flex items-center gap-2 text-slate-500 font-mono">
-          <span>Profile: ./data/chrome-profile</span>
+      {/* Footer Info & Quick Input Helper Bar */}
+      <div className="flex flex-wrap items-center justify-between px-4 py-2 bg-slate-950 border-t border-slate-800/80 text-[11px] text-slate-400 gap-2">
+        {/* Quick Direct Text / Password Sender */}
+        <form onSubmit={handleSendDirectText} className="flex items-center gap-1.5 flex-1 max-w-md">
+          <input
+            type="text"
+            value={directText}
+            onChange={(e) => setDirectText(e.target.value)}
+            placeholder="Text / Passwort / 2FA-Code hier einfügen und Senden..."
+            className="flex-1 px-2.5 py-1 bg-slate-900 border border-slate-700/80 rounded text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+          />
+          <button
+            type="submit"
+            className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition"
+          >
+            Tippen
+          </button>
+        </form>
+
+        <div className="flex items-center gap-3 text-slate-500 font-mono text-[11px]">
+          <span>Klick in Canvas = Fokus aktiv</span>
           <span>•</span>
-          <span>Res: 1440x900</span>
+          <span>Profile: ./data/chrome-profile</span>
         </div>
       </div>
     </div>

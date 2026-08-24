@@ -215830,39 +215830,89 @@ var BrowserSessionService = class {
     const session2 = this.sessions.get(type3);
     if (!session2 || session2.page.isClosed()) return;
     try {
-      await session2.cdp.send("Input.dispatchMouseEvent", {
-        type: event.type,
-        // 'mousePressed', 'mouseReleased', 'mouseMoved', 'mouseWheel'
-        x: Math.round(event.x),
-        y: Math.round(event.y),
-        button: event.button || "left",
-        clickCount: event.clickCount || 1,
-        deltaX: event.deltaX || 0,
-        deltaY: event.deltaY || 0,
-        modifiers: event.modifiers || 0
-      });
+      if (event.type === "mousePressed" || event.type === "mouseReleased") {
+        await session2.cdp.send("Input.dispatchMouseEvent", {
+          type: event.type,
+          x: Math.round(event.x),
+          y: Math.round(event.y),
+          button: event.button || "left",
+          clickCount: event.clickCount || 1,
+          modifiers: event.modifiers || 0
+        });
+      } else if (event.type === "mouseWheel") {
+        await session2.cdp.send("Input.dispatchMouseEvent", {
+          type: "mouseWheel",
+          x: Math.round(event.x),
+          y: Math.round(event.y),
+          deltaX: event.deltaX || 0,
+          deltaY: event.deltaY || 0
+        });
+      } else if (event.type === "mouseMoved") {
+        await session2.cdp.send("Input.dispatchMouseEvent", {
+          type: "mouseMoved",
+          x: Math.round(event.x),
+          y: Math.round(event.y)
+        });
+      }
     } catch (err) {
+      try {
+        if (event.type === "mousePressed") {
+          await session2.page.mouse.click(Math.round(event.x), Math.round(event.y), {
+            button: event.button || "left"
+          });
+        }
+      } catch {
+      }
     }
   }
   /**
-   * Forward keyboard events to CDP
+   * Forward keyboard events to CDP with full support for password and text fields
    */
   static async dispatchKeyEvent(type3, event) {
     const session2 = this.sessions.get(type3);
     if (!session2 || session2.page.isClosed()) return;
     try {
-      await session2.cdp.send("Input.dispatchKeyEvent", {
-        type: event.type,
-        // 'keyDown', 'keyUp', 'rawKeyDown', 'char'
-        key: event.key,
-        code: event.code,
-        text: event.text,
-        unmodifiedText: event.unmodifiedText || event.text,
-        windowsVirtualKeyCode: event.keyCode,
-        nativeVirtualKeyCode: event.keyCode,
-        modifiers: event.modifiers || 0
-      });
+      if (event.text && event.text.length === 1 && !["Enter", "Tab", "Backspace", "Escape"].includes(event.key)) {
+        await session2.cdp.send("Input.insertText", { text: event.text });
+      } else if (event.key === "Backspace") {
+        await session2.page.keyboard.press("Backspace");
+      } else if (event.key === "Enter") {
+        await session2.page.keyboard.press("Enter");
+      } else if (event.key === "Tab") {
+        await session2.page.keyboard.press("Tab");
+      } else if (event.key === "Escape") {
+        await session2.page.keyboard.press("Escape");
+      } else if (event.key === "ArrowLeft") {
+        await session2.page.keyboard.press("ArrowLeft");
+      } else if (event.key === "ArrowRight") {
+        await session2.page.keyboard.press("ArrowRight");
+      } else if (event.key === "ArrowUp") {
+        await session2.page.keyboard.press("ArrowUp");
+      } else if (event.key === "ArrowDown") {
+        await session2.page.keyboard.press("ArrowDown");
+      } else {
+        await session2.cdp.send("Input.dispatchKeyEvent", {
+          type: event.type === "keyUp" ? "keyUp" : "rawKeyDown",
+          key: event.key,
+          code: event.code,
+          text: event.text,
+          unmodifiedText: event.unmodifiedText || event.text,
+          windowsVirtualKeyCode: event.keyCode,
+          nativeVirtualKeyCode: event.keyCode,
+          modifiers: event.modifiers || 0
+        });
+      }
     } catch (err) {
+      try {
+        if (event.key && event.type !== "keyUp") {
+          if (event.key.length === 1) {
+            await session2.page.keyboard.type(event.key);
+          } else {
+            await session2.page.keyboard.press(event.key);
+          }
+        }
+      } catch {
+      }
     }
   }
   /**

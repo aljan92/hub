@@ -266,41 +266,90 @@ export class BrowserSessionService {
     if (!session || session.page.isClosed()) return;
 
     try {
-      await session.cdp.send('Input.dispatchMouseEvent', {
-        type: event.type, // 'mousePressed', 'mouseReleased', 'mouseMoved', 'mouseWheel'
-        x: Math.round(event.x),
-        y: Math.round(event.y),
-        button: event.button || 'left',
-        clickCount: event.clickCount || 1,
-        deltaX: event.deltaX || 0,
-        deltaY: event.deltaY || 0,
-        modifiers: event.modifiers || 0
-      });
+      if (event.type === 'mousePressed' || event.type === 'mouseReleased') {
+        await session.cdp.send('Input.dispatchMouseEvent', {
+          type: event.type,
+          x: Math.round(event.x),
+          y: Math.round(event.y),
+          button: event.button || 'left',
+          clickCount: event.clickCount || 1,
+          modifiers: event.modifiers || 0
+        });
+      } else if (event.type === 'mouseWheel') {
+        await session.cdp.send('Input.dispatchMouseEvent', {
+          type: 'mouseWheel',
+          x: Math.round(event.x),
+          y: Math.round(event.y),
+          deltaX: event.deltaX || 0,
+          deltaY: event.deltaY || 0
+        });
+      } else if (event.type === 'mouseMoved') {
+        await session.cdp.send('Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          x: Math.round(event.x),
+          y: Math.round(event.y)
+        });
+      }
     } catch (err: any) {
-      // Ignore transient input errors during page transition
+      try {
+        if (event.type === 'mousePressed') {
+          await session.page.mouse.click(Math.round(event.x), Math.round(event.y), {
+            button: (event.button as any) || 'left'
+          });
+        }
+      } catch {}
     }
   }
 
   /**
-   * Forward keyboard events to CDP
+   * Forward keyboard events to CDP with full support for password and text fields
    */
   static async dispatchKeyEvent(type: BrowserSessionType, event: any) {
     const session = this.sessions.get(type);
     if (!session || session.page.isClosed()) return;
 
     try {
-      await session.cdp.send('Input.dispatchKeyEvent', {
-        type: event.type, // 'keyDown', 'keyUp', 'rawKeyDown', 'char'
-        key: event.key,
-        code: event.code,
-        text: event.text,
-        unmodifiedText: event.unmodifiedText || event.text,
-        windowsVirtualKeyCode: event.keyCode,
-        nativeVirtualKeyCode: event.keyCode,
-        modifiers: event.modifiers || 0
-      });
+      if (event.text && event.text.length === 1 && !['Enter', 'Tab', 'Backspace', 'Escape'].includes(event.key)) {
+        // Direct character insertion into active input/password field
+        await session.cdp.send('Input.insertText', { text: event.text });
+      } else if (event.key === 'Backspace') {
+        await session.page.keyboard.press('Backspace');
+      } else if (event.key === 'Enter') {
+        await session.page.keyboard.press('Enter');
+      } else if (event.key === 'Tab') {
+        await session.page.keyboard.press('Tab');
+      } else if (event.key === 'Escape') {
+        await session.page.keyboard.press('Escape');
+      } else if (event.key === 'ArrowLeft') {
+        await session.page.keyboard.press('ArrowLeft');
+      } else if (event.key === 'ArrowRight') {
+        await session.page.keyboard.press('ArrowRight');
+      } else if (event.key === 'ArrowUp') {
+        await session.page.keyboard.press('ArrowUp');
+      } else if (event.key === 'ArrowDown') {
+        await session.page.keyboard.press('ArrowDown');
+      } else {
+        await session.cdp.send('Input.dispatchKeyEvent', {
+          type: event.type === 'keyUp' ? 'keyUp' : 'rawKeyDown',
+          key: event.key,
+          code: event.code,
+          text: event.text,
+          unmodifiedText: event.unmodifiedText || event.text,
+          windowsVirtualKeyCode: event.keyCode,
+          nativeVirtualKeyCode: event.keyCode,
+          modifiers: event.modifiers || 0
+        });
+      }
     } catch (err: any) {
-      // Ignore transient key errors
+      try {
+        if (event.key && event.type !== 'keyUp') {
+          if (event.key.length === 1) {
+            await session.page.keyboard.type(event.key);
+          } else {
+            await session.page.keyboard.press(event.key);
+          }
+        }
+      } catch {}
     }
   }
 
