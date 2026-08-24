@@ -51233,6 +51233,90 @@ function getDockerSocketPath() {
 }
 var DockerService = class {
   /**
+   * Execute a command inside a running Docker container via Docker socket
+   */
+  static async execCommand(containerName, cmd) {
+    const socketPath = getDockerSocketPath();
+    return new Promise((resolve) => {
+      const createPayload = JSON.stringify({
+        AttachStdout: true,
+        AttachStderr: true,
+        Cmd: cmd
+      });
+      const createReq = import_http.default.request({
+        socketPath,
+        path: `/v1.41/containers/${containerName}/exec`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(createPayload)
+        }
+      }, (res) => {
+        let data = "";
+        res.on("data", (chunk) => data += chunk);
+        res.on("end", () => {
+          if (res.statusCode !== 201) {
+            return resolve({ success: false, message: `Exec creation failed (${res.statusCode}): ${data}` });
+          }
+          try {
+            const execObj = JSON.parse(data);
+            const execId = execObj.Id;
+            const startPayload = JSON.stringify({ Detach: true, Tty: false });
+            const startReq = import_http.default.request({
+              socketPath,
+              path: `/v1.41/exec/${execId}/start`,
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(startPayload)
+              }
+            }, (startRes) => {
+              if (startRes.statusCode === 200 || startRes.statusCode === 204) {
+                resolve({ success: true, message: "Befehl erfolgreich im Container ausgef\xFChrt." });
+              } else {
+                resolve({ success: false, message: `Exec start failed (${startRes.statusCode})` });
+              }
+            });
+            startReq.on("error", (err) => resolve({ success: false, message: err.message }));
+            startReq.write(startPayload);
+            startReq.end();
+          } catch (e) {
+            resolve({ success: false, message: e.message });
+          }
+        });
+      });
+      createReq.on("error", (err) => {
+        resolve({ success: false, message: `Docker Socket nicht erreichbar: ${err.message}` });
+      });
+      createReq.write(createPayload);
+      createReq.end();
+    });
+  }
+  /**
+   * Launch or restart Chrome freshly on Display :1 inside container with Amazon Merch
+   */
+  static async launchOrRestartChrome(containerName) {
+    const status = await this.getContainerStatus(containerName);
+    if (!status.running) {
+      const restartRes = await this.restartContainer(containerName);
+      if (!restartRes.success) return restartRes;
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+    const cmd = [
+      "/bin/bash",
+      "-c",
+      "export DISPLAY=:1; pkill -f chrome || true; pkill -f chromium || true; rm -f /root/.config/google-chrome/Singleton* /root/.config/chromium/Singleton* 2>/dev/null || true; (google-chrome --no-sandbox --disable-dev-shm-usage --disable-gpu --user-data-dir=/root/.config/google-chrome --start-maximized https://merch.amazon.com/landing || chromium-browser --no-sandbox --disable-dev-shm-usage --user-data-dir=/root/.config/google-chrome --start-maximized https://merch.amazon.com/landing) >/dev/null 2>&1 &"
+    ];
+    const execRes = await this.execCommand(containerName, cmd);
+    if (execRes.success) {
+      return {
+        success: true,
+        message: `Google Chrome wurde in ${containerName} aufgerufen und ge\xF6ffnet!`
+      };
+    }
+    return execRes;
+  }
+  /**
    * Restarts a container by name via Docker Unix socket
    */
   static async restartContainer(containerName) {
@@ -51487,8 +51571,8 @@ app.post("/api/v1/browser/restart", async (req, res) => {
   try {
     const { session } = req.body;
     const containerName = session === "upload" ? "mba_chrome_upload" : "mba_chrome_sync";
-    logActivity("Browser", `Neustart-Signal f\xFCr Container ${containerName} empfangen`);
-    const result = await DockerService.restartContainer(containerName);
+    logActivity("Browser", `Chrome Start/Restart f\xFCr ${containerName} ausgef\xFChrt`);
+    const result = await DockerService.launchOrRestartChrome(containerName);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

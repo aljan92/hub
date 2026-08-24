@@ -9,6 +9,107 @@ function getDockerSocketPath(): string {
 
 export class DockerService {
   /**
+   * Execute a command inside a running Docker container via Docker socket
+   */
+  static async execCommand(containerName: string, cmd: string[]): Promise<{ success: boolean; message: string }> {
+    const socketPath = getDockerSocketPath();
+
+    return new Promise((resolve) => {
+      // 1. Create exec instance
+      const createPayload = JSON.stringify({
+        AttachStdout: true,
+        AttachStderr: true,
+        Cmd: cmd
+      });
+
+      const createReq = http.request({
+        socketPath,
+        path: `/v1.41/containers/${containerName}/exec`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(createPayload)
+        }
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          if (res.statusCode !== 201) {
+            return resolve({ success: false, message: `Exec creation failed (${res.statusCode}): ${data}` });
+          }
+
+          try {
+            const execObj = JSON.parse(data);
+            const execId = execObj.Id;
+
+            // 2. Start exec instance (detached)
+            const startPayload = JSON.stringify({ Detach: true, Tty: false });
+            const startReq = http.request({
+              socketPath,
+              path: `/v1.41/exec/${execId}/start`,
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(startPayload)
+              }
+            }, (startRes) => {
+              if (startRes.statusCode === 200 || startRes.statusCode === 204) {
+                resolve({ success: true, message: 'Befehl erfolgreich im Container ausgeführt.' });
+              } else {
+                resolve({ success: false, message: `Exec start failed (${startRes.statusCode})` });
+              }
+            });
+
+            startReq.on('error', (err) => resolve({ success: false, message: err.message }));
+            startReq.write(startPayload);
+            startReq.end();
+          } catch (e: any) {
+            resolve({ success: false, message: e.message });
+          }
+        });
+      });
+
+      createReq.on('error', (err: any) => {
+        resolve({ success: false, message: `Docker Socket nicht erreichbar: ${err.message}` });
+      });
+
+      createReq.write(createPayload);
+      createReq.end();
+    });
+  }
+
+  /**
+   * Launch or restart Chrome freshly on Display :1 inside container with Amazon Merch
+   */
+  static async launchOrRestartChrome(containerName: string): Promise<{ success: boolean; message: string }> {
+    const status = await this.getContainerStatus(containerName);
+    
+    // If container is not running, start it first
+    if (!status.running) {
+      const restartRes = await this.restartContainer(containerName);
+      if (!restartRes.success) return restartRes;
+      // Wait for X-Server / LXDE to initialize
+      await new Promise(r => setTimeout(r, 2500));
+    }
+
+    // Launch Chrome on DISPLAY=:1, clean locks and open Amazon Merch Landing
+    const cmd = [
+      "/bin/bash",
+      "-c",
+      "export DISPLAY=:1; pkill -f chrome || true; pkill -f chromium || true; rm -f /root/.config/google-chrome/Singleton* /root/.config/chromium/Singleton* 2>/dev/null || true; (google-chrome --no-sandbox --disable-dev-shm-usage --disable-gpu --user-data-dir=/root/.config/google-chrome --start-maximized https://merch.amazon.com/landing || chromium-browser --no-sandbox --disable-dev-shm-usage --user-data-dir=/root/.config/google-chrome --start-maximized https://merch.amazon.com/landing) >/dev/null 2>&1 &"
+    ];
+
+    const execRes = await this.execCommand(containerName, cmd);
+    if (execRes.success) {
+      return { 
+        success: true, 
+        message: `Google Chrome wurde in ${containerName} aufgerufen und geöffnet!` 
+      };
+    }
+    return execRes;
+  }
+
+  /**
    * Restarts a container by name via Docker Unix socket
    */
   static async restartContainer(containerName: string): Promise<{ success: boolean; message: string }> {

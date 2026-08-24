@@ -248,8 +248,8 @@ app.post('/api/v1/browser/restart', async (req, res) => {
     const { session } = req.body;
     const containerName = session === 'upload' ? 'mba_chrome_upload' : 'mba_chrome_sync';
     
-    logActivity('Browser', `Neustart-Signal für Container ${containerName} empfangen`);
-    const result = await DockerService.restartContainer(containerName);
+    logActivity('Browser', `Chrome Start/Restart für ${containerName} ausgeführt`);
+    const result = await DockerService.launchOrRestartChrome(containerName);
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
