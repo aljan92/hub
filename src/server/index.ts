@@ -179,13 +179,14 @@ app.get('/api/v1/stats', async (req, res) => {
     ]);
 
     const liveSlots = ratelimiter?.slots || dailySlotStats;
+    const tier = ratelimiter?.tier;
 
     res.json({
       success: true,
       tasksCount: activeTasks.length,
       queueCount: uploadQueue.length,
       slots: liveSlots,
-      tier: ratelimiter?.tier,
+      tier: tier !== undefined ? tier : undefined,
       designsCount: supabaseStats.totalDesigns,
       liveDesignsCount: supabaseStats.liveDesigns,
       unresolvedAsinsCount: supabaseStats.unresolvedAsins,

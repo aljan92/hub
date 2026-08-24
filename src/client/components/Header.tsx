@@ -146,11 +146,11 @@ export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, tier }) => {
           )}
 
           {/* MBA Tier Badge */}
-          {tier && (
+          {tier !== undefined && tier !== null && (
             <div className="flex items-center space-x-1.5 bg-slate-900/90 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-mono">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-slate-400 text-[11px]">Tier:</span>
-              <span className="font-bold text-emerald-400">{tier.toLocaleString('de-DE')}</span>
+              <span className="font-bold text-emerald-400">{Number(tier).toLocaleString('de-DE')}</span>
             </div>
           )}
         </div>

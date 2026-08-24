@@ -216514,14 +216514,14 @@ var SyncEngine = class _SyncEngine {
       if (result2?.data) {
         const d = result2.data;
         const used = d.dailyProduct?.count ?? d.dailyDesign?.count ?? 0;
-        const total = d.dailyProduct?.limit ?? d.dailyDesign?.limit ?? 100;
-        const tier = d.tier ?? d.maxProducts ?? d.totalProduct?.limit ?? d.tierLevel ?? null;
+        const total = d.dailyProduct?.limit ?? d.dailyDesign?.limit ?? 200;
+        const tier = d.overallDesign?.limit ?? d.overallProduct?.limit ?? d.tier ?? d.maxProducts ?? d.totalProduct?.limit ?? d.tierLevel ?? null;
         const payload = {
           tier: typeof tier === "number" ? tier : tier ? parseInt(String(tier).replace(/[,.]/g, ""), 10) : void 0,
           slots: {
             used: Number(used) || 0,
-            total: Number(total) || 100,
-            free: Math.max(0, (Number(total) || 100) - (Number(used) || 0))
+            total: Number(total) || 200,
+            free: Math.max(0, (Number(total) || 200) - (Number(used) || 0))
           }
         };
         this.cachedRatelimiter = {
@@ -216643,12 +216643,13 @@ app.get("/api/v1/stats", async (req, res) => {
       SyncEngine.fetchDashboardRatelimiter()
     ]);
     const liveSlots = ratelimiter?.slots || dailySlotStats;
+    const tier = ratelimiter?.tier;
     res.json({
       success: true,
       tasksCount: activeTasks.length,
       queueCount: uploadQueue.length,
       slots: liveSlots,
-      tier: ratelimiter?.tier,
+      tier: tier !== void 0 ? tier : void 0,
       designsCount: supabaseStats.totalDesigns,
       liveDesignsCount: supabaseStats.liveDesigns,
       unresolvedAsinsCount: supabaseStats.unresolvedAsins,

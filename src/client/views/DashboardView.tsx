@@ -104,27 +104,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
       {/* Top Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Daily Slots Card */}
-        <div className="glass-card p-5 rounded-2xl space-y-3">
+        <div className="glass-card p-5 rounded-2xl space-y-2">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Tages-Slots (Offen)</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Tages Slots</span>
             <div className="p-2 rounded-lg bg-accent-cyan/10 text-accent-cyan">
               <UploadCloud className="w-4 h-4" />
             </div>
           </div>
-          <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">
-              {statsData?.slots ? Math.max(0, statsData.slots.total - statsData.slots.used) : 200}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">
-              / {statsData?.slots ? statsData.slots.total : 200} verfügbar
-            </span>
-          </div>
-          <div className="flex items-center text-xs text-emerald-400 space-x-1">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>
-              {statsData?.slots 
-                ? `${statsData.slots.used} von ${statsData.slots.total} heute genutzt` 
-                : 'Bereit für Auto Slot-Filling (04:00 Uhr)'}
+          <div className="flex items-baseline space-x-2 pt-1">
+            <span className="text-2xl sm:text-3xl font-extrabold text-white font-mono">
+              {statsData?.slots ? `${statsData.slots.used} von ${statsData.slots.total}` : '0 von 200'}
             </span>
           </div>
         </div>
@@ -132,71 +121,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
         {/* MBA Live Designs Card */}
         <div 
           onClick={() => onNavigateTab('database')}
-          className="glass-card p-5 rounded-2xl space-y-3 cursor-pointer hover:border-emerald-500/40 group"
+          className="glass-card p-5 rounded-2xl space-y-2 cursor-pointer hover:border-emerald-500/40 group transition-all"
         >
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Live Designs (Amazon)</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Live Designs</span>
             <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:scale-110 transition-transform">
               <ShoppingBag className="w-4 h-4" />
             </div>
           </div>
-          <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">
-              {statsData?.liveDesignsCount !== undefined ? statsData.liveDesignsCount.toLocaleString('de-DE') : (statsData?.designsCount || '0')}
+          <div className="flex items-baseline space-x-2 pt-1">
+            <span className="text-2xl sm:text-3xl font-extrabold text-white font-mono">
+              {statsData?.liveDesignsCount !== undefined ? statsData.liveDesignsCount.toLocaleString('de-DE') : (statsData?.designsCount ? statsData.designsCount.toLocaleString('de-DE') : '0')}
             </span>
-            <span className="text-xs text-slate-400 font-medium">
-              {statsData?.designsCount ? `von ${statsData.designsCount.toLocaleString('de-DE')} gesamt` : 'Live auf Amazon'}
-            </span>
-          </div>
-          <div className="text-xs text-emerald-400 flex items-center space-x-1 group-hover:underline">
-            <span>Zur Database Engine</span>
-            <ExternalLink className="w-3 h-3 ml-0.5" />
           </div>
         </div>
 
         {/* Upload Queue Count Card */}
         <div 
           onClick={() => onNavigateTab('queue')}
-          className="glass-card p-5 rounded-2xl space-y-3 cursor-pointer hover:border-accent-cyan/40 group"
+          className="glass-card p-5 rounded-2xl space-y-2 cursor-pointer hover:border-accent-cyan/40 group transition-all"
         >
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Upload-Queue</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Upload Queue</span>
             <div className="p-2 rounded-lg bg-accent-cyan/10 text-accent-cyan group-hover:scale-110 transition-transform">
               <FolderSync className="w-4 h-4" />
             </div>
           </div>
-          <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">
+          <div className="flex items-baseline space-x-2 pt-1">
+            <span className="text-2xl sm:text-3xl font-extrabold text-white font-mono">
               {statsData?.queueCount !== undefined ? statsData.queueCount : 0}
             </span>
-            <span className="text-xs text-slate-400 font-medium">Bereit für Upload</span>
-          </div>
-          <div className="text-xs text-accent-cyan flex items-center space-x-1 group-hover:underline">
-            <span>Zur Warteschlange</span>
-            <ExternalLink className="w-3 h-3 ml-0.5" />
           </div>
         </div>
 
         {/* Task Review Loop Card */}
         <div 
           onClick={() => onNavigateTab('tasks')}
-          className="glass-card p-5 rounded-2xl space-y-3 cursor-pointer hover:border-primary-500/40 group"
+          className="glass-card p-5 rounded-2xl space-y-2 cursor-pointer hover:border-primary-500/40 group transition-all"
         >
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Tasks im Review</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Tasks Review</span>
             <div className="p-2 rounded-lg bg-accent-amber/10 text-accent-amber group-hover:scale-110 transition-transform">
               <Sparkles className="w-4 h-4" />
             </div>
           </div>
-          <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-extrabold text-white">
+          <div className="flex items-baseline space-x-2 pt-1">
+            <span className="text-2xl sm:text-3xl font-extrabold text-white font-mono">
               {statsData?.tasksCount !== undefined ? statsData.tasksCount : 0}
             </span>
-            <span className="text-xs text-slate-400 font-medium">Offene Aufgaben</span>
-          </div>
-          <div className="text-xs text-primary-400 flex items-center space-x-1 group-hover:underline">
-            <span>Jetzt prüfen &amp; freigeben</span>
-            <ExternalLink className="w-3 h-3 ml-0.5" />
           </div>
         </div>
       </div>
