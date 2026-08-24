@@ -18,6 +18,7 @@ export interface AppSettings {
   nasHost: string;
   nasUser: string;
   autoSlotFillHour: number;
+  autoSyncEnabled: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -36,6 +37,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   nasHost: process.env.NAS_HOST || '192.168.178.141',
   nasUser: process.env.NAS_USER || 'aljan92',
   autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4,
+  autoSyncEnabled: true,
 };
 
 function getSettingsFilePath(): string {

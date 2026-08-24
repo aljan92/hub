@@ -214195,7 +214195,8 @@ var DEFAULT_SETTINGS = {
   productorDpmaAuth: process.env.PRODUCTOR_DPMA_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm",
   nasHost: process.env.NAS_HOST || "192.168.178.141",
   nasUser: process.env.NAS_USER || "aljan92",
-  autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4
+  autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4,
+  autoSyncEnabled: true
 };
 function getSettingsFilePath() {
   const dataDir = import_path66.default.resolve(process.cwd(), "data");
@@ -215581,8 +215582,18 @@ var SyncEngine = class _SyncEngine {
     this.state.lastStatusMessage = "Scan manuell abgebrochen.";
     this.addLog("Scan manuell abgebrochen.", "warn");
   }
+  static init() {
+    const settings = loadSettings();
+    const enabled = settings.autoSyncEnabled !== void 0 ? settings.autoSyncEnabled : true;
+    this.state.autoUpdateEnabled = enabled;
+    if (enabled) {
+      this.addLog("[Auto-Update] Hintergrund-Scheduler aktiv (alle 15 Min).", "info");
+      this.startSchedulers();
+    }
+  }
   static toggleAutoUpdate(enabled) {
     this.state.autoUpdateEnabled = enabled;
+    saveSettings({ autoSyncEnabled: enabled });
     if (enabled) {
       this.addLog("[Auto-Update] Hintergrund-Scheduler aktiviert (alle 15 Min).", "success");
       this.startSchedulers();
@@ -217127,6 +217138,11 @@ if (import_fs73.default.existsSync(staticPath)) {
 server2.listen(Number(PORT), HOST, () => {
   console.log(`\u{1F680} MBA HUB Core Server running on http://${HOST}:${PORT}`);
   console.log(`\u{1F4E1} WebSocket stream active on ws://${HOST}:${PORT}/ws`);
+  try {
+    SyncEngine.init();
+  } catch (err) {
+    console.warn("[MBA Hub] SyncEngine.init warning:", err.message);
+  }
   setTimeout(async () => {
     try {
       console.log("[MBA Hub] Auto-prewarming browser Session 1 & Session 2 in background...");

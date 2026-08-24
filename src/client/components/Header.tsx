@@ -13,12 +13,10 @@ import {
 } from 'lucide-react';
 
 interface HeaderProps {
-  onSync: () => void;
-  isSyncing: boolean;
   tier?: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, tier }) => {
+export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const [credits, setCredits] = useState<{
     openrouter?: { usage?: number; limitRemaining?: number; balanceRemaining?: number; totalCredits?: number; limit?: number; hasKey?: boolean };
     vectorizer?: { credits?: number; details?: string; hasKey?: boolean };
@@ -155,7 +153,7 @@ export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, tier }) => {
           )}
         </div>
 
-        {/* Right Controls: 1-Click Update & Quick Sync */}
+        {/* Right Controls: 1-Click Update */}
         <div className="flex items-center space-x-2 shrink-0">
           {/* 1-Click Self-Update Button */}
           <button
@@ -165,18 +163,6 @@ export const Header: React.FC<HeaderProps> = ({ onSync, isSyncing, tier }) => {
           >
             <DownloadCloud className="w-3.5 h-3.5 text-primary-400" />
             <span>Update</span>
-          </button>
-
-          <button
-            onClick={() => {
-              fetchCredits();
-              onSync();
-            }}
-            disabled={isSyncing}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700/60 transition-all shadow-sm active:scale-95 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-primary-400' : 'text-slate-400'}`} />
-            <span className="hidden sm:inline">{isSyncing ? 'Synchronisiere...' : 'Sync'}</span>
           </button>
         </div>
       </header>

@@ -11,7 +11,6 @@ import { SettingsView } from './views/SettingsView';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [isSyncing, setIsSyncing] = useState(false);
   const [tier, setTier] = useState<number | undefined>(undefined);
   const [taskCount, setTaskCount] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
@@ -23,7 +22,7 @@ export const App: React.FC = () => {
         if (data.success) {
           setTaskCount(data.tasksCount || 0);
           setQueueCount(data.queueCount || 0);
-          if (data.tier) setTier(data.tier);
+          if (data.tier !== undefined) setTier(data.tier);
         }
       })
       .catch(() => {});
@@ -35,27 +34,10 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSync = () => {
-    setIsSyncing(true);
-    fetch('/api/v1/sync/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'quick_products' })
-    })
-      .then(res => res.json())
-      .finally(() => {
-        setIsSyncing(false);
-        fetchStats();
-        alert('MBA Quick Sync erfolgreich gestartet! Prüfe den Status im Tab "Database".');
-      });
-  };
-
   return (
     <div className="min-h-screen bg-background text-slate-100 flex flex-col">
       {/* Top Header */}
       <Header 
-        onSync={handleSync}
-        isSyncing={isSyncing}
         tier={tier}
       />
 

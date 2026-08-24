@@ -1,4 +1,4 @@
-import { getSupabaseClient, loadSettings } from './settingsService';
+import { getSupabaseClient, loadSettings, saveSettings } from './settingsService';
 import { BrowserSessionService } from './browserSessionService';
 
 export interface SyncLogEntry {
@@ -130,8 +130,19 @@ export class SyncEngine {
     this.addLog('Scan manuell abgebrochen.', 'warn');
   }
 
+  public static init() {
+    const settings = loadSettings();
+    const enabled = settings.autoSyncEnabled !== undefined ? settings.autoSyncEnabled : true;
+    this.state.autoUpdateEnabled = enabled;
+    if (enabled) {
+      this.addLog('[Auto-Update] Hintergrund-Scheduler aktiv (alle 15 Min).', 'info');
+      this.startSchedulers();
+    }
+  }
+
   public static toggleAutoUpdate(enabled: boolean) {
     this.state.autoUpdateEnabled = enabled;
+    saveSettings({ autoSyncEnabled: enabled });
     if (enabled) {
       this.addLog('[Auto-Update] Hintergrund-Scheduler aktiviert (alle 15 Min).', 'success');
       this.startSchedulers();

@@ -748,6 +748,13 @@ server.listen(Number(PORT), HOST, () => {
   console.log(`🚀 MBA HUB Core Server running on http://${HOST}:${PORT}`);
   console.log(`📡 WebSocket stream active on ws://${HOST}:${PORT}/ws`);
 
+  // Initialize background SyncEngine scheduler based on persistent settings
+  try {
+    SyncEngine.init();
+  } catch (err: any) {
+    console.warn('[MBA Hub] SyncEngine.init warning:', err.message);
+  }
+
   // Pre-warm browser sessions in background so they are immediately ready
   setTimeout(async () => {
     try {
