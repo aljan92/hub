@@ -206324,761 +206324,6 @@ var import_child_process8 = require("child_process");
 // src/server/services/settingsService.ts
 var import_fs71 = __toESM2(require("fs"), 1);
 var import_path66 = __toESM2(require("path"), 1);
-var DEFAULT_SETTINGS = {
-  openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
-  llmProvider: process.env.LLM_PROVIDER || "openrouter",
-  llmModel: process.env.LLM_MODEL || "anthropic/claude-3-5-sonnet",
-  ideogramApiKey: process.env.IDEOGRAM_API_KEY || "",
-  ideogramModel: process.env.IDEOGRAM_MODEL || "V_4",
-  vectorizerApiKey: process.env.VECTORIZER_API_KEY || "",
-  vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || "",
-  supabaseUrl: process.env.SUPABASE_URL || "",
-  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-  productorUsptoAuth: process.env.PRODUCTOR_USPTO_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
-  productorEuipoAuth: process.env.PRODUCTOR_EUIPO_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ==",
-  productorDpmaAuth: process.env.PRODUCTOR_DPMA_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm",
-  nasHost: process.env.NAS_HOST || "192.168.178.141",
-  nasUser: process.env.NAS_USER || "aljan92",
-  autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4
-};
-function getSettingsFilePath() {
-  const dataDir = import_path66.default.resolve(process.cwd(), "data");
-  if (!import_fs71.default.existsSync(dataDir)) {
-    try {
-      import_fs71.default.mkdirSync(dataDir, { recursive: true });
-    } catch (e) {
-    }
-  }
-  return import_path66.default.join(dataDir, "settings.json");
-}
-function loadSettings() {
-  const filePath = getSettingsFilePath();
-  if (import_fs71.default.existsSync(filePath)) {
-    try {
-      const fileData = import_fs71.default.readFileSync(filePath, "utf-8");
-      const parsed = JSON.parse(fileData);
-      return { ...DEFAULT_SETTINGS, ...parsed };
-    } catch (err) {
-      console.error("[Settings] Error reading settings.json:", err);
-    }
-  }
-  return { ...DEFAULT_SETTINGS };
-}
-function saveSettings(newSettings) {
-  const current = loadSettings();
-  const merged = { ...current, ...newSettings };
-  const filePath = getSettingsFilePath();
-  try {
-    import_fs71.default.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
-    console.log("[Settings] Settings successfully saved to", filePath);
-  } catch (err) {
-    console.error("[Settings] Error saving settings.json:", err);
-  }
-  return merged;
-}
-function getSupabaseClient() {
-  const settings = loadSettings();
-  if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
-    return null;
-  }
-  return createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), {
-    auth: { persistSession: false }
-  });
-}
-
-// src/server/services/trademarkService.ts
-var TrademarkService = class {
-  /**
-   * Test connection to Productor Trademark APIs
-   */
-  static async testConnection() {
-    const settings = loadSettings();
-    const start3 = Date.now();
-    try {
-      const formData = new URLSearchParams();
-      formData.append("trademarks", JSON.stringify(["testquery"]));
-      const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
-        method: "POST",
-        headers: {
-          "Authorization": settings.productorUsptoAuth,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: formData.toString(),
-        signal: AbortSignal.timeout(6e3)
-      });
-      const latencyMs = Date.now() - start3;
-      if (res.ok) {
-        return { success: true, latencyMs };
-      }
-      return { success: false, latencyMs, error: `USPTO API responded with HTTP ${res.status}` };
-    } catch (err) {
-      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Connection timeout" };
-    }
-  }
-  /**
-   * Check a list of terms/keywords or a whole quote across USPTO, EUIPO, and DPMA
-   */
-  static async checkTrademarks(terms, locale = "en") {
-    const settings = loadSettings();
-    const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
-    const uniqueTerms = Array.from(new Set(cleanTerms));
-    if (uniqueTerms.length === 0) {
-      return {
-        hasInfringementClass25: false,
-        blockedProducts: [],
-        hits: {},
-        totalHits: 0,
-        message: "No terms to check."
-      };
-    }
-    const allHits = {};
-    try {
-      const usptoFormData = new URLSearchParams();
-      usptoFormData.append("trademarks", JSON.stringify(uniqueTerms));
-      const usptoRes = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
-        method: "POST",
-        headers: {
-          "Authorization": settings.productorUsptoAuth,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: usptoFormData.toString(),
-        signal: AbortSignal.timeout(8e3)
-      });
-      if (usptoRes.ok) {
-        const usptoData = await usptoRes.json();
-        for (const [term, records] of Object.entries(usptoData)) {
-          if (Array.isArray(records) && records.length > 0) {
-            allHits[term] = allHits[term] || [];
-            records.forEach((r) => {
-              allHits[term].push({
-                trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
-                classNumber: String(r.class_id || r.class || r.international_class || "25"),
-                status: r.status || r.status_code || "LIVE",
-                registrationNumber: r.registration_number,
-                serialNumber: r.serial_number,
-                goodsAndServices: r.goods_and_services || r.goods_services,
-                source: "USPTO"
-              });
-            });
-          }
-        }
-      }
-      const euFormData = new URLSearchParams();
-      euFormData.append("trademarks", JSON.stringify(uniqueTerms));
-      const euRes = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
-        method: "POST",
-        headers: {
-          "Authorization": settings.productorEuipoAuth,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: euFormData.toString(),
-        signal: AbortSignal.timeout(8e3)
-      });
-      if (euRes.ok) {
-        const euData = await euRes.json();
-        for (const [term, records] of Object.entries(euData)) {
-          if (Array.isArray(records) && records.length > 0) {
-            allHits[term] = allHits[term] || [];
-            records.forEach((r) => {
-              allHits[term].push({
-                trademark: r.trademark || r.mark_identification || term,
-                classNumber: String(r.class_id || r.class || "25"),
-                status: r.status || "LIVE",
-                source: "EUIPO"
-              });
-            });
-          }
-        }
-      }
-      if (locale === "de") {
-        const dpmaFormData = new URLSearchParams();
-        dpmaFormData.append("trademarks", JSON.stringify(uniqueTerms));
-        const dpmaRes = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
-          method: "POST",
-          headers: {
-            "Authorization": settings.productorDpmaAuth,
-            "Content-Type": "application/x-www-form-urlencoded"
-          },
-          body: dpmaFormData.toString(),
-          signal: AbortSignal.timeout(8e3)
-        });
-        if (dpmaRes.ok) {
-          const dpmaData = await dpmaRes.json();
-          for (const [term, records] of Object.entries(dpmaData)) {
-            if (Array.isArray(records) && records.length > 0) {
-              allHits[term] = allHits[term] || [];
-              records.forEach((r) => {
-                allHits[term].push({
-                  trademark: r.trademark || term,
-                  classNumber: String(r.class_id || r.class || "25"),
-                  status: r.status || "LIVE",
-                  source: "DPMA"
-                });
-              });
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("[TrademarkService] Error checking trademarks:", err.message || err);
-    }
-    let hasInfringementClass25 = false;
-    const blockedProductsSet = /* @__PURE__ */ new Set();
-    let totalHits = 0;
-    for (const [term, records] of Object.entries(allHits)) {
-      totalHits += records.length;
-      for (const rec of records) {
-        const isLive = !rec.status || rec.status.toUpperCase().includes("LIVE") || rec.status.toUpperCase().includes("REGISTERED");
-        if (!isLive) continue;
-        const cls = rec.classNumber;
-        if (cls === "25") {
-          hasInfringementClass25 = true;
-          blockedProductsSet.add("STANDARD_TSHIRT");
-          blockedProductsSet.add("PREMIUM_TSHIRT");
-          blockedProductsSet.add("HOODIE");
-          blockedProductsSet.add("SWEATSHIRT");
-          blockedProductsSet.add("ZIP_HOODIE");
-          blockedProductsSet.add("TANK_TOP");
-          blockedProductsSet.add("LONG_SLEEVE_TSHIRT");
-          blockedProductsSet.add("RAGLAN");
-        } else if (cls === "9") {
-          blockedProductsSet.add("POPSOCKET");
-          blockedProductsSet.add("PHONE_CASE_APPLE_IPHONE");
-          blockedProductsSet.add("PHONE_CASE_SAMSUNG_GALAXY");
-        } else if (cls === "21") {
-          blockedProductsSet.add("MUG");
-          blockedProductsSet.add("TUMBLER");
-        } else if (cls === "20") {
-          blockedProductsSet.add("THROW_PILLOW");
-        } else if (cls === "8" || cls === "18") {
-          blockedProductsSet.add("TOTE_BAG");
-        }
-      }
-    }
-    return {
-      hasInfringementClass25,
-      blockedProducts: Array.from(blockedProductsSet),
-      hits: allHits,
-      totalHits,
-      message: hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${blockedProductsSet.size} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
-    };
-  }
-};
-
-// src/server/services/llmService.ts
-var cachedModels = [];
-var lastModelsFetch = 0;
-var LLMService = class {
-  static normalizeModelId(model) {
-    const trimmed = model.trim();
-    if (trimmed === "anthropic/claude-3.5-sonnet") return "anthropic/claude-3-5-sonnet";
-    if (trimmed === "anthropic/claude-3.5-sonnet-20241022") return "anthropic/claude-3-5-sonnet-20241022";
-    return trimmed;
-  }
-  static getBaseUrlAndHeaders() {
-    const settings = loadSettings();
-    const isDirectOpenAI = settings.llmProvider === "openai";
-    const url = isDirectOpenAI ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
-    const headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${settings.openRouterApiKey.trim()}`
-    };
-    if (!isDirectOpenAI) {
-      headers["HTTP-Referer"] = "https://mba-hub.local";
-      headers["X-Title"] = "MBA HUB";
-    }
-    const rawModel = settings.llmModel || "anthropic/claude-3-5-sonnet";
-    return {
-      url,
-      headers,
-      model: this.normalizeModelId(rawModel)
-    };
-  }
-  /**
-   * Fetch all models from OpenRouter dynamically
-   */
-  static async getAvailableModels() {
-    const now = Date.now();
-    if (cachedModels.length > 0 && now - lastModelsFetch < 1e3 * 60 * 30) {
-      return cachedModels;
-    }
-    try {
-      const res = await fetch("https://openrouter.ai/api/v1/models", {
-        headers: {
-          "HTTP-Referer": "https://mba-hub.local",
-          "X-Title": "MBA HUB"
-        },
-        signal: AbortSignal.timeout(1e4)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data?.data)) {
-          const list = data.data.map((m) => ({
-            id: m.id,
-            name: m.name || m.id,
-            contextLength: m.context_length,
-            promptPrice: m.pricing?.prompt ? `$${(parseFloat(m.pricing.prompt) * 1e6).toFixed(2)}/M` : void 0,
-            completionPrice: m.pricing?.completion ? `$${(parseFloat(m.pricing.completion) * 1e6).toFixed(2)}/M` : void 0,
-            description: m.description
-          }));
-          const topKeywords = ["claude-3.5-sonnet", "claude-3-5-sonnet", "gpt-4o", "gemini-2.0-flash", "gemini-2.5", "llama-3.2"];
-          list.sort((a, b) => {
-            const aIsTop = topKeywords.some((k) => a.id.toLowerCase().includes(k));
-            const bIsTop = topKeywords.some((k) => b.id.toLowerCase().includes(k));
-            if (aIsTop && !bIsTop) return -1;
-            if (!aIsTop && bIsTop) return 1;
-            return a.name.localeCompare(b.name);
-          });
-          cachedModels = list;
-          lastModelsFetch = now;
-          return list;
-        }
-      }
-    } catch (err) {
-      console.warn("[LLMService] Failed to fetch dynamic models list:", err);
-    }
-    return [
-      { id: "anthropic/claude-3.5-sonnet", name: "Anthropic: Claude 3.5 Sonnet" },
-      { id: "anthropic/claude-3.5-sonnet:beta", name: "Anthropic: Claude 3.5 Sonnet (Beta)" },
-      { id: "openai/gpt-4o", name: "OpenAI: GPT-4o" },
-      { id: "openai/gpt-4o-mini", name: "OpenAI: GPT-4o Mini" },
-      { id: "google/gemini-2.0-flash-001", name: "Google: Gemini 2.0 Flash" },
-      { id: "meta-llama/llama-3.2-11b-vision-instruct", name: "Meta: Llama 3.2 11B Vision" }
-    ];
-  }
-  /**
-   * Check OpenRouter credit balance & usage
-   */
-  static async getCredits(customKey) {
-    const settings = loadSettings();
-    const key = (customKey || settings.openRouterApiKey).trim();
-    if (!key) return { error: "Kein API Key" };
-    try {
-      const [authRes, creditsRes] = await Promise.all([
-        fetch("https://openrouter.ai/api/v1/auth/key", {
-          headers: { "Authorization": `Bearer ${key}` },
-          signal: AbortSignal.timeout(8e3)
-        }),
-        fetch("https://openrouter.ai/api/v1/credits", {
-          headers: { "Authorization": `Bearer ${key}` },
-          signal: AbortSignal.timeout(8e3)
-        })
-      ]);
-      let usage;
-      let limit;
-      let limitRemaining;
-      let totalCredits;
-      let balanceRemaining;
-      let isFreeTier;
-      if (authRes.ok) {
-        const authJson = await authRes.json();
-        const d = authJson?.data;
-        usage = d?.usage;
-        limit = d?.limit;
-        limitRemaining = d?.limit_remaining;
-        isFreeTier = d?.is_free_tier;
-      }
-      if (creditsRes.ok) {
-        const creditsJson = await creditsRes.json();
-        const cd = creditsJson?.data;
-        if (cd) {
-          totalCredits = cd.total_credits;
-          const totalUsage = cd.total_usage || 0;
-          if (totalCredits !== void 0) {
-            balanceRemaining = Math.max(0, totalCredits - totalUsage);
-          }
-        }
-      }
-      const finalAvailable = balanceRemaining ?? limitRemaining;
-      return {
-        usage,
-        limit,
-        limitRemaining: finalAvailable,
-        totalCredits,
-        balanceRemaining: finalAvailable,
-        isFreeTier
-      };
-    } catch (err) {
-      return { error: err.message || "Timeout" };
-    }
-  }
-  /**
-   * Test LLM connection without sending chat tokens:
-   * Uses OpenRouter /auth/key endpoint or OpenAI /models endpoint to verify the key instantly & safely
-   */
-  static async testConnection(customKey, customModel) {
-    const settings = loadSettings();
-    const key = (customKey || settings.openRouterApiKey).trim();
-    const isDirectOpenAI = settings.llmProvider === "openai";
-    if (!key) {
-      return { success: false, latencyMs: 0, error: "Kein API Key hinterlegt" };
-    }
-    const start3 = Date.now();
-    try {
-      if (!isDirectOpenAI) {
-        const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
-          headers: {
-            "Authorization": `Bearer ${key}`,
-            "HTTP-Referer": "https://mba-hub.local",
-            "X-Title": "MBA HUB"
-          },
-          signal: AbortSignal.timeout(15e3)
-        });
-        const latencyMs = Date.now() - start3;
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && json?.data) {
-          const d = json.data;
-          const usageStr = d.usage !== void 0 ? `Verbrauch: $${Number(d.usage).toFixed(4)}` : "";
-          const remStr = d.limit_remaining !== void 0 && d.limit_remaining !== null ? ` | Restlimit: $${Number(d.limit_remaining).toFixed(2)}` : d.limit ? ` | Limit: $${Number(d.limit).toFixed(2)}` : "";
-          const labelStr = d.label ? `[${d.label}] ` : "";
-          return {
-            success: true,
-            latencyMs,
-            details: `${labelStr}OpenRouter Key g\xFCltig \u2713 ${usageStr}${remStr}`,
-            usage: d.usage,
-            limitRemaining: d.limit_remaining
-          };
-        }
-        if (res.status === 401 || res.status === 403) {
-          return {
-            success: false,
-            latencyMs,
-            error: json?.error?.message || "Ung\xFCltiger OpenRouter API Key (401 Unauthorized)"
-          };
-        }
-        return {
-          success: false,
-          latencyMs,
-          error: json?.error?.message || `HTTP ${res.status}: OpenRouter Authentifizierungsfehler`
-        };
-      } else {
-        const res = await fetch("https://api.openai.com/v1/models", {
-          headers: {
-            "Authorization": `Bearer ${key}`
-          },
-          signal: AbortSignal.timeout(15e3)
-        });
-        const latencyMs = Date.now() - start3;
-        if (res.ok) {
-          return {
-            success: true,
-            latencyMs,
-            details: "OpenAI API Key g\xFCltig (Modell-Katalog erreichbar) \u2713"
-          };
-        }
-        const data = await res.json().catch(() => ({}));
-        return {
-          success: false,
-          latencyMs,
-          error: data?.error?.message || `HTTP ${res.status}: Ung\xFCltiger OpenAI API Key`
-        };
-      }
-    } catch (err) {
-      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout bei der Verbindung zu OpenRouter" };
-    }
-  }
-  /**
-   * Optimize niches & quote into a high-converting Ideogram 3.0 prompt
-   */
-  static async generateIdeogramPrompt(niche1, niche2, quote5, stylePreset) {
-    const { url, headers, model } = this.getBaseUrlAndHeaders();
-    const systemPrompt = `You are an expert prompt engineer specializing in Ideogram 3.0 T-shirt graphics for Merch by Amazon.
-Your goal is to craft a highly descriptive, visually stunning, clean vector prompt that produces high-converting apparel designs.
-Requirements:
-1. Emphasize isolated vector graphics on a solid clean background.
-2. If a quote is provided, include the exact text inside quotation marks and request bold, legible typography.
-3. Keep the prompt under 90 words, focused strictly on visual aesthetic, style, lighting, and composition. No promo or buzzwords like 4K. Output ONLY the raw prompt text.`;
-    const userMessage = `Niche 1: ${niche1}
-Niche 2: ${niche2}
-Quote / Text: "${quote5}"
-Style Preset: ${stylePreset}`;
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userMessage }
-          ],
-          temperature: 0.7,
-          max_tokens: 250
-        }),
-        signal: AbortSignal.timeout(15e3)
-      });
-      if (!res.ok) {
-        throw new Error(`LLM error: ${res.statusText}`);
-      }
-      const data = await res.json();
-      return data.choices?.[0]?.message?.content?.trim() || `T-shirt graphic design of "${quote5}", ${niche1} style, clean vector illustration on solid background.`;
-    } catch (err) {
-      console.error("[LLMService] Error generating prompt:", err);
-      return `T-shirt graphic design of "${quote5}", ${niche1} ${niche2} aesthetic, clean vector illustration, isolated on solid background, commercial merchandise ready.`;
-    }
-  }
-  /**
-   * Vision Analysis + Amazon SEO Listing Generation (single-session token efficiency)
-   */
-  static async analyzeVisionAndGenerateListing(imageUrlOrBase64, niche1, niche2) {
-    const { url, headers, model } = this.getBaseUrlAndHeaders();
-    const systemPrompt = `You are "Listing Creator", an expert in Amazon Merch on Demand SEO listings and visual design analysis.
-Analyze the image and provide a compliant, high-converting listing plus design classifications.
-Character limits:
-- Title: 55-60 chars (Include visible quote verbatim or strongest keywords, no product types like "shirt")
-- Brand: 40-50 chars (Target audience/mood in Title Case)
-- Bullet 1: 230-246 chars (Audience, context, style, visible text if not in Title)
-- Bullet 2: 230-246 chars (Occasions, related sub-niches, "perfect for...")
-- Description: 450-650 chars (Smooth story-style summary)
-- Keywords: >= 25 comma-separated unique lowercase keywords.
-- colorCount: estimated number of distinct visible colors (integer, conservative, 2-8).
-- audiencePrediction: "Men", "Women", "Youth", or "Men, Women"
-- avoidColorPrediction: "Black", "White", or "None" (if white elements exist, avoid white)
-- reuseBackgroundPrediction: "Nein" (if graphic is isolated on solid bg) or "Ja"
-
-Respond strictly with valid JSON conforming to these exact keys.`;
-    const userContent = [
-      { type: "text", text: `Niche 1: ${niche1 || ""}
-Niche 2: ${niche2 || ""}` },
-      { type: "image_url", image_url: { url: imageUrlOrBase64 } }
-    ];
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent }
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.4,
-          max_tokens: 1e3
-        }),
-        signal: AbortSignal.timeout(25e3)
-      });
-      if (!res.ok) throw new Error(`Vision API error: ${res.statusText}`);
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-      return JSON.parse(content);
-    } catch (err) {
-      console.error("[LLMService] Vision Listing error:", err);
-      return {
-        title: `${niche1 || "Vintage"} Retro Graphic Design`,
-        brand: `${niche1 || "Retro"} Apparel Co`,
-        bullet1: `Express your unique aesthetic with this stylish ${niche1 || "vintage"} artwork. Ideal for everyday casual wear and trendsetters.`,
-        bullet2: `A versatile addition to any collection, perfect for birthdays, holidays, summer festivals, and casual outings with friends.`,
-        description: `High-quality graphic design celebrating ${niche1 || "retro"} vibes with vivid details and expressive artwork for enthusiasts.`,
-        keywords: "vintage, retro, aesthetic, graphic, distressed, classic, apparel, gifts",
-        colorCount: 4,
-        audiencePrediction: "Men, Women",
-        avoidColorPrediction: "None",
-        reuseBackgroundPrediction: "Nein"
-      };
-    }
-  }
-};
-
-// src/server/services/ideogramService.ts
-var IdeogramService = class {
-  /**
-   * Test Ideogram API connection (0 credits consumed)
-   */
-  static async testConnection(customKey) {
-    const settings = loadSettings();
-    const rawKey = customKey || settings.ideogramApiKey;
-    if (!rawKey || !rawKey.trim()) {
-      return { success: false, latencyMs: 0, error: "Kein Ideogram API Key hinterlegt" };
-    }
-    const key = rawKey.trim();
-    const start3 = Date.now();
-    try {
-      const res = await fetch("https://api.ideogram.ai/models", {
-        method: "GET",
-        headers: {
-          "Api-Key": key
-        },
-        signal: AbortSignal.timeout(15e3)
-      });
-      const latencyMs = Date.now() - start3;
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const customModels = Array.isArray(data?.models) ? data.models : [];
-        const customMsg = customModels.length > 0 ? ` (${customModels.length} Custom Models verf\xFCgbar)` : "";
-        return {
-          success: true,
-          latencyMs,
-          details: `Ideogram Verbindung erfolgreich! (Modelle V4, V3, V2 bereit${customMsg}) \u2713`
-        };
-      }
-      if (res.status === 401 || res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        return {
-          success: false,
-          latencyMs,
-          error: data?.message || "Ung\xFCltiger Ideogram API Key (401 Unauthorized). Bitte Key pr\xFCfen unter https://ideogram.ai/manage-api"
-        };
-      }
-      return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
-    } catch (err) {
-      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout bei der Verbindung zu Ideogram" };
-    }
-  }
-  /**
-   * Get all standard and custom Ideogram models (V4, V3, V2 Turbo, V2)
-   */
-  static async getAvailableModels() {
-    const standardModels = [
-      { id: "V_4", name: "Ideogram 4.0 (Neueste Generation & Transparent)" },
-      { id: "V_3", name: "Ideogram 3.0 (T-Shirt & Vektor Spezialist)" },
-      { id: "V_2_TURBO", name: "Ideogram 2.0 Turbo (Schnell & G\xFCnstig)" },
-      { id: "V_2", name: "Ideogram 2.0 (High Quality)" }
-    ];
-    const settings = loadSettings();
-    if (!settings.ideogramApiKey) return standardModels;
-    try {
-      const res = await fetch("https://api.ideogram.ai/models", {
-        headers: { "Api-Key": settings.ideogramApiKey.trim() },
-        signal: AbortSignal.timeout(1e4)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data?.models)) {
-          const custom = data.models.filter((m) => m.is_available_for_generation !== false).map((m) => ({
-            id: m.model_id || m.name,
-            name: `Custom: ${m.name || m.model_id}`,
-            isCustom: true
-          }));
-          return [...standardModels, ...custom];
-        }
-      }
-    } catch (e) {
-    }
-    return standardModels;
-  }
-  /**
-   * Generate Image via Ideogram API (supports V4, V3, V2)
-   */
-  static async generateImage(options2) {
-    const settings = loadSettings();
-    const key = settings.ideogramApiKey;
-    if (!key) {
-      throw new Error("Ideogram API Key fehlt in den Einstellungen.");
-    }
-    const aspectMap = {
-      "1:1": "ASPECT_1_1",
-      "3:4": "ASPECT_3_4",
-      "4:3": "ASPECT_4_3",
-      "16:9": "ASPECT_16_9",
-      "9:16": "ASPECT_9_16"
-    };
-    const selectedModel = options2.model || settings.ideogramModel || "V_4";
-    const payload = {
-      image_request: {
-        prompt: options2.prompt,
-        aspect_ratio: aspectMap[options2.aspectRatio || "1:1"] || "ASPECT_1_1",
-        model: selectedModel,
-        magic_prompt_option: options2.magicPromptOption || "AUTO"
-      }
-    };
-    const res = await fetch("https://api.ideogram.ai/generate", {
-      method: "POST",
-      headers: {
-        "Api-Key": key.trim(),
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(6e4)
-    });
-    if (!res.ok) {
-      const errBody = await res.text();
-      throw new Error(`Ideogram API Fehler: ${res.status} - ${errBody}`);
-    }
-    const data = await res.json();
-    const imageUrl = data?.data?.[0]?.url;
-    if (!imageUrl) {
-      throw new Error("Keine Bild-URL von Ideogram erhalten.");
-    }
-    return {
-      imageUrl,
-      prompt: options2.prompt
-    };
-  }
-};
-
-// src/server/services/vectorizerService.ts
-var VectorizerService = class {
-  /**
-   * Test Vectorizer.ai API credentials and query account details
-   */
-  static async testConnection(customKey, customSecret) {
-    const settings = loadSettings();
-    const key = customKey || settings.vectorizerApiKey;
-    const secret = customSecret || settings.vectorizerApiSecret;
-    if (!key || !secret) {
-      return { success: false, latencyMs: 0, error: "API Key (ID) oder API Secret fehlt" };
-    }
-    const start3 = Date.now();
-    try {
-      const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
-      const res = await fetch("https://vectorizer.ai/api/v1/account", {
-        headers: {
-          "Authorization": `Basic ${auth}`
-        },
-        signal: AbortSignal.timeout(8e3)
-      });
-      const latencyMs = Date.now() - start3;
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        const credits = data?.credits?.remaining ?? data?.credits;
-        return {
-          success: true,
-          latencyMs,
-          creditsRemaining: credits,
-          details: credits !== void 0 ? `Guthaben: ${credits} Credits` : "Account verbunden"
-        };
-      }
-      if (res.status === 401) {
-        return {
-          success: false,
-          latencyMs,
-          error: data?.error?.message || "Ung\xFCltige Vectorizer.ai Zugangsdaten (401)"
-        };
-      }
-      return { success: false, latencyMs, error: data?.error?.message || `HTTP ${res.status}` };
-    } catch (err) {
-      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout" };
-    }
-  }
-  /**
-   * Vectorize an image URL or Buffer to SVG
-   */
-  static async vectorizeImage(imageUrl) {
-    const settings = loadSettings();
-    const key = settings.vectorizerApiKey;
-    const secret = settings.vectorizerApiSecret;
-    if (!key || !secret) {
-      throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
-    }
-    const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
-    const formData = new FormData();
-    formData.append("image.url", imageUrl);
-    formData.append("mode", "production");
-    const res = await fetch("https://vectorizer.ai/api/v1/vectorize", {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${auth}`
-      },
-      body: formData,
-      signal: AbortSignal.timeout(6e4)
-    });
-    if (!res.ok) {
-      throw new Error(`Vectorizer Fehler: HTTP ${res.status}`);
-    }
-    return await res.text();
-  }
-};
 
 // node_modules/@supabase/supabase-js/dist/index.mjs
 var dist_exports = {};
@@ -207091,7 +206336,7 @@ __export2(dist_exports, {
   PostgrestError: () => PostgrestError,
   StorageApiError: () => StorageApiError,
   SupabaseClient: () => SupabaseClient,
-  createClient: () => createClient2
+  createClient: () => createClient
 });
 
 // node_modules/@supabase/supabase-js/dist/tracingRegistry.mjs
@@ -214919,7 +214164,7 @@ var SupabaseClient = class {
     }
   }
 };
-var createClient2 = (supabaseUrl, supabaseKey, options2) => {
+var createClient = (supabaseUrl, supabaseKey, options2) => {
   return new SupabaseClient(supabaseUrl, supabaseKey, options2);
 };
 function shouldShowDeprecationWarning() {
@@ -214933,6 +214178,763 @@ function shouldShowDeprecationWarning() {
   return parseInt(versionMatch[1], 10) <= 20;
 }
 if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and below are deprecated and will no longer be supported in future versions of @supabase/supabase-js. Please upgrade to Node.js 22 or later. For more information, visit: https://github.com/orgs/supabase/discussions/45715");
+
+// src/server/services/settingsService.ts
+var DEFAULT_SETTINGS = {
+  openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
+  llmProvider: process.env.LLM_PROVIDER || "openrouter",
+  llmModel: process.env.LLM_MODEL || "anthropic/claude-3-5-sonnet",
+  ideogramApiKey: process.env.IDEOGRAM_API_KEY || "",
+  ideogramModel: process.env.IDEOGRAM_MODEL || "V_4",
+  vectorizerApiKey: process.env.VECTORIZER_API_KEY || "",
+  vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || "",
+  supabaseUrl: process.env.SUPABASE_URL || "",
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  productorUsptoAuth: process.env.PRODUCTOR_USPTO_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
+  productorEuipoAuth: process.env.PRODUCTOR_EUIPO_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ==",
+  productorDpmaAuth: process.env.PRODUCTOR_DPMA_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm",
+  nasHost: process.env.NAS_HOST || "192.168.178.141",
+  nasUser: process.env.NAS_USER || "aljan92",
+  autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4
+};
+function getSettingsFilePath() {
+  const dataDir = import_path66.default.resolve(process.cwd(), "data");
+  if (!import_fs71.default.existsSync(dataDir)) {
+    try {
+      import_fs71.default.mkdirSync(dataDir, { recursive: true });
+    } catch (e) {
+    }
+  }
+  return import_path66.default.join(dataDir, "settings.json");
+}
+function loadSettings() {
+  const filePath = getSettingsFilePath();
+  if (import_fs71.default.existsSync(filePath)) {
+    try {
+      const fileData = import_fs71.default.readFileSync(filePath, "utf-8");
+      const parsed = JSON.parse(fileData);
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    } catch (err) {
+      console.error("[Settings] Error reading settings.json:", err);
+    }
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+function saveSettings(newSettings) {
+  const current = loadSettings();
+  const merged = { ...current, ...newSettings };
+  const filePath = getSettingsFilePath();
+  try {
+    import_fs71.default.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
+    console.log("[Settings] Settings successfully saved to", filePath);
+  } catch (err) {
+    console.error("[Settings] Error saving settings.json:", err);
+  }
+  return merged;
+}
+function getSupabaseClient() {
+  const settings = loadSettings();
+  if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+    return null;
+  }
+  return createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), {
+    auth: { persistSession: false }
+  });
+}
+
+// src/server/services/trademarkService.ts
+var TrademarkService = class {
+  /**
+   * Test connection to Productor Trademark APIs
+   */
+  static async testConnection() {
+    const settings = loadSettings();
+    const start3 = Date.now();
+    try {
+      const formData = new URLSearchParams();
+      formData.append("trademarks", JSON.stringify(["testquery"]));
+      const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
+        method: "POST",
+        headers: {
+          "Authorization": settings.productorUsptoAuth,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: formData.toString(),
+        signal: AbortSignal.timeout(6e3)
+      });
+      const latencyMs = Date.now() - start3;
+      if (res.ok) {
+        return { success: true, latencyMs };
+      }
+      return { success: false, latencyMs, error: `USPTO API responded with HTTP ${res.status}` };
+    } catch (err) {
+      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Connection timeout" };
+    }
+  }
+  /**
+   * Check a list of terms/keywords or a whole quote across USPTO, EUIPO, and DPMA
+   */
+  static async checkTrademarks(terms, locale = "en") {
+    const settings = loadSettings();
+    const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
+    const uniqueTerms = Array.from(new Set(cleanTerms));
+    if (uniqueTerms.length === 0) {
+      return {
+        hasInfringementClass25: false,
+        blockedProducts: [],
+        hits: {},
+        totalHits: 0,
+        message: "No terms to check."
+      };
+    }
+    const allHits = {};
+    try {
+      const usptoFormData = new URLSearchParams();
+      usptoFormData.append("trademarks", JSON.stringify(uniqueTerms));
+      const usptoRes = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
+        method: "POST",
+        headers: {
+          "Authorization": settings.productorUsptoAuth,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: usptoFormData.toString(),
+        signal: AbortSignal.timeout(8e3)
+      });
+      if (usptoRes.ok) {
+        const usptoData = await usptoRes.json();
+        for (const [term, records] of Object.entries(usptoData)) {
+          if (Array.isArray(records) && records.length > 0) {
+            allHits[term] = allHits[term] || [];
+            records.forEach((r) => {
+              allHits[term].push({
+                trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
+                classNumber: String(r.class_id || r.class || r.international_class || "25"),
+                status: r.status || r.status_code || "LIVE",
+                registrationNumber: r.registration_number,
+                serialNumber: r.serial_number,
+                goodsAndServices: r.goods_and_services || r.goods_services,
+                source: "USPTO"
+              });
+            });
+          }
+        }
+      }
+      const euFormData = new URLSearchParams();
+      euFormData.append("trademarks", JSON.stringify(uniqueTerms));
+      const euRes = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
+        method: "POST",
+        headers: {
+          "Authorization": settings.productorEuipoAuth,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: euFormData.toString(),
+        signal: AbortSignal.timeout(8e3)
+      });
+      if (euRes.ok) {
+        const euData = await euRes.json();
+        for (const [term, records] of Object.entries(euData)) {
+          if (Array.isArray(records) && records.length > 0) {
+            allHits[term] = allHits[term] || [];
+            records.forEach((r) => {
+              allHits[term].push({
+                trademark: r.trademark || r.mark_identification || term,
+                classNumber: String(r.class_id || r.class || "25"),
+                status: r.status || "LIVE",
+                source: "EUIPO"
+              });
+            });
+          }
+        }
+      }
+      if (locale === "de") {
+        const dpmaFormData = new URLSearchParams();
+        dpmaFormData.append("trademarks", JSON.stringify(uniqueTerms));
+        const dpmaRes = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
+          method: "POST",
+          headers: {
+            "Authorization": settings.productorDpmaAuth,
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: dpmaFormData.toString(),
+          signal: AbortSignal.timeout(8e3)
+        });
+        if (dpmaRes.ok) {
+          const dpmaData = await dpmaRes.json();
+          for (const [term, records] of Object.entries(dpmaData)) {
+            if (Array.isArray(records) && records.length > 0) {
+              allHits[term] = allHits[term] || [];
+              records.forEach((r) => {
+                allHits[term].push({
+                  trademark: r.trademark || term,
+                  classNumber: String(r.class_id || r.class || "25"),
+                  status: r.status || "LIVE",
+                  source: "DPMA"
+                });
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[TrademarkService] Error checking trademarks:", err.message || err);
+    }
+    let hasInfringementClass25 = false;
+    const blockedProductsSet = /* @__PURE__ */ new Set();
+    let totalHits = 0;
+    for (const [term, records] of Object.entries(allHits)) {
+      totalHits += records.length;
+      for (const rec of records) {
+        const isLive = !rec.status || rec.status.toUpperCase().includes("LIVE") || rec.status.toUpperCase().includes("REGISTERED");
+        if (!isLive) continue;
+        const cls = rec.classNumber;
+        if (cls === "25") {
+          hasInfringementClass25 = true;
+          blockedProductsSet.add("STANDARD_TSHIRT");
+          blockedProductsSet.add("PREMIUM_TSHIRT");
+          blockedProductsSet.add("HOODIE");
+          blockedProductsSet.add("SWEATSHIRT");
+          blockedProductsSet.add("ZIP_HOODIE");
+          blockedProductsSet.add("TANK_TOP");
+          blockedProductsSet.add("LONG_SLEEVE_TSHIRT");
+          blockedProductsSet.add("RAGLAN");
+        } else if (cls === "9") {
+          blockedProductsSet.add("POPSOCKET");
+          blockedProductsSet.add("PHONE_CASE_APPLE_IPHONE");
+          blockedProductsSet.add("PHONE_CASE_SAMSUNG_GALAXY");
+        } else if (cls === "21") {
+          blockedProductsSet.add("MUG");
+          blockedProductsSet.add("TUMBLER");
+        } else if (cls === "20") {
+          blockedProductsSet.add("THROW_PILLOW");
+        } else if (cls === "8" || cls === "18") {
+          blockedProductsSet.add("TOTE_BAG");
+        }
+      }
+    }
+    return {
+      hasInfringementClass25,
+      blockedProducts: Array.from(blockedProductsSet),
+      hits: allHits,
+      totalHits,
+      message: hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${blockedProductsSet.size} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
+    };
+  }
+};
+
+// src/server/services/llmService.ts
+var cachedModels = [];
+var lastModelsFetch = 0;
+var LLMService = class {
+  static normalizeModelId(model) {
+    const trimmed = model.trim();
+    if (trimmed === "anthropic/claude-3.5-sonnet") return "anthropic/claude-3-5-sonnet";
+    if (trimmed === "anthropic/claude-3.5-sonnet-20241022") return "anthropic/claude-3-5-sonnet-20241022";
+    return trimmed;
+  }
+  static getBaseUrlAndHeaders() {
+    const settings = loadSettings();
+    const isDirectOpenAI = settings.llmProvider === "openai";
+    const url = isDirectOpenAI ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${settings.openRouterApiKey.trim()}`
+    };
+    if (!isDirectOpenAI) {
+      headers["HTTP-Referer"] = "https://mba-hub.local";
+      headers["X-Title"] = "MBA HUB";
+    }
+    const rawModel = settings.llmModel || "anthropic/claude-3-5-sonnet";
+    return {
+      url,
+      headers,
+      model: this.normalizeModelId(rawModel)
+    };
+  }
+  /**
+   * Fetch all models from OpenRouter dynamically
+   */
+  static async getAvailableModels() {
+    const now = Date.now();
+    if (cachedModels.length > 0 && now - lastModelsFetch < 1e3 * 60 * 30) {
+      return cachedModels;
+    }
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/models", {
+        headers: {
+          "HTTP-Referer": "https://mba-hub.local",
+          "X-Title": "MBA HUB"
+        },
+        signal: AbortSignal.timeout(1e4)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.data)) {
+          const list = data.data.map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            contextLength: m.context_length,
+            promptPrice: m.pricing?.prompt ? `$${(parseFloat(m.pricing.prompt) * 1e6).toFixed(2)}/M` : void 0,
+            completionPrice: m.pricing?.completion ? `$${(parseFloat(m.pricing.completion) * 1e6).toFixed(2)}/M` : void 0,
+            description: m.description
+          }));
+          const topKeywords = ["claude-3.5-sonnet", "claude-3-5-sonnet", "gpt-4o", "gemini-2.0-flash", "gemini-2.5", "llama-3.2"];
+          list.sort((a, b) => {
+            const aIsTop = topKeywords.some((k) => a.id.toLowerCase().includes(k));
+            const bIsTop = topKeywords.some((k) => b.id.toLowerCase().includes(k));
+            if (aIsTop && !bIsTop) return -1;
+            if (!aIsTop && bIsTop) return 1;
+            return a.name.localeCompare(b.name);
+          });
+          cachedModels = list;
+          lastModelsFetch = now;
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn("[LLMService] Failed to fetch dynamic models list:", err);
+    }
+    return [
+      { id: "anthropic/claude-3.5-sonnet", name: "Anthropic: Claude 3.5 Sonnet" },
+      { id: "anthropic/claude-3.5-sonnet:beta", name: "Anthropic: Claude 3.5 Sonnet (Beta)" },
+      { id: "openai/gpt-4o", name: "OpenAI: GPT-4o" },
+      { id: "openai/gpt-4o-mini", name: "OpenAI: GPT-4o Mini" },
+      { id: "google/gemini-2.0-flash-001", name: "Google: Gemini 2.0 Flash" },
+      { id: "meta-llama/llama-3.2-11b-vision-instruct", name: "Meta: Llama 3.2 11B Vision" }
+    ];
+  }
+  /**
+   * Check OpenRouter credit balance & usage
+   */
+  static async getCredits(customKey) {
+    const settings = loadSettings();
+    const key = (customKey || settings.openRouterApiKey).trim();
+    if (!key) return { error: "Kein API Key" };
+    try {
+      const [authRes, creditsRes] = await Promise.all([
+        fetch("https://openrouter.ai/api/v1/auth/key", {
+          headers: { "Authorization": `Bearer ${key}` },
+          signal: AbortSignal.timeout(8e3)
+        }),
+        fetch("https://openrouter.ai/api/v1/credits", {
+          headers: { "Authorization": `Bearer ${key}` },
+          signal: AbortSignal.timeout(8e3)
+        })
+      ]);
+      let usage;
+      let limit;
+      let limitRemaining;
+      let totalCredits;
+      let balanceRemaining;
+      let isFreeTier;
+      if (authRes.ok) {
+        const authJson = await authRes.json();
+        const d = authJson?.data;
+        usage = d?.usage;
+        limit = d?.limit;
+        limitRemaining = d?.limit_remaining;
+        isFreeTier = d?.is_free_tier;
+      }
+      if (creditsRes.ok) {
+        const creditsJson = await creditsRes.json();
+        const cd = creditsJson?.data;
+        if (cd) {
+          totalCredits = cd.total_credits;
+          const totalUsage = cd.total_usage || 0;
+          if (totalCredits !== void 0) {
+            balanceRemaining = Math.max(0, totalCredits - totalUsage);
+          }
+        }
+      }
+      const finalAvailable = balanceRemaining ?? limitRemaining;
+      return {
+        usage,
+        limit,
+        limitRemaining: finalAvailable,
+        totalCredits,
+        balanceRemaining: finalAvailable,
+        isFreeTier
+      };
+    } catch (err) {
+      return { error: err.message || "Timeout" };
+    }
+  }
+  /**
+   * Test LLM connection without sending chat tokens:
+   * Uses OpenRouter /auth/key endpoint or OpenAI /models endpoint to verify the key instantly & safely
+   */
+  static async testConnection(customKey, customModel) {
+    const settings = loadSettings();
+    const key = (customKey || settings.openRouterApiKey).trim();
+    const isDirectOpenAI = settings.llmProvider === "openai";
+    if (!key) {
+      return { success: false, latencyMs: 0, error: "Kein API Key hinterlegt" };
+    }
+    const start3 = Date.now();
+    try {
+      if (!isDirectOpenAI) {
+        const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
+          headers: {
+            "Authorization": `Bearer ${key}`,
+            "HTTP-Referer": "https://mba-hub.local",
+            "X-Title": "MBA HUB"
+          },
+          signal: AbortSignal.timeout(15e3)
+        });
+        const latencyMs = Date.now() - start3;
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && json?.data) {
+          const d = json.data;
+          const usageStr = d.usage !== void 0 ? `Verbrauch: $${Number(d.usage).toFixed(4)}` : "";
+          const remStr = d.limit_remaining !== void 0 && d.limit_remaining !== null ? ` | Restlimit: $${Number(d.limit_remaining).toFixed(2)}` : d.limit ? ` | Limit: $${Number(d.limit).toFixed(2)}` : "";
+          const labelStr = d.label ? `[${d.label}] ` : "";
+          return {
+            success: true,
+            latencyMs,
+            details: `${labelStr}OpenRouter Key g\xFCltig \u2713 ${usageStr}${remStr}`,
+            usage: d.usage,
+            limitRemaining: d.limit_remaining
+          };
+        }
+        if (res.status === 401 || res.status === 403) {
+          return {
+            success: false,
+            latencyMs,
+            error: json?.error?.message || "Ung\xFCltiger OpenRouter API Key (401 Unauthorized)"
+          };
+        }
+        return {
+          success: false,
+          latencyMs,
+          error: json?.error?.message || `HTTP ${res.status}: OpenRouter Authentifizierungsfehler`
+        };
+      } else {
+        const res = await fetch("https://api.openai.com/v1/models", {
+          headers: {
+            "Authorization": `Bearer ${key}`
+          },
+          signal: AbortSignal.timeout(15e3)
+        });
+        const latencyMs = Date.now() - start3;
+        if (res.ok) {
+          return {
+            success: true,
+            latencyMs,
+            details: "OpenAI API Key g\xFCltig (Modell-Katalog erreichbar) \u2713"
+          };
+        }
+        const data = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          latencyMs,
+          error: data?.error?.message || `HTTP ${res.status}: Ung\xFCltiger OpenAI API Key`
+        };
+      }
+    } catch (err) {
+      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout bei der Verbindung zu OpenRouter" };
+    }
+  }
+  /**
+   * Optimize niches & quote into a high-converting Ideogram 3.0 prompt
+   */
+  static async generateIdeogramPrompt(niche1, niche2, quote5, stylePreset) {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const systemPrompt = `You are an expert prompt engineer specializing in Ideogram 3.0 T-shirt graphics for Merch by Amazon.
+Your goal is to craft a highly descriptive, visually stunning, clean vector prompt that produces high-converting apparel designs.
+Requirements:
+1. Emphasize isolated vector graphics on a solid clean background.
+2. If a quote is provided, include the exact text inside quotation marks and request bold, legible typography.
+3. Keep the prompt under 90 words, focused strictly on visual aesthetic, style, lighting, and composition. No promo or buzzwords like 4K. Output ONLY the raw prompt text.`;
+    const userMessage = `Niche 1: ${niche1}
+Niche 2: ${niche2}
+Quote / Text: "${quote5}"
+Style Preset: ${stylePreset}`;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage }
+          ],
+          temperature: 0.7,
+          max_tokens: 250
+        }),
+        signal: AbortSignal.timeout(15e3)
+      });
+      if (!res.ok) {
+        throw new Error(`LLM error: ${res.statusText}`);
+      }
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content?.trim() || `T-shirt graphic design of "${quote5}", ${niche1} style, clean vector illustration on solid background.`;
+    } catch (err) {
+      console.error("[LLMService] Error generating prompt:", err);
+      return `T-shirt graphic design of "${quote5}", ${niche1} ${niche2} aesthetic, clean vector illustration, isolated on solid background, commercial merchandise ready.`;
+    }
+  }
+  /**
+   * Vision Analysis + Amazon SEO Listing Generation (single-session token efficiency)
+   */
+  static async analyzeVisionAndGenerateListing(imageUrlOrBase64, niche1, niche2) {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const systemPrompt = `You are "Listing Creator", an expert in Amazon Merch on Demand SEO listings and visual design analysis.
+Analyze the image and provide a compliant, high-converting listing plus design classifications.
+Character limits:
+- Title: 55-60 chars (Include visible quote verbatim or strongest keywords, no product types like "shirt")
+- Brand: 40-50 chars (Target audience/mood in Title Case)
+- Bullet 1: 230-246 chars (Audience, context, style, visible text if not in Title)
+- Bullet 2: 230-246 chars (Occasions, related sub-niches, "perfect for...")
+- Description: 450-650 chars (Smooth story-style summary)
+- Keywords: >= 25 comma-separated unique lowercase keywords.
+- colorCount: estimated number of distinct visible colors (integer, conservative, 2-8).
+- audiencePrediction: "Men", "Women", "Youth", or "Men, Women"
+- avoidColorPrediction: "Black", "White", or "None" (if white elements exist, avoid white)
+- reuseBackgroundPrediction: "Nein" (if graphic is isolated on solid bg) or "Ja"
+
+Respond strictly with valid JSON conforming to these exact keys.`;
+    const userContent = [
+      { type: "text", text: `Niche 1: ${niche1 || ""}
+Niche 2: ${niche2 || ""}` },
+      { type: "image_url", image_url: { url: imageUrlOrBase64 } }
+    ];
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userContent }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.4,
+          max_tokens: 1e3
+        }),
+        signal: AbortSignal.timeout(25e3)
+      });
+      if (!res.ok) throw new Error(`Vision API error: ${res.statusText}`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      return JSON.parse(content);
+    } catch (err) {
+      console.error("[LLMService] Vision Listing error:", err);
+      return {
+        title: `${niche1 || "Vintage"} Retro Graphic Design`,
+        brand: `${niche1 || "Retro"} Apparel Co`,
+        bullet1: `Express your unique aesthetic with this stylish ${niche1 || "vintage"} artwork. Ideal for everyday casual wear and trendsetters.`,
+        bullet2: `A versatile addition to any collection, perfect for birthdays, holidays, summer festivals, and casual outings with friends.`,
+        description: `High-quality graphic design celebrating ${niche1 || "retro"} vibes with vivid details and expressive artwork for enthusiasts.`,
+        keywords: "vintage, retro, aesthetic, graphic, distressed, classic, apparel, gifts",
+        colorCount: 4,
+        audiencePrediction: "Men, Women",
+        avoidColorPrediction: "None",
+        reuseBackgroundPrediction: "Nein"
+      };
+    }
+  }
+};
+
+// src/server/services/ideogramService.ts
+var IdeogramService = class {
+  /**
+   * Test Ideogram API connection (0 credits consumed)
+   */
+  static async testConnection(customKey) {
+    const settings = loadSettings();
+    const rawKey = customKey || settings.ideogramApiKey;
+    if (!rawKey || !rawKey.trim()) {
+      return { success: false, latencyMs: 0, error: "Kein Ideogram API Key hinterlegt" };
+    }
+    const key = rawKey.trim();
+    const start3 = Date.now();
+    try {
+      const res = await fetch("https://api.ideogram.ai/models", {
+        method: "GET",
+        headers: {
+          "Api-Key": key
+        },
+        signal: AbortSignal.timeout(15e3)
+      });
+      const latencyMs = Date.now() - start3;
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const customModels = Array.isArray(data?.models) ? data.models : [];
+        const customMsg = customModels.length > 0 ? ` (${customModels.length} Custom Models verf\xFCgbar)` : "";
+        return {
+          success: true,
+          latencyMs,
+          details: `Ideogram Verbindung erfolgreich! (Modelle V4, V3, V2 bereit${customMsg}) \u2713`
+        };
+      }
+      if (res.status === 401 || res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          latencyMs,
+          error: data?.message || "Ung\xFCltiger Ideogram API Key (401 Unauthorized). Bitte Key pr\xFCfen unter https://ideogram.ai/manage-api"
+        };
+      }
+      return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
+    } catch (err) {
+      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout bei der Verbindung zu Ideogram" };
+    }
+  }
+  /**
+   * Get all standard and custom Ideogram models (V4, V3, V2 Turbo, V2)
+   */
+  static async getAvailableModels() {
+    const standardModels = [
+      { id: "V_4", name: "Ideogram 4.0 (Neueste Generation & Transparent)" },
+      { id: "V_3", name: "Ideogram 3.0 (T-Shirt & Vektor Spezialist)" },
+      { id: "V_2_TURBO", name: "Ideogram 2.0 Turbo (Schnell & G\xFCnstig)" },
+      { id: "V_2", name: "Ideogram 2.0 (High Quality)" }
+    ];
+    const settings = loadSettings();
+    if (!settings.ideogramApiKey) return standardModels;
+    try {
+      const res = await fetch("https://api.ideogram.ai/models", {
+        headers: { "Api-Key": settings.ideogramApiKey.trim() },
+        signal: AbortSignal.timeout(1e4)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.models)) {
+          const custom = data.models.filter((m) => m.is_available_for_generation !== false).map((m) => ({
+            id: m.model_id || m.name,
+            name: `Custom: ${m.name || m.model_id}`,
+            isCustom: true
+          }));
+          return [...standardModels, ...custom];
+        }
+      }
+    } catch (e) {
+    }
+    return standardModels;
+  }
+  /**
+   * Generate Image via Ideogram API (supports V4, V3, V2)
+   */
+  static async generateImage(options2) {
+    const settings = loadSettings();
+    const key = settings.ideogramApiKey;
+    if (!key) {
+      throw new Error("Ideogram API Key fehlt in den Einstellungen.");
+    }
+    const aspectMap = {
+      "1:1": "ASPECT_1_1",
+      "3:4": "ASPECT_3_4",
+      "4:3": "ASPECT_4_3",
+      "16:9": "ASPECT_16_9",
+      "9:16": "ASPECT_9_16"
+    };
+    const selectedModel = options2.model || settings.ideogramModel || "V_4";
+    const payload = {
+      image_request: {
+        prompt: options2.prompt,
+        aspect_ratio: aspectMap[options2.aspectRatio || "1:1"] || "ASPECT_1_1",
+        model: selectedModel,
+        magic_prompt_option: options2.magicPromptOption || "AUTO"
+      }
+    };
+    const res = await fetch("https://api.ideogram.ai/generate", {
+      method: "POST",
+      headers: {
+        "Api-Key": key.trim(),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(6e4)
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw new Error(`Ideogram API Fehler: ${res.status} - ${errBody}`);
+    }
+    const data = await res.json();
+    const imageUrl = data?.data?.[0]?.url;
+    if (!imageUrl) {
+      throw new Error("Keine Bild-URL von Ideogram erhalten.");
+    }
+    return {
+      imageUrl,
+      prompt: options2.prompt
+    };
+  }
+};
+
+// src/server/services/vectorizerService.ts
+var VectorizerService = class {
+  /**
+   * Test Vectorizer.ai API credentials and query account details
+   */
+  static async testConnection(customKey, customSecret) {
+    const settings = loadSettings();
+    const key = customKey || settings.vectorizerApiKey;
+    const secret = customSecret || settings.vectorizerApiSecret;
+    if (!key || !secret) {
+      return { success: false, latencyMs: 0, error: "API Key (ID) oder API Secret fehlt" };
+    }
+    const start3 = Date.now();
+    try {
+      const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
+      const res = await fetch("https://vectorizer.ai/api/v1/account", {
+        headers: {
+          "Authorization": `Basic ${auth}`
+        },
+        signal: AbortSignal.timeout(8e3)
+      });
+      const latencyMs = Date.now() - start3;
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const credits = data?.credits?.remaining ?? data?.credits;
+        return {
+          success: true,
+          latencyMs,
+          creditsRemaining: credits,
+          details: credits !== void 0 ? `Guthaben: ${credits} Credits` : "Account verbunden"
+        };
+      }
+      if (res.status === 401) {
+        return {
+          success: false,
+          latencyMs,
+          error: data?.error?.message || "Ung\xFCltige Vectorizer.ai Zugangsdaten (401)"
+        };
+      }
+      return { success: false, latencyMs, error: data?.error?.message || `HTTP ${res.status}` };
+    } catch (err) {
+      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout" };
+    }
+  }
+  /**
+   * Vectorize an image URL or Buffer to SVG
+   */
+  static async vectorizeImage(imageUrl) {
+    const settings = loadSettings();
+    const key = settings.vectorizerApiKey;
+    const secret = settings.vectorizerApiSecret;
+    if (!key || !secret) {
+      throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
+    }
+    const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
+    const formData = new FormData();
+    formData.append("image.url", imageUrl);
+    formData.append("mode", "production");
+    const res = await fetch("https://vectorizer.ai/api/v1/vectorize", {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${auth}`
+      },
+      body: formData,
+      signal: AbortSignal.timeout(6e4)
+    });
+    if (!res.ok) {
+      throw new Error(`Vectorizer Fehler: HTTP ${res.status}`);
+    }
+    return await res.text();
+  }
+};
 
 // src/server/services/supabaseService.ts
 var SupabaseService = class {
@@ -214954,7 +214956,7 @@ var SupabaseService = class {
     }
     const start3 = Date.now();
     try {
-      const supabase = createClient2(url.trim(), key.trim(), { auth: { persistSession: false } });
+      const supabase = createClient(url.trim(), key.trim(), { auth: { persistSession: false } });
       const [allRes, liveRes] = await Promise.all([
         supabase.from("mba_designs").select("*", { count: "exact", head: true }),
         supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"])
@@ -215022,7 +215024,7 @@ var SupabaseService = class {
       };
     }
     try {
-      const supabase = createClient2(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), { auth: { persistSession: false } });
+      const supabase = createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), { auth: { persistSession: false } });
       const [totalRes, liveRes, unresolvedRes, salesRes] = await Promise.all([
         supabase.from("mba_designs").select("design_id", { count: "exact", head: true }),
         supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]),
