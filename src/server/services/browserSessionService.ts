@@ -259,41 +259,53 @@ export class BrowserSessionService {
   }
 
   /**
-   * Forward mouse events (clicks, movement, wheel scroll) to CDP
+   * Forward mouse events (clicks, movement, wheel scroll) to CDP with dual trigger
    */
   static async dispatchMouseEvent(type: BrowserSessionType, event: any) {
     const session = this.sessions.get(type);
     if (!session || session.page.isClosed()) return;
 
+    const x = Math.round(event.x);
+    const y = Math.round(event.y);
+
     try {
-      if (event.type === 'mousePressed' || event.type === 'mouseReleased') {
+      if (event.type === 'mousePressed') {
         await session.cdp.send('Input.dispatchMouseEvent', {
-          type: event.type,
-          x: Math.round(event.x),
-          y: Math.round(event.y),
+          type: 'mousePressed',
+          x,
+          y,
           button: event.button || 'left',
-          clickCount: event.clickCount || 1,
-          modifiers: event.modifiers || 0
+          clickCount: 1
         });
+      } else if (event.type === 'mouseReleased') {
+        await session.cdp.send('Input.dispatchMouseEvent', {
+          type: 'mouseReleased',
+          x,
+          y,
+          button: event.button || 'left',
+          clickCount: 1
+        });
+        // Also trigger native Playwright click to ensure buttons and forms submit
+        await session.page.mouse.click(x, y, { button: (event.button as any) || 'left', delay: 20 }).catch(() => {});
       } else if (event.type === 'mouseWheel') {
         await session.cdp.send('Input.dispatchMouseEvent', {
           type: 'mouseWheel',
-          x: Math.round(event.x),
-          y: Math.round(event.y),
+          x,
+          y,
           deltaX: event.deltaX || 0,
           deltaY: event.deltaY || 0
         });
       } else if (event.type === 'mouseMoved') {
         await session.cdp.send('Input.dispatchMouseEvent', {
           type: 'mouseMoved',
-          x: Math.round(event.x),
-          y: Math.round(event.y)
+          x,
+          y
         });
       }
     } catch (err: any) {
       try {
-        if (event.type === 'mousePressed') {
-          await session.page.mouse.click(Math.round(event.x), Math.round(event.y), {
+        if (event.type === 'mousePressed' || event.type === 'mouseReleased') {
+          await session.page.mouse.click(x, y, {
             button: (event.button as any) || 'left'
           });
         }
@@ -302,7 +314,7 @@ export class BrowserSessionService {
   }
 
   /**
-   * Forward keyboard events to CDP with full support for password and text fields
+   * Forward keyboard events to CDP with full support for password, text fields and Enter submit
    */
   static async dispatchKeyEvent(type: BrowserSessionType, event: any) {
     const session = this.sessions.get(type);
@@ -315,6 +327,20 @@ export class BrowserSessionService {
       } else if (event.key === 'Backspace') {
         await session.page.keyboard.press('Backspace');
       } else if (event.key === 'Enter') {
+        await session.cdp.send('Input.dispatchKeyEvent', {
+          type: 'rawKeyDown',
+          key: 'Enter',
+          code: 'Enter',
+          windowsVirtualKeyCode: 13,
+          nativeVirtualKeyCode: 13
+        });
+        await session.cdp.send('Input.dispatchKeyEvent', {
+          type: 'keyUp',
+          key: 'Enter',
+          code: 'Enter',
+          windowsVirtualKeyCode: 13,
+          nativeVirtualKeyCode: 13
+        });
         await session.page.keyboard.press('Enter');
       } else if (event.key === 'Tab') {
         await session.page.keyboard.press('Tab');

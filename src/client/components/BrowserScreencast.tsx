@@ -113,17 +113,31 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
     sendWsEvent('BROWSER_INIT');
   };
 
-  // Convert canvas event coordinates to remote 1440x900 browser coordinates
+  // Convert canvas event coordinates to remote 1440x900 browser coordinates with exact aspect ratio compensation
   const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY
-    };
+
+    const cw = canvas.width;  // 1440
+    const ch = canvas.height; // 900
+    const rw = rect.width;
+    const rh = rect.height;
+
+    const scale = Math.min(rw / cw, rh / ch);
+    const renderedW = cw * scale;
+    const renderedH = ch * scale;
+
+    const offsetX = (rw - renderedW) / 2;
+    const offsetY = (rh - renderedH) / 2;
+
+    const clientX = e.clientX - rect.left;
+    const clientY = e.clientY - rect.top;
+
+    const x = Math.max(0, Math.min(cw, (clientX - offsetX) / scale));
+    const y = Math.max(0, Math.min(ch, (clientY - offsetY) / scale));
+
+    return { x, y };
   };
 
   // Mouse Input Dispatchers
