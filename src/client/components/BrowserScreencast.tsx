@@ -395,23 +395,32 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
           </button>
         </form>
 
-        {/* Quick Target Links */}
-        <div className="hidden lg:flex items-center gap-1.5 text-[11px]">
+        {/* Quick Target Links & Submit Action */}
+        <div className="flex items-center gap-1.5 text-[11px]">
+          <button
+            type="button"
+            onClick={() => sendWsEvent('BROWSER_SUBMIT', {})}
+            className="flex items-center gap-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded shadow transition active:scale-95"
+            title="Klickt automatisch auf Sign In / Weiter / Absenden"
+          >
+            <span>⚡ Sign In / Absenden</span>
+          </button>
+
           <button
             onClick={() => { setUrlInput('https://merch.amazon.com/dashboard'); sendWsEvent('BROWSER_NAVIGATE', { url: 'https://merch.amazon.com/dashboard' }); }}
-            className="px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 font-medium transition"
+            className="hidden sm:inline-block px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 font-medium transition"
           >
             Dashboard
           </button>
           <button
             onClick={() => { setUrlInput('https://merch.amazon.com/manage/products'); sendWsEvent('BROWSER_NAVIGATE', { url: 'https://merch.amazon.com/manage/products' }); }}
-            className="px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 font-medium transition"
+            className="hidden md:inline-block px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 font-medium transition"
           >
             Designs
           </button>
           <button
             onClick={() => { setUrlInput('https://merch.amazon.com/create'); sendWsEvent('BROWSER_NAVIGATE', { url: 'https://merch.amazon.com/create' }); }}
-            className="px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 font-medium transition"
+            className="hidden md:inline-block px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 font-medium transition"
           >
             Upload
           </button>
@@ -438,9 +447,16 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
           height={900}
           onMouseDown={(e) => {
             canvasRef.current?.focus();
-            handleMouseDown(e);
           }}
-          onMouseUp={handleMouseUp}
+          onClick={(e) => {
+            const { x, y } = getCanvasCoords(e);
+            sendWsEvent('BROWSER_MOUSE', {
+              type: 'click',
+              x,
+              y,
+              button: e.button === 2 ? 'right' : 'left'
+            });
+          }}
           onMouseMove={handleMouseMove}
           onWheel={handleWheel}
           onKeyDown={handleKeyDown}

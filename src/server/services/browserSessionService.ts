@@ -259,7 +259,7 @@ export class BrowserSessionService {
   }
 
   /**
-   * Forward mouse events (clicks, movement, wheel scroll) to CDP with dual trigger
+   * Forward mouse events (clicks, movement, wheel scroll) using native Playwright mouse
    */
   static async dispatchMouseEvent(type: BrowserSessionType, event: any) {
     const session = this.sessions.get(type);
@@ -269,47 +269,59 @@ export class BrowserSessionService {
     const y = Math.round(event.y);
 
     try {
-      if (event.type === 'mousePressed') {
-        await session.cdp.send('Input.dispatchMouseEvent', {
-          type: 'mousePressed',
-          x,
-          y,
-          button: event.button || 'left',
-          clickCount: 1
-        });
+      if (event.type === 'click') {
+        await session.page.mouse.click(x, y, { button: (event.button as any) || 'left' });
+      } else if (event.type === 'mousePressed') {
+        await session.page.mouse.move(x, y);
+        await session.page.mouse.down({ button: (event.button as any) || 'left' });
       } else if (event.type === 'mouseReleased') {
-        await session.cdp.send('Input.dispatchMouseEvent', {
-          type: 'mouseReleased',
-          x,
-          y,
-          button: event.button || 'left',
-          clickCount: 1
-        });
-        // Also trigger native Playwright click to ensure buttons and forms submit
-        await session.page.mouse.click(x, y, { button: (event.button as any) || 'left', delay: 20 }).catch(() => {});
+        await session.page.mouse.up({ button: (event.button as any) || 'left' });
       } else if (event.type === 'mouseWheel') {
-        await session.cdp.send('Input.dispatchMouseEvent', {
-          type: 'mouseWheel',
-          x,
-          y,
-          deltaX: event.deltaX || 0,
-          deltaY: event.deltaY || 0
-        });
+        await session.page.mouse.wheel(event.deltaX || 0, event.deltaY || 0);
       } else if (event.type === 'mouseMoved') {
-        await session.cdp.send('Input.dispatchMouseEvent', {
-          type: 'mouseMoved',
-          x,
-          y
-        });
+        await session.page.mouse.move(x, y);
       }
     } catch (err: any) {
-      try {
-        if (event.type === 'mousePressed' || event.type === 'mouseReleased') {
-          await session.page.mouse.click(x, y, {
-            button: (event.button as any) || 'left'
-          });
+      // Ignore transient mouse errors
+    }
+  }
+
+  /**
+   * Submit active Amazon form (Sign In, Continue, OTP, etc.)
+   */
+  static async submitActiveForm(type: BrowserSessionType): Promise<{ success: boolean; message: string }> {
+    const session = this.sessions.get(type);
+    if (!session || session.page.isClosed()) return { success: false, message: 'Session nicht aktiv' };
+
+    try {
+      // 1. Press Enter
+      await session.page.keyboard.press('Enter').catch(() => {});
+
+      // 2. Evaluate DOM submit click
+      await session.page.evaluate(() => {
+        const selectors = [
+          '#signInSubmit',
+          '#continue',
+          'input[type="submit"]',
+          'button[type="submit"]',
+          '.a-button-input',
+          '#auth-signin-button',
+          'input[name="rememberMe"]'
+        ];
+        for (const sel of selectors) {
+          const btn = document.querySelector(sel) as HTMLElement;
+          if (btn && btn.offsetParent !== null) { // visible
+            btn.click();
+            return;
+          }
         }
-      } catch {}
+        const form = document.querySelector('form[name="signIn"], form') as HTMLFormElement;
+        if (form) form.submit();
+      });
+
+      return { success: true, message: 'Login-Formular erfolgreich abgeschickt!' };
+    } catch (err: any) {
+      return { success: false, message: err.message };
     }
   }
 
@@ -327,21 +339,7 @@ export class BrowserSessionService {
       } else if (event.key === 'Backspace') {
         await session.page.keyboard.press('Backspace');
       } else if (event.key === 'Enter') {
-        await session.cdp.send('Input.dispatchKeyEvent', {
-          type: 'rawKeyDown',
-          key: 'Enter',
-          code: 'Enter',
-          windowsVirtualKeyCode: 13,
-          nativeVirtualKeyCode: 13
-        });
-        await session.cdp.send('Input.dispatchKeyEvent', {
-          type: 'keyUp',
-          key: 'Enter',
-          code: 'Enter',
-          windowsVirtualKeyCode: 13,
-          nativeVirtualKeyCode: 13
-        });
-        await session.page.keyboard.press('Enter');
+        await this.submitActiveForm(type);
       } else if (event.key === 'Tab') {
         await session.page.keyboard.press('Tab');
       } else if (event.key === 'Escape') {

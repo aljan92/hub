@@ -215824,7 +215824,7 @@ var BrowserSessionService = class {
     }
   }
   /**
-   * Forward mouse events (clicks, movement, wheel scroll) to CDP with dual trigger
+   * Forward mouse events (clicks, movement, wheel scroll) using native Playwright mouse
    */
   static async dispatchMouseEvent(type3, event) {
     const session2 = this.sessions.get(type3);
@@ -215832,48 +215832,53 @@ var BrowserSessionService = class {
     const x = Math.round(event.x);
     const y = Math.round(event.y);
     try {
-      if (event.type === "mousePressed") {
-        await session2.cdp.send("Input.dispatchMouseEvent", {
-          type: "mousePressed",
-          x,
-          y,
-          button: event.button || "left",
-          clickCount: 1
-        });
+      if (event.type === "click") {
+        await session2.page.mouse.click(x, y, { button: event.button || "left" });
+      } else if (event.type === "mousePressed") {
+        await session2.page.mouse.move(x, y);
+        await session2.page.mouse.down({ button: event.button || "left" });
       } else if (event.type === "mouseReleased") {
-        await session2.cdp.send("Input.dispatchMouseEvent", {
-          type: "mouseReleased",
-          x,
-          y,
-          button: event.button || "left",
-          clickCount: 1
-        });
-        await session2.page.mouse.click(x, y, { button: event.button || "left", delay: 20 }).catch(() => {
-        });
+        await session2.page.mouse.up({ button: event.button || "left" });
       } else if (event.type === "mouseWheel") {
-        await session2.cdp.send("Input.dispatchMouseEvent", {
-          type: "mouseWheel",
-          x,
-          y,
-          deltaX: event.deltaX || 0,
-          deltaY: event.deltaY || 0
-        });
+        await session2.page.mouse.wheel(event.deltaX || 0, event.deltaY || 0);
       } else if (event.type === "mouseMoved") {
-        await session2.cdp.send("Input.dispatchMouseEvent", {
-          type: "mouseMoved",
-          x,
-          y
-        });
+        await session2.page.mouse.move(x, y);
       }
     } catch (err) {
-      try {
-        if (event.type === "mousePressed" || event.type === "mouseReleased") {
-          await session2.page.mouse.click(x, y, {
-            button: event.button || "left"
-          });
+    }
+  }
+  /**
+   * Submit active Amazon form (Sign In, Continue, OTP, etc.)
+   */
+  static async submitActiveForm(type3) {
+    const session2 = this.sessions.get(type3);
+    if (!session2 || session2.page.isClosed()) return { success: false, message: "Session nicht aktiv" };
+    try {
+      await session2.page.keyboard.press("Enter").catch(() => {
+      });
+      await session2.page.evaluate(() => {
+        const selectors2 = [
+          "#signInSubmit",
+          "#continue",
+          'input[type="submit"]',
+          'button[type="submit"]',
+          ".a-button-input",
+          "#auth-signin-button",
+          'input[name="rememberMe"]'
+        ];
+        for (const sel of selectors2) {
+          const btn = document.querySelector(sel);
+          if (btn && btn.offsetParent !== null) {
+            btn.click();
+            return;
+          }
         }
-      } catch {
-      }
+        const form = document.querySelector('form[name="signIn"], form');
+        if (form) form.submit();
+      });
+      return { success: true, message: "Login-Formular erfolgreich abgeschickt!" };
+    } catch (err) {
+      return { success: false, message: err.message };
     }
   }
   /**
@@ -215888,21 +215893,7 @@ var BrowserSessionService = class {
       } else if (event.key === "Backspace") {
         await session2.page.keyboard.press("Backspace");
       } else if (event.key === "Enter") {
-        await session2.cdp.send("Input.dispatchKeyEvent", {
-          type: "rawKeyDown",
-          key: "Enter",
-          code: "Enter",
-          windowsVirtualKeyCode: 13,
-          nativeVirtualKeyCode: 13
-        });
-        await session2.cdp.send("Input.dispatchKeyEvent", {
-          type: "keyUp",
-          key: "Enter",
-          code: "Enter",
-          windowsVirtualKeyCode: 13,
-          nativeVirtualKeyCode: 13
-        });
-        await session2.page.keyboard.press("Enter");
+        await this.submitActiveForm(type3);
       } else if (event.key === "Tab") {
         await session2.page.keyboard.press("Tab");
       } else if (event.key === "Escape") {
@@ -216108,6 +216099,8 @@ wss.on("connection", (ws4) => {
         await BrowserSessionService.goBack(session2 || "sync");
       } else if (type3 === "BROWSER_FORWARD") {
         await BrowserSessionService.goForward(session2 || "sync");
+      } else if (type3 === "BROWSER_SUBMIT") {
+        await BrowserSessionService.submitActiveForm(session2 || "sync");
       }
     } catch (err) {
       console.error("[MBA Hub WS] Invalid message error:", err);

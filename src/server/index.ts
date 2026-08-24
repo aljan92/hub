@@ -142,6 +142,8 @@ wss.on('connection', (ws) => {
         await BrowserSessionService.goBack(session || 'sync');
       } else if (type === 'BROWSER_FORWARD') {
         await BrowserSessionService.goForward(session || 'sync');
+      } else if (type === 'BROWSER_SUBMIT') {
+        await BrowserSessionService.submitActiveForm(session || 'sync');
       }
     } catch (err) {
       console.error('[MBA Hub WS] Invalid message error:', err);
