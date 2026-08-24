@@ -15,6 +15,7 @@ import { IdeogramService } from './services/ideogramService';
 import { VectorizerService } from './services/vectorizerService';
 import { SupabaseService } from './services/supabaseService';
 import { SyncEngine } from './services/syncEngine';
+import { DockerService } from './services/dockerService';
 
 dotenv.config();
 
@@ -239,6 +240,37 @@ app.get('/api/v1/sync/logs', (req, res) => {
 app.post('/api/v1/sync/logs/clear', (req, res) => {
   SyncEngine.clearLogs();
   res.json({ success: true });
+});
+
+// 2.0.2 Browser Container Management (Start / Restart Chrome)
+app.post('/api/v1/browser/restart', async (req, res) => {
+  try {
+    const { session } = req.body;
+    const containerName = session === 'upload' ? 'mba_chrome_upload' : 'mba_chrome_sync';
+    
+    logActivity('Browser', `Neustart-Signal für Container ${containerName} empfangen`);
+    const result = await DockerService.restartContainer(containerName);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/v1/browser/status', async (req, res) => {
+  try {
+    const [syncStatus, uploadStatus] = await Promise.all([
+      DockerService.getContainerStatus('mba_chrome_sync'),
+      DockerService.getContainerStatus('mba_chrome_upload')
+    ]);
+
+    res.json({
+      success: true,
+      sync: syncStatus,
+      upload: uploadStatus
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // 2. Settings Management

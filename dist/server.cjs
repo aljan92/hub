@@ -18738,10 +18738,10 @@ var require_layer = __commonJS({
 var require_methods = __commonJS({
   "node_modules/methods/index.js"(exports2, module2) {
     "use strict";
-    var http2 = require("http");
+    var http3 = require("http");
     module2.exports = getCurrentNodeMethods() || getBasicNodeMethods();
     function getCurrentNodeMethods() {
-      return http2.METHODS && http2.METHODS.map(function lowerCaseMethod(method) {
+      return http3.METHODS && http3.METHODS.map(function lowerCaseMethod(method) {
         return method.toLowerCase();
       });
     }
@@ -21955,7 +21955,7 @@ var require_application = __commonJS({
     var query = require_query();
     var debug = require_src3()("express:application");
     var View = require_view();
-    var http2 = require("http");
+    var http3 = require("http");
     var compileETag = require_utils2().compileETag;
     var compileQueryParser = require_utils2().compileQueryParser;
     var compileTrust = require_utils2().compileTrust;
@@ -22204,7 +22204,7 @@ var require_application = __commonJS({
       tryRender(view, renderOptions, done);
     };
     app2.listen = function listen() {
-      var server2 = http2.createServer(this);
+      var server2 = http3.createServer(this);
       return server2.listen.apply(server2, arguments);
     };
     function logerror(err) {
@@ -22806,12 +22806,12 @@ var require_request = __commonJS({
     var deprecate = require_depd()("express");
     var isIP = require("net").isIP;
     var typeis = require_type_is();
-    var http2 = require("http");
+    var http3 = require("http");
     var fresh = require_fresh();
     var parseRange = require_range_parser();
     var parse = require_parseurl();
     var proxyaddr = require_proxy_addr();
-    var req = Object.create(http2.IncomingMessage.prototype);
+    var req = Object.create(http3.IncomingMessage.prototype);
     module2.exports = req;
     req.get = req.header = function header(name) {
       if (!name) {
@@ -23232,7 +23232,7 @@ var require_response = __commonJS({
     var deprecate = require_depd()("express");
     var encodeUrl = require_encodeurl();
     var escapeHtml = require_escape_html();
-    var http2 = require("http");
+    var http3 = require("http");
     var isAbsolute = require_utils2().isAbsolute;
     var onFinished = require_on_finished();
     var path3 = require("path");
@@ -23248,7 +23248,7 @@ var require_response = __commonJS({
     var mime = send.mime;
     var resolve = path3.resolve;
     var vary = require_vary();
-    var res = Object.create(http2.ServerResponse.prototype);
+    var res = Object.create(http3.ServerResponse.prototype);
     module2.exports = res;
     var charsetRegExp = /;\s*charset\s*=/;
     res.status = function status(code) {
@@ -26182,7 +26182,7 @@ var require_websocket = __commonJS({
     "use strict";
     var EventEmitter = require("events");
     var https = require("https");
-    var http2 = require("http");
+    var http3 = require("http");
     var net = require("net");
     var tls = require("tls");
     var { randomBytes, createHash } = require("crypto");
@@ -26724,7 +26724,7 @@ var require_websocket = __commonJS({
       }
       const defaultPort = isSecure ? 443 : 80;
       const key = randomBytes(16).toString("base64");
-      const request = isSecure ? https.request : http2.request;
+      const request = isSecure ? https.request : http3.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
       opts.createConnection = opts.createConnection || (isSecure ? tlsConnect : netConnect);
@@ -27220,7 +27220,7 @@ var require_websocket_server = __commonJS({
   "node_modules/ws/lib/websocket-server.js"(exports2, module2) {
     "use strict";
     var EventEmitter = require("events");
-    var http2 = require("http");
+    var http3 = require("http");
     var { Duplex } = require("stream");
     var { createHash } = require("crypto");
     var extension2 = require_extension();
@@ -27301,8 +27301,8 @@ var require_websocket_server = __commonJS({
           );
         }
         if (options.port != null) {
-          this._server = http2.createServer((req, res) => {
-            const body = http2.STATUS_CODES[426];
+          this._server = http3.createServer((req, res) => {
+            const body = http3.STATUS_CODES[426];
             res.writeHead(426, {
               "Content-Length": body.length,
               "Content-Type": "text/plain"
@@ -27591,7 +27591,7 @@ var require_websocket_server = __commonJS({
       this.destroy();
     }
     function abortHandshake(socket, code, message, headers) {
-      message = message || http2.STATUS_CODES[code];
+      message = message || http3.STATUS_CODES[code];
       headers = {
         Connection: "close",
         "Content-Type": "text/html",
@@ -27600,7 +27600,7 @@ var require_websocket_server = __commonJS({
       };
       socket.once("finish", socket.destroy);
       socket.end(
-        `HTTP/1.1 ${code} ${http2.STATUS_CODES[code]}\r
+        `HTTP/1.1 ${code} ${http3.STATUS_CODES[code]}\r
 ` + Object.keys(headers).map((h) => `${h}: ${headers[h]}`).join("\r\n") + "\r\n\r\n" + message
       );
     }
@@ -41916,7 +41916,7 @@ var require_main4 = __commonJS({
 
 // src/server/index.ts
 var import_express = __toESM(require_express2(), 1);
-var import_http = __toESM(require("http"), 1);
+var import_http2 = __toESM(require("http"), 1);
 
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -51223,12 +51223,96 @@ var SyncEngine = class {
   }
 };
 
+// src/server/services/dockerService.ts
+var import_http = __toESM(require("http"), 1);
+var DockerService = class {
+  /**
+   * Restarts a container by name via Docker Unix socket
+   */
+  static async restartContainer(containerName) {
+    return new Promise((resolve) => {
+      const options = {
+        socketPath: "/var/run/docker.sock",
+        path: `/v1.41/containers/${containerName}/restart?t=3`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      };
+      const req = import_http.default.request(options, (res) => {
+        if (res.statusCode === 204 || res.statusCode === 200) {
+          resolve({ success: true, message: `Container ${containerName} erfolgreich neugestartet.` });
+        } else {
+          let data = "";
+          res.on("data", (chunk) => data += chunk);
+          res.on("end", () => {
+            resolve({
+              success: false,
+              message: `Docker API (${res.statusCode}): ${data || "Konnte Container nicht neustarten"}`
+            });
+          });
+        }
+      });
+      req.on("error", (err) => {
+        resolve({
+          success: false,
+          message: `Docker Socket nicht erreichbar (${err.message}). Bitte sicherstellen, dass /var/run/docker.sock gemountet ist.`
+        });
+      });
+      req.setTimeout(1e4, () => {
+        req.destroy();
+        resolve({ success: false, message: "Timeout beim Neustart des Browser-Containers." });
+      });
+      req.end();
+    });
+  }
+  /**
+   * Get container status (running/exited)
+   */
+  static async getContainerStatus(containerName) {
+    return new Promise((resolve) => {
+      const options = {
+        socketPath: "/var/run/docker.sock",
+        path: `/v1.41/containers/${containerName}/json`,
+        method: "GET"
+      };
+      const req = import_http.default.request(options, (res) => {
+        let data = "";
+        res.on("data", (chunk) => data += chunk);
+        res.on("end", () => {
+          try {
+            if (res.statusCode === 200) {
+              const json = JSON.parse(data);
+              resolve({
+                running: json.State?.Running || false,
+                status: json.State?.Status || "unknown"
+              });
+            } else {
+              resolve({ running: false, status: `HTTP ${res.statusCode}` });
+            }
+          } catch {
+            resolve({ running: false, status: "error" });
+          }
+        });
+      });
+      req.on("error", () => {
+        resolve({ running: false, status: "socket_unavailable" });
+      });
+      req.setTimeout(5e3, () => {
+        req.destroy();
+        resolve({ running: false, status: "timeout" });
+      });
+      req.end();
+    });
+  }
+};
+
 // src/server/index.ts
 var import_meta = {};
 import_dotenv.default.config();
 var currentDir = typeof __dirname !== "undefined" ? __dirname : import_path2.default.dirname((0, import_url.fileURLToPath)(import_meta.url));
 var app = (0, import_express.default)();
-var server = import_http.default.createServer(app);
+var server = import_http2.default.createServer(app);
 var wss = new import_websocket_server.default({ server, path: "/ws" });
 var PORT = process.env.PORT || 3e3;
 var HOST = process.env.HOST || "0.0.0.0";
@@ -51246,6 +51330,17 @@ var activityLog = [
     desc: "Server l\xE4uft autark auf TerraMaster TOS 6.0"
   }
 ];
+function logActivity(title, desc, type = "INFO") {
+  const event = {
+    time: (/* @__PURE__ */ new Date()).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    type,
+    title,
+    desc
+  };
+  activityLog.unshift(event);
+  if (activityLog.length > 50) activityLog.pop();
+  broadcast("ACTIVITY_LOG", event);
+}
 function broadcast(type, payload) {
   const message = JSON.stringify({ type, payload, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   wss.clients.forEach((client) => {
@@ -51379,6 +51474,32 @@ app.get("/api/v1/sync/logs", (req, res) => {
 app.post("/api/v1/sync/logs/clear", (req, res) => {
   SyncEngine.clearLogs();
   res.json({ success: true });
+});
+app.post("/api/v1/browser/restart", async (req, res) => {
+  try {
+    const { session } = req.body;
+    const containerName = session === "upload" ? "mba_chrome_upload" : "mba_chrome_sync";
+    logActivity("Browser", `Neustart-Signal f\xFCr Container ${containerName} empfangen`);
+    const result = await DockerService.restartContainer(containerName);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+app.get("/api/v1/browser/status", async (req, res) => {
+  try {
+    const [syncStatus, uploadStatus] = await Promise.all([
+      DockerService.getContainerStatus("mba_chrome_sync"),
+      DockerService.getContainerStatus("mba_chrome_upload")
+    ]);
+    res.json({
+      success: true,
+      sync: syncStatus,
+      upload: uploadStatus
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 app.get("/api/v1/settings", (req, res) => {
   const settings = loadSettings();

@@ -21,6 +21,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./data/chrome-profile:/app/data/chrome-profile
+      - /var/run/docker.sock:/var/run/docker.sock
 
   # Chrome Session 1: Sync & Login (Passwortfrei auf Port 6080)
   chrome-sync:

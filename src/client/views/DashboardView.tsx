@@ -15,7 +15,9 @@ import {
   Terminal,
   MonitorPlay,
   RefreshCw,
-  FolderSync
+  FolderSync,
+  Play,
+  Power
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -34,10 +36,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
   const [statsData, setStatsData] = useState<any>(moduleCachedStats);
   const [activityEvents, setActivityEvents] = useState<any[]>(moduleCachedActivity);
   const [loadingHealth, setLoadingHealth] = useState(false);
+  const [restartingBrowser, setRestartingBrowser] = useState(false);
+  const [restartMessage, setRestartMessage] = useState<string | null>(null);
 
   const nasHost = typeof window !== 'undefined' ? (window.location.hostname || '192.168.178.141') : '192.168.178.141';
   const currentPort = activeSession === 'sync' ? 6080 : 6081;
   const currentUrl = `http://${nasHost}:${currentPort}/`;
+
+  const handleRestartBrowser = async () => {
+    setRestartingBrowser(true);
+    setRestartMessage(null);
+    try {
+      const res = await fetch('/api/v1/browser/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: activeSession })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRestartMessage(`✓ ${activeSession === 'sync' ? 'Session 1 (Sync)' : 'Session 2 (Upload)'} wurde gestartet / neugestartet!`);
+        setTimeout(() => {
+          setIframeKey(k => k + 1);
+          setRestartMessage(null);
+        }, 2000);
+      } else {
+        setRestartMessage(`Info: ${data.message || 'Neustart nicht möglich'}`);
+        setTimeout(() => setRestartMessage(null), 5000);
+      }
+    } catch (err: any) {
+      setRestartMessage(`Fehler beim Neustart: ${err.message}`);
+      setTimeout(() => setRestartMessage(null), 5000);
+    } finally {
+      setRestartingBrowser(false);
+    }
+  };
 
   const fetchDashboardData = (forceSpinner = false) => {
     if (forceSpinner) setLoadingHealth(true);
@@ -202,6 +234,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
                 <span>Session 2: Upload Worker (6081)</span>
               </button>
 
+              {/* Action: Start / Restart Chrome */}
+              <button
+                type="button"
+                onClick={handleRestartBrowser}
+                disabled={restartingBrowser}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                title="Startet oder startet die Chrome-Instanz frisch mit Amazon Merch neu"
+              >
+                <Play className={`w-3.5 h-3.5 fill-current ${restartingBrowser ? 'animate-spin' : ''}`} />
+                <span>{restartingBrowser ? 'Starte Chrome...' : 'Chrome starten / neu starten'}</span>
+              </button>
+
               {/* Action: Reload Stream */}
               <button
                 type="button"
@@ -224,6 +268,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
               </a>
             </div>
           </div>
+
+          {/* Feedback Banner if restarting */}
+          {restartMessage && (
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2 animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+              <span>{restartMessage}</span>
+            </div>
+          )}
 
           {/* Description Subtext */}
           <div className="flex items-center justify-between text-xs text-slate-400 px-1">
