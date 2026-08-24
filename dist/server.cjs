@@ -215509,46 +215509,15 @@ var MP_MAP = {
   A1VC38T7YXB528: "jp"
 };
 var VARIANT_PRODUCT_TYPES = /* @__PURE__ */ new Set([
-  // Drinkware
-  "MUG",
-  "MUG_11OZ",
-  "MUG_15OZ",
-  "TRAVEL_MUG",
-  "TUMBLER",
-  "WATER_BOTTLE",
-  "CAN_COOLER",
-  // Headwear
-  "BASEBALL_HAT",
-  "BASEBALL_CAP",
-  "HAT",
-  "CAP",
-  "TRUCKER_HAT",
-  "BEANIE",
-  "DAD_HAT",
-  // Mobile / PopSockets
   "POP_SOCKET",
-  "POPSOCKET",
-  "POPSOCKETS_GRIP",
   "PHONE_CASE_APPLE_IPHONE",
   "PHONE_CASE_SAMSUNG_GALAXY",
-  "PHONE_CASE_SAMSUNG",
-  "PHONE_CASE",
-  "IPHONE_CASE",
-  "SAMSUNG_CASE",
-  // Home, Office & Accessories
-  "TOTE_BAG",
-  "THROW_PILLOW",
-  "PILLOW",
+  "MUG",
   "HARDCOVER_JOURNAL",
-  "JOURNAL",
-  "DESK_PAD",
-  "MOUSE_PAD",
-  "MOUSEPAD",
-  "STICKER",
-  "MAGNET",
-  "APRON",
-  "POSTER",
-  "CANVAS_PRINT"
+  "WATER_BOTTLE",
+  "TUMBLER",
+  "TOTE_BAG",
+  "THROW_PILLOW"
 ]);
 var ALL_STATUSES = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
 var FIND_LISTINGS_URL = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
