@@ -215263,7 +215263,7 @@ var BrowserSessionService = class _BrowserSessionService {
       this.sessions.delete(type3);
     });
     await this.startScreencast(type3);
-    page.goto(defaultUrl, { waitUntil: "domcontentloaded", timeout: 3e4 }).catch((err) => {
+    await page.goto(defaultUrl, { waitUntil: "domcontentloaded", timeout: 3e4 }).catch((err) => {
       console.warn(`[BrowserSession] Initial navigation warning for ${type3}:`, err.message);
     });
     return session2;
@@ -215648,17 +215648,49 @@ var SyncEngine = class {
     if (!session2 || session2.page.isClosed()) {
       throw new Error("Session 1 (Sync & Login) ist nicht aktiv.");
     }
-    const currentUrl = session2.page.url();
+    let currentUrl = session2.page.url();
+    if (currentUrl === "about:blank" || !currentUrl.includes("amazon.com")) {
+      this.addLog("[Session 1] Navigiere zu Amazon Dashboard...", "info");
+      await session2.page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 }).catch(() => {
+      });
+      currentUrl = session2.page.url();
+    }
     if (!currentUrl.includes("amazon.com")) {
       throw new Error(`Session 1 ist nicht auf Amazon eingeloggt (Aktuelle Seite: ${currentUrl}). Bitte erst in Session 1 einloggen.`);
     }
     return session2.page;
   }
   /**
-   * Execute in-browser FindListings query using Session 1 authentication cookies
+   * Execute in-browser FindListings query using Session 1 authentication cookies and CSRF tokens
    */
   static async fetchFindListingsPage(page, startIndex = 0, count = 50, statuses = ALL_STATUSES) {
     return await page.evaluate(async ({ startIndex: startIndex2, count: count2, statuses: statuses2, url, marketIds }) => {
+      let csrfToken = "";
+      const cookieMatches = document.cookie.match(/(?:^|;\s*)(?:csrf-token|anti-csrftoken-a2z|session-id)=([^;]+)/);
+      if (cookieMatches) {
+        csrfToken = decodeURIComponent(cookieMatches[1]);
+      }
+      if (!csrfToken) {
+        const metaTag = document.querySelector('meta[name="csrf-token"], meta[name="anti-csrftoken-a2z"]');
+        if (metaTag) csrfToken = metaTag.getAttribute("content") || "";
+      }
+      if (!csrfToken && window.csrfToken) {
+        csrfToken = window.csrfToken;
+      }
+      if (!csrfToken && window.ue_csrf) {
+        csrfToken = window.ue_csrf;
+      }
+      const headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/plain, */*",
+        "X-Requested-With": "XMLHttpRequest"
+      };
+      if (csrfToken) {
+        headers["anti-csrftoken-a2z"] = csrfToken;
+        headers["csrf-token"] = csrfToken;
+        headers["x-csrf-token"] = csrfToken;
+        headers["x-amz-csrf-token"] = csrfToken;
+      }
       const body = {
         searchFilter: {
           statuses: statuses2,
@@ -215676,15 +215708,13 @@ var SyncEngine = class {
       };
       const res = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
+        headers,
         body: JSON.stringify(body),
         credentials: "include"
       });
       if (!res.ok) {
-        throw new Error(`Amazon FindListings HTTP ${res.status}: ${res.statusText}`);
+        const errText = await res.text().catch(() => "");
+        throw new Error(`Amazon FindListings HTTP ${res.status}: ${errText || res.statusText}`);
       }
       return await res.json();
     }, {
@@ -216881,6 +216911,16 @@ if (import_fs73.default.existsSync(staticPath)) {
 server2.listen(Number(PORT), HOST, () => {
   console.log(`\u{1F680} MBA HUB Core Server running on http://${HOST}:${PORT}`);
   console.log(`\u{1F4E1} WebSocket stream active on ws://${HOST}:${PORT}/ws`);
+  setTimeout(async () => {
+    try {
+      console.log("[MBA Hub] Auto-prewarming browser Session 1 & Session 2 in background...");
+      await BrowserSessionService.getSession("sync");
+      await BrowserSessionService.getSession("upload");
+      console.log("[MBA Hub] Browser sessions warm and ready \u2713");
+    } catch (err) {
+      console.warn("[MBA Hub] Auto-prewarming warning:", err.message);
+    }
+  }, 1e3);
 });
 /*! Bundled license information:
 

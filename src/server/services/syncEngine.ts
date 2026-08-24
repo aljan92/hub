@@ -185,7 +185,15 @@ export class SyncEngine {
     if (!session || session.page.isClosed()) {
       throw new Error('Session 1 (Sync & Login) ist nicht aktiv.');
     }
-    const currentUrl = session.page.url();
+
+    let currentUrl = session.page.url();
+    // If on about:blank or not on amazon, navigate to dashboard
+    if (currentUrl === 'about:blank' || !currentUrl.includes('amazon.com')) {
+      this.addLog('[Session 1] Navigiere zu Amazon Dashboard...', 'info');
+      await session.page.goto('https://merch.amazon.com/dashboard', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      currentUrl = session.page.url();
+    }
+
     if (!currentUrl.includes('amazon.com')) {
       throw new Error(`Session 1 ist nicht auf Amazon eingeloggt (Aktuelle Seite: ${currentUrl}). Bitte erst in Session 1 einloggen.`);
     }
@@ -193,10 +201,40 @@ export class SyncEngine {
   }
 
   /**
-   * Execute in-browser FindListings query using Session 1 authentication cookies
+   * Execute in-browser FindListings query using Session 1 authentication cookies and CSRF tokens
    */
   private static async fetchFindListingsPage(page: any, startIndex = 0, count = 50, statuses: string[] = ALL_STATUSES) {
     return await page.evaluate(async ({ startIndex, count, statuses, url, marketIds }) => {
+      // 1. Extract CSRF / Anti-CSRF Token from document cookies or DOM meta tags
+      let csrfToken = '';
+      const cookieMatches = document.cookie.match(/(?:^|;\s*)(?:csrf-token|anti-csrftoken-a2z|session-id)=([^;]+)/);
+      if (cookieMatches) {
+        csrfToken = decodeURIComponent(cookieMatches[1]);
+      }
+      if (!csrfToken) {
+        const metaTag = document.querySelector('meta[name="csrf-token"], meta[name="anti-csrftoken-a2z"]');
+        if (metaTag) csrfToken = metaTag.getAttribute('content') || '';
+      }
+      if (!csrfToken && (window as any).csrfToken) {
+        csrfToken = (window as any).csrfToken;
+      }
+      if (!csrfToken && (window as any).ue_csrf) {
+        csrfToken = (window as any).ue_csrf;
+      }
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
+        'X-Requested-With': 'XMLHttpRequest'
+      };
+
+      if (csrfToken) {
+        headers['anti-csrftoken-a2z'] = csrfToken;
+        headers['csrf-token'] = csrfToken;
+        headers['x-csrf-token'] = csrfToken;
+        headers['x-amz-csrf-token'] = csrfToken;
+      }
+
       const body = {
         searchFilter: {
           statuses,
@@ -212,17 +250,17 @@ export class SyncEngine {
           order: "DESC"
         }
       };
+
       const res = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
+        headers,
         body: JSON.stringify(body),
         credentials: 'include'
       });
+
       if (!res.ok) {
-        throw new Error(`Amazon FindListings HTTP ${res.status}: ${res.statusText}`);
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Amazon FindListings HTTP ${res.status}: ${errText || res.statusText}`);
       }
       return await res.json();
     }, { 

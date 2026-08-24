@@ -238,8 +238,8 @@ export class BrowserSessionService {
     // Start screencast stream on this page
     await this.startScreencast(type);
 
-    // Navigate to default URL
-    page.goto(defaultUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(err => {
+    // Navigate to default URL and wait for DOM content
+    await page.goto(defaultUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(err => {
       console.warn(`[BrowserSession] Initial navigation warning for ${type}:`, err.message);
     });
 

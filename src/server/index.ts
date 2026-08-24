@@ -742,4 +742,16 @@ if (fs.existsSync(staticPath)) {
 server.listen(Number(PORT), HOST, () => {
   console.log(`🚀 MBA HUB Core Server running on http://${HOST}:${PORT}`);
   console.log(`📡 WebSocket stream active on ws://${HOST}:${PORT}/ws`);
+
+  // Pre-warm browser sessions in background so they are immediately ready
+  setTimeout(async () => {
+    try {
+      console.log('[MBA Hub] Auto-prewarming browser Session 1 & Session 2 in background...');
+      await BrowserSessionService.getSession('sync');
+      await BrowserSessionService.getSession('upload');
+      console.log('[MBA Hub] Browser sessions warm and ready ✓');
+    } catch (err: any) {
+      console.warn('[MBA Hub] Auto-prewarming warning:', err.message);
+    }
+  }, 1000);
 });
