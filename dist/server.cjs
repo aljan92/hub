@@ -217215,32 +217215,31 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
 }`;
 var DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) Trademark Attorney and POD Compliance Auditor.
-Your job is to analyze the USPTO / Trademark hits detected for a generated Merch by Amazon listing and produce a compliant, safe, and high-converting listing.
+Your job is to analyze the USPTO / Trademark hits detected for a generated Merch by Amazon listing and make a definitive compliance decision.
 
-### 1. STRICT COMPLIANCE & REWRITING RULES:
+### 1. CORE COMPLIANCE RULES:
 
-A. CORE QUOTE & MOTIF (DESIGN-FIXED ELEMENTS):
-- The Quote and primary Motif name are printed directly on the design and CANNOT be altered.
-- CRITICAL CLASS 25 REJECTION RULE:
-  * If the core Quote or the central graphic Motif itself has an active LIVE trademark match in Class 25 (Apparel/Clothing) (e.g. "Just Do It", "Hakuna Matata", "Lego", a trademarked brand name, logo, or character):
-    -> You MUST immediately set "verdict": "REJECTED".
-    -> Provide a clear "rejection_reason".
-- OTHER NICE CLASSES ON QUOTE/MOTIF:
-  * If the Quote or Motif matches OTHER Nice classes (e.g. Class 9 for PopSockets/Phone Cases, Class 21 for Mugs, Class 20 for Pillows, Class 18 for Tote Bags):
-    -> Apparel (Class 25) remains ALLOWED ("verdict": "APPROVED").
-    -> Note the affected non-apparel product categories in "actions_taken" so the system can deactivate them.
+A. DESCRIPTIVE FAIR USE (ALLOWED IN BULLETS & DESCRIPTION):
+- Generic, common words (e.g., "space", "vintage", "retro", "happy", "sun", "workout", "sunset", "cute", "angel", "reality", "manifest", "wings", "stars", "gold", "cosmic", "celestial", "radiant") are often registered as apparel trademarks by individual brands.
+- If these words appear in natural descriptive sentence context within Bullet Points or Description (e.g. "featuring celestial angel wings artwork in ivory and gold tones"), this is 100% LEGAL DESCRIPTIVE FAIR USE. Do NOT delete or butcher sentences for common descriptive words!
 
-B. ALL OTHER WORDS (MUST BE ACTIVELY REPHRASED TO PREVENT PRODUCT EXCLUSIONS):
-- Everything in the listing that is NOT the Quote or the explicit motif name MUST be actively rephrased if it matches a trademark in ANY class!
-- PRIMARY GOAL: Eliminate all trademark hits in Title, Brand, Bullet 1, Bullet 2, and Description by replacing them with safe, powerful non-infringing synonyms so that NO PRODUCTS HAVE TO BE EXCLUDED!
-- Title & Brand: ZERO Class 25 tolerance! Rephrase any matched terms (e.g. "Angel Number" -> "Spiritual Numerology", "Wings" -> "Feather Artwork", "Space" -> "Cosmic"). Keep character limits: Brand <= 50 chars, Title <= 60 chars.
-- Bullets & Description:
-  * If any word triggers a Class 25 or secondary class match (Class 9, 21, etc.), actively rephrase and replace that word with a safe synonym so that both apparel and accessory products (PopSockets, Phone Cases, Mugs, Pillows, Tote Bags) remain 100% available without blocks!
-  * Proprietary corporate brands (e.g., "Nike", "Disney", "Marvel", "Pokemon", "Adidas", "Apple", celebrity names) are strictly forbidden and MUST be removed/replaced.
+B. SOURCE IDENTIFIERS / BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE):
+- If a trademarked word or phrase appears as the Brand Name or directly as the main subject in the Title, it functions as a trademark / source identifier.
+- Action: Brand and Title MUST be 100% free of active Class 25 (Apparel) trademarks! If Brand or Title triggers a Class 25 hit, rephrase to a unique, non-infringing phrase while keeping the niche relevance and SEO value.
+- Character limits: Brand <= 50 chars, Title <= 60 chars.
 
-C. FINAL REFINED LISTING REQUIREMENTS:
-- If verdict is "APPROVED", provide the complete, cleaned English listing in "refined_listing" with all possible trademark conflicts eliminated.
-- Character limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
+C. UNACCEPTABLE TRADEMARK INFRINGEMENT (MUST REJECT):
+- If the core Quote / Slogan printed on the design or the central design motif itself directly infringes a protected trademark in Class 25 (e.g. "Just Do It", "Hakuna Matata", "Lego", "Disney", "Marvel", "Pokemon", "Star Wars", famous celebrities, or active registered slogans):
+  * Set "verdict": "REJECTED"
+  * Provide a clear "rejection_reason".
+
+D. SAFE REPHRASING & MBA LISTING COMPLIANCE:
+- When rewriting any fields, you MUST strictly adhere to the Amazon Merch on Demand listing guidelines:
+  * NO quality/material claims: soft, cotton, premium, durable, lightweight, fitted, loose.
+  * NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now.
+  * NO background color mentions: white design, black background, transparent.
+  * Use full, natural sentences without keyword stuffing.
+  * Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
 
 ### 2. OUTPUT FORMAT:
 Respond ONLY with a valid JSON object matching this schema (no markdown fences, no conversational text):
@@ -217248,12 +217247,12 @@ Respond ONLY with a valid JSON object matching this schema (no markdown fences, 
   "verdict": "APPROVED",
   "rejection_reason": null,
   "actions_taken": [
-    "Replaced 'Angel Number' in Title with 'Spiritual Numerology' to eliminate Class 25 conflict",
-    "Rephrased 'celestial' in Bullet 1 to 'starlight' to avoid Class 9 PopSocket conflict and keep all products enabled"
+    "Retained 'wings' and 'stars' in Bullets as descriptive fair use",
+    "Replaced 'Wings Apparel' in Brand with 'Feather Artwork Studio'"
   ],
   "refined_listing": {
     "brand": "<Cleaned Brand Name (max 50 chars)>",
-    "title": "<Cleaned Title (max 60 chars, NO Class 25 hits)>",
+    "title": "<Cleaned Title (max 60 chars)>",
     "bullet1": "<Cleaned Bullet 1 (max 250 chars)>",
     "bullet2": "<Cleaned Bullet 2 (max 250 chars)>",
     "description": "<Cleaned Description (max 2000 chars)>"
@@ -218218,13 +218217,16 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
           console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (Quote ist Class 25 Trademark).`);
           return;
         }
-        const brandTitleSafeForApparel = !fieldResults.brand?.hasInfringementClass25 && !fieldResults.title?.hasInfringementClass25 && !hasCls25;
-        if (brandTitleSafeForApparel || totalHits === 0) {
+        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
+        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
+        const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
+        const isBrandAndTitleSafe = !brandHasClass25 && !titleHasClass25 && !quoteHasClass25;
+        if (isBrandAndTitleSafe) {
           const finalBlockedProducts = (batchResult.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
           const refineSuccessResult = {
             verdict: "APPROVED",
             rejection_reason: null,
-            actions_taken: isInitial ? ["Keine kritischen Markenrechts-Treffer in Klasse 25 gefunden. Bekleidung ist freigegeben."] : [`Listing nach Runde ${checkRound} erfolgreich bereinigt. Keine Klasse 25 Konflikte mehr.`],
+            actions_taken: isInitial ? ["Brand & Title sind 100% frei von Klasse 25 Schutzrechten. Deskriptive W\xF6rter in Bullets/Description fallen unter Fair Use. Bekleidung freigegeben."] : [`Listing nach Runde ${checkRound} erfolgreich bereinigt. Brand & Title haben keine Klasse 25 Konflikte mehr.`],
             blockedProducts: finalBlockedProducts,
             refined_listing: {
               brand: currentFields.brand,
@@ -218261,11 +218263,11 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
             trademarkRefineResult: refineSuccessResult,
             hasError: false
           });
-          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} in Runde ${checkRound} erfolgreich freigegeben \u2713`);
+          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} in Runde ${checkRound} erfolgreich freigegeben \u2713 (Brand & Title sauber)`);
           return;
         }
         if (isFinal) {
-          const rejectionMsg = `Nach 4 USPTO-Pr\xFCfungen und 3 automatischen Korrekturl\xE4ufen konnten die Markenrechts-Treffer in Nizza-Klasse 25 nicht vollst\xE4ndig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
+          const rejectionMsg = `Nach 4 USPTO-Pr\xFCfungen und 3 automatischen Korrekturl\xE4ufen konnten die Markenrechts-Treffer in Klasse 25 f\xFCr Brand/Title nicht vollst\xE4ndig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
@@ -218301,7 +218303,8 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
           if (fieldData.totalHits > 0 && fieldData.hits) {
             for (const [term, hits] of Object.entries(fieldData.hits)) {
               const classInfo = hits.map((h) => `Class ${h.classNumber} (${h.status || "LIVE"})`).join(", ");
-              hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo}`);
+              const isK25 = hits.some((h) => h.classes && h.classes.includes("25") || String(h.classNumber).split(/[,;\s]+/).includes("25"));
+              hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo} ${isK25 ? "\u{1F534} CLASS 25 CONFLICT!" : "\u{1F7E1} Secondary Class"}`);
             }
           }
         }
@@ -218315,13 +218318,18 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
 - Bullet 2: "${currentFields.bullet2}"
 - Description: "${currentFields.description}"
 
-### Detected USPTO Trademark Hits (MUST BE ELIMINATED):
+### Detected USPTO Trademark Hits:
 ${hitsSummary.length > 0 ? hitsSummary.join("\n") : "- No hits detected."}
 
-Please audit every hit strictly against these rules:
-1. QUOTE & MOTIF: If the core Quote or the central Motif itself has an active Class 25 trademark (e.g. "Just Do It", "Hakuna Matata", "Lego", protected character/slogan), set "verdict": "REJECTED" immediately!
-2. ALL OTHER WORDS (Brand, Title, Bullets, Description): Everything that is NOT the Quote or the explicit motif name MUST be actively rephrased if it matches a trademark in ANY class (especially Class 25 in Title/Brand), so that NO PRODUCTS have to be excluded!
-3. Return the refined JSON strictly adhering to the schema!`;
+Please audit the listing based on your compliance rules:
+1. BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE): Brand Name and Title MUST be 100% free of active Class 25 (Apparel) trademarks! Rephrase any matched terms to unique, non-infringing phrases with high SEO value.
+2. BULLETS & DESCRIPTION (DESCRIPTIVE FAIR USE): Common generic words (e.g. "space", "angel", "wings", "stars", "gold", "cosmic", "celestial", "radiant") in natural sentence context fall under Descriptive Fair Use. Do NOT butcher or delete natural descriptive sentences!
+3. MBA LISTING RULES COMPLIANCE:
+   - NO quality/material claims (soft, cotton, premium, durable, lightweight).
+   - NO promotional or gift language (gift, present, birthday gift, best seller, sale, buy now).
+   - NO background color mentions (white design, black background).
+   - Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
+4. Return your decision as JSON strictly matching the schema!`;
         this.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_REFINE_REQUEST",

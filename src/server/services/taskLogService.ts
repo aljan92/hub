@@ -984,14 +984,16 @@ export class TaskLogService {
           return;
         }
 
-        // 4. Prüfen, ob Brand & Title und alle Listing-Felder sauber von Klasse 25 sind!
-        const brandTitleSafeForApparel = 
-          !(fieldResults.brand?.hasInfringementClass25) &&
-          !(fieldResults.title?.hasInfringementClass25) &&
-          !hasCls25;
+        // 4. Prüfen, ob Brand & Title und Quote frei von Klasse 25 sind!
+        // (In Bullets & Description sind deskriptive Wörter unter Descriptive Fair Use vollumfänglich erlaubt)
+        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
+        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
+        const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
 
-        // Wenn keine Klasse 25 Treffer vorhanden sind (oder alle Felder sauber sind)
-        if (brandTitleSafeForApparel || totalHits === 0) {
+        const isBrandAndTitleSafe = !brandHasClass25 && !titleHasClass25 && !quoteHasClass25;
+
+        // Wenn Brand & Title sauber von Klasse 25 sind:
+        if (isBrandAndTitleSafe) {
           // Berechne eventuell gesperrte Nebenprodukte (z.B. PopSockets bei Klasse 9 auf Quote)
           const finalBlockedProducts = (batchResult.blockedProducts || []).filter(p => !APPAREL_SET.has(p));
 
@@ -999,8 +1001,8 @@ export class TaskLogService {
             verdict: 'APPROVED',
             rejection_reason: null,
             actions_taken: isInitial 
-              ? ['Keine kritischen Markenrechts-Treffer in Klasse 25 gefunden. Bekleidung ist freigegeben.']
-              : [`Listing nach Runde ${checkRound} erfolgreich bereinigt. Keine Klasse 25 Konflikte mehr.`],
+              ? ['Brand & Title sind 100% frei von Klasse 25 Schutzrechten. Deskriptive Wörter in Bullets/Description fallen unter Fair Use. Bekleidung freigegeben.']
+              : [`Listing nach Runde ${checkRound} erfolgreich bereinigt. Brand & Title haben keine Klasse 25 Konflikte mehr.`],
             blockedProducts: finalBlockedProducts,
             refined_listing: {
               brand: currentFields.brand,
@@ -1042,13 +1044,13 @@ export class TaskLogService {
             hasError: false
           });
 
-          console.log(`[TaskLogService] 🛡️ Task ${taskId} in Runde ${checkRound} erfolgreich freigegeben ✓`);
+          console.log(`[TaskLogService] 🛡️ Task ${taskId} in Runde ${checkRound} erfolgreich freigegeben ✓ (Brand & Title sauber)`);
           return;
         }
 
-        // 5. Wenn nach dem 4. TM Check (also nach 3 Korrekturen) immer noch Klasse 25 Treffer vorhanden sind:
+        // 5. Wenn nach dem 4. TM Check immer noch Klasse 25 Treffer in Brand/Title vorhanden sind:
         if (isFinal) {
-          const rejectionMsg = `Nach 4 USPTO-Prüfungen und 3 automatischen Korrekturläufen konnten die Markenrechts-Treffer in Nizza-Klasse 25 nicht vollständig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
+          const rejectionMsg = `Nach 4 USPTO-Prüfungen und 3 automatischen Korrekturläufen konnten die Markenrechts-Treffer in Klasse 25 für Brand/Title nicht vollständig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
           
           this.addEvent(taskId, {
             timestamp: new Date().toISOString(),
@@ -1079,7 +1081,7 @@ export class TaskLogService {
           return;
         }
 
-        // 6. Hits vorhanden & noch Runden übrig -> LLM Refinement anfordern
+        // 6. Hits in Brand/Title vorhanden & noch Runden übrig -> LLM Refinement anfordern
         if (!apiKey) {
           console.warn(`[TaskLogService] Kein OpenRouter API-Key vorhanden für TM Refine.`);
           break;
@@ -1091,12 +1093,34 @@ export class TaskLogService {
           if (fieldData.totalHits > 0 && fieldData.hits) {
             for (const [term, hits] of Object.entries(fieldData.hits)) {
               const classInfo = hits.map(h => `Class ${h.classNumber} (${h.status || 'LIVE'})`).join(', ');
-              hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo}`);
+              const isK25 = hits.some(h => (h.classes && h.classes.includes('25')) || String(h.classNumber).split(/[,;\s]+/).includes('25'));
+              hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo} ${isK25 ? '🔴 CLASS 25 CONFLICT!' : '🟡 Secondary Class'}`);
             }
           }
         }
 
-        const userMessage = `Here is the current English listing and the detected USPTO Trademark hits (Correction Round ${checkRound}/3):\n\n### Current Listing:\n- Quote / Slogan: "${currentFields.quote}"\n- Brand: "${currentFields.brand}"\n- Title: "${currentFields.title}"\n- Bullet 1: "${currentFields.bullet1}"\n- Bullet 2: "${currentFields.bullet2}"\n- Description: "${currentFields.description}"\n\n### Detected USPTO Trademark Hits (MUST BE ELIMINATED):\n${hitsSummary.length > 0 ? hitsSummary.join('\n') : '- No hits detected.'}\n\nPlease audit every hit strictly against these rules:\n1. QUOTE & MOTIF: If the core Quote or the central Motif itself has an active Class 25 trademark (e.g. "Just Do It", "Hakuna Matata", "Lego", protected character/slogan), set "verdict": "REJECTED" immediately!\n2. ALL OTHER WORDS (Brand, Title, Bullets, Description): Everything that is NOT the Quote or the explicit motif name MUST be actively rephrased if it matches a trademark in ANY class (especially Class 25 in Title/Brand), so that NO PRODUCTS have to be excluded!\n3. Return the refined JSON strictly adhering to the schema!`;
+        const userMessage = `Here is the current English listing and the detected USPTO Trademark hits (Correction Round ${checkRound}/3):
+
+### Current Listing:
+- Quote / Slogan: "${currentFields.quote}"
+- Brand: "${currentFields.brand}"
+- Title: "${currentFields.title}"
+- Bullet 1: "${currentFields.bullet1}"
+- Bullet 2: "${currentFields.bullet2}"
+- Description: "${currentFields.description}"
+
+### Detected USPTO Trademark Hits:
+${hitsSummary.length > 0 ? hitsSummary.join('\n') : '- No hits detected.'}
+
+Please audit the listing based on your compliance rules:
+1. BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE): Brand Name and Title MUST be 100% free of active Class 25 (Apparel) trademarks! Rephrase any matched terms to unique, non-infringing phrases with high SEO value.
+2. BULLETS & DESCRIPTION (DESCRIPTIVE FAIR USE): Common generic words (e.g. "space", "angel", "wings", "stars", "gold", "cosmic", "celestial", "radiant") in natural sentence context fall under Descriptive Fair Use. Do NOT butcher or delete natural descriptive sentences!
+3. MBA LISTING RULES COMPLIANCE:
+   - NO quality/material claims (soft, cotton, premium, durable, lightweight).
+   - NO promotional or gift language (gift, present, birthday gift, best seller, sale, buy now).
+   - NO background color mentions (white design, black background).
+   - Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
+4. Return your decision as JSON strictly matching the schema!`;
 
         this.addEvent(taskId, {
           timestamp: new Date().toISOString(),
