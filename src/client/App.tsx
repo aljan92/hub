@@ -9,6 +9,7 @@ import { DatabaseView } from './views/DatabaseView';
 import { LogsView } from './views/LogsView';
 import { SettingsView } from './views/SettingsView';
 import { PromptLogView } from './views/PromptLogView';
+import { SystemPromptsView } from './views/SystemPromptsView';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -56,6 +57,7 @@ export const App: React.FC = () => {
           <div className="max-w-7xl mx-auto">
             {activeTab === 'dashboard' && <DashboardView onNavigateTab={setActiveTab} />}
             {activeTab === 'promptlog' && <PromptLogView />}
+            {activeTab === 'systemprompts' && <SystemPromptsView />}
             {activeTab === 'designer' && <DesignerView />}
             {activeTab === 'tasks' && <TasksView />}
             {activeTab === 'queue' && <QueueView />}

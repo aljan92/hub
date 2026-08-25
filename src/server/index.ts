@@ -18,6 +18,7 @@ import { SyncEngine } from './services/syncEngine';
 import { BrowserSessionService } from './services/browserSessionService';
 import { getMcpSchema } from './services/mcpSchemaService';
 import { TaskLogService } from './services/taskLogService';
+import { SystemPromptService } from './services/systemPromptService';
 
 dotenv.config();
 
@@ -29,6 +30,19 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
+
+// Broadcast helper for WebSockets
+function broadcast(type: string, payload: any) {
+  const message = JSON.stringify({ type, payload, timestamp: new Date().toISOString() });
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+}
+
+// Connect broadcaster to TaskLogService
+TaskLogService.setBroadcaster(broadcast);
 
 // Middleware
 app.use(cors());
@@ -91,16 +105,6 @@ function logActivity(title: string, desc: string, type: 'SUCCESS' | 'INFO' | 'WA
   activityLog.unshift(event);
   if (activityLog.length > 50) activityLog.pop();
   broadcast('ACTIVITY_LOG', event);
-}
-
-// Broadcast helper for WebSockets
-function broadcast(type: string, payload: any) {
-  const message = JSON.stringify({ type, payload, timestamp: new Date().toISOString() });
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  });
 }
 
 // Stream CDP Screencast frames to all connected dashboard clients
@@ -907,6 +911,27 @@ app.delete('/api/v1/tasks/log', (req, res) => {
   TaskLogService.clearTaskLogs();
   broadcast('TASK_LOGS_CLEARED', {});
   res.json({ success: true, message: 'All task logs cleared' });
+});
+
+// 8.2 System Prompts Management Endpoints
+app.get('/api/v1/systemprompts', (req, res) => {
+  res.json({
+    success: true,
+    promptGenerator: SystemPromptService.getPromptGeneratorPrompt()
+  });
+});
+
+app.post('/api/v1/systemprompts', (req, res) => {
+  const { promptGenerator } = req.body;
+  if (typeof promptGenerator === 'string') {
+    SystemPromptService.savePromptGeneratorPrompt(promptGenerator);
+  }
+  res.json({ success: true, promptGenerator: SystemPromptService.getPromptGeneratorPrompt() });
+});
+
+app.post('/api/v1/systemprompts/reset', (req, res) => {
+  const resetPrompt = SystemPromptService.resetToDefault();
+  res.json({ success: true, promptGenerator: resetPrompt });
 });
 
 // 8.2 Hermes REST Webhook Endpoint (Legacy Task Submission)

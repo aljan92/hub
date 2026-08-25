@@ -7,10 +7,11 @@ import {
   Database, 
   Terminal,
   Settings as SettingsIcon,
-  Bot
+  Bot,
+  Sliders
 } from 'lucide-react';
 
-export type ActiveTab = 'dashboard' | 'designer' | 'promptlog' | 'tasks' | 'queue' | 'database' | 'logs' | 'settings';
+export type ActiveTab = 'dashboard' | 'promptlog' | 'systemprompts' | 'designer' | 'tasks' | 'queue' | 'database' | 'logs' | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -37,6 +38,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Prompt Log',
       icon: Terminal,
       description: 'Hermes & Ingestion',
+    },
+    {
+      id: 'systemprompts' as ActiveTab,
+      label: 'Systemprompts',
+      icon: Sliders,
+      description: 'Art Director & Vorlagen',
     },
     {
       id: 'designer' as ActiveTab,

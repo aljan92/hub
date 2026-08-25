@@ -13,17 +13,50 @@ import {
   Clock, 
   Globe, 
   AlertCircle,
-  Code2
+  Code2,
+  ArrowDownRight,
+  Cpu,
+  Layers,
+  CheckCircle2,
+  Zap
 } from 'lucide-react';
+
+export type EventType = 
+  | 'INCOMING_PAYLOAD'
+  | 'SESSION_START'
+  | 'LLM_REQUEST'
+  | 'LLM_RESPONSE'
+  | 'ERROR';
+
+export interface SessionEvent {
+  timestamp: string;
+  type: EventType;
+  title: string;
+  content: any;
+  metadata?: {
+    model?: string;
+    provider?: string;
+    latencyMs?: number;
+    tokens?: {
+      prompt?: number;
+      completion?: number;
+      total?: number;
+    };
+    costUsd?: number;
+  };
+}
 
 export interface DesignTaskLog {
   id: string;
   counter: number;
   source: 'HERMES' | 'TEST' | 'DESIGNER';
   suffix: 'H' | 'T' | 'D';
+  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'ERROR';
   receivedAt: string;
   clientIp?: string;
   payload: Record<string, any>;
+  events: SessionEvent[];
+  resultPrompt?: string;
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -34,7 +67,7 @@ export const PromptLogView: React.FC = () => {
   const [filterSource, setFilterSource] = useState<'ALL' | 'HERMES' | 'TEST' | 'DESIGNER'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTask, setSelectedTask] = useState<DesignTaskLog | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Mini Playground State
   const [playNiche1, setPlayNiche1] = useState('Angel Numbers');
@@ -49,9 +82,11 @@ export const PromptLogView: React.FC = () => {
       const data = await res.json();
       if (data.success && Array.isArray(data.tasks)) {
         setTasks(data.tasks);
-        if (!selectedTask && data.tasks.length > 0) {
-          setSelectedTask(data.tasks[0]);
-        }
+        // Keep currently selected task up to date with new events
+        setSelectedTask(prev => {
+          if (!prev) return data.tasks[0] || null;
+          return data.tasks.find((t: DesignTaskLog) => t.id === prev.id) || data.tasks[0] || null;
+        });
       }
     } catch (err) {
       console.error('Failed to fetch task logs:', err);
@@ -62,7 +97,7 @@ export const PromptLogView: React.FC = () => {
 
   useEffect(() => {
     fetchTasks();
-    const interval = setInterval(fetchTasks, 5000);
+    const interval = setInterval(fetchTasks, 3000); // 3s polling for live session updates
     return () => clearInterval(interval);
   }, []);
 
@@ -90,7 +125,7 @@ export const PromptLogView: React.FC = () => {
 
       const data = await res.json();
       if (data.success) {
-        setTestSuccessMessage(`Task ${data.taskId} erfolgreich erstellt!`);
+        setTestSuccessMessage(`Task ${data.taskId} erstellt & OpenRouter Session gestartet!`);
         fetchTasks();
         setTimeout(() => setTestSuccessMessage(null), 4000);
       } else {
@@ -116,37 +151,33 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
-  const copyJson = (text: string) => {
-    if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }).catch(() => {
-        fallbackCopy(text);
-      });
+  const copyToClipboard = (text: string, key: string) => {
+    const fallbackCopy = (str: string) => {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = str;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey(null), 2000);
+      } catch (e) {}
+    };
+
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          setCopiedKey(key);
+          setTimeout(() => setCopiedKey(null), 2000);
+        })
+        .catch(() => fallbackCopy(text));
     } else {
       fallbackCopy(text);
-    }
-  };
-
-  const fallbackCopy = (text: string) => {
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.left = '-9999px';
-      textarea.style.top = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      const successful = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      if (successful) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    } catch (err) {
-      console.error('Fallback copy failed:', err);
     }
   };
 
@@ -193,6 +224,14 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
+  const formatEventTime = (isoString: string) => {
+    try {
+      return new Date(isoString).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -200,10 +239,10 @@ export const PromptLogView: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold text-slate-100 tracking-tight flex items-center gap-2">
             <Terminal className="w-6 h-6 text-accent-cyan" />
-            Prompt Log &amp; Task Ingestion
+            Prompt Log &amp; LLM Session Logbuch
           </h2>
           <p className="text-sm text-slate-400">
-            Echtzeit-Protokoll aller eingehenden Design-Tasks von Hermes, Tests und dem Designer.
+            Chronologisches Protokoll: Eingang von Hermes/Test ➔ OpenRouter Session ➔ Prompt-Erstellung.
           </p>
         </div>
         <div className="flex items-center space-x-3">
@@ -236,7 +275,7 @@ export const PromptLogView: React.FC = () => {
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-200">Mini Playground</h3>
-              <p className="text-xs text-slate-400">Simuliere einen eingehenden Request (wird als Test-Task <code>#xxx-T</code> registriert)</p>
+              <p className="text-xs text-slate-400">Simuliere einen Task (erzeugt Test-Task <code>#xxx-T</code> und triggert sofort OpenRouter)</p>
             </div>
           </div>
           {testSuccessMessage && (
@@ -345,11 +384,11 @@ export const PromptLogView: React.FC = () => {
       </div>
 
       {/* Main Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-[480px]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-[550px]">
         {/* Left Column: Task List */}
-        <div className="lg:col-span-5 glass-card rounded-2xl p-3 border border-slate-800 space-y-2 overflow-y-auto max-h-[620px] custom-scrollbar">
+        <div className="lg:col-span-4 glass-card rounded-2xl p-3 border border-slate-800 space-y-2 overflow-y-auto max-h-[720px] custom-scrollbar">
           {filteredTasks.length === 0 ? (
-            <div className="text-center py-12 space-y-3">
+            <div className="text-center py-16 space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-slate-800/80 flex items-center justify-center mx-auto text-slate-500">
                 <Code2 className="w-6 h-6" />
               </div>
@@ -401,22 +440,43 @@ export const PromptLogView: React.FC = () => {
                     )}
                   </div>
 
-                  {task.hasError && (
-                    <div className="flex items-center space-x-1 text-[11px] text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
-                      <AlertCircle className="w-3 h-3" />
-                      <span>Fehler: {task.errorDetails || 'Abgelehnt'}</span>
-                    </div>
-                  )}
+                  {/* Status Indicator */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/50 text-[10px]">
+                    {task.status === 'PROCESSING' && (
+                      <span className="text-amber-400 flex items-center gap-1 font-semibold animate-pulse">
+                        <Zap className="w-3 h-3" /> OpenRouter generiert...
+                      </span>
+                    )}
+                    {task.status === 'PROMPT_READY' && (
+                      <span className="text-emerald-400 flex items-center gap-1 font-semibold">
+                        <CheckCircle2 className="w-3 h-3" /> Prompt bereit
+                      </span>
+                    )}
+                    {task.hasError && (
+                      <span className="text-rose-400 flex items-center gap-1 font-semibold">
+                        <AlertCircle className="w-3 h-3" /> Fehler aufgetreten
+                      </span>
+                    )}
+                    {!task.status || task.status === 'RECEIVED' && (
+                      <span className="text-slate-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> Empfangen
+                      </span>
+                    )}
+
+                    <span className="text-slate-500 font-mono">
+                      {task.events?.length || 1} Log-Events
+                    </span>
+                  </div>
                 </div>
               );
             })
           )}
         </div>
 
-        {/* Right Column: Selected Task Inspector & Raw JSON */}
-        <div className="lg:col-span-7 glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4">
+        {/* Right Column: Chronological Session Logbook */}
+        <div className="lg:col-span-8 glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between space-y-4 max-h-[720px] overflow-y-auto custom-scrollbar">
           {selectedTask ? (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {/* Task Details Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
                 <div className="flex items-center space-x-3">
@@ -442,56 +502,164 @@ export const PromptLogView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Key Values Preview */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Niche 1</span>
-                  <p className="text-xs font-semibold text-slate-200 truncate">{selectedTask.payload?.niche1 || '-'}</p>
-                </div>
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Niche 2</span>
-                  <p className="text-xs font-semibold text-slate-200 truncate">{selectedTask.payload?.niche2 || '-'}</p>
-                </div>
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Style</span>
-                  <p className="text-xs font-semibold text-slate-200 truncate">{selectedTask.payload?.style || '-'}</p>
-                </div>
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Feelings</span>
-                  <p className="text-xs font-semibold text-slate-200 truncate">{selectedTask.payload?.feelings || '-'}</p>
-                </div>
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">BG / Font Color</span>
-                  <p className="text-xs font-semibold text-slate-200 truncate">
-                    {selectedTask.payload?.backgroundcolor || '-'} / {selectedTask.payload?.fontcolor || '-'}
-                  </p>
-                </div>
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Task Counter</span>
-                  <p className="text-xs font-mono font-bold text-accent-cyan">#{selectedTask.counter}</p>
-                </div>
-              </div>
+              {/* Logbook Timeline */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-accent-cyan" />
+                  Chronologisches Session-Logbuch
+                </h4>
 
-              {/* Raw JSON Viewer */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <Code2 className="w-3.5 h-3.5 text-accent-cyan" />
-                    Empfangenes Payload JSON
-                  </span>
-                  <button
-                    onClick={() => copyJson(JSON.stringify(selectedTask.payload, null, 2))}
-                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors border border-slate-700"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copied ? 'Kopiert! ✓' : 'JSON kopieren'}</span>
-                  </button>
-                </div>
+                <div className="space-y-4 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
+                  {/* Iterate through task events */}
+                  {(selectedTask.events || [
+                    {
+                      timestamp: selectedTask.receivedAt,
+                      type: 'INCOMING_PAYLOAD',
+                      title: `Eingang von ${selectedTask.source}`,
+                      content: selectedTask.payload
+                    }
+                  ]).map((event, idx) => {
+                    const timeStr = formatEventTime(event.timestamp);
 
-                <div className="relative">
-                  <pre className="w-full bg-slate-950 p-4 rounded-xl font-mono text-xs text-emerald-400 border border-slate-800 overflow-x-auto max-h-[320px] custom-scrollbar">
-                    {JSON.stringify(selectedTask.payload, null, 2)}
-                  </pre>
+                    return (
+                      <div key={idx} className="relative pl-8 space-y-2 group">
+                        {/* Bullet point */}
+                        <div className={`absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full border-2 -translate-x-1/2 transition-colors ${
+                          event.type === 'ERROR'
+                            ? 'bg-rose-500 border-rose-900 ring-4 ring-rose-500/20'
+                            : event.type === 'LLM_RESPONSE'
+                            ? 'bg-emerald-500 border-emerald-950 ring-4 ring-emerald-500/20'
+                            : event.type === 'LLM_REQUEST'
+                            ? 'bg-cyan-500 border-cyan-950'
+                            : 'bg-slate-700 border-slate-900'
+                        }`} />
+
+                        {/* Event Header */}
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-mono text-[11px] font-semibold text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                              {timeStr}
+                            </span>
+                            <span className="font-bold text-slate-200">
+                              {event.title}
+                            </span>
+                          </div>
+
+                          {event.metadata && (
+                            <div className="flex items-center space-x-2 text-[11px] text-slate-400 font-mono">
+                              {event.metadata.model && (
+                                <span className="bg-slate-800 px-2 py-0.5 rounded text-slate-300 border border-slate-700">
+                                  {event.metadata.model}
+                                </span>
+                              )}
+                              {event.metadata.latencyMs !== undefined && (
+                                <span className="text-accent-cyan font-semibold">
+                                  ⚡ {event.metadata.latencyMs}ms
+                                </span>
+                              )}
+                              {event.metadata.tokens?.total && (
+                                <span className="text-purple-400">
+                                  📊 {event.metadata.tokens.total} Tokens
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Event Body Content */}
+                        {event.type === 'INCOMING_PAYLOAD' && (
+                          <div className="bg-slate-950 rounded-xl p-3.5 border border-slate-800/80 space-y-2">
+                            <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                              <span>Empfangenes Original JSON:</span>
+                              <button
+                                onClick={() => copyToClipboard(JSON.stringify(event.content, null, 2), `incoming-${idx}`)}
+                                className="flex items-center space-x-1 text-slate-400 hover:text-slate-200"
+                              >
+                                {copiedKey === `incoming-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                <span>{copiedKey === `incoming-${idx}` ? 'Kopiert!' : 'JSON kopieren'}</span>
+                              </button>
+                            </div>
+                            <pre className="font-mono text-xs text-emerald-400 overflow-x-auto max-h-48 custom-scrollbar">
+                              {JSON.stringify(event.content, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+
+                        {event.type === 'SESSION_START' && (
+                          <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
+                            <span>{event.content}</span>
+                            <span className="font-mono text-cyan-400 text-[11px]">{event.metadata?.provider}</span>
+                          </div>
+                        )}
+
+                        {event.type === 'LLM_REQUEST' && (
+                          <div className="bg-slate-950 rounded-xl p-3.5 border border-slate-800/80 space-y-3">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
+                              <span>Anfrage an OpenRouter:</span>
+                              <button
+                                onClick={() => copyToClipboard(event.content.userMessage, `req-${idx}`)}
+                                className="flex items-center space-x-1 text-slate-400 hover:text-slate-200"
+                              >
+                                {copiedKey === `req-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                <span>{copiedKey === `req-${idx}` ? 'Kopiert!' : 'Input kopieren'}</span>
+                              </button>
+                            </div>
+
+                            {/* System Prompt preview */}
+                            <details className="text-xs text-slate-400 group/details">
+                              <summary className="cursor-pointer font-semibold text-slate-300 hover:text-accent-cyan flex items-center gap-1">
+                                <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">system</span>
+                                <span>Aktiver System-Prompt (Klick zum Ausklappen)</span>
+                              </summary>
+                              <pre className="mt-2 p-2.5 bg-slate-900 rounded-lg text-[11px] text-slate-300 font-mono whitespace-pre-wrap border border-slate-800">
+                                {event.content.systemPrompt}
+                              </pre>
+                            </details>
+
+                            {/* User message */}
+                            <div>
+                              <span className="text-[10px] font-semibold uppercase text-slate-400 block mb-1">User Message:</span>
+                              <pre className="p-2.5 bg-slate-900 rounded-lg text-xs text-cyan-300 font-mono whitespace-pre-wrap border border-slate-800">
+                                {event.content.userMessage}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+
+                        {event.type === 'LLM_RESPONSE' && (
+                          <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 border border-emerald-500/30 shadow-lg shadow-emerald-500/5 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                                Generierter Ideogram-Prompt (Ergebnis von OpenRouter)
+                              </span>
+                              <button
+                                onClick={() => copyToClipboard(event.content, `prompt-${idx}`)}
+                                className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                              >
+                                {copiedKey === `prompt-${idx}` ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                <span>{copiedKey === `prompt-${idx}` ? 'Kopiert! ✓' : 'Prompt kopieren'}</span>
+                              </button>
+                            </div>
+
+                            <p className="font-mono text-xs sm:text-sm text-slate-100 bg-slate-950/90 p-3.5 rounded-lg border border-slate-800 leading-relaxed select-all">
+                              {event.content}
+                            </p>
+                          </div>
+                        )}
+
+                        {event.type === 'ERROR' && (
+                          <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3.5 text-xs text-rose-300 flex items-start space-x-2">
+                            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                              <p className="font-bold text-rose-200">Fehler bei der Ausführung</p>
+                              <p className="font-mono text-[11px]">{event.content}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -502,7 +670,7 @@ export const PromptLogView: React.FC = () => {
               </div>
               <div className="space-y-1">
                 <h4 className="text-sm font-bold text-slate-300">Kein Task ausgewählt</h4>
-                <p className="text-xs text-slate-500 max-w-sm">Wähle links einen Task aus der Liste aus, um das vollständige Payload-JSON und alle Metadaten einzusehen.</p>
+                <p className="text-xs text-slate-500 max-w-sm">Wähle links einen Task aus der Liste aus, um das chronologische Logbuch einzusehen.</p>
               </div>
             </div>
           )}
