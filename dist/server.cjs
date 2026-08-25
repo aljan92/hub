@@ -214700,11 +214700,29 @@ var TrademarkService = class {
       };
     }
     const isCompletelySafe = !globalHasInfringementClass25 && globalBlockedProducts.size === 0;
-    const verdict = globalHasInfringementClass25 ? "REJECTED_CLASS_25" : globalBlockedProducts.size > 0 ? "SAFE_FOR_APPAREL" : "SAFE_ALL";
-    const message = globalHasInfringementClass25 ? `Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden in: ${Object.keys(fieldResults).filter((f) => fieldResults[f].hasInfringementClass25).join(", ")}` : totalGlobalHits > 0 ? `Keine Treffer in Klasse 25 (Bekleidung ist sicher). ${globalBlockedProducts.size} Nebenprodukte (PopSockets/Tassen etc.) gesperrt.` : "Keine aktiven Schutzrechte gefunden. Text & Listing sind sauber \u2713";
+    const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
+    const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
+    const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
+    const hasBrandTitleClass25 = brandHasClass25 || titleHasClass25 || quoteHasClass25;
+    let verdict;
+    let message;
+    if (hasBrandTitleClass25) {
+      verdict = "REJECTED_CLASS_25";
+      const affected = [brandHasClass25 && "Brand", titleHasClass25 && "Title", quoteHasClass25 && "Quote"].filter(Boolean);
+      message = `Klasse 25 Konflikt in Identifikatoren (${affected.join(", ")}). Automatisches Umschreiben erforderlich.`;
+    } else if (globalHasInfringementClass25) {
+      verdict = "NEEDS_AUDIT";
+      message = `Treffer in Bullets/Description gefunden (${totalGlobalHits} Treffer). Fair-Use-Pr\xFCfung durch Trademark Auditor.`;
+    } else if (globalBlockedProducts.size > 0) {
+      verdict = "SAFE_FOR_APPAREL";
+      message = `Keine Treffer in Klasse 25 (Bekleidung sicher). ${globalBlockedProducts.size} Nebenprodukte gesperrt.`;
+    } else {
+      verdict = "SAFE_ALL";
+      message = "Keine aktiven Schutzrechte gefunden. Listing ist sauber \u2713";
+    }
     return {
       success: true,
-      safe: !globalHasInfringementClass25,
+      safe: !hasBrandTitleClass25,
       hasInfringementClass25: globalHasInfringementClass25,
       blockedProducts: Array.from(globalBlockedProducts),
       officesChecked: offices,
@@ -218217,16 +218235,12 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
           console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (Quote ist Class 25 Trademark).`);
           return;
         }
-        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
-        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
-        const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
-        const isBrandAndTitleSafe = !brandHasClass25 && !titleHasClass25 && !quoteHasClass25;
-        if (isBrandAndTitleSafe) {
+        if (totalHits === 0) {
           const finalBlockedProducts = (batchResult.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
           const refineSuccessResult = {
             verdict: "APPROVED",
             rejection_reason: null,
-            actions_taken: isInitial ? ["Brand & Title sind 100% frei von Klasse 25 Schutzrechten. Deskriptive W\xF6rter in Bullets/Description fallen unter Fair Use. Bekleidung freigegeben."] : [`Listing nach Runde ${checkRound} erfolgreich bereinigt. Brand & Title haben keine Klasse 25 Konflikte mehr.`],
+            actions_taken: ["Keine Markenrechts-Treffer gefunden. Listing vollst\xE4ndig frei."],
             blockedProducts: finalBlockedProducts,
             refined_listing: {
               brand: currentFields.brand,
@@ -218236,26 +218250,11 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
               description: currentFields.description
             }
           };
-          if (!isInitial) {
-            this.addEvent(taskId, {
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "TM_REFINE_RESPONSE",
-              title: `Empfangen von OpenRouter (Trademark-Bewertung: FREIGEGEBEN nach Nachpr\xFCfung Runde ${checkRound})`,
-              content: refineSuccessResult
-            });
-          }
-          if (task.listingResult) {
-            if (task.listingResult.en) {
-              task.listingResult.en = { ...task.listingResult.en, ...refineSuccessResult.refined_listing };
-            } else if (typeof task.listingResult === "object") {
-              task.listingResult = { ...task.listingResult, ...refineSuccessResult.refined_listing };
-            }
-          }
           this.updateTaskStatus(taskId, {
             status: "COMPLETED",
             listingResult: task.listingResult,
             trademarkCheckResult: {
-              totalHits,
+              totalHits: 0,
               hasInfringementClass25: false,
               blockedProducts: finalBlockedProducts,
               fieldSummaries: fieldResults
@@ -218263,7 +218262,7 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
             trademarkRefineResult: refineSuccessResult,
             hasError: false
           });
-          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} in Runde ${checkRound} erfolgreich freigegeben \u2713 (Brand & Title sauber)`);
+          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} sofort freigegeben (0 Treffer) \u2713`);
           return;
         }
         if (isFinal) {
@@ -218432,7 +218431,7 @@ Please audit the listing based on your compliance rules:
         this.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_REFINE_RESPONSE",
-          title: `Empfangen von OpenRouter (Trademark-Korrektur Runde ${checkRound})`,
+          title: `Empfangen von OpenRouter (Trademark-Bewertung: ${parsedRefined?.verdict || "FREIGEGEBEN"} in Runde ${checkRound})`,
           content: parsedRefined,
           metadata: {
             model: data.model || model,
@@ -218457,6 +218456,25 @@ Please audit the listing based on your compliance rules:
             task.listingResult = { ...task.listingResult, ...refinedListing };
           }
         }
+        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
+        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
+        if (!brandHasClass25 && !titleHasClass25) {
+          const finalBlockedProducts = (batchResult.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
+          this.updateTaskStatus(taskId, {
+            status: "COMPLETED",
+            listingResult: task.listingResult,
+            trademarkCheckResult: {
+              totalHits,
+              hasInfringementClass25: false,
+              blockedProducts: finalBlockedProducts,
+              fieldSummaries: fieldResults
+            },
+            trademarkRefineResult: parsedRefined,
+            hasError: false
+          });
+          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} in Runde ${checkRound} erfolgreich durch Trademark-Auditor freigegeben \u2713`);
+          return;
+        }
       }
     } catch (err) {
       console.error(`[TaskLogService] Unerwarteter Fehler beim TM Audit f\xFCr Task ${taskId}:`, err);
@@ -218472,57 +218490,51 @@ Please audit the listing based on your compliance rules:
   /**
    * Jump back to an earlier pipeline step and re-execute from there
    */
-  static async retryFromStep(taskId, stepType) {
+  static async retryFromStep(taskId, stepType, eventIndex) {
     const logs = this.loadLogs();
-    const taskIdx = logs.findIndex((t) => t.id.toLowerCase() === taskId.toLowerCase());
-    if (taskIdx === -1) throw new Error(`Task ${taskId} nicht gefunden.`);
-    const currentTask = logs[taskIdx];
+    const currentTask = logs.find((t) => t.id === taskId);
+    if (!currentTask) {
+      throw new Error(`Task ${taskId} nicht gefunden.`);
+    }
+    if (typeof eventIndex === "number" && eventIndex >= 0 && eventIndex < currentTask.events.length) {
+      currentTask.events = currentTask.events.slice(0, eventIndex);
+    }
     if (stepType === "LLM_REQUEST") {
-      const keepIdx = currentTask.events.findIndex((e) => e.type === "LLM_REQUEST");
-      if (keepIdx !== -1) {
-        currentTask.events = currentTask.events.slice(0, keepIdx);
+      if (typeof eventIndex !== "number") {
+        const keepIdx = currentTask.events.findIndex((e) => e.type === "LLM_REQUEST");
+        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
       }
       currentTask.status = "PROCESSING";
       currentTask.resultPrompt = void 0;
-      currentTask.imageUrl = void 0;
-      currentTask.localImagePath = void 0;
-      currentTask.analysisResult = void 0;
-      currentTask.listingResult = void 0;
-      currentTask.trademarkCheckResult = void 0;
-      currentTask.trademarkRefineResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
-      this.processTaskWithOpenRouter(taskId).catch((err) => {
-        console.error(`[TaskLogService] Retry failed for task ${taskId}:`, err);
+      this.generatePromptWithOpenRouter(taskId).catch((err) => {
+        console.error(`[TaskLogService] Retry Prompt failed for task ${taskId}:`, err);
       });
-      return { success: true, message: "Prompt-Generierung neu gestartet." };
+      return { success: true, message: "Ideogram Prompt-Generierung neu gestartet." };
     }
     if (stepType === "IDEOGRAM_REQUEST") {
-      const keepIdx = currentTask.events.findIndex((e) => e.type === "IDEOGRAM_REQUEST");
-      if (keepIdx !== -1) {
-        currentTask.events = currentTask.events.slice(0, keepIdx);
+      if (typeof eventIndex !== "number") {
+        const keepIdx = currentTask.events.findIndex((e) => e.type === "IDEOGRAM_REQUEST");
+        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
       }
       currentTask.status = "GENERATING_IMAGE";
       currentTask.imageUrl = void 0;
       currentTask.localImagePath = void 0;
       currentTask.analysisResult = void 0;
-      currentTask.listingResult = void 0;
-      currentTask.trademarkCheckResult = void 0;
-      currentTask.trademarkRefineResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
-      const promptToUse = currentTask.resultPrompt || currentTask.payload?.quote || "";
-      this.processTaskWithIdeogram(taskId, promptToUse).catch((err) => {
-        console.error(`[TaskLogService] Retry Ideogram failed for task ${taskId}:`, err);
+      this.generateImageWithIdeogram(taskId).catch((err) => {
+        console.error(`[TaskLogService] Retry Image failed for task ${taskId}:`, err);
       });
-      return { success: true, message: "Ideogram-Bildgenerierung neu gestartet." };
+      return { success: true, message: "Ideogram Bild-Generierung neu gestartet." };
     }
     if (stepType === "ANALYSIS_REQUEST") {
-      const keepIdx = currentTask.events.findIndex((e) => e.type === "ANALYSIS_REQUEST");
-      if (keepIdx !== -1) {
-        currentTask.events = currentTask.events.slice(0, keepIdx);
+      if (typeof eventIndex !== "number") {
+        const keepIdx = currentTask.events.findIndex((e) => e.type === "ANALYSIS_REQUEST");
+        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
       }
       currentTask.status = "ANALYZING_DESIGN";
       currentTask.analysisResult = void 0;
@@ -218540,9 +218552,9 @@ Please audit the listing based on your compliance rules:
       return { success: true, message: "Vision Design-Analyse neu gestartet." };
     }
     if (stepType === "LISTING_REQUEST") {
-      const keepIdx = currentTask.events.findIndex((e) => e.type === "LISTING_REQUEST");
-      if (keepIdx !== -1) {
-        currentTask.events = currentTask.events.slice(0, keepIdx);
+      if (typeof eventIndex !== "number") {
+        const keepIdx = currentTask.events.findIndex((e) => e.type === "LISTING_REQUEST");
+        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
       }
       currentTask.status = "GENERATING_LISTING";
       currentTask.listingResult = void 0;
@@ -218556,43 +218568,43 @@ Please audit the listing based on your compliance rules:
       });
       return { success: true, message: "MBA Listing-Generierung neu gestartet." };
     }
-    if (stepType === "TM_CHECK_REQUEST") {
-      const keepIdx = currentTask.events.findIndex((e) => e.type === "TM_CHECK_REQUEST");
-      const isPreFlight = keepIdx !== -1 && currentTask.events[keepIdx]?.content?.isPreFlight;
-      if (keepIdx !== -1) {
-        currentTask.events = currentTask.events.slice(0, keepIdx);
+    if (stepType === "PREFLIGHT_TM_REQUEST") {
+      if (typeof eventIndex !== "number") {
+        const keepIdx = currentTask.events.findIndex((e) => e.type === "TM_CHECK_REQUEST");
+        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
       }
-      currentTask.status = isPreFlight ? "PROCESSING" : "CHECKING_TRADEMARKS";
+      currentTask.status = "PROCESSING";
+      currentTask.hasError = false;
+      currentTask.errorDetails = void 0;
+      this.saveLogs(logs);
+      this.processTaskWithOpenRouter(taskId).catch((err) => {
+        console.error(`[TaskLogService] Retry Pre-Flight TM Check failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Pre-Flight TM-Pr\xFCfung neu gestartet." };
+    }
+    if (stepType === "TM_CHECK_REQUEST" || stepType === "TM_REFINE_REQUEST") {
+      if (typeof eventIndex !== "number") {
+        let lastTmIdx = -1;
+        for (let i = currentTask.events.length - 1; i >= 0; i--) {
+          if (currentTask.events[i].type === "TM_CHECK_REQUEST" || currentTask.events[i].type === "TM_REFINE_REQUEST") {
+            lastTmIdx = i;
+            break;
+          }
+        }
+        if (lastTmIdx !== -1) {
+          currentTask.events = currentTask.events.slice(0, lastTmIdx);
+        }
+      }
+      currentTask.status = "CHECKING_TRADEMARKS";
       currentTask.trademarkCheckResult = void 0;
       currentTask.trademarkRefineResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
-      if (isPreFlight) {
-        this.processTaskWithOpenRouter(taskId).catch((err) => {
-          console.error(`[TaskLogService] Retry Pre-Flight TM Check failed for task ${taskId}:`, err);
-        });
-      } else {
-        this.auditListingTrademarks(taskId).catch((err) => {
-          console.error(`[TaskLogService] Retry TM Check failed for task ${taskId}:`, err);
-        });
-      }
-      return { success: true, message: isPreFlight ? "Pre-Flight TM-Pr\xFCfung neu gestartet." : "USPTO Trademark-Pr\xFCfung neu gestartet." };
-    }
-    if (stepType === "TM_REFINE_REQUEST") {
-      const keepIdx = currentTask.events.findIndex((e) => e.type === "TM_REFINE_REQUEST");
-      if (keepIdx !== -1) {
-        currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
-      currentTask.status = "CHECKING_TRADEMARKS";
-      currentTask.trademarkRefineResult = void 0;
-      currentTask.hasError = false;
-      currentTask.errorDetails = void 0;
-      this.saveLogs(logs);
       this.auditListingTrademarks(taskId).catch((err) => {
-        console.error(`[TaskLogService] Retry TM Refine failed for task ${taskId}:`, err);
+        console.error(`[TaskLogService] Retry Listing TM Check failed for task ${taskId}:`, err);
       });
-      return { success: true, message: "Trademark Audit & Refinement neu gestartet." };
+      return { success: true, message: "USPTO Trademark-Pr\xFCfung & Audit neu gestartet." };
     }
     throw new Error(`Unbekannter Step-Typ: ${stepType}`);
   }
@@ -219504,9 +219516,9 @@ app.delete("/api/v1/tasks/log", (req, res) => {
 });
 app.post("/api/v1/tasks/:taskId/retry", async (req, res) => {
   const { taskId } = req.params;
-  const { stepType } = req.body;
+  const { stepType, eventIndex } = req.body;
   try {
-    const result2 = await TaskLogService.retryFromStep(taskId, stepType);
+    const result2 = await TaskLogService.retryFromStep(taskId, stepType, eventIndex);
     res.json({ success: true, ...result2 });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });

@@ -52,7 +52,7 @@ export interface BatchCheckResult {
   officesChecked: TrademarkOffice[];
   summary: {
     totalHits: number;
-    verdict: 'SAFE_ALL' | 'SAFE_FOR_APPAREL' | 'REJECTED_CLASS_25';
+    verdict: 'SAFE_ALL' | 'SAFE_FOR_APPAREL' | 'NEEDS_AUDIT' | 'REJECTED_CLASS_25';
     message: string;
   };
   fieldResults: Record<string, FieldCheckResult>;
@@ -533,21 +533,33 @@ export class TrademarkService {
     }
 
     const isCompletelySafe = !globalHasInfringementClass25 && globalBlockedProducts.size === 0;
-    const verdict: 'SAFE_ALL' | 'SAFE_FOR_APPAREL' | 'REJECTED_CLASS_25' = globalHasInfringementClass25
-      ? 'REJECTED_CLASS_25'
-      : globalBlockedProducts.size > 0
-      ? 'SAFE_FOR_APPAREL'
-      : 'SAFE_ALL';
 
-    const message = globalHasInfringementClass25
-      ? `Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden in: ${Object.keys(fieldResults).filter(f => fieldResults[f].hasInfringementClass25).join(', ')}`
-      : totalGlobalHits > 0
-      ? `Keine Treffer in Klasse 25 (Bekleidung ist sicher). ${globalBlockedProducts.size} Nebenprodukte (PopSockets/Tassen etc.) gesperrt.`
-      : 'Keine aktiven Schutzrechte gefunden. Text & Listing sind sauber ✓';
+    const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
+    const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
+    const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
+    const hasBrandTitleClass25 = brandHasClass25 || titleHasClass25 || quoteHasClass25;
+
+    let verdict: 'SAFE_ALL' | 'SAFE_FOR_APPAREL' | 'NEEDS_AUDIT' | 'REJECTED_CLASS_25';
+    let message: string;
+
+    if (hasBrandTitleClass25) {
+      verdict = 'REJECTED_CLASS_25';
+      const affected = [brandHasClass25 && 'Brand', titleHasClass25 && 'Title', quoteHasClass25 && 'Quote'].filter(Boolean);
+      message = `Klasse 25 Konflikt in Identifikatoren (${affected.join(', ')}). Automatisches Umschreiben erforderlich.`;
+    } else if (globalHasInfringementClass25) {
+      verdict = 'NEEDS_AUDIT';
+      message = `Treffer in Bullets/Description gefunden (${totalGlobalHits} Treffer). Fair-Use-Prüfung durch Trademark Auditor.`;
+    } else if (globalBlockedProducts.size > 0) {
+      verdict = 'SAFE_FOR_APPAREL';
+      message = `Keine Treffer in Klasse 25 (Bekleidung sicher). ${globalBlockedProducts.size} Nebenprodukte gesperrt.`;
+    } else {
+      verdict = 'SAFE_ALL';
+      message = 'Keine aktiven Schutzrechte gefunden. Listing ist sauber ✓';
+    }
 
     return {
       success: true,
-      safe: !globalHasInfringementClass25,
+      safe: !hasBrandTitleClass25,
       hasInfringementClass25: globalHasInfringementClass25,
       blockedProducts: Array.from(globalBlockedProducts),
       officesChecked: offices,

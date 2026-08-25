@@ -219,13 +219,13 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
-  const handleRetryStep = async (taskId: string, stepType: RetryStepType) => {
-    setRetryingStep(`${taskId}-${stepType}`);
+  const handleRetryStep = async (taskId: string, stepType: RetryStepType, eventIndex?: number) => {
+    setRetryingStep(`${taskId}-${stepType}-${eventIndex ?? 0}`);
     try {
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/retry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stepType })
+        body: JSON.stringify({ stepType, eventIndex })
       });
       if (res.ok) {
         await fetchTasks();
@@ -603,12 +603,13 @@ export const PromptLogView: React.FC = () => {
               {/* Timeline */}
               <div className="space-y-4 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
                 {(selectedTask.events || []).map((event, idx) => {
+                  const isPreFlight = event.content?.isPreFlight || (event.type === 'TM_CHECK_REQUEST' && idx <= 3);
                   const retryType: RetryStepType | undefined = 
                     event.type === 'LLM_REQUEST' ? 'LLM_REQUEST' :
                     event.type === 'IDEOGRAM_REQUEST' ? 'IDEOGRAM_REQUEST' :
                     event.type === 'ANALYSIS_REQUEST' ? 'ANALYSIS_REQUEST' :
                     event.type === 'LISTING_REQUEST' ? 'LISTING_REQUEST' :
-                    event.type === 'TM_CHECK_REQUEST' ? 'TM_CHECK_REQUEST' :
+                    event.type === 'TM_CHECK_REQUEST' ? (isPreFlight ? 'PREFLIGHT_TM_REQUEST' : 'TM_CHECK_REQUEST') :
                     event.type === 'TM_REFINE_REQUEST' ? 'TM_REFINE_REQUEST' : undefined;
 
                   return (
@@ -632,9 +633,9 @@ export const PromptLogView: React.FC = () => {
                       <EventHeader
                         event={event}
                         taskId={selectedTask.id}
-                        onRetry={retryType ? (st) => handleRetryStep(selectedTask.id, st) : undefined}
+                        onRetry={retryType ? (st) => handleRetryStep(selectedTask.id, st, idx) : undefined}
                         retryStepType={retryType}
-                        isRetrying={retryingStep === `${selectedTask.id}-${retryType}`}
+                        isRetrying={retryingStep === `${selectedTask.id}-${retryType}-${idx}`}
                       />
 
                       {/* Event Body */}

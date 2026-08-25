@@ -850,9 +850,9 @@ app.delete('/api/v1/tasks/log', (req, res) => {
 
 app.post('/api/v1/tasks/:taskId/retry', async (req, res) => {
   const { taskId } = req.params;
-  const { stepType } = req.body;
+  const { stepType, eventIndex } = req.body;
   try {
-    const result = await TaskLogService.retryFromStep(taskId, stepType);
+    const result = await TaskLogService.retryFromStep(taskId, stepType, eventIndex);
     res.json({ success: true, ...result });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
