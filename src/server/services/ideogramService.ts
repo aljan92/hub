@@ -123,47 +123,95 @@ export class IdeogramService {
       throw new Error('Ideogram API Key fehlt in den Einstellungen.');
     }
 
-    const aspectMap: Record<string, string> = {
-      '10x16': 'ASPECT_10_16',
-      '10:16': 'ASPECT_10_16',
-      '16x10': 'ASPECT_16_10',
-      '16:10': 'ASPECT_16_10',
-      '9x16': 'ASPECT_9_16',
-      '9:16': 'ASPECT_9_16',
-      '16x9': 'ASPECT_16_9',
-      '16:9': 'ASPECT_16_9',
-      '3x2': 'ASPECT_3_2',
-      '3:2': 'ASPECT_3_2',
-      '2x3': 'ASPECT_2_3',
-      '2:3': 'ASPECT_2_3',
-      '4x3': 'ASPECT_4_3',
-      '4:3': 'ASPECT_4_3',
-      '3x4': 'ASPECT_3_4',
-      '3:4': 'ASPECT_3_4',
-      '1x1': 'ASPECT_1_1',
-      '1:1': 'ASPECT_1_1',
-      '1x3': 'ASPECT_1_3',
-      '1:3': 'ASPECT_1_3',
-      '3x1': 'ASPECT_3_1',
-      '3:1': 'ASPECT_3_1',
-      // Safe fallbacks for unsupported ratios
-      '4x5': 'ASPECT_10_16',
-      '4:5': 'ASPECT_10_16',
-      '5x4': 'ASPECT_4_3',
-      '5:4': 'ASPECT_4_3',
-      '1x2': 'ASPECT_1_3',
-      '1:2': 'ASPECT_1_3',
-      '2x1': 'ASPECT_3_1',
-      '2:1': 'ASPECT_3_1',
-    };
-
-    const ratioKey = options.aspectRatio || settings.ideogramAspectRatio || '10x16';
-    const mappedRatio = aspectMap[ratioKey] || aspectMap[ratioKey.replace(':', 'x')] || 'ASPECT_10_16';
-
     const renderingSpeed = options.renderingSpeed || settings.ideogramRenderingSpeed || 'DEFAULT';
     const styleType = options.styleType || settings.ideogramStyle || 'GENERAL';
     const magicPromptOption = options.magicPromptOption || settings.ideogramMagicPromptOption || 'AUTO';
     const selectedModel = options.model || settings.ideogramModel || 'V_3';
+    const cleanRatio = (options.aspectRatio || settings.ideogramAspectRatio || '10x16').replace(':', 'x');
+
+    // 1. Ideogram V3 Endpoint (Official)
+    if (selectedModel === 'V_3' || selectedModel === 'V_3_TURBO' || selectedModel.startsWith('V_3')) {
+      const formData = new FormData();
+      formData.append('prompt', options.prompt);
+      formData.append('rendering_speed', renderingSpeed);
+      formData.append('style_type', styleType);
+      formData.append('aspect_ratio', cleanRatio);
+      formData.append('magic_prompt_option', magicPromptOption);
+
+      const res = await fetch('https://api.ideogram.ai/v1/ideogram-v3/generate', {
+        method: 'POST',
+        headers: {
+          'Api-Key': key.trim(),
+        },
+        body: formData,
+        signal: AbortSignal.timeout(180000)
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Ideogram V3 API Fehler: ${res.status} - ${errBody}`);
+      }
+
+      const data = await res.json();
+      const imageUrl = data?.data?.[0]?.url;
+      if (!imageUrl) {
+        throw new Error('Ideogram V3 lieferte keine Bild-URL zurück.');
+      }
+
+      return {
+        imageUrl,
+        prompt: data?.data?.[0]?.prompt || options.prompt,
+      };
+    }
+
+    // 2. Ideogram V4 Endpoint (Official)
+    if (selectedModel === 'V_4' || selectedModel.startsWith('V_4')) {
+      const formData = new FormData();
+      formData.append('text_prompt', options.prompt);
+      formData.append('rendering_speed', renderingSpeed);
+      formData.append('aspect_ratio', cleanRatio);
+
+      const res = await fetch('https://api.ideogram.ai/v1/ideogram-v4/generate', {
+        method: 'POST',
+        headers: {
+          'Api-Key': key.trim(),
+        },
+        body: formData,
+        signal: AbortSignal.timeout(180000)
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Ideogram V4 API Fehler: ${res.status} - ${errBody}`);
+      }
+
+      const data = await res.json();
+      const imageUrl = data?.data?.[0]?.url;
+      if (!imageUrl) {
+        throw new Error('Ideogram V4 lieferte keine Bild-URL zurück.');
+      }
+
+      return {
+        imageUrl,
+        prompt: data?.data?.[0]?.prompt || options.prompt,
+      };
+    }
+
+    // 3. Legacy Endpoint for V2 / V1
+    const aspectMap: Record<string, string> = {
+      '10x16': 'ASPECT_10_16',
+      '16x10': 'ASPECT_16_10',
+      '9x16': 'ASPECT_9_16',
+      '16x9': 'ASPECT_16_9',
+      '3x2': 'ASPECT_3_2',
+      '2x3': 'ASPECT_2_3',
+      '4x3': 'ASPECT_4_3',
+      '3x4': 'ASPECT_3_4',
+      '1x1': 'ASPECT_1_1',
+      '1x3': 'ASPECT_1_3',
+      '3x1': 'ASPECT_3_1',
+    };
+    const mappedRatio = aspectMap[cleanRatio] || 'ASPECT_10_16';
 
     const payload = {
       image_request: {
@@ -193,13 +241,14 @@ export class IdeogramService {
 
     const data = await res.json();
     const imageUrl = data?.data?.[0]?.url;
+
     if (!imageUrl) {
-      throw new Error('Keine Bild-URL von Ideogram erhalten.');
+      throw new Error('Ideogram lieferte keine Bild-URL zurück.');
     }
 
     return {
       imageUrl,
-      prompt: options.prompt
+      prompt: data?.data?.[0]?.prompt || options.prompt,
     };
   }
 }
