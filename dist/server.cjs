@@ -20065,14 +20065,14 @@ var require_etag = __commonJS2({
   "node_modules/etag/index.js"(exports2, module3) {
     "use strict";
     module3.exports = etag;
-    var crypto2 = require("crypto");
+    var crypto3 = require("crypto");
     var Stats = require("fs").Stats;
     var toString = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-      var hash = crypto2.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
+      var hash = crypto3.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash + '"';
     }
@@ -22965,11 +22965,11 @@ var require_request = __commonJS2({
 // node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS2({
   "node_modules/cookie-signature/index.js"(exports2) {
-    var crypto2 = require("crypto");
+    var crypto3 = require("crypto");
     exports2.sign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
-      return val + "." + crypto2.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
+      return val + "." + crypto3.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
     };
     exports2.unsign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Signed cookie string must be provided.");
@@ -22978,7 +22978,7 @@ var require_cookie_signature = __commonJS2({
       return sha1(mac) == sha1(val) ? str : false;
     };
     function sha1(str) {
-      return crypto2.createHash("sha1").update(str).digest("hex");
+      return crypto3.createHash("sha1").update(str).digest("hex");
     }
   }
 });
@@ -27968,7 +27968,7 @@ var require_main = __commonJS2({
     var fs4 = require("fs");
     var path4 = require("path");
     var os = require("os");
-    var crypto2 = require("crypto");
+    var crypto3 = require("crypto");
     var packageJson = require_package();
     var version5 = packageJson.version;
     var LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
@@ -28187,7 +28187,7 @@ var require_main = __commonJS2({
       const authTag = ciphertext.subarray(-16);
       ciphertext = ciphertext.subarray(12, -16);
       try {
-        const aesgcm = crypto2.createDecipheriv("aes-256-gcm", key, nonce);
+        const aesgcm = crypto3.createDecipheriv("aes-256-gcm", key, nonce);
         aesgcm.setAuthTag(authTag);
         return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
       } catch (error) {
@@ -128124,12 +128124,12 @@ ${value2}`, dataLines++;
         return baseFetch(url2, mergedInit);
       };
     }
-    var crypto2;
-    crypto2 = globalThis.crypto?.webcrypto ?? // Node.js [18-16] REPL
+    var crypto22;
+    crypto22 = globalThis.crypto?.webcrypto ?? // Node.js [18-16] REPL
     globalThis.crypto ?? // Node.js >18
     import("node:crypto").then((m) => m.webcrypto);
     async function getRandomValues(size) {
-      return (await crypto2).getRandomValues(new Uint8Array(size));
+      return (await crypto22).getRandomValues(new Uint8Array(size));
     }
     async function random(size) {
       const mask = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
@@ -128149,7 +128149,7 @@ ${value2}`, dataLines++;
       return await random(length);
     }
     async function generateChallenge(code_verifier) {
-      const buffer = await (await crypto2).subtle.digest("SHA-256", new TextEncoder().encode(code_verifier));
+      const buffer = await (await crypto22).subtle.digest("SHA-256", new TextEncoder().encode(code_verifier));
       return btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\//g, "_").replace(/\+/g, "-").replace(/=/g, "");
     }
     async function pkceChallenge(length) {
@@ -129574,7 +129574,7 @@ data: ${JSON.stringify(message)}
     var import_http24 = require("http2");
     var import_http222 = require("http2");
     var import_stream42 = require("stream");
-    var import_crypto2 = __toESM3(require("crypto"), 1);
+    var import_crypto3 = __toESM3(require("crypto"), 1);
     var RequestError = class extends Error {
       constructor(message, options2) {
         super(message, options2);
@@ -129913,7 +129913,7 @@ data: ${JSON.stringify(message)}
     };
     var X_ALREADY_SENT = "x-hono-already-sent";
     if (typeof global.crypto === "undefined") {
-      global.crypto = import_crypto2.default;
+      global.crypto = import_crypto3.default;
     }
     var outgoingEnded = /* @__PURE__ */ Symbol("outgoingEnded");
     var incomingDraining = /* @__PURE__ */ Symbol("incomingDraining");
@@ -214180,6 +214180,10 @@ function shouldShowDeprecationWarning() {
 if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and below are deprecated and will no longer be supported in future versions of @supabase/supabase-js. Please upgrade to Node.js 22 or later. For more information, visit: https://github.com/orgs/supabase/discussions/45715");
 
 // src/server/services/settingsService.ts
+var import_crypto2 = __toESM2(require("crypto"), 1);
+function generateApiKey() {
+  return `mba_${import_crypto2.default.randomBytes(20).toString("hex")}`;
+}
 var DEFAULT_SETTINGS = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
   llmProvider: process.env.LLM_PROVIDER || "openrouter",
@@ -214196,7 +214200,8 @@ var DEFAULT_SETTINGS = {
   nasHost: process.env.NAS_HOST || "192.168.178.141",
   nasUser: process.env.NAS_USER || "aljan92",
   autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4,
-  autoSyncEnabled: true
+  autoSyncEnabled: true,
+  mcpApiKey: process.env.MBA_MCP_API_KEY || generateApiKey()
 };
 function getSettingsFilePath() {
   const dataDir = import_path66.default.resolve(process.cwd(), "data");
@@ -214214,7 +214219,12 @@ function loadSettings() {
     try {
       const fileData = import_fs71.default.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(fileData);
-      return { ...DEFAULT_SETTINGS, ...parsed };
+      const settings = { ...DEFAULT_SETTINGS, ...parsed };
+      if (!settings.mcpApiKey) {
+        settings.mcpApiKey = generateApiKey();
+        saveSettings({ mcpApiKey: settings.mcpApiKey });
+      }
+      return settings;
     } catch (err) {
       console.error("[Settings] Error reading settings.json:", err);
     }
@@ -214244,6 +214254,58 @@ function getSupabaseClient() {
 }
 
 // src/server/services/trademarkService.ts
+var COMMON_STOP_WORDS = /* @__PURE__ */ new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "this",
+  "that",
+  "from",
+  "your",
+  "have",
+  "are",
+  "was",
+  "were",
+  "will",
+  "been",
+  "each",
+  "when",
+  "into",
+  "just",
+  "more",
+  "some",
+  "than",
+  "them",
+  "then",
+  "they",
+  "what",
+  "which",
+  "who",
+  "will",
+  "shirt",
+  "tshirt",
+  "t-shirt",
+  "apparel",
+  "gift",
+  "ideas",
+  "great",
+  "cool",
+  "love",
+  "lovers",
+  "graphic",
+  "design",
+  "men",
+  "women",
+  "kids",
+  "boys",
+  "girls",
+  "youth",
+  "funny",
+  "retro",
+  "vintage",
+  "classic"
+]);
 var TrademarkService = class {
   /**
    * Test connection to Productor Trademark APIs
@@ -214273,116 +214335,193 @@ var TrademarkService = class {
     }
   }
   /**
-   * Check a list of terms/keywords or a whole quote across USPTO, EUIPO, and DPMA
+   * Parse office inputs (e.g. 'USPTO', 'EUIPO', 'DPMA' or fallback 'US', 'DE', 'EU')
    */
-  static async checkTrademarks(terms, locale = "en") {
-    const settings = loadSettings();
-    const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
-    const uniqueTerms = Array.from(new Set(cleanTerms));
-    if (uniqueTerms.length === 0) {
-      return {
-        hasInfringementClass25: false,
-        blockedProducts: [],
-        hits: {},
-        totalHits: 0,
-        message: "No terms to check."
-      };
+  static normalizeOffices(input, marketplace) {
+    const rawList = [];
+    if (Array.isArray(input)) {
+      rawList.push(...input);
+    } else if (typeof input === "string" && input.trim()) {
+      rawList.push(...input.split(",").map((s) => s.trim()));
+    } else if (marketplace && typeof marketplace === "string") {
+      rawList.push(marketplace.trim());
     }
+    const offices = /* @__PURE__ */ new Set();
+    for (const raw of rawList) {
+      const up = raw.toUpperCase();
+      if (up === "USPTO" || up === "US" || up === "COM") {
+        offices.add("USPTO");
+      } else if (up === "EUIPO" || up === "EU" || up === "UK" || up === "GB" || up === "FR" || up === "IT" || up === "ES") {
+        offices.add("EUIPO");
+      } else if (up === "DPMA" || up === "DE") {
+        offices.add("DPMA");
+        offices.add("EUIPO");
+      }
+    }
+    if (offices.size === 0) {
+      offices.add("USPTO");
+    }
+    return Array.from(offices);
+  }
+  /**
+   * Extract search terms from text: full phrase + n-grams + individual significant keywords
+   */
+  static extractTermsFromText(text2) {
+    if (!text2 || typeof text2 !== "string") return [];
+    const trimmed = text2.trim();
+    if (trimmed.length < 2) return [];
+    const terms = /* @__PURE__ */ new Set();
+    if (trimmed.length <= 60) {
+      terms.add(trimmed.toLowerCase());
+    }
+    const words = trimmed.split(/[\s,.;:!?/()"\-+]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter((w) => w.length >= 3);
+    for (const w of words) {
+      if (w.length >= 4 && !COMMON_STOP_WORDS.has(w)) {
+        terms.add(w);
+      }
+    }
+    for (let i = 0; i < words.length - 1; i++) {
+      const twoGram = `${words[i]} ${words[i + 1]}`;
+      terms.add(twoGram);
+      if (i < words.length - 2) {
+        const threeGram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
+        terms.add(threeGram);
+      }
+    }
+    return Array.from(terms);
+  }
+  /**
+   * Check terms across specified trademark offices
+   */
+  static async queryOffices(uniqueTerms, offices) {
+    const settings = loadSettings();
     const allHits = {};
-    try {
-      const usptoFormData = new URLSearchParams();
-      usptoFormData.append("trademarks", JSON.stringify(uniqueTerms));
-      const usptoRes = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
-        method: "POST",
-        headers: {
-          "Authorization": settings.productorUsptoAuth,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: usptoFormData.toString(),
-        signal: AbortSignal.timeout(8e3)
-      });
-      if (usptoRes.ok) {
-        const usptoData = await usptoRes.json();
-        for (const [term, records] of Object.entries(usptoData)) {
-          if (Array.isArray(records) && records.length > 0) {
-            allHits[term] = allHits[term] || [];
-            records.forEach((r) => {
-              allHits[term].push({
-                trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
-                classNumber: String(r.class_id || r.class || r.international_class || "25"),
-                status: r.status || r.status_code || "LIVE",
-                registrationNumber: r.registration_number,
-                serialNumber: r.serial_number,
-                goodsAndServices: r.goods_and_services || r.goods_services,
-                source: "USPTO"
-              });
-            });
-          }
-        }
-      }
-      const euFormData = new URLSearchParams();
-      euFormData.append("trademarks", JSON.stringify(uniqueTerms));
-      const euRes = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
-        method: "POST",
-        headers: {
-          "Authorization": settings.productorEuipoAuth,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: euFormData.toString(),
-        signal: AbortSignal.timeout(8e3)
-      });
-      if (euRes.ok) {
-        const euData = await euRes.json();
-        for (const [term, records] of Object.entries(euData)) {
-          if (Array.isArray(records) && records.length > 0) {
-            allHits[term] = allHits[term] || [];
-            records.forEach((r) => {
-              allHits[term].push({
-                trademark: r.trademark || r.mark_identification || term,
-                classNumber: String(r.class_id || r.class || "25"),
-                status: r.status || "LIVE",
-                source: "EUIPO"
-              });
-            });
-          }
-        }
-      }
-      if (locale === "de") {
-        const dpmaFormData = new URLSearchParams();
-        dpmaFormData.append("trademarks", JSON.stringify(uniqueTerms));
-        const dpmaRes = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
-          method: "POST",
-          headers: {
-            "Authorization": settings.productorDpmaAuth,
-            "Content-Type": "application/x-www-form-urlencoded"
-          },
-          body: dpmaFormData.toString(),
-          signal: AbortSignal.timeout(8e3)
-        });
-        if (dpmaRes.ok) {
-          const dpmaData = await dpmaRes.json();
-          for (const [term, records] of Object.entries(dpmaData)) {
-            if (Array.isArray(records) && records.length > 0) {
-              allHits[term] = allHits[term] || [];
-              records.forEach((r) => {
-                allHits[term].push({
-                  trademark: r.trademark || term,
-                  classNumber: String(r.class_id || r.class || "25"),
-                  status: r.status || "LIVE",
-                  source: "DPMA"
+    if (uniqueTerms.length === 0 || offices.length === 0) {
+      return allHits;
+    }
+    const promises = [];
+    if (offices.includes("USPTO")) {
+      promises.push((async () => {
+        try {
+          const usptoFormData = new URLSearchParams();
+          usptoFormData.append("trademarks", JSON.stringify(uniqueTerms));
+          const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
+            method: "POST",
+            headers: {
+              "Authorization": settings.productorUsptoAuth,
+              "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: usptoFormData.toString(),
+            signal: AbortSignal.timeout(9e3)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            for (const [term, records] of Object.entries(data)) {
+              if (Array.isArray(records) && records.length > 0) {
+                allHits[term] = allHits[term] || [];
+                records.forEach((r) => {
+                  allHits[term].push({
+                    term,
+                    trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
+                    classNumber: String(r.class_id || r.class || r.international_class || "25"),
+                    status: r.status || r.status_code || "LIVE",
+                    registrationNumber: r.registration_number,
+                    serialNumber: r.serial_number,
+                    goodsAndServices: r.goods_and_services || r.goods_services,
+                    source: "USPTO"
+                  });
                 });
-              });
+              }
             }
           }
+        } catch (err) {
+          console.warn("[TrademarkService] USPTO query error:", err.message || err);
         }
-      }
-    } catch (err) {
-      console.warn("[TrademarkService] Error checking trademarks:", err.message || err);
+      })());
     }
+    if (offices.includes("EUIPO")) {
+      promises.push((async () => {
+        try {
+          const euFormData = new URLSearchParams();
+          euFormData.append("trademarks", JSON.stringify(uniqueTerms));
+          const res = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
+            method: "POST",
+            headers: {
+              "Authorization": settings.productorEuipoAuth,
+              "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: euFormData.toString(),
+            signal: AbortSignal.timeout(9e3)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            for (const [term, records] of Object.entries(data)) {
+              if (Array.isArray(records) && records.length > 0) {
+                allHits[term] = allHits[term] || [];
+                records.forEach((r) => {
+                  allHits[term].push({
+                    term,
+                    trademark: r.trademark || r.mark_identification || term,
+                    classNumber: String(r.class_id || r.class || "25"),
+                    status: r.status || "LIVE",
+                    source: "EUIPO"
+                  });
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("[TrademarkService] EUIPO query error:", err.message || err);
+        }
+      })());
+    }
+    if (offices.includes("DPMA")) {
+      promises.push((async () => {
+        try {
+          const dpmaFormData = new URLSearchParams();
+          dpmaFormData.append("trademarks", JSON.stringify(uniqueTerms));
+          const res = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
+            method: "POST",
+            headers: {
+              "Authorization": settings.productorDpmaAuth,
+              "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: dpmaFormData.toString(),
+            signal: AbortSignal.timeout(9e3)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            for (const [term, records] of Object.entries(data)) {
+              if (Array.isArray(records) && records.length > 0) {
+                allHits[term] = allHits[term] || [];
+                records.forEach((r) => {
+                  allHits[term].push({
+                    term,
+                    trademark: r.trademark || term,
+                    classNumber: String(r.class_id || r.class || "25"),
+                    status: r.status || "LIVE",
+                    source: "DPMA"
+                  });
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("[TrademarkService] DPMA query error:", err.message || err);
+        }
+      })());
+    }
+    await Promise.all(promises);
+    return allHits;
+  }
+  /**
+   * Analyze hits to calculate blocked products and class 25 status
+   */
+  static analyzeHits(hitsRecord) {
     let hasInfringementClass25 = false;
     const blockedProductsSet = /* @__PURE__ */ new Set();
     let totalHits = 0;
-    for (const [term, records] of Object.entries(allHits)) {
+    for (const [, records] of Object.entries(hitsRecord)) {
       totalHits += records.length;
       for (const rec of records) {
         const isLive = !rec.status || rec.status.toUpperCase().includes("LIVE") || rec.status.toUpperCase().includes("REGISTERED");
@@ -214415,9 +214554,90 @@ var TrademarkService = class {
     return {
       hasInfringementClass25,
       blockedProducts: Array.from(blockedProductsSet),
-      hits: allHits,
-      totalHits,
-      message: hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${blockedProductsSet.size} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
+      totalHits
+    };
+  }
+  /**
+   * Legacy check method for single term array (used by UI Designer)
+   */
+  static async checkTrademarks(terms, locale = "en") {
+    const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
+    const uniqueTerms = Array.from(new Set(cleanTerms));
+    if (uniqueTerms.length === 0) {
+      return {
+        hasInfringementClass25: false,
+        blockedProducts: [],
+        hits: {},
+        totalHits: 0,
+        message: "No terms to check."
+      };
+    }
+    const offices = locale === "de" ? ["USPTO", "EUIPO", "DPMA"] : ["USPTO", "EUIPO"];
+    const hits = await this.queryOffices(uniqueTerms, offices);
+    const analysis = this.analyzeHits(hits);
+    return {
+      hasInfringementClass25: analysis.hasInfringementClass25,
+      blockedProducts: analysis.blockedProducts,
+      hits,
+      totalHits: analysis.totalHits,
+      message: analysis.hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : analysis.totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${analysis.blockedProducts.length} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
+    };
+  }
+  /**
+   * Comprehensive Multi-Field Batch Check for Hermes Agent & MCP Integration
+   */
+  static async checkBatchFields(input) {
+    const offices = this.normalizeOffices(input.offices, input.marketplace);
+    const fields = input.fields || {};
+    const fieldTermsMap = {};
+    const allUniqueTerms = /* @__PURE__ */ new Set();
+    for (const [fieldName, rawValue] of Object.entries(fields)) {
+      if (rawValue && typeof rawValue === "string") {
+        const terms = this.extractTermsFromText(rawValue);
+        fieldTermsMap[fieldName] = terms;
+        terms.forEach((t) => allUniqueTerms.add(t));
+      }
+    }
+    const termList = Array.from(allUniqueTerms);
+    const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
+    const fieldResults = {};
+    let totalGlobalHits = 0;
+    let globalHasInfringementClass25 = false;
+    const globalBlockedProducts = /* @__PURE__ */ new Set();
+    for (const [fieldName, terms] of Object.entries(fieldTermsMap)) {
+      const fieldHits = {};
+      for (const t of terms) {
+        if (globalHits[t] && globalHits[t].length > 0) {
+          fieldHits[t] = globalHits[t];
+        }
+      }
+      const analysis = this.analyzeHits(fieldHits);
+      if (analysis.hasInfringementClass25) globalHasInfringementClass25 = true;
+      analysis.blockedProducts.forEach((p) => globalBlockedProducts.add(p));
+      totalGlobalHits += analysis.totalHits;
+      fieldResults[fieldName] = {
+        safe: !analysis.hasInfringementClass25,
+        hasInfringementClass25: analysis.hasInfringementClass25,
+        totalHits: analysis.totalHits,
+        blockedProducts: analysis.blockedProducts,
+        hits: fieldHits
+      };
+    }
+    const isCompletelySafe = !globalHasInfringementClass25 && globalBlockedProducts.size === 0;
+    const verdict = globalHasInfringementClass25 ? "REJECTED_CLASS_25" : globalBlockedProducts.size > 0 ? "SAFE_FOR_APPAREL" : "SAFE_ALL";
+    const message = globalHasInfringementClass25 ? `Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden in: ${Object.keys(fieldResults).filter((f) => fieldResults[f].hasInfringementClass25).join(", ")}` : totalGlobalHits > 0 ? `Keine Treffer in Klasse 25 (Bekleidung ist sicher). ${globalBlockedProducts.size} Nebenprodukte (PopSockets/Tassen etc.) gesperrt.` : "Keine aktiven Schutzrechte gefunden. Text & Listing sind sauber \u2713";
+    return {
+      success: true,
+      safe: !globalHasInfringementClass25,
+      hasInfringementClass25: globalHasInfringementClass25,
+      blockedProducts: Array.from(globalBlockedProducts),
+      officesChecked: offices,
+      summary: {
+        totalHits: totalGlobalHits,
+        verdict,
+        message
+      },
+      fieldResults
     };
   }
 };
@@ -216548,6 +216768,133 @@ var SyncEngine = class _SyncEngine {
   }
 };
 
+// src/server/services/mcpSchemaService.ts
+var MBA_HUB_TOOLS = [
+  {
+    name: "mba_hub_check_trademark",
+    description: "Performs live Merch by Amazon (MBA) trademark checks across USPTO, EUIPO, and DPMA databases. Analyzes Nice Class 25 (Clothing/Apparel) and secondary classes (Class 9 PopSockets/Cases, Class 21 Mugs, Class 20 Pillows, Class 18 Bags). Checks full phrases, n-grams, and keywords.",
+    parameters: {
+      type: "object",
+      properties: {
+        offices: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["USPTO", "EUIPO", "DPMA"]
+          },
+          description: 'Trademark offices to query. Default is ["USPTO"]. Options: USPTO (US), EUIPO (European Union / UK / Europe), DPMA (Germany).'
+        },
+        marketplace: {
+          type: "string",
+          description: 'Alternative shorthand for marketplace: "US" (USPTO), "DE" (DPMA + EUIPO), "EU" (EUIPO), "UK" (EUIPO). Used if offices is not specified.'
+        },
+        fields: {
+          type: "object",
+          description: "Listing text fields to check for trademark violations. Must contain at least one field.",
+          properties: {
+            phrase: {
+              type: "string",
+              description: 'Main design quote / slogan / text appearing on the shirt (e.g. "Powered by Coffee")'
+            },
+            title: {
+              type: "string",
+              description: 'Amazon product title (e.g. "Retro Vintage Coffee Lover T-Shirt")'
+            },
+            brand: {
+              type: "string",
+              description: 'Brand name (e.g. "Vintage Cafe Apparel")'
+            },
+            bullet1: {
+              type: "string",
+              description: "Feature bullet point 1"
+            },
+            bullet2: {
+              type: "string",
+              description: "Feature bullet point 2"
+            },
+            description: {
+              type: "string",
+              description: "Product description"
+            }
+          }
+        }
+      },
+      required: ["fields"]
+    }
+  },
+  {
+    name: "mba_hub_submit_task",
+    description: "Submits a new design task (prompt, quote, metadata) to the MBA HUB queue for review or automatic generation.",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "Image generation prompt for Ideogram / Midjourney"
+        },
+        quote: {
+          type: "string",
+          description: "Text quote on the design"
+        },
+        niche1: {
+          type: "string",
+          description: 'Main niche category (e.g. "Retro Cats")'
+        },
+        niche2: {
+          type: "string",
+          description: 'Sub-niche or style (e.g. "80s Synthwave")'
+        },
+        title: {
+          type: "string",
+          description: "Listing title"
+        },
+        brand: {
+          type: "string",
+          description: "Listing brand"
+        },
+        bullet1: {
+          type: "string",
+          description: "Feature bullet point 1"
+        },
+        bullet2: {
+          type: "string",
+          description: "Feature bullet point 2"
+        },
+        description: {
+          type: "string",
+          description: "Listing description"
+        }
+      },
+      required: ["prompt"]
+    }
+  }
+];
+function getMcpSchema() {
+  return {
+    version: "1.0.0",
+    server: "MBA_HUB",
+    description: "Merch by Amazon Command Center MCP & REST Integration",
+    tools: MBA_HUB_TOOLS,
+    endpoints: {
+      health: {
+        method: "GET",
+        path: "/api/v1/mcp/health",
+        auth: "Optional: x-mba-api-key (validates connectivity and auth status)"
+      },
+      check_trademark: {
+        method: "POST",
+        path: "/api/v1/mcp/trademark/check",
+        auth: "Header: x-mba-api-key OR Authorization: Bearer <key>"
+      },
+      submit_task: {
+        method: "POST",
+        path: "/api/v1/hermes/task",
+        auth: "Header: x-mba-api-key OR Authorization: Bearer <key>"
+      }
+    }
+  };
+}
+
 // src/server/index.ts
 var import_meta = {};
 import_dotenv.default.config();
@@ -216913,13 +217260,34 @@ app.post("/api/v1/connectors/test", async (req, res) => {
       const result2 = await SupabaseService.testConnection(credentials?.url, credentials?.key);
       return res.json(result2);
     }
+    if (connector === "hermes" || connector === "mcp") {
+      const tmTest = await TrademarkService.testConnection();
+      return res.json({
+        success: tmTest.success,
+        latencyMs: tmTest.latencyMs,
+        message: tmTest.success ? "MCP Engine & Trademark APIs bereit" : tmTest.error,
+        details: `API-Key aktiv \u2022 Endpunkt /api/v1/mcp/trademark/check einsatzbereit`
+      });
+    }
     res.status(400).json({ success: false, error: "Unknown connector" });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-var cachedHealthData = null;
-var lastHealthCheckTime = 0;
+var hermesHeartbeat = {
+  lastPingTime: 0,
+  lastPingIp: "",
+  totalPings: 0,
+  lastMetadata: {}
+};
+function recordHermesHeartbeat(req, metadata) {
+  hermesHeartbeat.lastPingTime = Date.now();
+  hermesHeartbeat.lastPingIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "remote";
+  hermesHeartbeat.totalPings += 1;
+  if (metadata) {
+    hermesHeartbeat.lastMetadata = metadata;
+  }
+}
 async function refreshHealthData() {
   try {
     const [openrouter, ideogram, vectorizer, productor, supabase] = await Promise.all([
@@ -216929,12 +217297,21 @@ async function refreshHealthData() {
       TrademarkService.testConnection(),
       SupabaseService.testConnection()
     ]);
+    const isHermesOnline = hermesHeartbeat.lastPingTime > 0 && Date.now() - hermesHeartbeat.lastPingTime < 10 * 60 * 1e3;
+    const minutesAgo = hermesHeartbeat.lastPingTime > 0 ? Math.floor((Date.now() - hermesHeartbeat.lastPingTime) / 6e4) : null;
     cachedHealthData = {
       openRouter: openrouter,
       ideogram,
       vectorizer,
       productorTM: productor,
       supabase,
+      hermes: {
+        success: isHermesOnline,
+        lastPingTime: hermesHeartbeat.lastPingTime,
+        statusText: isHermesOnline ? minutesAgo === 0 ? "Heartbeat aktiv (Online)" : `Aktiv (vor ${minutesAgo}m)` : hermesHeartbeat.lastPingTime === 0 ? "Standby (Wartet auf Ping)" : `Offline (Zuletzt vor ${minutesAgo}m)`,
+        latencyMs: isHermesOnline ? 1 : void 0,
+        totalPings: hermesHeartbeat.totalPings
+      },
       amazonWorker: { success: true, latencyMs: 2, status: "Session Warm" }
     };
     lastHealthCheckTime = Date.now();
@@ -217076,8 +217453,32 @@ app.post("/api/v1/tasks/:id/approve", (req, res) => {
   broadcast("TASK_APPROVED", { taskId: id, queueEntry });
   res.json({ success: true, queueEntry });
 });
+function validateMcpAuth(req, res, next) {
+  const settings = loadSettings();
+  if (!settings.mcpApiKey) {
+    recordHermesHeartbeat(req);
+    return next();
+  }
+  const authHeader = req.headers["authorization"];
+  const customHeader = req.headers["x-mba-api-key"];
+  let providedKey = "";
+  if (customHeader) {
+    providedKey = customHeader.trim();
+  } else if (authHeader && authHeader.startsWith("Bearer ")) {
+    providedKey = authHeader.slice(7).trim();
+  }
+  if (!providedKey || providedKey !== settings.mcpApiKey) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized: Invalid or missing x-mba-api-key header or Bearer token."
+    });
+  }
+  recordHermesHeartbeat(req);
+  next();
+}
 app.post("/api/v1/hermes/task", async (req, res) => {
   const { prompt, quote: quote5, niche1, niche2, title, brand, bullet1, bullet2, description } = req.body;
+  recordHermesHeartbeat(req, { prompt, quote: quote5, niche1, niche2 });
   console.log(`[Hermes Webhook] Received task for niche "${niche1} / ${niche2}": ${prompt}`);
   if (quote5) {
     const tmCheck = await TrademarkService.checkTrademarks([quote5], "en");
@@ -217121,6 +217522,95 @@ app.post("/api/v1/hermes/task", async (req, res) => {
     message: "Task accepted, pre-TM check passed, and queued.",
     taskId: newTask.id
   });
+});
+app.all(["/api/v1/mcp/ping", "/api/v1/mcp/heartbeat"], (req, res) => {
+  const settings = loadSettings();
+  const authHeader = req.headers["authorization"];
+  const customHeader = req.headers["x-mba-api-key"];
+  let providedKey = "";
+  if (customHeader) {
+    providedKey = customHeader.trim();
+  } else if (authHeader && authHeader.startsWith("Bearer ")) {
+    providedKey = authHeader.slice(7).trim();
+  }
+  const isAuthValid = !settings.mcpApiKey || providedKey === settings.mcpApiKey;
+  if (isAuthValid) {
+    recordHermesHeartbeat(req, req.body || req.query);
+  }
+  res.json({
+    status: "ok",
+    message: isAuthValid ? "Heartbeat registered successfully." : "Heartbeat received (unauthenticated).",
+    authenticated: Boolean(providedKey && isAuthValid),
+    authConfigured: Boolean(settings.mcpApiKey),
+    serverTime: (/* @__PURE__ */ new Date()).toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    activeTasksCount: activeTasks.length,
+    uploadQueueCount: uploadQueue.length
+  });
+});
+app.get(["/api/v1/mcp/health", "/health"], (req, res) => {
+  const settings = loadSettings();
+  const authHeader = req.headers["authorization"];
+  const customHeader = req.headers["x-mba-api-key"];
+  let providedKey = "";
+  if (customHeader) {
+    providedKey = customHeader.trim();
+  } else if (authHeader && authHeader.startsWith("Bearer ")) {
+    providedKey = authHeader.slice(7).trim();
+  }
+  const isAuthValid = !settings.mcpApiKey || providedKey === settings.mcpApiKey;
+  if (isAuthValid) {
+    recordHermesHeartbeat(req);
+  }
+  res.json({
+    status: "ok",
+    service: "MBA_HUB_MCP",
+    version: "1.0.0",
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    authenticated: Boolean(providedKey && isAuthValid),
+    authConfigured: Boolean(settings.mcpApiKey),
+    heartbeat: {
+      lastPingTime: hermesHeartbeat.lastPingTime,
+      totalPings: hermesHeartbeat.totalPings
+    },
+    trademarkEngine: {
+      status: "online",
+      offices: ["USPTO", "EUIPO", "DPMA"]
+    }
+  });
+});
+app.get("/api/v1/mcp/schema", (req, res) => {
+  res.json(getMcpSchema());
+});
+app.post("/api/v1/mcp/trademark/check", validateMcpAuth, async (req, res) => {
+  try {
+    const { offices, marketplace, fields, phrase, title, brand, bullet1, bullet2, description } = req.body;
+    const resolvedFields = {
+      ...fields && typeof fields === "object" ? fields : {}
+    };
+    if (phrase && typeof phrase === "string") resolvedFields.phrase = phrase;
+    if (title && typeof title === "string") resolvedFields.title = title;
+    if (brand && typeof brand === "string") resolvedFields.brand = brand;
+    if (bullet1 && typeof bullet1 === "string") resolvedFields.bullet1 = bullet1;
+    if (bullet2 && typeof bullet2 === "string") resolvedFields.bullet2 = bullet2;
+    if (description && typeof description === "string") resolvedFields.description = description;
+    if (Object.keys(resolvedFields).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing fields to check. Please provide at least one of: phrase, title, brand, bullet1, bullet2, description (either top-level or inside a "fields" object).'
+      });
+    }
+    const result2 = await TrademarkService.checkBatchFields({
+      offices,
+      marketplace,
+      fields: resolvedFields
+    });
+    res.json(result2);
+  } catch (err) {
+    console.error("[MCP Trademark Check] Error:", err);
+    res.status(500).json({ success: false, error: err.message || "Internal Server Error" });
+  }
 });
 app.get("/api/v1/queue", (req, res) => {
   res.json({ success: true, queue: uploadQueue });

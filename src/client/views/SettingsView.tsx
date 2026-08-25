@@ -15,7 +15,14 @@ import {
   ShieldCheck,
   Search,
   DollarSign,
-  Info
+  Info,
+  Bot,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
+  Globe,
+  Terminal
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -49,6 +56,11 @@ export const SettingsView: React.FC = () => {
   const [nasUser, setNasUser] = useState('aljan92');
   const [autoSlotFillHour, setAutoSlotFillHour] = useState(4);
 
+  const [mcpApiKey, setMcpApiKey] = useState('');
+  const [showMcpKey, setShowMcpKey] = useState(false);
+  const [copiedMcpKey, setCopiedMcpKey] = useState(false);
+  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+
   // Load existing settings and models on mount
   useEffect(() => {
     // 1. Settings
@@ -69,6 +81,7 @@ export const SettingsView: React.FC = () => {
           setNasHost(s.nasHost || '192.168.178.141');
           setNasUser(s.nasUser || 'aljan92');
           setAutoSlotFillHour(s.autoSlotFillHour || 4);
+          setMcpApiKey(s.mcpApiKey || '');
         }
       })
       .catch(err => console.warn('[Settings] Failed to fetch settings:', err));
@@ -86,6 +99,26 @@ export const SettingsView: React.FC = () => {
       })
       .catch(() => {});
   }, []);
+
+  const generateNewMcpKey = () => {
+    const chars = 'abcdef0123456789';
+    let key = 'mba_';
+    for (let i = 0; i < 40; i++) {
+      key += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setMcpApiKey(key);
+  };
+
+  const copyToClipboard = (text: string, type: 'key' | 'endpoint') => {
+    navigator.clipboard.writeText(text);
+    if (type === 'key') {
+      setCopiedMcpKey(true);
+      setTimeout(() => setCopiedMcpKey(false), 2000);
+    } else {
+      setCopiedEndpoint(true);
+      setTimeout(() => setCopiedEndpoint(false), 2000);
+    }
+  };
 
   const fetchModels = () => {
     setLoadingModels(true);
@@ -116,6 +149,7 @@ export const SettingsView: React.FC = () => {
         nasHost,
         nasUser,
         autoSlotFillHour: Number(autoSlotFillHour),
+        mcpApiKey,
       };
 
       const res = await fetch('/api/v1/settings', {
@@ -554,6 +588,150 @@ export const SettingsView: React.FC = () => {
               onChange={(e) => setAutoSlotFillHour(Number(e.target.value))}
               className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 focus:border-primary-500 focus:outline-none"
             />
+          </div>
+        </div>
+
+        {/* 7. Hermes Agent & Remote API (MCP) Card */}
+        <div className="glass-card p-5 rounded-2xl space-y-4 md:col-span-2 border border-primary-500/30 shadow-xl relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-tr from-primary-600 to-accent-cyan text-white shadow-md shadow-primary-500/20">
+                <Bot className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center">
+                  Hermes Agent &amp; Remote API (MCP Integration)
+                </h3>
+                <p className="text-xs text-slate-400">Direkte Trademark-Prüfung &amp; Task-Submission für deinen Hermes Agenten (VPS / Remote).</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => runTest('hermes', { apiKey: mcpApiKey })}
+              disabled={testResults['hermes']?.testing}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/40 flex items-center space-x-1.5 transition-all self-start sm:self-auto disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${testResults['hermes']?.testing ? 'animate-spin text-accent-cyan' : ''}`} />
+              <span>MCP &amp; TM Engine testen</span>
+            </button>
+          </div>
+
+          {testResults['hermes'] && !testResults['hermes'].testing && (
+            <div className={`p-3 rounded-xl text-xs flex flex-col space-y-1 border ${
+              testResults['hermes'].success 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center font-semibold">
+                  {testResults['hermes'].success ? <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" /> : <ShieldAlert className="w-4 h-4 mr-1.5 shrink-0" />}
+                  {testResults['hermes'].message || (testResults['hermes'].success ? 'MCP Schnittstelle einsatzbereit ✓' : 'Test fehlgeschlagen')}
+                </span>
+                {testResults['hermes'].latencyMs !== undefined && (
+                  <span className="font-mono text-[10px]">{testResults['hermes'].latencyMs}ms</span>
+                )}
+              </div>
+              {testResults['hermes'].details && (
+                <div className="text-[11px] opacity-90 pl-5 font-mono">
+                  {testResults['hermes'].details}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* API Key Control */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-300 flex items-center">
+                <Key className="w-3.5 h-3.5 mr-1 text-accent-amber" />
+                MBA HUB API Key (<code className="text-accent-cyan font-mono">x-mba-api-key</code>)
+              </label>
+              <button
+                type="button"
+                onClick={generateNewMcpKey}
+                className="text-[11px] font-semibold text-primary-400 hover:text-primary-300 transition-colors"
+              >
+                + Neuen Key generieren
+              </button>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <div className="relative flex-1">
+                <input
+                  type={showMcpKey ? 'text' : 'password'}
+                  value={mcpApiKey}
+                  onChange={(e) => setMcpApiKey(e.target.value)}
+                  className="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:border-primary-500 focus:outline-none font-mono tracking-wider"
+                  placeholder="mba_..."
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowMcpKey(!showMcpKey)}
+                  className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showMcpKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => copyToClipboard(mcpApiKey, 'key')}
+                disabled={!mcpApiKey}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center space-x-1.5 border border-slate-700 transition-colors shrink-0 disabled:opacity-50"
+              >
+                {copiedMcpKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedMcpKey ? 'Kopiert!' : 'Key kopieren'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Endpoints & Cloudflare Tunnel Info */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800/80">
+            <div className="bg-slate-950/80 rounded-xl p-3.5 border border-slate-800/80 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                <span className="flex items-center">
+                  <Terminal className="w-3.5 h-3.5 mr-1.5 text-accent-cyan" />
+                  TM Check Endpunkt (POST)
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">Phase 1</span>
+              </div>
+              <div className="font-mono text-[11px] text-slate-300 bg-slate-900/90 p-2 rounded-lg border border-slate-800 select-all flex items-center justify-between">
+                <span className="truncate">/api/v1/mcp/trademark/check</span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard('/api/v1/mcp/trademark/check', 'endpoint')}
+                  className="text-slate-400 hover:text-white ml-2 shrink-0"
+                  title="Pfad kopieren"
+                >
+                  {copiedEndpoint ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              {/* Health Ping Sub-Endpoint */}
+              <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400">
+                <span className="font-semibold text-slate-300">⚡ Health Ping (GET):</span>
+                <code className="bg-slate-900 px-2 py-0.5 rounded text-accent-cyan font-mono text-[10px] select-all">/api/v1/mcp/health</code>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Unterstützt <code className="text-slate-300">offices: ["USPTO", "EUIPO", "DPMA"]</code> und Felder wie <code className="text-slate-300">phrase</code>, <code className="text-slate-300">title</code>, <code className="text-slate-300">brand</code>, etc.
+              </p>
+            </div>
+
+            <div className="bg-slate-950/80 rounded-xl p-3.5 border border-slate-800/80 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                <span className="flex items-center">
+                  <Globe className="w-3.5 h-3.5 mr-1.5 text-accent-amber" />
+                  Cloudflare Tunnel Setup
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">Port 3000</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Leite deine Domain (z.B. <code className="text-slate-200">hub.deinedomain.de</code>) via <code className="text-slate-200">cloudflared</code> auf Port <code className="text-slate-200">3000</code> des NAS weiter.
+              </p>
+              <div className="font-mono text-[10px] text-slate-400 bg-slate-900/90 p-1.5 rounded border border-slate-800 truncate">
+                Header: <span className="text-accent-cyan">x-mba-api-key: {mcpApiKey ? mcpApiKey.substring(0, 10) + '...' : 'mba_...'}</span>
+              </div>
+            </div>
           </div>
         </div>
 

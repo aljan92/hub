@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+import crypto from 'crypto';
+
 export interface AppSettings {
   openRouterApiKey: string;
   llmProvider: 'openrouter' | 'openai';
@@ -19,6 +21,11 @@ export interface AppSettings {
   nasUser: string;
   autoSlotFillHour: number;
   autoSyncEnabled: boolean;
+  mcpApiKey: string;
+}
+
+export function generateApiKey(): string {
+  return `mba_${crypto.randomBytes(20).toString('hex')}`;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -38,6 +45,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   nasUser: process.env.NAS_USER || 'aljan92',
   autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4,
   autoSyncEnabled: true,
+  mcpApiKey: process.env.MBA_MCP_API_KEY || generateApiKey(),
 };
 
 function getSettingsFilePath(): string {
@@ -58,7 +66,12 @@ export function loadSettings(): AppSettings {
     try {
       const fileData = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(fileData);
-      return { ...DEFAULT_SETTINGS, ...parsed };
+      const settings = { ...DEFAULT_SETTINGS, ...parsed };
+      if (!settings.mcpApiKey) {
+        settings.mcpApiKey = generateApiKey();
+        saveSettings({ mcpApiKey: settings.mcpApiKey });
+      }
+      return settings;
     } catch (err) {
       console.error('[Settings] Error reading settings.json:', err);
     }

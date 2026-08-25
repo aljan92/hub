@@ -16,6 +16,7 @@ import { VectorizerService } from './services/vectorizerService';
 import { SupabaseService } from './services/supabaseService';
 import { SyncEngine } from './services/syncEngine';
 import { BrowserSessionService } from './services/browserSessionService';
+import { getMcpSchema } from './services/mcpSchemaService';
 
 dotenv.config();
 
@@ -471,15 +472,37 @@ app.post('/api/v1/connectors/test', async (req, res) => {
       const result = await SupabaseService.testConnection(credentials?.url, credentials?.key);
       return res.json(result);
     }
+    if (connector === 'hermes' || connector === 'mcp') {
+      const tmTest = await TrademarkService.testConnection();
+      return res.json({
+        success: tmTest.success,
+        latencyMs: tmTest.latencyMs,
+        message: tmTest.success ? 'MCP Engine & Trademark APIs bereit' : tmTest.error,
+        details: `API-Key aktiv • Endpunkt /api/v1/mcp/trademark/check einsatzbereit`
+      });
+    }
     res.status(400).json({ success: false, error: 'Unknown connector' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Background Health Caching
-let cachedHealthData: any = null;
-let lastHealthCheckTime = 0;
+// Hermes Heartbeat State
+let hermesHeartbeat = {
+  lastPingTime: 0,
+  lastPingIp: '',
+  totalPings: 0,
+  lastMetadata: {} as any
+};
+
+function recordHermesHeartbeat(req: express.Request, metadata?: any) {
+  hermesHeartbeat.lastPingTime = Date.now();
+  hermesHeartbeat.lastPingIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'remote';
+  hermesHeartbeat.totalPings += 1;
+  if (metadata) {
+    hermesHeartbeat.lastMetadata = metadata;
+  }
+}
 
 async function refreshHealthData() {
   try {
@@ -491,12 +514,24 @@ async function refreshHealthData() {
       SupabaseService.testConnection()
     ]);
 
+    const isHermesOnline = hermesHeartbeat.lastPingTime > 0 && (Date.now() - hermesHeartbeat.lastPingTime < 10 * 60 * 1000);
+    const minutesAgo = hermesHeartbeat.lastPingTime > 0 ? Math.floor((Date.now() - hermesHeartbeat.lastPingTime) / 60000) : null;
+
     cachedHealthData = {
       openRouter: openrouter,
       ideogram: ideogram,
       vectorizer: vectorizer,
       productorTM: productor,
       supabase: supabase,
+      hermes: {
+        success: isHermesOnline,
+        lastPingTime: hermesHeartbeat.lastPingTime,
+        statusText: isHermesOnline 
+          ? (minutesAgo === 0 ? 'Heartbeat aktiv (Online)' : `Aktiv (vor ${minutesAgo}m)`)
+          : (hermesHeartbeat.lastPingTime === 0 ? 'Standby (Wartet auf Ping)' : `Offline (Zuletzt vor ${minutesAgo}m)`),
+        latencyMs: isHermesOnline ? 1 : undefined,
+        totalPings: hermesHeartbeat.totalPings
+      },
       amazonWorker: { success: true, latencyMs: 2, status: 'Session Warm' }
     };
     lastHealthCheckTime = Date.now();
@@ -669,9 +704,38 @@ app.post('/api/v1/tasks/:id/approve', (req, res) => {
   res.json({ success: true, queueEntry });
 });
 
-// 8. Hermes REST Webhook Endpoint
+// Auth middleware for Hermes / MCP / Remote endpoints
+function validateMcpAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const settings = loadSettings();
+  if (!settings.mcpApiKey) {
+    recordHermesHeartbeat(req);
+    return next(); // If no key is set yet, allow
+  }
+  const authHeader = req.headers['authorization'];
+  const customHeader = req.headers['x-mba-api-key'] as string;
+
+  let providedKey = '';
+  if (customHeader) {
+    providedKey = customHeader.trim();
+  } else if (authHeader && authHeader.startsWith('Bearer ')) {
+    providedKey = authHeader.slice(7).trim();
+  }
+
+  if (!providedKey || providedKey !== settings.mcpApiKey) {
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized: Invalid or missing x-mba-api-key header or Bearer token.'
+    });
+  }
+
+  recordHermesHeartbeat(req);
+  next();
+}
+
+// 8. Hermes REST Webhook Endpoint (Task Submission)
 app.post('/api/v1/hermes/task', async (req, res) => {
   const { prompt, quote, niche1, niche2, title, brand, bullet1, bullet2, description } = req.body;
+  recordHermesHeartbeat(req, { prompt, quote, niche1, niche2 });
   
   console.log(`[Hermes Webhook] Received task for niche "${niche1} / ${niche2}": ${prompt}`);
 
@@ -723,7 +787,114 @@ app.post('/api/v1/hermes/task', async (req, res) => {
   });
 });
 
-// 9. Upload Queue Management
+// 9. MCP Tool Schema & Health Ping Endpoints
+app.all(['/api/v1/mcp/ping', '/api/v1/mcp/heartbeat'], (req, res) => {
+  const settings = loadSettings();
+  const authHeader = req.headers['authorization'];
+  const customHeader = req.headers['x-mba-api-key'] as string;
+
+  let providedKey = '';
+  if (customHeader) {
+    providedKey = customHeader.trim();
+  } else if (authHeader && authHeader.startsWith('Bearer ')) {
+    providedKey = authHeader.slice(7).trim();
+  }
+
+  const isAuthValid = !settings.mcpApiKey || providedKey === settings.mcpApiKey;
+  if (isAuthValid) {
+    recordHermesHeartbeat(req, req.body || req.query);
+  }
+
+  res.json({
+    status: 'ok',
+    message: isAuthValid ? 'Heartbeat registered successfully.' : 'Heartbeat received (unauthenticated).',
+    authenticated: Boolean(providedKey && isAuthValid),
+    authConfigured: Boolean(settings.mcpApiKey),
+    serverTime: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    activeTasksCount: activeTasks.length,
+    uploadQueueCount: uploadQueue.length
+  });
+});
+
+app.get(['/api/v1/mcp/health', '/health'], (req, res) => {
+  const settings = loadSettings();
+  const authHeader = req.headers['authorization'];
+  const customHeader = req.headers['x-mba-api-key'] as string;
+
+  let providedKey = '';
+  if (customHeader) {
+    providedKey = customHeader.trim();
+  } else if (authHeader && authHeader.startsWith('Bearer ')) {
+    providedKey = authHeader.slice(7).trim();
+  }
+
+  const isAuthValid = !settings.mcpApiKey || providedKey === settings.mcpApiKey;
+  if (isAuthValid) {
+    recordHermesHeartbeat(req);
+  }
+
+  res.json({
+    status: 'ok',
+    service: 'MBA_HUB_MCP',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    authenticated: Boolean(providedKey && isAuthValid),
+    authConfigured: Boolean(settings.mcpApiKey),
+    heartbeat: {
+      lastPingTime: hermesHeartbeat.lastPingTime,
+      totalPings: hermesHeartbeat.totalPings
+    },
+    trademarkEngine: {
+      status: 'online',
+      offices: ['USPTO', 'EUIPO', 'DPMA']
+    }
+  });
+});
+
+app.get('/api/v1/mcp/schema', (req, res) => {
+  res.json(getMcpSchema());
+});
+
+// 10. Dedicated MBA_HUB MCP Trademark Check Endpoint
+app.post('/api/v1/mcp/trademark/check', validateMcpAuth, async (req, res) => {
+  try {
+    const { offices, marketplace, fields, phrase, title, brand, bullet1, bullet2, description } = req.body;
+
+    // Support both nested { fields: { ... } } and top-level fields
+    const resolvedFields: Record<string, string> = {
+      ...(fields && typeof fields === 'object' ? fields : {}),
+    };
+
+    if (phrase && typeof phrase === 'string') resolvedFields.phrase = phrase;
+    if (title && typeof title === 'string') resolvedFields.title = title;
+    if (brand && typeof brand === 'string') resolvedFields.brand = brand;
+    if (bullet1 && typeof bullet1 === 'string') resolvedFields.bullet1 = bullet1;
+    if (bullet2 && typeof bullet2 === 'string') resolvedFields.bullet2 = bullet2;
+    if (description && typeof description === 'string') resolvedFields.description = description;
+
+    if (Object.keys(resolvedFields).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing fields to check. Please provide at least one of: phrase, title, brand, bullet1, bullet2, description (either top-level or inside a "fields" object).'
+      });
+    }
+
+    const result = await TrademarkService.checkBatchFields({
+      offices,
+      marketplace,
+      fields: resolvedFields
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('[MCP Trademark Check] Error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
+  }
+});
+
+// 11. Upload Queue Management
 app.get('/api/v1/queue', (req, res) => {
   res.json({ success: true, queue: uploadQueue });
 });
