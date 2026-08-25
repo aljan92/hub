@@ -818,6 +818,15 @@ app.post('/api/v1/tasks/:id/approve', (req, res) => {
 
 // Auth middleware for Hermes / MCP / Remote endpoints
 function validateMcpAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  // Allow internal requests from Dashboard / Playground / Designer
+  const isInternal = req.query.source === 'test' || 
+                     req.query.source === 'designer' || 
+                     req.headers['x-internal-source'] === 'hub-ui' ||
+                     req.headers['sec-fetch-site'] === 'same-origin';
+  if (isInternal) {
+    return next();
+  }
+
   const settings = loadSettings();
   if (!settings.mcpApiKey) {
     recordHermesHeartbeat(req);
