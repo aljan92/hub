@@ -136,7 +136,8 @@ export class IdeogramService {
       formData.append('rendering_speed', renderingSpeed);
       formData.append('style_type', styleType);
       formData.append('aspect_ratio', cleanRatio);
-      formData.append('magic_prompt_option', magicPromptOption);
+      formData.append('magic_prompt', magicPromptOption);
+      formData.append('num_images', '1');
 
       const res = await fetch('https://api.ideogram.ai/v1/ideogram-v3/generate', {
         method: 'POST',
