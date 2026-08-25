@@ -124,17 +124,53 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
 }`;
 
-export class SystemPromptService {
-  private static dataDir = path.resolve(process.cwd(), 'data');
-  private static promptFile = path.resolve(process.cwd(), 'data', 'system_prompts.json');
+export const DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) Trademark Attorney and POD Compliance Auditor.
+Your job is to analyze the USPTO / Trademark hits detected for a generated Merch by Amazon listing and make a definitive compliance decision.
 
+### 1. CORE COMPLIANCE RULES:
+A. DESCRIPTIVE FAIR USE (ALLOWED):
+- Generic, common words (e.g., "space", "vintage", "retro", "happy", "sun", "workout", "sunset", "cute", "angel", "reality", "manifest") are often registered as apparel trademarks by individual brands.
+- If these words appear in descriptive sentence context within Bullet Points or Description (e.g. "a great gift for lovers of outer space and astronomy"), this is 100% LEGAL DESCRIPTIVE FAIR USE. Do NOT delete or reject!
+
+B. SOURCE IDENTIFIERS / BRAND & TITLE (DANGEROUS):
+- If a trademarked word or phrase appears as the Brand Name or directly as the main subject in the Title, it functions as a trademark / source identifier.
+- Action: If it is a generic word, rephrase the Brand or Title to a unique, non-infringing phrase while keeping the SEO value.
+
+C. UNACCEPTABLE TRADEMARK INFRINGEMENT (MUST REJECT):
+- If the core Quote / Slogan or the design motif itself directly infringes a protected trademark in Class 25 (e.g. "Just Do It", "Hakuna Matata", "Lego", "Disney", "Marvel", "Pokemon", "Star Wars", famous celebrities, or active registered slogans):
+  * Set "verdict": "REJECTED"
+  * Provide a clear "rejection_reason".
+
+D. SAFE REPHRASING (CLEANING):
+- If trademark hits can be solved by safely swapping 1-2 words in Title, Brand, or Bullets, do so cleanly without reducing keyword power.
+- Update the listing fields accordingly while strictly adhering to character limits (Brand <= 50, Title <= 60, Bullets <= 250, Description <= 2000).
+
+### 2. OUTPUT FORMAT:
+Respond ONLY with a valid JSON object matching this schema (no markdown fences, no conversational text):
+{
+  "verdict": "APPROVED",
+  "rejection_reason": null,
+  "actions_taken": [
+    "Retained 'space' in Bullet 1 as descriptive fair use",
+    "Replaced 'Space Apparel' in Brand with 'Cosmic Star Graphics'"
+  ],
+  "refined_listing": {
+    "brand": "<Cleaned Brand Name (max 50 chars)>",
+    "title": "<Cleaned Title (max 60 chars)>",
+    "bullet1": "<Cleaned Bullet 1 (max 250 chars)>",
+    "bullet2": "<Cleaned Bullet 2 (max 250 chars)>",
+    "description": "<Cleaned Description (max 2000 chars)>"
+  }
+}`;
+
+export class SystemPromptService {
+  private static promptFile = path.resolve(process.cwd(), 'data', 'system_prompts.json');
   private static cachedPrompts: Record<string, string> | null = null;
 
-  private static ensureDataDir() {
-    if (!fs.existsSync(this.dataDir)) {
-      try {
-        fs.mkdirSync(this.dataDir, { recursive: true });
-      } catch (e) {}
+  private static ensureDataDir(): void {
+    const dir = path.dirname(this.promptFile);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
   }
 
@@ -158,6 +194,9 @@ export class SystemPromptService {
           if (!this.cachedPrompts.listingGenerator) {
             this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
           }
+          if (!this.cachedPrompts.trademarkAuditor) {
+            this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+          }
           return this.cachedPrompts;
         }
       } catch (e) {
@@ -169,6 +208,7 @@ export class SystemPromptService {
       promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
       listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
+      trademarkAuditor: DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
     };
 
     try {
@@ -193,16 +233,22 @@ export class SystemPromptService {
     return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
   }
 
-  static getAllPrompts(): { promptGenerator: string; designAnalyzer: string; listingGenerator: string } {
+  static getTrademarkAuditorPrompt(): string {
+    const prompts = this.loadPrompts();
+    return prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+  }
+
+  static getAllPrompts(): { promptGenerator: string; designAnalyzer: string; listingGenerator: string; trademarkAuditor: string } {
     const prompts = this.loadPrompts();
     return {
       promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
       listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
+      trademarkAuditor: prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
     };
   }
 
-  static savePrompts(updates: { promptGenerator?: string; designAnalyzer?: string; listingGenerator?: string }): void {
+  static savePrompts(updates: { promptGenerator?: string; designAnalyzer?: string; listingGenerator?: string; trademarkAuditor?: string }): void {
     this.ensureDataDir();
     const prompts = this.loadPrompts();
     if (typeof updates.promptGenerator === 'string') {
@@ -214,6 +260,9 @@ export class SystemPromptService {
     if (typeof updates.listingGenerator === 'string') {
       prompts.listingGenerator = updates.listingGenerator;
     }
+    if (typeof updates.trademarkAuditor === 'string') {
+      prompts.trademarkAuditor = updates.trademarkAuditor;
+    }
     this.cachedPrompts = prompts;
 
     try {
@@ -224,7 +273,7 @@ export class SystemPromptService {
     }
   }
 
-  static resetToDefault(type: 'promptGenerator' | 'designAnalyzer' | 'listingGenerator' | 'all' = 'all'): { promptGenerator: string; designAnalyzer: string; listingGenerator: string } {
+  static resetToDefault(type: 'promptGenerator' | 'designAnalyzer' | 'listingGenerator' | 'trademarkAuditor' | 'all' = 'all'): { promptGenerator: string; designAnalyzer: string; listingGenerator: string; trademarkAuditor: string } {
     const current = this.loadPrompts();
     if (type === 'promptGenerator' || type === 'all') {
       current.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
@@ -235,6 +284,9 @@ export class SystemPromptService {
     if (type === 'listingGenerator' || type === 'all') {
       current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
     }
+    if (type === 'trademarkAuditor' || type === 'all') {
+      current.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+    }
     this.cachedPrompts = current;
     try {
       fs.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), 'utf-8');
@@ -244,6 +296,7 @@ export class SystemPromptService {
       promptGenerator: current.promptGenerator,
       designAnalyzer: current.designAnalyzer,
       listingGenerator: current.listingGenerator,
+      trademarkAuditor: current.trademarkAuditor,
     };
   }
 }

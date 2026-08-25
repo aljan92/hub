@@ -30,7 +30,9 @@ import {
   CheckSquare,
   RotateCcw,
   FileText,
-  XCircle
+  XCircle,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 
 export type EventType = 
@@ -44,6 +46,9 @@ export type EventType =
   | 'ANALYSIS_RESPONSE'
   | 'LISTING_REQUEST'
   | 'LISTING_RESPONSE'
+  | 'TM_CHECK_RESPONSE'
+  | 'TM_REFINE_REQUEST'
+  | 'TM_REFINE_RESPONSE'
   | 'ERROR';
 
 export interface SessionEvent {
@@ -69,7 +74,7 @@ export interface DesignTaskLog {
   counter: number;
   source: 'HERMES' | 'TEST' | 'DESIGNER';
   suffix: 'H' | 'T' | 'D';
-  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'COMPLETED' | 'REJECTED' | 'ERROR';
+  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'CHECKING_TRADEMARKS' | 'COMPLETED' | 'REJECTED' | 'ERROR';
   receivedAt: string;
   clientIp?: string;
   payload: Record<string, any>;
@@ -79,6 +84,8 @@ export interface DesignTaskLog {
   localImagePath?: string;
   analysisResult?: any;
   listingResult?: any;
+  trademarkCheckResult?: any;
+  trademarkRefineResult?: any;
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -121,7 +128,7 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
-  const handleRetryStep = async (taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST' | 'LISTING_REQUEST') => {
+  const handleRetryStep = async (taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST' | 'LISTING_REQUEST' | 'TM_REFINE_REQUEST') => {
     setRetryingStep(`${taskId}-${stepType}`);
     try {
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/retry`, {
@@ -506,6 +513,11 @@ export const PromptLogView: React.FC = () => {
                         <FileText className="w-3 h-3" /> Erstelle MBA Listing...
                       </span>
                     )}
+                    {task.status === 'CHECKING_TRADEMARKS' && (
+                      <span className="text-amber-400 flex items-center gap-1 font-semibold animate-pulse">
+                        <ShieldCheck className="w-3 h-3" /> Trademark Audit...
+                      </span>
+                    )}
                     {(task.status === 'REJECTED' || (task.analysisResult && !task.listingResult && (task.analysisResult.quote_check?.quote_matches === false || task.analysisResult.quote_check?.regenerate_recommended === true))) && (
                       <span className="text-amber-400 flex items-center gap-1 font-semibold">
                         <XCircle className="w-3 h-3 text-rose-400" /> Abgelehnt (Kein Listing)
@@ -601,6 +613,12 @@ export const PromptLogView: React.FC = () => {
                         <div className={`absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full border-2 -translate-x-1/2 transition-colors ${
                           event.type === 'ERROR'
                             ? 'bg-rose-500 border-rose-900 ring-4 ring-rose-500/20'
+                            : event.type === 'TM_REFINE_RESPONSE'
+                            ? 'bg-emerald-400 border-emerald-950 ring-4 ring-emerald-400/30'
+                            : event.type === 'TM_REFINE_REQUEST'
+                            ? 'bg-amber-500 border-amber-950'
+                            : event.type === 'TM_CHECK_RESPONSE'
+                            ? 'bg-amber-400 border-amber-950 ring-4 ring-amber-400/25'
                             : event.type === 'LISTING_RESPONSE'
                             ? 'bg-emerald-400 border-emerald-950 ring-4 ring-emerald-400/30'
                             : event.type === 'LISTING_REQUEST'
@@ -1268,6 +1286,174 @@ export const PromptLogView: React.FC = () => {
                               <details className="text-[11px] text-slate-400">
                                 <summary className="cursor-pointer font-semibold text-slate-400 hover:text-accent-cyan">
                                   Vollständiges Listing-JSON aller Marktplätze anzeigen (Klick zum Aufklappen)
+                                </summary>
+                                <pre className="mt-1.5 p-2.5 bg-slate-950 rounded-lg text-emerald-400 font-mono text-[11px] border border-slate-800/80 overflow-x-auto">
+                                  {JSON.stringify(event.content, null, 2)}
+                                </pre>
+                              </details>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Event: Empfangen von Productor / USPTO (Trademark Check Result) */}
+                        {event.type === 'TM_CHECK_RESPONSE' && (() => {
+                          const result = typeof event.content === 'object' && event.content !== null ? event.content : null;
+                          const totalHits = result?.totalHits || 0;
+                          const hasCls25 = result?.hasInfringementClass25 || false;
+
+                          return (
+                            <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 border border-amber-500/40 shadow-xl shadow-amber-500/5 space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                                  Productor / USPTO Schutzrechte-Prüfung
+                                </span>
+                                <div className="flex items-center space-x-2">
+                                  {totalHits === 0 ? (
+                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                      ✓ 0 Treffer (100% sauber)
+                                    </span>
+                                  ) : (
+                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                                      hasCls25 ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                                    }`}>
+                                      {hasCls25 ? `⚠️ ${totalHits} Treffer (Klasse 25)` : `ℹ️ ${totalHits} Treffer in Nebenklassen`}
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => copyToClipboard(JSON.stringify(event.content, null, 2), `tm-check-${idx}`)}
+                                    className="flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors"
+                                  >
+                                    {copiedKey === `tm-check-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                    <span>JSON</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {result?.fieldSummaries && Object.keys(result.fieldSummaries).length > 0 && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                                  {Object.entries(result.fieldSummaries).map(([fieldName, fieldData]: [string, any]) => {
+                                    const hits = Object.keys(fieldData?.hits || {});
+                                    const hasHits = hits.length > 0;
+                                    return (
+                                      <div key={fieldName} className={`p-2.5 rounded-xl border ${hasHits ? 'bg-amber-950/20 border-amber-500/30' : 'bg-slate-950 border-slate-800/80'}`}>
+                                        <div className="flex items-center justify-between text-[11px] font-bold">
+                                          <span className="uppercase text-slate-400">{fieldName}</span>
+                                          <span className={hasHits ? 'text-amber-400' : 'text-emerald-400'}>
+                                            {hasHits ? `${hits.length} Treffer` : 'Sauber ✓'}
+                                          </span>
+                                        </div>
+                                        {hasHits && (
+                                          <div className="flex flex-wrap gap-1 mt-1.5">
+                                            {hits.map((h, i) => (
+                                              <span key={i} className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                                                {h}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Collapsible raw JSON */}
+                              <details className="text-[11px] text-slate-400">
+                                <summary className="cursor-pointer font-semibold text-slate-400 hover:text-accent-cyan">
+                                  Vollständiges USPTO Prüfprotokoll anzeigen (Klick zum Aufklappen)
+                                </summary>
+                                <pre className="mt-1.5 p-2.5 bg-slate-950 rounded-lg text-amber-300 font-mono text-[11px] border border-slate-800/80 overflow-x-auto max-h-48 custom-scrollbar">
+                                  {JSON.stringify(event.content, null, 2)}
+                                </pre>
+                              </details>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Event: Senden an OpenRouter (Trademark Auditor & Refiner) */}
+                        {event.type === 'TM_REFINE_REQUEST' && (
+                          <div className="bg-slate-950 rounded-xl p-3.5 border border-amber-500/30 space-y-3">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-amber-300">
+                              <span className="flex items-center gap-1.5">
+                                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                                Anfrage an OpenRouter (Trademark Auditor &amp; Refiner):
+                              </span>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleRetryStep(selectedTask.id, 'TM_REFINE_REQUEST')}
+                                  disabled={retryingStep !== null}
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+                                  title="Trademark-Audit und Korrektur mit dem aktiven System-Prompt neu ausführen"
+                                >
+                                  <RotateCcw className={`w-3 h-3 ${retryingStep === `${selectedTask.id}-TM_REFINE_REQUEST` ? 'animate-spin' : ''}`} />
+                                  <span>Ab hier neu ausführen</span>
+                                </button>
+                                <span className="font-mono text-slate-400">{event.metadata?.model}</span>
+                              </div>
+                            </div>
+
+                            {/* System Prompt preview */}
+                            <details className="text-xs text-slate-400 group/details">
+                              <summary className="cursor-pointer font-semibold text-slate-300 hover:text-accent-cyan flex items-center gap-1">
+                                <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">auditor system prompt</span>
+                                <span>Aktiver Trademark Auditor Systemprompt (Klick zum Ausklappen)</span>
+                              </summary>
+                              <pre className="mt-2 p-2.5 bg-slate-900 rounded-lg text-[11px] text-slate-300 font-mono whitespace-pre-wrap border border-slate-800">
+                                {event.content.systemPrompt}
+                              </pre>
+                            </details>
+                          </div>
+                        )}
+
+                        {/* Event: Empfangen von OpenRouter (Trademark-Bewertung & Korrektur) */}
+                        {event.type === 'TM_REFINE_RESPONSE' && (() => {
+                          const refine = typeof event.content === 'object' && event.content !== null ? event.content : null;
+                          const isApproved = refine?.verdict === 'APPROVED';
+
+                          return (
+                            <div className={`bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 border shadow-xl space-y-3 ${
+                              isApproved ? 'border-emerald-500/40 shadow-emerald-500/5' : 'border-rose-500/40 shadow-rose-500/5'
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <span className={`text-xs font-bold flex items-center gap-1.5 ${isApproved ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                  {isApproved ? <ShieldCheck className="w-4 h-4 text-emerald-400" /> : <ShieldAlert className="w-4 h-4 text-rose-400" />}
+                                  Ergebnis der Trademark-Bewertung (KI-Entscheidung)
+                                </span>
+                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                                  isApproved ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                }`}>
+                                  {isApproved ? '✓ Freigabe (Listing bereinigt / Fair Use)' : '✕ Abgelehnt (Markenkonflikt)'}
+                                </span>
+                              </div>
+
+                              {isApproved ? (
+                                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-2 text-xs">
+                                  <span className="font-bold text-slate-300 block">Vorgenommene Prüfungen &amp; Anpassungen:</span>
+                                  {Array.isArray(refine.actions_taken) && refine.actions_taken.length > 0 ? (
+                                    <ul className="space-y-1">
+                                      {refine.actions_taken.map((act: string, i: number) => (
+                                        <li key={i} className="text-slate-300 flex items-start space-x-1.5">
+                                          <span className="text-emerald-400 font-bold">•</span>
+                                          <span>{act}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <p className="text-slate-400">Keine Textänderungen erforderlich – gefundene Begriffe sind als beschreibender Fair Use freigegeben.</p>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="bg-rose-950/20 p-3 rounded-xl border border-rose-500/30 space-y-1 text-xs text-rose-300">
+                                  <span className="font-bold text-rose-200 block">Begründung für die Ablehnung:</span>
+                                  <p>{refine?.rejection_reason || 'Die Quote oder das Design verletzt aktive Schutzrechte in Nizza-Klasse 25.'}</p>
+                                </div>
+                              )}
+
+                              {/* Collapsible raw JSON */}
+                              <details className="text-[11px] text-slate-400">
+                                <summary className="cursor-pointer font-semibold text-slate-400 hover:text-accent-cyan">
+                                  Vollständiges Auditor-JSON anzeigen (Klick zum Aufklappen)
                                 </summary>
                                 <pre className="mt-1.5 p-2.5 bg-slate-950 rounded-lg text-emerald-400 font-mono text-[11px] border border-slate-800/80 overflow-x-auto">
                                   {JSON.stringify(event.content, null, 2)}

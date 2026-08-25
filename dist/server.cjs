@@ -217167,16 +217167,51 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "es": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
   "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
 }`;
+var DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) Trademark Attorney and POD Compliance Auditor.
+Your job is to analyze the USPTO / Trademark hits detected for a generated Merch by Amazon listing and make a definitive compliance decision.
+
+### 1. CORE COMPLIANCE RULES:
+A. DESCRIPTIVE FAIR USE (ALLOWED):
+- Generic, common words (e.g., "space", "vintage", "retro", "happy", "sun", "workout", "sunset", "cute", "angel", "reality", "manifest") are often registered as apparel trademarks by individual brands.
+- If these words appear in descriptive sentence context within Bullet Points or Description (e.g. "a great gift for lovers of outer space and astronomy"), this is 100% LEGAL DESCRIPTIVE FAIR USE. Do NOT delete or reject!
+
+B. SOURCE IDENTIFIERS / BRAND & TITLE (DANGEROUS):
+- If a trademarked word or phrase appears as the Brand Name or directly as the main subject in the Title, it functions as a trademark / source identifier.
+- Action: If it is a generic word, rephrase the Brand or Title to a unique, non-infringing phrase while keeping the SEO value.
+
+C. UNACCEPTABLE TRADEMARK INFRINGEMENT (MUST REJECT):
+- If the core Quote / Slogan or the design motif itself directly infringes a protected trademark in Class 25 (e.g. "Just Do It", "Hakuna Matata", "Lego", "Disney", "Marvel", "Pokemon", "Star Wars", famous celebrities, or active registered slogans):
+  * Set "verdict": "REJECTED"
+  * Provide a clear "rejection_reason".
+
+D. SAFE REPHRASING (CLEANING):
+- If trademark hits can be solved by safely swapping 1-2 words in Title, Brand, or Bullets, do so cleanly without reducing keyword power.
+- Update the listing fields accordingly while strictly adhering to character limits (Brand <= 50, Title <= 60, Bullets <= 250, Description <= 2000).
+
+### 2. OUTPUT FORMAT:
+Respond ONLY with a valid JSON object matching this schema (no markdown fences, no conversational text):
+{
+  "verdict": "APPROVED",
+  "rejection_reason": null,
+  "actions_taken": [
+    "Retained 'space' in Bullet 1 as descriptive fair use",
+    "Replaced 'Space Apparel' in Brand with 'Cosmic Star Graphics'"
+  ],
+  "refined_listing": {
+    "brand": "<Cleaned Brand Name (max 50 chars)>",
+    "title": "<Cleaned Title (max 60 chars)>",
+    "bullet1": "<Cleaned Bullet 1 (max 250 chars)>",
+    "bullet2": "<Cleaned Bullet 2 (max 250 chars)>",
+    "description": "<Cleaned Description (max 2000 chars)>"
+  }
+}`;
 var SystemPromptService = class {
-  static dataDir = import_path69.default.resolve(process.cwd(), "data");
   static promptFile = import_path69.default.resolve(process.cwd(), "data", "system_prompts.json");
   static cachedPrompts = null;
   static ensureDataDir() {
-    if (!import_fs74.default.existsSync(this.dataDir)) {
-      try {
-        import_fs74.default.mkdirSync(this.dataDir, { recursive: true });
-      } catch (e) {
-      }
+    const dir = import_path69.default.dirname(this.promptFile);
+    if (!import_fs74.default.existsSync(dir)) {
+      import_fs74.default.mkdirSync(dir, { recursive: true });
     }
   }
   static loadPrompts() {
@@ -217198,6 +217233,9 @@ var SystemPromptService = class {
           if (!this.cachedPrompts.listingGenerator) {
             this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
           }
+          if (!this.cachedPrompts.trademarkAuditor) {
+            this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+          }
           return this.cachedPrompts;
         }
       } catch (e) {
@@ -217207,7 +217245,8 @@ var SystemPromptService = class {
     this.cachedPrompts = {
       promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
-      listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT
+      listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
+      trademarkAuditor: DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT
     };
     try {
       import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
@@ -217227,12 +217266,17 @@ var SystemPromptService = class {
     const prompts = this.loadPrompts();
     return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
   }
+  static getTrademarkAuditorPrompt() {
+    const prompts = this.loadPrompts();
+    return prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+  }
   static getAllPrompts() {
     const prompts = this.loadPrompts();
     return {
       promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
-      listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT
+      listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
+      trademarkAuditor: prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT
     };
   }
   static savePrompts(updates) {
@@ -217246,6 +217290,9 @@ var SystemPromptService = class {
     }
     if (typeof updates.listingGenerator === "string") {
       prompts.listingGenerator = updates.listingGenerator;
+    }
+    if (typeof updates.trademarkAuditor === "string") {
+      prompts.trademarkAuditor = updates.trademarkAuditor;
     }
     this.cachedPrompts = prompts;
     try {
@@ -217266,6 +217313,9 @@ var SystemPromptService = class {
     if (type3 === "listingGenerator" || type3 === "all") {
       current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
     }
+    if (type3 === "trademarkAuditor" || type3 === "all") {
+      current.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+    }
     this.cachedPrompts = current;
     try {
       import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), "utf-8");
@@ -217274,7 +217324,8 @@ var SystemPromptService = class {
     return {
       promptGenerator: current.promptGenerator,
       designAnalyzer: current.designAnalyzer,
-      listingGenerator: current.listingGenerator
+      listingGenerator: current.listingGenerator,
+      trademarkAuditor: current.trademarkAuditor
     };
   }
 };
@@ -217894,11 +217945,12 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
         }
       });
       this.updateTaskStatus(taskId, {
-        status: "COMPLETED",
+        status: "CHECKING_TRADEMARKS",
         listingResult: parsedListing,
         hasError: false
       });
-      console.log(`[TaskLogService] \u{1F4DD} MBA Listing f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+      console.log(`[TaskLogService] \u{1F4DD} MBA Listing f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms. Starte Trademark Audit...`);
+      await this.auditListingTrademarks(taskId);
     } catch (err) {
       const latencyMs = Date.now() - start3;
       const errorMsg = err.message || "Fehler bei der Listing-Generierung";
@@ -217908,6 +217960,199 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
         title: "Fehler bei Listing-Generierung",
         content: errorMsg,
         metadata: { latencyMs, model }
+      });
+      this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+    }
+  }
+  /**
+   * Automatically check USPTO Trademarks for the generated English listing and run LLM refinement loop
+   */
+  static async auditListingTrademarks(taskId) {
+    const task = this.getTaskLogById(taskId);
+    if (!task || !task.listingResult) return;
+    const enListing = task.listingResult.en || task.listingResult;
+    const brand = typeof enListing === "object" ? enListing.brand || "" : "";
+    const title = typeof enListing === "object" ? enListing.title || "" : "";
+    const bullet1 = typeof enListing === "object" ? enListing.bullet1 || "" : "";
+    const bullet2 = typeof enListing === "object" ? enListing.bullet2 || "" : "";
+    const description = typeof enListing === "object" ? enListing.description || "" : "";
+    const quote5 = task.payload?.quote || "";
+    const start3 = Date.now();
+    console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte USPTO Trademark Batch Check f\xFCr Task ${taskId}...`);
+    try {
+      const batchResult = await TrademarkService.checkBatchFields({
+        offices: ["USPTO"],
+        fields: {
+          quote: quote5,
+          brand,
+          title,
+          bullet1,
+          bullet2,
+          description
+        }
+      });
+      const latencyMs = Date.now() - start3;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TM_CHECK_RESPONSE",
+        title: `Empfangen von Productor / USPTO (${batchResult.totalHits} Treffer)`,
+        content: {
+          totalHits: batchResult.totalHits,
+          hasInfringementClass25: batchResult.hasInfringementClass25,
+          blockedProducts: batchResult.blockedProducts,
+          fieldSummaries: batchResult.fieldSummaries,
+          allHits: batchResult.allHits
+        },
+        metadata: {
+          provider: "Productor USPTO",
+          latencyMs
+        }
+      });
+      if (batchResult.totalHits === 0) {
+        this.updateTaskStatus(taskId, {
+          status: "COMPLETED",
+          trademarkCheckResult: batchResult,
+          hasError: false
+        });
+        console.log(`[TaskLogService] \u{1F6E1}\uFE0F Keine Schutzrechte-Treffer f\xFCr Task ${taskId}. 100% sauber \u2713`);
+        return;
+      }
+      const settings = loadSettings();
+      const apiKey = settings.openRouterApiKey;
+      if (!apiKey) {
+        this.updateTaskStatus(taskId, {
+          status: "COMPLETED",
+          trademarkCheckResult: batchResult,
+          hasError: false
+        });
+        return;
+      }
+      const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
+      const auditorPrompt = SystemPromptService.getTrademarkAuditorPrompt();
+      const hitsSummary = [];
+      for (const [field, data2] of Object.entries(batchResult.fieldSummaries || {})) {
+        if (data2.hitsCount > 0) {
+          const hitTerms = Object.keys(data2.hits || {}).join(", ");
+          hitsSummary.push(`- Field "${field}": Hit terms: [${hitTerms}]`);
+        }
+      }
+      const userMessage = `Here is the generated English listing and the detected USPTO Trademark hits:
+
+### Current Listing:
+- Quote / Slogan: "${quote5}"
+- Brand: "${brand}"
+- Title: "${title}"
+- Bullet 1: "${bullet1}"
+- Bullet 2: "${bullet2}"
+- Description: "${description}"
+
+### Detected USPTO Trademark Hits:
+${hitsSummary.join("\n")}
+
+Please audit each hit: Distinguish between descriptive fair use (allowed) vs brand/title infringement (must rephrase) vs severe direct quote infringement (must reject). Return the refined JSON strictly adhering to the schema!`;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TM_REFINE_REQUEST",
+        title: `Senden an OpenRouter (Trademark Auditor & Refiner)`,
+        content: {
+          systemPrompt: auditorPrompt,
+          userMessage
+        },
+        metadata: { model, provider: "OpenRouter" }
+      });
+      const refineStart = Date.now();
+      const response2 = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://mbahub.local",
+          "X-Title": "MBA HUB TM Auditor"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: auditorPrompt },
+            { role: "user", content: userMessage }
+          ],
+          temperature: 0.2,
+          max_tokens: 2e3
+        }),
+        signal: AbortSignal.timeout(6e4)
+      });
+      const refineLatencyMs = Date.now() - refineStart;
+      if (!response2.ok) {
+        const errText = await response2.text();
+        throw new Error(`OpenRouter TM Auditor Fehler: ${response2.status} - ${errText}`);
+      }
+      const data = await response2.json();
+      const rawContent = data.choices?.[0]?.message?.content || "";
+      let parsedRefined = null;
+      try {
+        let cleanJsonStr = rawContent.trim();
+        if (cleanJsonStr.startsWith("```")) {
+          cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+        }
+        parsedRefined = JSON.parse(cleanJsonStr);
+      } catch (pe) {
+        parsedRefined = rawContent;
+      }
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TM_REFINE_RESPONSE",
+        title: `Empfangen von OpenRouter (Trademark-Bewertung & Korrektur)`,
+        content: parsedRefined,
+        metadata: {
+          model: data.model || model,
+          latencyMs: refineLatencyMs,
+          tokens: data.usage ? {
+            prompt: data.usage.prompt_tokens,
+            completion: data.usage.completion_tokens,
+            total: data.usage.total_tokens
+          } : void 0
+        }
+      });
+      if (parsedRefined?.verdict === "REJECTED") {
+        this.updateTaskStatus(taskId, {
+          status: "REJECTED",
+          trademarkCheckResult: batchResult,
+          trademarkRefineResult: parsedRefined,
+          hasError: false,
+          errorDetails: parsedRefined.rejection_reason || "Markenrechtsverletzung in Klasse 25 festgestellt."
+        });
+        console.log(`[TaskLogService] \u274C Task ${taskId} von Trademark Auditor abgelehnt: ${parsedRefined.rejection_reason}`);
+      } else {
+        if (parsedRefined?.refined_listing && task.listingResult) {
+          if (task.listingResult.en) {
+            task.listingResult.en = {
+              ...task.listingResult.en,
+              ...parsedRefined.refined_listing
+            };
+          } else if (typeof task.listingResult === "object") {
+            task.listingResult = {
+              ...task.listingResult,
+              ...parsedRefined.refined_listing
+            };
+          }
+        }
+        this.updateTaskStatus(taskId, {
+          status: "COMPLETED",
+          listingResult: task.listingResult,
+          trademarkCheckResult: batchResult,
+          trademarkRefineResult: parsedRefined,
+          hasError: false
+        });
+        console.log(`[TaskLogService] \u{1F6E1}\uFE0F Trademark Audit f\xFCr Task ${taskId} erfolgreich abgeschlossen in ${refineLatencyMs}ms \u2713`);
+      }
+    } catch (err) {
+      const latencyMs = Date.now() - start3;
+      console.error(`[TaskLogService] Fehler beim TM Audit f\xFCr Task ${taskId}:`, err);
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ERROR",
+        title: "Fehler beim Trademark Audit",
+        content: err.message || "Fehler bei der USPTO TM Pr\xFCfung",
+        metadata: { latencyMs }
       });
       this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
     }
@@ -217931,6 +218176,8 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
       currentTask.localImagePath = void 0;
       currentTask.analysisResult = void 0;
       currentTask.listingResult = void 0;
+      currentTask.trademarkCheckResult = void 0;
+      currentTask.trademarkRefineResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
@@ -217949,6 +218196,8 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
       currentTask.localImagePath = void 0;
       currentTask.analysisResult = void 0;
       currentTask.listingResult = void 0;
+      currentTask.trademarkCheckResult = void 0;
+      currentTask.trademarkRefineResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
@@ -217966,6 +218215,8 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
       currentTask.status = "ANALYZING_DESIGN";
       currentTask.analysisResult = void 0;
       currentTask.listingResult = void 0;
+      currentTask.trademarkCheckResult = void 0;
+      currentTask.trademarkRefineResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
@@ -217983,6 +218234,8 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
       }
       currentTask.status = "GENERATING_LISTING";
       currentTask.listingResult = void 0;
+      currentTask.trademarkCheckResult = void 0;
+      currentTask.trademarkRefineResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
@@ -217990,6 +218243,21 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
         console.error(`[TaskLogService] Retry Listing failed for task ${taskId}:`, err);
       });
       return { success: true, message: "MBA Listing-Generierung neu gestartet." };
+    }
+    if (stepType === "TM_REFINE_REQUEST") {
+      const keepIdx = currentTask.events.findIndex((e) => e.type === "TM_REFINE_REQUEST");
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = "CHECKING_TRADEMARKS";
+      currentTask.trademarkRefineResult = void 0;
+      currentTask.hasError = false;
+      currentTask.errorDetails = void 0;
+      this.saveLogs(logs);
+      this.auditListingTrademarks(taskId).catch((err) => {
+        console.error(`[TaskLogService] Retry TM Refine failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Trademark Audit & Refinement neu gestartet." };
     }
     throw new Error(`Unbekannter Step-Typ: ${stepType}`);
   }
@@ -218739,18 +219007,20 @@ app.get("/api/v1/systemprompts", (req, res) => {
     success: true,
     promptGenerator: prompts.promptGenerator,
     designAnalyzer: prompts.designAnalyzer,
-    listingGenerator: prompts.listingGenerator
+    listingGenerator: prompts.listingGenerator,
+    trademarkAuditor: prompts.trademarkAuditor
   });
 });
 app.post("/api/v1/systemprompts", (req, res) => {
-  const { promptGenerator, designAnalyzer, listingGenerator } = req.body;
-  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer, listingGenerator });
+  const { promptGenerator, designAnalyzer, listingGenerator, trademarkAuditor } = req.body;
+  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer, listingGenerator, trademarkAuditor });
   const updated = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
     promptGenerator: updated.promptGenerator,
     designAnalyzer: updated.designAnalyzer,
-    listingGenerator: updated.listingGenerator
+    listingGenerator: updated.listingGenerator,
+    trademarkAuditor: updated.trademarkAuditor
   });
 });
 app.post("/api/v1/systemprompts/reset", (req, res) => {
@@ -218760,7 +219030,8 @@ app.post("/api/v1/systemprompts/reset", (req, res) => {
     success: true,
     promptGenerator: resetPrompts.promptGenerator,
     designAnalyzer: resetPrompts.designAnalyzer,
-    listingGenerator: resetPrompts.listingGenerator
+    listingGenerator: resetPrompts.listingGenerator,
+    trademarkAuditor: resetPrompts.trademarkAuditor
   });
 });
 app.get("/api/v1/designs/image/:taskId", (req, res) => {

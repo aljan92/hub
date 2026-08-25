@@ -3,10 +3,11 @@ import path from 'path';
 import { loadSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
 import { IdeogramService } from './ideogramService';
+import { TrademarkService } from './trademarkService';
 
 export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER';
 export type TaskSuffix = 'H' | 'T' | 'D';
-export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'COMPLETED' | 'REJECTED' | 'ERROR';
+export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'CHECKING_TRADEMARKS' | 'COMPLETED' | 'REJECTED' | 'ERROR';
 
 export type EventType = 
   | 'INCOMING_PAYLOAD'
@@ -19,12 +20,15 @@ export type EventType =
   | 'ANALYSIS_RESPONSE'
   | 'LISTING_REQUEST'
   | 'LISTING_RESPONSE'
+  | 'TM_CHECK_RESPONSE'
+  | 'TM_REFINE_REQUEST'
+  | 'TM_REFINE_RESPONSE'
   | 'ERROR';
 
 export interface SessionEvent {
   timestamp: string; // ISO String (z.B. "2026-08-25T13:05:12.123Z")
   type: EventType;
-  title: string;     // z.B. "Eingang von Hermes", "Senden an OpenRouter", "Senden an Ideogram", "Design-Analyse", "Listing-Erstellung"
+  title: string;     // z.B. "Eingang von Hermes", "Senden an OpenRouter", "Senden an Ideogram", "Design-Analyse", "Listing-Erstellung", "USPTO Trademark-Prüfung"
   content: any;
   metadata?: {
     model?: string;
@@ -54,6 +58,8 @@ export interface DesignTaskLog {
   localImagePath?: string;
   analysisResult?: any;
   listingResult?: any;
+  trademarkCheckResult?: any;
+  trademarkRefineResult?: any;
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -766,12 +772,15 @@ export class TaskLogService {
       });
 
       this.updateTaskStatus(taskId, {
-        status: 'COMPLETED',
+        status: 'CHECKING_TRADEMARKS',
         listingResult: parsedListing,
         hasError: false
       });
 
-      console.log(`[TaskLogService] 📝 MBA Listing für Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+      console.log(`[TaskLogService] 📝 MBA Listing für Task ${taskId} erfolgreich generiert in ${latencyMs}ms. Starte Trademark Audit...`);
+
+      // Trigger automatic Trademark Check & Refinement loop!
+      await this.auditListingTrademarks(taskId);
     } catch (err: any) {
       const latencyMs = Date.now() - start;
       const errorMsg = err.message || 'Fehler bei der Listing-Generierung';
@@ -787,9 +796,213 @@ export class TaskLogService {
   }
 
   /**
+   * Automatically check USPTO Trademarks for the generated English listing and run LLM refinement loop
+   */
+  static async auditListingTrademarks(taskId: string) {
+    const task = this.getTaskLogById(taskId);
+    if (!task || !task.listingResult) return;
+
+    const enListing = task.listingResult.en || task.listingResult;
+    const brand = typeof enListing === 'object' ? enListing.brand || '' : '';
+    const title = typeof enListing === 'object' ? enListing.title || '' : '';
+    const bullet1 = typeof enListing === 'object' ? enListing.bullet1 || '' : '';
+    const bullet2 = typeof enListing === 'object' ? enListing.bullet2 || '' : '';
+    const description = typeof enListing === 'object' ? enListing.description || '' : '';
+    const quote = task.payload?.quote || '';
+
+    const start = Date.now();
+    console.log(`[TaskLogService] 🛡️ Starte USPTO Trademark Batch Check für Task ${taskId}...`);
+
+    try {
+      const batchResult = await TrademarkService.checkBatchFields({
+        offices: ['USPTO'],
+        fields: {
+          quote,
+          brand,
+          title,
+          bullet1,
+          bullet2,
+          description
+        }
+      });
+
+      const latencyMs = Date.now() - start;
+
+      // 1. Log Event: Empfangen von Productor / USPTO
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TM_CHECK_RESPONSE',
+        title: `Empfangen von Productor / USPTO (${batchResult.totalHits} Treffer)`,
+        content: {
+          totalHits: batchResult.totalHits,
+          hasInfringementClass25: batchResult.hasInfringementClass25,
+          blockedProducts: batchResult.blockedProducts,
+          fieldSummaries: batchResult.fieldSummaries,
+          allHits: batchResult.allHits
+        },
+        metadata: {
+          provider: 'Productor USPTO',
+          latencyMs
+        }
+      });
+
+      // 2. Case: 0 Hits -> Clean!
+      if (batchResult.totalHits === 0) {
+        this.updateTaskStatus(taskId, {
+          status: 'COMPLETED',
+          trademarkCheckResult: batchResult,
+          hasError: false
+        });
+        console.log(`[TaskLogService] 🛡️ Keine Schutzrechte-Treffer für Task ${taskId}. 100% sauber ✓`);
+        return;
+      }
+
+      // 3. Case: Hits found -> Send to OpenRouter Trademark Auditor Session for context-aware refinement
+      const settings = loadSettings();
+      const apiKey = settings.openRouterApiKey;
+      if (!apiKey) {
+        this.updateTaskStatus(taskId, {
+          status: 'COMPLETED',
+          trademarkCheckResult: batchResult,
+          hasError: false
+        });
+        return;
+      }
+
+      const model = settings.llmModel || 'anthropic/claude-3-5-sonnet';
+      const auditorPrompt = SystemPromptService.getTrademarkAuditorPrompt();
+
+      // Build summary of hits per field
+      const hitsSummary: string[] = [];
+      for (const [field, data] of Object.entries(batchResult.fieldSummaries || {})) {
+        if (data.hitsCount > 0) {
+          const hitTerms = Object.keys(data.hits || {}).join(', ');
+          hitsSummary.push(`- Field "${field}": Hit terms: [${hitTerms}]`);
+        }
+      }
+
+      const userMessage = `Here is the generated English listing and the detected USPTO Trademark hits:\n\n### Current Listing:\n- Quote / Slogan: "${quote}"\n- Brand: "${brand}"\n- Title: "${title}"\n- Bullet 1: "${bullet1}"\n- Bullet 2: "${bullet2}"\n- Description: "${description}"\n\n### Detected USPTO Trademark Hits:\n${hitsSummary.join('\n')}\n\nPlease audit each hit: Distinguish between descriptive fair use (allowed) vs brand/title infringement (must rephrase) vs severe direct quote infringement (must reject). Return the refined JSON strictly adhering to the schema!`;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TM_REFINE_REQUEST',
+        title: `Senden an OpenRouter (Trademark Auditor & Refiner)`,
+        content: {
+          systemPrompt: auditorPrompt,
+          userMessage
+        },
+        metadata: { model, provider: 'OpenRouter' }
+      });
+
+      const refineStart = Date.now();
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://mbahub.local',
+          'X-Title': 'MBA HUB TM Auditor'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: auditorPrompt },
+            { role: 'user', content: userMessage }
+          ],
+          temperature: 0.2,
+          max_tokens: 2000
+        }),
+        signal: AbortSignal.timeout(60000)
+      });
+
+      const refineLatencyMs = Date.now() - refineStart;
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`OpenRouter TM Auditor Fehler: ${response.status} - ${errText}`);
+      }
+
+      const data = await response.json();
+      const rawContent = data.choices?.[0]?.message?.content || '';
+
+      let parsedRefined: any = null;
+      try {
+        let cleanJsonStr = rawContent.trim();
+        if (cleanJsonStr.startsWith('```')) {
+          cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        }
+        parsedRefined = JSON.parse(cleanJsonStr);
+      } catch (pe) {
+        parsedRefined = rawContent;
+      }
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TM_REFINE_RESPONSE',
+        title: `Empfangen von OpenRouter (Trademark-Bewertung & Korrektur)`,
+        content: parsedRefined,
+        metadata: {
+          model: data.model || model,
+          latencyMs: refineLatencyMs,
+          tokens: data.usage ? {
+            prompt: data.usage.prompt_tokens,
+            completion: data.usage.completion_tokens,
+            total: data.usage.total_tokens
+          } : undefined
+        }
+      });
+
+      if (parsedRefined?.verdict === 'REJECTED') {
+        this.updateTaskStatus(taskId, {
+          status: 'REJECTED',
+          trademarkCheckResult: batchResult,
+          trademarkRefineResult: parsedRefined,
+          hasError: false,
+          errorDetails: parsedRefined.rejection_reason || 'Markenrechtsverletzung in Klasse 25 festgestellt.'
+        });
+        console.log(`[TaskLogService] ❌ Task ${taskId} von Trademark Auditor abgelehnt: ${parsedRefined.rejection_reason}`);
+      } else {
+        // Update the en listing if refined fields were provided
+        if (parsedRefined?.refined_listing && task.listingResult) {
+          if (task.listingResult.en) {
+            task.listingResult.en = {
+              ...task.listingResult.en,
+              ...parsedRefined.refined_listing
+            };
+          } else if (typeof task.listingResult === 'object') {
+            task.listingResult = {
+              ...task.listingResult,
+              ...parsedRefined.refined_listing
+            };
+          }
+        }
+
+        this.updateTaskStatus(taskId, {
+          status: 'COMPLETED',
+          listingResult: task.listingResult,
+          trademarkCheckResult: batchResult,
+          trademarkRefineResult: parsedRefined,
+          hasError: false
+        });
+        console.log(`[TaskLogService] 🛡️ Trademark Audit für Task ${taskId} erfolgreich abgeschlossen in ${refineLatencyMs}ms ✓`);
+      }
+    } catch (err: any) {
+      const latencyMs = Date.now() - start;
+      console.error(`[TaskLogService] Fehler beim TM Audit für Task ${taskId}:`, err);
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: 'Fehler beim Trademark Audit',
+        content: err.message || 'Fehler bei der USPTO TM Prüfung',
+        metadata: { latencyMs }
+      });
+      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
+    }
+  }
+
+  /**
    * Jump back to an earlier pipeline step and re-execute from there
    */
-  static async retryFromStep(taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST' | 'LISTING_REQUEST') {
+  static async retryFromStep(taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST' | 'LISTING_REQUEST' | 'TM_REFINE_REQUEST') {
     const logs = this.loadLogs();
     const taskIdx = logs.findIndex(t => t.id.toLowerCase() === taskId.toLowerCase());
     if (taskIdx === -1) throw new Error(`Task ${taskId} nicht gefunden.`);
@@ -807,12 +1020,14 @@ export class TaskLogService {
       currentTask.localImagePath = undefined;
       currentTask.analysisResult = undefined;
       currentTask.listingResult = undefined;
+      currentTask.trademarkCheckResult = undefined;
+      currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
 
       this.saveLogs(logs);
 
-      // Re-execute OpenRouter prompt generation -> Ideogram -> Vision -> Listing
+      // Re-execute OpenRouter prompt generation -> Ideogram -> Vision -> Listing -> TM
       this.processTaskWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Retry failed for task ${taskId}:`, err);
       });
@@ -830,6 +1045,8 @@ export class TaskLogService {
       currentTask.localImagePath = undefined;
       currentTask.analysisResult = undefined;
       currentTask.listingResult = undefined;
+      currentTask.trademarkCheckResult = undefined;
+      currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
 
@@ -851,6 +1068,8 @@ export class TaskLogService {
       currentTask.status = 'ANALYZING_DESIGN';
       currentTask.analysisResult = undefined;
       currentTask.listingResult = undefined;
+      currentTask.trademarkCheckResult = undefined;
+      currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
 
@@ -873,6 +1092,8 @@ export class TaskLogService {
       }
       currentTask.status = 'GENERATING_LISTING';
       currentTask.listingResult = undefined;
+      currentTask.trademarkCheckResult = undefined;
+      currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
 
@@ -883,6 +1104,25 @@ export class TaskLogService {
       });
 
       return { success: true, message: 'MBA Listing-Generierung neu gestartet.' };
+    }
+
+    if (stepType === 'TM_REFINE_REQUEST') {
+      const keepIdx = currentTask.events.findIndex(e => e.type === 'TM_REFINE_REQUEST');
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = 'CHECKING_TRADEMARKS';
+      currentTask.trademarkRefineResult = undefined;
+      currentTask.hasError = false;
+      currentTask.errorDetails = undefined;
+
+      this.saveLogs(logs);
+
+      this.auditListingTrademarks(taskId).catch(err => {
+        console.error(`[TaskLogService] Retry TM Refine failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Trademark Audit & Refinement neu gestartet.' };
     }
 
     throw new Error(`Unbekannter Step-Typ: ${stepType}`);

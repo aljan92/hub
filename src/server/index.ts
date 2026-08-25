@@ -931,19 +931,21 @@ app.get('/api/v1/systemprompts', (req, res) => {
     success: true,
     promptGenerator: prompts.promptGenerator,
     designAnalyzer: prompts.designAnalyzer,
-    listingGenerator: prompts.listingGenerator
+    listingGenerator: prompts.listingGenerator,
+    trademarkAuditor: prompts.trademarkAuditor
   });
 });
 
 app.post('/api/v1/systemprompts', (req, res) => {
-  const { promptGenerator, designAnalyzer, listingGenerator } = req.body;
-  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer, listingGenerator });
+  const { promptGenerator, designAnalyzer, listingGenerator, trademarkAuditor } = req.body;
+  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer, listingGenerator, trademarkAuditor });
   const updated = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
     promptGenerator: updated.promptGenerator,
     designAnalyzer: updated.designAnalyzer,
-    listingGenerator: updated.listingGenerator
+    listingGenerator: updated.listingGenerator,
+    trademarkAuditor: updated.trademarkAuditor
   });
 });
 
@@ -954,7 +956,8 @@ app.post('/api/v1/systemprompts/reset', (req, res) => {
     success: true,
     promptGenerator: resetPrompts.promptGenerator,
     designAnalyzer: resetPrompts.designAnalyzer,
-    listingGenerator: resetPrompts.listingGenerator
+    listingGenerator: resetPrompts.listingGenerator,
+    trademarkAuditor: resetPrompts.trademarkAuditor
   });
 });
 

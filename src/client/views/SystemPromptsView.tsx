@@ -10,15 +10,17 @@ import {
   Layers,
   HelpCircle,
   FileText,
-  Tag
+  Tag,
+  ShieldCheck
 } from 'lucide-react';
 
 export const SystemPromptsView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'promptGenerator' | 'designAnalyzer' | 'listingGenerator'>('promptGenerator');
+  const [activeTab, setActiveTab] = useState<'promptGenerator' | 'designAnalyzer' | 'listingGenerator' | 'trademarkAuditor'>('promptGenerator');
   
   const [promptGeneratorText, setPromptGeneratorText] = useState<string>('');
   const [designAnalyzerText, setDesignAnalyzerText] = useState<string>('');
   const [listingGeneratorText, setListingGeneratorText] = useState<string>('');
+  const [trademarkAuditorText, setTrademarkAuditorText] = useState<string>('');
   
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -28,12 +30,14 @@ export const SystemPromptsView: React.FC = () => {
   const stateRef = useRef({ 
     promptGenerator: promptGeneratorText, 
     designAnalyzer: designAnalyzerText,
-    listingGenerator: listingGeneratorText 
+    listingGenerator: listingGeneratorText,
+    trademarkAuditor: trademarkAuditorText
   });
   stateRef.current = { 
     promptGenerator: promptGeneratorText, 
     designAnalyzer: designAnalyzerText,
-    listingGenerator: listingGeneratorText 
+    listingGenerator: listingGeneratorText,
+    trademarkAuditor: trademarkAuditorText
   };
 
   // 1. Load active system prompts from server
@@ -45,6 +49,7 @@ export const SystemPromptsView: React.FC = () => {
           if (typeof data.promptGenerator === 'string') setPromptGeneratorText(data.promptGenerator);
           if (typeof data.designAnalyzer === 'string') setDesignAnalyzerText(data.designAnalyzer);
           if (typeof data.listingGenerator === 'string') setListingGeneratorText(data.listingGenerator);
+          if (typeof data.trademarkAuditor === 'string') setTrademarkAuditorText(data.trademarkAuditor);
         }
       })
       .catch(err => console.error('Failed to load system prompts:', err))
@@ -53,7 +58,7 @@ export const SystemPromptsView: React.FC = () => {
     // Auto-save on component unmount (when leaving menu)
     return () => {
       const payload = stateRef.current;
-      if (payload.promptGenerator.trim() || payload.designAnalyzer.trim() || payload.listingGenerator.trim()) {
+      if (payload.promptGenerator.trim() || payload.designAnalyzer.trim() || payload.listingGenerator.trim() || payload.trademarkAuditor.trim()) {
         fetch('/api/v1/systemprompts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -65,11 +70,12 @@ export const SystemPromptsView: React.FC = () => {
   }, []);
 
   // 2. Save function
-  const handleSave = async (overrides?: { promptGenerator?: string; designAnalyzer?: string; listingGenerator?: string }) => {
+  const handleSave = async (overrides?: { promptGenerator?: string; designAnalyzer?: string; listingGenerator?: string; trademarkAuditor?: string }) => {
     const payload = {
       promptGenerator: overrides?.promptGenerator !== undefined ? overrides.promptGenerator : promptGeneratorText,
       designAnalyzer: overrides?.designAnalyzer !== undefined ? overrides.designAnalyzer : designAnalyzerText,
       listingGenerator: overrides?.listingGenerator !== undefined ? overrides.listingGenerator : listingGeneratorText,
+      trademarkAuditor: overrides?.trademarkAuditor !== undefined ? overrides.trademarkAuditor : trademarkAuditorText,
     };
 
     setSaving(true);
@@ -99,7 +105,9 @@ export const SystemPromptsView: React.FC = () => {
       ? 'den Prompt Generator Prompt' 
       : activeTab === 'designAnalyzer'
       ? 'den Design-Analyse Prompt'
-      : 'den Listing Generator Prompt';
+      : activeTab === 'listingGenerator'
+      ? 'den Listing Generator Prompt'
+      : 'den Trademark Auditor & Refiner Prompt';
     if (!confirm(`Möchtest du ${label} wirklich auf die Standardvorlage zurücksetzen?`)) return;
     
     setSaving(true);
@@ -117,6 +125,8 @@ export const SystemPromptsView: React.FC = () => {
           setDesignAnalyzerText(data.designAnalyzer);
         } else if (activeTab === 'listingGenerator' && data.listingGenerator) {
           setListingGeneratorText(data.listingGenerator);
+        } else if (activeTab === 'trademarkAuditor' && data.trademarkAuditor) {
+          setTrademarkAuditorText(data.trademarkAuditor);
         }
         setSavedStatus('SAVED');
         setLastSavedTime(new Date().toLocaleTimeString());
@@ -132,15 +142,19 @@ export const SystemPromptsView: React.FC = () => {
     ? promptGeneratorText 
     : activeTab === 'designAnalyzer'
     ? designAnalyzerText
-    : listingGeneratorText;
+    : activeTab === 'listingGenerator'
+    ? listingGeneratorText
+    : trademarkAuditorText;
 
   const setCurrentText = (val: string) => {
     if (activeTab === 'promptGenerator') {
       setPromptGeneratorText(val);
     } else if (activeTab === 'designAnalyzer') {
       setDesignAnalyzerText(val);
-    } else {
+    } else if (activeTab === 'listingGenerator') {
       setListingGeneratorText(val);
+    } else {
+      setTrademarkAuditorText(val);
     }
     setSavedStatus('IDLE');
   };
@@ -155,7 +169,7 @@ export const SystemPromptsView: React.FC = () => {
             Systemprompts &amp; Art Director
           </h2>
           <p className="text-sm text-slate-400">
-            Verwalte die System-Prompts für Prompt-Erstellung, Design-Analyse und automatische MBA-Listing-Generierung.
+            Verwalte die System-Prompts für Prompt-Erstellung, Design-Analyse, Listing-Generierung und Trademark-Prüfung.
           </p>
         </div>
 
@@ -231,6 +245,18 @@ export const SystemPromptsView: React.FC = () => {
           <FileText className="w-4 h-4 text-emerald-400" />
           <span>3. Listing Generator (MBA SEO)</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('trademarkAuditor')}
+          className={`flex items-center space-x-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all whitespace-nowrap ${
+            activeTab === 'trademarkAuditor'
+              ? 'border-amber-400 text-amber-300 bg-slate-900/60 rounded-t-xl'
+              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/20 rounded-t-xl'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-amber-400" />
+          <span>4. Trademark Auditor &amp; Refiner (USPTO)</span>
+        </button>
       </div>
 
       {/* Big Prompt Editor Textarea */}
@@ -255,6 +281,12 @@ export const SystemPromptsView: React.FC = () => {
                 <h3 className="text-sm font-bold text-slate-200">Listing Generator (MBA SEO Copywriting System-Prompt)</h3>
               </>
             )}
+            {activeTab === 'trademarkAuditor' && (
+              <>
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-bold text-slate-200">Trademark Auditor &amp; Refiner (USPTO / Schutzrechte-Korrektur)</h3>
+              </>
+            )}
           </div>
           <span className="text-xs text-slate-500 font-mono">
             {currentText.length} Zeichen • {currentText.split(/\s+/).filter(Boolean).length} Wörter
@@ -273,7 +305,9 @@ export const SystemPromptsView: React.FC = () => {
                 ? 'Schreibe oder füge hier deinen System-Prompt für die Ideogram-Prompt-Erstellung ein...'
                 : activeTab === 'designAnalyzer'
                 ? 'Schreibe oder füge hier deinen System-Prompt für die Vision-Designanalyse und Fragen ein...'
-                : 'Schreibe oder füge hier deinen System-Prompt für das Merch by Amazon SEO Listing ein...'
+                : activeTab === 'listingGenerator'
+                ? 'Schreibe oder füge hier deinen System-Prompt für das Merch by Amazon SEO Listing ein...'
+                : 'Schreibe oder füge hier deinen System-Prompt für die Trademark-Prüfung und Korrekturschleife ein...'
             }
             className="w-full bg-slate-950 text-slate-100 font-mono text-xs sm:text-sm leading-relaxed p-4 rounded-xl border border-slate-800 focus:outline-none focus:border-accent-cyan/80 focus:ring-1 focus:ring-accent-cyan/50 transition-all custom-scrollbar resize-y"
           />
@@ -285,7 +319,9 @@ export const SystemPromptsView: React.FC = () => {
               ? 'Wird an OpenRouter übergeben, um das Hermes/Playground JSON in einen Ideogram-Prompt umzuwandeln.'
               : activeTab === 'designAnalyzer'
               ? 'Wird zusammen mit dem generierten Ideogram-Bild an OpenRouter übergeben, um Quote, Zielgruppe, Farben & Hintergrund zu analysieren.'
-              : 'Wird nach erfolgreicher Design-Analyse (APPROVED) automatisch in derselben Session ausgeführt, um das mehrsprachige MBA-Listing zu erstellen.'}
+              : activeTab === 'listingGenerator'
+              ? 'Wird nach erfolgreicher Design-Analyse (APPROVED) automatisch in derselben Session ausgeführt, um das mehrsprachige MBA-Listing zu erstellen.'
+              : 'Wird ausgeführt, wenn beim automatischen USPTO Trademark-Check Treffer gefunden werden, um kontextbasiert Fair Use zu erkennen oder Wörter umzuschreiben.'}
           </span>
           <span className="text-slate-400 font-semibold">Tastenkürzel: Klick außerhalb / Tab-Wechsel = Auto-Save</span>
         </div>
