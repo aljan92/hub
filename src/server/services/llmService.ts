@@ -22,7 +22,14 @@ export interface OpenRouterModelItem {
   description?: string;
 }
 
-let cachedModels: OpenRouterModelItem[] = [];
+let cachedModels: OpenRouterModelItem[] = [
+  { id: 'anthropic/claude-3.5-sonnet', name: 'Anthropic: Claude 3.5 Sonnet' },
+  { id: 'anthropic/claude-3.5-sonnet:beta', name: 'Anthropic: Claude 3.5 Sonnet (Beta)' },
+  { id: 'openai/gpt-4o', name: 'OpenAI: GPT-4o' },
+  { id: 'openai/gpt-4o-mini', name: 'OpenAI: GPT-4o Mini' },
+  { id: 'google/gemini-2.0-flash-001', name: 'Google: Gemini 2.0 Flash' },
+  { id: 'meta-llama/llama-3.2-11b-vision-instruct', name: 'Meta: Llama 3.2 11B Vision' },
+];
 let lastModelsFetch = 0;
 
 export class LLMService {
@@ -60,25 +67,24 @@ export class LLMService {
   }
 
   /**
-   * Fetch all models from OpenRouter dynamically
+   * Fetch all models from OpenRouter dynamically (Instant response from cache)
    */
   static async getAvailableModels(): Promise<OpenRouterModelItem[]> {
     const now = Date.now();
-    if (cachedModels.length > 0 && now - lastModelsFetch < 1000 * 60 * 30) {
+    if (now - lastModelsFetch < 1000 * 60 * 30) {
       return cachedModels;
     }
 
-    try {
-      const res = await fetch('https://openrouter.ai/api/v1/models', {
-        headers: {
-          'HTTP-Referer': 'https://mba-hub.local',
-          'X-Title': 'MBA HUB'
-        },
-        signal: AbortSignal.timeout(10000)
-      });
-
-      if (res.ok) {
-        const data = await res.json();
+    // Trigger background fetch
+    fetch('https://openrouter.ai/api/v1/models', {
+      headers: {
+        'HTTP-Referer': 'https://mba-hub.local',
+        'X-Title': 'MBA HUB'
+      },
+      signal: AbortSignal.timeout(4000)
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
         if (Array.isArray(data?.data)) {
           const list: OpenRouterModelItem[] = data.data.map((m: any) => ({
             id: m.id,
@@ -89,7 +95,6 @@ export class LLMService {
             description: m.description,
           }));
 
-          // Sort prioritizing top vision & reasoning models
           const topKeywords = ['claude-3.5-sonnet', 'claude-3-5-sonnet', 'gpt-4o', 'gemini-2.0-flash', 'gemini-2.5', 'llama-3.2'];
           list.sort((a, b) => {
             const aIsTop = topKeywords.some(k => a.id.toLowerCase().includes(k));
@@ -101,22 +106,11 @@ export class LLMService {
 
           cachedModels = list;
           lastModelsFetch = now;
-          return list;
         }
-      }
-    } catch (err) {
-      console.warn('[LLMService] Failed to fetch dynamic models list:', err);
-    }
+      })
+      .catch(() => {});
 
-    // Curated Fallback if offline
-    return [
-      { id: 'anthropic/claude-3.5-sonnet', name: 'Anthropic: Claude 3.5 Sonnet' },
-      { id: 'anthropic/claude-3.5-sonnet:beta', name: 'Anthropic: Claude 3.5 Sonnet (Beta)' },
-      { id: 'openai/gpt-4o', name: 'OpenAI: GPT-4o' },
-      { id: 'openai/gpt-4o-mini', name: 'OpenAI: GPT-4o Mini' },
-      { id: 'google/gemini-2.0-flash-001', name: 'Google: Gemini 2.0 Flash' },
-      { id: 'meta-llama/llama-3.2-11b-vision-instruct', name: 'Meta: Llama 3.2 11B Vision' },
-    ];
+    return cachedModels;
   }
 
   /**

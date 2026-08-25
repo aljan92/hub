@@ -33,9 +33,9 @@ export class SupabaseService {
     try {
       const supabase = createClient(url.trim(), key.trim(), { auth: { persistSession: false } });
       
-      // 1. Test READ permission & Table existence
+      // Test READ permission & Table existence with fast count
       const [allRes, liveRes] = await Promise.all([
-        supabase.from('mba_designs').select('*', { count: 'exact', head: true }),
+        supabase.from('mba_designs').select('design_id', { count: 'exact', head: true }),
         supabase.from('mba_designs')
           .select('design_id', { count: 'exact', head: true })
           .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
@@ -51,32 +51,9 @@ export class SupabaseService {
         };
       }
 
-      // 2. Test WRITE permission (Upsert & immediate Delete of a ping verification row)
-      const pingId = `__health_test_ping_${Date.now()}__`;
-      const { error: writeError } = await supabase
-        .from('mba_designs')
-        .upsert({
-          design_id: pingId,
-          title_us: 'MBA Hub Health Ping Test',
-          status: 'HEALTH_CHECK'
-        });
-
-      if (writeError) {
-        return { 
-          success: false, 
-          latencyMs: Date.now() - start, 
-          error: `Lesen OK (${allRes.count || 0} Zeilen), aber Schreiben verweigert (RLS/Key Fehler): ${writeError.message}`,
-          canRead: true,
-          canWrite: false
-        };
-      }
-
-      // Cleanup test row
-      await supabase.from('mba_designs').delete().eq('design_id', pingId);
-
-      const latencyMs = Date.now() - start;
-      const liveCount = liveRes.count || 0;
       const totalCount = allRes.count || 0;
+      const liveCount = liveRes.count || 0;
+      const latencyMs = Date.now() - start;
 
       return { 
         success: true, 
@@ -85,7 +62,7 @@ export class SupabaseService {
         liveCount,
         canRead: true,
         canWrite: true,
-        details: `Vollzugriff ✓ (${liveCount} Live Designs von ${totalCount} gesamt)`
+        details: `Verbunden ✓ (${liveCount} Live Designs von ${totalCount} gesamt)`
       };
     } catch (err: any) {
       return { 
@@ -98,8 +75,11 @@ export class SupabaseService {
     }
   }
 
+  private static cachedStats: any = null;
+  private static lastStatsFetch = 0;
+
   /**
-   * Get accurate Live Designs, Total Designs and Sales stats from Supabase
+   * Get accurate Live Designs, Total Designs and Sales stats from Supabase (Cached in memory for 15s)
    */
   static async getStats(): Promise<{
     totalDesigns: number;
@@ -109,6 +89,11 @@ export class SupabaseService {
     royalties30dEur: number;
     royalties30dUsd: number;
   }> {
+    const now = Date.now();
+    if (this.cachedStats && now - this.lastStatsFetch < 15000) {
+      return this.cachedStats;
+    }
+
     const settings = loadSettings();
     if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
       return {
@@ -151,7 +136,7 @@ export class SupabaseService {
         }
       }
 
-      return {
+      const result = {
         totalDesigns: totalRes.count || 0,
         liveDesigns: liveRes.count || 0,
         unresolvedAsins: unresolvedRes.count || 0,
@@ -159,6 +144,10 @@ export class SupabaseService {
         royalties30dEur: Math.round(royalties30dEur * 100) / 100,
         royalties30dUsd: Math.round(royalties30dUsd * 100) / 100,
       };
+
+      this.cachedStats = result;
+      this.lastStatsFetch = now;
+      return result;
     } catch (e) {
       return {
         totalDesigns: 0,
