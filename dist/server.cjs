@@ -217813,7 +217813,7 @@ Beantworte die 4 Kernfragen streng als JSON!`;
       this.updateTaskStatus(taskId, { status: "COMPLETED" });
       return;
     }
-    const model = settings.openRouterModel || "anthropic/claude-3.5-sonnet";
+    const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
     const listingPrompt = SystemPromptService.getListingGeneratorPrompt();
     const quote5 = task.payload?.quote || "";
     const niche1 = task.payload?.niche1 || "";

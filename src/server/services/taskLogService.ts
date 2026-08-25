@@ -682,7 +682,7 @@ export class TaskLogService {
       return;
     }
 
-    const model = settings.openRouterModel || 'anthropic/claude-3.5-sonnet';
+    const model = settings.llmModel || 'anthropic/claude-3-5-sonnet';
     const listingPrompt = SystemPromptService.getListingGeneratorPrompt();
     const quote = task.payload?.quote || '';
     const niche1 = task.payload?.niche1 || '';
