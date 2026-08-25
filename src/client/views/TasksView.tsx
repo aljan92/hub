@@ -811,16 +811,6 @@ export const TasksView: React.FC = () => {
                 {/* ========================================================================= */}
                 {activeTask.status === 'AWAITING_TM_REVIEW' && (
                   <div className="space-y-5">
-                    <div className="bg-purple-950/20 p-4 rounded-xl border border-purple-500/40 space-y-2">
-                      <div className="flex items-center space-x-2 text-purple-300 font-bold text-xs">
-                        <ShieldAlert className="w-4 h-4 text-purple-400" />
-                        <span>Trademark-Audit: Nach 4 USPTO-Prüfungen verbleiben Treffer in Klasse 25</span>
-                      </div>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        Das automatische Refinement konnte die Treffer nicht vollständig ohne Sinnverlust auflösen. Du kannst das Listing unten manuell korrigieren und sofort per Klick auf <strong>&quot;Listing erneut prüfen&quot;</strong> live gegen die USPTO-Datenbank testen.
-                      </p>
-                    </div>
-
                     {/* Listing Fields Editor */}
                     <div className="space-y-3">
                       {/* Brand */}
