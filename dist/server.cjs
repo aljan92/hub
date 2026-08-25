@@ -218004,6 +218004,25 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
     const bullet2 = typeof enListing === "object" ? enListing.bullet2 || "" : "";
     const description = typeof enListing === "object" ? enListing.description || "" : "";
     const quote5 = task.payload?.quote || "";
+    this.addEvent(taskId, {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "TM_CHECK_REQUEST",
+      title: `Senden an Productor / USPTO (Trademark-Pr\xFCfung)`,
+      content: {
+        offices: ["USPTO"],
+        fields: {
+          quote: quote5,
+          brand,
+          title,
+          bullet1,
+          bullet2,
+          description
+        }
+      },
+      metadata: {
+        provider: "Productor USPTO"
+      }
+    });
     const start3 = Date.now();
     console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte USPTO Trademark Batch Check f\xFCr Task ${taskId}...`);
     try {
@@ -218358,6 +218377,22 @@ Please audit each hit according to the rules:
         console.error(`[TaskLogService] Retry Listing failed for task ${taskId}:`, err);
       });
       return { success: true, message: "MBA Listing-Generierung neu gestartet." };
+    }
+    if (stepType === "TM_CHECK_REQUEST") {
+      const keepIdx = currentTask.events.findIndex((e) => e.type === "TM_CHECK_REQUEST");
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = "CHECKING_TRADEMARKS";
+      currentTask.trademarkCheckResult = void 0;
+      currentTask.trademarkRefineResult = void 0;
+      currentTask.hasError = false;
+      currentTask.errorDetails = void 0;
+      this.saveLogs(logs);
+      this.auditListingTrademarks(taskId).catch((err) => {
+        console.error(`[TaskLogService] Retry TM Check failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "USPTO Trademark-Pr\xFCfung neu gestartet." };
     }
     if (stepType === "TM_REFINE_REQUEST") {
       const keepIdx = currentTask.events.findIndex((e) => e.type === "TM_REFINE_REQUEST");

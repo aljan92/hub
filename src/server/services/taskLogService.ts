@@ -20,6 +20,7 @@ export type EventType =
   | 'ANALYSIS_RESPONSE'
   | 'LISTING_REQUEST'
   | 'LISTING_RESPONSE'
+  | 'TM_CHECK_REQUEST'
   | 'TM_CHECK_RESPONSE'
   | 'TM_REFINE_REQUEST'
   | 'TM_REFINE_RESPONSE'
@@ -810,6 +811,27 @@ export class TaskLogService {
     const description = typeof enListing === 'object' ? enListing.description || '' : '';
     const quote = task.payload?.quote || '';
 
+    // 0. Log Event: Senden an Productor / USPTO
+    this.addEvent(taskId, {
+      timestamp: new Date().toISOString(),
+      type: 'TM_CHECK_REQUEST',
+      title: `Senden an Productor / USPTO (Trademark-Prüfung)`,
+      content: {
+        offices: ['USPTO'],
+        fields: {
+          quote,
+          brand,
+          title,
+          bullet1,
+          bullet2,
+          description
+        }
+      },
+      metadata: {
+        provider: 'Productor USPTO'
+      }
+    });
+
     const start = Date.now();
     console.log(`[TaskLogService] 🛡️ Starte USPTO Trademark Batch Check für Task ${taskId}...`);
 
@@ -1202,6 +1224,26 @@ export class TaskLogService {
       });
 
       return { success: true, message: 'MBA Listing-Generierung neu gestartet.' };
+    }
+
+    if (stepType === 'TM_CHECK_REQUEST') {
+      const keepIdx = currentTask.events.findIndex(e => e.type === 'TM_CHECK_REQUEST');
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = 'CHECKING_TRADEMARKS';
+      currentTask.trademarkCheckResult = undefined;
+      currentTask.trademarkRefineResult = undefined;
+      currentTask.hasError = false;
+      currentTask.errorDetails = undefined;
+
+      this.saveLogs(logs);
+
+      this.auditListingTrademarks(taskId).catch(err => {
+        console.error(`[TaskLogService] Retry TM Check failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'USPTO Trademark-Prüfung neu gestartet.' };
     }
 
     if (stepType === 'TM_REFINE_REQUEST') {

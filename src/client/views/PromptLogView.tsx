@@ -46,6 +46,7 @@ export type EventType =
   | 'ANALYSIS_RESPONSE'
   | 'LISTING_REQUEST'
   | 'LISTING_RESPONSE'
+  | 'TM_CHECK_REQUEST'
   | 'TM_CHECK_RESPONSE'
   | 'TM_REFINE_REQUEST'
   | 'TM_REFINE_RESPONSE'
@@ -128,7 +129,7 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
-  const handleRetryStep = async (taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST' | 'LISTING_REQUEST' | 'TM_REFINE_REQUEST') => {
+  const handleRetryStep = async (taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST' | 'LISTING_REQUEST' | 'TM_CHECK_REQUEST' | 'TM_REFINE_REQUEST') => {
     setRetryingStep(`${taskId}-${stepType}`);
     try {
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/retry`, {
@@ -619,6 +620,8 @@ export const PromptLogView: React.FC = () => {
                             ? 'bg-amber-500 border-amber-950'
                             : event.type === 'TM_CHECK_RESPONSE'
                             ? 'bg-amber-400 border-amber-950 ring-4 ring-amber-400/25'
+                            : event.type === 'TM_CHECK_REQUEST'
+                            ? 'bg-amber-600 border-amber-950'
                             : event.type === 'LISTING_RESPONSE'
                             ? 'bg-emerald-400 border-emerald-950 ring-4 ring-emerald-400/30'
                             : event.type === 'LISTING_REQUEST'
@@ -1313,6 +1316,54 @@ export const PromptLogView: React.FC = () => {
                             </div>
                           );
                         })()}
+
+                        {/* Event: Senden an Productor / USPTO (Trademark Check Request) */}
+                        {event.type === 'TM_CHECK_REQUEST' && (
+                          <div className="bg-slate-950 rounded-xl p-3.5 border border-amber-500/30 space-y-3">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-amber-300">
+                              <span className="flex items-center gap-1.5">
+                                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                                Anfrage an Productor / USPTO (Trademark-Prüfung):
+                              </span>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleRetryStep(selectedTask.id, 'TM_CHECK_REQUEST')}
+                                  disabled={retryingStep !== null}
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+                                  title="USPTO Trademark-Prüfung ab hier neu ausführen"
+                                >
+                                  <RotateCcw className={`w-3 h-3 ${retryingStep === `${selectedTask.id}-TM_CHECK_REQUEST` ? 'animate-spin' : ''}`} />
+                                  <span>Ab hier neu ausführen</span>
+                                </button>
+                                <span className="font-mono text-slate-400">Productor USPTO</span>
+                              </div>
+                            </div>
+
+                            {event.content?.fields && (
+                              <div className="space-y-1.5 text-xs">
+                                <span className="text-[11px] font-bold text-slate-400 block">Zu prüfende Textfelder:</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {Object.entries(event.content.fields).map(([fieldName, val]: [string, any]) => (
+                                    <div key={fieldName} className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-[11px]">
+                                      <span className="font-bold text-amber-300 uppercase block mb-0.5">{fieldName}:</span>
+                                      <span className="text-slate-300 font-mono select-all line-clamp-2">{String(val || '-')}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Collapsible raw JSON */}
+                            <details className="text-[11px] text-slate-400">
+                              <summary className="cursor-pointer font-semibold text-slate-400 hover:text-accent-cyan">
+                                Vollständiges Request-Payload anzeigen (Klick zum Aufklappen)
+                              </summary>
+                              <pre className="mt-1.5 p-2.5 bg-slate-900 rounded-lg text-amber-300 font-mono text-[11px] border border-slate-800/80 overflow-x-auto">
+                                {JSON.stringify(event.content, null, 2)}
+                              </pre>
+                            </details>
+                          </div>
+                        )}
 
                         {/* Event: Empfangen von Productor / USPTO (Trademark Check Result) */}
                         {event.type === 'TM_CHECK_RESPONSE' && (() => {
