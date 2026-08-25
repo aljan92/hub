@@ -3,9 +3,10 @@ import { loadSettings } from './settingsService';
 export interface IdeogramGenerateOptions {
   prompt: string;
   aspectRatio?: string;
-  model?: string;
-  magicPromptOption?: 'AUTO' | 'ON' | 'OFF';
+  renderingSpeed?: string;
   styleType?: string;
+  magicPromptOption?: string;
+  model?: string;
   transparentBackground?: boolean;
 }
 
@@ -77,8 +78,8 @@ export class IdeogramService {
    */
   static async getAvailableModels(): Promise<IdeogramModelItem[]> {
     const standardModels: IdeogramModelItem[] = [
-      { id: 'V_4', name: 'Ideogram 4.0 (Neueste Generation & Transparent)' },
       { id: 'V_3', name: 'Ideogram 3.0 (T-Shirt & Vektor Spezialist)' },
+      { id: 'V_4', name: 'Ideogram 4.0 (Neueste Generation & Transparent)' },
       { id: 'V_2_TURBO', name: 'Ideogram 2.0 Turbo (Schnell & Günstig)' },
       { id: 'V_2', name: 'Ideogram 2.0 (High Quality)' },
     ];
@@ -113,7 +114,7 @@ export class IdeogramService {
   }
 
   /**
-   * Generate Image via Ideogram API (supports V4, V3, V2)
+   * Generate Image via Ideogram API (supports V3, V4, V2)
    */
   static async generateImage(options: IdeogramGenerateOptions): Promise<{ imageUrl: string; prompt: string }> {
     const settings = loadSettings();
@@ -123,21 +124,54 @@ export class IdeogramService {
     }
 
     const aspectMap: Record<string, string> = {
-      '1:1': 'ASPECT_1_1',
-      '3:4': 'ASPECT_3_4',
-      '4:3': 'ASPECT_4_3',
-      '16:9': 'ASPECT_16_9',
+      '10x16': 'ASPECT_10_16',
+      '10:16': 'ASPECT_10_16',
+      '9x16': 'ASPECT_9_16',
       '9:16': 'ASPECT_9_16',
+      '4x5': 'ASPECT_4_5',
+      '4:5': 'ASPECT_4_5',
+      '3x4': 'ASPECT_3_4',
+      '3:4': 'ASPECT_3_4',
+      '1x1': 'ASPECT_1_1',
+      '1:1': 'ASPECT_1_1',
+      '4x3': 'ASPECT_4_3',
+      '4:3': 'ASPECT_4_3',
+      '16x9': 'ASPECT_16_9',
+      '16:9': 'ASPECT_16_9',
+      '16x10': 'ASPECT_16_10',
+      '16:10': 'ASPECT_16_10',
+      '2x3': 'ASPECT_2_3',
+      '2:3': 'ASPECT_2_3',
+      '3x2': 'ASPECT_3_2',
+      '3:2': 'ASPECT_3_2',
+      '1x2': 'ASPECT_1_2',
+      '1:2': 'ASPECT_1_2',
+      '2x1': 'ASPECT_2_1',
+      '2:1': 'ASPECT_2_1',
+      '1x3': 'ASPECT_1_3',
+      '1:3': 'ASPECT_1_3',
+      '3x1': 'ASPECT_3_1',
+      '3:1': 'ASPECT_3_1',
+      '5x4': 'ASPECT_5_4',
+      '5:4': 'ASPECT_5_4',
     };
 
-    const selectedModel = options.model || settings.ideogramModel || 'V_4';
+    const ratioKey = options.aspectRatio || settings.ideogramAspectRatio || '10x16';
+    const mappedRatio = aspectMap[ratioKey] || aspectMap[ratioKey.replace(':', 'x')] || 'ASPECT_10_16';
+
+    const renderingSpeed = options.renderingSpeed || settings.ideogramRenderingSpeed || 'DEFAULT';
+    const styleType = options.styleType || settings.ideogramStyle || 'GENERAL';
+    const magicPromptOption = options.magicPromptOption || settings.ideogramMagicPromptOption || 'AUTO';
+    const selectedModel = options.model || settings.ideogramModel || 'V_3';
 
     const payload = {
       image_request: {
         prompt: options.prompt,
-        aspect_ratio: aspectMap[options.aspectRatio || '1:1'] || 'ASPECT_1_1',
+        aspect_ratio: mappedRatio,
         model: selectedModel,
-        magic_prompt_option: options.magicPromptOption || 'AUTO',
+        rendering_speed: renderingSpeed,
+        style_type: styleType,
+        magic_prompt_option: magicPromptOption,
       }
     };
 
@@ -148,7 +182,7 @@ export class IdeogramService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60000)
+      signal: AbortSignal.timeout(180000)
     });
 
     if (!res.ok) {

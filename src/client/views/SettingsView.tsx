@@ -50,11 +50,16 @@ export const SettingsView: React.FC = () => {
   const [modelSearch, setModelSearch] = useState('');
 
   const [ideogramApiKey, setIdeogramApiKey] = useState<string>(initialSettings.ideogramApiKey || '');
-  const [ideogramModel, setIdeogramModel] = useState<string>(initialSettings.ideogramModel || 'V_2_TURBO');
+  const [ideogramModel, setIdeogramModel] = useState<string>(initialSettings.ideogramModel || 'V_3');
+  const [ideogramRenderingSpeed, setIdeogramRenderingSpeed] = useState<string>(initialSettings.ideogramRenderingSpeed || 'DEFAULT');
+  const [ideogramAspectRatio, setIdeogramAspectRatio] = useState<string>(initialSettings.ideogramAspectRatio || '10x16');
+  const [ideogramStyle, setIdeogramStyle] = useState<string>(initialSettings.ideogramStyle || 'GENERAL');
+  const [ideogramMagicPromptOption, setIdeogramMagicPromptOption] = useState<string>(initialSettings.ideogramMagicPromptOption || 'AUTO');
   const [availableIdeogramModels, setAvailableIdeogramModels] = useState<{ id: string; name: string }[]>([
-    { id: 'V_2_TURBO', name: 'Ideogram 2.0 Turbo (Schnell, hohe Qualität)' },
+    { id: 'V_3', name: 'Ideogram 3.0 (T-Shirt & Vektor Spezialist)' },
+    { id: 'V_4', name: 'Ideogram 4.0 (Neueste Generation & Transparent)' },
+    { id: 'V_2_TURBO', name: 'Ideogram 2.0 Turbo (Schnell & Günstig)' },
     { id: 'V_2', name: 'Ideogram 2.0 (High Quality)' },
-    { id: 'V_1', name: 'Ideogram 1.0 (Klassisch)' },
   ]);
 
   const [vectorizerApiKey, setVectorizerApiKey] = useState<string>(initialSettings.vectorizerApiKey || '');
@@ -84,7 +89,11 @@ export const SettingsView: React.FC = () => {
           setLlmProvider(s.llmProvider || 'openrouter');
           setLlmModel(s.llmModel || 'anthropic/claude-3.5-sonnet');
           setIdeogramApiKey(s.ideogramApiKey || '');
-          setIdeogramModel(s.ideogramModel || 'V_2_TURBO');
+          setIdeogramModel(s.ideogramModel || 'V_3');
+          setIdeogramRenderingSpeed(s.ideogramRenderingSpeed || 'DEFAULT');
+          setIdeogramAspectRatio(s.ideogramAspectRatio || '10x16');
+          setIdeogramStyle(s.ideogramStyle || 'GENERAL');
+          setIdeogramMagicPromptOption(s.ideogramMagicPromptOption || 'AUTO');
           setVectorizerApiKey(s.vectorizerApiKey || '');
           setVectorizerApiSecret(s.vectorizerApiSecret || '');
           setSupabaseUrl(s.supabaseUrl || '');
@@ -156,6 +165,10 @@ export const SettingsView: React.FC = () => {
         llmModel,
         ideogramApiKey,
         ideogramModel,
+        ideogramRenderingSpeed,
+        ideogramAspectRatio,
+        ideogramStyle,
+        ideogramMagicPromptOption,
         vectorizerApiKey,
         vectorizerApiSecret,
         supabaseUrl,
@@ -437,6 +450,78 @@ export const SettingsView: React.FC = () => {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* 4 Ideogram Parameters Grid */}
+          <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-800/80">
+            {/* 1. Rendering Speed */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Speed (Rendering)</label>
+              <select
+                value={ideogramRenderingSpeed}
+                onChange={(e) => setIdeogramRenderingSpeed(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
+              >
+                <option value="DEFAULT">DEFAULT (Standard)</option>
+                <option value="TURBO">TURBO (Schnell)</option>
+                <option value="QUALITY">QUALITY (Beste Qualität)</option>
+              </select>
+            </div>
+
+            {/* 2. Aspect Ratio */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Aspect Ratio</label>
+              <select
+                value={ideogramAspectRatio}
+                onChange={(e) => setIdeogramAspectRatio(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
+              >
+                <option value="10x16">10x16 (T-Shirt Portrait)</option>
+                <option value="9x16">9x16 (Story / Hochformat)</option>
+                <option value="4x5">4x5 (Merch Portrait)</option>
+                <option value="3x4">3x4 (Hochformat)</option>
+                <option value="1x1">1x1 (Quadrat)</option>
+                <option value="4x3">4x3 (Querformat)</option>
+                <option value="16x9">16x9 (Widescreen)</option>
+                <option value="16x10">16x10 (Querformat)</option>
+                <option value="2x3">2x3 (Poster Hochformat)</option>
+                <option value="3x2">3x2 (Poster Querformat)</option>
+                <option value="1x2">1x2 (Schmal)</option>
+                <option value="2x1">2x1 (Banner)</option>
+                <option value="1x3">1x3 (Extrem Schmal)</option>
+                <option value="3x1">3x1 (Panorama)</option>
+                <option value="5x4">5x4 (Querformat)</option>
+              </select>
+            </div>
+
+            {/* 3. Style */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Style</label>
+              <select
+                value={ideogramStyle}
+                onChange={(e) => setIdeogramStyle(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
+              >
+                <option value="GENERAL">GENERAL (Allgemein)</option>
+                <option value="DESIGN">DESIGN (Grafik &amp; Vektor)</option>
+                <option value="REALISTIC">REALISTIC (Realistisch)</option>
+                <option value="AUTO">AUTO (Automatisch)</option>
+              </select>
+            </div>
+
+            {/* 4. Magic Prompt */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Magic Prompt</label>
+              <select
+                value={ideogramMagicPromptOption}
+                onChange={(e) => setIdeogramMagicPromptOption(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
+              >
+                <option value="AUTO">AUTO (Automatisch)</option>
+                <option value="ON">ON (Immer aktiv)</option>
+                <option value="OFF">OFF (Aus - Reiner Prompt)</option>
+              </select>
+            </div>
           </div>
         </div>
 

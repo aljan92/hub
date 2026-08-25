@@ -214189,7 +214189,11 @@ var DEFAULT_SETTINGS = {
   llmProvider: process.env.LLM_PROVIDER || "openrouter",
   llmModel: process.env.LLM_MODEL || "anthropic/claude-3-5-sonnet",
   ideogramApiKey: process.env.IDEOGRAM_API_KEY || "",
-  ideogramModel: process.env.IDEOGRAM_MODEL || "V_4",
+  ideogramModel: process.env.IDEOGRAM_MODEL || "V_3",
+  ideogramRenderingSpeed: "DEFAULT",
+  ideogramAspectRatio: "10x16",
+  ideogramStyle: "GENERAL",
+  ideogramMagicPromptOption: "AUTO",
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || "",
   vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || "",
   supabaseUrl: process.env.SUPABASE_URL || "",
@@ -215026,8 +215030,8 @@ var IdeogramService = class {
    */
   static async getAvailableModels() {
     const standardModels = [
-      { id: "V_4", name: "Ideogram 4.0 (Neueste Generation & Transparent)" },
       { id: "V_3", name: "Ideogram 3.0 (T-Shirt & Vektor Spezialist)" },
+      { id: "V_4", name: "Ideogram 4.0 (Neueste Generation & Transparent)" },
       { id: "V_2_TURBO", name: "Ideogram 2.0 Turbo (Schnell & G\xFCnstig)" },
       { id: "V_2", name: "Ideogram 2.0 (High Quality)" }
     ];
@@ -215054,7 +215058,7 @@ var IdeogramService = class {
     return standardModels;
   }
   /**
-   * Generate Image via Ideogram API (supports V4, V3, V2)
+   * Generate Image via Ideogram API (supports V3, V4, V2)
    */
   static async generateImage(options2) {
     const settings = loadSettings();
@@ -215063,19 +215067,51 @@ var IdeogramService = class {
       throw new Error("Ideogram API Key fehlt in den Einstellungen.");
     }
     const aspectMap = {
-      "1:1": "ASPECT_1_1",
+      "10x16": "ASPECT_10_16",
+      "10:16": "ASPECT_10_16",
+      "9x16": "ASPECT_9_16",
+      "9:16": "ASPECT_9_16",
+      "4x5": "ASPECT_4_5",
+      "4:5": "ASPECT_4_5",
+      "3x4": "ASPECT_3_4",
       "3:4": "ASPECT_3_4",
+      "1x1": "ASPECT_1_1",
+      "1:1": "ASPECT_1_1",
+      "4x3": "ASPECT_4_3",
       "4:3": "ASPECT_4_3",
+      "16x9": "ASPECT_16_9",
       "16:9": "ASPECT_16_9",
-      "9:16": "ASPECT_9_16"
+      "16x10": "ASPECT_16_10",
+      "16:10": "ASPECT_16_10",
+      "2x3": "ASPECT_2_3",
+      "2:3": "ASPECT_2_3",
+      "3x2": "ASPECT_3_2",
+      "3:2": "ASPECT_3_2",
+      "1x2": "ASPECT_1_2",
+      "1:2": "ASPECT_1_2",
+      "2x1": "ASPECT_2_1",
+      "2:1": "ASPECT_2_1",
+      "1x3": "ASPECT_1_3",
+      "1:3": "ASPECT_1_3",
+      "3x1": "ASPECT_3_1",
+      "3:1": "ASPECT_3_1",
+      "5x4": "ASPECT_5_4",
+      "5:4": "ASPECT_5_4"
     };
-    const selectedModel = options2.model || settings.ideogramModel || "V_4";
+    const ratioKey = options2.aspectRatio || settings.ideogramAspectRatio || "10x16";
+    const mappedRatio = aspectMap[ratioKey] || aspectMap[ratioKey.replace(":", "x")] || "ASPECT_10_16";
+    const renderingSpeed = options2.renderingSpeed || settings.ideogramRenderingSpeed || "DEFAULT";
+    const styleType = options2.styleType || settings.ideogramStyle || "GENERAL";
+    const magicPromptOption = options2.magicPromptOption || settings.ideogramMagicPromptOption || "AUTO";
+    const selectedModel = options2.model || settings.ideogramModel || "V_3";
     const payload = {
       image_request: {
         prompt: options2.prompt,
-        aspect_ratio: aspectMap[options2.aspectRatio || "1:1"] || "ASPECT_1_1",
+        aspect_ratio: mappedRatio,
         model: selectedModel,
-        magic_prompt_option: options2.magicPromptOption || "AUTO"
+        rendering_speed: renderingSpeed,
+        style_type: styleType,
+        magic_prompt_option: magicPromptOption
       }
     };
     const res = await fetch("https://api.ideogram.ai/generate", {
@@ -215085,7 +215121,7 @@ var IdeogramService = class {
         "Content-Type": "application/json"
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(6e4)
+      signal: AbortSignal.timeout(18e4)
     });
     if (!res.ok) {
       const errBody = await res.text();

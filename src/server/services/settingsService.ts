@@ -10,6 +10,10 @@ export interface AppSettings {
   llmModel: string;
   ideogramApiKey: string;
   ideogramModel: string;
+  ideogramRenderingSpeed: string;
+  ideogramAspectRatio: string;
+  ideogramStyle: string;
+  ideogramMagicPromptOption: string;
   vectorizerApiKey: string;
   vectorizerApiSecret: string;
   supabaseUrl: string;
@@ -33,7 +37,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   llmProvider: (process.env.LLM_PROVIDER as 'openrouter' | 'openai') || 'openrouter',
   llmModel: process.env.LLM_MODEL || 'anthropic/claude-3-5-sonnet',
   ideogramApiKey: process.env.IDEOGRAM_API_KEY || '',
-  ideogramModel: process.env.IDEOGRAM_MODEL || 'V_4',
+  ideogramModel: process.env.IDEOGRAM_MODEL || 'V_3',
+  ideogramRenderingSpeed: 'DEFAULT',
+  ideogramAspectRatio: '10x16',
+  ideogramStyle: 'GENERAL',
+  ideogramMagicPromptOption: 'AUTO',
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || '',
   vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || '',
   supabaseUrl: process.env.SUPABASE_URL || '',
