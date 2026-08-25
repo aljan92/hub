@@ -217337,6 +217337,7 @@ ${JSON.stringify(task.payload, null, 2)}`;
         hasError: false
       });
       console.log(`[TaskLogService] \u26A1 Task ${taskId} erfolgreich generiert in ${latencyMs}ms (${usage?.total || 0} Tokens)`);
+      await this.processTaskWithIdeogram(taskId, extractedPrompt);
     } catch (err) {
       const latencyMs = Date.now() - start3;
       const errorMsg = err.message || "Verbindungsfehler zur OpenRouter API";
@@ -217344,6 +217345,111 @@ ${JSON.stringify(task.payload, null, 2)}`;
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "ERROR",
         title: `Verbindungsfehler (${provider})`,
+        content: errorMsg,
+        metadata: { latencyMs, model }
+      });
+      this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: errorMsg });
+    }
+  }
+  /**
+   * Run Ideogram image generation and download design to NAS
+   */
+  static async processTaskWithIdeogram(taskId, promptText) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) return;
+    const settings = loadSettings();
+    const model = settings.ideogramModel || "V_3";
+    const renderingSpeed = settings.ideogramRenderingSpeed || "DEFAULT";
+    const aspectRatio = settings.ideogramAspectRatio || "10x16";
+    const styleType = settings.ideogramStyle || "GENERAL";
+    const magicPromptOption = settings.ideogramMagicPromptOption || "AUTO";
+    this.updateTaskStatus(taskId, { status: "GENERATING_IMAGE" });
+    if (!settings.ideogramApiKey) {
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ERROR",
+        title: "Fehler: Kein Ideogram API-Token",
+        content: "Bitte trage deinen Ideogram API Token in den Settings ein."
+      });
+      this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: "Kein Ideogram API Key in Settings" });
+      return;
+    }
+    this.addEvent(taskId, {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "IDEOGRAM_REQUEST",
+      title: `Senden an Ideogram (${model})`,
+      content: {
+        prompt: promptText,
+        model,
+        renderingSpeed,
+        aspectRatio,
+        style: styleType,
+        magicPrompt: magicPromptOption
+      },
+      metadata: {
+        model
+      }
+    });
+    const start3 = Date.now();
+    try {
+      const result2 = await IdeogramService.generateImage({
+        prompt: promptText,
+        model,
+        renderingSpeed,
+        aspectRatio,
+        styleType,
+        magicPromptOption
+      });
+      const latencyMs = Date.now() - start3;
+      const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const designsDir = import_path70.default.resolve(process.cwd(), "data", "designs");
+      if (!import_fs75.default.existsSync(designsDir)) {
+        try {
+          import_fs75.default.mkdirSync(designsDir, { recursive: true });
+        } catch (e) {
+        }
+      }
+      const localFilename = `${cleanId}.png`;
+      const localFilePath = import_path70.default.join(designsDir, localFilename);
+      const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
+      try {
+        const imgRes = await fetch(result2.imageUrl);
+        if (imgRes.ok) {
+          const arrayBuffer = await imgRes.arrayBuffer();
+          import_fs75.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
+          console.log(`[TaskLogService] \u{1F4BE} Bild f\xFCr Task ${taskId} lokal gespeichert: ${localFilePath}`);
+        }
+      } catch (e) {
+        console.warn(`[TaskLogService] Konnte Bild f\xFCr Task ${taskId} nicht lokal cachen:`, e);
+      }
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "IDEOGRAM_RESPONSE",
+        title: `Empfangen von Ideogram (Bild generiert)`,
+        content: {
+          imageUrl: result2.imageUrl,
+          localUrl,
+          prompt: promptText
+        },
+        metadata: {
+          latencyMs,
+          model
+        }
+      });
+      this.updateTaskStatus(taskId, {
+        status: "COMPLETED",
+        imageUrl: result2.imageUrl,
+        localImagePath: localUrl,
+        hasError: false
+      });
+      console.log(`[TaskLogService] \u{1F5BC}\uFE0F Ideogram Bild f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+    } catch (err) {
+      const latencyMs = Date.now() - start3;
+      const errorMsg = err.message || "Fehler bei der Ideogram Bildgenerierung";
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ERROR",
+        title: "Fehler bei Ideogram",
         content: errorMsg,
         metadata: { latencyMs, model }
       });
@@ -218096,6 +218202,20 @@ app.post("/api/v1/systemprompts", (req, res) => {
 app.post("/api/v1/systemprompts/reset", (req, res) => {
   const resetPrompt = SystemPromptService.resetToDefault();
   res.json({ success: true, promptGenerator: resetPrompt });
+});
+app.get("/api/v1/designs/image/:taskId", (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const filePath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  if (import_fs76.default.existsSync(filePath)) {
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    return import_fs76.default.createReadStream(filePath).pipe(res);
+  }
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (task && task.imageUrl) {
+    return res.redirect(task.imageUrl);
+  }
+  res.status(404).send("Design image not found");
 });
 app.post("/api/v1/hermes/task", async (req, res) => {
   const { prompt, quote: quote5, niche1, niche2, title, brand, bullet1, bullet2, description } = req.body;

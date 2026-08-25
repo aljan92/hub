@@ -2,22 +2,25 @@ import fs from 'fs';
 import path from 'path';
 import { loadSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
+import { IdeogramService } from './ideogramService';
 
 export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER';
 export type TaskSuffix = 'H' | 'T' | 'D';
-export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'ERROR';
+export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'COMPLETED' | 'ERROR';
 
 export type EventType = 
   | 'INCOMING_PAYLOAD'
   | 'SESSION_START'
   | 'LLM_REQUEST'
   | 'LLM_RESPONSE'
+  | 'IDEOGRAM_REQUEST'
+  | 'IDEOGRAM_RESPONSE'
   | 'ERROR';
 
 export interface SessionEvent {
   timestamp: string; // ISO String (z.B. "2026-08-25T13:05:12.123Z")
   type: EventType;
-  title: string;     // z.B. "Eingang von Hermes", "Öffnen der OpenRouter Session", "Senden an OpenRouter", "Empfangen von OpenRouter"
+  title: string;     // z.B. "Eingang von Hermes", "Senden an OpenRouter", "Senden an Ideogram", "Empfangen von Ideogram"
   content: any;
   metadata?: {
     model?: string;
@@ -43,6 +46,8 @@ export interface DesignTaskLog {
   payload: Record<string, any>;
   events: SessionEvent[];
   resultPrompt?: string;
+  imageUrl?: string;
+  localImagePath?: string;
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -360,6 +365,9 @@ export class TaskLogService {
       });
 
       console.log(`[TaskLogService] ⚡ Task ${taskId} erfolgreich generiert in ${latencyMs}ms (${usage?.total || 0} Tokens)`);
+
+      // 5. Automatically trigger Ideogram Image Generation
+      await this.processTaskWithIdeogram(taskId, extractedPrompt);
     } catch (err: any) {
       const latencyMs = Date.now() - start;
       const errorMsg = err.message || 'Verbindungsfehler zur OpenRouter API';
@@ -367,6 +375,124 @@ export class TaskLogService {
         timestamp: new Date().toISOString(),
         type: 'ERROR',
         title: `Verbindungsfehler (${provider})`,
+        content: errorMsg,
+        metadata: { latencyMs, model }
+      });
+      this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: errorMsg });
+    }
+  }
+
+  /**
+   * Run Ideogram image generation and download design to NAS
+   */
+  static async processTaskWithIdeogram(taskId: string, promptText: string) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) return;
+
+    const settings = loadSettings();
+    const model = settings.ideogramModel || 'V_3';
+    const renderingSpeed = settings.ideogramRenderingSpeed || 'DEFAULT';
+    const aspectRatio = settings.ideogramAspectRatio || '10x16';
+    const styleType = settings.ideogramStyle || 'GENERAL';
+    const magicPromptOption = settings.ideogramMagicPromptOption || 'AUTO';
+
+    this.updateTaskStatus(taskId, { status: 'GENERATING_IMAGE' });
+
+    if (!settings.ideogramApiKey) {
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: 'Fehler: Kein Ideogram API-Token',
+        content: 'Bitte trage deinen Ideogram API Token in den Settings ein.'
+      });
+      this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: 'Kein Ideogram API Key in Settings' });
+      return;
+    }
+
+    // 1. Log Event: Senden an Ideogram
+    this.addEvent(taskId, {
+      timestamp: new Date().toISOString(),
+      type: 'IDEOGRAM_REQUEST',
+      title: `Senden an Ideogram (${model})`,
+      content: {
+        prompt: promptText,
+        model,
+        renderingSpeed,
+        aspectRatio,
+        style: styleType,
+        magicPrompt: magicPromptOption
+      },
+      metadata: {
+        model
+      }
+    });
+
+    // 2. Execute call to Ideogram API
+    const start = Date.now();
+    try {
+      const result = await IdeogramService.generateImage({
+        prompt: promptText,
+        model,
+        renderingSpeed,
+        aspectRatio,
+        styleType,
+        magicPromptOption
+      });
+
+      const latencyMs = Date.now() - start;
+
+      // 3. Cache image locally to data/designs/ on NAS
+      const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+      if (!fs.existsSync(designsDir)) {
+        try { fs.mkdirSync(designsDir, { recursive: true }); } catch (e) {}
+      }
+      const localFilename = `${cleanId}.png`;
+      const localFilePath = path.join(designsDir, localFilename);
+      const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
+
+      try {
+        const imgRes = await fetch(result.imageUrl);
+        if (imgRes.ok) {
+          const arrayBuffer = await imgRes.arrayBuffer();
+          fs.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
+          console.log(`[TaskLogService] 💾 Bild für Task ${taskId} lokal gespeichert: ${localFilePath}`);
+        }
+      } catch (e) {
+        console.warn(`[TaskLogService] Konnte Bild für Task ${taskId} nicht lokal cachen:`, e);
+      }
+
+      // 4. Log Event: Empfangen von Ideogram
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'IDEOGRAM_RESPONSE',
+        title: `Empfangen von Ideogram (Bild generiert)`,
+        content: {
+          imageUrl: result.imageUrl,
+          localUrl,
+          prompt: promptText
+        },
+        metadata: {
+          latencyMs,
+          model
+        }
+      });
+
+      this.updateTaskStatus(taskId, {
+        status: 'COMPLETED',
+        imageUrl: result.imageUrl,
+        localImagePath: localUrl,
+        hasError: false
+      });
+
+      console.log(`[TaskLogService] 🖼️ Ideogram Bild für Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+    } catch (err: any) {
+      const latencyMs = Date.now() - start;
+      const errorMsg = err.message || 'Fehler bei der Ideogram Bildgenerierung';
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: 'Fehler bei Ideogram',
         content: errorMsg,
         metadata: { latencyMs, model }
       });

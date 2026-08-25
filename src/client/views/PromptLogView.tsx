@@ -18,7 +18,11 @@ import {
   Cpu,
   Layers,
   CheckCircle2,
-  Zap
+  Zap,
+  Image as ImageIcon,
+  ExternalLink,
+  Download,
+  Sliders
 } from 'lucide-react';
 
 export type EventType = 
@@ -26,6 +30,8 @@ export type EventType =
   | 'SESSION_START'
   | 'LLM_REQUEST'
   | 'LLM_RESPONSE'
+  | 'IDEOGRAM_REQUEST'
+  | 'IDEOGRAM_RESPONSE'
   | 'ERROR';
 
 export interface SessionEvent {
@@ -51,12 +57,14 @@ export interface DesignTaskLog {
   counter: number;
   source: 'HERMES' | 'TEST' | 'DESIGNER';
   suffix: 'H' | 'T' | 'D';
-  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'ERROR';
+  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'COMPLETED' | 'ERROR';
   receivedAt: string;
   clientIp?: string;
   payload: Record<string, any>;
   events: SessionEvent[];
   resultPrompt?: string;
+  imageUrl?: string;
+  localImagePath?: string;
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -447,24 +455,34 @@ export const PromptLogView: React.FC = () => {
                         <Zap className="w-3 h-3" /> OpenRouter generiert...
                       </span>
                     )}
-                    {task.status === 'PROMPT_READY' && (
+                    {task.status === 'GENERATING_IMAGE' && (
+                      <span className="text-purple-400 flex items-center gap-1 font-semibold animate-pulse">
+                        <ImageIcon className="w-3 h-3" /> Ideogram generiert...
+                      </span>
+                    )}
+                    {task.status === 'COMPLETED' && (
                       <span className="text-emerald-400 flex items-center gap-1 font-semibold">
+                        <CheckCircle2 className="w-3 h-3" /> Design fertig ✓
+                      </span>
+                    )}
+                    {task.status === 'PROMPT_READY' && (
+                      <span className="text-cyan-400 flex items-center gap-1 font-semibold">
                         <CheckCircle2 className="w-3 h-3" /> Prompt bereit
                       </span>
                     )}
                     {task.hasError && (
                       <span className="text-rose-400 flex items-center gap-1 font-semibold">
-                        <AlertCircle className="w-3 h-3" /> Fehler aufgetreten
+                        <AlertCircle className="w-3 h-3" /> Fehler
                       </span>
                     )}
-                    {!task.status || task.status === 'RECEIVED' && (
+                    {(!task.status || task.status === 'RECEIVED') && (
                       <span className="text-slate-400 flex items-center gap-1">
                         <Clock className="w-3 h-3" /> Empfangen
                       </span>
                     )}
 
                     <span className="text-slate-500 font-mono">
-                      {task.events?.length || 1} Log-Events
+                      {task.events?.length || 1} Events
                     </span>
                   </div>
                 </div>
@@ -527,6 +545,10 @@ export const PromptLogView: React.FC = () => {
                         <div className={`absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full border-2 -translate-x-1/2 transition-colors ${
                           event.type === 'ERROR'
                             ? 'bg-rose-500 border-rose-900 ring-4 ring-rose-500/20'
+                            : event.type === 'IDEOGRAM_RESPONSE'
+                            ? 'bg-purple-500 border-purple-950 ring-4 ring-purple-500/20'
+                            : event.type === 'IDEOGRAM_REQUEST'
+                            ? 'bg-purple-600 border-purple-950'
                             : event.type === 'LLM_RESPONSE'
                             ? 'bg-emerald-500 border-emerald-950 ring-4 ring-emerald-500/20'
                             : event.type === 'LLM_REQUEST'
@@ -554,7 +576,7 @@ export const PromptLogView: React.FC = () => {
                               )}
                               {event.metadata.latencyMs !== undefined && (
                                 <span className="text-accent-cyan font-semibold">
-                                  ⚡ {event.metadata.latencyMs}ms
+                                  ⚡ {event.metadata.latencyMs > 1000 ? `${(event.metadata.latencyMs / 1000).toFixed(1)}s` : `${event.metadata.latencyMs}ms`}
                                 </span>
                               )}
                               {event.metadata.tokens?.total && (
@@ -688,6 +710,90 @@ export const PromptLogView: React.FC = () => {
                             </div>
                           );
                         })()}
+
+                        {/* Event: Senden an Ideogram */}
+                        {event.type === 'IDEOGRAM_REQUEST' && (
+                          <div className="bg-slate-950 rounded-xl p-3.5 border border-purple-500/30 space-y-2">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-purple-300">
+                              <span>Parameter für Ideogram:</span>
+                              <span className="font-mono text-slate-400">{event.content.model}</span>
+                            </div>
+
+                            {/* Parameter Chips */}
+                            <div className="flex flex-wrap gap-1.5 text-[11px] font-mono">
+                              <span className="bg-purple-950/60 text-purple-300 px-2 py-0.5 rounded border border-purple-800/60">
+                                Speed: {event.content.renderingSpeed}
+                              </span>
+                              <span className="bg-purple-950/60 text-purple-300 px-2 py-0.5 rounded border border-purple-800/60">
+                                Ratio: {event.content.aspectRatio}
+                              </span>
+                              <span className="bg-purple-950/60 text-purple-300 px-2 py-0.5 rounded border border-purple-800/60">
+                                Style: {event.content.style}
+                              </span>
+                              <span className="bg-purple-950/60 text-purple-300 px-2 py-0.5 rounded border border-purple-800/60">
+                                Magic: {event.content.magicPrompt}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-slate-300 font-mono bg-slate-900 p-2.5 rounded-lg border border-slate-800 line-clamp-3">
+                              {event.content.prompt}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Event: Empfangen von Ideogram (mit Design Bild-Vorschau) */}
+                        {event.type === 'IDEOGRAM_RESPONSE' && (
+                          <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 border border-purple-500/40 shadow-xl shadow-purple-500/5 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
+                                <ImageIcon className="w-4 h-4 text-purple-400" />
+                                Generiertes Design (Ideogram)
+                              </span>
+                              <div className="flex items-center space-x-2">
+                                <a
+                                  href={event.content.localUrl || event.content.imageUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  <span>Vollbild</span>
+                                </a>
+                                <a
+                                  href={event.content.localUrl || event.content.imageUrl}
+                                  download={`${selectedTask.id}.png`}
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 transition-colors"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span>PNG</span>
+                                </a>
+                              </div>
+                            </div>
+
+                            {/* Clean Design Image Thumbnail Preview */}
+                            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                              <div className="relative group/img overflow-hidden rounded-xl bg-slate-900 border border-slate-800 shadow-lg">
+                                <img
+                                  src={event.content.localUrl || event.content.imageUrl}
+                                  alt="Generiertes Design"
+                                  className="w-44 h-44 sm:w-52 sm:h-52 object-contain rounded-xl transition-transform duration-300 group-hover/img:scale-105"
+                                  loading="lazy"
+                                />
+                              </div>
+                              <div className="flex-1 space-y-2 text-xs">
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Verwendeter Prompt:</span>
+                                  <p className="text-slate-300 font-mono text-[11px] bg-slate-900 p-2 rounded-lg border border-slate-800/80 leading-relaxed max-h-32 overflow-y-auto custom-scrollbar">
+                                    {event.content.prompt}
+                                  </p>
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  Gesichert auf NAS: <code className="text-purple-400">data/designs/{selectedTask.id.replace('#', '').replace('-', '_')}.png</code>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
                         {event.type === 'ERROR' && (
                           <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3.5 text-xs text-rose-300 flex items-start space-x-2">

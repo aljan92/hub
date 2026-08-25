@@ -934,6 +934,22 @@ app.post('/api/v1/systemprompts/reset', (req, res) => {
   res.json({ success: true, promptGenerator: resetPrompt });
 });
 
+// 8.3 Design Image Serving Endpoint
+app.get('/api/v1/designs/image/:taskId', (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return fs.createReadStream(filePath).pipe(res);
+  }
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (task && task.imageUrl) {
+    return res.redirect(task.imageUrl);
+  }
+  res.status(404).send('Design image not found');
+});
+
 // 8.2 Hermes REST Webhook Endpoint (Legacy Task Submission)
 app.post('/api/v1/hermes/task', async (req, res) => {
   const { prompt, quote, niche1, niche2, title, brand, bullet1, bullet2, description } = req.body;
