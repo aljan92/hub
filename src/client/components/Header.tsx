@@ -20,7 +20,33 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const [credits, setCredits] = useState<{
     openrouter?: { usage?: number; limitRemaining?: number; balanceRemaining?: number; totalCredits?: number; limit?: number; hasKey?: boolean };
     vectorizer?: { credits?: number; details?: string; hasKey?: boolean };
-  } | null>(null);
+  } | null>(() => {
+    try {
+      const cached = localStorage.getItem('mba_cached_credits');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [activeTier, setActiveTier] = useState<number | undefined>(() => {
+    if (tier !== undefined && tier !== null) return tier;
+    try {
+      const cached = localStorage.getItem('mba_cached_tier');
+      return cached ? Number(cached) : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+
+  useEffect(() => {
+    if (tier !== undefined && tier !== null) {
+      setActiveTier(tier);
+      try {
+        localStorage.setItem('mba_cached_tier', String(tier));
+      } catch {}
+    }
+  }, [tier]);
 
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -32,7 +58,16 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
       .then(res => res.json())
       .then(data => {
         if (data.success) {
-          setCredits(data);
+          setCredits(prev => {
+            const merged = {
+              openrouter: { ...(prev?.openrouter || {}), ...(data.openrouter || {}) },
+              vectorizer: { ...(prev?.vectorizer || {}), ...(data.vectorizer || {}) }
+            };
+            try {
+              localStorage.setItem('mba_cached_credits', JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
         }
       })
       .catch(() => {});
@@ -40,7 +75,7 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
 
   useEffect(() => {
     fetchCredits();
-    const interval = setInterval(fetchCredits, 30000); // refresh every 30s
+    const interval = setInterval(fetchCredits, 20000); // refresh every 20s
     return () => clearInterval(interval);
   }, []);
 
@@ -144,11 +179,11 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
           )}
 
           {/* MBA Tier Badge */}
-          {tier !== undefined && tier !== null && (
+          {activeTier !== undefined && activeTier !== null && (
             <div className="flex items-center space-x-1.5 bg-slate-900/90 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-mono">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-slate-400 text-[11px]">Tier:</span>
-              <span className="font-bold text-emerald-400">{Number(tier).toLocaleString('de-DE')}</span>
+              <span className="font-bold text-emerald-400">{Number(activeTier).toLocaleString('de-DE')}</span>
             </div>
           )}
         </div>

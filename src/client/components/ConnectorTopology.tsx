@@ -32,6 +32,13 @@ export const ConnectorTopology: React.FC<ConnectorTopologyProps> = ({
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [testingConnector, setTestingConnector] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, any>>({});
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
+
+  // Real-time 1s ticker for live countdown / age counter
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleTestConnection = async (type: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -51,6 +58,25 @@ export const ConnectorTopology: React.FC<ConnectorTopologyProps> = ({
       onRefreshHealth();
     }
   };
+
+  const getHermesPingAge = (lastPingTime?: number): string => {
+    if (!lastPingTime || lastPingTime <= 0) return 'Kein Heartbeat';
+    const diffSec = Math.max(0, Math.floor((currentTime - lastPingTime) / 1000));
+    if (diffSec < 5) return 'Gerade eben';
+    if (diffSec < 60) return `vor ${diffSec}s`;
+    const mins = Math.floor(diffSec / 60);
+    const secs = diffSec % 60;
+    if (mins < 60) return `vor ${mins}m ${secs}s`;
+    const hours = Math.floor(mins / 60);
+    const remMins = mins % 60;
+    return `vor ${hours}h ${remMins}m`;
+  };
+
+  const hermesLastPing = healthData?.hermes?.lastPingTime;
+  const isHermesOnline = Boolean(
+    healthData?.hermes?.success || 
+    (hermesLastPing && (currentTime - hermesLastPing < 10 * 60 * 1000))
+  );
 
   // Node definitions with minimal, clean labels
   const nodes = {
@@ -87,17 +113,18 @@ export const ConnectorTopology: React.FC<ConnectorTopologyProps> = ({
     hermes: {
       id: 'hermes',
       title: 'Hermes Agent',
-      protocol: 'MCP',
+      protocol: 'MCP / Cron',
       icon: Bot,
       color: 'from-blue-500 to-indigo-600',
-      borderColor: 'border-blue-500/30 hover:border-blue-400',
+      borderColor: isHermesOnline ? 'border-blue-500/40 hover:border-blue-400' : 'border-slate-700/60',
       activeColor: 'text-blue-400',
       glowColor: 'hover:shadow-blue-500/10',
-      isOnline: true,
-      statusText: 'Standby',
-      ping: 'Local',
-      endpoint: '/api/v1/hermes/task',
-      settingsTab: 'settings'
+      isOnline: isHermesOnline,
+      statusText: isHermesOnline ? 'Heartbeat aktiv' : (hermesLastPing ? 'Timeout / Standby' : 'Wartet auf Ping'),
+      ping: getHermesPingAge(hermesLastPing),
+      endpoint: 'hub.angermann.work/api/v1/mcp/ping',
+      settingsTab: 'settings',
+      extraInfo: hermesLastPing ? `Zuletzt: ${new Date(hermesLastPing).toLocaleTimeString('de-DE')} • ${healthData?.hermes?.totalPings || 1} Pings` : undefined
     },
     amazon: {
       id: 'amazon',
@@ -276,6 +303,12 @@ export const ConnectorTopology: React.FC<ConnectorTopologyProps> = ({
                 <span>Endpunkt:</span>
                 <span className="font-mono text-[11px] text-slate-300 truncate max-w-[180px]">{currentNode.endpoint}</span>
               </div>
+              {(currentNode as any).extraInfo && (
+                <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-900">
+                  <span>Heartbeat Details:</span>
+                  <span className="font-mono text-[10px] text-accent-cyan font-medium">{(currentNode as any).extraInfo}</span>
+                </div>
+              )}
             </div>
 
             {/* Test result feedback */}

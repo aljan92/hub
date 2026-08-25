@@ -216993,6 +216993,7 @@ app.get("/api/health", (req, res) => {
 app.get("/api/v1/activity", (req, res) => {
   res.json({ success: true, activity: activityLog });
 });
+var lastKnownTier = void 0;
 app.get("/api/v1/stats", async (req, res) => {
   try {
     const [supabaseStats, syncState, ratelimiter] = await Promise.all([
@@ -217001,13 +217002,15 @@ app.get("/api/v1/stats", async (req, res) => {
       SyncEngine.fetchDashboardRatelimiter()
     ]);
     const liveSlots = ratelimiter?.slots || dailySlotStats;
-    const tier = ratelimiter?.tier;
+    if (ratelimiter?.tier !== void 0 && ratelimiter?.tier !== null) {
+      lastKnownTier = ratelimiter.tier;
+    }
     res.json({
       success: true,
       tasksCount: activeTasks.length,
       queueCount: uploadQueue.length,
       slots: liveSlots,
-      tier: tier !== void 0 ? tier : void 0,
+      tier: lastKnownTier,
       designsCount: supabaseStats.totalDesigns,
       liveDesignsCount: supabaseStats.liveDesigns,
       unresolvedAsinsCount: supabaseStats.unresolvedAsins,
@@ -217017,7 +217020,7 @@ app.get("/api/v1/stats", async (req, res) => {
       hasSupabase: supabaseStats.totalDesigns > 0 || !!loadSettings().supabaseUrl
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err.message, tier: lastKnownTier });
   }
 });
 app.get("/api/v1/sync/state", async (req, res) => {
@@ -217205,36 +217208,56 @@ app.get("/api/v1/ideogram/models", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+var lastKnownCredits = {
+  openrouter: { hasKey: false },
+  vectorizer: { hasKey: false },
+  ideogram: { hasKey: false }
+};
 app.get("/api/v1/credits", async (req, res) => {
   try {
+    const settings = loadSettings();
+    const hasOpenRouterKey = Boolean(settings.openRouterApiKey && settings.openRouterApiKey.trim());
+    const hasVectorizerKey = Boolean(settings.vectorizerApiKey && settings.vectorizerApiKey.trim());
+    const hasIdeogramKey = Boolean(settings.ideogramApiKey && settings.ideogramApiKey.trim());
     const [openrouter, vectorizer, ideogram] = await Promise.all([
-      LLMService.getCredits(),
-      VectorizerService.testConnection(),
-      IdeogramService.testConnection()
+      hasOpenRouterKey ? LLMService.getCredits() : Promise.resolve({ error: "Kein Key" }),
+      hasVectorizerKey ? VectorizerService.testConnection() : Promise.resolve({ success: false }),
+      hasIdeogramKey ? IdeogramService.testConnection() : Promise.resolve({ success: false })
     ]);
+    const orData = {
+      usage: openrouter.usage ?? lastKnownCredits.openrouter?.usage,
+      limit: openrouter.limit ?? lastKnownCredits.openrouter?.limit,
+      limitRemaining: openrouter.limitRemaining ?? lastKnownCredits.openrouter?.limitRemaining,
+      balanceRemaining: openrouter.balanceRemaining ?? lastKnownCredits.openrouter?.balanceRemaining,
+      totalCredits: openrouter.totalCredits ?? lastKnownCredits.openrouter?.totalCredits,
+      isFreeTier: openrouter.isFreeTier ?? lastKnownCredits.openrouter?.isFreeTier,
+      hasKey: hasOpenRouterKey
+    };
+    const vecData = {
+      credits: vectorizer.creditsRemaining ?? vectorizer.credits ?? lastKnownCredits.vectorizer?.credits,
+      details: vectorizer.details ?? lastKnownCredits.vectorizer?.details,
+      hasKey: hasVectorizerKey
+    };
+    const ideoData = {
+      status: ideogram.success ? "Aktiv" : ideogram.error ? "Fehler" : "Offline",
+      hasKey: hasIdeogramKey
+    };
+    lastKnownCredits = {
+      openrouter: orData,
+      vectorizer: vecData,
+      ideogram: ideoData
+    };
     res.json({
       success: true,
-      openrouter: {
-        usage: openrouter.usage,
-        limit: openrouter.limit,
-        limitRemaining: openrouter.limitRemaining,
-        balanceRemaining: openrouter.balanceRemaining,
-        totalCredits: openrouter.totalCredits,
-        isFreeTier: openrouter.isFreeTier,
-        hasKey: !openrouter.error
-      },
-      vectorizer: {
-        credits: vectorizer.creditsRemaining,
-        details: vectorizer.details,
-        hasKey: vectorizer.success
-      },
-      ideogram: {
-        status: ideogram.success ? "Aktiv" : ideogram.error ? "Fehler" : "Offline",
-        hasKey: ideogram.success
-      }
+      openrouter: orData,
+      vectorizer: vecData,
+      ideogram: ideoData
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.json({
+      success: true,
+      ...lastKnownCredits
+    });
   }
 });
 app.post("/api/v1/connectors/test", async (req, res) => {
