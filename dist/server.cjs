@@ -217059,10 +217059,11 @@ Output ONLY the raw, optimized image generation prompt text. Do not include intr
 var DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT = `You are an expert AI Art Director and POD (Print on Demand) Quality Assurance Specialist for Merch by Amazon.
 Your task is to analyze the generated t-shirt / merch graphic design based on the input specifications and evaluate it strictly against the following 4 core criteria:
 
-1. QUOTE ACCURACY & TYPOGRAPHY:
-- Verify whether the visible text in the image matches the requested quote exactly.
-- Check for spelling mistakes, missing or duplicate letters, typos, illegible fonts, or distorted glyphs.
-- If there are typos, missing words, or significant errors, set "quote_matches" to false and "regenerate_recommended" to true.
+1. QUOTE ACCURACY & VISUAL QUALITY:
+- Check for GENUINE text errors: Misspelled words, duplicate letters (e.g. "Mannifest"), missing whole words, unreadable gibberish, or completely illegible typography.
+- TOLERATE MINOR FORMATTING & PUNCTUATION VARIATIONS: Do NOT reject designs for minor spacing or punctuation choices (e.g. "11 11" instead of "11:11", omitted hyphens/colons/dots, words arranged over multiple lines, or creative uppercase/lowercase casing) as long as the wording / numbers are correct, complete, and clearly legible!
+- Check for SEVERE graphic/anatomical defects: Obvious AI distortions such as malformed extra fingers/hands, melted faces, or corrupted graphic shapes.
+- Evaluation rule: Set "quote_matches" to true and "regenerate_recommended" to false unless there is a genuine spelling mistake, missing word, illegible text, or severe visual deformity.
 
 2. TARGET AUDIENCE (FIT TYPES):
 - Determine which target audiences this design is suitable for: Select from ["Men", "Women", "Youth"].
