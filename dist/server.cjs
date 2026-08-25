@@ -217184,7 +217184,7 @@ app.post("/api/v1/system/update", async (req, res) => {
     const buffer = Buffer.from(arrayBuffer);
     const tempTarPath = import_path69.default.resolve(process.cwd(), ".temp_update.tar.gz");
     import_fs74.default.writeFileSync(tempTarPath, buffer);
-    (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1`, {
+    (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
@@ -217196,7 +217196,7 @@ app.post("/api/v1/system/update", async (req, res) => {
     if (import_fs74.default.existsSync(hostRepoPath)) {
       try {
         import_fs74.default.writeFileSync(tempTarPath, buffer);
-        (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1`, {
+        (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });

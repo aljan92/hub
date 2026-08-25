@@ -370,8 +370,8 @@ app.post('/api/v1/system/update', async (req, res) => {
     const tempTarPath = path.resolve(process.cwd(), '.temp_update.tar.gz');
     fs.writeFileSync(tempTarPath, buffer);
 
-    // 2. Extract using built-in tar
-    execSync(`tar -xzf "${tempTarPath}" --strip-components=1`, {
+    // 2. Extract using built-in tar (Safeguarding data/ directory from ever being touched)
+    execSync(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
       cwd: process.cwd(),
       timeout: 45000
     });
@@ -384,7 +384,7 @@ app.post('/api/v1/system/update', async (req, res) => {
     if (fs.existsSync(hostRepoPath)) {
       try {
         fs.writeFileSync(tempTarPath, buffer);
-        execSync(`tar -xzf "${tempTarPath}" --strip-components=1`, {
+        execSync(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
           cwd: hostRepoPath,
           timeout: 45000
         });
