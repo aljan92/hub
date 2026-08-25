@@ -217311,6 +217311,8 @@ function recordHermesHeartbeat(req, metadata) {
     hermesHeartbeat.lastMetadata = metadata;
   }
 }
+var cachedHealthData = null;
+var lastHealthCheckTime = 0;
 async function refreshHealthData() {
   try {
     const [openrouter, ideogram, vectorizer, productor, supabase] = await Promise.all([

@@ -437,23 +437,23 @@ app.get('/api/v1/credits', async (req, res) => {
     ]);
 
     const orData = {
-      usage: openrouter.usage ?? lastKnownCredits.openrouter?.usage,
-      limit: openrouter.limit ?? lastKnownCredits.openrouter?.limit,
-      limitRemaining: openrouter.limitRemaining ?? lastKnownCredits.openrouter?.limitRemaining,
-      balanceRemaining: openrouter.balanceRemaining ?? lastKnownCredits.openrouter?.balanceRemaining,
-      totalCredits: openrouter.totalCredits ?? lastKnownCredits.openrouter?.totalCredits,
-      isFreeTier: openrouter.isFreeTier ?? lastKnownCredits.openrouter?.isFreeTier,
+      usage: (openrouter as any).usage ?? lastKnownCredits.openrouter?.usage,
+      limit: (openrouter as any).limit ?? lastKnownCredits.openrouter?.limit,
+      limitRemaining: (openrouter as any).limitRemaining ?? lastKnownCredits.openrouter?.limitRemaining,
+      balanceRemaining: (openrouter as any).balanceRemaining ?? lastKnownCredits.openrouter?.balanceRemaining,
+      totalCredits: (openrouter as any).totalCredits ?? lastKnownCredits.openrouter?.totalCredits,
+      isFreeTier: (openrouter as any).isFreeTier ?? lastKnownCredits.openrouter?.isFreeTier,
       hasKey: hasOpenRouterKey
     };
 
     const vecData = {
       credits: (vectorizer as any).creditsRemaining ?? (vectorizer as any).credits ?? lastKnownCredits.vectorizer?.credits,
-      details: vectorizer.details ?? lastKnownCredits.vectorizer?.details,
+      details: (vectorizer as any).details ?? lastKnownCredits.vectorizer?.details,
       hasKey: hasVectorizerKey
     };
 
     const ideoData = {
-      status: ideogram.success ? 'Aktiv' : (ideogram.error ? 'Fehler' : 'Offline'),
+      status: (ideogram as any).success ? 'Aktiv' : ((ideogram as any).error ? 'Fehler' : 'Offline'),
       hasKey: hasIdeogramKey
     };
 
@@ -480,7 +480,6 @@ app.get('/api/v1/credits', async (req, res) => {
 // 3. Connectors Live Health & Test Endpoints
 app.post('/api/v1/connectors/test', async (req, res) => {
   const { connector, credentials } = req.body;
-
   try {
     if (connector === 'openrouter' || connector === 'openai') {
       const result = await LLMService.testConnection(credentials?.apiKey, credentials?.model);
@@ -533,6 +532,10 @@ function recordHermesHeartbeat(req: express.Request, metadata?: any) {
     hermesHeartbeat.lastMetadata = metadata;
   }
 }
+
+// Background Health Caching
+let cachedHealthData: any = null;
+let lastHealthCheckTime = 0;
 
 async function refreshHealthData() {
   try {

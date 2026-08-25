@@ -28,7 +28,7 @@ import {
 export const SettingsView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [testResults, setTestResults] = useState<Record<string, { testing?: boolean; success?: boolean; latencyMs?: number; error?: string; details?: string }>>({});
+  const [testResults, setTestResults] = useState<Record<string, { testing?: boolean; success?: boolean; latencyMs?: number; error?: string; details?: string; message?: string }>>({});
 
   // Settings State
   const [openRouterApiKey, setOpenRouterApiKey] = useState('');
