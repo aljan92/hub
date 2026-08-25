@@ -28,7 +28,8 @@ import {
   Palette,
   Scissors,
   CheckSquare,
-  RotateCcw
+  RotateCcw,
+  FileText
 } from 'lucide-react';
 
 export type EventType = 
@@ -40,6 +41,8 @@ export type EventType =
   | 'IDEOGRAM_RESPONSE'
   | 'ANALYSIS_REQUEST'
   | 'ANALYSIS_RESPONSE'
+  | 'LISTING_REQUEST'
+  | 'LISTING_RESPONSE'
   | 'ERROR';
 
 export interface SessionEvent {
@@ -65,7 +68,7 @@ export interface DesignTaskLog {
   counter: number;
   source: 'HERMES' | 'TEST' | 'DESIGNER';
   suffix: 'H' | 'T' | 'D';
-  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'COMPLETED' | 'ERROR';
+  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'COMPLETED' | 'ERROR';
   receivedAt: string;
   clientIp?: string;
   payload: Record<string, any>;
@@ -74,6 +77,7 @@ export interface DesignTaskLog {
   imageUrl?: string;
   localImagePath?: string;
   analysisResult?: any;
+  listingResult?: any;
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -86,6 +90,7 @@ export const PromptLogView: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [retryingStep, setRetryingStep] = useState<string | null>(null);
+  const [selectedListingLang, setSelectedListingLang] = useState<Record<string, string>>({});
 
   const selectedTask = tasks.find(t => t.id === selectedTaskId) || tasks[0] || null;
 
@@ -112,7 +117,7 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
-  const handleRetryStep = async (taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST') => {
+  const handleRetryStep = async (taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST' | 'LISTING_REQUEST') => {
     setRetryingStep(`${taskId}-${stepType}`);
     try {
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/retry`, {
@@ -492,9 +497,14 @@ export const PromptLogView: React.FC = () => {
                         <Eye className="w-3 h-3" /> Analysiere Design...
                       </span>
                     )}
+                    {task.status === 'GENERATING_LISTING' && (
+                      <span className="text-emerald-400 flex items-center gap-1 font-semibold animate-pulse">
+                        <FileText className="w-3 h-3" /> Erstelle MBA Listing...
+                      </span>
+                    )}
                     {task.status === 'COMPLETED' && (
                       <span className="text-emerald-400 flex items-center gap-1 font-semibold">
-                        <CheckCircle2 className="w-3 h-3" /> Design &amp; Analyse fertig ✓
+                        <CheckCircle2 className="w-3 h-3" /> Design &amp; Listing fertig ✓
                       </span>
                     )}
                     {task.status === 'PROMPT_READY' && (
@@ -577,10 +587,14 @@ export const PromptLogView: React.FC = () => {
                         <div className={`absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full border-2 -translate-x-1/2 transition-colors ${
                           event.type === 'ERROR'
                             ? 'bg-rose-500 border-rose-900 ring-4 ring-rose-500/20'
+                            : event.type === 'LISTING_RESPONSE'
+                            ? 'bg-emerald-400 border-emerald-950 ring-4 ring-emerald-400/30'
+                            : event.type === 'LISTING_REQUEST'
+                            ? 'bg-emerald-500 border-emerald-950'
                             : event.type === 'ANALYSIS_RESPONSE'
-                            ? 'bg-emerald-400 border-emerald-950 ring-4 ring-emerald-400/25'
+                            ? 'bg-cyan-400 border-cyan-950 ring-4 ring-cyan-400/25'
                             : event.type === 'ANALYSIS_REQUEST'
-                            ? 'bg-cyan-400 border-cyan-950'
+                            ? 'bg-cyan-500 border-cyan-950'
                             : event.type === 'IDEOGRAM_RESPONSE'
                             ? 'bg-purple-500 border-purple-950 ring-4 ring-purple-500/20'
                             : event.type === 'IDEOGRAM_REQUEST'
@@ -865,7 +879,7 @@ export const PromptLogView: React.FC = () => {
                                 <button
                                   onClick={() => handleRetryStep(selectedTask.id, 'ANALYSIS_REQUEST')}
                                   disabled={retryingStep !== null}
-                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20 transition-all disabled:opacity-50"
                                   title="Vision Design-Analyse mit dem aktiven System-Prompt neu ausführen"
                                 >
                                   <RotateCcw className={`w-3 h-3 ${retryingStep === `${selectedTask.id}-ANALYSIS_REQUEST` ? 'animate-spin' : ''}`} />
@@ -1035,6 +1049,227 @@ export const PromptLogView: React.FC = () => {
                                   Vollständiges Analyse-JSON anzeigen (Klick zum Aufklappen)
                                 </summary>
                                 <pre className="mt-1.5 p-2.5 bg-slate-950 rounded-lg text-cyan-300 font-mono text-[11px] border border-slate-800/80 overflow-x-auto">
+                                  {JSON.stringify(event.content, null, 2)}
+                                </pre>
+                              </details>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Event: Senden an OpenRouter (Listing Generator) */}
+                        {event.type === 'LISTING_REQUEST' && (
+                          <div className="bg-slate-950 rounded-xl p-3.5 border border-emerald-500/30 space-y-3">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-300">
+                              <span className="flex items-center gap-1.5">
+                                <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                                Listing-Anfrage an OpenRouter (MBA SEO):
+                              </span>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleRetryStep(selectedTask.id, 'LISTING_REQUEST')}
+                                  disabled={retryingStep !== null}
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                                  title="Listing-Erstellung mit dem aktiven System-Prompt neu ausführen"
+                                >
+                                  <RotateCcw className={`w-3 h-3 ${retryingStep === `${selectedTask.id}-LISTING_REQUEST` ? 'animate-spin' : ''}`} />
+                                  <span>Ab hier neu ausführen</span>
+                                </button>
+                                <span className="font-mono text-slate-400">{event.metadata?.model}</span>
+                              </div>
+                            </div>
+
+                            {/* System Prompt preview */}
+                            <details className="text-xs text-slate-400 group/details">
+                              <summary className="cursor-pointer font-semibold text-slate-300 hover:text-accent-cyan flex items-center gap-1">
+                                <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">listing system prompt</span>
+                                <span>Aktiver Listing-Systemprompt (Klick zum Ausklappen)</span>
+                              </summary>
+                              <pre className="mt-2 p-2.5 bg-slate-900 rounded-lg text-[11px] text-slate-300 font-mono whitespace-pre-wrap border border-slate-800">
+                                {event.content.systemPrompt}
+                              </pre>
+                            </details>
+
+                            <div>
+                              <span className="text-[10px] font-semibold uppercase text-slate-400 block mb-1">User Message:</span>
+                              <pre className="p-2.5 bg-slate-900 rounded-lg text-xs text-emerald-300 font-mono whitespace-pre-wrap border border-slate-800">
+                                {event.content.userMessage}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Event: Empfangen von OpenRouter (MBA Listing) */}
+                        {event.type === 'LISTING_RESPONSE' && (() => {
+                          const listing = typeof event.content === 'object' && event.content !== null ? event.content : null;
+                          const currentLang = selectedListingLang[selectedTask.id] || 'en';
+                          const langListing = listing ? listing[currentLang] || listing['en'] : null;
+
+                          const languages = [
+                            { code: 'en', label: '🇬🇧 EN (US/UK)' },
+                            { code: 'de', label: '🇩🇪 DE' },
+                            { code: 'fr', label: '🇫🇷 FR' },
+                            { code: 'it', label: '🇮🇹 IT' },
+                            { code: 'es', label: '🇪🇸 ES' },
+                            { code: 'ja', label: '🇯🇵 JA' },
+                          ];
+
+                          const handleCopyAll = () => {
+                            if (!langListing) return;
+                            const fullText = `Brand: ${langListing.brand || ''}\nTitle: ${langListing.title || ''}\nBullet 1: ${langListing.bullet1 || ''}\nBullet 2: ${langListing.bullet2 || ''}\nDescription:\n${langListing.description || ''}`;
+                            copyToClipboard(fullText, `listing-all-${idx}`);
+                          };
+
+                          return (
+                            <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 border border-emerald-500/40 shadow-xl shadow-emerald-500/5 space-y-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                                  <FileText className="w-4 h-4 text-emerald-400" />
+                                  Fertiges Merch by Amazon Listing (Multi-Marketplace)
+                                </span>
+                                <div className="flex items-center space-x-2">
+                                  <button
+                                    onClick={handleCopyAll}
+                                    className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                                  >
+                                    {copiedKey === `listing-all-${idx}` ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                    <span>{copiedKey === `listing-all-${idx}` ? 'Listing kopiert! ✓' : 'Alle Felder kopieren'}</span>
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(JSON.stringify(event.content, null, 2), `listing-raw-${idx}`)}
+                                    className="flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors"
+                                  >
+                                    {copiedKey === `listing-raw-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                    <span>{copiedKey === `listing-raw-${idx}` ? 'Kopiert!' : 'JSON'}</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Marketplace Sub-Tabs */}
+                              <div className="flex space-x-1.5 border-b border-slate-800/80 pb-2 overflow-x-auto custom-scrollbar">
+                                {languages.map(lang => (
+                                  <button
+                                    key={lang.code}
+                                    onClick={() => setSelectedListingLang(prev => ({ ...prev, [selectedTask.id]: lang.code }))}
+                                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                                      currentLang === lang.code
+                                        ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                                        : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800'
+                                    }`}
+                                  >
+                                    {lang.label}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {langListing ? (
+                                <div className="space-y-3 text-xs">
+                                  {/* Brand */}
+                                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-bold text-slate-400 uppercase tracking-wider">Brand Name</span>
+                                      <div className="flex items-center space-x-2">
+                                        <span className={`font-mono font-bold ${((langListing.brand || '').length > 50) ? 'text-rose-400' : 'text-slate-400'}`}>
+                                          {(langListing.brand || '').length}/50
+                                        </span>
+                                        <button
+                                          onClick={() => copyToClipboard(langListing.brand || '', `brand-${idx}-${currentLang}`)}
+                                          className="text-slate-400 hover:text-emerald-400"
+                                        >
+                                          {copiedKey === `brand-${idx}-${currentLang}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <p className="font-mono text-sm text-slate-100 font-semibold select-all">{langListing.brand || '-'}</p>
+                                  </div>
+
+                                  {/* Title */}
+                                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-bold text-slate-400 uppercase tracking-wider">Design Title</span>
+                                      <div className="flex items-center space-x-2">
+                                        <span className={`font-mono font-bold ${((langListing.title || '').length > 60) ? 'text-rose-400' : 'text-slate-400'}`}>
+                                          {(langListing.title || '').length}/60
+                                        </span>
+                                        <button
+                                          onClick={() => copyToClipboard(langListing.title || '', `title-${idx}-${currentLang}`)}
+                                          className="text-slate-400 hover:text-emerald-400"
+                                        >
+                                          {copiedKey === `title-${idx}-${currentLang}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <p className="font-mono text-sm text-emerald-300 font-bold select-all">{langListing.title || '-'}</p>
+                                  </div>
+
+                                  {/* Bullet Point 1 */}
+                                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-bold text-slate-400 uppercase tracking-wider">Feature Bullet 1</span>
+                                      <div className="flex items-center space-x-2">
+                                        <span className={`font-mono font-bold ${((langListing.bullet1 || '').length > 250) ? 'text-rose-400' : 'text-slate-400'}`}>
+                                          {(langListing.bullet1 || '').length}/250
+                                        </span>
+                                        <button
+                                          onClick={() => copyToClipboard(langListing.bullet1 || '', `b1-${idx}-${currentLang}`)}
+                                          className="text-slate-400 hover:text-emerald-400"
+                                        >
+                                          {copiedKey === `b1-${idx}-${currentLang}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <p className="font-mono text-xs text-slate-200 leading-relaxed select-all">{langListing.bullet1 || '-'}</p>
+                                  </div>
+
+                                  {/* Bullet Point 2 */}
+                                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-bold text-slate-400 uppercase tracking-wider">Feature Bullet 2</span>
+                                      <div className="flex items-center space-x-2">
+                                        <span className={`font-mono font-bold ${((langListing.bullet2 || '').length > 250) ? 'text-rose-400' : 'text-slate-400'}`}>
+                                          {(langListing.bullet2 || '').length}/250
+                                        </span>
+                                        <button
+                                          onClick={() => copyToClipboard(langListing.bullet2 || '', `b2-${idx}-${currentLang}`)}
+                                          className="text-slate-400 hover:text-emerald-400"
+                                        >
+                                          {copiedKey === `b2-${idx}-${currentLang}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <p className="font-mono text-xs text-slate-200 leading-relaxed select-all">{langListing.bullet2 || '-'}</p>
+                                  </div>
+
+                                  {/* Description */}
+                                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-bold text-slate-400 uppercase tracking-wider">Product Description</span>
+                                      <div className="flex items-center space-x-2">
+                                        <span className={`font-mono font-bold ${((langListing.description || '').length > 2000) ? 'text-rose-400' : 'text-slate-400'}`}>
+                                          {(langListing.description || '').length}/2000
+                                        </span>
+                                        <button
+                                          onClick={() => copyToClipboard(langListing.description || '', `desc-${idx}-${currentLang}`)}
+                                          className="text-slate-400 hover:text-emerald-400"
+                                        >
+                                          {copiedKey === `desc-${idx}-${currentLang}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <p className="font-mono text-xs text-slate-300 leading-relaxed select-all whitespace-pre-wrap">{langListing.description || '-'}</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <pre className="p-3 bg-slate-950 rounded-xl text-xs text-slate-200 font-mono overflow-x-auto whitespace-pre-wrap border border-slate-800">
+                                  {typeof event.content === 'string' ? event.content : JSON.stringify(event.content, null, 2)}
+                                </pre>
+                              )}
+
+                              {/* Collapsible raw JSON */}
+                              <details className="text-[11px] text-slate-400">
+                                <summary className="cursor-pointer font-semibold text-slate-400 hover:text-accent-cyan">
+                                  Vollständiges Listing-JSON aller Marktplätze anzeigen (Klick zum Aufklappen)
+                                </summary>
+                                <pre className="mt-1.5 p-2.5 bg-slate-950 rounded-lg text-emerald-400 font-mono text-[11px] border border-slate-800/80 overflow-x-auto">
                                   {JSON.stringify(event.content, null, 2)}
                                 </pre>
                               </details>

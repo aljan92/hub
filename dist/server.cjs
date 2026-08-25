@@ -217107,6 +217107,63 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   },
   "overall_verdict": "APPROVED"
 }`;
+var DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) SEO listing copywriter and compliance specialist.
+Your task is to generate a high-converting, policy-compliant, and perfectly optimized Merch by Amazon listing based on the design, quote, niche, and visual elements.
+
+### 1. RULES FOR EACH FIELD:
+- Title (Max 60 characters!):
+  * Focus on the main quote / idea and strong search keywords.
+  * Do NOT include product types (NO words like "T-Shirt", "shirt", "hoodie", "tank top").
+  * IMPORTANT Suffix-Appending Rule: Ensure the final word in the Title forms a clean long-tail keyword when Amazon automatically appends "T-Shirt" (e.g. end with "Outfit", "Apparel", "Graphic", or the main theme word like "Retro Sunset").
+- Brand (Max 50 characters!):
+  * Create a thematic brand name reflecting the niche / style of the design.
+  * Must contain relevant search keywords.
+  * Must NOT be an existing trademark or brand name. Do NOT include the word "Brand" or product types.
+- Bullet Point 1 (Max 250 characters!):
+  * Focus on the design's content, artistic style, typography, and visual appeal.
+  * Keep it relevant to the artwork. Do NOT mention garment material, fit, sizing, or print quality.
+  * Do NOT use phrases like "this shirt" \u2013 refer to the design or use neutral phrasing (e.g. "Featuring a stylish ...").
+- Bullet Point 2 (Max 250 characters!):
+  * Describe the target audience, lifestyle, or suitable occasion for wearing the artwork.
+  * Do NOT use the word "gift" or phrases like "perfect for birthday" (instead use "Great for anyone who loves...").
+- Description (Max 2000 characters):
+  * Combine the ideas from Bullets 1 & 2 into a reader-friendly, natural paragraph with soft long-tail keywords.
+  * Do NOT mention background color or physical garment properties.
+
+### 2. STRICT COMPLIANCE & BANNED WORDS (ACCOUNT SAFETY):
+- NO quality/material claims: soft, premium, cotton, high quality, durable, lightweight, fitted, loose.
+- NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now.
+- NO background color mentions: white design, black background, transparent.
+- NO trademarks or copyrighted terms.
+- NO profanity, violence, or sensitive themes (must be 100% Family Friendly / PG-13).
+- NO keyword stuffing. Use full, natural sentences.
+
+### 3. MULTI-MARKETPLACE TRANSLATIONS:
+Provide localized, native listings for English (en), German (de), French (fr), Italian (it), Spanish (es), and Japanese (ja).
+CRITICAL: Any English quotes or slogans on the design MUST remain in English in all translated listings! Only translate the surrounding descriptive text.
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
+{
+  "en": {
+    "brand": "<Brand Name max 50 chars>",
+    "title": "<Title max 60 chars>",
+    "bullet1": "<Bullet 1 max 250 chars>",
+    "bullet2": "<Bullet 2 max 250 chars>",
+    "description": "<Description paragraph>"
+  },
+  "de": {
+    "brand": "<Deutscher Brand Name>",
+    "title": "<Deutscher Titel max 60 Zeichen>",
+    "bullet1": "<Deutscher Bullet 1 max 250 Zeichen>",
+    "bullet2": "<Deutscher Bullet 2 max 250 Zeichen>",
+    "description": "<Deutsche Beschreibung>"
+  },
+  "fr": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "it": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "es": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
+}`;
 var SystemPromptService = class {
   static dataDir = import_path69.default.resolve(process.cwd(), "data");
   static promptFile = import_path69.default.resolve(process.cwd(), "data", "system_prompts.json");
@@ -217135,6 +217192,9 @@ var SystemPromptService = class {
           if (!this.cachedPrompts.designAnalyzer) {
             this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
           }
+          if (!this.cachedPrompts.listingGenerator) {
+            this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+          }
           return this.cachedPrompts;
         }
       } catch (e) {
@@ -217143,7 +217203,8 @@ var SystemPromptService = class {
     }
     this.cachedPrompts = {
       promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
-      designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT
+      designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
+      listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT
     };
     try {
       import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
@@ -217159,11 +217220,16 @@ var SystemPromptService = class {
     const prompts = this.loadPrompts();
     return prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
   }
+  static getListingGeneratorPrompt() {
+    const prompts = this.loadPrompts();
+    return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+  }
   static getAllPrompts() {
     const prompts = this.loadPrompts();
     return {
       promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
-      designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT
+      designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
+      listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT
     };
   }
   static savePrompts(updates) {
@@ -217175,6 +217241,9 @@ var SystemPromptService = class {
     if (typeof updates.designAnalyzer === "string") {
       prompts.designAnalyzer = updates.designAnalyzer;
     }
+    if (typeof updates.listingGenerator === "string") {
+      prompts.listingGenerator = updates.listingGenerator;
+    }
     this.cachedPrompts = prompts;
     try {
       import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(prompts, null, 2), "utf-8");
@@ -217182,12 +217251,6 @@ var SystemPromptService = class {
     } catch (e) {
       console.error("[SystemPromptService] Failed to save system_prompts.json:", e);
     }
-  }
-  static savePromptGeneratorPrompt(promptText) {
-    this.savePrompts({ promptGenerator: promptText });
-  }
-  static saveDesignAnalyzerPrompt(promptText) {
-    this.savePrompts({ designAnalyzer: promptText });
   }
   static resetToDefault(type3 = "all") {
     const current = this.loadPrompts();
@@ -217197,6 +217260,9 @@ var SystemPromptService = class {
     if (type3 === "designAnalyzer" || type3 === "all") {
       current.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
     }
+    if (type3 === "listingGenerator" || type3 === "all") {
+      current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+    }
     this.cachedPrompts = current;
     try {
       import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), "utf-8");
@@ -217204,7 +217270,8 @@ var SystemPromptService = class {
     }
     return {
       promptGenerator: current.promptGenerator,
-      designAnalyzer: current.designAnalyzer
+      designAnalyzer: current.designAnalyzer,
+      listingGenerator: current.listingGenerator
     };
   }
 };
@@ -217696,12 +217763,22 @@ Beantworte die 4 Kernfragen streng als JSON!`;
           tokens: usage
         }
       });
-      this.updateTaskStatus(taskId, {
-        status: "COMPLETED",
-        analysisResult: parsedAnalysis,
-        hasError: false
-      });
       console.log(`[TaskLogService] \u{1F441}\uFE0F Vision Design-Analyse f\xFCr Task ${taskId} erfolgreich in ${latencyMs}ms`);
+      const isApproved = parsedAnalysis?.overall_verdict === "APPROVED" || parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended;
+      if (isApproved) {
+        this.updateTaskStatus(taskId, {
+          status: "GENERATING_LISTING",
+          analysisResult: parsedAnalysis,
+          hasError: false
+        });
+        await this.generateListingWithOpenRouter(taskId);
+      } else {
+        this.updateTaskStatus(taskId, {
+          status: "COMPLETED",
+          analysisResult: parsedAnalysis,
+          hasError: false
+        });
+      }
     } catch (err) {
       const latencyMs = Date.now() - start3;
       const errorMsg = err.message || "Fehler bei der Vision Design-Analyse";
@@ -217709,6 +217786,123 @@ Beantworte die 4 Kernfragen streng als JSON!`;
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "ERROR",
         title: "Fehler bei Vision-Analyse",
+        content: errorMsg,
+        metadata: { latencyMs, model }
+      });
+      this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+    }
+  }
+  /**
+   * Automatically generate MBA SEO Listing across all marketplaces (en, de, fr, it, es, ja)
+   */
+  static async generateListingWithOpenRouter(taskId) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) return;
+    const settings = loadSettings();
+    const apiKey = settings.openRouterApiKey;
+    if (!apiKey) {
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ERROR",
+        title: "Fehler: Kein OpenRouter API Key",
+        content: "F\xFCr die Listing-Generierung wird ein OpenRouter API Key in den Settings ben\xF6tigt."
+      });
+      this.updateTaskStatus(taskId, { status: "COMPLETED" });
+      return;
+    }
+    const model = settings.openRouterModel || "anthropic/claude-3.5-sonnet";
+    const listingPrompt = SystemPromptService.getListingGeneratorPrompt();
+    const quote5 = task.payload?.quote || "";
+    const niche1 = task.payload?.niche1 || "";
+    const niche2 = task.payload?.niche2 || "";
+    const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "Men, Women, Youth";
+    const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || "None";
+    const userPromptText = `Please generate the full, multi-language Amazon Merch on Demand (MBA) SEO listing for this design based on the following details:
+
+- Quote / Text: "${quote5}"
+- Primary Niche: "${niche1}"
+- Secondary Niche: "${niche2}"
+- Target Audience: ${targetGroup}
+- Colors to Avoid: ${avoidColors}
+- Ideogram Prompt: "${task.resultPrompt || ""}"
+
+Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to character limits and compliance rules!`;
+    this.addEvent(taskId, {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "LISTING_REQUEST",
+      title: `Senden an OpenRouter (Listing Generator)`,
+      content: {
+        systemPrompt: listingPrompt,
+        userMessage: userPromptText
+      },
+      metadata: { model, provider: "OpenRouter" }
+    });
+    const start3 = Date.now();
+    try {
+      const response2 = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://mbahub.local",
+          "X-Title": "MBA HUB Listing Generator"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: listingPrompt },
+            { role: "user", content: userPromptText }
+          ],
+          temperature: 0.7,
+          max_tokens: 4e3
+        }),
+        signal: AbortSignal.timeout(9e4)
+      });
+      const latencyMs = Date.now() - start3;
+      if (!response2.ok) {
+        const errorText = await response2.text();
+        throw new Error(`OpenRouter Listing API Fehler: ${response2.status} - ${errorText}`);
+      }
+      const data = await response2.json();
+      const rawContent = data.choices?.[0]?.message?.content || "";
+      let parsedListing = null;
+      try {
+        let cleanJsonStr = rawContent.trim();
+        if (cleanJsonStr.startsWith("```")) {
+          cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+        }
+        parsedListing = JSON.parse(cleanJsonStr);
+      } catch (pe) {
+        parsedListing = rawContent;
+      }
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "LISTING_RESPONSE",
+        title: `Empfangen von OpenRouter (MBA Listing)`,
+        content: parsedListing,
+        metadata: {
+          model: data.model || model,
+          latencyMs,
+          tokens: data.usage ? {
+            prompt: data.usage.prompt_tokens,
+            completion: data.usage.completion_tokens,
+            total: data.usage.total_tokens
+          } : void 0
+        }
+      });
+      this.updateTaskStatus(taskId, {
+        status: "COMPLETED",
+        listingResult: parsedListing,
+        hasError: false
+      });
+      console.log(`[TaskLogService] \u{1F4DD} MBA Listing f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+    } catch (err) {
+      const latencyMs = Date.now() - start3;
+      const errorMsg = err.message || "Fehler bei der Listing-Generierung";
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ERROR",
+        title: "Fehler bei Listing-Generierung",
         content: errorMsg,
         metadata: { latencyMs, model }
       });
@@ -217733,6 +217927,7 @@ Beantworte die 4 Kernfragen streng als JSON!`;
       currentTask.imageUrl = void 0;
       currentTask.localImagePath = void 0;
       currentTask.analysisResult = void 0;
+      currentTask.listingResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
@@ -217750,6 +217945,7 @@ Beantworte die 4 Kernfragen streng als JSON!`;
       currentTask.imageUrl = void 0;
       currentTask.localImagePath = void 0;
       currentTask.analysisResult = void 0;
+      currentTask.listingResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
@@ -217766,6 +217962,7 @@ Beantworte die 4 Kernfragen streng als JSON!`;
       }
       currentTask.status = "ANALYZING_DESIGN";
       currentTask.analysisResult = void 0;
+      currentTask.listingResult = void 0;
       currentTask.hasError = false;
       currentTask.errorDetails = void 0;
       this.saveLogs(logs);
@@ -217775,6 +217972,21 @@ Beantworte die 4 Kernfragen streng als JSON!`;
         console.error(`[TaskLogService] Retry Analysis failed for task ${taskId}:`, err);
       });
       return { success: true, message: "Vision Design-Analyse neu gestartet." };
+    }
+    if (stepType === "LISTING_REQUEST") {
+      const keepIdx = currentTask.events.findIndex((e) => e.type === "LISTING_REQUEST");
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = "GENERATING_LISTING";
+      currentTask.listingResult = void 0;
+      currentTask.hasError = false;
+      currentTask.errorDetails = void 0;
+      this.saveLogs(logs);
+      this.generateListingWithOpenRouter(taskId).catch((err) => {
+        console.error(`[TaskLogService] Retry Listing failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "MBA Listing-Generierung neu gestartet." };
     }
     throw new Error(`Unbekannter Step-Typ: ${stepType}`);
   }
@@ -218523,17 +218735,19 @@ app.get("/api/v1/systemprompts", (req, res) => {
   res.json({
     success: true,
     promptGenerator: prompts.promptGenerator,
-    designAnalyzer: prompts.designAnalyzer
+    designAnalyzer: prompts.designAnalyzer,
+    listingGenerator: prompts.listingGenerator
   });
 });
 app.post("/api/v1/systemprompts", (req, res) => {
-  const { promptGenerator, designAnalyzer } = req.body;
-  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer });
+  const { promptGenerator, designAnalyzer, listingGenerator } = req.body;
+  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer, listingGenerator });
   const updated = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
     promptGenerator: updated.promptGenerator,
-    designAnalyzer: updated.designAnalyzer
+    designAnalyzer: updated.designAnalyzer,
+    listingGenerator: updated.listingGenerator
   });
 });
 app.post("/api/v1/systemprompts/reset", (req, res) => {
@@ -218542,7 +218756,8 @@ app.post("/api/v1/systemprompts/reset", (req, res) => {
   res.json({
     success: true,
     promptGenerator: resetPrompts.promptGenerator,
-    designAnalyzer: resetPrompts.designAnalyzer
+    designAnalyzer: resetPrompts.designAnalyzer,
+    listingGenerator: resetPrompts.listingGenerator
   });
 });
 app.get("/api/v1/designs/image/:taskId", (req, res) => {

@@ -6,7 +6,7 @@ import { IdeogramService } from './ideogramService';
 
 export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER';
 export type TaskSuffix = 'H' | 'T' | 'D';
-export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'COMPLETED' | 'ERROR';
+export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'COMPLETED' | 'ERROR';
 
 export type EventType = 
   | 'INCOMING_PAYLOAD'
@@ -17,12 +17,14 @@ export type EventType =
   | 'IDEOGRAM_RESPONSE'
   | 'ANALYSIS_REQUEST'
   | 'ANALYSIS_RESPONSE'
+  | 'LISTING_REQUEST'
+  | 'LISTING_RESPONSE'
   | 'ERROR';
 
 export interface SessionEvent {
   timestamp: string; // ISO String (z.B. "2026-08-25T13:05:12.123Z")
   type: EventType;
-  title: string;     // z.B. "Eingang von Hermes", "Senden an OpenRouter", "Senden an Ideogram", "Design-Analyse"
+  title: string;     // z.B. "Eingang von Hermes", "Senden an OpenRouter", "Senden an Ideogram", "Design-Analyse", "Listing-Erstellung"
   content: any;
   metadata?: {
     model?: string;
@@ -51,6 +53,7 @@ export interface DesignTaskLog {
   imageUrl?: string;
   localImagePath?: string;
   analysisResult?: any;
+  listingResult?: any;
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -625,13 +628,26 @@ export class TaskLogService {
         }
       });
 
-      this.updateTaskStatus(taskId, {
-        status: 'COMPLETED',
-        analysisResult: parsedAnalysis,
-        hasError: false
-      });
-
       console.log(`[TaskLogService] 👁️ Vision Design-Analyse für Task ${taskId} erfolgreich in ${latencyMs}ms`);
+
+      // Check if design is APPROVED -> Automatically generate Listing!
+      const isApproved = parsedAnalysis?.overall_verdict === 'APPROVED' || 
+        (parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended);
+
+      if (isApproved) {
+        this.updateTaskStatus(taskId, {
+          status: 'GENERATING_LISTING',
+          analysisResult: parsedAnalysis,
+          hasError: false
+        });
+        await this.generateListingWithOpenRouter(taskId);
+      } else {
+        this.updateTaskStatus(taskId, {
+          status: 'COMPLETED',
+          analysisResult: parsedAnalysis,
+          hasError: false
+        });
+      }
     } catch (err: any) {
       const latencyMs = Date.now() - start;
       const errorMsg = err.message || 'Fehler bei der Vision Design-Analyse';
@@ -647,9 +663,133 @@ export class TaskLogService {
   }
 
   /**
+   * Automatically generate MBA SEO Listing across all marketplaces (en, de, fr, it, es, ja)
+   */
+  static async generateListingWithOpenRouter(taskId: string) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) return;
+
+    const settings = loadSettings();
+    const apiKey = settings.openRouterApiKey;
+    if (!apiKey) {
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: 'Fehler: Kein OpenRouter API Key',
+        content: 'Für die Listing-Generierung wird ein OpenRouter API Key in den Settings benötigt.'
+      });
+      this.updateTaskStatus(taskId, { status: 'COMPLETED' });
+      return;
+    }
+
+    const model = settings.openRouterModel || 'anthropic/claude-3.5-sonnet';
+    const listingPrompt = SystemPromptService.getListingGeneratorPrompt();
+    const quote = task.payload?.quote || '';
+    const niche1 = task.payload?.niche1 || '';
+    const niche2 = task.payload?.niche2 || '';
+    const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) 
+      ? task.analysisResult.target_group.selected.join(', ') 
+      : 'Men, Women, Youth';
+    const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || 'None';
+
+    const userPromptText = `Please generate the full, multi-language Amazon Merch on Demand (MBA) SEO listing for this design based on the following details:\n\n- Quote / Text: "${quote}"\n- Primary Niche: "${niche1}"\n- Secondary Niche: "${niche2}"\n- Target Audience: ${targetGroup}\n- Colors to Avoid: ${avoidColors}\n- Ideogram Prompt: "${task.resultPrompt || ''}"\n\nGenerate the complete JSON for en, de, fr, it, es, ja strictly adhering to character limits and compliance rules!`;
+
+    // 1. Log Event: Senden an OpenRouter (Listing Generator)
+    this.addEvent(taskId, {
+      timestamp: new Date().toISOString(),
+      type: 'LISTING_REQUEST',
+      title: `Senden an OpenRouter (Listing Generator)`,
+      content: {
+        systemPrompt: listingPrompt,
+        userMessage: userPromptText
+      },
+      metadata: { model, provider: 'OpenRouter' }
+    });
+
+    const start = Date.now();
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://mbahub.local',
+          'X-Title': 'MBA HUB Listing Generator'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: listingPrompt },
+            { role: 'user', content: userPromptText }
+          ],
+          temperature: 0.7,
+          max_tokens: 4000
+        }),
+        signal: AbortSignal.timeout(90000)
+      });
+
+      const latencyMs = Date.now() - start;
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter Listing API Fehler: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      const rawContent = data.choices?.[0]?.message?.content || '';
+
+      let parsedListing: any = null;
+      try {
+        let cleanJsonStr = rawContent.trim();
+        if (cleanJsonStr.startsWith('```')) {
+          cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        }
+        parsedListing = JSON.parse(cleanJsonStr);
+      } catch (pe) {
+        parsedListing = rawContent;
+      }
+
+      // 2. Log Event: Empfangen von OpenRouter (Listing)
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'LISTING_RESPONSE',
+        title: `Empfangen von OpenRouter (MBA Listing)`,
+        content: parsedListing,
+        metadata: {
+          model: data.model || model,
+          latencyMs,
+          tokens: data.usage ? {
+            prompt: data.usage.prompt_tokens,
+            completion: data.usage.completion_tokens,
+            total: data.usage.total_tokens
+          } : undefined
+        }
+      });
+
+      this.updateTaskStatus(taskId, {
+        status: 'COMPLETED',
+        listingResult: parsedListing,
+        hasError: false
+      });
+
+      console.log(`[TaskLogService] 📝 MBA Listing für Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+    } catch (err: any) {
+      const latencyMs = Date.now() - start;
+      const errorMsg = err.message || 'Fehler bei der Listing-Generierung';
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: 'Fehler bei Listing-Generierung',
+        content: errorMsg,
+        metadata: { latencyMs, model }
+      });
+      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
+    }
+  }
+
+  /**
    * Jump back to an earlier pipeline step and re-execute from there
    */
-  static async retryFromStep(taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST') {
+  static async retryFromStep(taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST' | 'LISTING_REQUEST') {
     const logs = this.loadLogs();
     const taskIdx = logs.findIndex(t => t.id.toLowerCase() === taskId.toLowerCase());
     if (taskIdx === -1) throw new Error(`Task ${taskId} nicht gefunden.`);
@@ -666,12 +806,13 @@ export class TaskLogService {
       currentTask.imageUrl = undefined;
       currentTask.localImagePath = undefined;
       currentTask.analysisResult = undefined;
+      currentTask.listingResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
 
       this.saveLogs(logs);
 
-      // Re-execute OpenRouter prompt generation -> Ideogram -> Vision
+      // Re-execute OpenRouter prompt generation -> Ideogram -> Vision -> Listing
       this.processTaskWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Retry failed for task ${taskId}:`, err);
       });
@@ -688,6 +829,7 @@ export class TaskLogService {
       currentTask.imageUrl = undefined;
       currentTask.localImagePath = undefined;
       currentTask.analysisResult = undefined;
+      currentTask.listingResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
 
@@ -708,6 +850,7 @@ export class TaskLogService {
       }
       currentTask.status = 'ANALYZING_DESIGN';
       currentTask.analysisResult = undefined;
+      currentTask.listingResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
 
@@ -721,6 +864,25 @@ export class TaskLogService {
       });
 
       return { success: true, message: 'Vision Design-Analyse neu gestartet.' };
+    }
+
+    if (stepType === 'LISTING_REQUEST') {
+      const keepIdx = currentTask.events.findIndex(e => e.type === 'LISTING_REQUEST');
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = 'GENERATING_LISTING';
+      currentTask.listingResult = undefined;
+      currentTask.hasError = false;
+      currentTask.errorDetails = undefined;
+
+      this.saveLogs(logs);
+
+      this.generateListingWithOpenRouter(taskId).catch(err => {
+        console.error(`[TaskLogService] Retry Listing failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'MBA Listing-Generierung neu gestartet.' };
     }
 
     throw new Error(`Unbekannter Step-Typ: ${stepType}`);

@@ -930,18 +930,20 @@ app.get('/api/v1/systemprompts', (req, res) => {
   res.json({
     success: true,
     promptGenerator: prompts.promptGenerator,
-    designAnalyzer: prompts.designAnalyzer
+    designAnalyzer: prompts.designAnalyzer,
+    listingGenerator: prompts.listingGenerator
   });
 });
 
 app.post('/api/v1/systemprompts', (req, res) => {
-  const { promptGenerator, designAnalyzer } = req.body;
-  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer });
+  const { promptGenerator, designAnalyzer, listingGenerator } = req.body;
+  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer, listingGenerator });
   const updated = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
     promptGenerator: updated.promptGenerator,
-    designAnalyzer: updated.designAnalyzer
+    designAnalyzer: updated.designAnalyzer,
+    listingGenerator: updated.listingGenerator
   });
 });
 
@@ -951,7 +953,8 @@ app.post('/api/v1/systemprompts/reset', (req, res) => {
   res.json({
     success: true,
     promptGenerator: resetPrompts.promptGenerator,
-    designAnalyzer: resetPrompts.designAnalyzer
+    designAnalyzer: resetPrompts.designAnalyzer,
+    listingGenerator: resetPrompts.listingGenerator
   });
 });
 

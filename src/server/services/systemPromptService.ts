@@ -64,6 +64,64 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "overall_verdict": "APPROVED"
 }`;
 
+export const DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) SEO listing copywriter and compliance specialist.
+Your task is to generate a high-converting, policy-compliant, and perfectly optimized Merch by Amazon listing based on the design, quote, niche, and visual elements.
+
+### 1. RULES FOR EACH FIELD:
+- Title (Max 60 characters!):
+  * Focus on the main quote / idea and strong search keywords.
+  * Do NOT include product types (NO words like "T-Shirt", "shirt", "hoodie", "tank top").
+  * IMPORTANT Suffix-Appending Rule: Ensure the final word in the Title forms a clean long-tail keyword when Amazon automatically appends "T-Shirt" (e.g. end with "Outfit", "Apparel", "Graphic", or the main theme word like "Retro Sunset").
+- Brand (Max 50 characters!):
+  * Create a thematic brand name reflecting the niche / style of the design.
+  * Must contain relevant search keywords.
+  * Must NOT be an existing trademark or brand name. Do NOT include the word "Brand" or product types.
+- Bullet Point 1 (Max 250 characters!):
+  * Focus on the design's content, artistic style, typography, and visual appeal.
+  * Keep it relevant to the artwork. Do NOT mention garment material, fit, sizing, or print quality.
+  * Do NOT use phrases like "this shirt" – refer to the design or use neutral phrasing (e.g. "Featuring a stylish ...").
+- Bullet Point 2 (Max 250 characters!):
+  * Describe the target audience, lifestyle, or suitable occasion for wearing the artwork.
+  * Do NOT use the word "gift" or phrases like "perfect for birthday" (instead use "Great for anyone who loves...").
+- Description (Max 2000 characters):
+  * Combine the ideas from Bullets 1 & 2 into a reader-friendly, natural paragraph with soft long-tail keywords.
+  * Do NOT mention background color or physical garment properties.
+
+### 2. STRICT COMPLIANCE & BANNED WORDS (ACCOUNT SAFETY):
+- NO quality/material claims: soft, premium, cotton, high quality, durable, lightweight, fitted, loose.
+- NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now.
+- NO background color mentions: white design, black background, transparent.
+- NO trademarks or copyrighted terms.
+- NO profanity, violence, or sensitive themes (must be 100% Family Friendly / PG-13).
+- NO keyword stuffing. Use full, natural sentences.
+
+### 3. MULTI-MARKETPLACE TRANSLATIONS:
+Provide localized, native listings for English (en), German (de), French (fr), Italian (it), Spanish (es), and Japanese (ja).
+CRITICAL: Any English quotes or slogans on the design MUST remain in English in all translated listings! Only translate the surrounding descriptive text.
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
+{
+  "en": {
+    "brand": "<Brand Name max 50 chars>",
+    "title": "<Title max 60 chars>",
+    "bullet1": "<Bullet 1 max 250 chars>",
+    "bullet2": "<Bullet 2 max 250 chars>",
+    "description": "<Description paragraph>"
+  },
+  "de": {
+    "brand": "<Deutscher Brand Name>",
+    "title": "<Deutscher Titel max 60 Zeichen>",
+    "bullet1": "<Deutscher Bullet 1 max 250 Zeichen>",
+    "bullet2": "<Deutscher Bullet 2 max 250 Zeichen>",
+    "description": "<Deutsche Beschreibung>"
+  },
+  "fr": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "it": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "es": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
+}`;
+
 export class SystemPromptService {
   private static dataDir = path.resolve(process.cwd(), 'data');
   private static promptFile = path.resolve(process.cwd(), 'data', 'system_prompts.json');
@@ -95,6 +153,9 @@ export class SystemPromptService {
           if (!this.cachedPrompts.designAnalyzer) {
             this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
           }
+          if (!this.cachedPrompts.listingGenerator) {
+            this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+          }
           return this.cachedPrompts;
         }
       } catch (e) {
@@ -105,6 +166,7 @@ export class SystemPromptService {
     this.cachedPrompts = {
       promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
+      listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
     };
 
     try {
@@ -124,15 +186,21 @@ export class SystemPromptService {
     return prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
   }
 
-  static getAllPrompts(): { promptGenerator: string; designAnalyzer: string } {
+  static getListingGeneratorPrompt(): string {
+    const prompts = this.loadPrompts();
+    return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+  }
+
+  static getAllPrompts(): { promptGenerator: string; designAnalyzer: string; listingGenerator: string } {
     const prompts = this.loadPrompts();
     return {
       promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
+      listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
     };
   }
 
-  static savePrompts(updates: { promptGenerator?: string; designAnalyzer?: string }): void {
+  static savePrompts(updates: { promptGenerator?: string; designAnalyzer?: string; listingGenerator?: string }): void {
     this.ensureDataDir();
     const prompts = this.loadPrompts();
     if (typeof updates.promptGenerator === 'string') {
@@ -140,6 +208,9 @@ export class SystemPromptService {
     }
     if (typeof updates.designAnalyzer === 'string') {
       prompts.designAnalyzer = updates.designAnalyzer;
+    }
+    if (typeof updates.listingGenerator === 'string') {
+      prompts.listingGenerator = updates.listingGenerator;
     }
     this.cachedPrompts = prompts;
 
@@ -151,21 +222,16 @@ export class SystemPromptService {
     }
   }
 
-  static savePromptGeneratorPrompt(promptText: string): void {
-    this.savePrompts({ promptGenerator: promptText });
-  }
-
-  static saveDesignAnalyzerPrompt(promptText: string): void {
-    this.savePrompts({ designAnalyzer: promptText });
-  }
-
-  static resetToDefault(type: 'promptGenerator' | 'designAnalyzer' | 'all' = 'all'): { promptGenerator: string; designAnalyzer: string } {
+  static resetToDefault(type: 'promptGenerator' | 'designAnalyzer' | 'listingGenerator' | 'all' = 'all'): { promptGenerator: string; designAnalyzer: string; listingGenerator: string } {
     const current = this.loadPrompts();
     if (type === 'promptGenerator' || type === 'all') {
       current.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
     }
     if (type === 'designAnalyzer' || type === 'all') {
       current.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+    }
+    if (type === 'listingGenerator' || type === 'all') {
+      current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
     }
     this.cachedPrompts = current;
     try {
@@ -175,6 +241,7 @@ export class SystemPromptService {
     return {
       promptGenerator: current.promptGenerator,
       designAnalyzer: current.designAnalyzer,
+      listingGenerator: current.listingGenerator,
     };
   }
 }
