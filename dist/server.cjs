@@ -218149,7 +218149,7 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
           }
         });
         if (fieldResults.quote?.hasInfringementClass25) {
-          const rejectionReason = `Die Quote "${currentFields.quote}" verletzt ein eingetragenes Markenrecht in Nizza-Klasse 25 (Bekleidung) und kann nicht sicher verkauft werden.`;
+          const rejectionReason = `Die Quote "${currentFields.quote}" verletzt ein eingetragenes Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Pr\xFCfung in Tasks.`;
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TM_REFINE_RESPONSE",
@@ -218158,11 +218158,25 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
               verdict: "REJECTED",
               rejection_reason: rejectionReason,
               blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-              actions_taken: ["Quote in Klasse 25 gesch\xFCtzt -> Design sofort abgelehnt."]
+              actions_taken: ["Quote in Klasse 25 gesch\xFCtzt -> Zur manuellen Pr\xFCfung an Tasks \xFCbergeben."]
+            }
+          });
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)",
+            content: {
+              checkpoint: "TM_REVIEW",
+              reason: rejectionReason,
+              verdict: "REJECTED",
+              round: checkRound,
+              totalHits,
+              fieldSummaries: fieldResults
             }
           });
           this.updateTaskStatus(taskId, {
-            status: "REJECTED",
+            status: "AWAITING_TM_REVIEW",
+            checkpoint: "TM_REVIEW",
             trademarkCheckResult: {
               totalHits,
               hasInfringementClass25: true,
@@ -218177,7 +218191,7 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
             hasError: false,
             errorDetails: rejectionReason
           });
-          console.log(`[TaskLogService] \u274C Task ${taskId} abgelehnt (Quote ist Class 25 Trademark).`);
+          console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (Quote ist Class 25 Trademark).`);
           return;
         }
         const brandTitleSafeForApparel = !fieldResults.brand?.hasInfringementClass25 && !fieldResults.title?.hasInfringementClass25 && !hasCls25;
@@ -218351,8 +218365,22 @@ Please audit every hit strictly against these rules:
               } : void 0
             }
           });
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: `\xDCbergeben an Tasks (Trademark-Ablehnung in Runde ${checkRound})`,
+            content: {
+              checkpoint: "TM_REVIEW",
+              reason: parsedRefined.rejection_reason || "Markenrechtsverletzung vom LLM festgestellt. Wartet auf manuelle Pr\xFCfung in Tasks.",
+              verdict: "REJECTED",
+              round: checkRound,
+              totalHits,
+              fieldSummaries: fieldResults
+            }
+          });
           this.updateTaskStatus(taskId, {
-            status: "REJECTED",
+            status: "AWAITING_TM_REVIEW",
+            checkpoint: "TM_REVIEW",
             trademarkCheckResult: {
               totalHits,
               hasInfringementClass25: true,
@@ -218366,7 +218394,7 @@ Please audit every hit strictly against these rules:
             hasError: false,
             errorDetails: parsedRefined.rejection_reason || "Markenrechtsverletzung festgestellt."
           });
-          console.log(`[TaskLogService] \u274C Task ${taskId} von LLM in Runde ${checkRound} abgelehnt: ${parsedRefined.rejection_reason}`);
+          console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (TM-Ablehnung in Runde ${checkRound}): ${parsedRefined.rejection_reason}`);
           return;
         }
         this.addEvent(taskId, {

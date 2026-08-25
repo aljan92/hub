@@ -1004,9 +1004,9 @@ export class TaskLogService {
           }
         });
 
-        // 3. Sofortige Ablehnung: Wenn Quote selbst ein aktives Klasse 25 Trademark verletzt!
+        // 3. Wenn Quote selbst ein aktives Klasse 25 Trademark verletzt -> Übergabe an Tasks zur manuellen Freigabe/Anpassung
         if (fieldResults.quote?.hasInfringementClass25) {
-          const rejectionReason = `Die Quote "${currentFields.quote}" verletzt ein eingetragenes Markenrecht in Nizza-Klasse 25 (Bekleidung) und kann nicht sicher verkauft werden.`;
+          const rejectionReason = `Die Quote "${currentFields.quote}" verletzt ein eingetragenes Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Prüfung in Tasks.`;
           this.addEvent(taskId, {
             timestamp: new Date().toISOString(),
             type: 'TM_REFINE_RESPONSE',
@@ -1015,12 +1015,27 @@ export class TaskLogService {
               verdict: 'REJECTED',
               rejection_reason: rejectionReason,
               blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              actions_taken: ['Quote in Klasse 25 geschützt -> Design sofort abgelehnt.']
+              actions_taken: ['Quote in Klasse 25 geschützt -> Zur manuellen Prüfung an Tasks übergeben.']
+            }
+          });
+
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'TASK_HANDOFF',
+            title: 'Übergeben an Tasks (Manuelle Trademark-Optimierung)',
+            content: {
+              checkpoint: 'TM_REVIEW',
+              reason: rejectionReason,
+              verdict: 'REJECTED',
+              round: checkRound,
+              totalHits,
+              fieldSummaries: fieldResults
             }
           });
 
           this.updateTaskStatus(taskId, {
-            status: 'REJECTED',
+            status: 'AWAITING_TM_REVIEW',
+            checkpoint: 'TM_REVIEW',
             trademarkCheckResult: {
               totalHits,
               hasInfringementClass25: true,
@@ -1035,7 +1050,7 @@ export class TaskLogService {
             hasError: false,
             errorDetails: rejectionReason
           });
-          console.log(`[TaskLogService] ❌ Task ${taskId} abgelehnt (Quote ist Class 25 Trademark).`);
+          console.log(`[TaskLogService] 📋 Task ${taskId} an Tasks übergeben (Quote ist Class 25 Trademark).`);
           return;
         }
 
@@ -1227,8 +1242,23 @@ export class TaskLogService {
             }
           });
 
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'TASK_HANDOFF',
+            title: `Übergeben an Tasks (Trademark-Ablehnung in Runde ${checkRound})`,
+            content: {
+              checkpoint: 'TM_REVIEW',
+              reason: parsedRefined.rejection_reason || 'Markenrechtsverletzung vom LLM festgestellt. Wartet auf manuelle Prüfung in Tasks.',
+              verdict: 'REJECTED',
+              round: checkRound,
+              totalHits,
+              fieldSummaries: fieldResults
+            }
+          });
+
           this.updateTaskStatus(taskId, {
-            status: 'REJECTED',
+            status: 'AWAITING_TM_REVIEW',
+            checkpoint: 'TM_REVIEW',
             trademarkCheckResult: {
               totalHits,
               hasInfringementClass25: true,
@@ -1242,7 +1272,7 @@ export class TaskLogService {
             hasError: false,
             errorDetails: parsedRefined.rejection_reason || 'Markenrechtsverletzung festgestellt.'
           });
-          console.log(`[TaskLogService] ❌ Task ${taskId} von LLM in Runde ${checkRound} abgelehnt: ${parsedRefined.rejection_reason}`);
+          console.log(`[TaskLogService] 📋 Task ${taskId} an Tasks übergeben (TM-Ablehnung in Runde ${checkRound}): ${parsedRefined.rejection_reason}`);
           return;
         }
 
