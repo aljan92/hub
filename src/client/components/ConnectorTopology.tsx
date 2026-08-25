@@ -229,20 +229,35 @@ export const ConnectorTopology: React.FC<ConnectorTopologyProps> = ({
               onClick={() => setSelectedNode('hub')}
               className="w-full relative group cursor-pointer"
             >
-              <div className="absolute -inset-1.5 bg-gradient-to-r from-cyan-500 via-primary-500 to-indigo-500 rounded-2xl blur-md opacity-35 group-hover:opacity-60 transition duration-300" />
-              <div className="relative bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border-2 border-primary-500/50 rounded-2xl p-6 text-center shadow-xl transition-all group-hover:scale-[1.02]">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-tr from-primary-600 to-cyan-500 text-white shadow-lg shadow-primary-500/25 mb-2.5">
-                  <Zap className="w-6 h-6" />
+              <div className={`absolute -inset-1.5 rounded-2xl blur-md transition duration-500 ${
+                (isLoading || !healthData) 
+                  ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 opacity-60 animate-pulse' 
+                  : 'bg-gradient-to-r from-cyan-500 via-primary-500 to-indigo-500 opacity-35 group-hover:opacity-60'
+              }`} />
+              <div className={`relative bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border-2 rounded-2xl p-6 text-center shadow-xl transition-all group-hover:scale-[1.02] ${
+                (isLoading || !healthData) ? 'border-amber-500/60' : 'border-primary-500/50'
+              }`}>
+                <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl text-white shadow-lg mb-3 transition-all ${
+                  (isLoading || !healthData) 
+                    ? 'bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/30 animate-pulse' 
+                    : 'bg-gradient-to-tr from-primary-600 to-cyan-500 shadow-primary-500/25'
+                }`}>
+                  {(isLoading || !healthData) ? (
+                    <RefreshCw className="w-6 h-6 animate-spin" />
+                  ) : (
+                    <Zap className="w-6 h-6" />
+                  )}
                 </div>
                 <h4 className="text-xl font-black tracking-wider text-white uppercase">
                   MBA HUB
                 </h4>
-                <p className="text-[10px] font-semibold text-cyan-400 uppercase tracking-widest mt-0.5">
-                  Zentrale Integrationsplattform
-                </p>
-                <div className="mt-3 inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/80 border border-slate-800 text-[10px] text-slate-300 font-mono">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Port 3000 • NAS Core</span>
+                <div className={`mt-3.5 inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-slate-950/90 border text-xs font-mono transition-all ${
+                  (isLoading || !healthData) ? 'border-amber-500/40 text-amber-300' : 'border-emerald-500/40 text-emerald-300'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    (isLoading || !healthData) ? 'bg-amber-400 animate-ping' : 'bg-emerald-400 animate-pulse'
+                  }`} />
+                  <span className="font-semibold">{(isLoading || !healthData) ? 'Initialisiere...' : 'Bereit'}</span>
                 </div>
               </div>
             </div>

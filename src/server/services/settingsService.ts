@@ -60,7 +60,12 @@ function getSettingsFilePath(): string {
   return path.join(dataDir, 'settings.json');
 }
 
+let cachedSettings: AppSettings | null = null;
+
 export function loadSettings(): AppSettings {
+  if (cachedSettings) {
+    return cachedSettings;
+  }
   const filePath = getSettingsFilePath();
   if (fs.existsSync(filePath)) {
     try {
@@ -71,17 +76,20 @@ export function loadSettings(): AppSettings {
         settings.mcpApiKey = generateApiKey();
         saveSettings({ mcpApiKey: settings.mcpApiKey });
       }
+      cachedSettings = settings;
       return settings;
     } catch (err) {
       console.error('[Settings] Error reading settings.json:', err);
     }
   }
-  return { ...DEFAULT_SETTINGS };
+  cachedSettings = { ...DEFAULT_SETTINGS };
+  return cachedSettings;
 }
 
 export function saveSettings(newSettings: Partial<AppSettings>): AppSettings {
   const current = loadSettings();
   const merged = { ...current, ...newSettings };
+  cachedSettings = merged;
   const filePath = getSettingsFilePath();
   try {
     fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');

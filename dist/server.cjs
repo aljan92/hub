@@ -214213,7 +214213,11 @@ function getSettingsFilePath() {
   }
   return import_path66.default.join(dataDir, "settings.json");
 }
+var cachedSettings = null;
 function loadSettings() {
+  if (cachedSettings) {
+    return cachedSettings;
+  }
   const filePath = getSettingsFilePath();
   if (import_fs71.default.existsSync(filePath)) {
     try {
@@ -214224,16 +214228,19 @@ function loadSettings() {
         settings.mcpApiKey = generateApiKey();
         saveSettings({ mcpApiKey: settings.mcpApiKey });
       }
+      cachedSettings = settings;
       return settings;
     } catch (err) {
       console.error("[Settings] Error reading settings.json:", err);
     }
   }
-  return { ...DEFAULT_SETTINGS };
+  cachedSettings = { ...DEFAULT_SETTINGS };
+  return cachedSettings;
 }
 function saveSettings(newSettings) {
   const current = loadSettings();
   const merged = { ...current, ...newSettings };
+  cachedSettings = merged;
   const filePath = getSettingsFilePath();
   try {
     import_fs71.default.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");

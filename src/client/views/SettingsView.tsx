@@ -30,33 +30,44 @@ export const SettingsView: React.FC = () => {
   const [saved, setSaved] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, { testing?: boolean; success?: boolean; latencyMs?: number; error?: string; details?: string; message?: string }>>({});
 
+  // Fast LocalStorage hydration to eliminate any loading delay or empty fields
+  const getCachedSettings = () => {
+    try {
+      const c = localStorage.getItem('mba_cached_settings_data');
+      return c ? JSON.parse(c) : {};
+    } catch {
+      return {};
+    }
+  };
+  const initialSettings = getCachedSettings();
+
   // Settings State
-  const [openRouterApiKey, setOpenRouterApiKey] = useState('');
-  const [llmProvider, setLlmProvider] = useState<'openrouter' | 'openai'>('openrouter');
-  const [llmModel, setLlmModel] = useState('anthropic/claude-3.5-sonnet');
+  const [openRouterApiKey, setOpenRouterApiKey] = useState<string>(initialSettings.openRouterApiKey || '');
+  const [llmProvider, setLlmProvider] = useState<'openrouter' | 'openai'>(initialSettings.llmProvider || 'openrouter');
+  const [llmModel, setLlmModel] = useState<string>(initialSettings.llmModel || 'anthropic/claude-3.5-sonnet');
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string; promptPrice?: string; completionPrice?: string }[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
 
-  const [ideogramApiKey, setIdeogramApiKey] = useState('');
-  const [ideogramModel, setIdeogramModel] = useState('V_2_TURBO');
+  const [ideogramApiKey, setIdeogramApiKey] = useState<string>(initialSettings.ideogramApiKey || '');
+  const [ideogramModel, setIdeogramModel] = useState<string>(initialSettings.ideogramModel || 'V_2_TURBO');
   const [availableIdeogramModels, setAvailableIdeogramModels] = useState<{ id: string; name: string }[]>([
     { id: 'V_2_TURBO', name: 'Ideogram 2.0 Turbo (Schnell, hohe Qualität)' },
     { id: 'V_2', name: 'Ideogram 2.0 (High Quality)' },
     { id: 'V_1', name: 'Ideogram 1.0 (Klassisch)' },
   ]);
 
-  const [vectorizerApiKey, setVectorizerApiKey] = useState('');
-  const [vectorizerApiSecret, setVectorizerApiSecret] = useState('');
+  const [vectorizerApiKey, setVectorizerApiKey] = useState<string>(initialSettings.vectorizerApiKey || '');
+  const [vectorizerApiSecret, setVectorizerApiSecret] = useState<string>(initialSettings.vectorizerApiSecret || '');
 
-  const [supabaseUrl, setSupabaseUrl] = useState('');
-  const [supabaseServiceRoleKey, setSupabaseServiceRoleKey] = useState('');
+  const [supabaseUrl, setSupabaseUrl] = useState<string>(initialSettings.supabaseUrl || '');
+  const [supabaseServiceRoleKey, setSupabaseServiceRoleKey] = useState<string>(initialSettings.supabaseServiceRoleKey || '');
 
-  const [nasHost, setNasHost] = useState('192.168.178.141');
-  const [nasUser, setNasUser] = useState('aljan92');
-  const [autoSlotFillHour, setAutoSlotFillHour] = useState(4);
+  const [nasHost, setNasHost] = useState<string>(initialSettings.nasHost || '192.168.178.141');
+  const [nasUser, setNasUser] = useState<string>(initialSettings.nasUser || 'aljan92');
+  const [autoSlotFillHour, setAutoSlotFillHour] = useState<number>(initialSettings.autoSlotFillHour || 4);
 
-  const [mcpApiKey, setMcpApiKey] = useState('');
+  const [mcpApiKey, setMcpApiKey] = useState<string>(initialSettings.mcpApiKey || '');
   const [showMcpKey, setShowMcpKey] = useState(false);
   const [copiedMcpKey, setCopiedMcpKey] = useState(false);
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
@@ -82,6 +93,9 @@ export const SettingsView: React.FC = () => {
           setNasUser(s.nasUser || 'aljan92');
           setAutoSlotFillHour(s.autoSlotFillHour || 4);
           setMcpApiKey(s.mcpApiKey || '');
+          try {
+            localStorage.setItem('mba_cached_settings_data', JSON.stringify(s));
+          } catch {}
         }
       })
       .catch(err => console.warn('[Settings] Failed to fetch settings:', err));
@@ -159,6 +173,9 @@ export const SettingsView: React.FC = () => {
       });
 
       if (res.ok) {
+        try {
+          localStorage.setItem('mba_cached_settings_data', JSON.stringify(payload));
+        } catch {}
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
       }
