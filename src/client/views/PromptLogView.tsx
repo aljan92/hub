@@ -44,6 +44,7 @@ export type EventType =
   | 'IDEOGRAM_RESPONSE'
   | 'ANALYSIS_REQUEST'
   | 'ANALYSIS_RESPONSE'
+  | 'TASK_HANDOFF'
   | 'LISTING_REQUEST'
   | 'LISTING_RESPONSE'
   | 'TM_CHECK_REQUEST'
@@ -75,7 +76,8 @@ export interface DesignTaskLog {
   counter: number;
   source: 'HERMES' | 'TEST' | 'DESIGNER';
   suffix: 'H' | 'T' | 'D';
-  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'CHECKING_TRADEMARKS' | 'COMPLETED' | 'REJECTED' | 'ERROR';
+  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'AWAITING_PRE_FLIGHT_REVIEW' | 'AWAITING_DESIGN_REVIEW' | 'GENERATING_LISTING' | 'CHECKING_TRADEMARKS' | 'AWAITING_TM_REVIEW' | 'COMPLETED' | 'REJECTED' | 'ERROR';
+  checkpoint?: 'PRE_FLIGHT' | 'DESIGN_REVIEW' | 'TM_REVIEW';
   receivedAt: string;
   clientIp?: string;
   payload: Record<string, any>;
@@ -84,6 +86,12 @@ export interface DesignTaskLog {
   imageUrl?: string;
   localImagePath?: string;
   analysisResult?: any;
+  customAnswers?: {
+    audience?: string;
+    avoidColor?: string;
+    reuseBackground?: string;
+    notes?: string;
+  };
   listingResult?: any;
   trademarkCheckResult?: any;
   trademarkRefineResult?: any;
@@ -514,12 +522,22 @@ export const PromptLogView: React.FC = () => {
                         <FileText className="w-3 h-3" /> Erstelle MBA Listing...
                       </span>
                     )}
-                    {task.status === 'CHECKING_TRADEMARKS' && (
-                      <span className="text-amber-400 flex items-center gap-1 font-semibold animate-pulse">
-                        <ShieldCheck className="w-3 h-3" /> Trademark Audit...
+                    {task.status === 'AWAITING_PRE_FLIGHT_REVIEW' && (
+                      <span className="text-amber-400 flex items-center gap-1 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                        <CheckSquare className="w-3 h-3 text-amber-400" /> Wartet: Quote-Prüfung
                       </span>
                     )}
-                    {(task.status === 'REJECTED' || (task.analysisResult && !task.listingResult && (task.analysisResult.quote_check?.quote_matches === false || task.analysisResult.quote_check?.regenerate_recommended === true))) && (
+                    {task.status === 'AWAITING_DESIGN_REVIEW' && (
+                      <span className="text-cyan-300 flex items-center gap-1 font-bold bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                        <CheckSquare className="w-3 h-3 text-cyan-400" /> Wartet: Design-Prüfung
+                      </span>
+                    )}
+                    {task.status === 'AWAITING_TM_REVIEW' && (
+                      <span className="text-purple-300 flex items-center gap-1 font-bold bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
+                        <CheckSquare className="w-3 h-3 text-purple-400" /> Wartet: TM-Optimierung
+                      </span>
+                    )}
+                    {(task.status === 'REJECTED' || (task.analysisResult && !task.listingResult && (task.analysisResult.quote_check?.quote_matches === false || task.analysisResult.quote_check?.regenerate_recommended === true))) && task.status !== 'AWAITING_PRE_FLIGHT_REVIEW' && task.status !== 'AWAITING_DESIGN_REVIEW' && task.status !== 'AWAITING_TM_REVIEW' && (
                       <span className="text-amber-400 flex items-center gap-1 font-semibold">
                         <XCircle className="w-3 h-3 text-rose-400" /> Abgelehnt (Kein Listing)
                       </span>
@@ -614,6 +632,8 @@ export const PromptLogView: React.FC = () => {
                         <div className={`absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full border-2 -translate-x-1/2 transition-colors ${
                           event.type === 'ERROR'
                             ? 'bg-rose-500 border-rose-900 ring-4 ring-rose-500/20'
+                            : event.type === 'TASK_HANDOFF'
+                            ? 'bg-amber-400 border-amber-950 ring-4 ring-amber-400/30'
                             : event.type === 'TM_REFINE_RESPONSE'
                             ? 'bg-emerald-400 border-emerald-950 ring-4 ring-emerald-400/30'
                             : event.type === 'TM_REFINE_REQUEST'
@@ -1589,6 +1609,36 @@ export const PromptLogView: React.FC = () => {
                             </div>
                           );
                         })()}
+
+                        {/* Event: Übergeben an Tasks (Human-in-the-Loop) */}
+                        {event.type === 'TASK_HANDOFF' && (
+                          <div className="bg-gradient-to-br from-slate-950 via-amber-950/20 to-slate-950 rounded-xl p-4 border border-amber-500/40 shadow-xl shadow-amber-500/5 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                                <CheckSquare className="w-4 h-4 text-amber-400" />
+                                {event.title || 'Übergeben an Tasks'}
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                HUMAN-IN-THE-LOOP
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                              {event.content?.reason || 'Dieser Task pausiert und wartet in der Tasks-Ansicht auf deine Prüfung/Entscheidung.'}
+                            </p>
+
+                            <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80 gap-1.5">
+                              <span>
+                                Checkpoint: <strong className="text-amber-300 font-mono">{event.content?.checkpoint || 'TASKS_REVIEW'}</strong>
+                              </span>
+                              <span className="text-slate-400 flex items-center gap-1">
+                                <span>👉 Bitte im Tab</span>
+                                <strong className="text-accent-cyan">Tasks</strong>
+                                <span>bearbeiten oder freigeben.</span>
+                              </span>
+                            </div>
+                          </div>
+                        )}
 
                         {event.type === 'ERROR' && (
                           <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3.5 text-xs text-rose-300 flex items-start space-x-2">

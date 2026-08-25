@@ -214205,7 +214205,8 @@ var DEFAULT_SETTINGS = {
   nasUser: process.env.NAS_USER || "aljan92",
   autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4,
   autoSyncEnabled: true,
-  mcpApiKey: process.env.MBA_MCP_API_KEY || ""
+  mcpApiKey: process.env.MBA_MCP_API_KEY || "",
+  aiAutonomyEnabled: false
 };
 function getSettingsFilePath() {
   const dataDir = import_path66.default.resolve(process.cwd(), "data");
@@ -217502,7 +217503,7 @@ var TaskLogService = class {
   /**
    * Run the LLM Session via OpenRouter
    */
-  static async processTaskWithOpenRouter(taskId) {
+  static async processTaskWithOpenRouter(taskId, options2) {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
     const settings = loadSettings();
@@ -217510,7 +217511,7 @@ var TaskLogService = class {
     const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
     const provider = settings.llmProvider === "openai" ? "OpenAI Direct" : "OpenRouter";
     const quote5 = (task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || "").trim();
-    if (quote5) {
+    if (quote5 && !options2?.skipPreFlight) {
       console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Pre-Flight USPTO TM-Check f\xFCr Quote "${quote5}" (Task ${taskId})...`);
       this.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -217547,20 +217548,22 @@ var TaskLogService = class {
           metadata: { provider: "Productor USPTO", latencyMs: preLatencyMs }
         });
         if (preHasCls25) {
-          const rejectionReason = `Die Quote "${quote5}" verletzt ein aktives Markenrecht in Nizza-Klasse 25 (Bekleidung). Workflow vor LLM-Generierung abgebrochen (Token gespart).`;
+          const rejectionReason = `Die Quote "${quote5}" verletzt ein aktives Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Pr\xFCfung in Tasks.`;
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TM_REFINE_RESPONSE",
-            title: `Pre-Flight Trademark-Pr\xFCfung: SOFORTIGE ABLEHNUNG`,
+            type: "TASK_HANDOFF",
+            title: `\xDCbergeben an Tasks (Pre-Flight Quote Konflikt)`,
             content: {
-              verdict: "REJECTED",
-              rejection_reason: rejectionReason,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-              actions_taken: ["Pre-Flight Check: Quote in Klasse 25 gesch\xFCtzt -> Workflow abgebrochen (Token & Kosten gespart)."]
+              checkpoint: "PRE_FLIGHT",
+              reason: rejectionReason,
+              quote: quote5,
+              totalHits: preHits,
+              fieldSummaries: preCheckResult.fieldResults
             }
           });
           this.updateTaskStatus(taskId, {
-            status: "REJECTED",
+            status: "AWAITING_PRE_FLIGHT_REVIEW",
+            checkpoint: "PRE_FLIGHT",
             hasError: false,
             errorDetails: rejectionReason,
             trademarkCheckResult: {
@@ -217568,14 +217571,9 @@ var TaskLogService = class {
               hasInfringementClass25: true,
               blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
               fieldSummaries: preCheckResult.fieldResults
-            },
-            trademarkRefineResult: {
-              verdict: "REJECTED",
-              rejection_reason: rejectionReason,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
             }
           });
-          console.log(`[TaskLogService] \u274C Task ${taskId} im Pre-Flight TM-Check gestoppt (Quote "${quote5}" verletzt Klasse 25).`);
+          console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} im Pre-Flight TM-Check an Tasks \xFCbergeben (Quote "${quote5}" verletzt Klasse 25).`);
           return;
         }
       } catch (tmErr) {
@@ -217921,7 +217919,8 @@ Beantworte die 4 Kernfragen streng als JSON!`;
       });
       console.log(`[TaskLogService] \u{1F441}\uFE0F Vision Design-Analyse f\xFCr Task ${taskId} erfolgreich in ${latencyMs}ms`);
       const isApproved = parsedAnalysis?.overall_verdict === "APPROVED" || parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended;
-      if (isApproved) {
+      if (settings.aiAutonomyEnabled && isApproved) {
+        console.log(`[TaskLogService] \u26A1 Autonomie aktiv: Task ${taskId} \xFCberspringt Human-in-the-Loop (Design freigegeben) -> Listing-Generierung gestartet.`);
         this.updateTaskStatus(taskId, {
           status: "GENERATING_LISTING",
           analysisResult: parsedAnalysis,
@@ -217929,11 +217928,26 @@ Beantworte die 4 Kernfragen streng als JSON!`;
         });
         await this.generateListingWithOpenRouter(taskId);
       } else {
-        this.updateTaskStatus(taskId, {
-          status: "REJECTED",
-          analysisResult: parsedAnalysis,
-          hasError: false
+        const reason = isApproved ? "Vision-Analyse abgeschlossen. Wartet auf Pr\xFCfung/Best\xE4tigung von Bild, Quote und Zielgruppe in Tasks." : parsedAnalysis?.quote_check?.quote_errors || "Quote-Abweichung oder Designfehler festgestellt. Wartet auf manuelle Pr\xFCfung in Tasks.";
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "TASK_HANDOFF",
+          title: `\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)`,
+          content: {
+            checkpoint: "DESIGN_REVIEW",
+            reason,
+            isApproved,
+            analysis: parsedAnalysis
+          }
         });
+        this.updateTaskStatus(taskId, {
+          status: "AWAITING_DESIGN_REVIEW",
+          checkpoint: "DESIGN_REVIEW",
+          analysisResult: parsedAnalysis,
+          hasError: false,
+          errorDetails: isApproved ? void 0 : reason
+        });
+        console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} an Tasks \xFCbergeben zur Design- & Fragen-Pr\xFCfung.`);
       }
     } catch (err) {
       const latencyMs = Date.now() - start3;
@@ -218213,35 +218227,31 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
           return;
         }
         if (isFinal) {
-          const rejectionMsg = `Nach 4 USPTO-Pr\xFCfungen und 3 automatischen Korrekturl\xE4ufen konnten die Markenrechts-Treffer in Nizza-Klasse 25 nicht vollst\xE4ndig eliminiert werden.`;
+          const rejectionMsg = `Nach 4 USPTO-Pr\xFCfungen und 3 automatischen Korrekturl\xE4ufen konnten die Markenrechts-Treffer in Nizza-Klasse 25 nicht vollst\xE4ndig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TM_REFINE_RESPONSE",
-            title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT nach 4 Pr\xFCfungen)`,
+            type: "TASK_HANDOFF",
+            title: `\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)`,
             content: {
-              verdict: "REJECTED",
-              rejection_reason: rejectionMsg,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-              actions_taken: ["Maximale Korrekturschleifen (4 Checks) erreicht. Klasse 25 Konflikte blieben bestehen."]
+              checkpoint: "TM_REVIEW",
+              reason: rejectionMsg,
+              totalHits,
+              fieldSummaries: fieldResults
             }
           });
           this.updateTaskStatus(taskId, {
-            status: "REJECTED",
+            status: "AWAITING_TM_REVIEW",
+            checkpoint: "TM_REVIEW",
             trademarkCheckResult: {
               totalHits,
               hasInfringementClass25: true,
               blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
               fieldSummaries: fieldResults
             },
-            trademarkRefineResult: {
-              verdict: "REJECTED",
-              rejection_reason: rejectionMsg,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
-            },
             hasError: false,
             errorDetails: rejectionMsg
           });
-          console.log(`[TaskLogService] \u274C Task ${taskId} endg\xFCltig abgelehnt nach 4 TM-Pr\xFCfungen.`);
+          console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} an Tasks \xFCbergeben zur manuellen TM-Optimierung.`);
           return;
         }
         if (!apiKey) {
@@ -218529,6 +218539,12 @@ Please audit every hit strictly against these rules:
   static getTaskLogs() {
     return this.loadLogs();
   }
+  static getAwaitingTasks() {
+    const logs = this.loadLogs();
+    return logs.filter(
+      (t) => t.status === "AWAITING_PRE_FLIGHT_REVIEW" || t.status === "AWAITING_DESIGN_REVIEW" || t.status === "AWAITING_TM_REVIEW"
+    );
+  }
   static getTaskLogById(id) {
     const logs = this.loadLogs();
     return logs.find((t) => t.id.toLowerCase() === id.toLowerCase());
@@ -218536,6 +218552,199 @@ Please audit every hit strictly against these rules:
   static clearTaskLogs() {
     this.inMemoryLogs = [];
     this.saveLogs([]);
+  }
+  /**
+   * Checkpoint 2: Submit Design & Questions Review
+   */
+  static async submitDesignReview(taskId, params2) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+    if (params2.action === "REGENERATE_IMAGE") {
+      const promptToUse = params2.updatedPrompt || task.resultPrompt || task.payload?.quote || "";
+      task.status = "GENERATING_IMAGE";
+      task.checkpoint = void 0;
+      task.hasError = false;
+      task.errorDetails = void 0;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "IDEOGRAM_REQUEST",
+        title: `Ideogram Bildgenerierung erneut angefordert (Human Loop: Quote/Design korrigiert)`,
+        content: {
+          prompt: promptToUse,
+          reason: "Manuell in Tasks zur Neugenerierung freigegeben"
+        }
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      this.processTaskWithIdeogram(taskId, promptToUse).catch((err) => {
+        console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Bildgenerierung mit Ideogram neu gestartet." };
+    }
+    if (params2.action === "APPROVE") {
+      if (params2.answers) {
+        task.customAnswers = params2.answers;
+        if (task.analysisResult && typeof task.analysisResult === "object") {
+          if (params2.answers.audience) {
+            task.analysisResult.target_group = {
+              selected: params2.answers.audience.split(",").map((s) => s.trim()),
+              reason: "Manuell in Tasks angepasst"
+            };
+          }
+          if (params2.answers.avoidColor) {
+            task.analysisResult.avoid_product_colors = {
+              avoid: params2.answers.avoidColor,
+              reason: "Manuell in Tasks angepasst"
+            };
+          }
+          if (params2.answers.reuseBackground) {
+            task.analysisResult.background_analysis = {
+              ...task.analysisResult.background_analysis || {},
+              removal_mode: params2.answers.reuseBackground.includes("Nein") ? "AUTOMATIC" : "MANUAL"
+            };
+          }
+        }
+      }
+      task.status = "GENERATING_LISTING";
+      task.checkpoint = void 0;
+      task.hasError = false;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "LISTING_REQUEST",
+        title: `Design-Pr\xFCfung best\xE4tigt (Human Loop) -> MBA Listing-Erstellung`,
+        content: {
+          answers: params2.answers || "KI-Antworten 1:1 \xFCbernommen"
+        }
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      this.generateListingWithOpenRouter(taskId).catch((err) => {
+        console.error(`[TaskLogService] Listing generation failed after design review for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Design freigegeben! MBA Listing wird generiert." };
+    }
+    throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
+  }
+  /**
+   * Checkpoint 3: Submit Manual Trademark Review
+   */
+  static async submitTmReview(taskId, params2) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+    if (params2.action === "RECHECK") {
+      const listingToCheck = params2.refinedListing || task.listingResult?.en || {};
+      const batchResult = await TrademarkService.checkBatchFields({
+        offices: ["USPTO"],
+        fields: {
+          brand: listingToCheck.brand || "",
+          title: listingToCheck.title || "",
+          bullet1: listingToCheck.bullet1 || "",
+          bullet2: listingToCheck.bullet2 || "",
+          description: listingToCheck.description || "",
+          quote: task.payload?.quote || ""
+        }
+      });
+      return {
+        success: true,
+        totalHits: batchResult.summary?.totalHits ?? 0,
+        hasInfringementClass25: batchResult.hasInfringementClass25 || false,
+        blockedProducts: batchResult.blockedProducts || [],
+        fieldSummaries: batchResult.fieldResults || {}
+      };
+    }
+    if (params2.action === "APPROVE") {
+      if (params2.refinedListing && task.listingResult) {
+        if (task.listingResult.en) {
+          task.listingResult.en = { ...task.listingResult.en, ...params2.refinedListing };
+        } else {
+          task.listingResult = { ...task.listingResult, ...params2.refinedListing };
+        }
+      }
+      task.status = "COMPLETED";
+      task.checkpoint = void 0;
+      task.hasError = false;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TM_REFINE_RESPONSE",
+        title: `Task manuell freigegeben (Human Loop) & in Upload-Queue verschoben`,
+        content: {
+          verdict: "APPROVED",
+          refinedListing: params2.refinedListing,
+          actions_taken: ["Manuell im Tasks-Workspace optimiert und freigegeben."]
+        }
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      return { success: true, message: "Listing manuell freigegeben und abgeschlossen." };
+    }
+    if (params2.action === "REJECT") {
+      task.status = "REJECTED";
+      task.checkpoint = void 0;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TM_REFINE_RESPONSE",
+        title: `Task manuell abgelehnt & geschlossen (Human Loop)`,
+        content: {
+          verdict: "REJECTED",
+          reason: "Manuell im Tasks-Workspace verworfen."
+        }
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      return { success: true, message: "Task abgelehnt und geschlossen." };
+    }
+    throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
+  }
+  /**
+   * Checkpoint 1: Override / Restart Pre-Flight Quote Check
+   */
+  static async overridePreFlight(taskId, params2) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+    if (params2.action === "DISCARD") {
+      task.status = "REJECTED";
+      task.checkpoint = void 0;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TM_REFINE_RESPONSE",
+        title: `Pre-Flight Konflikt: Task verworfen & geschlossen`,
+        content: { verdict: "REJECTED", reason: "Pre-Flight Quote Markenkonflikt verworfen." }
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      return { success: true, message: "Task verworfen." };
+    }
+    if (params2.action === "RESTART") {
+      if (params2.newQuote) {
+        task.payload.quote = params2.newQuote;
+      }
+      task.status = "PROCESSING";
+      task.checkpoint = void 0;
+      task.events = task.events.slice(0, 1);
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      this.processTaskWithOpenRouter(taskId).catch((err) => {
+        console.error(`[TaskLogService] Restart with new quote failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Pipeline mit neuer Quote neu gestartet." };
+    }
+    if (params2.action === "OVERRIDE") {
+      task.status = "PROCESSING";
+      task.checkpoint = void 0;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "SESSION_START",
+        title: `Pre-Flight Override best\xE4tigt (Human Loop: Trotz TM-Treffer fortfahren)`,
+        content: `Quote "${task.payload?.quote}" manuell f\xFCr Generierung freigegeben.`
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      this.processTaskWithOpenRouter(taskId, { skipPreFlight: true }).catch((err) => {
+        console.error(`[TaskLogService] Override pre-flight failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Pre-Flight \xFCbersprungen. Pipeline wird fortgesetzt." };
+    }
+    throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
   }
 };
 
@@ -218679,7 +218888,7 @@ async function refreshStatsInBackground() {
 refreshStatsInBackground();
 setInterval(refreshStatsInBackground, 15e3);
 app.get("/api/v1/stats", (req, res) => {
-  cachedStats.tasksCount = activeTasks.length;
+  cachedStats.tasksCount = TaskLogService.getAwaitingTasks().length;
   cachedStats.queueCount = uploadQueue.length;
   res.json({
     success: true,
@@ -219154,35 +219363,41 @@ app.post("/api/v1/designer/generate", async (req, res) => {
   }
 });
 app.get("/api/v1/tasks", (req, res) => {
-  res.json({ success: true, tasks: activeTasks });
+  const awaiting = TaskLogService.getAwaitingTasks();
+  res.json({ success: true, tasks: awaiting });
 });
-app.post("/api/v1/tasks/:id/approve", (req, res) => {
-  const { id } = req.params;
-  const taskIndex = activeTasks.findIndex((t) => t.id === id);
-  if (taskIndex === -1) {
-    return res.status(404).json({ success: false, error: "Task not found" });
+app.post("/api/v1/tasks/:taskId/submit-design-review", async (req, res) => {
+  const { taskId } = req.params;
+  const { action, answers, updatedPrompt } = req.body;
+  try {
+    const result2 = await TaskLogService.submitDesignReview(taskId, { action, answers, updatedPrompt });
+    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    res.json(result2);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
   }
-  const approvedTask = activeTasks[taskIndex];
-  activeTasks.splice(taskIndex, 1);
-  const queueEntry = {
-    id: `queue-${Date.now()}`,
-    title: approvedTask.title,
-    productCount: 100,
-    optimizedCount: 100,
-    slotPruned: "Optimiert f\xFCr maximale Slots",
-    mode: "draft",
-    status: "Ready",
-    features: {
-      generalResize: true,
-      mugBrush: approvedTask.avoidColor === "Wei\xDF" || approvedTask.avoidColor === "White",
-      popSocket: true,
-      phoneCase: true
-    },
-    image: approvedTask.imageUrl
-  };
-  uploadQueue.unshift(queueEntry);
-  broadcast("TASK_APPROVED", { taskId: id, queueEntry });
-  res.json({ success: true, queueEntry });
+});
+app.post("/api/v1/tasks/:taskId/submit-tm-review", async (req, res) => {
+  const { taskId } = req.params;
+  const { action, refinedListing } = req.body;
+  try {
+    const result2 = await TaskLogService.submitTmReview(taskId, { action, refinedListing });
+    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    res.json(result2);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/tasks/:taskId/override-preflight", async (req, res) => {
+  const { taskId } = req.params;
+  const { action, newQuote } = req.body;
+  try {
+    const result2 = await TaskLogService.overridePreFlight(taskId, { action, newQuote });
+    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    res.json(result2);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
 });
 function validateMcpAuth(req, res, next) {
   const isInternal = req.query.source === "test" || req.query.source === "designer" || req.headers["x-internal-source"] === "hub-ui" || req.headers["sec-fetch-site"] === "same-origin";

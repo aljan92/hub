@@ -224,7 +224,7 @@ refreshStatsInBackground();
 setInterval(refreshStatsInBackground, 15000);
 
 app.get('/api/v1/stats', (req, res) => {
-  cachedStats.tasksCount = activeTasks.length;
+  cachedStats.tasksCount = TaskLogService.getAwaitingTasks().length;
   cachedStats.queueCount = uploadQueue.length;
   res.json({
     success: true,
@@ -782,42 +782,46 @@ app.post('/api/v1/designer/generate', async (req, res) => {
   }
 });
 
-// 7. Tasks Management
+// 7. Tasks Management (Connected to Human-in-the-Loop Engine)
 app.get('/api/v1/tasks', (req, res) => {
-  res.json({ success: true, tasks: activeTasks });
+  const awaiting = TaskLogService.getAwaitingTasks();
+  res.json({ success: true, tasks: awaiting });
 });
 
-app.post('/api/v1/tasks/:id/approve', (req, res) => {
-  const { id } = req.params;
-  const taskIndex = activeTasks.findIndex(t => t.id === id);
-  if (taskIndex === -1) {
-    return res.status(404).json({ success: false, error: 'Task not found' });
+app.post('/api/v1/tasks/:taskId/submit-design-review', async (req, res) => {
+  const { taskId } = req.params;
+  const { action, answers, updatedPrompt } = req.body;
+  try {
+    const result = await TaskLogService.submitDesignReview(taskId, { action, answers, updatedPrompt });
+    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
   }
+});
 
-  const approvedTask = activeTasks[taskIndex];
-  activeTasks.splice(taskIndex, 1);
+app.post('/api/v1/tasks/:taskId/submit-tm-review', async (req, res) => {
+  const { taskId } = req.params;
+  const { action, refinedListing } = req.body;
+  try {
+    const result = await TaskLogService.submitTmReview(taskId, { action, refinedListing });
+    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
 
-  // Add to upload queue
-  const queueEntry = {
-    id: `queue-${Date.now()}`,
-    title: approvedTask.title,
-    productCount: 100,
-    optimizedCount: 100,
-    slotPruned: 'Optimiert für maximale Slots',
-    mode: 'draft',
-    status: 'Ready',
-    features: {
-      generalResize: true,
-      mugBrush: approvedTask.avoidColor === 'Weiß' || approvedTask.avoidColor === 'White',
-      popSocket: true,
-      phoneCase: true,
-    },
-    image: approvedTask.imageUrl
-  };
-  uploadQueue.unshift(queueEntry);
-
-  broadcast('TASK_APPROVED', { taskId: id, queueEntry });
-  res.json({ success: true, queueEntry });
+app.post('/api/v1/tasks/:taskId/override-preflight', async (req, res) => {
+  const { taskId } = req.params;
+  const { action, newQuote } = req.body;
+  try {
+    const result = await TaskLogService.overridePreFlight(taskId, { action, newQuote });
+    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
 });
 
 // Auth middleware for Hermes / MCP / Remote endpoints

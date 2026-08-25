@@ -26,6 +26,7 @@ export interface AppSettings {
   autoSlotFillHour: number;
   autoSyncEnabled: boolean;
   mcpApiKey: string;
+  aiAutonomyEnabled: boolean;
 }
 
 export function generateApiKey(): string {
@@ -54,6 +55,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4,
   autoSyncEnabled: true,
   mcpApiKey: process.env.MBA_MCP_API_KEY || '',
+  aiAutonomyEnabled: false,
 };
 
 function getSettingsFilePath(): string {

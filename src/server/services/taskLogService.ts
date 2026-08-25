@@ -7,7 +7,20 @@ import { TrademarkService } from './trademarkService';
 
 export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER';
 export type TaskSuffix = 'H' | 'T' | 'D';
-export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'CHECKING_TRADEMARKS' | 'COMPLETED' | 'REJECTED' | 'ERROR';
+export type TaskStatus = 
+  | 'RECEIVED'
+  | 'PROCESSING'
+  | 'PROMPT_READY'
+  | 'GENERATING_IMAGE'
+  | 'ANALYZING_DESIGN'
+  | 'AWAITING_PRE_FLIGHT_REVIEW'
+  | 'AWAITING_DESIGN_REVIEW'
+  | 'GENERATING_LISTING'
+  | 'CHECKING_TRADEMARKS'
+  | 'AWAITING_TM_REVIEW'
+  | 'COMPLETED'
+  | 'REJECTED'
+  | 'ERROR';
 
 export type EventType = 
   | 'INCOMING_PAYLOAD'
@@ -18,6 +31,7 @@ export type EventType =
   | 'IDEOGRAM_RESPONSE'
   | 'ANALYSIS_REQUEST'
   | 'ANALYSIS_RESPONSE'
+  | 'TASK_HANDOFF'
   | 'LISTING_REQUEST'
   | 'LISTING_RESPONSE'
   | 'TM_CHECK_REQUEST'
@@ -29,7 +43,7 @@ export type EventType =
 export interface SessionEvent {
   timestamp: string; // ISO String (z.B. "2026-08-25T13:05:12.123Z")
   type: EventType;
-  title: string;     // z.B. "Eingang von Hermes", "Senden an OpenRouter", "Senden an Ideogram", "Design-Analyse", "Listing-Erstellung", "USPTO Trademark-Prüfung"
+  title: string;     // z.B. "Eingang von Hermes", "Übergeben an Tasks", "Senden an OpenRouter"
   content: any;
   metadata?: {
     model?: string;
@@ -50,6 +64,7 @@ export interface DesignTaskLog {
   source: TaskSource;
   suffix: TaskSuffix;
   status: TaskStatus;
+  checkpoint?: 'PRE_FLIGHT' | 'DESIGN_REVIEW' | 'TM_REVIEW';
   receivedAt: string;
   clientIp?: string;
   payload: Record<string, any>;
@@ -58,6 +73,12 @@ export interface DesignTaskLog {
   imageUrl?: string;
   localImagePath?: string;
   analysisResult?: any;
+  customAnswers?: {
+    audience?: string;
+    avoidColor?: string;
+    reuseBackground?: string;
+    notes?: string;
+  };
   listingResult?: any;
   trademarkCheckResult?: any;
   trademarkRefineResult?: any;
@@ -236,7 +257,7 @@ export class TaskLogService {
   /**
    * Run the LLM Session via OpenRouter
    */
-  static async processTaskWithOpenRouter(taskId: string) {
+  static async processTaskWithOpenRouter(taskId: string, options?: { skipPreFlight?: boolean }) {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
 
@@ -247,7 +268,7 @@ export class TaskLogService {
 
     // 0. Pre-Flight Quote Trademark Check to save tokens and costs early!
     const quote = (task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || '').trim();
-    if (quote) {
+    if (quote && !options?.skipPreFlight) {
       console.log(`[TaskLogService] 🛡️ Starte Pre-Flight USPTO TM-Check für Quote "${quote}" (Task ${taskId})...`);
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -287,24 +308,26 @@ export class TaskLogService {
           metadata: { provider: 'Productor USPTO', latencyMs: preLatencyMs }
         });
 
-        // If Quote has an active Class 25 hit -> Immediate REJECTION! Save all downstream LLM tokens!
+        // If Quote has an active Class 25 hit -> Hand off to Tasks (Human-in-the-Loop)! Save all downstream tokens!
         if (preHasCls25) {
-          const rejectionReason = `Die Quote "${quote}" verletzt ein aktives Markenrecht in Nizza-Klasse 25 (Bekleidung). Workflow vor LLM-Generierung abgebrochen (Token gespart).`;
+          const rejectionReason = `Die Quote "${quote}" verletzt ein aktives Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Prüfung in Tasks.`;
           
           this.addEvent(taskId, {
             timestamp: new Date().toISOString(),
-            type: 'TM_REFINE_RESPONSE',
-            title: `Pre-Flight Trademark-Prüfung: SOFORTIGE ABLEHNUNG`,
+            type: 'TASK_HANDOFF',
+            title: `Übergeben an Tasks (Pre-Flight Quote Konflikt)`,
             content: {
-              verdict: 'REJECTED',
-              rejection_reason: rejectionReason,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              actions_taken: ['Pre-Flight Check: Quote in Klasse 25 geschützt -> Workflow abgebrochen (Token & Kosten gespart).']
+              checkpoint: 'PRE_FLIGHT',
+              reason: rejectionReason,
+              quote,
+              totalHits: preHits,
+              fieldSummaries: preCheckResult.fieldResults
             }
           });
 
           this.updateTaskStatus(taskId, {
-            status: 'REJECTED',
+            status: 'AWAITING_PRE_FLIGHT_REVIEW',
+            checkpoint: 'PRE_FLIGHT',
             hasError: false,
             errorDetails: rejectionReason,
             trademarkCheckResult: {
@@ -312,15 +335,10 @@ export class TaskLogService {
               hasInfringementClass25: true,
               blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
               fieldSummaries: preCheckResult.fieldResults
-            },
-            trademarkRefineResult: {
-              verdict: 'REJECTED',
-              rejection_reason: rejectionReason,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED']
             }
           });
 
-          console.log(`[TaskLogService] ❌ Task ${taskId} im Pre-Flight TM-Check gestoppt (Quote "${quote}" verletzt Klasse 25).`);
+          console.log(`[TaskLogService] 🛑 Task ${taskId} im Pre-Flight TM-Check an Tasks übergeben (Quote "${quote}" verletzt Klasse 25).`);
           return;
         }
       } catch (tmErr: any) {
@@ -720,11 +738,13 @@ export class TaskLogService {
 
       console.log(`[TaskLogService] 👁️ Vision Design-Analyse für Task ${taskId} erfolgreich in ${latencyMs}ms`);
 
-      // Check if design is APPROVED -> Automatically generate Listing!
+      // Check if design is APPROVED according to Vision AI
       const isApproved = parsedAnalysis?.overall_verdict === 'APPROVED' || 
         (parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended);
 
-      if (isApproved) {
+      // Check Global AI Autonomy Switch
+      if (settings.aiAutonomyEnabled && isApproved) {
+        console.log(`[TaskLogService] ⚡ Autonomie aktiv: Task ${taskId} überspringt Human-in-the-Loop (Design freigegeben) -> Listing-Generierung gestartet.`);
         this.updateTaskStatus(taskId, {
           status: 'GENERATING_LISTING',
           analysisResult: parsedAnalysis,
@@ -732,11 +752,32 @@ export class TaskLogService {
         });
         await this.generateListingWithOpenRouter(taskId);
       } else {
-        this.updateTaskStatus(taskId, {
-          status: 'REJECTED',
-          analysisResult: parsedAnalysis,
-          hasError: false
+        // Human-in-the-Loop: Hand off to Tasks View for manual inspection / confirmation
+        const reason = isApproved 
+          ? 'Vision-Analyse abgeschlossen. Wartet auf Prüfung/Bestätigung von Bild, Quote und Zielgruppe in Tasks.'
+          : (parsedAnalysis?.quote_check?.quote_errors || 'Quote-Abweichung oder Designfehler festgestellt. Wartet auf manuelle Prüfung in Tasks.');
+
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'TASK_HANDOFF',
+          title: `Übergeben an Tasks (Design- & Fragen-Prüfung)`,
+          content: {
+            checkpoint: 'DESIGN_REVIEW',
+            reason,
+            isApproved,
+            analysis: parsedAnalysis
+          }
         });
+
+        this.updateTaskStatus(taskId, {
+          status: 'AWAITING_DESIGN_REVIEW',
+          checkpoint: 'DESIGN_REVIEW',
+          analysisResult: parsedAnalysis,
+          hasError: false,
+          errorDetails: isApproved ? undefined : reason
+        });
+
+        console.log(`[TaskLogService] 🛑 Task ${taskId} an Tasks übergeben zur Design- & Fragen-Prüfung.`);
       }
     } catch (err: any) {
       const latencyMs = Date.now() - start;
@@ -1062,38 +1103,34 @@ export class TaskLogService {
 
         // 5. Wenn nach dem 4. TM Check (also nach 3 Korrekturen) immer noch Klasse 25 Treffer vorhanden sind:
         if (isFinal) {
-          const rejectionMsg = `Nach 4 USPTO-Prüfungen und 3 automatischen Korrekturläufen konnten die Markenrechts-Treffer in Nizza-Klasse 25 nicht vollständig eliminiert werden.`;
+          const rejectionMsg = `Nach 4 USPTO-Prüfungen und 3 automatischen Korrekturläufen konnten die Markenrechts-Treffer in Nizza-Klasse 25 nicht vollständig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
           
           this.addEvent(taskId, {
             timestamp: new Date().toISOString(),
-            type: 'TM_REFINE_RESPONSE',
-            title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT nach 4 Prüfungen)`,
+            type: 'TASK_HANDOFF',
+            title: `Übergeben an Tasks (Manuelle Trademark-Optimierung)`,
             content: {
-              verdict: 'REJECTED',
-              rejection_reason: rejectionMsg,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              actions_taken: ['Maximale Korrekturschleifen (4 Checks) erreicht. Klasse 25 Konflikte blieben bestehen.']
+              checkpoint: 'TM_REVIEW',
+              reason: rejectionMsg,
+              totalHits,
+              fieldSummaries: fieldResults
             }
           });
 
           this.updateTaskStatus(taskId, {
-            status: 'REJECTED',
+            status: 'AWAITING_TM_REVIEW',
+            checkpoint: 'TM_REVIEW',
             trademarkCheckResult: {
               totalHits,
               hasInfringementClass25: true,
               blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
               fieldSummaries: fieldResults
             },
-            trademarkRefineResult: {
-              verdict: 'REJECTED',
-              rejection_reason: rejectionMsg,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED']
-            },
             hasError: false,
             errorDetails: rejectionMsg
           });
 
-          console.log(`[TaskLogService] ❌ Task ${taskId} endgültig abgelehnt nach 4 TM-Prüfungen.`);
+          console.log(`[TaskLogService] 🛑 Task ${taskId} an Tasks übergeben zur manuellen TM-Optimierung.`);
           return;
         }
 
@@ -1415,6 +1452,15 @@ export class TaskLogService {
     return this.loadLogs();
   }
 
+  static getAwaitingTasks(): DesignTaskLog[] {
+    const logs = this.loadLogs();
+    return logs.filter(t => 
+      t.status === 'AWAITING_PRE_FLIGHT_REVIEW' ||
+      t.status === 'AWAITING_DESIGN_REVIEW' ||
+      t.status === 'AWAITING_TM_REVIEW'
+    );
+  }
+
   static getTaskLogById(id: string): DesignTaskLog | undefined {
     const logs = this.loadLogs();
     return logs.find(t => t.id.toLowerCase() === id.toLowerCase());
@@ -1423,6 +1469,254 @@ export class TaskLogService {
   static clearTaskLogs() {
     this.inMemoryLogs = [];
     this.saveLogs([]);
+  }
+
+  /**
+   * Checkpoint 2: Submit Design & Questions Review
+   */
+  static async submitDesignReview(taskId: string, params: {
+    action: 'APPROVE' | 'REGENERATE_IMAGE';
+    answers?: {
+      audience?: string;
+      avoidColor?: string;
+      reuseBackground?: string;
+      notes?: string;
+    };
+    updatedPrompt?: string;
+  }) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    if (params.action === 'REGENERATE_IMAGE') {
+      const promptToUse = params.updatedPrompt || task.resultPrompt || task.payload?.quote || '';
+      task.status = 'GENERATING_IMAGE';
+      task.checkpoint = undefined;
+      task.hasError = false;
+      task.errorDetails = undefined;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'IDEOGRAM_REQUEST',
+        title: `Ideogram Bildgenerierung erneut angefordert (Human Loop: Quote/Design korrigiert)`,
+        content: {
+          prompt: promptToUse,
+          reason: 'Manuell in Tasks zur Neugenerierung freigegeben'
+        }
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      this.processTaskWithIdeogram(taskId, promptToUse).catch(err => {
+        console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Bildgenerierung mit Ideogram neu gestartet.' };
+    }
+
+    if (params.action === 'APPROVE') {
+      if (params.answers) {
+        task.customAnswers = params.answers;
+        if (task.analysisResult && typeof task.analysisResult === 'object') {
+          if (params.answers.audience) {
+            task.analysisResult.target_group = {
+              selected: params.answers.audience.split(',').map(s => s.trim()),
+              reason: 'Manuell in Tasks angepasst'
+            };
+          }
+          if (params.answers.avoidColor) {
+            task.analysisResult.avoid_product_colors = {
+              avoid: params.answers.avoidColor,
+              reason: 'Manuell in Tasks angepasst'
+            };
+          }
+          if (params.answers.reuseBackground) {
+            task.analysisResult.background_analysis = {
+              ...(task.analysisResult.background_analysis || {}),
+              removal_mode: params.answers.reuseBackground.includes('Nein') ? 'AUTOMATIC' : 'MANUAL'
+            };
+          }
+        }
+      }
+
+      task.status = 'GENERATING_LISTING';
+      task.checkpoint = undefined;
+      task.hasError = false;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'LISTING_REQUEST',
+        title: `Design-Prüfung bestätigt (Human Loop) -> MBA Listing-Erstellung`,
+        content: {
+          answers: params.answers || 'KI-Antworten 1:1 übernommen'
+        }
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      this.generateListingWithOpenRouter(taskId).catch(err => {
+        console.error(`[TaskLogService] Listing generation failed after design review for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Design freigegeben! MBA Listing wird generiert.' };
+    }
+
+    throw new Error(`Ungültige Aktion: ${params.action}`);
+  }
+
+  /**
+   * Checkpoint 3: Submit Manual Trademark Review
+   */
+  static async submitTmReview(taskId: string, params: {
+    action: 'RECHECK' | 'APPROVE' | 'REJECT';
+    refinedListing?: any;
+  }) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    if (params.action === 'RECHECK') {
+      const listingToCheck = params.refinedListing || task.listingResult?.en || {};
+      const batchResult = await TrademarkService.checkBatchFields({
+        offices: ['USPTO'],
+        fields: {
+          brand: listingToCheck.brand || '',
+          title: listingToCheck.title || '',
+          bullet1: listingToCheck.bullet1 || '',
+          bullet2: listingToCheck.bullet2 || '',
+          description: listingToCheck.description || '',
+          quote: task.payload?.quote || ''
+        }
+      });
+
+      return {
+        success: true,
+        totalHits: batchResult.summary?.totalHits ?? 0,
+        hasInfringementClass25: batchResult.hasInfringementClass25 || false,
+        blockedProducts: batchResult.blockedProducts || [],
+        fieldSummaries: batchResult.fieldResults || {}
+      };
+    }
+
+    if (params.action === 'APPROVE') {
+      if (params.refinedListing && task.listingResult) {
+        if (task.listingResult.en) {
+          task.listingResult.en = { ...task.listingResult.en, ...params.refinedListing };
+        } else {
+          task.listingResult = { ...task.listingResult, ...params.refinedListing };
+        }
+      }
+
+      task.status = 'COMPLETED';
+      task.checkpoint = undefined;
+      task.hasError = false;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TM_REFINE_RESPONSE',
+        title: `Task manuell freigegeben (Human Loop) & in Upload-Queue verschoben`,
+        content: {
+          verdict: 'APPROVED',
+          refinedListing: params.refinedListing,
+          actions_taken: ['Manuell im Tasks-Workspace optimiert und freigegeben.']
+        }
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      return { success: true, message: 'Listing manuell freigegeben und abgeschlossen.' };
+    }
+
+    if (params.action === 'REJECT') {
+      task.status = 'REJECTED';
+      task.checkpoint = undefined;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TM_REFINE_RESPONSE',
+        title: `Task manuell abgelehnt & geschlossen (Human Loop)`,
+        content: {
+          verdict: 'REJECTED',
+          reason: 'Manuell im Tasks-Workspace verworfen.'
+        }
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      return { success: true, message: 'Task abgelehnt und geschlossen.' };
+    }
+
+    throw new Error(`Ungültige Aktion: ${params.action}`);
+  }
+
+  /**
+   * Checkpoint 1: Override / Restart Pre-Flight Quote Check
+   */
+  static async overridePreFlight(taskId: string, params: {
+    action: 'OVERRIDE' | 'RESTART' | 'DISCARD';
+    newQuote?: string;
+  }) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    if (params.action === 'DISCARD') {
+      task.status = 'REJECTED';
+      task.checkpoint = undefined;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TM_REFINE_RESPONSE',
+        title: `Pre-Flight Konflikt: Task verworfen & geschlossen`,
+        content: { verdict: 'REJECTED', reason: 'Pre-Flight Quote Markenkonflikt verworfen.' }
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      return { success: true, message: 'Task verworfen.' };
+    }
+
+    if (params.action === 'RESTART') {
+      if (params.newQuote) {
+        task.payload.quote = params.newQuote;
+      }
+      task.status = 'PROCESSING';
+      task.checkpoint = undefined;
+      task.events = task.events.slice(0, 1); // keep incoming payload
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      this.processTaskWithOpenRouter(taskId).catch(err => {
+        console.error(`[TaskLogService] Restart with new quote failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Pipeline mit neuer Quote neu gestartet.' };
+    }
+
+    if (params.action === 'OVERRIDE') {
+      task.status = 'PROCESSING';
+      task.checkpoint = undefined;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'SESSION_START',
+        title: `Pre-Flight Override bestätigt (Human Loop: Trotz TM-Treffer fortfahren)`,
+        content: `Quote "${task.payload?.quote}" manuell für Generierung freigegeben.`
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      this.processTaskWithOpenRouter(taskId, { skipPreFlight: true }).catch(err => {
+        console.error(`[TaskLogService] Override pre-flight failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Pre-Flight übersprungen. Pipeline wird fortgesetzt.' };
+    }
+
+    throw new Error(`Ungültige Aktion: ${params.action}`);
   }
 }
 
