@@ -217198,11 +217198,13 @@ Your task is to generate a high-converting, policy-compliant, and perfectly opti
   * Combine the ideas from Bullets 1 & 2 into a reader-friendly, natural paragraph with soft long-tail keywords.
   * Do NOT mention background color or physical garment properties.
 
-### 2. STRICT COMPLIANCE & BANNED WORDS (ACCOUNT SAFETY):
-- NO quality/material claims: soft, premium, cotton, high quality, durable, lightweight, fitted, loose.
-- NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now.
+### 2. STRICT COMPLIANCE & BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+- NO faux material / physical effect claims (CRITICAL FOR 2D PRINTS): sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
+- NO quality/material claims: soft, premium, cotton, high quality, durable, lightweight, fitted, loose, size up, printed in, made in.
+- NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now, discount.
 - NO background color mentions: white design, black background, transparent.
-- NO trademarks or copyrighted terms.
+- NO product types in Title/Brand: t-shirt, shirt, hoodie, tank top, popsocket, pop socket.
+- NO trademarks, copyrighted characters, or brand names.
 - NO profanity, violence, or sensitive themes (must be 100% Family Friendly / PG-13).
 - NO keyword stuffing. Use full, natural sentences.
 
@@ -217398,6 +217400,289 @@ var SystemPromptService = class {
       listingGenerator: current.listingGenerator,
       trademarkAuditor: current.trademarkAuditor
     };
+  }
+};
+
+// src/server/services/bannedWordsService.ts
+var BANNED_WORDS_BY_LOCALE = {
+  en: [
+    // Physical faux effects / Material claims (Forbidden on 2D prints)
+    "sparkling",
+    "glitter",
+    "neon",
+    "metallic",
+    "foil",
+    "rose gold",
+    "gold",
+    "glow effect",
+    "glows in black light",
+    "glow in the dark",
+    "sequin",
+    "metal",
+    "wood",
+    "diamond",
+    "gem",
+    "texture",
+    "textured",
+    "holographic",
+    "embossed",
+    "leather",
+    "rubber",
+    // Quality, Fit & Sizing claims
+    "premium",
+    "high quality",
+    "quality",
+    "fitted",
+    "looser",
+    "size up",
+    "bigger size",
+    "larger size",
+    "maternity",
+    "printed to be fitted",
+    "printed in",
+    "printed",
+    "made in",
+    // Shipping & Promotional promises
+    "free shipping",
+    "prime shipping",
+    "ships in",
+    "easy returns",
+    "refund",
+    "review",
+    "risk free",
+    "satisfaction guaranteed",
+    "limited quantities",
+    "best seller",
+    "sale",
+    "buy now",
+    "discount",
+    "trending",
+    // Gift language (Amazon MBA policy flag)
+    "gift",
+    "present",
+    "birthday gift",
+    "christmas gift",
+    // Product types in Title/Brand
+    "popsocket",
+    "pop socket",
+    "t-shirt",
+    "tshirt",
+    "t shirt",
+    "hoodie",
+    "tank top",
+    "sweatshirt",
+    // Vulgar / Adult / Sensitive
+    "fuck",
+    "shit",
+    "bitch",
+    "btch",
+    "dick",
+    "penis",
+    // Known Trap Trademarks
+    "Steppenwolf",
+    "Cycologist"
+  ],
+  de: [
+    // Physische Material- & Effekt-Behauptungen
+    "glitzernd",
+    "Glitter",
+    "Pailletten",
+    "leuchtend",
+    "leuchtet bei Schwarzlicht",
+    "leuchtet im Dunkeln",
+    "Neon",
+    "Metallic",
+    "Folie",
+    "Ros\xE9gold",
+    "Gold",
+    "Holz",
+    "Metall",
+    "Marmor",
+    "Glas",
+    "Leder",
+    "Gummi",
+    "Diamant",
+    "Edelstein",
+    "flauschig",
+    "Pl\xFCsch",
+    "gepr\xE4gt",
+    // Qualität & Passform
+    "bewertung",
+    "hohe qualit\xE4t",
+    "premium",
+    "Schwangerschaftsbekleidung",
+    "\xDCbergr\xF6\xDFe",
+    // Werbe- & Geschenk-Sprache
+    "geschenk",
+    "geburtstagsgeschenk",
+    "weihnachtsgeschenk",
+    "bester verk\xE4ufer",
+    "rabatt",
+    "jetzt kaufen",
+    // Obszönitäten & Fallen
+    "fuck",
+    "btch",
+    "bitch",
+    "penis",
+    "schie\xDFen",
+    "Steppenwolf"
+  ],
+  fr: [
+    "n\xE9on",
+    "m\xE9tallis\xE9",
+    "feuille d'aluminium",
+    "rose",
+    "\xE9tincelant",
+    "brillant",
+    "brillant \xE0 la lumi\xE8re noire",
+    "brillant dans l\u2019obscurit\xE9",
+    "m\xE9tal",
+    "marbre",
+    "paillettes",
+    "cuir",
+    "caoutchouc",
+    "pelucheuses",
+    "fourrure",
+    "verre",
+    "diamant",
+    "pierre pr\xE9cieuse",
+    "cadeau",
+    "nains"
+  ],
+  it: [
+    "metallo",
+    "marmo",
+    "paillettes",
+    "glitter",
+    "pelle",
+    "gomma",
+    "pelo o pelliccia",
+    "perline",
+    "diamanti",
+    "gemme",
+    "fluo",
+    "metallico",
+    "laminato",
+    "oro rosa",
+    "oro",
+    "brillante",
+    "fosforescente",
+    "fluorescente alla luce nera",
+    "luminoso al buio",
+    "regalo",
+    "Benito Mussolini",
+    "Benito",
+    "Mussolini",
+    "anos"
+  ],
+  es: [
+    "papel de aluminio",
+    "oro rosa",
+    "oro",
+    "brillante",
+    "brillo en luz negra",
+    "brillo en la oscuridad",
+    "como madera",
+    "metal",
+    "m\xE1rmol",
+    "lentejuelas",
+    "purpurina",
+    "cuero",
+    "caucho",
+    "tejido o peludo",
+    "vidrio",
+    "diamantes o gemas",
+    "regalo",
+    "primer"
+  ],
+  ja: [
+    "\u30C1\u30D3",
+    "\u30B8\u30F3",
+    "\u30B7\u30F3",
+    "\u30A2\u30BF\u30EA",
+    "\u30A2\u30BF",
+    "\u30AE\u30D5\u30C8",
+    "\u30D7\u30EC\u30BC\u30F3\u30C8",
+    "\u9AD8\u54C1\u8CEA",
+    "\u30D7\u30EC\u30DF\u30A2\u30E0"
+  ]
+};
+var BannedWordsService = class {
+  /**
+   * Get banned words array for a specific locale (defaulting to English if not found)
+   */
+  static getBannedWords(locale = "en") {
+    const norm = locale.toLowerCase().trim();
+    return BANNED_WORDS_BY_LOCALE[norm] || BANNED_WORDS_BY_LOCALE.en || [];
+  }
+  /**
+   * Generate formatted Markdown section to append to the Listing Generator system prompt
+   */
+  static getBannedWordsPromptSection() {
+    const enWords = this.getBannedWords("en").join(", ");
+    const deWords = this.getBannedWords("de").join(", ");
+    return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+You MUST NEVER use any of the following prohibited words or phrases in ANY field (Brand, Title, Bullet 1, Bullet 2, Description) under ANY circumstances:
+
+A. FAUX MATERIAL & PHYSICAL EFFECT CLAIMS (CRITICAL! DO NOT DESCRIBE 2D ARTWORK AS PHYSICAL MATERIALS):
+- English: sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
+- German: glitzernd, Glitter, Pailletten, leuchtend, Neon, Metallic, Folie, Ros\xE9gold, Gold, Holz, Metall, Marmor, Glas, Leder, Diamant, Edelstein.
+
+B. QUALITY, FIT & SIZING CLAIMS:
+- English: premium, high quality, quality, fitted, looser, size up, bigger size, larger size, maternity, printed in, made in.
+- German: hohe qualit\xE4t, premium, bewertung, Schwangerschaftsbekleidung.
+
+C. PROMOTIONAL & GIFT LANGUAGE:
+- English: gift, present, birthday gift, christmas gift, best seller, sale, buy now, discount.
+- German: geschenk, geburtstagsgeschenk, weihnachtsgeschenk, rabatt.
+
+D. PRODUCT TYPE IN TITLE/BRAND:
+- NO words like: "T-Shirt", "tshirt", "shirt", "hoodie", "tank top", "popsocket", "pop socket".
+
+E. ALL PROHIBITED WORDS LIST:
+- [EN]: ${enWords}
+- [DE]: ${deWords}`;
+  }
+  /**
+   * Scan text for banned words in a given language locale
+   */
+  static findBannedWordsInText(text2, locale = "en") {
+    if (!text2 || typeof text2 !== "string") return [];
+    const words = this.getBannedWords(locale);
+    const found = [];
+    const isJapanese = locale === "ja";
+    for (const w of words) {
+      const escaped2 = w.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+      const regex = isJapanese ? new RegExp(escaped2, "gi") : new RegExp(`\\b${escaped2}\\b`, "gi");
+      if (regex.test(text2)) {
+        found.push(w);
+      }
+    }
+    return Array.from(new Set(found));
+  }
+  /**
+   * Validate full multi-language listing payload and return any detected banned words
+   */
+  static validateListing(listing) {
+    const issuesByLocale = {};
+    if (!listing || typeof listing !== "object") return issuesByLocale;
+    for (const [loc, fields] of Object.entries(listing)) {
+      if (fields && typeof fields === "object") {
+        const localeIssues = [];
+        for (const [fieldName, val] of Object.entries(fields)) {
+          if (typeof val === "string") {
+            const found = this.findBannedWordsInText(val, loc);
+            if (found.length > 0) {
+              localeIssues.push({ field: fieldName, foundWords: found });
+            }
+          }
+        }
+        if (localeIssues.length > 0) {
+          issuesByLocale[loc] = localeIssues;
+        }
+      }
+    }
+    return issuesByLocale;
   }
 };
 
@@ -218022,7 +218307,11 @@ Beantworte die 4 Kernfragen streng als JSON!`;
       return;
     }
     const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
-    const listingPrompt = SystemPromptService.getListingGeneratorPrompt();
+    const baseListingPrompt = SystemPromptService.getListingGeneratorPrompt();
+    const bannedWordsSection = BannedWordsService.getBannedWordsPromptSection();
+    const listingPrompt = `${baseListingPrompt}
+
+${bannedWordsSection}`;
     const quote5 = task.payload?.quote || "";
     const niche1 = task.payload?.niche1 || "";
     const niche2 = task.payload?.niche2 || "";
@@ -218086,11 +218375,19 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
       } catch (pe) {
         parsedListing = rawContent;
       }
+      const bannedIssues = BannedWordsService.validateListing(parsedListing);
+      const hasBannedIssues = Object.keys(bannedIssues).length > 0;
+      if (hasBannedIssues) {
+        console.warn(`[TaskLogService] \u26A0\uFE0F Blacklist-Treffer in generiertem Listing f\xFCr Task ${taskId}:`, JSON.stringify(bannedIssues));
+      }
       this.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "LISTING_RESPONSE",
         title: `Empfangen von OpenRouter (MBA Listing)`,
-        content: parsedListing,
+        content: {
+          ...parsedListing,
+          ...hasBannedIssues ? { _banned_word_warnings: bannedIssues } : {}
+        },
         metadata: {
           model: data.model || model,
           latencyMs,

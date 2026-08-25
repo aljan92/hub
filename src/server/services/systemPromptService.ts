@@ -89,11 +89,13 @@ Your task is to generate a high-converting, policy-compliant, and perfectly opti
   * Combine the ideas from Bullets 1 & 2 into a reader-friendly, natural paragraph with soft long-tail keywords.
   * Do NOT mention background color or physical garment properties.
 
-### 2. STRICT COMPLIANCE & BANNED WORDS (ACCOUNT SAFETY):
-- NO quality/material claims: soft, premium, cotton, high quality, durable, lightweight, fitted, loose.
-- NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now.
+### 2. STRICT COMPLIANCE & BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+- NO faux material / physical effect claims (CRITICAL FOR 2D PRINTS): sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
+- NO quality/material claims: soft, premium, cotton, high quality, durable, lightweight, fitted, loose, size up, printed in, made in.
+- NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now, discount.
 - NO background color mentions: white design, black background, transparent.
-- NO trademarks or copyrighted terms.
+- NO product types in Title/Brand: t-shirt, shirt, hoodie, tank top, popsocket, pop socket.
+- NO trademarks, copyrighted characters, or brand names.
 - NO profanity, violence, or sensitive themes (must be 100% Family Friendly / PG-13).
 - NO keyword stuffing. Use full, natural sentences.
 

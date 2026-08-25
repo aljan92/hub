@@ -4,6 +4,7 @@ import { loadSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
 import { IdeogramService } from './ideogramService';
 import { TrademarkService } from './trademarkService';
+import { BannedWordsService } from './bannedWordsService';
 
 export * from '../../types/tasks';
 import { 
@@ -744,7 +745,10 @@ export class TaskLogService {
     }
 
     const model = settings.llmModel || 'anthropic/claude-3-5-sonnet';
-    const listingPrompt = SystemPromptService.getListingGeneratorPrompt();
+    const baseListingPrompt = SystemPromptService.getListingGeneratorPrompt();
+    const bannedWordsSection = BannedWordsService.getBannedWordsPromptSection();
+    const listingPrompt = `${baseListingPrompt}\n\n${bannedWordsSection}`;
+
     const quote = task.payload?.quote || '';
     const niche1 = task.payload?.niche1 || '';
     const niche2 = task.payload?.niche2 || '';
@@ -809,12 +813,22 @@ export class TaskLogService {
         parsedListing = rawContent;
       }
 
+      // Check for any banned word violations
+      const bannedIssues = BannedWordsService.validateListing(parsedListing);
+      const hasBannedIssues = Object.keys(bannedIssues).length > 0;
+      if (hasBannedIssues) {
+        console.warn(`[TaskLogService] ⚠️ Blacklist-Treffer in generiertem Listing für Task ${taskId}:`, JSON.stringify(bannedIssues));
+      }
+
       // 2. Log Event: Empfangen von OpenRouter (Listing)
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'LISTING_RESPONSE',
         title: `Empfangen von OpenRouter (MBA Listing)`,
-        content: parsedListing,
+        content: {
+          ...parsedListing,
+          ...(hasBannedIssues ? { _banned_word_warnings: bannedIssues } : {})
+        },
         metadata: {
           model: data.model || model,
           latencyMs,
