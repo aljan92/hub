@@ -646,6 +646,86 @@ export class TaskLogService {
     }
   }
 
+  /**
+   * Jump back to an earlier pipeline step and re-execute from there
+   */
+  static async retryFromStep(taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST') {
+    const logs = this.loadLogs();
+    const taskIdx = logs.findIndex(t => t.id.toLowerCase() === taskId.toLowerCase());
+    if (taskIdx === -1) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    const currentTask = logs[taskIdx];
+
+    if (stepType === 'LLM_REQUEST') {
+      const keepIdx = currentTask.events.findIndex(e => e.type === 'LLM_REQUEST');
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = 'PROCESSING';
+      currentTask.resultPrompt = undefined;
+      currentTask.imageUrl = undefined;
+      currentTask.localImagePath = undefined;
+      currentTask.analysisResult = undefined;
+      currentTask.hasError = false;
+      currentTask.errorDetails = undefined;
+
+      this.saveLogs(logs);
+
+      // Re-execute OpenRouter prompt generation -> Ideogram -> Vision
+      this.processTaskWithOpenRouter(taskId).catch(err => {
+        console.error(`[TaskLogService] Retry failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Prompt-Generierung neu gestartet.' };
+    }
+
+    if (stepType === 'IDEOGRAM_REQUEST') {
+      const keepIdx = currentTask.events.findIndex(e => e.type === 'IDEOGRAM_REQUEST');
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = 'GENERATING_IMAGE';
+      currentTask.imageUrl = undefined;
+      currentTask.localImagePath = undefined;
+      currentTask.analysisResult = undefined;
+      currentTask.hasError = false;
+      currentTask.errorDetails = undefined;
+
+      this.saveLogs(logs);
+
+      const promptToUse = currentTask.resultPrompt || currentTask.payload?.quote || '';
+      this.processTaskWithIdeogram(taskId, promptToUse).catch(err => {
+        console.error(`[TaskLogService] Retry Ideogram failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Ideogram-Bildgenerierung neu gestartet.' };
+    }
+
+    if (stepType === 'ANALYSIS_REQUEST') {
+      const keepIdx = currentTask.events.findIndex(e => e.type === 'ANALYSIS_REQUEST');
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = 'ANALYZING_DESIGN';
+      currentTask.analysisResult = undefined;
+      currentTask.hasError = false;
+      currentTask.errorDetails = undefined;
+
+      this.saveLogs(logs);
+
+      const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const localFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+
+      this.analyzeDesignWithOpenRouter(taskId, localFilePath, currentTask.imageUrl || '').catch(err => {
+        console.error(`[TaskLogService] Retry Analysis failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Vision Design-Analyse neu gestartet.' };
+    }
+
+    throw new Error(`Unbekannter Step-Typ: ${stepType}`);
+  }
+
   static getTaskLogs(): DesignTaskLog[] {
     return this.loadLogs();
   }

@@ -217056,54 +217056,54 @@ CORE RULES:
 
 OUTPUT FORMAT:
 Output ONLY the raw, optimized image generation prompt text. Do not include introductory text, explanations, or quotes around the whole prompt.`;
-var DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT = `Du bist ein hochqualifizierter Art Director und POD (Print on Demand) Qualit\xE4tspr\xFCfer f\xFCr Merch by Amazon.
-Deine Aufgabe ist es, das generierte T-Shirt/Merch-Grafikdesign anhand der Vorgaben und der folgenden 4 Kernfragen pr\xE4zise zu analysieren:
+var DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT = `You are an expert AI Art Director and POD (Print on Demand) Quality Assurance Specialist for Merch by Amazon.
+Your task is to analyze the generated t-shirt / merch graphic design based on the input specifications and evaluate it strictly against the following 4 core criteria:
 
-1. QUOTE- & TEXTPR\xDCFUNG:
-- Pr\xFCfe, ob der Text im Bild exakt mit der angeforderten Quote \xFCbereinstimmt.
-- Achte auf Rechtschreibfehler, fehlende oder doppelte Buchstaben, Tippfehler, unleserliche Schriftarten oder verzerrte Glyphen.
-- Wenn Fehler vorliegen oder der Text wesentlich abweicht, setze "quote_matches" auf false und "regenerate_recommended" auf true.
+1. QUOTE ACCURACY & TYPOGRAPHY:
+- Verify whether the visible text in the image matches the requested quote exactly.
+- Check for spelling mistakes, missing or duplicate letters, typos, illegible fonts, or distorted glyphs.
+- If there are typos, missing words, or significant errors, set "quote_matches" to false and "regenerate_recommended" to true.
 
-2. ZIELGRUPPE (FIT TYPES):
-- Bestimme die passenden Zielgruppen f\xFCr dieses Design: Auswahl aus ["Men", "Women", "Youth"].
-- Mehrfachauswahl ist ausdr\xFCcklich erw\xFCnscht (z.B. ["Men", "Women", "Youth"] f\xFCr allgemeine/s\xFC\xDFe Motive, ["Men", "Women"] f\xFCr typische Erwachsenen-Zitate).
+2. TARGET AUDIENCE (FIT TYPES):
+- Determine which target audiences this design is suitable for: Select from ["Men", "Women", "Youth"].
+- Multiple selections are encouraged (e.g. ["Men", "Women", "Youth"] for cute/general motifs, ["Men", "Women"] for adult-oriented quotes).
 
-3. VERMEIDBARE PRODUKTFARBEN (KONTRAST):
-- Welche T-Shirt- bzw. Produkt-Grundfarben m\xFCssen vermieden werden, damit das Design optimal lesbar ist?
-- Optionen f\xFCr "avoid":
-  - "Schwarz": Wenn das Design \xFCberwiegend aus schwarzer/dunkler Schrift oder Elementen ohne wei\xDFe Outline besteht.
-  - "Wei\xDF": Wenn das Design \xFCberwiegend aus wei\xDFer/heller Schrift ohne dunkle Outline besteht.
-  - "Keine": Wenn das Design auf allen Textilfarben gut lesbar ist (z.B. dank Outlines/bunten Elementen).
+3. PRODUCT COLORS TO AVOID (CONTRAST):
+- Which t-shirt / garment base color must be avoided to ensure maximum contrast and legibility?
+- Options for "avoid":
+  - "Schwarz": If the graphic is primarily black/dark text or elements without a light outline.
+  - "Wei\xDF": If the graphic is primarily white/light text or elements without a dark outline.
+  - "Keine": If the design has strong contrast or outlines that look great on both black and white apparel.
 
-4. HINTERGRUND-ELEMENT & TRANSPARENZ:
-- Wird die Hintergrundfarbe aktiv als Design-Element verwendet (z.B. illustrierte Landschaft, Farbverlauf-Kreis, komplexe Szenerie)?
-- "is_design_element": true (Ja) oder false (Nein).
-- Wenn false ("Nein"), kann der Hintergrund automatisch transparent freigestellt werden.
-- Wenn true ("Ja"), muss die Freistellung manuell durch den User erfolgen.
+4. BACKGROUND HANDLING (AUTOMATED TRANSPARENCY / ISOLATION):
+- Is the background color an active artistic design element (e.g. detailed scenery, gradient circle, complex illustration environment)?
+- "is_design_element": true (Yes) or false (No).
+- If false ("No"), automated background removal (magic wand / chroma key) can be safely applied.
+- If true ("Yes"), manual clipping / isolation by the user is required.
 
-ANTWORTFORMAT:
-Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt in folgendem Format (kein Markdown-Codeblock, kein Begleittext):
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
 {
   "quote_check": {
-    "requested_quote": "<Originale Quote aus dem Input>",
-    "detected_quote": "<Tats\xE4chlich im Bild erkannter Text>",
+    "requested_quote": "<Original quote from input>",
+    "detected_quote": "<Actual text read from image>",
     "quote_matches": true,
     "quote_errors": null,
     "regenerate_recommended": false
   },
   "target_group": {
     "selected": ["Men", "Women", "Youth"],
-    "reason": "<Kurze deutsche Begr\xFCndung>"
+    "reason": "<Brief explanation>"
   },
   "avoid_product_colors": {
     "avoid": "Schwarz",
-    "reason": "<Kurze deutsche Begr\xFCndung zum Kontrast>"
+    "reason": "<Brief contrast explanation>"
   },
   "background_analysis": {
     "is_design_element": false,
-    "background_color_detected": "<Erkannte Hintergrundfarbe>",
+    "background_color_detected": "<Detected background color>",
     "removal_mode": "AUTOMATIC",
-    "reason": "<Kurze deutsche Begr\xFCndung>"
+    "reason": "<Brief explanation>"
   },
   "overall_verdict": "APPROVED"
 }`;
@@ -217714,6 +217714,69 @@ Beantworte die 4 Kernfragen streng als JSON!`;
       });
       this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
     }
+  }
+  /**
+   * Jump back to an earlier pipeline step and re-execute from there
+   */
+  static async retryFromStep(taskId, stepType) {
+    const logs = this.loadLogs();
+    const taskIdx = logs.findIndex((t) => t.id.toLowerCase() === taskId.toLowerCase());
+    if (taskIdx === -1) throw new Error(`Task ${taskId} nicht gefunden.`);
+    const currentTask = logs[taskIdx];
+    if (stepType === "LLM_REQUEST") {
+      const keepIdx = currentTask.events.findIndex((e) => e.type === "LLM_REQUEST");
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = "PROCESSING";
+      currentTask.resultPrompt = void 0;
+      currentTask.imageUrl = void 0;
+      currentTask.localImagePath = void 0;
+      currentTask.analysisResult = void 0;
+      currentTask.hasError = false;
+      currentTask.errorDetails = void 0;
+      this.saveLogs(logs);
+      this.processTaskWithOpenRouter(taskId).catch((err) => {
+        console.error(`[TaskLogService] Retry failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Prompt-Generierung neu gestartet." };
+    }
+    if (stepType === "IDEOGRAM_REQUEST") {
+      const keepIdx = currentTask.events.findIndex((e) => e.type === "IDEOGRAM_REQUEST");
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = "GENERATING_IMAGE";
+      currentTask.imageUrl = void 0;
+      currentTask.localImagePath = void 0;
+      currentTask.analysisResult = void 0;
+      currentTask.hasError = false;
+      currentTask.errorDetails = void 0;
+      this.saveLogs(logs);
+      const promptToUse = currentTask.resultPrompt || currentTask.payload?.quote || "";
+      this.processTaskWithIdeogram(taskId, promptToUse).catch((err) => {
+        console.error(`[TaskLogService] Retry Ideogram failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Ideogram-Bildgenerierung neu gestartet." };
+    }
+    if (stepType === "ANALYSIS_REQUEST") {
+      const keepIdx = currentTask.events.findIndex((e) => e.type === "ANALYSIS_REQUEST");
+      if (keepIdx !== -1) {
+        currentTask.events = currentTask.events.slice(0, keepIdx);
+      }
+      currentTask.status = "ANALYZING_DESIGN";
+      currentTask.analysisResult = void 0;
+      currentTask.hasError = false;
+      currentTask.errorDetails = void 0;
+      this.saveLogs(logs);
+      const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const localFilePath = import_path70.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+      this.analyzeDesignWithOpenRouter(taskId, localFilePath, currentTask.imageUrl || "").catch((err) => {
+        console.error(`[TaskLogService] Retry Analysis failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Vision Design-Analyse neu gestartet." };
+    }
+    throw new Error(`Unbekannter Step-Typ: ${stepType}`);
   }
   static getTaskLogs() {
     return this.loadLogs();
@@ -218444,6 +218507,16 @@ app.delete("/api/v1/tasks/log", (req, res) => {
   TaskLogService.clearTaskLogs();
   broadcast("TASK_LOGS_CLEARED", {});
   res.json({ success: true, message: "All task logs cleared" });
+});
+app.post("/api/v1/tasks/:taskId/retry", async (req, res) => {
+  const { taskId } = req.params;
+  const { stepType } = req.body;
+  try {
+    const result2 = await TaskLogService.retryFromStep(taskId, stepType);
+    res.json({ success: true, ...result2 });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
 });
 app.get("/api/v1/systemprompts", (req, res) => {
   const prompts = SystemPromptService.getAllPrompts();

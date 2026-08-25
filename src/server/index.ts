@@ -913,6 +913,17 @@ app.delete('/api/v1/tasks/log', (req, res) => {
   res.json({ success: true, message: 'All task logs cleared' });
 });
 
+app.post('/api/v1/tasks/:taskId/retry', async (req, res) => {
+  const { taskId } = req.params;
+  const { stepType } = req.body;
+  try {
+    const result = await TaskLogService.retryFromStep(taskId, stepType);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // 8.1 System Prompts Settings
 app.get('/api/v1/systemprompts', (req, res) => {
   const prompts = SystemPromptService.getAllPrompts();

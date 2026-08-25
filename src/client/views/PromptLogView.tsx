@@ -27,7 +27,8 @@ import {
   Users,
   Palette,
   Scissors,
-  CheckSquare
+  CheckSquare,
+  RotateCcw
 } from 'lucide-react';
 
 export type EventType = 
@@ -79,11 +80,12 @@ export interface DesignTaskLog {
 
 export const PromptLogView: React.FC = () => {
   const [tasks, setTasks] = useState<DesignTaskLog[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [filterSource, setFilterSource] = useState<'ALL' | 'HERMES' | 'TEST' | 'DESIGNER'>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTask, setSelectedTask] = useState<DesignTaskLog | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [retryingStep, setRetryingStep] = useState<string | null>(null);
 
   // Mini Playground State
   const [playNiche1, setPlayNiche1] = useState('Angel Numbers');
@@ -92,22 +94,37 @@ export const PromptLogView: React.FC = () => {
   const [testSuccessMessage, setTestSuccessMessage] = useState<string | null>(null);
 
   const fetchTasks = async () => {
-    setLoading(true);
     try {
       const res = await fetch('/api/v1/tasks/log');
       const data = await res.json();
       if (data.success && Array.isArray(data.tasks)) {
         setTasks(data.tasks);
-        // Keep currently selected task up to date with new events
-        setSelectedTask(prev => {
-          if (!prev) return data.tasks[0] || null;
-          return data.tasks.find((t: DesignTaskLog) => t.id === prev.id) || data.tasks[0] || null;
-        });
+        if (!selectedTaskId && data.tasks.length > 0) {
+          setSelectedTaskId(data.tasks[0].id);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch task logs:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRetryStep = async (taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST') => {
+    setRetryingStep(`${taskId}-${stepType}`);
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/retry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stepType })
+      });
+      if (res.ok) {
+        await fetchTasks();
+      }
+    } catch (e) {
+      console.error('Failed to retry task step:', e);
+    } finally {
+      setTimeout(() => setRetryingStep(null), 1000);
     }
   };
 
@@ -635,13 +652,24 @@ export const PromptLogView: React.FC = () => {
                           <div className="bg-slate-950 rounded-xl p-3.5 border border-slate-800/80 space-y-3">
                             <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
                               <span>Anfrage an OpenRouter:</span>
-                              <button
-                                onClick={() => copyToClipboard(event.content.userMessage, `req-${idx}`)}
-                                className="flex items-center space-x-1 text-slate-400 hover:text-slate-200"
-                              >
-                                {copiedKey === `req-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                                <span>{copiedKey === `req-${idx}` ? 'Kopiert!' : 'Input kopieren'}</span>
-                              </button>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleRetryStep(selectedTask.id, 'LLM_REQUEST')}
+                                  disabled={retryingStep !== null}
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20 transition-all disabled:opacity-50"
+                                  title="Prompt-Erstellung ab diesem Schritt neu starten (alle Folgeschritte werden aktualisiert)"
+                                >
+                                  <RotateCcw className={`w-3 h-3 ${retryingStep === `${selectedTask.id}-LLM_REQUEST` ? 'animate-spin' : ''}`} />
+                                  <span>Ab hier neu ausführen</span>
+                                </button>
+                                <button
+                                  onClick={() => copyToClipboard(event.content.userMessage, `req-${idx}`)}
+                                  className="flex items-center space-x-1 text-slate-400 hover:text-slate-200"
+                                >
+                                  {copiedKey === `req-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                  <span>{copiedKey === `req-${idx}` ? 'Kopiert!' : 'Input kopieren'}</span>
+                                </button>
+                              </div>
                             </div>
 
                             {/* System Prompt preview */}
@@ -733,7 +761,18 @@ export const PromptLogView: React.FC = () => {
                           <div className="bg-slate-950 rounded-xl p-3.5 border border-purple-500/30 space-y-2">
                             <div className="flex items-center justify-between text-[11px] font-semibold text-purple-300">
                               <span>Parameter für Ideogram:</span>
-                              <span className="font-mono text-slate-400">{event.content.model}</span>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleRetryStep(selectedTask.id, 'IDEOGRAM_REQUEST')}
+                                  disabled={retryingStep !== null}
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20 transition-all disabled:opacity-50"
+                                  title="Ideogram-Bildgenerierung ab diesem Schritt neu starten"
+                                >
+                                  <RotateCcw className={`w-3 h-3 ${retryingStep === `${selectedTask.id}-IDEOGRAM_REQUEST` ? 'animate-spin' : ''}`} />
+                                  <span>Ab hier neu ausführen</span>
+                                </button>
+                                <span className="font-mono text-slate-400">{event.content.model}</span>
+                              </div>
                             </div>
 
                             {/* Parameter Chips */}
@@ -820,7 +859,18 @@ export const PromptLogView: React.FC = () => {
                                 <Eye className="w-3.5 h-3.5 text-cyan-400" />
                                 Vision-Anfrage an OpenRouter (Design &amp; Fragen):
                               </span>
-                              <span className="font-mono text-slate-400">{event.metadata?.model}</span>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleRetryStep(selectedTask.id, 'ANALYSIS_REQUEST')}
+                                  disabled={retryingStep !== null}
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                                  title="Vision Design-Analyse mit dem aktiven System-Prompt neu ausführen"
+                                >
+                                  <RotateCcw className={`w-3 h-3 ${retryingStep === `${selectedTask.id}-ANALYSIS_REQUEST` ? 'animate-spin' : ''}`} />
+                                  <span>Ab hier neu ausführen</span>
+                                </button>
+                                <span className="font-mono text-slate-400">{event.metadata?.model}</span>
+                              </div>
                             </div>
 
                             {/* System Prompt preview */}
