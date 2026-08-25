@@ -6,7 +6,7 @@ import { IdeogramService } from './ideogramService';
 
 export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER';
 export type TaskSuffix = 'H' | 'T' | 'D';
-export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'COMPLETED' | 'ERROR';
+export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'COMPLETED' | 'REJECTED' | 'ERROR';
 
 export type EventType = 
   | 'INCOMING_PAYLOAD'
@@ -643,7 +643,7 @@ export class TaskLogService {
         await this.generateListingWithOpenRouter(taskId);
       } else {
         this.updateTaskStatus(taskId, {
-          status: 'COMPLETED',
+          status: 'REJECTED',
           analysisResult: parsedAnalysis,
           hasError: false
         });

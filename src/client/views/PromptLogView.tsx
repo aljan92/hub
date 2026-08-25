@@ -29,7 +29,8 @@ import {
   Scissors,
   CheckSquare,
   RotateCcw,
-  FileText
+  FileText,
+  XCircle
 } from 'lucide-react';
 
 export type EventType = 
@@ -68,7 +69,7 @@ export interface DesignTaskLog {
   counter: number;
   source: 'HERMES' | 'TEST' | 'DESIGNER';
   suffix: 'H' | 'T' | 'D';
-  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'COMPLETED' | 'ERROR';
+  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'GENERATING_LISTING' | 'COMPLETED' | 'REJECTED' | 'ERROR';
   receivedAt: string;
   clientIp?: string;
   payload: Record<string, any>;
@@ -106,9 +107,12 @@ export const PromptLogView: React.FC = () => {
       const data = await res.json();
       if (data.success && Array.isArray(data.tasks)) {
         setTasks(data.tasks);
-        if (!selectedTaskId && data.tasks.length > 0) {
-          setSelectedTaskId(data.tasks[0].id);
-        }
+        setSelectedTaskId(prev => {
+          if (prev && data.tasks.some((t: any) => t.id === prev)) {
+            return prev;
+          }
+          return data.tasks[0]?.id || null;
+        });
       }
     } catch (err) {
       console.error('Failed to fetch task logs:', err);
@@ -502,9 +506,19 @@ export const PromptLogView: React.FC = () => {
                         <FileText className="w-3 h-3" /> Erstelle MBA Listing...
                       </span>
                     )}
-                    {task.status === 'COMPLETED' && (
+                    {(task.status === 'REJECTED' || (task.analysisResult && !task.listingResult && (task.analysisResult.quote_check?.quote_matches === false || task.analysisResult.quote_check?.regenerate_recommended === true))) && (
+                      <span className="text-amber-400 flex items-center gap-1 font-semibold">
+                        <XCircle className="w-3 h-3 text-rose-400" /> Abgelehnt (Kein Listing)
+                      </span>
+                    )}
+                    {task.status === 'COMPLETED' && task.listingResult && (
                       <span className="text-emerald-400 flex items-center gap-1 font-semibold">
                         <CheckCircle2 className="w-3 h-3" /> Design &amp; Listing fertig ✓
+                      </span>
+                    )}
+                    {task.status === 'COMPLETED' && !task.analysisResult && !task.listingResult && (
+                      <span className="text-cyan-400 flex items-center gap-1 font-semibold">
+                        <CheckCircle2 className="w-3 h-3" /> Bild fertig ✓
                       </span>
                     )}
                     {task.status === 'PROMPT_READY' && (

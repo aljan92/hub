@@ -217777,7 +217777,7 @@ Beantworte die 4 Kernfragen streng als JSON!`;
         await this.generateListingWithOpenRouter(taskId);
       } else {
         this.updateTaskStatus(taskId, {
-          status: "COMPLETED",
+          status: "REJECTED",
           analysisResult: parsedAnalysis,
           hasError: false
         });
