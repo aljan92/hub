@@ -217272,6 +217272,18 @@ ${JSON.stringify(task.payload, null, 2)}`;
         completion: json.usage.completion_tokens,
         total: json.usage.total_tokens
       } : void 0;
+      let extractedPrompt = generatedContent;
+      try {
+        let cleanJsonStr = generatedContent.trim();
+        if (cleanJsonStr.startsWith("```")) {
+          cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+        }
+        const parsed = JSON.parse(cleanJsonStr);
+        if (parsed && typeof parsed.prompt === "string") {
+          extractedPrompt = parsed.prompt;
+        }
+      } catch (e) {
+      }
       this.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "LLM_RESPONSE",
@@ -217285,7 +217297,7 @@ ${JSON.stringify(task.payload, null, 2)}`;
       });
       this.updateTaskStatus(taskId, {
         status: "PROMPT_READY",
-        resultPrompt: generatedContent,
+        resultPrompt: extractedPrompt,
         hasError: false
       });
       console.log(`[TaskLogService] \u26A1 Task ${taskId} erfolgreich generiert in ${latencyMs}ms (${usage?.total || 0} Tokens)`);

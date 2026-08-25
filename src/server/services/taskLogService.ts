@@ -325,6 +325,21 @@ export class TaskLogService {
         total: json.usage.total_tokens
       } : undefined;
 
+      // Extract raw prompt text from JSON response if formatted as {"prompt": "..."}
+      let extractedPrompt = generatedContent;
+      try {
+        let cleanJsonStr = generatedContent.trim();
+        if (cleanJsonStr.startsWith('```')) {
+          cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        }
+        const parsed = JSON.parse(cleanJsonStr);
+        if (parsed && typeof parsed.prompt === 'string') {
+          extractedPrompt = parsed.prompt;
+        }
+      } catch (e) {
+        // Keep raw content if not JSON
+      }
+
       // 4. Log Event: Empfangen von OpenRouter
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -340,7 +355,7 @@ export class TaskLogService {
 
       this.updateTaskStatus(taskId, {
         status: 'PROMPT_READY',
-        resultPrompt: generatedContent,
+        resultPrompt: extractedPrompt,
         hasError: false
       });
 
