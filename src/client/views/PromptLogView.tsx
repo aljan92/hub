@@ -913,13 +913,6 @@ export const PromptLogView: React.FC = () => {
                                 {event.content.systemPrompt}
                               </pre>
                             </details>
-
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase text-slate-400 block mb-1">User Message &amp; Bild:</span>
-                              <pre className="p-2.5 bg-slate-900 rounded-lg text-xs text-cyan-300 font-mono whitespace-pre-wrap border border-slate-800">
-                                {event.content.userMessage}
-                              </pre>
-                            </div>
                           </div>
                         )}
 
@@ -1102,13 +1095,6 @@ export const PromptLogView: React.FC = () => {
                                 {event.content.systemPrompt}
                               </pre>
                             </details>
-
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase text-slate-400 block mb-1">User Message:</span>
-                              <pre className="p-2.5 bg-slate-900 rounded-lg text-xs text-emerald-300 font-mono whitespace-pre-wrap border border-slate-800">
-                                {event.content.userMessage}
-                              </pre>
-                            </div>
                           </div>
                         )}
 
