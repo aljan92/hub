@@ -465,6 +465,7 @@ export const SettingsView: React.FC = () => {
                 <option value="DEFAULT">DEFAULT (Standard)</option>
                 <option value="TURBO">TURBO (Schnell)</option>
                 <option value="QUALITY">QUALITY (Beste Qualität)</option>
+                <option value="FLASH">FLASH (Ultra Schnell)</option>
               </select>
             </div>
 
@@ -476,21 +477,17 @@ export const SettingsView: React.FC = () => {
                 onChange={(e) => setIdeogramAspectRatio(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
               >
-                <option value="10x16">10x16 (T-Shirt Portrait)</option>
+                <option value="10x16">10x16 (T-Shirt Portrait / 10:16)</option>
+                <option value="16x10">16x10 (Querformat / 16:10)</option>
                 <option value="9x16">9x16 (Story / Hochformat)</option>
-                <option value="4x5">4x5 (Merch Portrait)</option>
-                <option value="3x4">3x4 (Hochformat)</option>
-                <option value="1x1">1x1 (Quadrat)</option>
-                <option value="4x3">4x3 (Querformat)</option>
-                <option value="16x9">16x9 (Widescreen)</option>
-                <option value="16x10">16x10 (Querformat)</option>
-                <option value="2x3">2x3 (Poster Hochformat)</option>
+                <option value="16x9">16x9 (Widescreen / 16:9)</option>
                 <option value="3x2">3x2 (Poster Querformat)</option>
-                <option value="1x2">1x2 (Schmal)</option>
-                <option value="2x1">2x1 (Banner)</option>
-                <option value="1x3">1x3 (Extrem Schmal)</option>
-                <option value="3x1">3x1 (Panorama)</option>
-                <option value="5x4">5x4 (Querformat)</option>
+                <option value="2x3">2x3 (Poster Hochformat)</option>
+                <option value="4x3">4x3 (Klassisch Querformat)</option>
+                <option value="3x4">3x4 (Klassisch Hochformat)</option>
+                <option value="1x1">1x1 (Quadrat)</option>
+                <option value="1x3">1x3 (Schmal Hochformat)</option>
+                <option value="3x1">3x1 (Panorama Banner)</option>
               </select>
             </div>
 
@@ -502,9 +499,10 @@ export const SettingsView: React.FC = () => {
                 onChange={(e) => setIdeogramStyle(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
               >
-                <option value="GENERAL">GENERAL (Allgemein)</option>
+                <option value="GENERAL">GENERAL (Allgemein - Standard)</option>
                 <option value="DESIGN">DESIGN (Grafik &amp; Vektor)</option>
                 <option value="REALISTIC">REALISTIC (Realistisch)</option>
+                <option value="FICTION">FICTION (Fantasy &amp; Fiction)</option>
                 <option value="AUTO">AUTO (Automatisch)</option>
               </select>
             </div>
