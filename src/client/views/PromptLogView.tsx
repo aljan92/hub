@@ -967,17 +967,29 @@ export const PromptLogView: React.FC = () => {
                                     <div className="flex items-center justify-between">
                                       <span className="font-bold text-slate-300 flex items-center gap-1">
                                         <Palette className="w-3.5 h-3.5 text-amber-400" />
-                                        3. Zu vermeidende Farbe
+                                        3. Product Colors to Avoid
                                       </span>
-                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                                        analysis.avoid_product_colors?.avoid === 'Schwarz'
+                                      {(() => {
+                                        const avoidVal = (analysis.avoid_product_colors?.avoid || 'None').trim();
+                                        const lower = avoidVal.toLowerCase();
+                                        const isBlack = lower === 'black' || lower === 'schwarz';
+                                        const isWhite = lower === 'white' || lower === 'weiß' || lower === 'weiss';
+                                        const isNone = lower === 'none' || lower === 'keine';
+
+                                        const badgeClass = isBlack
                                           ? 'bg-slate-900 text-slate-200 border-slate-700'
-                                          : analysis.avoid_product_colors?.avoid === 'Weiß'
-                                          ? 'bg-slate-100 text-slate-900 border-white'
-                                          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                      }`}>
-                                        Vermeiden: {analysis.avoid_product_colors?.avoid || 'Keine'}
-                                      </span>
+                                          : isWhite
+                                          ? 'bg-slate-100 text-slate-900 border-white font-black'
+                                          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+
+                                        const displayLabel = isBlack ? 'Avoid: Black' : isWhite ? 'Avoid: White' : 'Avoid: None';
+
+                                        return (
+                                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeClass}`}>
+                                            {displayLabel}
+                                          </span>
+                                        );
+                                      })()}
                                     </div>
                                     {analysis.avoid_product_colors?.reason && (
                                       <p className="text-[11px] text-slate-400 leading-tight">{analysis.avoid_product_colors.reason}</p>

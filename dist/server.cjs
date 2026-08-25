@@ -217071,9 +217071,9 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 3. PRODUCT COLORS TO AVOID (CONTRAST):
 - Which t-shirt / garment base color must be avoided to ensure maximum contrast and legibility?
 - Options for "avoid":
-  - "Schwarz": If the graphic is primarily black/dark text or elements without a light outline.
-  - "Wei\xDF": If the graphic is primarily white/light text or elements without a dark outline.
-  - "Keine": If the design has strong contrast or outlines that look great on both black and white apparel.
+  - "Black": If the graphic is primarily black/dark text or elements without a light outline.
+  - "White": If the graphic is primarily white/light text or elements without a dark outline.
+  - "None": If the design has strong contrast or outlines that look great on both black and white apparel.
 
 4. BACKGROUND HANDLING (AUTOMATED TRANSPARENCY / ISOLATION):
 - Is the background color an active artistic design element (e.g. detailed scenery, gradient circle, complex illustration environment)?
@@ -217096,7 +217096,7 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
     "reason": "<Brief explanation>"
   },
   "avoid_product_colors": {
-    "avoid": "Schwarz",
+    "avoid": "Black",
     "reason": "<Brief contrast explanation>"
   },
   "background_analysis": {
