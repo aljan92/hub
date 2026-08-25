@@ -87,6 +87,8 @@ export const PromptLogView: React.FC = () => {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [retryingStep, setRetryingStep] = useState<string | null>(null);
 
+  const selectedTask = tasks.find(t => t.id === selectedTaskId) || tasks[0] || null;
+
   // Mini Playground State
   const [playNiche1, setPlayNiche1] = useState('Angel Numbers');
   const [playQuote, setPlayQuote] = useState('111 Manifest Your Reality');
@@ -177,7 +179,7 @@ export const PromptLogView: React.FC = () => {
       const res = await fetch('/api/v1/tasks/log', { method: 'DELETE' });
       if (res.ok) {
         setTasks([]);
-        setSelectedTask(null);
+        setSelectedTaskId(null);
       }
     } catch (err) {
       alert('Fehler beim Leeren der Logs');
@@ -439,7 +441,7 @@ export const PromptLogView: React.FC = () => {
               return (
                 <div
                   key={task.id}
-                  onClick={() => setSelectedTask(task)}
+                  onClick={() => setSelectedTaskId(task.id)}
                   className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 ${
                     isSelected
                       ? 'bg-slate-800/90 border-accent-cyan/40 shadow-lg shadow-accent-cyan/5'
