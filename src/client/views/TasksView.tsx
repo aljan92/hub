@@ -470,7 +470,7 @@ export const TasksView: React.FC = () => {
 
                         <div className="text-[10px] text-slate-400 flex items-center justify-between">
                           <span>{t.source}</span>
-                          <span>{new Date(t.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span>{t.receivedAt ? new Date(t.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
                         </div>
                       </div>
                     </div>
@@ -493,7 +493,7 @@ export const TasksView: React.FC = () => {
                         {activeTask.source}
                       </span>
                       <span className="text-xs text-slate-400">
-                        Eingegangen: {new Date(activeTask.receivedAt).toLocaleString()}
+                        Eingegangen: {activeTask.receivedAt ? new Date(activeTask.receivedAt).toLocaleString() : '-'}
                       </span>
                     </div>
                     <h3 className="text-base font-bold text-slate-100">
@@ -537,19 +537,35 @@ export const TasksView: React.FC = () => {
                       <p className="text-xs text-slate-300 leading-relaxed">
                         Die Quote <strong>&quot;{activeTask.payload?.quote}&quot;</strong> hat einen aktiven USPTO-Markentreffer in Nizza-Klasse 25 (Bekleidung). Um LLM-Tokens und Kosten zu sparen, wurde die automatische Generierung pausiert.
                       </p>
-                      {activeTask.trademarkCheckResult?.fieldSummaries?.quote && (
-                        <div className="pt-2">
-                          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Gefundene Markeneinträge:</span>
-                          <div className="space-y-1">
-                            {activeTask.trademarkCheckResult.fieldSummaries.quote.hits?.map((hit: any, i: number) => (
-                              <div key={i} className="p-2 rounded bg-slate-900/90 border border-slate-800 text-[11px] flex items-center justify-between">
-                                <span className="font-bold text-amber-300 font-mono">{hit.wordmark || hit.mark}</span>
-                                <span className="text-slate-400">Klasse: {hit.classes?.join(', ')} • Status: {hit.status || 'LIVE'}</span>
-                              </div>
-                            ))}
+                      
+                      {/* Robust rendering of hits whether object or array */}
+                      {(() => {
+                        const quoteHitsObj = activeTask.trademarkCheckResult?.fieldSummaries?.quote?.hits;
+                        const quoteHitsList: any[] = [];
+                        if (Array.isArray(quoteHitsObj)) {
+                          quoteHitsList.push(...quoteHitsObj);
+                        } else if (quoteHitsObj && typeof quoteHitsObj === 'object') {
+                          Object.values(quoteHitsObj).forEach((arr: any) => {
+                            if (Array.isArray(arr)) quoteHitsList.push(...arr);
+                          });
+                        }
+                        
+                        if (quoteHitsList.length === 0) return null;
+
+                        return (
+                          <div className="pt-2">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Gefundene Markeneinträge:</span>
+                            <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                              {quoteHitsList.map((hit: any, i: number) => (
+                                <div key={i} className="p-2 rounded bg-slate-900/90 border border-slate-800 text-[11px] flex items-center justify-between">
+                                  <span className="font-bold text-amber-300 font-mono">{hit.wordmark || hit.mark || hit.trademark || hit.term || 'Trademark'}</span>
+                                  <span className="text-slate-400">Klasse: {hit.classNumber || hit.classes?.join(', ') || '25'} • Status: {hit.status || 'LIVE'}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
 
                     {/* Form to Edit Quote */}
@@ -896,8 +912,8 @@ export const TasksView: React.FC = () => {
                             {Object.entries(liveTmResult.fieldSummaries).map(([fName, fData]: [string, any]) => (
                               <div key={fName} className="p-2 rounded bg-slate-900 border border-slate-800 flex items-center justify-between">
                                 <span className="text-slate-400 uppercase font-bold">{fName}:</span>
-                                <span className={fData.hasClass25 ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
-                                  {fData.totalHits || 0} Treffer {fData.hasClass25 && '(Klasse 25)'}
+                                <span className={(fData.hasInfringementClass25 || fData.hasClass25) ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
+                                  {fData.totalHits || 0} Treffer {(fData.hasInfringementClass25 || fData.hasClass25) && '(Klasse 25)'}
                                 </span>
                               </div>
                             ))}
