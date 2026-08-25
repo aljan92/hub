@@ -138,29 +138,6 @@ export const SystemPromptsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Info Callout */}
-      <div className="glass-card p-4 rounded-2xl border border-accent-cyan/20 bg-slate-900/60 flex items-start space-x-3">
-        <div className="p-2 rounded-xl bg-accent-cyan/10 text-accent-cyan shrink-0 mt-0.5">
-          <Info className="w-4 h-4" />
-        </div>
-        <div className="text-xs text-slate-300 space-y-1">
-          <p className="font-semibold text-slate-100">
-            Automatische Input-Übergabe an OpenRouter:
-          </p>
-          <p className="text-slate-400">
-            Bei jedem eingehenden Task (egal ob von Hermes, dem Playground oder Designer) wird dieser System-Prompt als <code className="text-accent-cyan bg-slate-950 px-1.5 py-0.5 rounded">system</code>-Rolle an OpenRouter geschickt. Als <code className="text-accent-cyan bg-slate-950 px-1.5 py-0.5 rounded">user</code>-Nachricht wird automatisch angehängt:
-          </p>
-          <pre className="mt-1.5 p-2 bg-slate-950 rounded-lg text-emerald-400 font-mono text-[11px] border border-slate-800">
-{`Input:
-{
-  "niche1": "Angel Numbers",
-  "quote": "111 Manifest Your Reality",
-  ...
-}`}
-          </pre>
-        </div>
-      </div>
-
       {/* Big Prompt Editor Textarea */}
       <div className="glass-card p-5 rounded-2xl border border-slate-800 space-y-3">
         <div className="flex items-center justify-between">
