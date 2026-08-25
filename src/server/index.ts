@@ -17,6 +17,7 @@ import { SupabaseService } from './services/supabaseService';
 import { SyncEngine } from './services/syncEngine';
 import { BrowserSessionService } from './services/browserSessionService';
 import { getMcpSchema } from './services/mcpSchemaService';
+import { TaskLogService } from './services/taskLogService';
 
 dotenv.config();
 
@@ -843,7 +844,63 @@ function validateMcpAuth(req: express.Request, res: express.Response, next: expr
   next();
 }
 
-// 8. Hermes REST Webhook Endpoint (Task Submission)
+// 8.0 Dedicated Design Ingestion Endpoint (/design & /api/v1/design)
+app.post(['/api/v1/design', '/design', '/api/v1/hermes/design', '/api/v1/mcp/design'], validateMcpAuth, async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const rawSource = (req.query.source as string) || (req.headers['x-task-source'] as string) || payload.source || 'HERMES';
+    let source: 'HERMES' | 'TEST' | 'DESIGNER' = 'HERMES';
+    const up = String(rawSource).toUpperCase();
+    if (up === 'TEST' || up === 'T') source = 'TEST';
+    else if (up === 'DESIGNER' || up === 'D') source = 'DESIGNER';
+
+    const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'remote';
+
+    // Create persistent task log
+    const taskLog = TaskLogService.createTaskLog({
+      source,
+      payload,
+      clientIp
+    });
+
+    if (source === 'HERMES') {
+      recordHermesHeartbeat(req, {
+        taskId: taskLog.id,
+        niche1: payload.niche1,
+        quote: payload.quote
+      });
+    }
+
+    broadcast('TASK_LOG_CREATED', taskLog);
+
+    res.json({
+      success: true,
+      taskId: taskLog.id,
+      source: taskLog.source,
+      receivedAt: taskLog.receivedAt,
+      payload: taskLog.payload
+    });
+  } catch (err: any) {
+    console.error('[Design Ingestion] Error processing task:', err);
+    res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
+  }
+});
+
+// 8.1 Task Logs Management Endpoints for Prompt Log UI
+app.get('/api/v1/tasks/log', (req, res) => {
+  res.json({
+    success: true,
+    tasks: TaskLogService.getTaskLogs()
+  });
+});
+
+app.delete('/api/v1/tasks/log', (req, res) => {
+  TaskLogService.clearTaskLogs();
+  broadcast('TASK_LOGS_CLEARED', {});
+  res.json({ success: true, message: 'All task logs cleared' });
+});
+
+// 8.2 Hermes REST Webhook Endpoint (Legacy Task Submission)
 app.post('/api/v1/hermes/task', async (req, res) => {
   const { prompt, quote, niche1, niche2, title, brand, bullet1, bullet2, description } = req.body;
   recordHermesHeartbeat(req, { prompt, quote, niche1, niche2 });

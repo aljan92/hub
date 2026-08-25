@@ -110,12 +110,54 @@ export const MBA_HUB_TOOLS: ToolDefinition[] = [
       },
       required: ['prompt']
     }
+  },
+  {
+    name: 'mba_hub_submit_design',
+    description: 'Submits a new design request to MBA HUB /design endpoint. Receives full niche, quote, style and prompt guidance and assigns an official tracking Task ID (#001-H).',
+    parameters: {
+      type: 'object',
+      properties: {
+        niche1: {
+          type: 'string',
+          description: 'Primary niche (e.g. "Angel Numbers")'
+        },
+        niche2: {
+          type: 'string',
+          description: 'Sub-niche or specific number/concept (e.g. "111")'
+        },
+        quote: {
+          type: 'string',
+          description: 'Primary quote or text string (e.g. "111 Manifest Your Reality")'
+        },
+        style: {
+          type: 'string',
+          description: 'Visual artistic style (e.g. "y2k pastel aura gradient")'
+        },
+        feelings: {
+          type: 'string',
+          description: 'Emotional tone / vibe (e.g. "spiritual")'
+        },
+        backgroundcolor: {
+          type: 'string',
+          description: 'T-shirt background color (e.g. "black")'
+        },
+        fontcolor: {
+          type: 'string',
+          description: 'Primary typography font color (e.g. "cream")'
+        },
+        custominstruction: {
+          type: 'string',
+          description: 'Detailed graphic design prompt or instructions'
+        }
+      },
+      required: ['quote']
+    }
   }
 ];
 
 export function getMcpSchema() {
   return {
-    version: '1.0.0',
+    version: '1.1.0',
     server: 'MBA_HUB',
     description: 'Merch by Amazon Command Center MCP & REST Integration',
     tools: MBA_HUB_TOOLS,
@@ -124,6 +166,12 @@ export function getMcpSchema() {
         method: 'GET',
         path: '/api/v1/mcp/health',
         auth: 'Optional: x-mba-api-key (validates connectivity and auth status)'
+      },
+      design_ingestion: {
+        method: 'POST',
+        path: '/api/v1/design',
+        alias: '/design',
+        auth: 'Header: x-mba-api-key OR Authorization: Bearer <key>'
       },
       check_trademark: {
         method: 'POST',

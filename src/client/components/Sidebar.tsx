@@ -10,7 +10,7 @@ import {
   Bot
 } from 'lucide-react';
 
-export type ActiveTab = 'dashboard' | 'designer' | 'tasks' | 'queue' | 'database' | 'logs' | 'settings';
+export type ActiveTab = 'dashboard' | 'designer' | 'promptlog' | 'tasks' | 'queue' | 'database' | 'logs' | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -31,6 +31,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Dashboard',
       icon: LayoutDashboard,
       description: 'Status & Topologie',
+    },
+    {
+      id: 'promptlog' as ActiveTab,
+      label: 'Prompt Log',
+      icon: Terminal,
+      description: 'Hermes & Ingestion',
     },
     {
       id: 'designer' as ActiveTab,
@@ -63,8 +69,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'logs' as ActiveTab,
       label: 'Logs',
-      icon: Terminal,
-      description: 'Live-Protokoll & Fehler',
+      icon: Bot,
+      description: 'Live-Protokoll & Events',
     },
     {
       id: 'settings' as ActiveTab,

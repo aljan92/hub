@@ -8,6 +8,7 @@ import { QueueView } from './views/QueueView';
 import { DatabaseView } from './views/DatabaseView';
 import { LogsView } from './views/LogsView';
 import { SettingsView } from './views/SettingsView';
+import { PromptLogView } from './views/PromptLogView';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -54,6 +55,7 @@ export const App: React.FC = () => {
         <main className="flex-1 p-6 md:p-8 overflow-y-auto bg-gradient-to-b from-background via-surface/40 to-background">
           <div className="max-w-7xl mx-auto">
             {activeTab === 'dashboard' && <DashboardView onNavigateTab={setActiveTab} />}
+            {activeTab === 'promptlog' && <PromptLogView />}
             {activeTab === 'designer' && <DesignerView />}
             {activeTab === 'tasks' && <TasksView />}
             {activeTab === 'queue' && <QueueView />}
