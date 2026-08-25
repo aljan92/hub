@@ -173,6 +173,40 @@ export class TrademarkService {
   }
 
   /**
+   * Check if a trademark status string or code represents an active/live registered trademark
+   * Strictly filters out PENDING, DEAD, ABANDONED, CANCELLED, EXPIRED, REFUSED
+   */
+  static isLiveStatus(rawStatus?: string | number): boolean {
+    if (rawStatus === undefined || rawStatus === null || rawStatus === '') {
+      return false;
+    }
+    const s = String(rawStatus).trim().toUpperCase();
+
+    // Explicit non-live statuses
+    if (
+      s.includes('DEAD') ||
+      s.includes('PENDING') ||
+      s.includes('CANCEL') ||
+      s.includes('ABANDON') ||
+      s.includes('EXPIRE') ||
+      s.includes('REFUSE') ||
+      s.includes('SUSPEND')
+    ) {
+      return false;
+    }
+
+    // Explicit live statuses
+    return (
+      s.includes('LIVE') ||
+      s.includes('REGISTERED') ||
+      s.includes('ACTIVE') ||
+      s === 'REG' ||
+      s === '700' ||
+      s === '701'
+    );
+  }
+
+  /**
    * Check terms across specified trademark offices
    */
   static async queryOffices(uniqueTerms: string[], offices: TrademarkOffice[]): Promise<Record<string, TrademarkHit[]>> {
@@ -211,18 +245,21 @@ export class TrademarkService {
             const data = await res.json();
             for (const [term, records] of Object.entries(data)) {
               if (Array.isArray(records) && records.length > 0) {
-                allHits[term] = allHits[term] || [];
                 records.forEach((r: any) => {
-                  allHits[term].push({
-                    term,
-                    trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
-                    classNumber: String(r.class_id || r.class || r.international_class || '25'),
-                    status: r.status || r.status_code || 'LIVE',
-                    registrationNumber: r.registration_number,
-                    serialNumber: r.serial_number,
-                    goodsAndServices: r.goods_and_services || r.goods_services,
-                    source: 'USPTO'
-                  });
+                  const rawStatus = r.status || r.status_code || 'LIVE';
+                  if (this.isLiveStatus(rawStatus)) {
+                    allHits[term] = allHits[term] || [];
+                    allHits[term].push({
+                      term,
+                      trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
+                      classNumber: String(r.class_id || r.class || r.international_class || '25'),
+                      status: 'LIVE',
+                      registrationNumber: r.registration_number,
+                      serialNumber: r.serial_number,
+                      goodsAndServices: r.goods_and_services || r.goods_services,
+                      source: 'USPTO'
+                    });
+                  }
                 });
               }
             }
@@ -254,15 +291,18 @@ export class TrademarkService {
             const data = await res.json();
             for (const [term, records] of Object.entries(data)) {
               if (Array.isArray(records) && records.length > 0) {
-                allHits[term] = allHits[term] || [];
                 records.forEach((r: any) => {
-                  allHits[term].push({
-                    term,
-                    trademark: r.trademark || r.mark_identification || term,
-                    classNumber: String(r.class_id || r.class || '25'),
-                    status: r.status || 'LIVE',
-                    source: 'EUIPO'
-                  });
+                  const rawStatus = r.status || 'LIVE';
+                  if (this.isLiveStatus(rawStatus)) {
+                    allHits[term] = allHits[term] || [];
+                    allHits[term].push({
+                      term,
+                      trademark: r.trademark || r.mark_identification || term,
+                      classNumber: String(r.class_id || r.class || '25'),
+                      status: 'LIVE',
+                      source: 'EUIPO'
+                    });
+                  }
                 });
               }
             }
@@ -294,15 +334,18 @@ export class TrademarkService {
             const data = await res.json();
             for (const [term, records] of Object.entries(data)) {
               if (Array.isArray(records) && records.length > 0) {
-                allHits[term] = allHits[term] || [];
                 records.forEach((r: any) => {
-                  allHits[term].push({
-                    term,
-                    trademark: r.trademark || term,
-                    classNumber: String(r.class_id || r.class || '25'),
-                    status: r.status || 'LIVE',
-                    source: 'DPMA'
-                  });
+                  const rawStatus = r.status || 'LIVE';
+                  if (this.isLiveStatus(rawStatus)) {
+                    allHits[term] = allHits[term] || [];
+                    allHits[term].push({
+                      term,
+                      trademark: r.trademark || term,
+                      classNumber: String(r.class_id || r.class || '25'),
+                      status: 'LIVE',
+                      source: 'DPMA'
+                    });
+                  }
                 });
               }
             }
@@ -330,10 +373,9 @@ export class TrademarkService {
     let totalHits = 0;
 
     for (const [, records] of Object.entries(hitsRecord)) {
-      totalHits += records.length;
       for (const rec of records) {
-        const isLive = !rec.status || rec.status.toUpperCase().includes('LIVE') || rec.status.toUpperCase().includes('REGISTERED');
-        if (!isLive) continue;
+        if (!this.isLiveStatus(rec.status)) continue;
+        totalHits++;
 
         const cls = rec.classNumber;
         if (cls === '25') {

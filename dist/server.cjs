@@ -214416,6 +214416,20 @@ var TrademarkService = class {
     return Array.from(terms);
   }
   /**
+   * Check if a trademark status string or code represents an active/live registered trademark
+   * Strictly filters out PENDING, DEAD, ABANDONED, CANCELLED, EXPIRED, REFUSED
+   */
+  static isLiveStatus(rawStatus) {
+    if (rawStatus === void 0 || rawStatus === null || rawStatus === "") {
+      return false;
+    }
+    const s = String(rawStatus).trim().toUpperCase();
+    if (s.includes("DEAD") || s.includes("PENDING") || s.includes("CANCEL") || s.includes("ABANDON") || s.includes("EXPIRE") || s.includes("REFUSE") || s.includes("SUSPEND")) {
+      return false;
+    }
+    return s.includes("LIVE") || s.includes("REGISTERED") || s.includes("ACTIVE") || s === "REG" || s === "700" || s === "701";
+  }
+  /**
    * Check terms across specified trademark offices
    */
   static async queryOffices(uniqueTerms, offices) {
@@ -214447,18 +214461,21 @@ var TrademarkService = class {
             const data = await res.json();
             for (const [term, records] of Object.entries(data)) {
               if (Array.isArray(records) && records.length > 0) {
-                allHits[term] = allHits[term] || [];
                 records.forEach((r) => {
-                  allHits[term].push({
-                    term,
-                    trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
-                    classNumber: String(r.class_id || r.class || r.international_class || "25"),
-                    status: r.status || r.status_code || "LIVE",
-                    registrationNumber: r.registration_number,
-                    serialNumber: r.serial_number,
-                    goodsAndServices: r.goods_and_services || r.goods_services,
-                    source: "USPTO"
-                  });
+                  const rawStatus = r.status || r.status_code || "LIVE";
+                  if (this.isLiveStatus(rawStatus)) {
+                    allHits[term] = allHits[term] || [];
+                    allHits[term].push({
+                      term,
+                      trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
+                      classNumber: String(r.class_id || r.class || r.international_class || "25"),
+                      status: "LIVE",
+                      registrationNumber: r.registration_number,
+                      serialNumber: r.serial_number,
+                      goodsAndServices: r.goods_and_services || r.goods_services,
+                      source: "USPTO"
+                    });
+                  }
                 });
               }
             }
@@ -214486,15 +214503,18 @@ var TrademarkService = class {
             const data = await res.json();
             for (const [term, records] of Object.entries(data)) {
               if (Array.isArray(records) && records.length > 0) {
-                allHits[term] = allHits[term] || [];
                 records.forEach((r) => {
-                  allHits[term].push({
-                    term,
-                    trademark: r.trademark || r.mark_identification || term,
-                    classNumber: String(r.class_id || r.class || "25"),
-                    status: r.status || "LIVE",
-                    source: "EUIPO"
-                  });
+                  const rawStatus = r.status || "LIVE";
+                  if (this.isLiveStatus(rawStatus)) {
+                    allHits[term] = allHits[term] || [];
+                    allHits[term].push({
+                      term,
+                      trademark: r.trademark || r.mark_identification || term,
+                      classNumber: String(r.class_id || r.class || "25"),
+                      status: "LIVE",
+                      source: "EUIPO"
+                    });
+                  }
                 });
               }
             }
@@ -214522,15 +214542,18 @@ var TrademarkService = class {
             const data = await res.json();
             for (const [term, records] of Object.entries(data)) {
               if (Array.isArray(records) && records.length > 0) {
-                allHits[term] = allHits[term] || [];
                 records.forEach((r) => {
-                  allHits[term].push({
-                    term,
-                    trademark: r.trademark || term,
-                    classNumber: String(r.class_id || r.class || "25"),
-                    status: r.status || "LIVE",
-                    source: "DPMA"
-                  });
+                  const rawStatus = r.status || "LIVE";
+                  if (this.isLiveStatus(rawStatus)) {
+                    allHits[term] = allHits[term] || [];
+                    allHits[term].push({
+                      term,
+                      trademark: r.trademark || term,
+                      classNumber: String(r.class_id || r.class || "25"),
+                      status: "LIVE",
+                      source: "DPMA"
+                    });
+                  }
                 });
               }
             }
@@ -214551,10 +214574,9 @@ var TrademarkService = class {
     const blockedProductsSet = /* @__PURE__ */ new Set();
     let totalHits = 0;
     for (const [, records] of Object.entries(hitsRecord)) {
-      totalHits += records.length;
       for (const rec of records) {
-        const isLive = !rec.status || rec.status.toUpperCase().includes("LIVE") || rec.status.toUpperCase().includes("REGISTERED");
-        if (!isLive) continue;
+        if (!this.isLiveStatus(rec.status)) continue;
+        totalHits++;
         const cls = rec.classNumber;
         if (cls === "25") {
           hasInfringementClass25 = true;
@@ -217173,7 +217195,8 @@ Your job is to analyze the USPTO / Trademark hits detected for a generated Merch
 ### 1. STRICT COMPLIANCE RULES:
 A. TITLE & BRAND RULES (ZERO CLASS 25 TOLERANCE):
 - Title and Brand MUST NOT contain any LIVE trademark matches in Nice Class 25 (Apparel/Clothing)!
-- If a word or phrase in the Title or Brand matches an active Class 25 trademark:
+- Only active, registered LIVE trademarks are considered. Pending applications, dead, expired, or abandoned filings are legally irrelevant and MUST be ignored.
+- If a word or phrase in the Title or Brand matches an active LIVE Class 25 trademark:
   * You MUST rephrase, replace, or remove that word from Title and Brand (e.g. swap "Angel Number" -> "Spiritual Numerology", "Wings" -> "Feather Graphic", etc.).
   * Keep strong SEO keywords and ensure character limits: Brand <= 50 chars, Title <= 60 chars.
 - If Title or Brand matches other Nice Classes (e.g. Class 9 for Phone Cases/PopSockets, Class 21 for Mugs, Class 20 for Pillows):

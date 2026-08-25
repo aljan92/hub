@@ -130,7 +130,8 @@ Your job is to analyze the USPTO / Trademark hits detected for a generated Merch
 ### 1. STRICT COMPLIANCE RULES:
 A. TITLE & BRAND RULES (ZERO CLASS 25 TOLERANCE):
 - Title and Brand MUST NOT contain any LIVE trademark matches in Nice Class 25 (Apparel/Clothing)!
-- If a word or phrase in the Title or Brand matches an active Class 25 trademark:
+- Only active, registered LIVE trademarks are considered. Pending applications, dead, expired, or abandoned filings are legally irrelevant and MUST be ignored.
+- If a word or phrase in the Title or Brand matches an active LIVE Class 25 trademark:
   * You MUST rephrase, replace, or remove that word from Title and Brand (e.g. swap "Angel Number" -> "Spiritual Numerology", "Wings" -> "Feather Graphic", etc.).
   * Keep strong SEO keywords and ensure character limits: Brand <= 50 chars, Title <= 60 chars.
 - If Title or Brand matches other Nice Classes (e.g. Class 9 for Phone Cases/PopSockets, Class 21 for Mugs, Class 20 for Pillows):
