@@ -540,21 +540,56 @@ app.post('/api/v1/connectors/test', async (req, res) => {
   }
 });
 
-// Hermes Heartbeat State
-let hermesHeartbeat = {
-  lastPingTime: 0,
-  lastPingIp: '',
-  totalPings: 0,
-  lastMetadata: {} as any
-};
+// Hermes Heartbeat State with Persistent Disk Storage
+const heartbeatFile = path.resolve(process.cwd(), 'data', 'hermes_heartbeat.json');
+
+function loadHeartbeatState() {
+  try {
+    if (fs.existsSync(heartbeatFile)) {
+      const data = JSON.parse(fs.readFileSync(heartbeatFile, 'utf-8'));
+      return {
+        lastPingTime: Number(data.lastPingTime) || 0,
+        lastPingIp: data.lastPingIp || '',
+        totalPings: Number(data.totalPings) || 0,
+        lastMetadata: data.lastMetadata || {}
+      };
+    }
+  } catch (e) {}
+  return { lastPingTime: 0, lastPingIp: '', totalPings: 0, lastMetadata: {} };
+}
+
+let hermesHeartbeat = loadHeartbeatState();
 
 function recordHermesHeartbeat(req: express.Request, metadata?: any) {
+  const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'remote';
   hermesHeartbeat.lastPingTime = Date.now();
-  hermesHeartbeat.lastPingIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'remote';
+  hermesHeartbeat.lastPingIp = clientIp;
   hermesHeartbeat.totalPings += 1;
   if (metadata) {
     hermesHeartbeat.lastMetadata = metadata;
   }
+
+  console.log(`[MCP Heartbeat] 🟢 Heartbeat #${hermesHeartbeat.totalPings} von IP ${clientIp} registriert (Server-Zeit: ${new Date().toLocaleTimeString()})`);
+
+  // Persist to data/hermes_heartbeat.json
+  try {
+    const dataDir = path.resolve(process.cwd(), 'data');
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), 'utf-8');
+  } catch (e) {}
+
+  const currentHermes = {
+    success: true,
+    lastPingTime: hermesHeartbeat.lastPingTime,
+    statusText: 'Heartbeat aktiv (Online)',
+    latencyMs: 1,
+    totalPings: hermesHeartbeat.totalPings
+  };
+
+  if (cachedHealthData) {
+    cachedHealthData.hermes = currentHermes;
+  }
+  broadcast('HEALTH_UPDATED', cachedHealthData || { hermes: currentHermes });
 }
 
 // Background Health Caching
@@ -876,20 +911,32 @@ app.all(['/api/v1/mcp/ping', '/api/v1/mcp/heartbeat'], (req, res) => {
     providedKey = authHeader.slice(7).trim();
   }
 
-  const isAuthValid = !settings.mcpApiKey || providedKey === settings.mcpApiKey;
-  if (isAuthValid) {
-    recordHermesHeartbeat(req, req.body || req.query);
+  const isAuthValid = !settings.mcpApiKey || (providedKey === settings.mcpApiKey);
+  
+  if (settings.mcpApiKey && providedKey && !isAuthValid) {
+    console.warn(`[MCP Ping] ⚠️ Ping von ${req.headers['cf-connecting-ip'] || req.socket.remoteAddress} abgewiesen: Key mismatch`);
+    return res.status(401).json({
+      status: 'error',
+      error: 'Unauthorized: Ungültiger x-mba-api-key',
+      authenticated: false
+    });
   }
+
+  recordHermesHeartbeat(req, req.body || req.query);
 
   res.json({
     status: 'ok',
-    message: isAuthValid ? 'Heartbeat registered successfully.' : 'Heartbeat received (unauthenticated).',
+    message: 'Heartbeat registered successfully.',
     authenticated: Boolean(providedKey && isAuthValid),
     authConfigured: Boolean(settings.mcpApiKey),
     serverTime: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     activeTasksCount: activeTasks.length,
-    uploadQueueCount: uploadQueue.length
+    uploadQueueCount: uploadQueue.length,
+    heartbeat: {
+      lastPingTime: hermesHeartbeat.lastPingTime,
+      totalPings: hermesHeartbeat.totalPings
+    }
   });
 });
 
