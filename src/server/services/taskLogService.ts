@@ -1462,8 +1462,15 @@ export class TaskLogService {
   }
 
   static getTaskLogById(id: string): DesignTaskLog | undefined {
+    if (!id) return undefined;
+    const cleanId = decodeURIComponent(id).trim().toLowerCase();
     const logs = this.loadLogs();
-    return logs.find(t => t.id.toLowerCase() === id.toLowerCase());
+    return logs.find(t => {
+      const tId = t.id.toLowerCase();
+      return tId === cleanId || 
+             tId === `#${cleanId}` || 
+             tId.replace('#', '') === cleanId.replace('#', '');
+    });
   }
 
   static clearTaskLogs() {

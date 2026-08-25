@@ -181,7 +181,7 @@ export const TasksView: React.FC = () => {
     if (!activeTask) return;
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/v1/tasks/${activeTask.id}/override-preflight`, {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/override-preflight`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, newQuote: editQuote })
@@ -211,7 +211,7 @@ export const TasksView: React.FC = () => {
         reuseBackground: selectedBgMode
       };
 
-      const res = await fetch(`/api/v1/tasks/${activeTask.id}/submit-design-review`, {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/submit-design-review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -239,11 +239,11 @@ export const TasksView: React.FC = () => {
     if (!activeTask) return;
     setIsCheckingTm(true);
     try {
-      const res = await fetch(`/api/v1/tasks/${activeTask.id}/submit-tm-review`, {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/submit-tm-review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'RECHECK',
+          action,
           refinedListing: editableListing
         })
       });
@@ -269,7 +269,7 @@ export const TasksView: React.FC = () => {
     if (!activeTask) return;
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/v1/tasks/${activeTask.id}/submit-tm-review`, {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/submit-tm-review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

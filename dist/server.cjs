@@ -218546,8 +218546,13 @@ Please audit every hit strictly against these rules:
     );
   }
   static getTaskLogById(id) {
+    if (!id) return void 0;
+    const cleanId = decodeURIComponent(id).trim().toLowerCase();
     const logs = this.loadLogs();
-    return logs.find((t) => t.id.toLowerCase() === id.toLowerCase());
+    return logs.find((t) => {
+      const tId = t.id.toLowerCase();
+      return tId === cleanId || tId === `#${cleanId}` || tId.replace("#", "") === cleanId.replace("#", "");
+    });
   }
   static clearTaskLogs() {
     this.inMemoryLogs = [];
