@@ -45,7 +45,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   nasUser: process.env.NAS_USER || 'aljan92',
   autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4,
   autoSyncEnabled: true,
-  mcpApiKey: process.env.MBA_MCP_API_KEY || generateApiKey(),
+  mcpApiKey: process.env.MBA_MCP_API_KEY || '',
 };
 
 function getSettingsFilePath(): string {
@@ -74,13 +74,24 @@ export function loadSettings(): AppSettings {
       const settings = { ...DEFAULT_SETTINGS, ...parsed };
       if (!settings.mcpApiKey) {
         settings.mcpApiKey = generateApiKey();
-        saveSettings({ mcpApiKey: settings.mcpApiKey });
+        const merged = { ...DEFAULT_SETTINGS, ...parsed, mcpApiKey: settings.mcpApiKey };
+        try {
+          fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
+        } catch (e) {}
       }
       cachedSettings = settings;
       return settings;
     } catch (err) {
       console.error('[Settings] Error reading settings.json:', err);
     }
+  } else {
+    const initialKey = generateApiKey();
+    const settings = { ...DEFAULT_SETTINGS, mcpApiKey: initialKey };
+    try {
+      fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');
+    } catch (e) {}
+    cachedSettings = settings;
+    return settings;
   }
   cachedSettings = { ...DEFAULT_SETTINGS };
   return cachedSettings;

@@ -25,7 +25,15 @@ let moduleCachedSyncState: any = null;
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) => {
   const [browserViewActive, setBrowserViewActive] = useState(false);
   const [healthData, setHealthData] = useState<any>(moduleCachedHealth);
-  const [statsData, setStatsData] = useState<any>(moduleCachedStats);
+  const [statsData, setStatsData] = useState<any>(() => {
+    if (moduleCachedStats) return moduleCachedStats;
+    try {
+      const c = localStorage.getItem('mba_cached_dashboard_stats');
+      return c ? JSON.parse(c) : null;
+    } catch {
+      return null;
+    }
+  });
   const [syncState, setSyncState] = useState<any>(moduleCachedSyncState);
   const [loadingHealth, setLoadingHealth] = useState(false);
 
@@ -42,13 +50,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
       .catch(err => console.warn('[Dashboard] Health fetch error:', err))
       .finally(() => setLoadingHealth(false));
 
-    // 2. Stats
+    // 2. Stats (Merge & Prevent 0-Drops)
     fetch('/api/v1/stats')
       .then(res => res.json())
       .then(data => {
         if (data.success) {
-          moduleCachedStats = data;
-          setStatsData(data);
+          setStatsData((prev: any) => {
+            const merged = {
+              ...prev,
+              ...data,
+              liveDesignsCount: (data.liveDesignsCount !== undefined && data.liveDesignsCount !== null && (data.liveDesignsCount > 0 || !prev?.liveDesignsCount))
+                ? data.liveDesignsCount 
+                : (prev?.liveDesignsCount || 0),
+              designsCount: (data.designsCount !== undefined && data.designsCount !== null && (data.designsCount > 0 || !prev?.designsCount))
+                ? data.designsCount 
+                : (prev?.designsCount || 0),
+            };
+            moduleCachedStats = merged;
+            try {
+              localStorage.setItem('mba_cached_dashboard_stats', JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
         }
       })
       .catch(() => {});

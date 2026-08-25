@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { loadSettings } from './settingsService';
 
@@ -79,7 +81,7 @@ export class SupabaseService {
   private static lastStatsFetch = 0;
 
   /**
-   * Get accurate Live Designs, Total Designs and Sales stats from Supabase (Cached in memory for 15s)
+   * Get accurate Live Designs, Total Designs and Sales stats from Supabase (Cached & Persisted)
    */
   static async getStats(): Promise<{
     totalDesigns: number;
@@ -94,16 +96,21 @@ export class SupabaseService {
       return this.cachedStats;
     }
 
+    const statsFile = path.resolve(process.cwd(), 'data', 'supabase_stats.json');
+    const loadPersisted = () => {
+      try {
+        if (fs.existsSync(statsFile)) {
+          return JSON.parse(fs.readFileSync(statsFile, 'utf-8'));
+        }
+      } catch (e) {}
+      return { totalDesigns: 0, liveDesigns: 0, unresolvedAsins: 0, sales30d: 0, royalties30dEur: 0, royalties30dUsd: 0 };
+    };
+
+    const persisted = loadPersisted();
+
     const settings = loadSettings();
     if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
-      return {
-        totalDesigns: 0,
-        liveDesigns: 0,
-        unresolvedAsins: 0,
-        sales30d: 0,
-        royalties30dEur: 0,
-        royalties30dUsd: 0,
-      };
+      return persisted;
     }
 
     try {
@@ -136,27 +143,32 @@ export class SupabaseService {
         }
       }
 
+      const totalCount = (totalRes.count !== undefined && totalRes.count !== null) ? totalRes.count : persisted.totalDesigns;
+      const liveCount = (liveRes.count !== undefined && liveRes.count !== null) ? liveRes.count : persisted.liveDesigns;
+      const unresolvedCount = (unresolvedRes.count !== undefined && unresolvedRes.count !== null) ? unresolvedRes.count : persisted.unresolvedAsins;
+
       const result = {
-        totalDesigns: totalRes.count || 0,
-        liveDesigns: liveRes.count || 0,
-        unresolvedAsins: unresolvedRes.count || 0,
-        sales30d,
-        royalties30dEur: Math.round(royalties30dEur * 100) / 100,
-        royalties30dUsd: Math.round(royalties30dUsd * 100) / 100,
+        totalDesigns: totalCount,
+        liveDesigns: liveCount,
+        unresolvedAsins: unresolvedCount,
+        sales30d: sales30d || persisted.sales30d || 0,
+        royalties30dEur: royalties30dEur ? Math.round(royalties30dEur * 100) / 100 : (persisted.royalties30dEur || 0),
+        royalties30dUsd: royalties30dUsd ? Math.round(royalties30dUsd * 100) / 100 : (persisted.royalties30dUsd || 0),
       };
+
+      if (result.totalDesigns > 0 || result.liveDesigns > 0) {
+        try {
+          const dataDir = path.resolve(process.cwd(), 'data');
+          if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+          fs.writeFileSync(statsFile, JSON.stringify(result, null, 2), 'utf-8');
+        } catch (e) {}
+      }
 
       this.cachedStats = result;
       this.lastStatsFetch = now;
       return result;
     } catch (e) {
-      return {
-        totalDesigns: 0,
-        liveDesigns: 0,
-        unresolvedAsins: 0,
-        sales30d: 0,
-        royalties30dEur: 0,
-        royalties30dUsd: 0,
-      };
+      return persisted;
     }
   }
 }
