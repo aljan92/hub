@@ -5,86 +5,16 @@ import { SystemPromptService } from './systemPromptService';
 import { IdeogramService } from './ideogramService';
 import { TrademarkService } from './trademarkService';
 
-export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER';
-export type TaskSuffix = 'H' | 'T' | 'D';
-export type TaskStatus = 
-  | 'RECEIVED'
-  | 'PROCESSING'
-  | 'PROMPT_READY'
-  | 'GENERATING_IMAGE'
-  | 'ANALYZING_DESIGN'
-  | 'AWAITING_PRE_FLIGHT_REVIEW'
-  | 'AWAITING_DESIGN_REVIEW'
-  | 'GENERATING_LISTING'
-  | 'CHECKING_TRADEMARKS'
-  | 'AWAITING_TM_REVIEW'
-  | 'COMPLETED'
-  | 'REJECTED'
-  | 'ERROR';
-
-export type EventType = 
-  | 'INCOMING_PAYLOAD'
-  | 'SESSION_START'
-  | 'LLM_REQUEST'
-  | 'LLM_RESPONSE'
-  | 'IDEOGRAM_REQUEST'
-  | 'IDEOGRAM_RESPONSE'
-  | 'ANALYSIS_REQUEST'
-  | 'ANALYSIS_RESPONSE'
-  | 'TASK_HANDOFF'
-  | 'LISTING_REQUEST'
-  | 'LISTING_RESPONSE'
-  | 'TM_CHECK_REQUEST'
-  | 'TM_CHECK_RESPONSE'
-  | 'TM_REFINE_REQUEST'
-  | 'TM_REFINE_RESPONSE'
-  | 'ERROR';
-
-export interface SessionEvent {
-  timestamp: string; // ISO String (z.B. "2026-08-25T13:05:12.123Z")
-  type: EventType;
-  title: string;     // z.B. "Eingang von Hermes", "Übergeben an Tasks", "Senden an OpenRouter"
-  content: any;
-  metadata?: {
-    model?: string;
-    provider?: string;
-    latencyMs?: number;
-    tokens?: {
-      prompt?: number;
-      completion?: number;
-      total?: number;
-    };
-    costUsd?: number;
-  };
-}
-
-export interface DesignTaskLog {
-  id: string; // e.g. "#001-H", "#002-T", "#1000-H"
-  counter: number;
-  source: TaskSource;
-  suffix: TaskSuffix;
-  status: TaskStatus;
-  checkpoint?: 'PRE_FLIGHT' | 'DESIGN_REVIEW' | 'TM_REVIEW';
-  receivedAt: string;
-  clientIp?: string;
-  payload: Record<string, any>;
-  events: SessionEvent[];
-  resultPrompt?: string;
-  imageUrl?: string;
-  localImagePath?: string;
-  analysisResult?: any;
-  customAnswers?: {
-    audience?: string;
-    avoidColor?: string;
-    reuseBackground?: string;
-    notes?: string;
-  };
-  listingResult?: any;
-  trademarkCheckResult?: any;
-  trademarkRefineResult?: any;
-  hasError?: boolean;
-  errorDetails?: string;
-}
+export * from '../../types/tasks';
+import { 
+  TaskSource, 
+  TaskSuffix, 
+  TaskStatus, 
+  EventType, 
+  SessionEvent, 
+  DesignTaskLog,
+  RetryStepType 
+} from '../../types/tasks';
 
 export class TaskLogService {
   private static dataDir = path.resolve(process.cwd(), 'data');
@@ -1325,7 +1255,7 @@ export class TaskLogService {
   /**
    * Jump back to an earlier pipeline step and re-execute from there
    */
-  static async retryFromStep(taskId: string, stepType: 'LLM_REQUEST' | 'IDEOGRAM_REQUEST' | 'ANALYSIS_REQUEST' | 'LISTING_REQUEST' | 'TM_REFINE_REQUEST') {
+  static async retryFromStep(taskId: string, stepType: RetryStepType) {
     const logs = this.loadLogs();
     const taskIdx = logs.findIndex(t => t.id.toLowerCase() === taskId.toLowerCase());
     if (taskIdx === -1) throw new Error(`Task ${taskId} nicht gefunden.`);
@@ -1636,10 +1566,12 @@ export class TaskLogService {
     }
 
     if (params.action === 'APPROVE') {
-      if (params.refinedListing && task.listingResult) {
-        if (task.listingResult.en) {
+      if (params.refinedListing) {
+        if (!task.listingResult) {
+          task.listingResult = { en: params.refinedListing };
+        } else if (task.listingResult.en) {
           task.listingResult.en = { ...task.listingResult.en, ...params.refinedListing };
-        } else {
+        } else if (typeof task.listingResult === 'object') {
           task.listingResult = { ...task.listingResult, ...params.refinedListing };
         }
       }

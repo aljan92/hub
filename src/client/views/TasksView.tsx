@@ -3,58 +3,136 @@ import {
   CheckSquare, 
   Sparkles, 
   Bot, 
-  User, 
   ShieldCheck, 
   ShieldAlert,
-  ArrowRight, 
   CheckCircle2, 
   XCircle,
   AlertCircle,
   AlertTriangle,
-  Layers, 
   Eye, 
   Edit3,
   Sliders,
-  Scissors,
-  RefreshCw,
-  Zap,
-  RotateCcw,
-  Maximize2,
-  Download,
-  Trash2,
+  RefreshCw, 
+  Zap, 
+  RotateCcw, 
+  Maximize2, 
+  Download, 
+  Trash2, 
   Search,
-  ExternalLink,
-  ChevronRight
+  Check,
+  FileText
 } from 'lucide-react';
 
-interface DesignTaskLog {
-  id: string;
-  counter: number;
-  source: 'HERMES' | 'TEST' | 'DESIGNER';
-  suffix: 'H' | 'T' | 'D';
-  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'AWAITING_PRE_FLIGHT_REVIEW' | 'AWAITING_DESIGN_REVIEW' | 'GENERATING_LISTING' | 'CHECKING_TRADEMARKS' | 'AWAITING_TM_REVIEW' | 'COMPLETED' | 'REJECTED' | 'ERROR';
-  checkpoint?: 'PRE_FLIGHT' | 'DESIGN_REVIEW' | 'TM_REVIEW';
-  receivedAt: string;
-  clientIp?: string;
-  payload: Record<string, any>;
-  events: any[];
-  resultPrompt?: string;
-  imageUrl?: string;
-  localImagePath?: string;
-  analysisResult?: any;
-  customAnswers?: {
-    audience?: string;
-    avoidColor?: string;
-    reuseBackground?: string;
-    notes?: string;
-  };
-  listingResult?: any;
-  trademarkCheckResult?: any;
-  trademarkRefineResult?: any;
-  hasError?: boolean;
-  errorDetails?: string;
+import { DesignTaskLog } from '../../types/tasks';
+
+// ---------------------------------------------------------------------------
+// Helper: Detailed Word-by-Word Trademark Hits Display per Field
+// ---------------------------------------------------------------------------
+interface FieldTmWordChipsProps {
+  label: string;
+  fieldData?: any;
 }
 
+const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData }) => {
+  if (!fieldData) return null;
+
+  const totalHits = fieldData.totalHits ?? 0;
+  const hasK25 = Boolean(fieldData.hasInfringementClass25 || fieldData.hasClass25);
+  const rawHits = fieldData.hits || {};
+
+  // If 0 hits, show a clean "Sauber" indicator
+  if (totalHits === 0) {
+    return (
+      <div className="flex items-center space-x-1.5 text-[11px] text-emerald-400 font-medium pt-1">
+        <CheckCircle2 className="w-3.5 h-3.5" />
+        <span>Keine Markentreffer in {label} (0 Treffer)</span>
+      </div>
+    );
+  }
+
+  // Normalize hits into array of { term, hits: any[] }
+  let termList: { term: string; hits: any[] }[] = [];
+  if (Array.isArray(rawHits)) {
+    const grouped: Record<string, any[]> = {};
+    rawHits.forEach((h: any) => {
+      const t = h.term || h.wordmark || h.trademark || 'term';
+      grouped[t] = grouped[t] || [];
+      grouped[t].push(h);
+    });
+    termList = Object.entries(grouped).map(([term, hits]) => ({ term, hits }));
+  } else if (typeof rawHits === 'object' && rawHits !== null) {
+    termList = Object.entries(rawHits).map(([term, hits]) => ({
+      term,
+      hits: Array.isArray(hits) ? hits : [hits]
+    }));
+  }
+
+  return (
+    <div className={`p-3 rounded-xl border space-y-2 mt-1.5 ${
+      hasK25 
+        ? 'bg-rose-950/25 border-rose-500/40 text-rose-200' 
+        : 'bg-amber-950/20 border-amber-500/30 text-amber-200'
+    }`}>
+      <div className="flex items-center justify-between text-[11px] font-semibold">
+        <div className="flex items-center space-x-1.5">
+          {hasK25 ? (
+            <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          )}
+          <span>{totalHits} Markentreffer in {label} {hasK25 ? '(Klasse 25 Bekleidung!)' : '(Nebenklassen)'}</span>
+        </div>
+        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+          hasK25 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+        }`}>
+          {hasK25 ? 'Klasse 25 Konflikt' : 'Nebenklasse'}
+        </span>
+      </div>
+
+      {/* Word-by-Word Breakdown */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+        {termList.map(({ term, hits }, i) => {
+          const isK25 = hits.some(h => String(h.classNumber || h.class_id || h.class) === '25');
+          const classes = Array.from(new Set(hits.map(h => String(h.classNumber || h.class_id || h.class || '25')))).join(', ');
+          const firstHit = hits[0] || {};
+          const markName = firstHit.trademark || firstHit.wordmark || firstHit.mark || term;
+          const status = firstHit.status || 'LIVE';
+          const regOrSerial = firstHit.registrationNumber || firstHit.serialNumber || '';
+
+          return (
+            <div
+              key={i}
+              className={`p-2.5 rounded-lg border text-xs font-mono flex flex-col gap-1 transition-all ${
+                isK25 
+                  ? 'bg-rose-950/60 border-rose-500/50 text-rose-100 ring-1 ring-rose-500/30' 
+                  : 'bg-slate-900 border-amber-500/40 text-slate-200'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-white text-xs underline decoration-dotted underline-offset-2">
+                  "{term}"
+                </span>
+                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                  isK25 ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'
+                }`}>
+                  Klasse {classes}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 flex items-center justify-between gap-2">
+                <span className="truncate max-w-[180px]" title={markName}>Marke: {markName}</span>
+                <span className="shrink-0">{status} {regOrSerial ? `• #${regOrSerial}` : ''}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
 export const TasksView: React.FC = () => {
   const [tasks, setTasks] = useState<DesignTaskLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -85,7 +163,56 @@ export const TasksView: React.FC = () => {
   const [liveTmResult, setLiveTmResult] = useState<any>(null);
   const [isCheckingTm, setIsCheckingTm] = useState(false);
 
-  // Fetch Settings & Tasks
+  // Helper to extract listing fields safely from all sources
+  const extractListingFields = (task?: DesignTaskLog) => {
+    if (!task) return { brand: '', title: '', bullet1: '', bullet2: '', description: '' };
+
+    let lr: any = task.listingResult;
+    if (typeof lr === 'string') {
+      try {
+        let clean = lr.trim();
+        if (clean.startsWith('```')) clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        lr = JSON.parse(clean);
+      } catch {}
+    }
+
+    const en = (lr && typeof lr === 'object') ? (lr.en || lr) : {};
+    const refined = task.trademarkRefineResult?.refined_listing || {};
+
+    let brand = refined.brand || en.brand || en.brandName || '';
+    let title = refined.title || en.title || en.designTitle || '';
+    let bullet1 = refined.bullet1 || en.bullet1 || en.bullet_1 || en.featureBullet1 || en.feature_bullet1 || '';
+    let bullet2 = refined.bullet2 || en.bullet2 || en.bullet_2 || en.featureBullet2 || en.feature_bullet2 || '';
+    let description = refined.description || en.description || en.product_description || en.productDescription || en.desc || '';
+
+    // Fallback scan across task events
+    if ((!description || !title) && Array.isArray(task.events)) {
+      for (let i = task.events.length - 1; i >= 0; i--) {
+        const ev = task.events[i];
+        if (ev.type === 'TM_REFINE_RESPONSE' && ev.content?.refined_listing) {
+          brand = brand || ev.content.refined_listing.brand || '';
+          title = title || ev.content.refined_listing.title || '';
+          bullet1 = bullet1 || ev.content.refined_listing.bullet1 || '';
+          bullet2 = bullet2 || ev.content.refined_listing.bullet2 || '';
+          description = description || ev.content.refined_listing.description || '';
+        }
+        if (ev.type === 'LISTING_RESPONSE' && ev.content) {
+          const listObj = ev.content.en || ev.content;
+          if (typeof listObj === 'object' && listObj !== null) {
+            brand = brand || listObj.brand || '';
+            title = title || listObj.title || '';
+            bullet1 = bullet1 || listObj.bullet1 || '';
+            bullet2 = bullet2 || listObj.bullet2 || '';
+            description = description || listObj.description || listObj.product_description || '';
+          }
+        }
+      }
+    }
+
+    return { brand, title, bullet1, bullet2, description };
+  };
+
+  // Fetch Tasks
   const fetchTasks = async () => {
     setLoading(true);
     try {
@@ -113,7 +240,7 @@ export const TasksView: React.FC = () => {
       const res = await fetch('/api/v1/settings');
       const data = await res.json();
       if (data.success && data.settings) {
-        setAiAutonomyEnabled(!!data.settings.aiAutonomyEnabled);
+        setAiAutonomyEnabled(Boolean(data.settings.aiAutonomyEnabled));
       }
     } catch (e) {}
   };
@@ -127,15 +254,15 @@ export const TasksView: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aiAutonomyEnabled: newVal })
       });
-      showNotification('success', newVal ? '⚡ 100% KI-Autonomie aktiviert (Design-Prüfung läuft automatisch).' : '🛡️ Human-in-the-Loop aktiviert (Design-Prüfung hält in Tasks an).');
+      showNotification('success', newVal ? 'KI-Autonomie aktiviert' : 'Human-in-the-Loop aktiviert');
     } catch (err) {
-      showNotification('error', 'Fehler beim Speichern der Einstellung.');
+      showNotification('error', 'Fehler beim Speichern der Einstellung');
     }
   };
 
   const showNotification = (type: 'success' | 'error', message: string) => {
     setNotification({ type, message });
-    setTimeout(() => setNotification(null), 4500);
+    setTimeout(() => setNotification(null), 4000);
   };
 
   useEffect(() => {
@@ -164,14 +291,8 @@ export const TasksView: React.FC = () => {
       setEditablePrompt(activeTask.resultPrompt || activeTask.payload?.quote || '');
 
       // TM Review Listing fields
-      const enListing = activeTask.listingResult?.en || activeTask.listingResult || {};
-      setEditableListing({
-        brand: enListing.brand || '',
-        title: enListing.title || '',
-        bullet1: enListing.bullet1 || '',
-        bullet2: enListing.bullet2 || '',
-        description: enListing.description || ''
-      });
+      const fields = extractListingFields(activeTask);
+      setEditableListing(fields);
       setLiveTmResult(activeTask.trademarkCheckResult || null);
     }
   }, [selectedTaskId, activeTask?.status]);
@@ -191,7 +312,7 @@ export const TasksView: React.FC = () => {
         showNotification('success', data.message);
         fetchTasks();
       } else {
-        showNotification('error', data.error || 'Fehler bei der Aktion');
+        showNotification('error', data.error || 'Aktion fehlgeschlagen');
       }
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler');
@@ -225,7 +346,7 @@ export const TasksView: React.FC = () => {
         showNotification('success', data.message);
         fetchTasks();
       } else {
-        showNotification('error', data.error || 'Fehler beim Übermitteln');
+        showNotification('error', data.error || 'Übermittlung fehlgeschlagen');
       }
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler');
@@ -243,7 +364,7 @@ export const TasksView: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action,
+          action: 'RECHECK',
           refinedListing: editableListing
         })
       });
@@ -251,9 +372,9 @@ export const TasksView: React.FC = () => {
       if (data.success) {
         setLiveTmResult(data);
         if (data.hasInfringementClass25) {
-          showNotification('error', `⚠️ Noch ${data.totalHits} Treffer in Klasse 25 vorhanden.`);
+          showNotification('error', `${data.totalHits} Treffer in Klasse 25 vorhanden`);
         } else {
-          showNotification('success', `✓ 0 Treffer in Klasse 25! Bekleidung ist sauber.`);
+          showNotification('success', '0 Treffer in Klasse 25 (Sauber)');
         }
       } else {
         showNotification('error', data.error || 'Prüfung fehlgeschlagen');
@@ -282,7 +403,7 @@ export const TasksView: React.FC = () => {
         showNotification('success', data.message);
         fetchTasks();
       } else {
-        showNotification('error', data.error || 'Fehler beim Speichern');
+        showNotification('error', data.error || 'Speichern fehlgeschlagen');
       }
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler');
@@ -303,16 +424,19 @@ export const TasksView: React.FC = () => {
   const designCount = tasks.filter(t => t.status === 'AWAITING_DESIGN_REVIEW').length;
   const tmCount = tasks.filter(t => t.status === 'AWAITING_TM_REVIEW').length;
 
+  // Extract field summaries for Checkpoint 3
+  const fieldSummaries = liveTmResult?.fieldSummaries || liveTmResult?.fieldResults || activeTask?.trademarkCheckResult?.fieldSummaries || activeTask?.trademarkCheckResult?.fieldResults || {};
+
   return (
     <div className="space-y-6">
       {/* Toast Notification */}
       {notification && (
-        <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl border shadow-2xl text-xs font-bold flex items-center space-x-2 transition-all transform animate-in slide-in-from-top-2 ${
+        <div className={`fixed top-5 right-5 z-50 px-4 py-2.5 rounded-xl border shadow-2xl text-xs font-semibold flex items-center space-x-2 transition-all transform animate-in slide-in-from-top-2 ${
           notification.type === 'success' 
-            ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40' 
-            : 'bg-rose-950/90 text-rose-300 border-rose-500/40'
+            ? 'bg-slate-900 text-emerald-300 border-emerald-500/40' 
+            : 'bg-slate-900 text-rose-300 border-rose-500/40'
         }`}>
-          {notification.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertCircle className="w-4 h-4 text-rose-400" />}
+          {notification.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}
           <span>{notification.message}</span>
         </div>
       )}
@@ -322,35 +446,35 @@ export const TasksView: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold text-slate-100 tracking-tight flex items-center">
             <CheckSquare className="w-6 h-6 mr-2.5 text-primary-400" />
-            Tasks &amp; Human-in-the-Loop
+            Tasks &amp; Review
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Zentraler Prüf- und Freigabe-Workspace für generierte Designs, Trademarks und Produkt-Fragen.
+            Zentraler Prüf- und Freigabe-Workspace für Designs, Trademarks und Listings.
           </p>
         </div>
 
-        {/* AI Autonomy Mode Switch */}
-        <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-2.5 shadow-md">
-          <div className="w-8 h-8 rounded-lg bg-primary-500/10 flex items-center justify-center text-primary-400 border border-primary-500/20">
-            <Bot className="w-4 h-4" />
+        {/* AI Autonomy Switch */}
+        <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-2 shadow-sm">
+          <div className="w-7 h-7 rounded-lg bg-primary-500/10 flex items-center justify-center text-primary-400 border border-primary-500/20">
+            <Bot className="w-3.5 h-3.5" />
           </div>
           <div className="flex flex-col">
             <div className="flex items-center space-x-1.5">
-              <span className="text-xs font-bold text-slate-200">100% KI-Autonomie</span>
+              <span className="text-xs font-semibold text-slate-200">Autonomie</span>
               <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${aiAutonomyEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                {aiAutonomyEnabled ? 'AKTIV' : 'AUS'}
+                {aiAutonomyEnabled ? 'Aktiv' : 'Aus'}
               </span>
             </div>
-            <span className="text-[10px] text-slate-400">Design-Prüfung bei KI-Approval automatisch überspringen</span>
+            <span className="text-[10px] text-slate-400">Automatische Freigabe bei sauberem Befund</span>
           </div>
           <button
             onClick={toggleAiAutonomy}
-            className={`w-11 h-6 rounded-full transition-colors relative ml-2 ${
+            className={`w-10 h-5 rounded-full transition-colors relative ml-2 ${
               aiAutonomyEnabled ? 'bg-primary-500' : 'bg-slate-700'
             }`}
           >
-            <div className={`w-4 h-4 rounded-full bg-white transition-transform transform absolute top-1 ${
-              aiAutonomyEnabled ? 'translate-x-6' : 'translate-x-1'
+            <div className={`w-3.5 h-3.5 rounded-full bg-white transition-transform transform absolute top-0.5 ${
+              aiAutonomyEnabled ? 'translate-x-5' : 'translate-x-1'
             }`} />
           </button>
         </div>
@@ -358,50 +482,50 @@ export const TasksView: React.FC = () => {
 
       {tasks.length === 0 ? (
         <div className="glass-panel rounded-2xl p-16 text-center space-y-4 border border-slate-800">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center mx-auto">
-            <CheckCircle2 className="w-8 h-8" />
+          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center mx-auto">
+            <CheckCircle2 className="w-7 h-7" />
           </div>
-          <h3 className="text-lg font-bold text-slate-100">Keine offenen Prüfungen</h3>
+          <h3 className="text-base font-bold text-slate-100">Keine offenen Aufgaben</h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-            Alle Aufgaben wurden geprüft oder laufen vollautomatisch im Hintergrund. Neue Designs von Hermes oder dem Designer erscheinen hier, sobald deine Prüfung erforderlich ist.
+            Alle Aufgaben wurden geprüft oder laufen im Hintergrund. Neue Designs von Hermes oder dem Designer erscheinen hier automatisch.
           </p>
           <button
             onClick={fetchTasks}
-            className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 inline-flex items-center space-x-1.5"
+            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 inline-flex items-center space-x-1.5 transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Aktualisieren</span>
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* Left Column: Task List (4 cols) */}
-          <div className="lg:col-span-4 space-y-3">
+          <div className="lg:col-span-4 space-y-2.5">
             {/* Filter Tabs */}
             <div className="flex items-center justify-between gap-1 p-1 bg-slate-900/90 rounded-xl border border-slate-800 text-[11px] font-semibold">
               <button
                 onClick={() => setFilter('ALL')}
-                className={`flex-1 py-1.5 rounded-lg transition-all ${filter === 'ALL' ? 'bg-primary-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`flex-1 py-1 rounded-lg transition-all ${filter === 'ALL' ? 'bg-primary-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 Alle ({tasks.length})
               </button>
               <button
                 onClick={() => setFilter('DESIGN')}
-                className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${filter === 'DESIGN' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`flex-1 py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${filter === 'DESIGN' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 <span>Design</span>
                 {designCount > 0 && <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-cyan-400 text-slate-950 font-bold">{designCount}</span>}
               </button>
               <button
                 onClick={() => setFilter('TRADEMARK')}
-                className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${filter === 'TRADEMARK' ? 'bg-purple-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`flex-1 py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${filter === 'TRADEMARK' ? 'bg-purple-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 <span>TM</span>
                 {tmCount > 0 && <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-purple-400 text-slate-950 font-bold">{tmCount}</span>}
               </button>
               <button
                 onClick={() => setFilter('PRE_FLIGHT')}
-                className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${filter === 'PRE_FLIGHT' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`flex-1 py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${filter === 'PRE_FLIGHT' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 <span>Quote</span>
                 {preFlightCount > 0 && <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-amber-400 text-slate-950 font-bold">{preFlightCount}</span>}
@@ -409,7 +533,7 @@ export const TasksView: React.FC = () => {
             </div>
 
             {/* List of Tasks */}
-            <div className="space-y-2 max-h-[calc(100vh-250px)] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[calc(100vh-240px)] overflow-y-auto pr-1 custom-scrollbar">
               {filteredTasks.map((t) => {
                 const isSelected = selectedTaskId === t.id;
                 const isPreFlight = t.status === 'AWAITING_PRE_FLIGHT_REVIEW';
@@ -421,51 +545,50 @@ export const TasksView: React.FC = () => {
                   <div
                     key={t.id}
                     onClick={() => setSelectedTaskId(t.id)}
-                    className={`p-3 rounded-2xl cursor-pointer transition-all border ${
+                    className={`p-3 rounded-xl cursor-pointer transition-all border ${
                       isSelected 
-                        ? 'bg-slate-900 border-primary-500/70 ring-1 ring-primary-500/40 shadow-lg shadow-primary-500/5' 
+                        ? 'bg-slate-900 border-primary-500/70 ring-1 ring-primary-500/30 shadow-md' 
                         : 'bg-slate-900/50 hover:bg-slate-900/80 border-slate-800/80'
                     }`}
                   >
                     <div className="flex space-x-3 items-center">
-                      {/* Image Thumbnail or Status Icon */}
+                      {/* Image Thumbnail */}
                       {t.imageUrl ? (
                         <img
                           src={t.imageUrl}
                           alt={displayQuote}
-                          className="w-14 h-14 rounded-xl object-cover border border-slate-800 shrink-0 bg-slate-950"
+                          className="w-12 h-12 rounded-lg object-cover border border-slate-800 shrink-0 bg-slate-950"
                         />
                       ) : (
-                        <div className={`w-14 h-14 rounded-xl border shrink-0 flex items-center justify-center ${
+                        <div className={`w-12 h-12 rounded-lg border shrink-0 flex items-center justify-center ${
                           isPreFlight ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400'
                         }`}>
-                          {isPreFlight ? <AlertTriangle className="w-6 h-6" /> : <Eye className="w-6 h-6" />}
+                          {isPreFlight ? <AlertTriangle className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                         </div>
                       )}
 
                       <div className="space-y-1 overflow-hidden flex-1">
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-[11px] font-bold text-slate-100">{t.id}</span>
-                          {/* Checkpoint Status Badge */}
                           {isPreFlight && (
-                            <span className="px-2 py-0.5 text-[9px] font-bold bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/30">
+                            <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-amber-500/20 text-amber-300 rounded border border-amber-500/30">
                               Quote TM
                             </span>
                           )}
                           {isDesign && (
-                            <span className="px-2 py-0.5 text-[9px] font-bold bg-cyan-500/20 text-cyan-300 rounded-full border border-cyan-500/30">
+                            <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/30">
                               Design
                             </span>
                           )}
                           {isTm && (
-                            <span className="px-2 py-0.5 text-[9px] font-bold bg-purple-500/20 text-purple-300 rounded-full border border-purple-500/30">
+                            <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
                               Listing TM
                             </span>
                           )}
                         </div>
 
-                        <h4 className="font-bold text-xs text-slate-200 truncate">
-                          &quot;{displayQuote}&quot;
+                        <h4 className="font-semibold text-xs text-slate-200 truncate">
+                          "{displayQuote}"
                         </h4>
 
                         <div className="text-[10px] text-slate-400 flex items-center justify-between">
@@ -483,142 +606,115 @@ export const TasksView: React.FC = () => {
           {/* Right Column: Review Workspace (8 cols) */}
           {activeTask && (
             <div className="lg:col-span-8 space-y-4">
-              <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
+              <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-5">
                 {/* Task Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
-                  <div className="space-y-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                  <div className="space-y-0.5">
                     <div className="flex items-center space-x-2">
                       <span className="font-mono text-sm font-bold text-primary-400">{activeTask.id}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
                         {activeTask.source}
                       </span>
                       <span className="text-xs text-slate-400">
-                        Eingegangen: {activeTask.receivedAt ? new Date(activeTask.receivedAt).toLocaleString() : '-'}
+                        {activeTask.receivedAt ? new Date(activeTask.receivedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '-'}
                       </span>
                     </div>
-                    <h3 className="text-base font-bold text-slate-100">
-                      Quote: &quot;{activeTask.payload?.quote || activeTask.payload?.quote_or_phrase || activeTask.payload?.text || '-'}&quot;
+                    <h3 className="text-sm font-semibold text-slate-100">
+                      "{activeTask.payload?.quote || activeTask.payload?.quote_or_phrase || activeTask.payload?.text || '-'}"
                     </h3>
                   </div>
 
                   {/* Top Status Badge */}
                   <div>
                     {activeTask.status === 'AWAITING_PRE_FLIGHT_REVIEW' && (
-                      <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1.5">
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
-                        <span>Checkpoint 1: Pre-Flight Quote Konflikt</span>
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Pre-Flight Quote Konflikt</span>
                       </span>
                     )}
                     {activeTask.status === 'AWAITING_DESIGN_REVIEW' && (
-                      <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center space-x-1.5">
-                        <Eye className="w-4 h-4 text-cyan-400" />
-                        <span>Checkpoint 2: Design- &amp; Fragen-Prüfung</span>
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center space-x-1.5">
+                        <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Design-Prüfung</span>
                       </span>
                     )}
                     {activeTask.status === 'AWAITING_TM_REVIEW' && (
-                      <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center space-x-1.5">
-                        <ShieldAlert className="w-4 h-4 text-purple-400" />
-                        <span>Checkpoint 3: Manuelle TM-Optimierung</span>
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center space-x-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Trademark-Prüfung</span>
                       </span>
                     )}
                   </div>
                 </div>
 
                 {/* ========================================================================= */}
-                {/* CHECKPOINT 1: PRE-FLIGHT QUOTE KONFLIKT WORKSPACE                         */}
+                {/* CHECKPOINT 1: PRE-FLIGHT QUOTE KONFLIKT                                   */}
                 {/* ========================================================================= */}
                 {activeTask.status === 'AWAITING_PRE_FLIGHT_REVIEW' && (
-                  <div className="space-y-5">
-                    <div className="bg-amber-950/20 p-4 rounded-xl border border-amber-500/40 space-y-2">
-                      <div className="flex items-center space-x-2 text-amber-300 font-bold text-xs">
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
-                        <span>Token-Schutz ausgelöst: Quote verletzt aktives Markenrecht in Klasse 25</span>
+                  <div className="space-y-4">
+                    <div className="bg-amber-950/20 p-3.5 rounded-xl border border-amber-500/30 space-y-2">
+                      <div className="flex items-center space-x-2 text-amber-300 font-semibold text-xs">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Quote verletzt Markenrecht in Klasse 25 (Bekleidung)</span>
                       </div>
                       <p className="text-xs text-slate-300 leading-relaxed">
-                        Die Quote <strong>&quot;{activeTask.payload?.quote}&quot;</strong> hat einen aktiven USPTO-Markentreffer in Nizza-Klasse 25 (Bekleidung). Um LLM-Tokens und Kosten zu sparen, wurde die automatische Generierung pausiert.
+                        Die Quote <strong>"{activeTask.payload?.quote}"</strong> hat einen Markentreffer in Klasse 25. Die automatische Generierung wurde pausiert.
                       </p>
                       
-                      {/* Robust rendering of hits whether object or array */}
-                      {(() => {
-                        const quoteHitsObj = activeTask.trademarkCheckResult?.fieldSummaries?.quote?.hits;
-                        const quoteHitsList: any[] = [];
-                        if (Array.isArray(quoteHitsObj)) {
-                          quoteHitsList.push(...quoteHitsObj);
-                        } else if (quoteHitsObj && typeof quoteHitsObj === 'object') {
-                          Object.values(quoteHitsObj).forEach((arr: any) => {
-                            if (Array.isArray(arr)) quoteHitsList.push(...arr);
-                          });
-                        }
-                        
-                        if (quoteHitsList.length === 0) return null;
-
-                        return (
-                          <div className="pt-2">
-                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Gefundene Markeneinträge:</span>
-                            <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                              {quoteHitsList.map((hit: any, i: number) => (
-                                <div key={i} className="p-2 rounded bg-slate-900/90 border border-slate-800 text-[11px] flex items-center justify-between">
-                                  <span className="font-bold text-amber-300 font-mono">{hit.wordmark || hit.mark || hit.trademark || hit.term || 'Trademark'}</span>
-                                  <span className="text-slate-400">Klasse: {hit.classNumber || hit.classes?.join(', ') || '25'} • Status: {hit.status || 'LIVE'}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
+                      <FieldTmWordChips label="Quote" fieldData={activeTask.trademarkCheckResult?.fieldSummaries?.quote || activeTask.trademarkCheckResult?.fieldResults?.quote} />
                     </div>
 
-                    {/* Form to Edit Quote */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
-                      <label className="text-xs font-bold text-slate-200 block">Quote bearbeiten &amp; neu starten:</label>
+                    {/* Edit Quote Input */}
+                    <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <label className="text-xs font-semibold text-slate-300 block">Quote bearbeiten:</label>
                       <input
                         type="text"
                         value={editQuote}
                         onChange={(e) => setEditQuote(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-primary-500"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-primary-500"
                         placeholder="Neue Quote eingeben..."
                       />
                     </div>
 
                     {/* Pre-Flight Action Buttons */}
-                    <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2.5 pt-1">
                       <button
                         onClick={() => handlePreFlightAction('DISCARD')}
                         disabled={isSubmitting}
-                        className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span>Task verwerfen (Schließen)</span>
+                        <span>Verwerfen</span>
                       </button>
                       <button
                         onClick={() => handlePreFlightAction('OVERRIDE')}
                         disabled={isSubmitting}
-                        className="px-4 py-2.5 rounded-xl text-xs font-bold bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/40 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-600/20 hover:bg-amber-600/30 text-amber-200 border border-amber-500/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
                       >
                         <Zap className="w-3.5 h-3.5" />
-                        <span>Trotzdem fortfahren (Override)</span>
+                        <span>Fortfahren</span>
                       </button>
                       <button
                         onClick={() => handlePreFlightAction('RESTART')}
                         disabled={isSubmitting || !editQuote.trim()}
-                        className="px-5 py-2.5 rounded-xl text-xs font-bold bg-primary-600 hover:bg-primary-500 text-white shadow-lg shadow-primary-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                        className="px-4 py-2 rounded-xl text-xs font-semibold bg-primary-600 hover:bg-primary-500 text-white flex items-center space-x-1.5 transition-all disabled:opacity-50 shadow-sm"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Quote anpassen &amp; neu starten</span>
+                        <span>Neu starten</span>
                       </button>
                     </div>
                   </div>
                 )}
 
                 {/* ========================================================================= */}
-                {/* CHECKPOINT 2: DESIGN- & FRAGEN-PRÜFUNG WORKSPACE                          */}
+                {/* CHECKPOINT 2: DESIGN- & FRAGEN-PRÜFUNG                                    */}
                 {/* ========================================================================= */}
                 {activeTask.status === 'AWAITING_DESIGN_REVIEW' && (
-                  <div className="space-y-6">
+                  <div className="space-y-5">
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
                       {/* Left: Image Preview & Prompt (5 cols) */}
-                      <div className="md:col-span-5 space-y-3">
-                        <div className="relative group rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 aspect-[10/16] max-h-[380px] flex items-center justify-center">
+                      <div className="md:col-span-5 space-y-2.5">
+                        <div className="relative group rounded-xl overflow-hidden border border-slate-800 bg-slate-950 aspect-[10/16] max-h-[340px] flex items-center justify-center">
                           {activeTask.imageUrl ? (
                             <>
                               <img
@@ -627,10 +723,10 @@ export const TasksView: React.FC = () => {
                                 className="w-full h-full object-contain cursor-pointer"
                                 onClick={() => setShowImageZoom(true)}
                               />
-                              <div className="absolute top-2 right-2 flex space-x-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
                                   onClick={() => setShowImageZoom(true)}
-                                  className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                  className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
                                   title="Vergrößern"
                                 >
                                   <Maximize2 className="w-3.5 h-3.5" />
@@ -640,7 +736,7 @@ export const TasksView: React.FC = () => {
                                   download={`design-${activeTask.id}.png`}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                  className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
                                   title="Download"
                                 >
                                   <Download className="w-3.5 h-3.5" />
@@ -652,9 +748,9 @@ export const TasksView: React.FC = () => {
                           )}
                         </div>
 
-                        {/* Editable Ideogram Prompt */}
-                        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/90 space-y-1.5">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Verwendeter Ideogram Prompt:</span>
+                        {/* Editable Prompt */}
+                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Prompt:</span>
                           <textarea
                             value={editablePrompt}
                             onChange={(e) => setEditablePrompt(e.target.value)}
@@ -664,37 +760,37 @@ export const TasksView: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Right: 4-Questions Matrix (7 cols) */}
-                      <div className="md:col-span-7 space-y-3.5">
-                        <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center">
-                          <Sliders className="w-4 h-4 mr-1.5 text-cyan-400" />
-                          Vision-AI Antworten &amp; Anpassung
+                      {/* Right: Questions Matrix (7 cols) */}
+                      <div className="md:col-span-7 space-y-3">
+                        <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center">
+                          <Sliders className="w-3.5 h-3.5 mr-1.5 text-cyan-400" />
+                          Vision-KI Analyse
                         </h4>
 
-                        {/* Question 1: Quote-Prüfung */}
-                        <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                        {/* Question 1: Quote */}
+                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-semibold text-slate-200">1. Quote-Prüfung</span>
                             {activeTask.analysisResult?.quote_check?.quote_matches ? (
-                              <span className="text-[10px] font-bold text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                                <CheckCircle2 className="w-3 h-3 mr-1" /> Quote stimmt 1:1
+                              <span className="text-[10px] font-semibold text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                <CheckCircle2 className="w-3 h-3 mr-1" /> Exakt
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold text-amber-400 flex items-center bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                <AlertTriangle className="w-3 h-3 mr-1" /> Abweichung festgestellt
+                              <span className="text-[10px] font-semibold text-amber-400 flex items-center bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                <AlertTriangle className="w-3 h-3 mr-1" /> Abweichung
                               </span>
                             )}
                           </div>
                           <div className="text-[11px] font-mono text-slate-300 bg-slate-950 p-2 rounded border border-slate-800/80">
-                            <div>Soll: <strong>&quot;{activeTask.payload?.quote}&quot;</strong></div>
-                            <div>Erkannt: <strong className="text-cyan-300">&quot;{activeTask.analysisResult?.quote_check?.detected_quote_text || '-'}&quot;</strong></div>
+                            <div>Soll: <span className="text-slate-200">"{activeTask.payload?.quote}"</span></div>
+                            <div>Erkannt: <span className="text-cyan-300">"{activeTask.analysisResult?.quote_check?.detected_quote_text || '-'}"</span></div>
                           </div>
                         </div>
 
-                        {/* Question 2: Zielgruppe */}
-                        <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                        {/* Question 2: Target Group */}
+                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">2. Welche Zielgruppe betrifft das Design?</span>
+                            <span className="font-semibold text-slate-200">2. Zielgruppe</span>
                             <span className="text-[10px] text-cyan-400 font-mono">
                               KI: {Array.isArray(activeTask.analysisResult?.target_group?.selected) ? activeTask.analysisResult.target_group.selected.join(', ') : (activeTask.analysisResult?.target_group?.selected || 'Men, Women')}
                             </span>
@@ -704,9 +800,9 @@ export const TasksView: React.FC = () => {
                               <button
                                 key={val}
                                 onClick={() => setSelectedAudience(val)}
-                                className={`px-2.5 py-1 text-xs rounded-lg border font-medium transition-all ${
+                                className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
                                   selectedAudience === val 
-                                    ? 'bg-cyan-600 text-white border-cyan-500 shadow-sm font-bold'
+                                    ? 'bg-cyan-600 text-white border-cyan-500 font-semibold'
                                     : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                                 }`}
                               >
@@ -716,10 +812,10 @@ export const TasksView: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Question 3: Zu vermeidende Farbe */}
-                        <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                        {/* Question 3: Avoid Color */}
+                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">3. Welche Produktfarbe sollte vermieden werden?</span>
+                            <span className="font-semibold text-slate-200">3. Zu vermeidende Produktfarbe</span>
                             <span className="text-[10px] text-cyan-400 font-mono">
                               KI: {activeTask.analysisResult?.avoid_product_colors?.avoid || 'Keine'}
                             </span>
@@ -729,9 +825,9 @@ export const TasksView: React.FC = () => {
                               <button
                                 key={val}
                                 onClick={() => setSelectedAvoidColor(val)}
-                                className={`px-3 py-1 text-xs rounded-lg border font-medium transition-all ${
+                                className={`px-3 py-1 text-xs rounded-lg border transition-all ${
                                   selectedAvoidColor === val 
-                                    ? 'bg-cyan-600 text-white border-cyan-500 shadow-sm font-bold'
+                                    ? 'bg-cyan-600 text-white border-cyan-500 font-semibold'
                                     : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                                 }`}
                               >
@@ -741,12 +837,12 @@ export const TasksView: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Question 4: Hintergrund */}
-                        <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                        {/* Question 4: Background */}
+                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">4. Hintergrund-Freistellung</span>
+                            <span className="font-semibold text-slate-200">4. Hintergrund</span>
                             <span className="text-[10px] text-cyan-400 font-mono">
-                              KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' ? 'Hintergrund behalten' : 'Auto Freistellen'}
+                              KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' ? 'Behalten' : 'Auto Freistellen'}
                             </span>
                           </div>
                           <div className="flex gap-2">
@@ -754,9 +850,9 @@ export const TasksView: React.FC = () => {
                               <button
                                 key={val}
                                 onClick={() => setSelectedBgMode(val)}
-                                className={`px-3 py-1 text-xs rounded-lg border font-medium transition-all ${
+                                className={`px-3 py-1 text-xs rounded-lg border transition-all ${
                                   selectedBgMode === val 
-                                    ? 'bg-cyan-600 text-white border-cyan-500 shadow-sm font-bold'
+                                    ? 'bg-cyan-600 text-white border-cyan-500 font-semibold'
                                     : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                                 }`}
                               >
@@ -768,38 +864,34 @@ export const TasksView: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Checkpoint 2 Action Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
-                      {/* Regenerate Button */}
+                    {/* Action Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-800">
                       <button
                         onClick={() => handleDesignReview('REGENERATE_IMAGE')}
                         disabled={isSubmitting}
-                        className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-rose-950/40 text-rose-300 border border-rose-500/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
-                        title="Springt zurück zu Ideogram und erzeugt ein neues Bild"
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
                       >
                         <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-                        <span>Quote falsch / Bild neu generieren</span>
+                        <span>Neu generieren</span>
                       </button>
 
-                      <div className="flex items-center space-x-2.5">
-                        {/* Custom Answers Save & Proceed */}
+                      <div className="flex items-center space-x-2">
                         <button
                           onClick={() => handleDesignReview('APPROVE', false)}
                           disabled={isSubmitting}
-                          className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                          className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition-all disabled:opacity-50"
                         >
                           <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Geänderte Werte speichern &amp; weiter</span>
+                          <span>Speichern &amp; Weiter</span>
                         </button>
 
-                        {/* 1-Click AI Answers Approve */}
                         <button
                           onClick={() => handleDesignReview('APPROVE', true)}
                           disabled={isSubmitting}
-                          className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-lg shadow-emerald-500/20 flex items-center space-x-1.5 transition-all active:scale-98 disabled:opacity-50"
+                          className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-1.5 transition-all disabled:opacity-50 shadow-sm"
                         >
-                          <Zap className="w-3.5 h-3.5 text-yellow-300" />
-                          <span>KI-Antworten übernehmen &amp; Listing erstellen</span>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Listing generieren</span>
                         </button>
                       </div>
                     </div>
@@ -807,16 +899,39 @@ export const TasksView: React.FC = () => {
                 )}
 
                 {/* ========================================================================= */}
-                {/* CHECKPOINT 3: MANUELLE TRADEMARK-OPTIMIERUNG WORKSPACE                     */}
+                {/* CHECKPOINT 3: MANUELLE TRADEMARK- & LISTING-PRÜFUNG                       */}
                 {/* ========================================================================= */}
                 {activeTask.status === 'AWAITING_TM_REVIEW' && (
                   <div className="space-y-5">
+                    {/* Intro Banner */}
+                    <div className="bg-purple-950/20 border border-purple-500/30 p-3.5 rounded-xl flex items-center justify-between">
+                      <div className="flex items-center space-x-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0">
+                          <ShieldAlert className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-100">Manuelle Trademark-Prüfung</h4>
+                          <p className="text-[11px] text-slate-400">
+                            Passe die Felder an, um Markentreffer in Klasse 25 (Bekleidung) zu eliminieren.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleTmRecheck}
+                        disabled={isCheckingTm || isSubmitting}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white flex items-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm"
+                      >
+                        <Search className={`w-3.5 h-3.5 ${isCheckingTm ? 'animate-spin' : ''}`} />
+                        <span>{isCheckingTm ? 'Prüfe...' : 'USPTO prüfen'}</span>
+                      </button>
+                    </div>
+
                     {/* Listing Fields Editor */}
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {/* Brand */}
-                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
+                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-bold text-slate-400 uppercase">Brand Name</span>
+                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Brand Name</span>
                           <span className={`font-mono text-[10px] font-bold ${editableListing.brand.length > 50 ? 'text-rose-400' : 'text-slate-400'}`}>
                             {editableListing.brand.length}/50
                           </span>
@@ -825,14 +940,16 @@ export const TasksView: React.FC = () => {
                           type="text"
                           value={editableListing.brand}
                           onChange={(e) => setEditableListing({ ...editableListing, brand: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                          placeholder="Brand Name eingeben..."
                         />
+                        <FieldTmWordChips label="Brand" fieldData={fieldSummaries.brand} />
                       </div>
 
                       {/* Title */}
-                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
+                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-bold text-slate-400 uppercase">Design Title</span>
+                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Design Title</span>
                           <span className={`font-mono text-[10px] font-bold ${editableListing.title.length > 60 ? 'text-rose-400' : 'text-slate-400'}`}>
                             {editableListing.title.length}/60
                           </span>
@@ -841,14 +958,16 @@ export const TasksView: React.FC = () => {
                           type="text"
                           value={editableListing.title}
                           onChange={(e) => setEditableListing({ ...editableListing, title: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-mono text-purple-300 font-bold focus:outline-none focus:border-purple-500"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-purple-300 font-semibold focus:outline-none focus:border-purple-500"
+                          placeholder="Design Title eingeben..."
                         />
+                        <FieldTmWordChips label="Title" fieldData={fieldSummaries.title} />
                       </div>
 
                       {/* Bullet 1 */}
-                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
+                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-bold text-slate-400 uppercase">Feature Bullet 1</span>
+                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 1</span>
                           <span className={`font-mono text-[10px] font-bold ${editableListing.bullet1.length > 250 ? 'text-rose-400' : 'text-slate-400'}`}>
                             {editableListing.bullet1.length}/250
                           </span>
@@ -856,15 +975,17 @@ export const TasksView: React.FC = () => {
                         <textarea
                           value={editableListing.bullet1}
                           onChange={(e) => setEditableListing({ ...editableListing, bullet1: e.target.value })}
-                          rows={2}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                          rows={6}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
+                          placeholder="Feature Bullet 1 eingeben..."
                         />
+                        <FieldTmWordChips label="Bullet 1" fieldData={fieldSummaries.bullet1} />
                       </div>
 
                       {/* Bullet 2 */}
-                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
+                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-bold text-slate-400 uppercase">Feature Bullet 2</span>
+                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 2</span>
                           <span className={`font-mono text-[10px] font-bold ${editableListing.bullet2.length > 250 ? 'text-rose-400' : 'text-slate-400'}`}>
                             {editableListing.bullet2.length}/250
                           </span>
@@ -872,74 +993,79 @@ export const TasksView: React.FC = () => {
                         <textarea
                           value={editableListing.bullet2}
                           onChange={(e) => setEditableListing({ ...editableListing, bullet2: e.target.value })}
-                          rows={2}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                          rows={6}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
+                          placeholder="Feature Bullet 2 eingeben..."
                         />
+                        <FieldTmWordChips label="Bullet 2" fieldData={fieldSummaries.bullet2} />
+                      </div>
+
+                      {/* Product Description */}
+                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Product Description</span>
+                          <span className={`font-mono text-[10px] font-bold ${editableListing.description.length > 2000 ? 'text-rose-400' : 'text-slate-400'}`}>
+                            {editableListing.description.length}/2000
+                          </span>
+                        </div>
+                        <textarea
+                          value={editableListing.description}
+                          onChange={(e) => setEditableListing({ ...editableListing, description: e.target.value })}
+                          rows={10}
+                          placeholder="Produktbeschreibung eingeben..."
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[200px]"
+                        />
+                        <FieldTmWordChips label="Description" fieldData={fieldSummaries.description} />
                       </div>
                     </div>
 
-                    {/* Live USPTO Results Box */}
+                    {/* Overall Summary Bar */}
                     {liveTmResult && (
-                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-300 flex items-center gap-1.5">
-                            <ShieldCheck className="w-4 h-4 text-purple-400" />
-                            Live USPTO Prüfergebnis:
-                          </span>
-                          <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                            liveTmResult.hasInfringementClass25 
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' 
-                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          }`}>
-                            {liveTmResult.hasInfringementClass25 
-                              ? `⚠️ ${liveTmResult.totalHits || 0} Treffer in Klasse 25` 
-                              : '✓ 0 Treffer in Klasse 25 (Sauber!)'}
-                          </span>
+                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <ShieldCheck className="w-4 h-4 text-purple-400" />
+                          <span className="text-xs font-semibold text-slate-200">Gesamtergebnis:</span>
                         </div>
-
-                        {liveTmResult.fieldSummaries && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
-                            {Object.entries(liveTmResult.fieldSummaries).map(([fName, fData]: [string, any]) => (
-                              <div key={fName} className="p-2 rounded bg-slate-900 border border-slate-800 flex items-center justify-between">
-                                <span className="text-slate-400 uppercase font-bold">{fName}:</span>
-                                <span className={(fData.hasInfringementClass25 || fData.hasClass25) ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
-                                  {fData.totalHits || 0} Treffer {(fData.hasInfringementClass25 || fData.hasClass25) && '(Klasse 25)'}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                          liveTmResult.hasInfringementClass25 
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' 
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        }`}>
+                          {liveTmResult.hasInfringementClass25 
+                            ? `${liveTmResult.totalHits || 0} Treffer in Klasse 25 (Blockiert)` 
+                            : '0 Treffer in Klasse 25 (Sauber für Bekleidung)'}
+                        </span>
                       </div>
                     )}
 
                     {/* Checkpoint 3 Action Buttons */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-800">
                       <button
                         onClick={() => handleTmDecision('REJECT')}
                         disabled={isSubmitting}
-                        className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-rose-950/40 text-rose-300 border border-rose-500/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
                       >
                         <XCircle className="w-3.5 h-3.5 text-rose-400" />
-                        <span>Task ablehnen &amp; schließen</span>
+                        <span>Ablehnen</span>
                       </button>
 
-                      <div className="flex items-center space-x-2.5">
+                      <div className="flex items-center space-x-2">
                         <button
                           onClick={handleTmRecheck}
                           disabled={isCheckingTm || isSubmitting}
-                          className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                          className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
                         >
                           <Search className={`w-3.5 h-3.5 ${isCheckingTm ? 'animate-spin' : 'text-purple-400'}`} />
-                          <span>Listing erneut prüfen (Live USPTO)</span>
+                          <span>USPTO prüfen</span>
                         </button>
 
                         <button
                           onClick={() => handleTmDecision('APPROVE')}
                           disabled={isSubmitting}
-                          className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-lg shadow-emerald-500/20 flex items-center space-x-1.5 transition-all active:scale-98 disabled:opacity-50"
+                          className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-1.5 transition-all disabled:opacity-50 shadow-sm"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Freigeben &amp; In Upload-Queue verschieben</span>
+                          <span>Freigeben</span>
                         </button>
                       </div>
                     </div>

@@ -49,33 +49,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// In-Memory state for Tasks and Queue
-interface TaskItem {
-  id: string;
-  title: string;
-  prompt: string;
-  quote: string;
-  imageUrl: string;
-  source: string;
-  createdAt: string;
-  audience: string;
-  avoidColor: string;
-  reuseBackground: string;
-  aiPrediction: {
-    audience: string;
-    avoidColor: string;
-    reuseBackground: string;
-    confidence: string;
-    title: string;
-    brand: string;
-    bullet1: string;
-    bullet2: string;
-    description: string;
-    keywords?: string;
-  };
-}
-
-let activeTasks: TaskItem[] = [];
+// In-Memory state for Queue and Stats
 let uploadQueue: any[] = [];
 let dailySlotStats = { used: 0, total: 100 };
 
@@ -123,7 +97,7 @@ wss.on('connection', (ws) => {
     payload: { 
       status: 'online', 
       slots: dailySlotStats,
-      tasks: activeTasks.length,
+      tasks: TaskLogService.getAwaitingTasks().length,
       queue: uploadQueue.length,
       browserStatus: BrowserSessionService.getStatus()
     } 
@@ -202,7 +176,7 @@ async function refreshStatsInBackground() {
     const liveSlots = ratelimiter?.slots || dailySlotStats;
 
     cachedStats = {
-      tasksCount: activeTasks.length,
+      tasksCount: TaskLogService.getAwaitingTasks().length,
       queueCount: uploadQueue.length,
       slots: liveSlots,
       tier: lastKnownTier,
@@ -718,65 +692,22 @@ app.post('/api/v1/designer/prompt', async (req, res) => {
 app.post('/api/v1/designer/generate', async (req, res) => {
   try {
     const { prompt, aspectRatio, niche1, niche2, quote } = req.body;
-    
-    // 1. Generate Image with Ideogram (or simulate if no key)
-    let imageUrl = '';
-    const settings = loadSettings();
-    if (settings.ideogramApiKey) {
-      const genResult = await IdeogramService.generateImage({ prompt, aspectRatio });
-      imageUrl = genResult.imageUrl;
-    } else {
-      // Fallback placeholder image for testing
-      imageUrl = `https://picsum.photos/seed/${Date.now()}/800/800`;
-    }
+    const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'local';
 
-    // 2. Parallel LLM Vision & Listing Analysis
-    let aiPrediction: any = {
-      audience: 'Men, Women',
-      avoidColor: 'None',
-      reuseBackground: 'Nein',
-      confidence: '95%',
-      title: `${niche1 || 'Vintage'} Graphic Design`,
-      brand: `${niche1 || 'Retro'} Apparel`,
-      bullet1: `High quality ${niche1 || 'vintage'} design. Ideal for casual wear.`,
-      bullet2: 'Perfect for enthusiasts, birthdays and gifts.',
-      description: `Express your passion with this detailed ${niche1 || 'retro'} graphic.`
-    };
+    const taskLog = TaskLogService.createTaskLog({
+      source: 'DESIGNER',
+      payload: {
+        prompt,
+        aspectRatio,
+        niche1,
+        niche2,
+        quote
+      },
+      clientIp
+    });
 
-    if (settings.openRouterApiKey) {
-      try {
-        const visionResult = await LLMService.analyzeVisionAndGenerateListing(imageUrl, niche1, niche2);
-        aiPrediction = {
-          ...visionResult,
-          audience: visionResult.audiencePrediction || 'Men, Women',
-          avoidColor: visionResult.avoidColorPrediction || 'None',
-          reuseBackground: visionResult.reuseBackgroundPrediction || 'Nein',
-          confidence: '98%'
-        };
-      } catch (vErr) {
-        console.warn('[Designer Generate] Vision listing fallback used:', vErr);
-      }
-    }
-
-    // 3. Create Task Item
-    const newTask: TaskItem = {
-      id: `task-${Date.now()}`,
-      title: quote || `${niche1 || 'Design'} Graphic`,
-      prompt,
-      quote: quote || '',
-      imageUrl,
-      source: 'Designer UI',
-      createdAt: new Date().toISOString(),
-      audience: aiPrediction.audience,
-      avoidColor: aiPrediction.avoidColor,
-      reuseBackground: aiPrediction.reuseBackground,
-      aiPrediction
-    };
-
-    activeTasks.unshift(newTask);
-    broadcast('TASK_CREATED', newTask);
-
-    res.json({ success: true, task: newTask });
+    broadcast('TASK_LOG_CREATED', taskLog);
+    res.json({ success: true, taskId: taskLog.id, task: taskLog });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -981,58 +912,24 @@ app.get('/api/v1/designs/image/:taskId', (req, res) => {
   res.status(404).send('Design image not found');
 });
 
-// 8.2 Hermes REST Webhook Endpoint (Legacy Task Submission)
+// 8.2 Hermes REST Webhook Endpoint (Task Submission)
 app.post('/api/v1/hermes/task', async (req, res) => {
-  const { prompt, quote, niche1, niche2, title, brand, bullet1, bullet2, description } = req.body;
-  recordHermesHeartbeat(req, { prompt, quote, niche1, niche2 });
+  const payload = req.body || {};
+  const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'remote';
+  recordHermesHeartbeat(req, { niche1: payload.niche1, niche2: payload.niche2, quote: payload.quote });
   
-  console.log(`[Hermes Webhook] Received task for niche "${niche1} / ${niche2}": ${prompt}`);
+  const taskLog = TaskLogService.createTaskLog({
+    source: 'HERMES',
+    payload,
+    clientIp
+  });
 
-  // Pre-TM Check for quote
-  if (quote) {
-    const tmCheck = await TrademarkService.checkTrademarks([quote], 'en');
-    if (tmCheck.hasInfringementClass25) {
-      return res.status(400).json({
-        success: false,
-        rejected: true,
-        reason: 'TRADEMARK_INFRINGEMENT_CLASS_25',
-        message: 'Quote rejected due to active Class 25 trademark. Please generate a new quote.',
-        hits: tmCheck.hits
-      });
-    }
-  }
-
-  const newTask: TaskItem = {
-    id: `task-${Date.now()}`,
-    prompt: prompt || `T-shirt graphic design of ${quote}`,
-    quote: quote || '',
-    title: title || quote || `${niche1 || 'Hermes'} Design`,
-    imageUrl: `https://picsum.photos/seed/${Date.now()}/800/800`,
-    source: 'Hermes Agent Webhook',
-    createdAt: new Date().toISOString(),
-    audience: 'Men, Women',
-    avoidColor: 'None',
-    reuseBackground: 'Nein',
-    aiPrediction: {
-      audience: 'Men, Women',
-      avoidColor: 'None',
-      reuseBackground: 'Nein',
-      confidence: '96%',
-      title: title || 'Custom Graphic Tee',
-      brand: brand || 'Hermes Apparel',
-      bullet1: bullet1 || 'Unique graphic design for casual styling.',
-      bullet2: bullet2 || 'Great gift idea for holidays and special occasions.',
-      description: description || 'High quality merchandise apparel.'
-    }
-  };
-
-  activeTasks.unshift(newTask);
-  broadcast('TASK_CREATED', newTask);
+  broadcast('TASK_LOG_CREATED', taskLog);
 
   res.status(200).json({
     success: true,
-    message: 'Task accepted, pre-TM check passed, and queued.',
-    taskId: newTask.id
+    message: 'Task accepted and queued.',
+    taskId: taskLog.id
   });
 });
 
@@ -1069,7 +966,7 @@ app.all(['/api/v1/mcp/ping', '/api/v1/mcp/heartbeat'], (req, res) => {
     authConfigured: Boolean(settings.mcpApiKey),
     serverTime: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
-    activeTasksCount: activeTasks.length,
+    activeTasksCount: TaskLogService.getAwaitingTasks().length,
     uploadQueueCount: uploadQueue.length,
     heartbeat: {
       lastPingTime: hermesHeartbeat.lastPingTime,
