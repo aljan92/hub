@@ -1179,6 +1179,25 @@ export const PromptLogView: React.FC = () => {
                                 ))}
                               </div>
 
+                              {/* TM Safety Badge in Listing Card */}
+                              {selectedTask.trademarkRefineResult?.verdict === 'APPROVED' && (
+                                <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-300 flex items-center justify-between">
+                                  <span className="flex items-center gap-1.5 font-bold">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                    USPTO geprüft &amp; bereinigt: Bekleidung ist FREIGEGEBEN ✓
+                                  </span>
+                                  {Array.isArray(selectedTask.trademarkRefineResult.blockedProducts) && selectedTask.trademarkRefineResult.blockedProducts.length > 0 ? (
+                                    <span className="text-amber-400 font-mono font-medium">
+                                      ⚠️ {selectedTask.trademarkRefineResult.blockedProducts.length} Nebenprodukt(e) gesperrt
+                                    </span>
+                                  ) : (
+                                    <span className="text-emerald-400 font-mono font-medium">
+                                      100% frei für alle Produkte
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
                               {langListing ? (
                                 <div className="space-y-3 text-xs">
                                   {/* Brand */}
@@ -1428,25 +1447,75 @@ export const PromptLogView: React.FC = () => {
                               </div>
 
                               {isApproved ? (
-                                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-2 text-xs">
-                                  <span className="font-bold text-slate-300 block">Vorgenommene Prüfungen &amp; Anpassungen:</span>
-                                  {Array.isArray(refine.actions_taken) && refine.actions_taken.length > 0 ? (
-                                    <ul className="space-y-1">
-                                      {refine.actions_taken.map((act: string, i: number) => (
-                                        <li key={i} className="text-slate-300 flex items-start space-x-1.5">
-                                          <span className="text-emerald-400 font-bold">•</span>
-                                          <span>{act}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p className="text-slate-400">Keine Textänderungen erforderlich – gefundene Begriffe sind als beschreibender Fair Use freigegeben.</p>
+                                <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800/80 space-y-3 text-xs">
+                                  {/* Product safety status */}
+                                  <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <span className="font-bold text-slate-300">Produkt-Freigabestatus:</span>
+                                    {Array.isArray(refine.blockedProducts) && refine.blockedProducts.length > 0 ? (
+                                      <div className="flex flex-col items-end gap-1">
+                                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                                          ✓ Bekleidung ist FREIGEGEBEN
+                                        </span>
+                                        <span className="text-amber-400 text-[11px] font-medium">
+                                          ⚠️ {refine.blockedProducts.length} Nebenprodukt(e) gesperrt
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-emerald-400 font-bold flex items-center gap-1">
+                                        ✓ 100% Freigabe für ALLE Produkte (Bekleidung &amp; Accessoires)
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* List of blocked accessory products if any */}
+                                  {Array.isArray(refine.blockedProducts) && refine.blockedProducts.length > 0 && (
+                                    <div className="space-y-1.5 pt-1">
+                                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Gesperrte Produktarten (Schutzrecht-Kollision in Nebenklassen):</span>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {refine.blockedProducts.map((prod: string, pIdx: number) => {
+                                          const prodLabel = prod
+                                            .replace(/_/g, ' ')
+                                            .replace('POPSOCKET', 'PopSockets (Grip)')
+                                            .replace('PHONE CASE APPLE IPHONE', 'iPhone Cases')
+                                            .replace('PHONE CASE SAMSUNG GALAXY', 'Samsung Cases')
+                                            .replace('MUG', 'Kaffeetassen (Mugs)')
+                                            .replace('TUMBLER', 'Tumbler')
+                                            .replace('THROW PILLOW', 'Kissen (Pillows)')
+                                            .replace('TOTE BAG', 'Tragetaschen (Tote Bags)');
+                                          return (
+                                            <span key={pIdx} className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                                              ✕ {prodLabel}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
                                   )}
+
+                                  {/* Actions taken by AI */}
+                                  <div className="space-y-1.5 pt-1 border-t border-slate-900">
+                                    <span className="font-bold text-slate-300 block">Vorgenommene Prüfungen &amp; Text-Anpassungen:</span>
+                                    {Array.isArray(refine.actions_taken) && refine.actions_taken.length > 0 ? (
+                                      <ul className="space-y-1">
+                                        {refine.actions_taken.map((act: string, i: number) => (
+                                          <li key={i} className="text-slate-300 flex items-start space-x-1.5">
+                                            <span className="text-emerald-400 font-bold">•</span>
+                                            <span>{act}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <p className="text-slate-400">Keine Textänderungen erforderlich – gefundene Begriffe sind als beschreibender Fair Use freigegeben.</p>
+                                    )}
+                                  </div>
                                 </div>
                               ) : (
-                                <div className="bg-rose-950/20 p-3 rounded-xl border border-rose-500/30 space-y-1 text-xs text-rose-300">
-                                  <span className="font-bold text-rose-200 block">Begründung für die Ablehnung:</span>
-                                  <p>{refine?.rejection_reason || 'Die Quote oder das Design verletzt aktive Schutzrechte in Nizza-Klasse 25.'}</p>
+                                <div className="bg-rose-950/20 p-3.5 rounded-xl border border-rose-500/30 space-y-2 text-xs text-rose-300">
+                                  <div className="flex items-center justify-between font-bold text-rose-200">
+                                    <span>Status: KOMPLETT GESPERRT / ABGELEHNT</span>
+                                    <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px]">Alle Produkte blockiert</span>
+                                  </div>
+                                  <p className="leading-relaxed">{refine?.rejection_reason || 'Die Quote oder das Design verletzt aktive Schutzrechte in Nizza-Klasse 25.'}</p>
                                 </div>
                               )}
 

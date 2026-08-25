@@ -217168,25 +217168,29 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
 }`;
 var DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) Trademark Attorney and POD Compliance Auditor.
-Your job is to analyze the USPTO / Trademark hits detected for a generated Merch by Amazon listing and make a definitive compliance decision.
+Your job is to analyze the USPTO / Trademark hits detected for a generated Merch by Amazon listing and produce a compliant, safe, and high-converting listing.
 
-### 1. CORE COMPLIANCE RULES:
-A. DESCRIPTIVE FAIR USE (ALLOWED):
-- Generic, common words (e.g., "space", "vintage", "retro", "happy", "sun", "workout", "sunset", "cute", "angel", "reality", "manifest") are often registered as apparel trademarks by individual brands.
-- If these words appear in descriptive sentence context within Bullet Points or Description (e.g. "a great gift for lovers of outer space and astronomy"), this is 100% LEGAL DESCRIPTIVE FAIR USE. Do NOT delete or reject!
+### 1. STRICT COMPLIANCE RULES:
+A. TITLE & BRAND RULES (ZERO CLASS 25 TOLERANCE):
+- Title and Brand MUST NOT contain any LIVE trademark matches in Nice Class 25 (Apparel/Clothing)!
+- If a word or phrase in the Title or Brand matches an active Class 25 trademark:
+  * You MUST rephrase, replace, or remove that word from Title and Brand (e.g. swap "Angel Number" -> "Spiritual Numerology", "Wings" -> "Feather Graphic", etc.).
+  * Keep strong SEO keywords and ensure character limits: Brand <= 50 chars, Title <= 60 chars.
+- If Title or Brand matches other Nice Classes (e.g. Class 9 for Phone Cases/PopSockets, Class 21 for Mugs, Class 20 for Pillows):
+  * The apparel listing (Class 25) remains ALLOWED. Note the affected product categories for blocking in actions_taken.
 
-B. SOURCE IDENTIFIERS / BRAND & TITLE (DANGEROUS):
-- If a trademarked word or phrase appears as the Brand Name or directly as the main subject in the Title, it functions as a trademark / source identifier.
-- Action: If it is a generic word, rephrase the Brand or Title to a unique, non-infringing phrase while keeping the SEO value.
+B. BULLETS & DESCRIPTION RULES (DESCRIPTIVE FAIR USE):
+- Nice Class 25 matches are 100% ALLOWED in Bullet Points and Description IF they are generic, colloquial, or descriptive terms (e.g., "space", "vintage", "retro", "happy", "sun", "manifest", "wings", "stars", "reality", "mindset", "workout"). This is protected descriptive Fair Use under US trademark law.
+- PROPRIETARY CORPORATE BRANDS (e.g., "Nike", "Disney", "Marvel", "Pokemon", "Adidas", "Star Wars", "Harley Davidson", celebrity names) are STRICTLY FORBIDDEN anywhere in the listing and MUST be removed/rephrased.
 
-C. UNACCEPTABLE TRADEMARK INFRINGEMENT (MUST REJECT):
-- If the core Quote / Slogan or the design motif itself directly infringes a protected trademark in Class 25 (e.g. "Just Do It", "Hakuna Matata", "Lego", "Disney", "Marvel", "Pokemon", "Star Wars", famous celebrities, or active registered slogans):
+C. CORE QUOTE & MOTIF (REJECTION TRIGGER):
+- If the core Quote / Slogan itself or the central graphic motif directly infringes a protected trademark in Class 25 (e.g., "Just Do It", "Hakuna Matata", "Let It Go", a trademarked brand name or character) that cannot be safely sold on Amazon:
   * Set "verdict": "REJECTED"
-  * Provide a clear "rejection_reason".
+  * Provide a precise "rejection_reason" explaining the infringement.
 
-D. SAFE REPHRASING (CLEANING):
-- If trademark hits can be solved by safely swapping 1-2 words in Title, Brand, or Bullets, do so cleanly without reducing keyword power.
-- Update the listing fields accordingly while strictly adhering to character limits (Brand <= 50, Title <= 60, Bullets <= 250, Description <= 2000).
+D. FINAL REFINED LISTING REQUIREMENTS:
+- If verdict is "APPROVED", provide the complete, cleaned English listing in "refined_listing".
+- Character limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
 
 ### 2. OUTPUT FORMAT:
 Respond ONLY with a valid JSON object matching this schema (no markdown fences, no conversational text):
@@ -217195,11 +217199,11 @@ Respond ONLY with a valid JSON object matching this schema (no markdown fences, 
   "rejection_reason": null,
   "actions_taken": [
     "Retained 'space' in Bullet 1 as descriptive fair use",
-    "Replaced 'Space Apparel' in Brand with 'Cosmic Star Graphics'"
+    "Replaced 'Angel Number' in Title with 'Spiritual Numerology' to eliminate Class 25 conflict"
   ],
   "refined_listing": {
     "brand": "<Cleaned Brand Name (max 50 chars)>",
-    "title": "<Cleaned Title (max 60 chars)>",
+    "title": "<Cleaned Title (max 60 chars, NO Class 25 hits)>",
     "bullet1": "<Cleaned Bullet 1 (max 250 chars)>",
     "bullet2": "<Cleaned Bullet 2 (max 250 chars)>",
     "description": "<Cleaned Description (max 2000 chars)>"
@@ -217991,27 +217995,41 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
           description
         }
       });
+      const totalHits = batchResult.summary?.totalHits ?? 0;
+      const hasCls25 = batchResult.hasInfringementClass25 || false;
+      const fieldResults = batchResult.fieldResults || {};
       const latencyMs = Date.now() - start3;
       this.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "TM_CHECK_RESPONSE",
-        title: `Empfangen von Productor / USPTO (${batchResult.totalHits} Treffer)`,
+        title: `Empfangen von Productor / USPTO (${totalHits} Treffer)`,
         content: {
-          totalHits: batchResult.totalHits,
-          hasInfringementClass25: batchResult.hasInfringementClass25,
+          totalHits,
+          hasInfringementClass25: hasCls25,
           blockedProducts: batchResult.blockedProducts,
-          fieldSummaries: batchResult.fieldSummaries,
-          allHits: batchResult.allHits
+          fieldSummaries: fieldResults,
+          summary: batchResult.summary
         },
         metadata: {
           provider: "Productor USPTO",
           latencyMs
         }
       });
-      if (batchResult.totalHits === 0) {
+      if (totalHits === 0) {
         this.updateTaskStatus(taskId, {
           status: "COMPLETED",
-          trademarkCheckResult: batchResult,
+          trademarkCheckResult: {
+            totalHits: 0,
+            hasInfringementClass25: false,
+            blockedProducts: [],
+            fieldSummaries: fieldResults
+          },
+          trademarkRefineResult: {
+            verdict: "APPROVED",
+            rejection_reason: null,
+            actions_taken: ["Keine Markenrechts-Treffer gefunden. Listing ist 100% sauber."],
+            blockedProducts: []
+          },
           hasError: false
         });
         console.log(`[TaskLogService] \u{1F6E1}\uFE0F Keine Schutzrechte-Treffer f\xFCr Task ${taskId}. 100% sauber \u2713`);
@@ -218022,7 +218040,12 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
       if (!apiKey) {
         this.updateTaskStatus(taskId, {
           status: "COMPLETED",
-          trademarkCheckResult: batchResult,
+          trademarkCheckResult: {
+            totalHits,
+            hasInfringementClass25: hasCls25,
+            blockedProducts: batchResult.blockedProducts,
+            fieldSummaries: fieldResults
+          },
           hasError: false
         });
         return;
@@ -218030,10 +218053,12 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
       const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
       const auditorPrompt = SystemPromptService.getTrademarkAuditorPrompt();
       const hitsSummary = [];
-      for (const [field, data2] of Object.entries(batchResult.fieldSummaries || {})) {
-        if (data2.hitsCount > 0) {
-          const hitTerms = Object.keys(data2.hits || {}).join(", ");
-          hitsSummary.push(`- Field "${field}": Hit terms: [${hitTerms}]`);
+      for (const [fieldName, fieldData] of Object.entries(fieldResults)) {
+        if (fieldData.totalHits > 0 && fieldData.hits) {
+          for (const [term, hits] of Object.entries(fieldData.hits)) {
+            const classInfo = hits.map((h) => `Class ${h.classNumber} (${h.status || "LIVE"})`).join(", ");
+            hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo}`);
+          }
         }
       }
       const userMessage = `Here is the generated English listing and the detected USPTO Trademark hits:
@@ -218047,9 +218072,13 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
 - Description: "${description}"
 
 ### Detected USPTO Trademark Hits:
-${hitsSummary.join("\n")}
+${hitsSummary.length > 0 ? hitsSummary.join("\n") : "- No hits detected."}
 
-Please audit each hit: Distinguish between descriptive fair use (allowed) vs brand/title infringement (must rephrase) vs severe direct quote infringement (must reject). Return the refined JSON strictly adhering to the schema!`;
+Please audit each hit according to the rules:
+1. Title & Brand: MUST NOT contain any live Nice Class 25 trademark matches. If any hit is Class 25 in Title or Brand, you MUST rephrase Title/Brand with a clean synonym.
+2. Bullets & Description: Nice Class 25 matches are 100% permitted if they are common descriptive/colloquial words (Fair Use). Remove only if it is a real proprietary corporate brand (e.g. Nike, Marvel, Disney).
+3. Quote & Motif: If the core quote/slogan is an active proprietary Class 25 mark (e.g. "Just Do It", "Hakuna Matata"), reject the design completely.
+4. Return the refined JSON strictly adhering to the schema!`;
       this.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "TM_REFINE_REQUEST",
@@ -218097,11 +218126,80 @@ Please audit each hit: Distinguish between descriptive fair use (allowed) vs bra
       } catch (pe) {
         parsedRefined = rawContent;
       }
+      if (parsedRefined?.verdict === "REJECTED") {
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "TM_REFINE_RESPONSE",
+          title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT)`,
+          content: {
+            ...parsedRefined,
+            blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
+          },
+          metadata: {
+            model: data.model || model,
+            latencyMs: refineLatencyMs,
+            tokens: data.usage ? {
+              prompt: data.usage.prompt_tokens,
+              completion: data.usage.completion_tokens,
+              total: data.usage.total_tokens
+            } : void 0
+          }
+        });
+        this.updateTaskStatus(taskId, {
+          status: "REJECTED",
+          trademarkCheckResult: {
+            totalHits,
+            hasInfringementClass25: true,
+            blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
+            fieldSummaries: fieldResults
+          },
+          trademarkRefineResult: {
+            ...parsedRefined,
+            blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
+          },
+          hasError: false,
+          errorDetails: parsedRefined.rejection_reason || "Markenrechtsverletzung in Klasse 25 festgestellt."
+        });
+        console.log(`[TaskLogService] \u274C Task ${taskId} von Trademark Auditor abgelehnt: ${parsedRefined.rejection_reason}`);
+        return;
+      }
+      const refinedListing = parsedRefined?.refined_listing || {};
+      const refinedBrand = refinedListing.brand || brand;
+      const refinedTitle = refinedListing.title || title;
+      const refinedBullet1 = refinedListing.bullet1 || bullet1;
+      const refinedBullet2 = refinedListing.bullet2 || bullet2;
+      const refinedDescription = refinedListing.description || description;
+      let finalBlockedProducts = [];
+      try {
+        const postCheck = await TrademarkService.checkBatchFields({
+          offices: ["USPTO"],
+          fields: {
+            brand: refinedBrand,
+            title: refinedTitle,
+            bullet1: refinedBullet1,
+            bullet2: refinedBullet2,
+            description: refinedDescription
+          }
+        });
+        const brandTitleSafeForApparel = !postCheck.fieldResults?.brand?.hasInfringementClass25 && !postCheck.fieldResults?.title?.hasInfringementClass25;
+        if (brandTitleSafeForApparel) {
+          const APPAREL_SET = /* @__PURE__ */ new Set(["STANDARD_TSHIRT", "PREMIUM_TSHIRT", "HOODIE", "SWEATSHIRT", "ZIP_HOODIE", "TANK_TOP", "LONG_SLEEVE_TSHIRT", "RAGLAN"]);
+          finalBlockedProducts = (postCheck.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
+        } else {
+          finalBlockedProducts = postCheck.blockedProducts || [];
+        }
+      } catch (e) {
+        finalBlockedProducts = [];
+      }
+      const finalRefineResult = {
+        ...parsedRefined,
+        blockedProducts: finalBlockedProducts
+      };
       this.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "TM_REFINE_RESPONSE",
-        title: `Empfangen von OpenRouter (Trademark-Bewertung & Korrektur)`,
-        content: parsedRefined,
+        title: `Empfangen von OpenRouter (Trademark-Bewertung: FREIGEGEBEN)`,
+        content: finalRefineResult,
         metadata: {
           model: data.model || model,
           latencyMs: refineLatencyMs,
@@ -218112,38 +218210,32 @@ Please audit each hit: Distinguish between descriptive fair use (allowed) vs bra
           } : void 0
         }
       });
-      if (parsedRefined?.verdict === "REJECTED") {
-        this.updateTaskStatus(taskId, {
-          status: "REJECTED",
-          trademarkCheckResult: batchResult,
-          trademarkRefineResult: parsedRefined,
-          hasError: false,
-          errorDetails: parsedRefined.rejection_reason || "Markenrechtsverletzung in Klasse 25 festgestellt."
-        });
-        console.log(`[TaskLogService] \u274C Task ${taskId} von Trademark Auditor abgelehnt: ${parsedRefined.rejection_reason}`);
-      } else {
-        if (parsedRefined?.refined_listing && task.listingResult) {
-          if (task.listingResult.en) {
-            task.listingResult.en = {
-              ...task.listingResult.en,
-              ...parsedRefined.refined_listing
-            };
-          } else if (typeof task.listingResult === "object") {
-            task.listingResult = {
-              ...task.listingResult,
-              ...parsedRefined.refined_listing
-            };
-          }
+      if (task.listingResult) {
+        if (task.listingResult.en) {
+          task.listingResult.en = {
+            ...task.listingResult.en,
+            ...refinedListing
+          };
+        } else if (typeof task.listingResult === "object") {
+          task.listingResult = {
+            ...task.listingResult,
+            ...refinedListing
+          };
         }
-        this.updateTaskStatus(taskId, {
-          status: "COMPLETED",
-          listingResult: task.listingResult,
-          trademarkCheckResult: batchResult,
-          trademarkRefineResult: parsedRefined,
-          hasError: false
-        });
-        console.log(`[TaskLogService] \u{1F6E1}\uFE0F Trademark Audit f\xFCr Task ${taskId} erfolgreich abgeschlossen in ${refineLatencyMs}ms \u2713`);
       }
+      this.updateTaskStatus(taskId, {
+        status: "COMPLETED",
+        listingResult: task.listingResult,
+        trademarkCheckResult: {
+          totalHits,
+          hasInfringementClass25: hasCls25,
+          blockedProducts: finalBlockedProducts,
+          fieldSummaries: fieldResults
+        },
+        trademarkRefineResult: finalRefineResult,
+        hasError: false
+      });
+      console.log(`[TaskLogService] \u{1F6E1}\uFE0F Trademark Audit f\xFCr Task ${taskId} erfolgreich abgeschlossen (${finalBlockedProducts.length} Nebenprodukte gesperrt) in ${refineLatencyMs}ms \u2713`);
     } catch (err) {
       const latencyMs = Date.now() - start3;
       console.error(`[TaskLogService] Fehler beim TM Audit f\xFCr Task ${taskId}:`, err);

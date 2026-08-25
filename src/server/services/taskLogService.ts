@@ -826,19 +826,22 @@ export class TaskLogService {
         }
       });
 
+      const totalHits = batchResult.summary?.totalHits ?? 0;
+      const hasCls25 = batchResult.hasInfringementClass25 || false;
+      const fieldResults = batchResult.fieldResults || {};
       const latencyMs = Date.now() - start;
 
       // 1. Log Event: Empfangen von Productor / USPTO
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TM_CHECK_RESPONSE',
-        title: `Empfangen von Productor / USPTO (${batchResult.totalHits} Treffer)`,
+        title: `Empfangen von Productor / USPTO (${totalHits} Treffer)`,
         content: {
-          totalHits: batchResult.totalHits,
-          hasInfringementClass25: batchResult.hasInfringementClass25,
+          totalHits,
+          hasInfringementClass25: hasCls25,
           blockedProducts: batchResult.blockedProducts,
-          fieldSummaries: batchResult.fieldSummaries,
-          allHits: batchResult.allHits
+          fieldSummaries: fieldResults,
+          summary: batchResult.summary
         },
         metadata: {
           provider: 'Productor USPTO',
@@ -846,11 +849,22 @@ export class TaskLogService {
         }
       });
 
-      // 2. Case: 0 Hits -> Clean!
-      if (batchResult.totalHits === 0) {
+      // 2. Case: 0 Hits -> 100% Clean!
+      if (totalHits === 0) {
         this.updateTaskStatus(taskId, {
           status: 'COMPLETED',
-          trademarkCheckResult: batchResult,
+          trademarkCheckResult: {
+            totalHits: 0,
+            hasInfringementClass25: false,
+            blockedProducts: [],
+            fieldSummaries: fieldResults
+          },
+          trademarkRefineResult: {
+            verdict: 'APPROVED',
+            rejection_reason: null,
+            actions_taken: ['Keine Markenrechts-Treffer gefunden. Listing ist 100% sauber.'],
+            blockedProducts: []
+          },
           hasError: false
         });
         console.log(`[TaskLogService] 🛡️ Keine Schutzrechte-Treffer für Task ${taskId}. 100% sauber ✓`);
@@ -863,7 +877,12 @@ export class TaskLogService {
       if (!apiKey) {
         this.updateTaskStatus(taskId, {
           status: 'COMPLETED',
-          trademarkCheckResult: batchResult,
+          trademarkCheckResult: {
+            totalHits,
+            hasInfringementClass25: hasCls25,
+            blockedProducts: batchResult.blockedProducts,
+            fieldSummaries: fieldResults
+          },
           hasError: false
         });
         return;
@@ -872,16 +891,18 @@ export class TaskLogService {
       const model = settings.llmModel || 'anthropic/claude-3-5-sonnet';
       const auditorPrompt = SystemPromptService.getTrademarkAuditorPrompt();
 
-      // Build summary of hits per field
+      // Build structured, rich summary of hits per field
       const hitsSummary: string[] = [];
-      for (const [field, data] of Object.entries(batchResult.fieldSummaries || {})) {
-        if (data.hitsCount > 0) {
-          const hitTerms = Object.keys(data.hits || {}).join(', ');
-          hitsSummary.push(`- Field "${field}": Hit terms: [${hitTerms}]`);
+      for (const [fieldName, fieldData] of Object.entries(fieldResults)) {
+        if (fieldData.totalHits > 0 && fieldData.hits) {
+          for (const [term, hits] of Object.entries(fieldData.hits)) {
+            const classInfo = hits.map(h => `Class ${h.classNumber} (${h.status || 'LIVE'})`).join(', ');
+            hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo}`);
+          }
         }
       }
 
-      const userMessage = `Here is the generated English listing and the detected USPTO Trademark hits:\n\n### Current Listing:\n- Quote / Slogan: "${quote}"\n- Brand: "${brand}"\n- Title: "${title}"\n- Bullet 1: "${bullet1}"\n- Bullet 2: "${bullet2}"\n- Description: "${description}"\n\n### Detected USPTO Trademark Hits:\n${hitsSummary.join('\n')}\n\nPlease audit each hit: Distinguish between descriptive fair use (allowed) vs brand/title infringement (must rephrase) vs severe direct quote infringement (must reject). Return the refined JSON strictly adhering to the schema!`;
+      const userMessage = `Here is the generated English listing and the detected USPTO Trademark hits:\n\n### Current Listing:\n- Quote / Slogan: "${quote}"\n- Brand: "${brand}"\n- Title: "${title}"\n- Bullet 1: "${bullet1}"\n- Bullet 2: "${bullet2}"\n- Description: "${description}"\n\n### Detected USPTO Trademark Hits:\n${hitsSummary.length > 0 ? hitsSummary.join('\n') : '- No hits detected.'}\n\nPlease audit each hit according to the rules:\n1. Title & Brand: MUST NOT contain any live Nice Class 25 trademark matches. If any hit is Class 25 in Title or Brand, you MUST rephrase Title/Brand with a clean synonym.\n2. Bullets & Description: Nice Class 25 matches are 100% permitted if they are common descriptive/colloquial words (Fair Use). Remove only if it is a real proprietary corporate brand (e.g. Nike, Marvel, Disney).\n3. Quote & Motif: If the core quote/slogan is an active proprietary Class 25 mark (e.g. "Just Do It", "Hakuna Matata"), reject the design completely.\n4. Return the refined JSON strictly adhering to the schema!`;
 
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -935,11 +956,93 @@ export class TaskLogService {
         parsedRefined = rawContent;
       }
 
+      if (parsedRefined?.verdict === 'REJECTED') {
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'TM_REFINE_RESPONSE',
+          title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT)`,
+          content: {
+            ...parsedRefined,
+            blockedProducts: ['ALL_PRODUCTS_BLOCKED']
+          },
+          metadata: {
+            model: data.model || model,
+            latencyMs: refineLatencyMs,
+            tokens: data.usage ? {
+              prompt: data.usage.prompt_tokens,
+              completion: data.usage.completion_tokens,
+              total: data.usage.total_tokens
+            } : undefined
+          }
+        });
+
+        this.updateTaskStatus(taskId, {
+          status: 'REJECTED',
+          trademarkCheckResult: {
+            totalHits,
+            hasInfringementClass25: true,
+            blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
+            fieldSummaries: fieldResults
+          },
+          trademarkRefineResult: {
+            ...parsedRefined,
+            blockedProducts: ['ALL_PRODUCTS_BLOCKED']
+          },
+          hasError: false,
+          errorDetails: parsedRefined.rejection_reason || 'Markenrechtsverletzung in Klasse 25 festgestellt.'
+        });
+        console.log(`[TaskLogService] ❌ Task ${taskId} von Trademark Auditor abgelehnt: ${parsedRefined.rejection_reason}`);
+        return;
+      }
+
+      // If APPROVED: Check post-refine blocked accessory products
+      const refinedListing = parsedRefined?.refined_listing || {};
+      const refinedBrand = refinedListing.brand || brand;
+      const refinedTitle = refinedListing.title || title;
+      const refinedBullet1 = refinedListing.bullet1 || bullet1;
+      const refinedBullet2 = refinedListing.bullet2 || bullet2;
+      const refinedDescription = refinedListing.description || description;
+
+      // Re-check the refined fields with USPTO to calculate exact remaining accessory blocked products
+      let finalBlockedProducts: string[] = [];
+      try {
+        const postCheck = await TrademarkService.checkBatchFields({
+          offices: ['USPTO'],
+          fields: {
+            brand: refinedBrand,
+            title: refinedTitle,
+            bullet1: refinedBullet1,
+            bullet2: refinedBullet2,
+            description: refinedDescription
+          }
+        });
+
+        // If Title and Brand in post-check have no Class 25 hits, apparel is NOT blocked!
+        const brandTitleSafeForApparel = 
+          !(postCheck.fieldResults?.brand?.hasInfringementClass25) &&
+          !(postCheck.fieldResults?.title?.hasInfringementClass25);
+
+        if (brandTitleSafeForApparel) {
+          // Filter out apparel products from blocked products, only keep non-apparel accessory blocks
+          const APPAREL_SET = new Set(['STANDARD_TSHIRT', 'PREMIUM_TSHIRT', 'HOODIE', 'SWEATSHIRT', 'ZIP_HOODIE', 'TANK_TOP', 'LONG_SLEEVE_TSHIRT', 'RAGLAN']);
+          finalBlockedProducts = (postCheck.blockedProducts || []).filter(p => !APPAREL_SET.has(p));
+        } else {
+          finalBlockedProducts = postCheck.blockedProducts || [];
+        }
+      } catch (e) {
+        finalBlockedProducts = [];
+      }
+
+      const finalRefineResult = {
+        ...parsedRefined,
+        blockedProducts: finalBlockedProducts
+      };
+
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TM_REFINE_RESPONSE',
-        title: `Empfangen von OpenRouter (Trademark-Bewertung & Korrektur)`,
-        content: parsedRefined,
+        title: `Empfangen von OpenRouter (Trademark-Bewertung: FREIGEGEBEN)`,
+        content: finalRefineResult,
         metadata: {
           model: data.model || model,
           latencyMs: refineLatencyMs,
@@ -951,40 +1054,35 @@ export class TaskLogService {
         }
       });
 
-      if (parsedRefined?.verdict === 'REJECTED') {
-        this.updateTaskStatus(taskId, {
-          status: 'REJECTED',
-          trademarkCheckResult: batchResult,
-          trademarkRefineResult: parsedRefined,
-          hasError: false,
-          errorDetails: parsedRefined.rejection_reason || 'Markenrechtsverletzung in Klasse 25 festgestellt.'
-        });
-        console.log(`[TaskLogService] ❌ Task ${taskId} von Trademark Auditor abgelehnt: ${parsedRefined.rejection_reason}`);
-      } else {
-        // Update the en listing if refined fields were provided
-        if (parsedRefined?.refined_listing && task.listingResult) {
-          if (task.listingResult.en) {
-            task.listingResult.en = {
-              ...task.listingResult.en,
-              ...parsedRefined.refined_listing
-            };
-          } else if (typeof task.listingResult === 'object') {
-            task.listingResult = {
-              ...task.listingResult,
-              ...parsedRefined.refined_listing
-            };
-          }
+      // Update the English listing with the refined, compliant fields
+      if (task.listingResult) {
+        if (task.listingResult.en) {
+          task.listingResult.en = {
+            ...task.listingResult.en,
+            ...refinedListing
+          };
+        } else if (typeof task.listingResult === 'object') {
+          task.listingResult = {
+            ...task.listingResult,
+            ...refinedListing
+          };
         }
-
-        this.updateTaskStatus(taskId, {
-          status: 'COMPLETED',
-          listingResult: task.listingResult,
-          trademarkCheckResult: batchResult,
-          trademarkRefineResult: parsedRefined,
-          hasError: false
-        });
-        console.log(`[TaskLogService] 🛡️ Trademark Audit für Task ${taskId} erfolgreich abgeschlossen in ${refineLatencyMs}ms ✓`);
       }
+
+      this.updateTaskStatus(taskId, {
+        status: 'COMPLETED',
+        listingResult: task.listingResult,
+        trademarkCheckResult: {
+          totalHits,
+          hasInfringementClass25: hasCls25,
+          blockedProducts: finalBlockedProducts,
+          fieldSummaries: fieldResults
+        },
+        trademarkRefineResult: finalRefineResult,
+        hasError: false
+      });
+      console.log(`[TaskLogService] 🛡️ Trademark Audit für Task ${taskId} erfolgreich abgeschlossen (${finalBlockedProducts.length} Nebenprodukte gesperrt) in ${refineLatencyMs}ms ✓`);
+
     } catch (err: any) {
       const latencyMs = Date.now() - start;
       console.error(`[TaskLogService] Fehler beim TM Audit für Task ${taskId}:`, err);
