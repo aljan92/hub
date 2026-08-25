@@ -22,7 +22,12 @@ import {
   Image as ImageIcon,
   ExternalLink,
   Download,
-  Sliders
+  Sliders,
+  Eye,
+  Users,
+  Palette,
+  Scissors,
+  CheckSquare
 } from 'lucide-react';
 
 export type EventType = 
@@ -32,6 +37,8 @@ export type EventType =
   | 'LLM_RESPONSE'
   | 'IDEOGRAM_REQUEST'
   | 'IDEOGRAM_RESPONSE'
+  | 'ANALYSIS_REQUEST'
+  | 'ANALYSIS_RESPONSE'
   | 'ERROR';
 
 export interface SessionEvent {
@@ -57,7 +64,7 @@ export interface DesignTaskLog {
   counter: number;
   source: 'HERMES' | 'TEST' | 'DESIGNER';
   suffix: 'H' | 'T' | 'D';
-  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'COMPLETED' | 'ERROR';
+  status: 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'COMPLETED' | 'ERROR';
   receivedAt: string;
   clientIp?: string;
   payload: Record<string, any>;
@@ -65,6 +72,7 @@ export interface DesignTaskLog {
   resultPrompt?: string;
   imageUrl?: string;
   localImagePath?: string;
+  analysisResult?: any;
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -452,7 +460,7 @@ export const PromptLogView: React.FC = () => {
                   <div className="flex items-center justify-between pt-1 border-t border-slate-800/50 text-[10px]">
                     {task.status === 'PROCESSING' && (
                       <span className="text-amber-400 flex items-center gap-1 font-semibold animate-pulse">
-                        <Zap className="w-3 h-3" /> OpenRouter generiert...
+                        <Zap className="w-3 h-3" /> OpenRouter Prompt...
                       </span>
                     )}
                     {task.status === 'GENERATING_IMAGE' && (
@@ -460,9 +468,14 @@ export const PromptLogView: React.FC = () => {
                         <ImageIcon className="w-3 h-3" /> Ideogram generiert...
                       </span>
                     )}
+                    {task.status === 'ANALYZING_DESIGN' && (
+                      <span className="text-cyan-400 flex items-center gap-1 font-semibold animate-pulse">
+                        <Eye className="w-3 h-3" /> Analysiere Design...
+                      </span>
+                    )}
                     {task.status === 'COMPLETED' && (
                       <span className="text-emerald-400 flex items-center gap-1 font-semibold">
-                        <CheckCircle2 className="w-3 h-3" /> Design fertig ✓
+                        <CheckCircle2 className="w-3 h-3" /> Design &amp; Analyse fertig ✓
                       </span>
                     )}
                     {task.status === 'PROMPT_READY' && (
@@ -545,6 +558,10 @@ export const PromptLogView: React.FC = () => {
                         <div className={`absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full border-2 -translate-x-1/2 transition-colors ${
                           event.type === 'ERROR'
                             ? 'bg-rose-500 border-rose-900 ring-4 ring-rose-500/20'
+                            : event.type === 'ANALYSIS_RESPONSE'
+                            ? 'bg-emerald-400 border-emerald-950 ring-4 ring-emerald-400/25'
+                            : event.type === 'ANALYSIS_REQUEST'
+                            ? 'bg-cyan-400 border-cyan-950'
                             : event.type === 'IDEOGRAM_RESPONSE'
                             ? 'bg-purple-500 border-purple-950 ring-4 ring-purple-500/20'
                             : event.type === 'IDEOGRAM_REQUEST'
@@ -794,6 +811,172 @@ export const PromptLogView: React.FC = () => {
                             </div>
                           </div>
                         )}
+
+                        {/* Event: Senden an OpenRouter (Vision Design-Analyse) */}
+                        {event.type === 'ANALYSIS_REQUEST' && (
+                          <div className="bg-slate-950 rounded-xl p-3.5 border border-cyan-500/30 space-y-3">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-cyan-300">
+                              <span className="flex items-center gap-1.5">
+                                <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                                Vision-Anfrage an OpenRouter (Design &amp; Fragen):
+                              </span>
+                              <span className="font-mono text-slate-400">{event.metadata?.model}</span>
+                            </div>
+
+                            {/* System Prompt preview */}
+                            <details className="text-xs text-slate-400 group/details">
+                              <summary className="cursor-pointer font-semibold text-slate-300 hover:text-accent-cyan flex items-center gap-1">
+                                <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">vision system prompt</span>
+                                <span>Aktiver Analyse-Systemprompt (Klick zum Ausklappen)</span>
+                              </summary>
+                              <pre className="mt-2 p-2.5 bg-slate-900 rounded-lg text-[11px] text-slate-300 font-mono whitespace-pre-wrap border border-slate-800">
+                                {event.content.systemPrompt}
+                              </pre>
+                            </details>
+
+                            <div>
+                              <span className="text-[10px] font-semibold uppercase text-slate-400 block mb-1">User Message &amp; Bild:</span>
+                              <pre className="p-2.5 bg-slate-900 rounded-lg text-xs text-cyan-300 font-mono whitespace-pre-wrap border border-slate-800">
+                                {event.content.userMessage}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Event: Empfangen von OpenRouter (Design-Analyse & 4 Fragen Antworten) */}
+                        {event.type === 'ANALYSIS_RESPONSE' && (() => {
+                          const analysis = typeof event.content === 'object' && event.content !== null ? event.content : null;
+
+                          return (
+                            <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 border border-cyan-500/40 shadow-xl shadow-cyan-500/5 space-y-4">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                                  <CheckSquare className="w-4 h-4 text-cyan-400" />
+                                  Ergebnis der Design-Analyse (KI-Antworten)
+                                </span>
+                                <button
+                                  onClick={() => copyToClipboard(JSON.stringify(event.content, null, 2), `analysis-${idx}`)}
+                                  className="flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors"
+                                >
+                                  {copiedKey === `analysis-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                  <span>{copiedKey === `analysis-${idx}` ? 'Kopiert!' : 'JSON kopieren'}</span>
+                                </button>
+                              </div>
+
+                              {analysis ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                  {/* 1. Quote Check */}
+                                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-slate-300">1. Quote-Prüfung</span>
+                                      {analysis.quote_check?.quote_matches ? (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                          ✓ Quote korrekt
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                                          ✕ Fehler / Abweichung
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[11px] font-mono text-slate-400 space-y-0.5">
+                                      <div>Erwartet: <span className="text-slate-200">"{analysis.quote_check?.requested_quote || selectedTask.payload?.quote || '-'}"</span></div>
+                                      <div>Erkannt: <span className="text-cyan-300">"{analysis.quote_check?.detected_quote || '-'}"</span></div>
+                                      {analysis.quote_check?.quote_errors && (
+                                        <div className="text-rose-300">Hinweis: {analysis.quote_check.quote_errors}</div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* 2. Target Group */}
+                                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-slate-300 flex items-center gap-1">
+                                        <Users className="w-3.5 h-3.5 text-purple-400" />
+                                        2. Zielgruppe (Fit Types)
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                      {Array.isArray(analysis.target_group?.selected) && analysis.target_group.selected.length > 0 ? (
+                                        analysis.target_group.selected.map((tg: string, i: number) => (
+                                          <span key={i} className="px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-purple-950/60 text-purple-300 border border-purple-800/60">
+                                            {tg}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="text-slate-500 text-[11px]">Keine Angabe</span>
+                                      )}
+                                    </div>
+                                    {analysis.target_group?.reason && (
+                                      <p className="text-[11px] text-slate-400 leading-tight pt-1">{analysis.target_group.reason}</p>
+                                    )}
+                                  </div>
+
+                                  {/* 3. Avoid Product Colors */}
+                                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-slate-300 flex items-center gap-1">
+                                        <Palette className="w-3.5 h-3.5 text-amber-400" />
+                                        3. Zu vermeidende Farbe
+                                      </span>
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                        analysis.avoid_product_colors?.avoid === 'Schwarz'
+                                          ? 'bg-slate-900 text-slate-200 border-slate-700'
+                                          : analysis.avoid_product_colors?.avoid === 'Weiß'
+                                          ? 'bg-slate-100 text-slate-900 border-white'
+                                          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                      }`}>
+                                        Vermeiden: {analysis.avoid_product_colors?.avoid || 'Keine'}
+                                      </span>
+                                    </div>
+                                    {analysis.avoid_product_colors?.reason && (
+                                      <p className="text-[11px] text-slate-400 leading-tight">{analysis.avoid_product_colors.reason}</p>
+                                    )}
+                                  </div>
+
+                                  {/* 4. Background & Removal Mode */}
+                                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-slate-300 flex items-center gap-1">
+                                        <Scissors className="w-3.5 h-3.5 text-accent-cyan" />
+                                        4. Freistellung / Hintergrund
+                                      </span>
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                        analysis.background_analysis?.removal_mode === 'AUTOMATIC' || !analysis.background_analysis?.is_design_element
+                                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                          : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                                      }`}>
+                                        {analysis.background_analysis?.removal_mode === 'AUTOMATIC' || !analysis.background_analysis?.is_design_element ? '🤖 Auto-Freistellung' : '🖐️ Manuelle Freistellung'}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400">
+                                      {analysis.background_analysis?.background_color_detected && (
+                                        <div>Hintergrund: <span className="text-slate-200 font-mono">{analysis.background_analysis.background_color_detected}</span></div>
+                                      )}
+                                      {analysis.background_analysis?.reason && (
+                                        <p className="pt-0.5">{analysis.background_analysis.reason}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <pre className="p-3 bg-slate-950 rounded-xl text-xs text-slate-200 font-mono overflow-x-auto whitespace-pre-wrap border border-slate-800">
+                                  {typeof event.content === 'string' ? event.content : JSON.stringify(event.content, null, 2)}
+                                </pre>
+                              )}
+
+                              {/* Collapsible raw JSON */}
+                              <details className="text-[11px] text-slate-400">
+                                <summary className="cursor-pointer font-semibold text-slate-400 hover:text-accent-cyan">
+                                  Vollständiges Analyse-JSON anzeigen (Klick zum Aufklappen)
+                                </summary>
+                                <pre className="mt-1.5 p-2.5 bg-slate-950 rounded-lg text-cyan-300 font-mono text-[11px] border border-slate-800/80 overflow-x-auto">
+                                  {JSON.stringify(event.content, null, 2)}
+                                </pre>
+                              </details>
+                            </div>
+                          );
+                        })()}
 
                         {event.type === 'ERROR' && (
                           <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3.5 text-xs text-rose-300 flex items-start space-x-2">

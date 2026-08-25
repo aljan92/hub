@@ -6,7 +6,7 @@ import { IdeogramService } from './ideogramService';
 
 export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER';
 export type TaskSuffix = 'H' | 'T' | 'D';
-export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'COMPLETED' | 'ERROR';
+export type TaskStatus = 'RECEIVED' | 'PROCESSING' | 'PROMPT_READY' | 'GENERATING_IMAGE' | 'ANALYZING_DESIGN' | 'COMPLETED' | 'ERROR';
 
 export type EventType = 
   | 'INCOMING_PAYLOAD'
@@ -15,12 +15,14 @@ export type EventType =
   | 'LLM_RESPONSE'
   | 'IDEOGRAM_REQUEST'
   | 'IDEOGRAM_RESPONSE'
+  | 'ANALYSIS_REQUEST'
+  | 'ANALYSIS_RESPONSE'
   | 'ERROR';
 
 export interface SessionEvent {
   timestamp: string; // ISO String (z.B. "2026-08-25T13:05:12.123Z")
   type: EventType;
-  title: string;     // z.B. "Eingang von Hermes", "Senden an OpenRouter", "Senden an Ideogram", "Empfangen von Ideogram"
+  title: string;     // z.B. "Eingang von Hermes", "Senden an OpenRouter", "Senden an Ideogram", "Design-Analyse"
   content: any;
   metadata?: {
     model?: string;
@@ -48,6 +50,7 @@ export interface DesignTaskLog {
   resultPrompt?: string;
   imageUrl?: string;
   localImagePath?: string;
+  analysisResult?: any;
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -479,13 +482,16 @@ export class TaskLogService {
       });
 
       this.updateTaskStatus(taskId, {
-        status: 'COMPLETED',
+        status: 'ANALYZING_DESIGN',
         imageUrl: result.imageUrl,
         localImagePath: localUrl,
         hasError: false
       });
 
       console.log(`[TaskLogService] 🖼️ Ideogram Bild für Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+
+      // 5. Automatically trigger Vision Design Analysis & Verification
+      await this.analyzeDesignWithOpenRouter(taskId, localFilePath, result.imageUrl);
     } catch (err: any) {
       const latencyMs = Date.now() - start;
       const errorMsg = err.message || 'Fehler bei der Ideogram Bildgenerierung';
@@ -497,6 +503,146 @@ export class TaskLogService {
         metadata: { latencyMs, model }
       });
       this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: errorMsg });
+    }
+  }
+
+  /**
+   * Run Multimodal Vision Analysis on the generated design with OpenRouter
+   */
+  static async analyzeDesignWithOpenRouter(taskId: string, localFilePath: string, imageUrl: string) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) return;
+
+    const settings = loadSettings();
+    const apiKey = settings.openRouterApiKey;
+    if (!apiKey) {
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: 'Fehler: Kein OpenRouter API Key',
+        content: 'Für die Vision Design-Analyse wird ein OpenRouter API Key in den Settings benötigt.'
+      });
+      this.updateTaskStatus(taskId, { status: 'COMPLETED' });
+      return;
+    }
+
+    const analyzerPrompt = SystemPromptService.getDesignAnalyzerPrompt();
+    const quote = task.payload?.quote || '';
+    const niche = `${task.payload?.niche1 || ''} ${task.payload?.niche2 || ''}`.trim();
+    const ideogramPrompt = task.resultPrompt || '';
+
+    const userPromptText = `Bitte analysiere das folgende generierte Design:\n\n- Original Quote aus Input: "${quote}"\n- Original Nische: "${niche}"\n- Verwendeter Ideogram-Prompt: "${ideogramPrompt}"\n\nBeantworte die 4 Kernfragen streng als JSON!`;
+
+    // 1. Log Event: Senden an OpenRouter (Vision)
+    this.addEvent(taskId, {
+      timestamp: new Date().toISOString(),
+      type: 'ANALYSIS_REQUEST',
+      title: `Senden an OpenRouter (Vision Design-Analyse)`,
+      content: {
+        systemPrompt: analyzerPrompt,
+        userMessage: userPromptText,
+        quote,
+        niche
+      },
+      metadata: {
+        model: settings.llmModel || 'anthropic/claude-3.5-sonnet',
+        provider: 'OpenRouter Vision'
+      }
+    });
+
+    // Prepare image for vision model
+    let imageSource = imageUrl;
+    if (fs.existsSync(localFilePath)) {
+      try {
+        const buffer = fs.readFileSync(localFilePath);
+        imageSource = `data:image/png;base64,${buffer.toString('base64')}`;
+      } catch (e) {}
+    }
+
+    const model = settings.llmModel || 'anthropic/claude-3.5-sonnet';
+    const start = Date.now();
+
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://mba-hub.local',
+          'X-Title': 'MBA Hub Quality Assurance'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: analyzerPrompt },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: userPromptText },
+                { type: 'image_url', image_url: { url: imageSource } }
+              ]
+            }
+          ],
+          temperature: 0.1
+        }),
+        signal: AbortSignal.timeout(90000)
+      });
+
+      const latencyMs = Date.now() - start;
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`OpenRouter Vision Fehler (${res.status}): ${errText}`);
+      }
+
+      const data = await res.json();
+      const answer = data?.choices?.[0]?.message?.content || '';
+      const usage = data?.usage;
+
+      // Parse JSON
+      let cleanJsonStr = answer.trim();
+      if (cleanJsonStr.startsWith('```')) {
+        cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+      }
+
+      let parsedAnalysis: any = null;
+      try {
+        parsedAnalysis = JSON.parse(cleanJsonStr);
+      } catch (e) {
+        // Raw content fallback
+      }
+
+      // 2. Log Event: Empfangen von OpenRouter (Vision)
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ANALYSIS_RESPONSE',
+        title: `Empfangen von OpenRouter (Design-Analyse & Antworten)`,
+        content: parsedAnalysis || answer,
+        metadata: {
+          latencyMs,
+          model,
+          tokens: usage
+        }
+      });
+
+      this.updateTaskStatus(taskId, {
+        status: 'COMPLETED',
+        analysisResult: parsedAnalysis,
+        hasError: false
+      });
+
+      console.log(`[TaskLogService] 👁️ Vision Design-Analyse für Task ${taskId} erfolgreich in ${latencyMs}ms`);
+    } catch (err: any) {
+      const latencyMs = Date.now() - start;
+      const errorMsg = err.message || 'Fehler bei der Vision Design-Analyse';
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: 'Fehler bei Vision-Analyse',
+        content: errorMsg,
+        metadata: { latencyMs, model }
+      });
+      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
     }
   }
 

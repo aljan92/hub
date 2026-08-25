@@ -913,25 +913,35 @@ app.delete('/api/v1/tasks/log', (req, res) => {
   res.json({ success: true, message: 'All task logs cleared' });
 });
 
-// 8.2 System Prompts Management Endpoints
+// 8.1 System Prompts Settings
 app.get('/api/v1/systemprompts', (req, res) => {
+  const prompts = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
-    promptGenerator: SystemPromptService.getPromptGeneratorPrompt()
+    promptGenerator: prompts.promptGenerator,
+    designAnalyzer: prompts.designAnalyzer
   });
 });
 
 app.post('/api/v1/systemprompts', (req, res) => {
-  const { promptGenerator } = req.body;
-  if (typeof promptGenerator === 'string') {
-    SystemPromptService.savePromptGeneratorPrompt(promptGenerator);
-  }
-  res.json({ success: true, promptGenerator: SystemPromptService.getPromptGeneratorPrompt() });
+  const { promptGenerator, designAnalyzer } = req.body;
+  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer });
+  const updated = SystemPromptService.getAllPrompts();
+  res.json({
+    success: true,
+    promptGenerator: updated.promptGenerator,
+    designAnalyzer: updated.designAnalyzer
+  });
 });
 
 app.post('/api/v1/systemprompts/reset', (req, res) => {
-  const resetPrompt = SystemPromptService.resetToDefault();
-  res.json({ success: true, promptGenerator: resetPrompt });
+  const { type } = req.body;
+  const resetPrompts = SystemPromptService.resetToDefault(type || 'all');
+  res.json({
+    success: true,
+    promptGenerator: resetPrompts.promptGenerator,
+    designAnalyzer: resetPrompts.designAnalyzer
+  });
 });
 
 // 8.3 Design Image Serving Endpoint

@@ -217056,6 +217056,57 @@ CORE RULES:
 
 OUTPUT FORMAT:
 Output ONLY the raw, optimized image generation prompt text. Do not include introductory text, explanations, or quotes around the whole prompt.`;
+var DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT = `Du bist ein hochqualifizierter Art Director und POD (Print on Demand) Qualit\xE4tspr\xFCfer f\xFCr Merch by Amazon.
+Deine Aufgabe ist es, das generierte T-Shirt/Merch-Grafikdesign anhand der Vorgaben und der folgenden 4 Kernfragen pr\xE4zise zu analysieren:
+
+1. QUOTE- & TEXTPR\xDCFUNG:
+- Pr\xFCfe, ob der Text im Bild exakt mit der angeforderten Quote \xFCbereinstimmt.
+- Achte auf Rechtschreibfehler, fehlende oder doppelte Buchstaben, Tippfehler, unleserliche Schriftarten oder verzerrte Glyphen.
+- Wenn Fehler vorliegen oder der Text wesentlich abweicht, setze "quote_matches" auf false und "regenerate_recommended" auf true.
+
+2. ZIELGRUPPE (FIT TYPES):
+- Bestimme die passenden Zielgruppen f\xFCr dieses Design: Auswahl aus ["Men", "Women", "Youth"].
+- Mehrfachauswahl ist ausdr\xFCcklich erw\xFCnscht (z.B. ["Men", "Women", "Youth"] f\xFCr allgemeine/s\xFC\xDFe Motive, ["Men", "Women"] f\xFCr typische Erwachsenen-Zitate).
+
+3. VERMEIDBARE PRODUKTFARBEN (KONTRAST):
+- Welche T-Shirt- bzw. Produkt-Grundfarben m\xFCssen vermieden werden, damit das Design optimal lesbar ist?
+- Optionen f\xFCr "avoid":
+  - "Schwarz": Wenn das Design \xFCberwiegend aus schwarzer/dunkler Schrift oder Elementen ohne wei\xDFe Outline besteht.
+  - "Wei\xDF": Wenn das Design \xFCberwiegend aus wei\xDFer/heller Schrift ohne dunkle Outline besteht.
+  - "Keine": Wenn das Design auf allen Textilfarben gut lesbar ist (z.B. dank Outlines/bunten Elementen).
+
+4. HINTERGRUND-ELEMENT & TRANSPARENZ:
+- Wird die Hintergrundfarbe aktiv als Design-Element verwendet (z.B. illustrierte Landschaft, Farbverlauf-Kreis, komplexe Szenerie)?
+- "is_design_element": true (Ja) oder false (Nein).
+- Wenn false ("Nein"), kann der Hintergrund automatisch transparent freigestellt werden.
+- Wenn true ("Ja"), muss die Freistellung manuell durch den User erfolgen.
+
+ANTWORTFORMAT:
+Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt in folgendem Format (kein Markdown-Codeblock, kein Begleittext):
+{
+  "quote_check": {
+    "requested_quote": "<Originale Quote aus dem Input>",
+    "detected_quote": "<Tats\xE4chlich im Bild erkannter Text>",
+    "quote_matches": true,
+    "quote_errors": null,
+    "regenerate_recommended": false
+  },
+  "target_group": {
+    "selected": ["Men", "Women", "Youth"],
+    "reason": "<Kurze deutsche Begr\xFCndung>"
+  },
+  "avoid_product_colors": {
+    "avoid": "Schwarz",
+    "reason": "<Kurze deutsche Begr\xFCndung zum Kontrast>"
+  },
+  "background_analysis": {
+    "is_design_element": false,
+    "background_color_detected": "<Erkannte Hintergrundfarbe>",
+    "removal_mode": "AUTOMATIC",
+    "reason": "<Kurze deutsche Begr\xFCndung>"
+  },
+  "overall_verdict": "APPROVED"
+}`;
 var SystemPromptService = class {
   static dataDir = import_path69.default.resolve(process.cwd(), "data");
   static promptFile = import_path69.default.resolve(process.cwd(), "data", "system_prompts.json");
@@ -217077,7 +217128,13 @@ var SystemPromptService = class {
       try {
         const fileContent = import_fs74.default.readFileSync(this.promptFile, "utf-8");
         this.cachedPrompts = JSON.parse(fileContent);
-        if (this.cachedPrompts && typeof this.cachedPrompts.promptGenerator === "string") {
+        if (this.cachedPrompts) {
+          if (!this.cachedPrompts.promptGenerator) {
+            this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
+          }
+          if (!this.cachedPrompts.designAnalyzer) {
+            this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+          }
           return this.cachedPrompts;
         }
       } catch (e) {
@@ -217085,7 +217142,8 @@ var SystemPromptService = class {
       }
     }
     this.cachedPrompts = {
-      promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT
+      promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
+      designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT
     };
     try {
       import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
@@ -217097,21 +217155,57 @@ var SystemPromptService = class {
     const prompts = this.loadPrompts();
     return prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
   }
-  static savePromptGeneratorPrompt(promptText) {
+  static getDesignAnalyzerPrompt() {
+    const prompts = this.loadPrompts();
+    return prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+  }
+  static getAllPrompts() {
+    const prompts = this.loadPrompts();
+    return {
+      promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
+      designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT
+    };
+  }
+  static savePrompts(updates) {
     this.ensureDataDir();
     const prompts = this.loadPrompts();
-    prompts.promptGenerator = promptText;
+    if (typeof updates.promptGenerator === "string") {
+      prompts.promptGenerator = updates.promptGenerator;
+    }
+    if (typeof updates.designAnalyzer === "string") {
+      prompts.designAnalyzer = updates.designAnalyzer;
+    }
     this.cachedPrompts = prompts;
     try {
       import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(prompts, null, 2), "utf-8");
-      console.log("[SystemPromptService] \u{1F4BE} Prompt Generator System-Prompt erfolgreich gespeichert.");
+      console.log("[SystemPromptService] \u{1F4BE} System-Prompts erfolgreich gespeichert.");
     } catch (e) {
       console.error("[SystemPromptService] Failed to save system_prompts.json:", e);
     }
   }
-  static resetToDefault() {
-    this.savePromptGeneratorPrompt(DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT);
-    return DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
+  static savePromptGeneratorPrompt(promptText) {
+    this.savePrompts({ promptGenerator: promptText });
+  }
+  static saveDesignAnalyzerPrompt(promptText) {
+    this.savePrompts({ designAnalyzer: promptText });
+  }
+  static resetToDefault(type3 = "all") {
+    const current = this.loadPrompts();
+    if (type3 === "promptGenerator" || type3 === "all") {
+      current.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
+    }
+    if (type3 === "designAnalyzer" || type3 === "all") {
+      current.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+    }
+    this.cachedPrompts = current;
+    try {
+      import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), "utf-8");
+    } catch (e) {
+    }
+    return {
+      promptGenerator: current.promptGenerator,
+      designAnalyzer: current.designAnalyzer
+    };
   }
 };
 
@@ -217475,12 +217569,13 @@ ${JSON.stringify(task.payload, null, 2)}`;
         }
       });
       this.updateTaskStatus(taskId, {
-        status: "COMPLETED",
+        status: "ANALYZING_DESIGN",
         imageUrl: result2.imageUrl,
         localImagePath: localUrl,
         hasError: false
       });
       console.log(`[TaskLogService] \u{1F5BC}\uFE0F Ideogram Bild f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+      await this.analyzeDesignWithOpenRouter(taskId, localFilePath, result2.imageUrl);
     } catch (err) {
       const latencyMs = Date.now() - start3;
       const errorMsg = err.message || "Fehler bei der Ideogram Bildgenerierung";
@@ -217492,6 +217587,132 @@ ${JSON.stringify(task.payload, null, 2)}`;
         metadata: { latencyMs, model }
       });
       this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: errorMsg });
+    }
+  }
+  /**
+   * Run Multimodal Vision Analysis on the generated design with OpenRouter
+   */
+  static async analyzeDesignWithOpenRouter(taskId, localFilePath, imageUrl) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) return;
+    const settings = loadSettings();
+    const apiKey = settings.openRouterApiKey;
+    if (!apiKey) {
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ERROR",
+        title: "Fehler: Kein OpenRouter API Key",
+        content: "F\xFCr die Vision Design-Analyse wird ein OpenRouter API Key in den Settings ben\xF6tigt."
+      });
+      this.updateTaskStatus(taskId, { status: "COMPLETED" });
+      return;
+    }
+    const analyzerPrompt = SystemPromptService.getDesignAnalyzerPrompt();
+    const quote5 = task.payload?.quote || "";
+    const niche = `${task.payload?.niche1 || ""} ${task.payload?.niche2 || ""}`.trim();
+    const ideogramPrompt = task.resultPrompt || "";
+    const userPromptText = `Bitte analysiere das folgende generierte Design:
+
+- Original Quote aus Input: "${quote5}"
+- Original Nische: "${niche}"
+- Verwendeter Ideogram-Prompt: "${ideogramPrompt}"
+
+Beantworte die 4 Kernfragen streng als JSON!`;
+    this.addEvent(taskId, {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "ANALYSIS_REQUEST",
+      title: `Senden an OpenRouter (Vision Design-Analyse)`,
+      content: {
+        systemPrompt: analyzerPrompt,
+        userMessage: userPromptText,
+        quote: quote5,
+        niche
+      },
+      metadata: {
+        model: settings.llmModel || "anthropic/claude-3.5-sonnet",
+        provider: "OpenRouter Vision"
+      }
+    });
+    let imageSource = imageUrl;
+    if (import_fs75.default.existsSync(localFilePath)) {
+      try {
+        const buffer = import_fs75.default.readFileSync(localFilePath);
+        imageSource = `data:image/png;base64,${buffer.toString("base64")}`;
+      } catch (e) {
+      }
+    }
+    const model = settings.llmModel || "anthropic/claude-3.5-sonnet";
+    const start3 = Date.now();
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey.trim()}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://mba-hub.local",
+          "X-Title": "MBA Hub Quality Assurance"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: analyzerPrompt },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: userPromptText },
+                { type: "image_url", image_url: { url: imageSource } }
+              ]
+            }
+          ],
+          temperature: 0.1
+        }),
+        signal: AbortSignal.timeout(9e4)
+      });
+      const latencyMs = Date.now() - start3;
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`OpenRouter Vision Fehler (${res.status}): ${errText}`);
+      }
+      const data = await res.json();
+      const answer = data?.choices?.[0]?.message?.content || "";
+      const usage = data?.usage;
+      let cleanJsonStr = answer.trim();
+      if (cleanJsonStr.startsWith("```")) {
+        cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      }
+      let parsedAnalysis = null;
+      try {
+        parsedAnalysis = JSON.parse(cleanJsonStr);
+      } catch (e) {
+      }
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ANALYSIS_RESPONSE",
+        title: `Empfangen von OpenRouter (Design-Analyse & Antworten)`,
+        content: parsedAnalysis || answer,
+        metadata: {
+          latencyMs,
+          model,
+          tokens: usage
+        }
+      });
+      this.updateTaskStatus(taskId, {
+        status: "COMPLETED",
+        analysisResult: parsedAnalysis,
+        hasError: false
+      });
+      console.log(`[TaskLogService] \u{1F441}\uFE0F Vision Design-Analyse f\xFCr Task ${taskId} erfolgreich in ${latencyMs}ms`);
+    } catch (err) {
+      const latencyMs = Date.now() - start3;
+      const errorMsg = err.message || "Fehler bei der Vision Design-Analyse";
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ERROR",
+        title: "Fehler bei Vision-Analyse",
+        content: errorMsg,
+        metadata: { latencyMs, model }
+      });
+      this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
     }
   }
   static getTaskLogs() {
@@ -218225,21 +218446,31 @@ app.delete("/api/v1/tasks/log", (req, res) => {
   res.json({ success: true, message: "All task logs cleared" });
 });
 app.get("/api/v1/systemprompts", (req, res) => {
+  const prompts = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
-    promptGenerator: SystemPromptService.getPromptGeneratorPrompt()
+    promptGenerator: prompts.promptGenerator,
+    designAnalyzer: prompts.designAnalyzer
   });
 });
 app.post("/api/v1/systemprompts", (req, res) => {
-  const { promptGenerator } = req.body;
-  if (typeof promptGenerator === "string") {
-    SystemPromptService.savePromptGeneratorPrompt(promptGenerator);
-  }
-  res.json({ success: true, promptGenerator: SystemPromptService.getPromptGeneratorPrompt() });
+  const { promptGenerator, designAnalyzer } = req.body;
+  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer });
+  const updated = SystemPromptService.getAllPrompts();
+  res.json({
+    success: true,
+    promptGenerator: updated.promptGenerator,
+    designAnalyzer: updated.designAnalyzer
+  });
 });
 app.post("/api/v1/systemprompts/reset", (req, res) => {
-  const resetPrompt = SystemPromptService.resetToDefault();
-  res.json({ success: true, promptGenerator: resetPrompt });
+  const { type: type3 } = req.body;
+  const resetPrompts = SystemPromptService.resetToDefault(type3 || "all");
+  res.json({
+    success: true,
+    promptGenerator: resetPrompts.promptGenerator,
+    designAnalyzer: resetPrompts.designAnalyzer
+  });
 });
 app.get("/api/v1/designs/image/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");

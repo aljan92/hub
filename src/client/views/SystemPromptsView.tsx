@@ -5,29 +5,34 @@ import {
   RotateCcw, 
   Check, 
   Sparkles, 
-  Info, 
-  Code2, 
-  FileText,
-  Clock
+  Eye, 
+  Clock, 
+  Layers,
+  HelpCircle
 } from 'lucide-react';
 
 export const SystemPromptsView: React.FC = () => {
-  const [promptText, setPromptText] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'promptGenerator' | 'designAnalyzer'>('promptGenerator');
+  
+  const [promptGeneratorText, setPromptGeneratorText] = useState<string>('');
+  const [designAnalyzerText, setDesignAnalyzerText] = useState<string>('');
+  
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [savedStatus, setSavedStatus] = useState<'SAVED' | 'SAVING' | 'IDLE'>('IDLE');
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
 
-  const promptRef = useRef(promptText);
-  promptRef.current = promptText;
+  const stateRef = useRef({ promptGenerator: promptGeneratorText, designAnalyzer: designAnalyzerText });
+  stateRef.current = { promptGenerator: promptGeneratorText, designAnalyzer: designAnalyzerText };
 
-  // 1. Load active system prompt from server
+  // 1. Load active system prompts from server
   useEffect(() => {
     fetch('/api/v1/systemprompts')
       .then(res => res.json())
       .then(data => {
-        if (data.success && typeof data.promptGenerator === 'string') {
-          setPromptText(data.promptGenerator);
+        if (data.success) {
+          if (typeof data.promptGenerator === 'string') setPromptGeneratorText(data.promptGenerator);
+          if (typeof data.designAnalyzer === 'string') setDesignAnalyzerText(data.designAnalyzer);
         }
       })
       .catch(err => console.error('Failed to load system prompts:', err))
@@ -35,11 +40,12 @@ export const SystemPromptsView: React.FC = () => {
 
     // Auto-save on component unmount (when leaving menu)
     return () => {
-      if (promptRef.current.trim()) {
+      const payload = stateRef.current;
+      if (payload.promptGenerator.trim() || payload.designAnalyzer.trim()) {
         fetch('/api/v1/systemprompts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ promptGenerator: promptRef.current }),
+          body: JSON.stringify(payload),
           keepalive: true
         }).catch(() => {});
       }
@@ -47,15 +53,19 @@ export const SystemPromptsView: React.FC = () => {
   }, []);
 
   // 2. Save function
-  const handleSave = async (textToSave?: string) => {
-    const text = textToSave !== undefined ? textToSave : promptText;
+  const handleSave = async (overrides?: { promptGenerator?: string; designAnalyzer?: string }) => {
+    const payload = {
+      promptGenerator: overrides?.promptGenerator !== undefined ? overrides.promptGenerator : promptGeneratorText,
+      designAnalyzer: overrides?.designAnalyzer !== undefined ? overrides.designAnalyzer : designAnalyzerText,
+    };
+
     setSaving(true);
     setSavedStatus('SAVING');
     try {
       const res = await fetch('/api/v1/systemprompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promptGenerator: text })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.success) {
@@ -64,7 +74,7 @@ export const SystemPromptsView: React.FC = () => {
         setTimeout(() => setSavedStatus('IDLE'), 3000);
       }
     } catch (err) {
-      console.error('Failed to save system prompt:', err);
+      console.error('Failed to save system prompts:', err);
     } finally {
       setSaving(false);
     }
@@ -72,13 +82,23 @@ export const SystemPromptsView: React.FC = () => {
 
   // 3. Reset to default
   const handleReset = async () => {
-    if (!confirm('Möchtest du den System-Prompt wirklich auf die Standardvorlage zurücksetzen?')) return;
+    const label = activeTab === 'promptGenerator' ? 'den Prompt Generator Prompt' : 'den Design-Analyse Prompt';
+    if (!confirm(`Möchtest du ${label} wirklich auf die Standardvorlage zurücksetzen?`)) return;
+    
     setSaving(true);
     try {
-      const res = await fetch('/api/v1/systemprompts/reset', { method: 'POST' });
+      const res = await fetch('/api/v1/systemprompts/reset', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: activeTab })
+      });
       const data = await res.json();
-      if (data.success && data.promptGenerator) {
-        setPromptText(data.promptGenerator);
+      if (data.success) {
+        if (activeTab === 'promptGenerator' && data.promptGenerator) {
+          setPromptGeneratorText(data.promptGenerator);
+        } else if (activeTab === 'designAnalyzer' && data.designAnalyzer) {
+          setDesignAnalyzerText(data.designAnalyzer);
+        }
         setSavedStatus('SAVED');
         setLastSavedTime(new Date().toLocaleTimeString());
       }
@@ -87,6 +107,16 @@ export const SystemPromptsView: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const currentText = activeTab === 'promptGenerator' ? promptGeneratorText : designAnalyzerText;
+  const setCurrentText = (val: string) => {
+    if (activeTab === 'promptGenerator') {
+      setPromptGeneratorText(val);
+    } else {
+      setDesignAnalyzerText(val);
+    }
+    setSavedStatus('IDLE');
   };
 
   return (
@@ -99,7 +129,7 @@ export const SystemPromptsView: React.FC = () => {
             Systemprompts &amp; Art Director
           </h2>
           <p className="text-sm text-slate-400">
-            Passe den System-Prompt für die automatische Ideogram-Prompt-Erstellung an. Wird beim Verlassen automatisch gespeichert.
+            Verwalte die System-Prompts für die Prompt-Erstellung und die nachfolgende Design-Analyse.
           </p>
         </div>
 
@@ -108,7 +138,7 @@ export const SystemPromptsView: React.FC = () => {
           {savedStatus === 'SAVED' && (
             <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-fadeIn">
               <Check className="w-3.5 h-3.5" />
-              <span>Automatisch gespeichert ✓ {lastSavedTime ? `(${lastSavedTime})` : ''}</span>
+              <span>Gespeichert ✓ {lastSavedTime ? `(${lastSavedTime})` : ''}</span>
             </div>
           )}
           {savedStatus === 'SAVING' && (
@@ -124,7 +154,7 @@ export const SystemPromptsView: React.FC = () => {
             className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all disabled:opacity-50"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Auf Standard zurücksetzen</span>
+            <span>Auf Standard</span>
           </button>
 
           <button
@@ -138,36 +168,77 @@ export const SystemPromptsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Tabs Navigation */}
+      <div className="flex border-b border-slate-800 space-x-2">
+        <button
+          onClick={() => setActiveTab('promptGenerator')}
+          className={`flex items-center space-x-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
+            activeTab === 'promptGenerator'
+              ? 'border-accent-cyan text-accent-cyan bg-slate-900/40 rounded-t-xl'
+              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/20 rounded-t-xl'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-purple-400" />
+          <span>1. Prompt Generator (Ideogram Prompt)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('designAnalyzer')}
+          className={`flex items-center space-x-2 px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
+            activeTab === 'designAnalyzer'
+              ? 'border-accent-cyan text-accent-cyan bg-slate-900/40 rounded-t-xl'
+              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/20 rounded-t-xl'
+          }`}
+        >
+          <Eye className="w-4 h-4 text-cyan-400" />
+          <span>2. Design-Analyse &amp; Questions (Vision QA)</span>
+        </button>
+      </div>
+
       {/* Big Prompt Editor Textarea */}
       <div className="glass-card p-5 rounded-2xl border border-slate-800 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Sparkles className="w-4 h-4 text-purple-400" />
-            <h3 className="text-sm font-bold text-slate-200">Prompt Generator (System-Prompt)</h3>
+            {activeTab === 'promptGenerator' ? (
+              <>
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <h3 className="text-sm font-bold text-slate-200">Prompt Generator (System-Prompt)</h3>
+              </>
+            ) : (
+              <>
+                <Eye className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-sm font-bold text-slate-200">Design-Analyse &amp; Fragen (Vision System-Prompt)</h3>
+              </>
+            )}
           </div>
           <span className="text-xs text-slate-500 font-mono">
-            {promptText.length} Zeichen • {promptText.split(/\s+/).filter(Boolean).length} Wörter
+            {currentText.length} Zeichen • {currentText.split(/\s+/).filter(Boolean).length} Wörter
           </span>
         </div>
 
         <div className="relative">
           <textarea
-            value={promptText}
-            onChange={e => {
-              setPromptText(e.target.value);
-              setSavedStatus('IDLE');
-            }}
+            value={currentText}
+            onChange={e => setCurrentText(e.target.value)}
             onBlur={() => handleSave()}
             disabled={loading}
             rows={18}
-            placeholder="Schreibe oder füge hier deinen System-Prompt ein..."
+            placeholder={
+              activeTab === 'promptGenerator'
+                ? 'Schreibe oder füge hier deinen System-Prompt für die Ideogram-Prompt-Erstellung ein...'
+                : 'Schreibe oder füge hier deinen System-Prompt für die Vision-Designanalyse und Fragen ein...'
+            }
             className="w-full bg-slate-950 text-slate-100 font-mono text-xs sm:text-sm leading-relaxed p-4 rounded-xl border border-slate-800 focus:outline-none focus:border-accent-cyan/80 focus:ring-1 focus:ring-accent-cyan/50 transition-all custom-scrollbar resize-y"
           />
         </div>
 
         <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
-          <span>Tipp: Der Text wird beim Verlassen der Seite oder Klick außerhalb des Textfelds automatisch gespeichert.</span>
-          <span className="text-slate-400 font-semibold">Tastenkürzel: Klick außerhalb = Auto-Save</span>
+          <span>
+            {activeTab === 'promptGenerator' 
+              ? 'Wird an OpenRouter übergeben, um das Hermes/Playground JSON in einen Ideogram-Prompt umzuwandeln.'
+              : 'Wird zusammen mit dem generierten Ideogram-Bild an OpenRouter übergeben, um Quote, Zielgruppe, Farben & Hintergrund zu analysieren.'}
+          </span>
+          <span className="text-slate-400 font-semibold">Tastenkürzel: Klick außerhalb / Tab-Wechsel = Auto-Save</span>
         </div>
       </div>
     </div>
