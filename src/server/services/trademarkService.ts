@@ -6,9 +6,10 @@ export interface TrademarkHit {
   trademark: string;
   term?: string;
   classNumber: string;
+  classes?: string[];
   status: string;
   registrationNumber?: string;
-  serialNumber?: string;
+  serialNumber?: string | number;
   goodsAndServices?: string;
   source: TrademarkOffice;
 }
@@ -173,6 +174,24 @@ export class TrademarkService {
   }
 
   /**
+   * Extract and normalize Nice Classification numbers (e.g. '041' -> '41', '009,042' -> ['9', '42'])
+   */
+  static extractNiceClasses(r: any): string[] {
+    if (!r) return [];
+    const raw = r.classification || r.Classification || r.classes || r.class_id || r.class || r.international_class || '';
+    if (!raw) return [];
+    
+    if (Array.isArray(raw)) {
+      return raw.map(c => String(c).replace(/^0+/, '').trim()).filter(Boolean);
+    }
+    
+    return String(raw)
+      .split(/[,;\s]+/)
+      .map(c => c.replace(/[^0-9]/g, '').replace(/^0+/, '').trim())
+      .filter(Boolean);
+  }
+
+  /**
    * Check if a trademark status string or code represents an active/live registered trademark
    * Strictly filters out PENDING, DEAD, ABANDONED, CANCELLED, EXPIRED, REFUSED
    */
@@ -200,6 +219,7 @@ export class TrademarkService {
       s.includes('LIVE') ||
       s.includes('REGISTERED') ||
       s.includes('ACTIVE') ||
+      s.includes('EINGETRAGEN') ||
       s === 'REG' ||
       s === '700' ||
       s === '701'
@@ -248,14 +268,16 @@ export class TrademarkService {
                 records.forEach((r: any) => {
                   const rawStatus = r.status || r.status_code || 'LIVE';
                   if (this.isLiveStatus(rawStatus)) {
+                    const classes = this.extractNiceClasses(r);
                     allHits[term] = allHits[term] || [];
                     allHits[term].push({
                       term,
                       trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
-                      classNumber: String(r.class_id || r.class || r.international_class || '25'),
+                      classNumber: classes.join(', ') || 'N/A',
+                      classes,
                       status: 'LIVE',
-                      registrationNumber: r.registration_number,
-                      serialNumber: r.serial_number,
+                      registrationNumber: r.registration_number || r.registration_date,
+                      serialNumber: r.serial_number || r.applicationNumber,
                       goodsAndServices: r.goods_and_services || r.goods_services,
                       source: 'USPTO'
                     });
@@ -292,14 +314,17 @@ export class TrademarkService {
             for (const [term, records] of Object.entries(data)) {
               if (Array.isArray(records) && records.length > 0) {
                 records.forEach((r: any) => {
-                  const rawStatus = r.status || 'LIVE';
+                  const rawStatus = r.markCurrentStatusCode || r.status || 'LIVE';
                   if (this.isLiveStatus(rawStatus)) {
+                    const classes = this.extractNiceClasses(r);
                     allHits[term] = allHits[term] || [];
                     allHits[term].push({
                       term,
                       trademark: r.trademark || r.mark_identification || term,
-                      classNumber: String(r.class_id || r.class || '25'),
+                      classNumber: classes.join(', ') || 'N/A',
+                      classes,
                       status: 'LIVE',
+                      serialNumber: r.applicationNumber,
                       source: 'EUIPO'
                     });
                   }
@@ -335,14 +360,17 @@ export class TrademarkService {
             for (const [term, records] of Object.entries(data)) {
               if (Array.isArray(records) && records.length > 0) {
                 records.forEach((r: any) => {
-                  const rawStatus = r.status || 'LIVE';
+                  const rawStatus = r.MarkCurrentStatusCode || r.status || 'LIVE';
                   if (this.isLiveStatus(rawStatus)) {
+                    const classes = this.extractNiceClasses(r);
                     allHits[term] = allHits[term] || [];
                     allHits[term].push({
                       term,
-                      trademark: r.trademark || term,
-                      classNumber: String(r.class_id || r.class || '25'),
+                      trademark: r.MarkVerbalElementText || r.trademark || term,
+                      classNumber: classes.join(', ') || 'N/A',
+                      classes,
                       status: 'LIVE',
+                      serialNumber: r.ApplicationNumber,
                       source: 'DPMA'
                     });
                   }
@@ -377,8 +405,11 @@ export class TrademarkService {
         if (!this.isLiveStatus(rec.status)) continue;
         totalHits++;
 
-        const cls = rec.classNumber;
-        if (cls === '25') {
+        const classes = (rec.classes && rec.classes.length > 0)
+          ? rec.classes
+          : this.extractNiceClasses({ classification: rec.classNumber });
+
+        if (classes.includes('25')) {
           hasInfringementClass25 = true;
           blockedProductsSet.add('STANDARD_TSHIRT');
           blockedProductsSet.add('PREMIUM_TSHIRT');
@@ -388,16 +419,20 @@ export class TrademarkService {
           blockedProductsSet.add('TANK_TOP');
           blockedProductsSet.add('LONG_SLEEVE_TSHIRT');
           blockedProductsSet.add('RAGLAN');
-        } else if (cls === '9') {
+        }
+        if (classes.includes('9')) {
           blockedProductsSet.add('POPSOCKET');
           blockedProductsSet.add('PHONE_CASE_APPLE_IPHONE');
           blockedProductsSet.add('PHONE_CASE_SAMSUNG_GALAXY');
-        } else if (cls === '21') {
+        }
+        if (classes.includes('21')) {
           blockedProductsSet.add('MUG');
           blockedProductsSet.add('TUMBLER');
-        } else if (cls === '20') {
+        }
+        if (classes.includes('20')) {
           blockedProductsSet.add('THROW_PILLOW');
-        } else if (cls === '8' || cls === '18') {
+        }
+        if (classes.includes('8') || classes.includes('18')) {
           blockedProductsSet.add('TOTE_BAG');
         }
       }

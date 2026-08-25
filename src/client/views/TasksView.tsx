@@ -92,8 +92,16 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
       {/* Word-by-Word Breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
         {termList.map(({ term, hits }, i) => {
-          const isK25 = hits.some(h => String(h.classNumber || h.class_id || h.class) === '25');
-          const classes = Array.from(new Set(hits.map(h => String(h.classNumber || h.class_id || h.class || '25')))).join(', ');
+          const isK25 = hits.some(h => {
+            const clsArr = (h.classes && h.classes.length > 0)
+              ? h.classes
+              : String(h.classNumber || '').split(/[,;\s]+/).map((c: string) => c.trim().replace(/^0+/, ''));
+            return clsArr.includes('25');
+          });
+          const classes = Array.from(new Set(hits.flatMap(h => {
+            if (h.classes && h.classes.length > 0) return h.classes;
+            return String(h.classNumber || '').split(/[,;\s]+/).map((c: string) => c.trim().replace(/^0+/, ''));
+          }))).filter(Boolean).join(', ') || 'N/A';
           const firstHit = hits[0] || {};
           const markName = firstHit.trademark || firstHit.wordmark || firstHit.mark || term;
           const status = firstHit.status || 'LIVE';
