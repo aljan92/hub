@@ -214334,24 +214334,25 @@ var TrademarkService = class {
     const settings = loadSettings();
     const start3 = Date.now();
     try {
-      const formData = new URLSearchParams();
-      formData.append("trademarks", JSON.stringify(["testquery"]));
+      const fd = new FormData();
+      fd.append("trademarks", JSON.stringify(["nike"]));
       const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
         method: "POST",
         headers: {
-          "Authorization": settings.productorUsptoAuth,
-          "Content-Type": "application/x-www-form-urlencoded"
+          "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
         },
-        body: formData.toString(),
+        body: fd,
         signal: AbortSignal.timeout(6e3)
       });
       const latencyMs = Date.now() - start3;
       if (res.ok) {
         return { success: true, latencyMs };
       }
-      return { success: false, latencyMs, error: `USPTO API responded with HTTP ${res.status}` };
+      return { success: false, latencyMs, error: `USPTO API antwortet mit HTTP ${res.status}` };
     } catch (err) {
-      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Connection timeout" };
+      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Verbindungs-Timeout" };
     }
   }
   /**
@@ -214419,19 +214420,23 @@ var TrademarkService = class {
     if (uniqueTerms.length === 0 || offices.length === 0) {
       return allHits;
     }
+    const defaultHeaders = {
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
+    };
     const promises = [];
     if (offices.includes("USPTO")) {
       promises.push((async () => {
         try {
-          const usptoFormData = new URLSearchParams();
-          usptoFormData.append("trademarks", JSON.stringify(uniqueTerms));
+          const usptoFd = new FormData();
+          usptoFd.append("trademarks", JSON.stringify(uniqueTerms));
           const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
             method: "POST",
             headers: {
-              "Authorization": settings.productorUsptoAuth,
-              "Content-Type": "application/x-www-form-urlencoded"
+              ...defaultHeaders,
+              "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
             },
-            body: usptoFormData.toString(),
+            body: usptoFd,
             signal: AbortSignal.timeout(9e3)
           });
           if (res.ok) {
@@ -214462,15 +214467,15 @@ var TrademarkService = class {
     if (offices.includes("EUIPO")) {
       promises.push((async () => {
         try {
-          const euFormData = new URLSearchParams();
-          euFormData.append("trademarks", JSON.stringify(uniqueTerms));
+          const euFd = new FormData();
+          euFd.append("trademarks", JSON.stringify(uniqueTerms));
           const res = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
             method: "POST",
             headers: {
-              "Authorization": settings.productorEuipoAuth,
-              "Content-Type": "application/x-www-form-urlencoded"
+              ...defaultHeaders,
+              "Authorization": settings.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
             },
-            body: euFormData.toString(),
+            body: euFd,
             signal: AbortSignal.timeout(9e3)
           });
           if (res.ok) {
@@ -214498,15 +214503,15 @@ var TrademarkService = class {
     if (offices.includes("DPMA")) {
       promises.push((async () => {
         try {
-          const dpmaFormData = new URLSearchParams();
-          dpmaFormData.append("trademarks", JSON.stringify(uniqueTerms));
+          const dpmaFd = new FormData();
+          dpmaFd.append("trademarks", JSON.stringify(uniqueTerms));
           const res = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
             method: "POST",
             headers: {
-              "Authorization": settings.productorDpmaAuth,
-              "Content-Type": "application/x-www-form-urlencoded"
+              ...defaultHeaders,
+              "Authorization": settings.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
             },
-            body: dpmaFormData.toString(),
+            body: dpmaFd,
             signal: AbortSignal.timeout(9e3)
           });
           if (res.ok) {
