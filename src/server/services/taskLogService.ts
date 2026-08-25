@@ -245,6 +245,89 @@ export class TaskLogService {
     const model = settings.llmModel || 'anthropic/claude-3-5-sonnet';
     const provider = settings.llmProvider === 'openai' ? 'OpenAI Direct' : 'OpenRouter';
 
+    // 0. Pre-Flight Quote Trademark Check to save tokens and costs early!
+    const quote = (task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || '').trim();
+    if (quote) {
+      console.log(`[TaskLogService] 🛡️ Starte Pre-Flight USPTO TM-Check für Quote "${quote}" (Task ${taskId})...`);
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TM_CHECK_REQUEST',
+        title: `Pre-Flight Trademark-Prüfung (Quote)`,
+        content: {
+          isPreFlight: true,
+          offices: ['USPTO'],
+          fields: { quote }
+        },
+        metadata: { provider: 'Productor USPTO' }
+      });
+
+      const preStart = Date.now();
+      try {
+        const preCheckResult = await TrademarkService.checkBatchFields({
+          offices: ['USPTO'],
+          fields: { quote }
+        });
+
+        const preHits = preCheckResult.summary?.totalHits ?? 0;
+        const preHasCls25 = preCheckResult.hasInfringementClass25 || false;
+        const preLatencyMs = Date.now() - preStart;
+
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'TM_CHECK_RESPONSE',
+          title: `Empfangen von Productor / USPTO (Pre-Flight Quote: ${preHits} Treffer)`,
+          content: {
+            isPreFlight: true,
+            totalHits: preHits,
+            hasInfringementClass25: preHasCls25,
+            blockedProducts: preCheckResult.blockedProducts,
+            fieldSummaries: preCheckResult.fieldResults,
+            summary: preCheckResult.summary
+          },
+          metadata: { provider: 'Productor USPTO', latencyMs: preLatencyMs }
+        });
+
+        // If Quote has an active Class 25 hit -> Immediate REJECTION! Save all downstream LLM tokens!
+        if (preHasCls25) {
+          const rejectionReason = `Die Quote "${quote}" verletzt ein aktives Markenrecht in Nizza-Klasse 25 (Bekleidung). Workflow vor LLM-Generierung abgebrochen (Token gespart).`;
+          
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'TM_REFINE_RESPONSE',
+            title: `Pre-Flight Trademark-Prüfung: SOFORTIGE ABLEHNUNG`,
+            content: {
+              verdict: 'REJECTED',
+              rejection_reason: rejectionReason,
+              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
+              actions_taken: ['Pre-Flight Check: Quote in Klasse 25 geschützt -> Workflow abgebrochen (Token & Kosten gespart).']
+            }
+          });
+
+          this.updateTaskStatus(taskId, {
+            status: 'REJECTED',
+            hasError: false,
+            errorDetails: rejectionReason,
+            trademarkCheckResult: {
+              totalHits: preHits,
+              hasInfringementClass25: true,
+              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
+              fieldSummaries: preCheckResult.fieldResults
+            },
+            trademarkRefineResult: {
+              verdict: 'REJECTED',
+              rejection_reason: rejectionReason,
+              blockedProducts: ['ALL_PRODUCTS_BLOCKED']
+            }
+          });
+
+          console.log(`[TaskLogService] ❌ Task ${taskId} im Pre-Flight TM-Check gestoppt (Quote "${quote}" verletzt Klasse 25).`);
+          return;
+        }
+      } catch (tmErr: any) {
+        console.warn(`[TaskLogService] Pre-Flight TM-Check Warnung (wird fortgesetzt):`, tmErr.message || tmErr);
+      }
+    }
+
     // 1. Log Event: Session Start
     this.addEvent(taskId, {
       timestamp: new Date().toISOString(),
@@ -1281,10 +1364,11 @@ export class TaskLogService {
 
     if (stepType === 'TM_CHECK_REQUEST') {
       const keepIdx = currentTask.events.findIndex(e => e.type === 'TM_CHECK_REQUEST');
+      const isPreFlight = keepIdx !== -1 && currentTask.events[keepIdx]?.content?.isPreFlight;
       if (keepIdx !== -1) {
         currentTask.events = currentTask.events.slice(0, keepIdx);
       }
-      currentTask.status = 'CHECKING_TRADEMARKS';
+      currentTask.status = isPreFlight ? 'PROCESSING' : 'CHECKING_TRADEMARKS';
       currentTask.trademarkCheckResult = undefined;
       currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
@@ -1292,11 +1376,17 @@ export class TaskLogService {
 
       this.saveLogs(logs);
 
-      this.auditListingTrademarks(taskId).catch(err => {
-        console.error(`[TaskLogService] Retry TM Check failed for task ${taskId}:`, err);
-      });
+      if (isPreFlight) {
+        this.processTaskWithOpenRouter(taskId).catch(err => {
+          console.error(`[TaskLogService] Retry Pre-Flight TM Check failed for task ${taskId}:`, err);
+        });
+      } else {
+        this.auditListingTrademarks(taskId).catch(err => {
+          console.error(`[TaskLogService] Retry TM Check failed for task ${taskId}:`, err);
+        });
+      }
 
-      return { success: true, message: 'USPTO Trademark-Prüfung neu gestartet.' };
+      return { success: true, message: isPreFlight ? 'Pre-Flight TM-Prüfung neu gestartet.' : 'USPTO Trademark-Prüfung neu gestartet.' };
     }
 
     if (stepType === 'TM_REFINE_REQUEST') {

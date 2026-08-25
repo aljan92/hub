@@ -1323,7 +1323,14 @@ export const PromptLogView: React.FC = () => {
                             <div className="flex items-center justify-between text-[11px] font-semibold text-amber-300">
                               <span className="flex items-center gap-1.5">
                                 <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                                Anfrage an Productor / USPTO (Trademark-Prüfung):
+                                {event.content?.isPreFlight ? (
+                                  <span className="flex items-center gap-2">
+                                    <span>Pre-Flight Quote TM-Prüfung:</span>
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold">TOKEN-SCHUTZ</span>
+                                  </span>
+                                ) : (
+                                  <span>Anfrage an Productor / USPTO (Trademark-Prüfung):</span>
+                                )}
                               </span>
                               <div className="flex items-center space-x-2">
                                 <button
@@ -1376,7 +1383,7 @@ export const PromptLogView: React.FC = () => {
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
                                   <ShieldCheck className="w-4 h-4 text-amber-400" />
-                                  Productor / USPTO Schutzrechte-Prüfung
+                                  {result?.isPreFlight ? 'Productor / USPTO Pre-Flight Quote Prüfung' : 'Productor / USPTO Schutzrechte-Prüfung'}
                                 </span>
                                 <div className="flex items-center space-x-2">
                                   {totalHits === 0 ? (
