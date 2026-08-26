@@ -157,9 +157,9 @@ export const TasksView: React.FC = () => {
   const [editQuote, setEditQuote] = useState('');
 
   // Checkpoint 2 (Design Review) State
-  const [selectedAudience, setSelectedAudience] = useState('Men, Women');
-  const [selectedAvoidColor, setSelectedAvoidColor] = useState('Keine');
-  const [selectedBgMode, setSelectedBgMode] = useState('Nein (Auto Freistellen)');
+  const [selectedAudiences, setSelectedAudiences] = useState<string[]>(['Men', 'Women', 'Youth']);
+  const [selectedAvoidColor, setSelectedAvoidColor] = useState('None');
+  const [selectedBgMode, setSelectedBgMode] = useState('Automatisch');
   const [selectedMaxColors, setSelectedMaxColors] = useState<number>(2);
   const [editablePrompt, setEditablePrompt] = useState('');
   const [showImageZoom, setShowImageZoom] = useState(false);
@@ -298,13 +298,40 @@ export const TasksView: React.FC = () => {
 
       // Design Review fields
       const pred = activeTask.analysisResult;
-      const targetGroup = Array.isArray(pred?.target_group?.selected) 
-        ? pred.target_group.selected.join(', ') 
-        : (pred?.target_group?.selected || 'Men, Women');
-      setSelectedAudience(activeTask.customAnswers?.audience || targetGroup);
-      setSelectedAvoidColor(activeTask.customAnswers?.avoidColor || pred?.avoid_product_colors?.avoid || 'Keine');
-      const isManual = activeTask.customAnswers?.reuseBackground === 'Manuell' || activeTask.customAnswers?.reuseBackground === 'Ja (Hintergrund behalten)' || pred?.background_analysis?.removal_mode === 'MANUAL';
-      setSelectedBgMode(activeTask.customAnswers?.reuseBackground ? (isManual ? 'Manuell' : 'Automatisch') : (isManual ? 'Manuell' : 'Automatisch'));
+      
+      // 2. Audience multi-selection (Men, Women, Youth)
+      let audiences: string[] = ['Men', 'Women', 'Youth'];
+      if (activeTask.customAnswers?.audience) {
+        if (Array.isArray(activeTask.customAnswers.audience)) {
+          audiences = activeTask.customAnswers.audience;
+        } else if (typeof activeTask.customAnswers.audience === 'string') {
+          audiences = activeTask.customAnswers.audience.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+      } else if (pred?.target_group?.selected) {
+        if (Array.isArray(pred.target_group.selected)) {
+          audiences = pred.target_group.selected.map((s: string) => s.trim()).filter(Boolean);
+        } else if (typeof pred.target_group.selected === 'string') {
+          audiences = pred.target_group.selected.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+      }
+      setSelectedAudiences(audiences.length > 0 ? audiences : ['Men', 'Women', 'Youth']);
+
+      // 3. Avoid Color (Black, White, None)
+      const rawAvoid = (activeTask.customAnswers?.avoidColor || pred?.avoid_product_colors?.avoid || 'None').trim();
+      let normAvoid = 'None';
+      if (rawAvoid.toLowerCase().includes('black') || rawAvoid.toLowerCase().includes('schwarz')) {
+        normAvoid = 'Black';
+      } else if (rawAvoid.toLowerCase().includes('white') || rawAvoid.toLowerCase().includes('weiß')) {
+        normAvoid = 'White';
+      } else {
+        normAvoid = 'None';
+      }
+      setSelectedAvoidColor(normAvoid);
+
+      // 4. Background removal mode (Automatisch / Manuell)
+      const isManual = activeTask.customAnswers?.reuseBackground === 'Manuell' || activeTask.customAnswers?.reuseBackground === 'MANUAL' || activeTask.customAnswers?.reuseBackground === 'Ja (Hintergrund behalten)' || pred?.background_analysis?.removal_mode === 'MANUAL' || pred?.background_analysis?.is_design_element === true;
+      setSelectedBgMode(isManual ? 'Manuell' : 'Automatisch');
+
       setSelectedMaxColors(activeTask.customAnswers?.maxColors ?? pred?.color_analysis?.color_count ?? 2);
       setEditablePrompt(activeTask.resultPrompt || activeTask.payload?.quote || '');
 
@@ -318,6 +345,17 @@ export const TasksView: React.FC = () => {
       setRevectorizeMaxColors(activeTask.customAnswers?.maxColors ?? activeTask.analysisResult?.color_analysis?.color_count ?? 2);
     }
   }, [selectedTaskId, activeTask?.status]);
+
+  const toggleAudience = (aud: string) => {
+    setSelectedAudiences(prev => {
+      if (prev.includes(aud)) {
+        const next = prev.filter(a => a !== aud);
+        return next.length > 0 ? next : [aud];
+      } else {
+        return [...prev, aud];
+      }
+    });
+  };
 
   // Actions for Checkpoint 1: Pre-Flight
   const handlePreFlightAction = async (action: 'OVERRIDE' | 'RESTART' | 'DISCARD') => {
@@ -349,7 +387,7 @@ export const TasksView: React.FC = () => {
     setIsSubmitting(true);
     try {
       const answers = {
-        audience: selectedAudience,
+        audience: selectedAudiences.join(', '),
         avoidColor: selectedAvoidColor,
         reuseBackground: selectedBgMode,
         maxColors: selectedMaxColors
@@ -863,25 +901,29 @@ export const TasksView: React.FC = () => {
                         {/* Question 2: Target Group */}
                         <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">2. Zielgruppe</span>
+                            <span className="font-semibold text-slate-200">2. Zielgruppe (Mehrfachauswahl)</span>
                             <span className="text-[10px] text-cyan-400 font-mono">
-                              KI: {Array.isArray(activeTask.analysisResult?.target_group?.selected) ? activeTask.analysisResult.target_group.selected.join(', ') : (activeTask.analysisResult?.target_group?.selected || 'Men, Women')}
+                              KI: {Array.isArray(activeTask.analysisResult?.target_group?.selected) ? activeTask.analysisResult.target_group.selected.join(', ') : (activeTask.analysisResult?.target_group?.selected || 'Men, Women, Youth')}
                             </span>
                           </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {['Men, Women', 'Men', 'Women', 'Youth', 'Alle'].map((val) => (
-                              <button
-                                key={val}
-                                onClick={() => setSelectedAudience(val)}
-                                className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
-                                  selectedAudience === val 
-                                    ? 'bg-cyan-600 text-white border-cyan-500 font-semibold'
-                                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                                }`}
-                              >
-                                {val}
-                              </button>
-                            ))}
+                          <div className="flex flex-wrap gap-2">
+                            {['Men', 'Women', 'Youth'].map((val) => {
+                              const isSelected = selectedAudiences.includes(val);
+                              return (
+                                <button
+                                  key={val}
+                                  type="button"
+                                  onClick={() => toggleAudience(val)}
+                                  className={`px-3.5 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
+                                    isSelected 
+                                      ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
+                                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                  }`}
+                                >
+                                  <span>{val}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -890,23 +932,27 @@ export const TasksView: React.FC = () => {
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-semibold text-slate-200">3. Zu vermeidende Produktfarbe</span>
                             <span className="text-[10px] text-cyan-400 font-mono">
-                              KI: {activeTask.analysisResult?.avoid_product_colors?.avoid || 'Keine'}
+                              KI: {activeTask.analysisResult?.avoid_product_colors?.avoid || 'None'}
                             </span>
                           </div>
                           <div className="flex gap-2">
-                            {['Schwarz', 'Weiß', 'Keine'].map((val) => (
-                              <button
-                                key={val}
-                                onClick={() => setSelectedAvoidColor(val)}
-                                className={`px-3 py-1 text-xs rounded-lg border transition-all ${
-                                  selectedAvoidColor === val 
-                                    ? 'bg-cyan-600 text-white border-cyan-500 font-semibold'
-                                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                                }`}
-                              >
-                                {val}
-                              </button>
-                            ))}
+                            {['Black', 'White', 'None'].map((val) => {
+                              const isSelected = selectedAvoidColor === val;
+                              return (
+                                <button
+                                  key={val}
+                                  type="button"
+                                  onClick={() => setSelectedAvoidColor(val)}
+                                  className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
+                                    isSelected 
+                                      ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
+                                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                  }`}
+                                >
+                                  {val}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -915,13 +961,14 @@ export const TasksView: React.FC = () => {
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-semibold text-slate-200">4. Hintergrund entfernen</span>
                             <span className="text-[10px] text-cyan-400 font-mono">
-                              KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' ? 'Manuell' : 'Automatisch'}
+                              KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' || activeTask.analysisResult?.background_analysis?.is_design_element === true ? 'Manuell' : 'Automatisch'}
                             </span>
                           </div>
                           <div className="flex gap-2">
                             {['Automatisch', 'Manuell'].map((val) => (
                               <button
                                 key={val}
+                                type="button"
                                 onClick={() => setSelectedBgMode(val)}
                                 className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
                                   selectedBgMode === val || 

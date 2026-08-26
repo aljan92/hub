@@ -17,7 +17,7 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 
 1. QUOTE ACCURACY & VISUAL QUALITY:
 - CRITICAL RULE ON PUNCTUATION & SPACING: Punctuation differences (such as colons ":", hyphens "-", dots ".", commas ",", spaces, or line breaks) are 100% VALID AND ACCEPTABLE!
-  Example: If requested quote is "11:11" and the image shows "11 11" or "11\n11", this is an APPROVED MATCH! You MUST set "quote_matches": true, "quote_errors": null, and "regenerate_recommended": false! Do NOT complain about missing colons or punctuation.
+  Example: If requested quote is "11:11" and the image shows "11 11" or "11\\n11", this is an APPROVED MATCH! You MUST set "quote_matches": true, "quote_errors": null, and "regenerate_recommended": false! Do NOT complain about missing colons or punctuation.
 - ONLY flag GENUINE text errors: Misspelled words, wrong letters, duplicate letters (e.g. "Mannifest" instead of "Manifest"), completely missing words, or unreadable AI gibberish glyphs.
 - Check for SEVERE graphic/anatomical defects: Obvious AI distortions such as malformed extra fingers/hands, melted faces, or corrupted graphic shapes.
 - Evaluation rule: Unless there are actual misspelled words or severe visual deformities, ALWAYS set "quote_matches": true, "quote_errors": null, "regenerate_recommended": false, and "overall_verdict": "APPROVED".
@@ -28,16 +28,17 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 
 3. PRODUCT COLORS TO AVOID (CONTRAST):
 - Which t-shirt / garment base color must be avoided to ensure maximum contrast and legibility?
-- Options for "avoid":
-  - "Black": If the graphic is primarily black/dark text or elements without a light outline.
-  - "White": If the graphic is primarily white/light text or elements without a dark outline.
-  - "None": If the design has strong contrast or outlines that look great on both black and white apparel.
+- DEFAULT to "None" if the design has strong contrast, solid outlines, golden/cream/colored typography, or looks great on both black and white apparel.
+- ONLY select "White" if the text or graphic elements are pure white or very light pastel without a dark border/outline.
+- ONLY select "Black" if the text or graphic elements are pure black or very dark without a light border/outline.
+- Options for "avoid": "Black", "White", or "None".
 
 4. BACKGROUND HANDLING (AUTOMATED TRANSPARENCY / ISOLATION):
-- Is the background color an active artistic design element (e.g. detailed scenery, gradient circle, complex illustration environment)?
+- Is the background color an active artistic design element (e.g. detailed scenery, gradient, texture, non-solid backdrop, complex illustration environment)?
 - "is_design_element": true (Yes) or false (No).
-- If false ("No"), automated background removal (magic wand / chroma key) can be safely applied.
-- If true ("Yes"), manual clipping / isolation by the user is required.
+- "removal_mode": "AUTOMATIC" if the background is a completely uniform, solid, flat single-color backdrop suitable for automated background removal.
+- "removal_mode": "MANUAL" if the background is non-uniform, gradient, textured, illustrated scenery, or part of the design artwork itself requiring manual clipping.
+- "reason": "<Brief explanation why AUTOMATIC or MANUAL was chosen>"
 
 5. COLOR COUNT ESTIMATION (VECTORIZATION MAX COLORS):
 - Estimate how many distinct, sensible colors are visible in the graphic design artwork (excluding any solid background to be removed).
@@ -60,7 +61,7 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
     "reason": "<Brief explanation>"
   },
   "avoid_product_colors": {
-    "avoid": "Black",
+    "avoid": "None",
     "reason": "<Brief contrast explanation>"
   },
   "background_analysis": {
