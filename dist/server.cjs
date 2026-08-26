@@ -214530,6 +214530,9 @@ var init_productCatalogService = __esm2({
         }
         return count;
       }
+      static getMaxDroppableSlots() {
+        return this.calculateMaxDroppableSlotsCount();
+      }
       /**
        * Enrich color objects with hex preview codes
        */

@@ -307,6 +307,10 @@ export class ProductCatalogService {
     return count;
   }
 
+  public static getMaxDroppableSlots(): number {
+    return this.calculateMaxDroppableSlotsCount();
+  }
+
   /**
    * Enrich color objects with hex preview codes
    */
