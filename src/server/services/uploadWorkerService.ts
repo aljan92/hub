@@ -3,6 +3,7 @@ import fs from 'fs';
 import { BrowserSessionService } from './browserSessionService';
 import { QueueService, QueueItem } from './queueService';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
+import { SyncEngine } from './syncEngine';
 import { Page } from 'playwright';
 
 export interface UploadProgressState {
@@ -839,8 +840,20 @@ export class UploadWorkerService {
         this.log(`🎉 Design sicher als Entwurf in Amazon Merch gespeichert & zurück auf Dashboard!`, 'Entwurf gespeichert ✓', 100, 100);
       }
 
-      // 10. Complete Queue Item
+      // 10. Complete Queue Item & Live Slot Refresh
       QueueService.updateItemStatus(item.id, 'COMPLETED');
+
+      try {
+        this.log(`📊 Frage aktuelle freie Tages-Upload-Slots von Amazon Merch ab...`, 'Aktualisiere freie Slots...');
+        const ratelimiter = await SyncEngine.fetchDashboardRatelimiter(page);
+        if (ratelimiter?.slots) {
+          this.log(`📈 Aktuelle Slots: ${ratelimiter.slots.free} frei (${ratelimiter.slots.used}/${ratelimiter.slots.total} verbraucht)`);
+          QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
+        }
+      } catch (err: any) {
+        console.warn('[UploadWorker] Could not refresh ratelimiter metadata:', err?.message);
+      }
+
       QueueService.rebalanceQueue();
       this.isUploading = false;
       this.currentStep = 'Abgeschlossen ✓';
@@ -851,6 +864,7 @@ export class UploadWorkerService {
       const errorMsg = err.message || 'Unbekannter Fehler während des Uploads';
       this.log(`❌ Upload Fehler: ${errorMsg}`, `Fehler: ${errorMsg}`);
       QueueService.updateItemStatus(item.id, 'ERROR', errorMsg);
+      QueueService.rebalanceQueue();
       this.isUploading = false;
       this.broadcastStatus();
     }

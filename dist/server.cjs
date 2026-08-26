@@ -214596,6 +214596,11 @@ var init_queueService = __esm2({
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) {
               this.items = parsed;
+              for (const item of this.items) {
+                if (item.status === "SCHEDULED_TODAY" || item.status === "WAITING_FOR_SLOTS" || !item.status) {
+                  item.status = "WAITING";
+                }
+              }
               this.enrichListingsFromTasksLog();
               return this.items;
             }
@@ -214701,44 +214706,39 @@ var init_queueService = __esm2({
           if (hasChanges) {
             import_fs76.default.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), "utf-8");
           }
-        } catch (e) {
+        } catch (err) {
+          console.error("[QueueService] enrichListings error:", err.message);
         }
       }
       /**
        * Save queue to ./data/upload_queue.json
        */
       static saveQueue() {
-        this.ensureLoaded();
         try {
-          const dataDir = import_path71.default.dirname(this.queueFilePath);
-          if (!import_fs76.default.existsSync(dataDir)) {
-            import_fs76.default.mkdirSync(dataDir, { recursive: true });
+          const dir = import_path71.default.dirname(this.queueFilePath);
+          if (!import_fs76.default.existsSync(dir)) {
+            import_fs76.default.mkdirSync(dir, { recursive: true });
           }
           import_fs76.default.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), "utf-8");
         } catch (err) {
           console.error("[QueueService] Error writing upload_queue.json:", err.message);
         }
-        return this.items;
       }
       /**
-       * Update daily slot info from Amazon Merch metadata
+       * Set daily available slots from live MBA Dashboard / Ratelimiter
        */
-      static updateDailySlots(free, used, total) {
+      static setDailySlots(free, used = 0, total = 200) {
         this.dailySlotsInfo = { free: Math.max(0, free), used, total };
-        const settings = loadSettings();
-        if (settings.queueAutoBalance) {
-          this.rebalanceQueue();
-        }
+        this.rebalanceQueue();
       }
       /**
-       * Get complete queue state and metrics
+       * Get complete queue state
        */
       static getState() {
         this.ensureLoaded();
         const settings = loadSettings();
-        const maxDroppableCapacity = ProductCatalogService.calculateMaxDroppableSlotsCount();
-        const scheduledItems = this.items.filter((i) => i.status === "SCHEDULED_TODAY" || i.status === "UPLOADING");
-        const scheduledSlotsToday = scheduledItems.reduce((sum, item) => sum + (item.allocatedSlots || 0), 0);
+        const activeItems = this.items.filter((i) => i.status === "UPLOADING" || i.status === "WAITING");
+        const scheduledSlotsToday = activeItems.reduce((sum, item) => sum + (item.allocatedSlots || item.totalBaseSlots || 0), 0);
         return {
           items: this.items,
           freeDailySlots: this.dailySlotsInfo.free,
@@ -214748,26 +214748,16 @@ var init_queueService = __esm2({
           uploadScheduleTime: settings.queueUploadScheduleTime || "off",
           maxDropPerDesign: settings.queueMaxDropPerDesign ?? 10,
           autoBalance: settings.queueAutoBalance ?? true,
-          maxDroppableCapacity
+          maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots()
         };
       }
       /**
-       * Add a completed task / design into the upload queue
+       * Enqueue a newly approved design
        */
       static enqueueDesign(item) {
         this.ensureLoaded();
         const existing = this.items.find((i) => i.taskId === item.taskId);
         if (existing) {
-          if (item.listings) existing.listings = item.listings;
-          if (item.brand) existing.brand = item.brand;
-          if (item.title) existing.title = item.title;
-          if (item.bullet1) existing.bullet1 = item.bullet1;
-          if (item.bullet2) existing.bullet2 = item.bullet2;
-          if (item.description) existing.description = item.description;
-          if (item.fitTypes) existing.fitTypes = item.fitTypes;
-          if (item.avoidColor) existing.avoidColor = item.avoidColor;
-          if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
-          this.saveQueue();
           return existing;
         }
         const catalog = ProductCatalogService.getCatalog();
@@ -214775,30 +214765,32 @@ var init_queueService = __esm2({
         const activeProductsMap = {};
         let totalBaseSlots = 0;
         for (const prod of catalog.products) {
-          if (tmBlocked.has(prod.id.toUpperCase())) {
-            continue;
-          }
+          if (tmBlocked.has(prod.id.toUpperCase())) continue;
           const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ["US"];
           activeProductsMap[prod.id] = mps;
           totalBaseSlots += mps.length;
         }
+        const cleanStr = (txt) => {
+          if (!txt) return "";
+          return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
+        };
         const newItem = {
-          id: "q_" + Math.random().toString(36).substring(2, 9),
+          id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           taskId: item.taskId,
-          designTitle: item.designTitle || item.title || "Neues Design",
-          niche: item.niche || "",
-          brand: item.brand,
-          title: item.title,
-          bullet1: item.bullet1,
-          bullet2: item.bullet2,
-          description: item.description,
+          designTitle: cleanStr(item.designTitle),
+          niche: cleanStr(item.niche || ""),
+          brand: cleanStr(item.brand || "MBA Hub Studio"),
+          title: cleanStr(item.title || item.designTitle),
+          bullet1: cleanStr(item.bullet1 || ""),
+          bullet2: cleanStr(item.bullet2 || ""),
+          description: cleanStr(item.description || ""),
           listings: item.listings || {
             en: {
-              brand: item.brand,
-              title: item.title,
-              bullet1: item.bullet1,
-              bullet2: item.bullet2,
-              description: item.description
+              brand: cleanStr(item.brand || "MBA Hub Studio"),
+              title: cleanStr(item.title || item.designTitle),
+              bullet1: cleanStr(item.bullet1 || ""),
+              bullet2: cleanStr(item.bullet2 || ""),
+              description: cleanStr(item.description || "")
             }
           },
           fitTypes: item.fitTypes || ["men", "women", "youth"],
@@ -214807,7 +214799,7 @@ var init_queueService = __esm2({
           imagePath: item.imagePath,
           pngPath: item.pngPath,
           addedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          status: "WAITING_FOR_SLOTS",
+          status: "WAITING",
           isLocked: false,
           allocatedSlots: totalBaseSlots,
           totalBaseSlots,
@@ -214837,6 +214829,20 @@ var init_queueService = __esm2({
           item.uploadedAt = (/* @__PURE__ */ new Date()).toISOString();
         }
         this.saveQueue();
+        return item;
+      }
+      /**
+       * Retry/Re-enqueue an item from ERROR or COMPLETED back to WAITING
+       */
+      static retryItem(queueId) {
+        this.ensureLoaded();
+        const item = this.items.find((i) => i.id === queueId);
+        if (!item) return null;
+        item.status = "WAITING";
+        item.errorMessage = void 0;
+        item.sortOrder = this.items.filter((i) => i.status === "WAITING" || i.status === "UPLOADING").length;
+        this.saveQueue();
+        this.rebalanceQueue();
         return item;
       }
       /**
@@ -214914,9 +214920,20 @@ var init_queueService = __esm2({
         if (this.items.length === 0) {
           return this.getState();
         }
-        const pendingItems = this.items.filter((i) => i.status !== "COMPLETED" && i.status !== "ERROR");
+        const uploadingItems = this.items.filter((i) => i.status === "UPLOADING");
+        let uploadingSlotsReserved = 0;
+        for (const upItem of uploadingItems) {
+          let total = 0;
+          for (const prodId in upItem.activeProductsMap) {
+            total += (upItem.activeProductsMap[prodId] || []).length;
+          }
+          upItem.allocatedSlots = total;
+          uploadingSlotsReserved += total;
+        }
+        const availableSlotsForWaiting = Math.max(0, freeDailySlots - uploadingSlotsReserved);
+        const waitingItems = this.items.filter((i) => i.status === "WAITING");
         const catalog = ProductCatalogService.getCatalog();
-        for (const item of pendingItems) {
+        for (const item of waitingItems) {
           const tmBlocked = new Set((item.tmBlockedProductIds || []).map((id) => id.toUpperCase()));
           const activeMap = {};
           let baseSlots = 0;
@@ -214932,23 +214949,21 @@ var init_queueService = __esm2({
           item.allocatedSlots = baseSlots;
         }
         let accumulatedMinSlots = 0;
-        const scheduledItems = [];
-        const waitingItems = [];
-        for (const item of pendingItems) {
+        const scheduledWaitingItems = [];
+        const overflowWaitingItems = [];
+        for (const item of waitingItems) {
           const minRequired = item.isLocked ? item.totalBaseSlots : Math.max(1, item.totalBaseSlots - maxDrop);
-          if (accumulatedMinSlots + minRequired <= freeDailySlots || scheduledItems.length === 0) {
+          if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting || scheduledWaitingItems.length === 0) {
             accumulatedMinSlots += minRequired;
-            scheduledItems.push(item);
-            item.status = "SCHEDULED_TODAY";
+            scheduledWaitingItems.push(item);
           } else {
-            waitingItems.push(item);
-            item.status = "WAITING_FOR_SLOTS";
+            overflowWaitingItems.push(item);
           }
         }
-        const totalRequestedSlots = scheduledItems.reduce((sum, item) => sum + item.totalBaseSlots, 0);
-        if (totalRequestedSlots > freeDailySlots && scheduledItems.length > 0) {
-          let slotsToDropTotal = totalRequestedSlots - freeDailySlots;
-          const unlockedScheduled = scheduledItems.filter((i) => !i.isLocked);
+        const totalRequestedSlots = scheduledWaitingItems.reduce((sum, item) => sum + item.totalBaseSlots, 0);
+        if (totalRequestedSlots > availableSlotsForWaiting && scheduledWaitingItems.length > 0) {
+          let slotsToDropTotal = totalRequestedSlots - availableSlotsForWaiting;
+          const unlockedScheduled = scheduledWaitingItems.filter((i) => !i.isLocked);
           const dropsPerItem = {};
           unlockedScheduled.forEach((i) => {
             dropsPerItem[i.id] = 0;
@@ -214970,14 +214985,14 @@ var init_queueService = __esm2({
             }
           }
         }
-        for (const item of scheduledItems) {
+        for (const item of scheduledWaitingItems) {
           let total = 0;
           for (const prodId in item.activeProductsMap) {
-            total += item.activeProductsMap[prodId].length;
+            total += (item.activeProductsMap[prodId] || []).length;
           }
           item.allocatedSlots = total;
         }
-        for (const item of waitingItems) {
+        for (const item of overflowWaitingItems) {
           item.allocatedSlots = item.totalBaseSlots;
         }
         this.saveQueue();
@@ -222039,6 +222054,16 @@ var UploadWorkerService = class _UploadWorkerService {
         this.log(`\u{1F389} Design sicher als Entwurf in Amazon Merch gespeichert & zur\xFCck auf Dashboard!`, "Entwurf gespeichert \u2713", 100, 100);
       }
       QueueService.updateItemStatus(item.id, "COMPLETED");
+      try {
+        this.log(`\u{1F4CA} Frage aktuelle freie Tages-Upload-Slots von Amazon Merch ab...`, "Aktualisiere freie Slots...");
+        const ratelimiter = await SyncEngine.fetchDashboardRatelimiter(page);
+        if (ratelimiter?.slots) {
+          this.log(`\u{1F4C8} Aktuelle Slots: ${ratelimiter.slots.free} frei (${ratelimiter.slots.used}/${ratelimiter.slots.total} verbraucht)`);
+          QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
+        }
+      } catch (err) {
+        console.warn("[UploadWorker] Could not refresh ratelimiter metadata:", err?.message);
+      }
       QueueService.rebalanceQueue();
       this.isUploading = false;
       this.currentStep = "Abgeschlossen \u2713";
@@ -222048,6 +222073,7 @@ var UploadWorkerService = class _UploadWorkerService {
       const errorMsg = err.message || "Unbekannter Fehler w\xE4hrend des Uploads";
       this.log(`\u274C Upload Fehler: ${errorMsg}`, `Fehler: ${errorMsg}`);
       QueueService.updateItemStatus(item.id, "ERROR", errorMsg);
+      QueueService.rebalanceQueue();
       this.isUploading = false;
       this.broadcastStatus();
     }
@@ -223076,6 +223102,18 @@ app.get("/api/v1/upload/status", (req, res) => {
 app.post("/api/v1/queue/item/:id/lock", (req, res) => {
   try {
     const item = QueueService.toggleLock(req.params.id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: "Queue item not found" });
+    }
+    const state = QueueService.getState();
+    res.json({ success: true, item, state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/queue/item/:id/retry", (req, res) => {
+  try {
+    const item = QueueService.retryItem(req.params.id);
     if (!item) {
       return res.status(404).json({ success: false, error: "Queue item not found" });
     }
