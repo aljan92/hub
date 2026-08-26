@@ -221540,7 +221540,7 @@ var UploadWorkerService = class {
         this.log(`\u26A0\uFE0F Render-Check beendet, fahre fort...`);
       }
       this.log(`\u{1F4E6} \xD6ffne 'Select Products' Modal...`, "Konfiguriere Marktpl\xE4tze...", 40, 100);
-      await page.waitForTimeout(2500);
+      await page.waitForTimeout(2e3);
       let modalOpened = false;
       for (let attempt = 1; attempt <= 4; attempt++) {
         const isNowOpen = await page.evaluate(() => {
@@ -221560,7 +221560,7 @@ var UploadWorkerService = class {
           modalOpened = true;
           break;
         }
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(1200);
         const checkModal = await page.evaluate(() => {
           return Array.from(document.querySelectorAll(".modal-dialog, .modal-content, merch-modal, .modal-body, .modal, merch-select-marketplaces-modal")).some((el) => {
             const r = el.getBoundingClientRect();
@@ -221575,7 +221575,7 @@ var UploadWorkerService = class {
       if (!modalOpened) {
         this.log(`\u26A0\uFE0F 'Select Products' Button konnte nicht ge\xF6ffnet werden, fahre mit Standard-Auswahl fort...`);
       } else {
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(300);
         const modalResult = await page.evaluate(async (activeMap) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const modal = Array.from(document.querySelectorAll(".modal-content, .modal-dialog, merch-modal, .modal")).find((el) => {
@@ -221598,13 +221598,7 @@ var UploadWorkerService = class {
               if (isChecked !== shouldBeChecked) {
                 cb.click();
                 modifiedCount++;
-                await sleep2(10);
-                const afterIcon = cb.querySelector(".sci-icon");
-                const isAfterChecked = afterIcon ? afterIcon.classList.contains("sci-check-box") : false;
-                if (isAfterChecked !== shouldBeChecked) {
-                  cb.click();
-                  await sleep2(10);
-                }
+                await sleep2(5);
               }
             }
           }
@@ -221645,7 +221639,7 @@ var UploadWorkerService = class {
         }
         await page.waitForSelector(".modal-backdrop, .modal-dialog", { state: "hidden", timeout: 8e3 }).catch(() => {
         });
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(600);
         this.log(`\u2705 Marktplatz-Matrix synchronisiert (${modalResult.modifiedCount} Checkboxen angepasst)`, "Produkte gew\xE4hlt \u2713", 50, 100);
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
@@ -221670,8 +221664,10 @@ var UploadWorkerService = class {
           const pid = params2.productId;
           const editBtn = document.querySelector(`.${pid}-edit-btn`) || document.querySelector(`#${pid}-card .edit-button`) || document.querySelector(`#${pid}-card button.edit-btn`) || document.querySelector(`button[class*="${pid}-edit"]`) || Array.from(document.querySelectorAll(`#${pid}-card button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
           if (!editBtn) return { success: false, reason: `Edit button for ${pid} not found` };
+          editBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+          await sleep2(250);
           editBtn.click();
-          await sleep2(350);
+          await sleep2(400);
           const editor = document.querySelector(`product-editor .${pid}-container`)?.closest("product-editor") || document.querySelector(`product-editor[id*="${pid}"]`) || document.querySelector("product-editor");
           if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
           const allFitLabels = {
@@ -221686,30 +221682,52 @@ var UploadWorkerService = class {
               const shouldBeChecked = params2.fitTypes.includes(ft);
               if (isChecked !== shouldBeChecked) {
                 label.click();
-                await sleep2(50);
+                await sleep2(80);
               }
             }
           }
           if (params2.colorMode === "customPicker") {
-            const colorBtn = editor.querySelector('.background-color-picker-button, #color-btn, button[id*="color-btn"]');
+            const colorBtn = editor.querySelector("#color-btn") || editor.querySelector('button[id*="color-btn"]') || editor.querySelector(".background-color-picker-button") || editor.querySelector("button.color-btn") || editor.querySelector(".color-picker-button");
             if (colorBtn) {
               colorBtn.click();
-              await sleep2(300);
-              const picker = document.querySelector(".sketch-picker, .color-picker-container, ngb-popover-window, color-sketch");
-              if (picker) {
-                const hexInput = picker.querySelector("input");
+              await sleep2(400);
+              const popover = document.querySelector(".sketch-picker, .color-picker-container, ngb-popover-window, color-sketch, .color-picker-popover");
+              if (popover) {
+                let hexInput = popover.querySelector('color-editable-input[label="hex"] input, input[type="text"]');
+                if (!hexInput) {
+                  const spans = Array.from(popover.querySelectorAll("span"));
+                  const hexSpan = spans.find((span) => span.textContent?.trim().toLowerCase() === "hex");
+                  if (hexSpan) {
+                    hexInput = hexSpan.closest(".wrap")?.querySelector("input") || hexSpan.parentElement?.querySelector("input");
+                  }
+                }
+                if (!hexInput) {
+                  hexInput = popover.querySelector("input");
+                }
                 if (hexInput) {
-                  const cleanHex = params2.customBgColor.replace("#", "");
+                  const cleanHex = params2.customBgColor.replace("#", "").toUpperCase();
+                  hexInput.focus();
                   hexInput.value = cleanHex;
                   hexInput.dispatchEvent(new Event("input", { bubbles: true }));
                   hexInput.dispatchEvent(new Event("change", { bubbles: true }));
-                  await sleep2(150);
+                  hexInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+                  hexInput.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
+                  hexInput.blur();
+                  await sleep2(200);
                 }
-                const doneBtn = picker.querySelector('button.done-button, button[type="submit"]');
+                const doneBtn = popover.querySelector('button.done-button, button[type="submit"]');
                 if (doneBtn) doneBtn.click();
+                else if (colorBtn.hasAttribute("aria-describedby")) colorBtn.click();
                 else document.body.click();
                 await sleep2(200);
               }
+            }
+            const directHexInput = editor.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]');
+            if (directHexInput) {
+              const cleanHex = params2.customBgColor.replace("#", "").toUpperCase();
+              directHexInput.value = cleanHex;
+              directHexInput.dispatchEvent(new Event("input", { bubbles: true }));
+              directHexInput.dispatchEvent(new Event("change", { bubbles: true }));
             }
           } else {
             const colorCheckboxes = Array.from(editor.querySelectorAll("colorcheckbox"));
@@ -221747,7 +221765,7 @@ var UploadWorkerService = class {
         if (!editResult.success) {
           this.log(`\u26A0\uFE0F Hinweis zu ${product.displayName}: ${editResult.reason}`);
         }
-        await page.waitForTimeout(200);
+        await page.waitForTimeout(400);
       }
       this.log(`\u2705 Alle ${totalActiveProducts} Produkte erfolgreich konfiguriert!`, "Produktdetails fertig \u2713", 80, 100);
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
@@ -221767,18 +221785,25 @@ var UploadWorkerService = class {
         const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
         const locales = ["en", "de", "fr", "it", "es", "ja"];
         const filledLocales = [];
+        const listingSection = document.getElementById("translation-request-no") || document.querySelector("product-editor-listing") || document.getElementById("designCreator-productEditor-title");
+        if (listingSection) {
+          listingSection.scrollIntoView({ behavior: "smooth", block: "center" });
+          await sleep2(300);
+        }
         for (const loc of locales) {
           const content = listingMap[loc] || (loc === "ja" ? listingMap["jp"] : null) || listingMap["en"];
           if (!content) continue;
           const tabBtn = document.querySelector(`button[aria-controls="${loc}"], #${loc}-header button, [id="${loc}-header"] button`);
           if (tabBtn) {
+            tabBtn.scrollIntoView({ behavior: "smooth", block: "center" });
             if (tabBtn.getAttribute("aria-expanded") !== "true") {
               tabBtn.click();
-              await sleep2(300);
+              await sleep2(350);
             }
           }
-          const setVal = (fieldKey, val) => {
+          const setVal = (fieldKey, val, maxLen = 2e3) => {
             if (!val) return;
+            const clamped = val.substring(0, maxLen).trim();
             const selectors2 = loc === "en" ? [
               `#en #designCreator-productEditor-${fieldKey}`,
               `[id="en"] #designCreator-productEditor-${fieldKey}`,
@@ -221793,28 +221818,58 @@ var UploadWorkerService = class {
               if (input) break;
             }
             if (input) {
-              input.value = val;
+              input.focus();
+              input.value = clamped;
               input.dispatchEvent(new Event("input", { bubbles: true }));
               input.dispatchEvent(new Event("change", { bubbles: true }));
+              input.dispatchEvent(new Event("blur", { bubbles: true }));
             }
           };
-          setVal("brandName", content.brand || "");
-          setVal("title", content.title || "");
-          setVal("featureBullet1", content.bullet1 || content.bullet_1 || "");
-          setVal("featureBullet2", content.bullet2 || content.bullet_2 || "");
-          setVal("description", content.description || "");
+          setVal("brandName", content.brand || "", 50);
+          setVal("title", content.title || "", 60);
+          setVal("featureBullet1", content.bullet1 || content.bullet_1 || "", 256);
+          setVal("featureBullet2", content.bullet2 || content.bullet_2 || "", 256);
+          setVal("description", content.description || "", 2e3);
           filledLocales.push(loc.toUpperCase());
-          await sleep2(150);
+          await sleep2(200);
         }
+        const enContent = listingMap["en"] || listingMap["de"] || {};
+        const setRootVal = (id, val, maxLen = 2e3) => {
+          if (!val) return;
+          const el = document.getElementById(id);
+          if (el) {
+            el.focus();
+            el.value = val.substring(0, maxLen).trim();
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            el.dispatchEvent(new Event("blur", { bubbles: true }));
+          }
+        };
+        setRootVal("designCreator-productEditor-title", enContent.title || "", 60);
+        setRootVal("designCreator-productEditor-brandName", enContent.brand || "", 50);
+        setRootVal("designCreator-productEditor-featureBullet1", enContent.bullet1 || enContent.bullet_1 || "", 256);
+        setRootVal("designCreator-productEditor-featureBullet2", enContent.bullet2 || enContent.bullet_2 || "", 256);
+        setRootVal("designCreator-productEditor-description", enContent.description || "", 2e3);
         return { success: true, filledLocales };
       }, listings);
       this.log(`\u2705 Listings f\xFCr Sprachen [${fillResult.filledLocales.join(", ")}] eingetragen!`, "Listings fertig \u2713", 90, 100);
+      await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
+      await page.waitForTimeout(1500);
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       if (mode === "publish") {
         this.log(`\u{1F680} Klicke 'Publish' Button f\xFCr Live-Ver\xF6ffentlichung...`, "Ver\xF6ffentliche...", 95, 100);
-        const submitBtn = await page.waitForSelector("#submit-button:not([disabled])", { timeout: 2e4 });
-        if (!submitBtn) throw new Error("Publish-Button nicht gefunden oder deaktiviert.");
-        await submitBtn.click();
+        const publishClicked = await page.evaluate(() => {
+          const submitBtn = document.getElementById("submit-button") || document.querySelector('button[id*="submit"], button.btn-submit');
+          if (submitBtn) {
+            submitBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+            submitBtn.click();
+            return true;
+          }
+          return false;
+        });
+        if (!publishClicked) {
+          throw new Error("Publish-Button im DOM nicht gefunden.");
+        }
         this.log(`\u23F3 Warte auf Best\xE4tigungs-Modal...`, "Best\xE4tige Publish...");
         const confirmBtn = await page.waitForSelector(".modal-footer .btn-primary.btn-submit, button.btn-submit", { timeout: 15e3 });
         if (!confirmBtn) throw new Error("Best\xE4tigungs-Button im Publish-Modal nicht gefunden.");
@@ -221824,10 +221879,19 @@ var UploadWorkerService = class {
         this.log(`\u{1F389} Design erfolgreich auf Amazon Merch ver\xF6ffentlicht!`, "Erfolgreich ver\xF6ffentlicht \u2713", 100, 100);
       } else {
         this.log(`\u{1F4BE} Klicke 'Save Draft' Button f\xFCr Entwurf-Speicherung...`, "Speichere Entwurf...", 95, 100);
-        const draftBtn = await page.waitForSelector('#draft-button, #save-as-draft-button, button[id*="draft"]', { timeout: 2e4 });
-        if (!draftBtn) throw new Error("Draft-Button nicht gefunden.");
-        await draftBtn.click();
-        await page.waitForTimeout(3e3);
+        const draftClicked = await page.evaluate(() => {
+          const draftBtn = document.getElementById("draft-button") || document.getElementById("save-as-draft-button") || document.querySelector('button[id*="draft"]') || document.querySelector("button.btn-draft");
+          if (draftBtn) {
+            draftBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+            draftBtn.click();
+            return true;
+          }
+          return false;
+        });
+        if (!draftClicked) {
+          throw new Error("Save-Draft Button im DOM nicht gefunden.");
+        }
+        await page.waitForTimeout(4e3);
         this.log(`\u{1F389} Design sicher als Entwurf in Amazon Merch gespeichert!`, "Entwurf gespeichert \u2713", 100, 100);
       }
       QueueService.updateItemStatus(item.id, "COMPLETED");
