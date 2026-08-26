@@ -73,6 +73,45 @@ export class TaskLogService {
     return this.currentCounter;
   }
 
+  /**
+   * Cleans text to strictly conform to Amazon Merch on Demand character requirements:
+   * - Converts typographic quotes („ “ ” « ») to standard ASCII quotes (")
+   * - Converts curly single quotes/apostrophes (’ ‘ ‚ ‛) to standard ASCII apostrophe (')
+   * - Converts typographic hyphens/dashes (— – −) to standard ASCII hyphen (-)
+   * - Converts ellipsis (…) to (...)
+   * - Removes any other prohibited unicode characters not allowed on Amazon Merch
+   */
+  public static sanitizeString(txt: string): string {
+    if (!txt || typeof txt !== 'string') return txt || '';
+    return txt
+      .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
+      .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'")
+      .replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
+      .replace(/\u2026/g, '...')
+      .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+      .replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  public static sanitizeListingObject(listing: any): any {
+    if (!listing || typeof listing !== 'object') return listing;
+    if (Array.isArray(listing)) {
+      return listing.map(item => typeof item === 'string' ? this.sanitizeString(item) : this.sanitizeListingObject(item));
+    }
+    const result: Record<string, any> = {};
+    for (const [key, val] of Object.entries(listing)) {
+      if (typeof val === 'string') {
+        result[key] = this.sanitizeString(val);
+      } else if (typeof val === 'object' && val !== null) {
+        result[key] = this.sanitizeListingObject(val);
+      } else {
+        result[key] = val;
+      }
+    }
+    return result;
+  }
+
   private static loadLogs(): DesignTaskLog[] {
     if (this.inMemoryLogs !== null) {
       return this.inMemoryLogs;
@@ -915,6 +954,9 @@ export class TaskLogService {
       } catch (pe) {
         parsedListing = rawContent;
       }
+
+      // Automatically sanitize all quotes, apostrophes, dashes and invalid characters across all generated languages
+      parsedListing = this.sanitizeListingObject(parsedListing);
 
       // Check for any banned word violations
       const bannedIssues = BannedWordsService.validateListing(parsedListing);
@@ -1998,12 +2040,13 @@ Please audit the listing based on your compliance rules:
 
     if (params.action === 'APPROVE') {
       if (params.refinedListing) {
+        const sanitizedRefined = this.sanitizeListingObject(params.refinedListing);
         if (!task.listingResult) {
-          task.listingResult = { en: params.refinedListing };
+          task.listingResult = { en: sanitizedRefined };
         } else if (task.listingResult.en) {
-          task.listingResult.en = { ...task.listingResult.en, ...params.refinedListing };
+          task.listingResult.en = { ...task.listingResult.en, ...sanitizedRefined };
         } else if (typeof task.listingResult === 'object') {
-          task.listingResult = { ...task.listingResult, ...params.refinedListing };
+          task.listingResult = { ...task.listingResult, ...sanitizedRefined };
         }
       }
 

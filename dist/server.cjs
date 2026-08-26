@@ -214617,16 +214617,36 @@ var init_queueService = __esm2({
           if (!Array.isArray(tasks)) return;
           const tasksMap = new Map(tasks.map((t) => [t.id, t]));
           let hasChanges = false;
+          const cleanStr = (txt) => {
+            if (!txt) return "";
+            return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
+          };
           for (const item of this.items) {
+            if (item.title) item.title = cleanStr(item.title);
+            if (item.brand) item.brand = cleanStr(item.brand);
+            if (item.bullet1) item.bullet1 = cleanStr(item.bullet1);
+            if (item.bullet2) item.bullet2 = cleanStr(item.bullet2);
+            if (item.description) item.description = cleanStr(item.description);
+            if (item.listings) {
+              for (const langObj of Object.values(item.listings)) {
+                if (langObj && typeof langObj === "object") {
+                  if (langObj.title) langObj.title = cleanStr(langObj.title);
+                  if (langObj.brand) langObj.brand = cleanStr(langObj.brand);
+                  if (langObj.bullet1) langObj.bullet1 = cleanStr(langObj.bullet1);
+                  if (langObj.bullet2) langObj.bullet2 = cleanStr(langObj.bullet2);
+                  if (langObj.description) langObj.description = cleanStr(langObj.description);
+                }
+              }
+            }
             const task = tasksMap.get(item.taskId);
             if (task) {
               const listing = task.listingResult || task.trademarkRefineResult || {};
               const enListing = listing.en || (listing.title || listing.brand ? listing : {});
-              if (!item.brand || item.brand === "\u2014") item.brand = enListing.brand || task.payload?.brand || "";
-              if (!item.title || item.title === "Neues Design") item.title = enListing.title || task.payload?.title || task.payload?.quote || "";
-              if (!item.bullet1) item.bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
-              if (!item.bullet2) item.bullet2 = enListing.bullet2 || enListing.bullet_2 || "";
-              if (!item.description) item.description = enListing.description || "";
+              if (!item.brand || item.brand === "\u2014") item.brand = cleanStr(enListing.brand || task.payload?.brand || "");
+              if (!item.title || item.title === "Neues Design") item.title = cleanStr(enListing.title || task.payload?.title || task.payload?.quote || "");
+              if (!item.bullet1) item.bullet1 = cleanStr(enListing.bullet1 || enListing.bullet_1 || "");
+              if (!item.bullet2) item.bullet2 = cleanStr(enListing.bullet2 || enListing.bullet_2 || "");
+              if (!item.description) item.description = cleanStr(enListing.description || "");
               if (!item.niche && task.payload?.niche) item.niche = task.payload.niche;
               if (!item.listings || Object.keys(item.listings).length === 0) {
                 const listings = {};
@@ -214635,22 +214655,22 @@ var init_queueService = __esm2({
                     if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
                       const langContent = val;
                       listings[key.toLowerCase()] = {
-                        brand: langContent.brand || item.brand,
-                        title: langContent.title || item.title,
-                        bullet1: langContent.bullet1 || langContent.bullet_1 || "",
-                        bullet2: langContent.bullet2 || langContent.bullet_2 || "",
-                        description: langContent.description || ""
+                        brand: cleanStr(langContent.brand || item.brand),
+                        title: cleanStr(langContent.title || item.title),
+                        bullet1: cleanStr(langContent.bullet1 || langContent.bullet_1 || ""),
+                        bullet2: cleanStr(langContent.bullet2 || langContent.bullet_2 || ""),
+                        description: cleanStr(langContent.description || "")
                       };
                     }
                   }
                 }
                 if (!listings.en && (item.title || item.brand)) {
                   listings.en = {
-                    brand: item.brand,
-                    title: item.title,
-                    bullet1: item.bullet1,
-                    bullet2: item.bullet2,
-                    description: item.description
+                    brand: cleanStr(item.brand),
+                    title: cleanStr(item.title),
+                    bullet1: cleanStr(item.bullet1),
+                    bullet2: cleanStr(item.bullet2),
+                    description: cleanStr(item.description)
                   };
                 }
                 item.listings = listings;
@@ -215587,10 +215607,11 @@ Your task is to generate a high-converting, policy-compliant, and perfectly opti
 - NO trademarks, copyrighted characters, or brand names.
 - NO profanity, violence, or sensitive themes (must be 100% Family Friendly / PG-13).
 - NO keyword stuffing. Use full, natural sentences.
+- NO typographic or curly quotation marks (do NOT use \u201E \u201C \u201D \xAB \xBB \u2019 \u2018). Use ONLY standard ASCII double quotes (") or single quotes ('). Do not use em-dashes (\u2014); use standard hyphens (-).
 
 ### 3. MULTI-MARKETPLACE TRANSLATIONS:
 Provide localized, native listings for English (en), German (de), French (fr), Italian (it), Spanish (es), and Japanese (ja).
-CRITICAL: Any English quotes or slogans on the design MUST remain in English in all translated listings! Only translate the surrounding descriptive text.
+CRITICAL: Any English quotes or slogans on the design MUST remain in English in all translated listings! Only translate the surrounding descriptive text. Never use non-ASCII quotes in translated text (e.g. do NOT use German \u201E \u201C).
 
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
@@ -219042,6 +219063,35 @@ var TaskLogService = class {
     }
     return this.currentCounter;
   }
+  /**
+   * Cleans text to strictly conform to Amazon Merch on Demand character requirements:
+   * - Converts typographic quotes („ “ ” « ») to standard ASCII quotes (")
+   * - Converts curly single quotes/apostrophes (’ ‘ ‚ ‛) to standard ASCII apostrophe (')
+   * - Converts typographic hyphens/dashes (— – −) to standard ASCII hyphen (-)
+   * - Converts ellipsis (…) to (...)
+   * - Removes any other prohibited unicode characters not allowed on Amazon Merch
+   */
+  static sanitizeString(txt) {
+    if (!txt || typeof txt !== "string") return txt || "";
+    return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
+  }
+  static sanitizeListingObject(listing) {
+    if (!listing || typeof listing !== "object") return listing;
+    if (Array.isArray(listing)) {
+      return listing.map((item) => typeof item === "string" ? this.sanitizeString(item) : this.sanitizeListingObject(item));
+    }
+    const result2 = {};
+    for (const [key, val] of Object.entries(listing)) {
+      if (typeof val === "string") {
+        result2[key] = this.sanitizeString(val);
+      } else if (typeof val === "object" && val !== null) {
+        result2[key] = this.sanitizeListingObject(val);
+      } else {
+        result2[key] = val;
+      }
+    }
+    return result2;
+  }
   static loadLogs() {
     if (this.inMemoryLogs !== null) {
       return this.inMemoryLogs;
@@ -219765,6 +219815,7 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
       } catch (pe) {
         parsedListing = rawContent;
       }
+      parsedListing = this.sanitizeListingObject(parsedListing);
       const bannedIssues = BannedWordsService.validateListing(parsedListing);
       const hasBannedIssues = Object.keys(bannedIssues).length > 0;
       if (hasBannedIssues) {
@@ -220692,12 +220743,13 @@ Please audit the listing based on your compliance rules:
     }
     if (params2.action === "APPROVE") {
       if (params2.refinedListing) {
+        const sanitizedRefined = this.sanitizeListingObject(params2.refinedListing);
         if (!task.listingResult) {
-          task.listingResult = { en: params2.refinedListing };
+          task.listingResult = { en: sanitizedRefined };
         } else if (task.listingResult.en) {
-          task.listingResult.en = { ...task.listingResult.en, ...params2.refinedListing };
+          task.listingResult.en = { ...task.listingResult.en, ...sanitizedRefined };
         } else if (typeof task.listingResult === "object") {
-          task.listingResult = { ...task.listingResult, ...params2.refinedListing };
+          task.listingResult = { ...task.listingResult, ...sanitizedRefined };
         }
       }
       task.status = "CHECKING_TRADEMARKS";

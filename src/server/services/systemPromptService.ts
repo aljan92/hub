@@ -112,10 +112,11 @@ Your task is to generate a high-converting, policy-compliant, and perfectly opti
 - NO trademarks, copyrighted characters, or brand names.
 - NO profanity, violence, or sensitive themes (must be 100% Family Friendly / PG-13).
 - NO keyword stuffing. Use full, natural sentences.
+- NO typographic or curly quotation marks (do NOT use „ “ ” « » ’ ‘). Use ONLY standard ASCII double quotes (") or single quotes ('). Do not use em-dashes (—); use standard hyphens (-).
 
 ### 3. MULTI-MARKETPLACE TRANSLATIONS:
 Provide localized, native listings for English (en), German (de), French (fr), Italian (it), Spanish (es), and Japanese (ja).
-CRITICAL: Any English quotes or slogans on the design MUST remain in English in all translated listings! Only translate the surrounding descriptive text.
+CRITICAL: Any English quotes or slogans on the design MUST remain in English in all translated listings! Only translate the surrounding descriptive text. Never use non-ASCII quotes in translated text (e.g. do NOT use German „ “).
 
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):

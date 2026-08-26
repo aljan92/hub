@@ -107,17 +107,49 @@ export class QueueService {
       const tasksMap = new Map(tasks.map((t: any) => [t.id, t]));
       let hasChanges = false;
 
+      const cleanStr = (txt: string) => {
+        if (!txt) return '';
+        return txt
+          .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
+          .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'")
+          .replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
+          .replace(/\u2026/g, '...')
+          .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+          .replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
       for (const item of this.items) {
+        // Always sanitize root fields
+        if (item.title) item.title = cleanStr(item.title);
+        if (item.brand) item.brand = cleanStr(item.brand);
+        if (item.bullet1) item.bullet1 = cleanStr(item.bullet1);
+        if (item.bullet2) item.bullet2 = cleanStr(item.bullet2);
+        if (item.description) item.description = cleanStr(item.description);
+
+        if (item.listings) {
+          for (const langObj of Object.values(item.listings)) {
+            if (langObj && typeof langObj === 'object') {
+              if (langObj.title) langObj.title = cleanStr(langObj.title);
+              if (langObj.brand) langObj.brand = cleanStr(langObj.brand);
+              if (langObj.bullet1) langObj.bullet1 = cleanStr(langObj.bullet1);
+              if (langObj.bullet2) langObj.bullet2 = cleanStr(langObj.bullet2);
+              if (langObj.description) langObj.description = cleanStr(langObj.description);
+            }
+          }
+        }
+
         const task = tasksMap.get(item.taskId);
         if (task) {
           const listing = task.listingResult || task.trademarkRefineResult || {};
           const enListing = listing.en || (listing.title || listing.brand ? listing : {});
           
-          if (!item.brand || item.brand === '—') item.brand = enListing.brand || task.payload?.brand || '';
-          if (!item.title || item.title === 'Neues Design') item.title = enListing.title || task.payload?.title || task.payload?.quote || '';
-          if (!item.bullet1) item.bullet1 = enListing.bullet1 || enListing.bullet_1 || '';
-          if (!item.bullet2) item.bullet2 = enListing.bullet2 || enListing.bullet_2 || '';
-          if (!item.description) item.description = enListing.description || '';
+          if (!item.brand || item.brand === '—') item.brand = cleanStr(enListing.brand || task.payload?.brand || '');
+          if (!item.title || item.title === 'Neues Design') item.title = cleanStr(enListing.title || task.payload?.title || task.payload?.quote || '');
+          if (!item.bullet1) item.bullet1 = cleanStr(enListing.bullet1 || enListing.bullet_1 || '');
+          if (!item.bullet2) item.bullet2 = cleanStr(enListing.bullet2 || enListing.bullet_2 || '');
+          if (!item.description) item.description = cleanStr(enListing.description || '');
           if (!item.niche && task.payload?.niche) item.niche = task.payload.niche;
 
           // Build multi-language listings map
@@ -128,22 +160,22 @@ export class QueueService {
                 if (val && typeof val === 'object' && !Array.isArray(val) && !key.startsWith('_')) {
                   const langContent = val as any;
                   listings[key.toLowerCase()] = {
-                    brand: langContent.brand || item.brand,
-                    title: langContent.title || item.title,
-                    bullet1: langContent.bullet1 || langContent.bullet_1 || '',
-                    bullet2: langContent.bullet2 || langContent.bullet_2 || '',
-                    description: langContent.description || ''
+                    brand: cleanStr(langContent.brand || item.brand),
+                    title: cleanStr(langContent.title || item.title),
+                    bullet1: cleanStr(langContent.bullet1 || langContent.bullet_1 || ''),
+                    bullet2: cleanStr(langContent.bullet2 || langContent.bullet_2 || ''),
+                    description: cleanStr(langContent.description || '')
                   };
                 }
               }
             }
             if (!listings.en && (item.title || item.brand)) {
               listings.en = {
-                brand: item.brand,
-                title: item.title,
-                bullet1: item.bullet1,
-                bullet2: item.bullet2,
-                description: item.description
+                brand: cleanStr(item.brand),
+                title: cleanStr(item.title),
+                bullet1: cleanStr(item.bullet1),
+                bullet2: cleanStr(item.bullet2),
+                description: cleanStr(item.description)
               };
             }
             item.listings = listings;
