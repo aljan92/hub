@@ -2049,47 +2049,112 @@ Please audit the listing based on your compliance rules:
         task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
       }
 
-      // Render Final MBA Master-PNG (4500x5400 px, 300 DPI) & 4-Panel Image
       const finalSvg = task.svgContent || params.editedSvgContent || '';
-      try {
-        const ts = Date.now();
+      const ts = Date.now();
+
+      // 1. Render 4-Panel Verification Image (2048x2048 px on White/Black/Red/Slate)
+      console.log(`[TaskLogService] 🖼️ Rendere 4-Panel Testbild nach SVG-Freigabe für Task ${taskId}...`);
+      const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
+      const fourPanelFilePath = path.join(designsDir, `${cleanId}_4panel.png`);
+      fs.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+      task.localFourPanelImagePath = fourPanelFilePath;
+      const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
+      task.fourPanelImageUrl = fourPanelUrl;
+
+      // 2. Log: Senden an LLM Vision zur 4-Panel Cutout-Prüfung
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'SVG_AUDIT_REQUEST',
+        title: `Senden an LLM Vision (4-Panel Cutout-Prüfung nach Freigabe)`,
+        content: {
+          fourPanelImageUrl: fourPanelUrl,
+          quote: task.payload?.quote
+        },
+        metadata: {
+          provider: 'OpenRouter Vision'
+        }
+      });
+
+      // 3. Run LLM Vision Cutout Audit
+      console.log(`[TaskLogService] 🤖 Führe LLM Vision Cutout-Audit nach SVG-Freigabe für Task ${taskId} durch...`);
+      const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
+      task.svgAuditResult = auditResult;
+
+      // 4. Log: Empfangen von LLM Vision Cutout Audit
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'SVG_AUDIT_RESPONSE',
+        title: `Empfangen von LLM Vision (${auditResult.cutout_verdict === 'APPROVED' ? 'Cutout Freigegeben ✓' : 'Korrektur nötig ⚠️'})`,
+        content: {
+          verdict: auditResult.cutout_verdict,
+          backgroundClean: auditResult.background_removed_cleanly,
+          detectedIssues: auditResult.detected_issues,
+          explanation: auditResult.explanation,
+          fourPanelImageUrl: fourPanelUrl
+        },
+        metadata: {
+          provider: 'OpenRouter Vision',
+          latencyMs: auditResult.latencyMs,
+          tokens: auditResult.tokens
+        }
+      });
+
+      if (auditResult.cutout_verdict === 'APPROVED') {
+        // 5. Render Final MBA Master-PNG (4500x5400 px, 300 DPI)
+        console.log(`[TaskLogService] 🖨️ Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) für Task ${taskId}...`);
         const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
         const mbaFilePath = path.join(designsDir, `${cleanId}_mba.png`);
         fs.writeFileSync(mbaFilePath, mbaBuffer);
         task.localMbaPngPath = mbaFilePath;
         task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
 
-        const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
-        const fourPanelFilePath = path.join(designsDir, `${cleanId}_4panel.png`);
-        fs.writeFileSync(fourPanelFilePath, fourPanelBuffer);
-        task.localFourPanelImagePath = fourPanelFilePath;
-        task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
-      } catch (e: any) {
-        console.warn(`[TaskLogService] Warning rendering final PNGs for task ${taskId}:`, e);
+        task.status = 'COMPLETED';
+        task.checkpoint = undefined;
+        task.hasError = false;
+
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'SVG_EDIT_RESPONSE',
+          title: `SVG Design & MBA Print-PNG final freigegeben (Cutout von Vision-KI bestätigt ✓)`,
+          content: {
+            verdict: 'APPROVED',
+            svgUrl: task.svgUrl,
+            mbaPngUrl: task.mbaPngUrl,
+            fourPanelImageUrl: task.fourPanelImageUrl,
+            svgLength: finalSvg.length,
+            message: 'Vektorgrafik geprüft, Cutout von Vision-KI freigegeben und MBA Master-PNG (4500x5400 px) erzeugt.'
+          }
+        });
+
+        this.saveLogs(this.loadLogs());
+        this.emitUpdate(task);
+
+        return { success: true, message: 'Cutout von Vision-KI freigegeben & MBA Master-PNG generiert ✓' };
+      } else {
+        // Cutout needs work - remain in Checkpoint 4
+        task.status = 'AWAITING_SVG_REVIEW';
+        task.checkpoint = 'SVG_REVIEW';
+        task.hasError = false;
+
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'TASK_HANDOFF',
+          title: `Übergeben an Tasks (KI Cutout-Audit empfiehlt Nacharbeit)`,
+          content: {
+            checkpoint: 'SVG_REVIEW',
+            reason: auditResult.explanation,
+            detectedIssues: auditResult.detected_issues
+          }
+        });
+
+        this.saveLogs(this.loadLogs());
+        this.emitUpdate(task);
+
+        return {
+          success: false,
+          error: `KI Cutout-Audit: ${auditResult.explanation || (auditResult.detected_issues && auditResult.detected_issues.join(', ')) || 'Unreinheiten erkannt. Bitte nachbessern.'}`
+        };
       }
-
-      task.status = 'COMPLETED';
-      task.checkpoint = undefined;
-      task.hasError = false;
-
-      this.addEvent(taskId, {
-        timestamp: new Date().toISOString(),
-        type: 'SVG_EDIT_RESPONSE',
-        title: `SVG Design & MBA Print-PNG final freigegeben (Human Loop)`,
-        content: {
-          verdict: 'APPROVED',
-          svgUrl: task.svgUrl,
-          mbaPngUrl: task.mbaPngUrl,
-          fourPanelImageUrl: task.fourPanelImageUrl,
-          svgLength: (task.svgContent || params.editedSvgContent || '').length,
-          message: 'Vektorgrafik geprüft und als MBA Print-PNG (4500x5400 px) für den Upload freigegeben.'
-        }
-      });
-
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-
-      return { success: true, message: 'SVG & MBA Print-PNG erfolgreich freigegeben und abgeschlossen.' };
     }
 
     if (params.action === 'REGENERATE_VECTOR') {

@@ -344,11 +344,11 @@ export const TasksView: React.FC = () => {
   };
 
   // Actions for Checkpoint 2: Design Review
-  const handleDesignReview = async (action: 'APPROVE' | 'REGENERATE_IMAGE', useDefaultAiAnswers: boolean = false) => {
+  const handleDesignReview = async (action: 'APPROVE' | 'REGENERATE_IMAGE') => {
     if (!activeTask) return;
     setIsSubmitting(true);
     try {
-      const answers = useDefaultAiAnswers ? undefined : {
+      const answers = {
         audience: selectedAudience,
         avoidColor: selectedAvoidColor,
         reuseBackground: selectedBgMode,
@@ -856,7 +856,7 @@ export const TasksView: React.FC = () => {
                           </div>
                           <div className="text-[11px] font-mono text-slate-300 bg-slate-950 p-2 rounded border border-slate-800/80">
                             <div>Soll: <span className="text-slate-200">"{activeTask.payload?.quote}"</span></div>
-                            <div>Erkannt: <span className="text-cyan-300">"{activeTask.analysisResult?.quote_check?.detected_quote_text || '-'}"</span></div>
+                            <div>Erkannt: <span className="text-cyan-300">"{activeTask.analysisResult?.quote_check?.detected_quote || activeTask.analysisResult?.quote_check?.detected_quote_text || '-'}"</span></div>
                           </div>
                         </div>
 
@@ -951,9 +951,9 @@ export const TasksView: React.FC = () => {
                                 key={num}
                                 type="button"
                                 onClick={() => setSelectedMaxColors(num)}
-                                className={`w-7 h-7 text-xs font-semibold rounded-lg border transition-all flex items-center justify-center ${
+                                className={`w-8 h-7 text-xs rounded-lg font-mono border transition-all ${
                                   selectedMaxColors === num
-                                    ? 'bg-cyan-600 text-white border-cyan-500 shadow-md scale-105'
+                                    ? 'bg-cyan-600 text-white border-cyan-500 font-bold shadow'
                                     : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                                 }`}
                               >
@@ -968,33 +968,24 @@ export const TasksView: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Action Bar */}
+                    {/* Checkpoint 2 Action Buttons */}
                     <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-800">
                       <button
                         onClick={() => handleDesignReview('REGENERATE_IMAGE')}
                         disabled={isSubmitting}
-                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
                       >
-                        <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-                        <span>Neu generieren</span>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Bild neu generieren</span>
                       </button>
 
                       <div className="flex items-center space-x-2">
                         <button
-                          onClick={() => handleDesignReview('APPROVE', false)}
+                          onClick={() => handleDesignReview('APPROVE')}
                           disabled={isSubmitting}
-                          className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                          className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-2 transition-all disabled:opacity-50 shadow-md shadow-emerald-950/40"
                         >
-                          <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Speichern &amp; Weiter</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleDesignReview('APPROVE', true)}
-                          disabled={isSubmitting}
-                          className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-1.5 transition-all disabled:opacity-50 shadow-sm"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
+                          <Sparkles className="w-4 h-4" />
                           <span>Listing generieren</span>
                         </button>
                       </div>

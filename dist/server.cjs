@@ -219993,40 +219993,93 @@ Please audit the listing based on your compliance rules:
         task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
       }
       const finalSvg = task.svgContent || params2.editedSvgContent || "";
-      try {
-        const ts = Date.now();
+      const ts = Date.now();
+      console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Testbild nach SVG-Freigabe f\xFCr Task ${taskId}...`);
+      const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
+      const fourPanelFilePath = import_path70.default.join(designsDir, `${cleanId}_4panel.png`);
+      import_fs75.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+      task.localFourPanelImagePath = fourPanelFilePath;
+      const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
+      task.fourPanelImageUrl = fourPanelUrl;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "SVG_AUDIT_REQUEST",
+        title: `Senden an LLM Vision (4-Panel Cutout-Pr\xFCfung nach Freigabe)`,
+        content: {
+          fourPanelImageUrl: fourPanelUrl,
+          quote: task.payload?.quote
+        },
+        metadata: {
+          provider: "OpenRouter Vision"
+        }
+      });
+      console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit nach SVG-Freigabe f\xFCr Task ${taskId} durch...`);
+      const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
+      task.svgAuditResult = auditResult;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "SVG_AUDIT_RESPONSE",
+        title: `Empfangen von LLM Vision (${auditResult.cutout_verdict === "APPROVED" ? "Cutout Freigegeben \u2713" : "Korrektur n\xF6tig \u26A0\uFE0F"})`,
+        content: {
+          verdict: auditResult.cutout_verdict,
+          backgroundClean: auditResult.background_removed_cleanly,
+          detectedIssues: auditResult.detected_issues,
+          explanation: auditResult.explanation,
+          fourPanelImageUrl: fourPanelUrl
+        },
+        metadata: {
+          provider: "OpenRouter Vision",
+          latencyMs: auditResult.latencyMs,
+          tokens: auditResult.tokens
+        }
+      });
+      if (auditResult.cutout_verdict === "APPROVED") {
+        console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
         const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
         const mbaFilePath = import_path70.default.join(designsDir, `${cleanId}_mba.png`);
         import_fs75.default.writeFileSync(mbaFilePath, mbaBuffer);
         task.localMbaPngPath = mbaFilePath;
         task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
-        const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
-        const fourPanelFilePath = import_path70.default.join(designsDir, `${cleanId}_4panel.png`);
-        import_fs75.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
-        task.localFourPanelImagePath = fourPanelFilePath;
-        task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
-      } catch (e) {
-        console.warn(`[TaskLogService] Warning rendering final PNGs for task ${taskId}:`, e);
+        task.status = "COMPLETED";
+        task.checkpoint = void 0;
+        task.hasError = false;
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "SVG_EDIT_RESPONSE",
+          title: `SVG Design & MBA Print-PNG final freigegeben (Cutout von Vision-KI best\xE4tigt \u2713)`,
+          content: {
+            verdict: "APPROVED",
+            svgUrl: task.svgUrl,
+            mbaPngUrl: task.mbaPngUrl,
+            fourPanelImageUrl: task.fourPanelImageUrl,
+            svgLength: finalSvg.length,
+            message: "Vektorgrafik gepr\xFCft, Cutout von Vision-KI freigegeben und MBA Master-PNG (4500x5400 px) erzeugt."
+          }
+        });
+        this.saveLogs(this.loadLogs());
+        this.emitUpdate(task);
+        return { success: true, message: "Cutout von Vision-KI freigegeben & MBA Master-PNG generiert \u2713" };
+      } else {
+        task.status = "AWAITING_SVG_REVIEW";
+        task.checkpoint = "SVG_REVIEW";
+        task.hasError = false;
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "TASK_HANDOFF",
+          title: `\xDCbergeben an Tasks (KI Cutout-Audit empfiehlt Nacharbeit)`,
+          content: {
+            checkpoint: "SVG_REVIEW",
+            reason: auditResult.explanation,
+            detectedIssues: auditResult.detected_issues
+          }
+        });
+        this.saveLogs(this.loadLogs());
+        this.emitUpdate(task);
+        return {
+          success: false,
+          error: `KI Cutout-Audit: ${auditResult.explanation || auditResult.detected_issues && auditResult.detected_issues.join(", ") || "Unreinheiten erkannt. Bitte nachbessern."}`
+        };
       }
-      task.status = "COMPLETED";
-      task.checkpoint = void 0;
-      task.hasError = false;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "SVG_EDIT_RESPONSE",
-        title: `SVG Design & MBA Print-PNG final freigegeben (Human Loop)`,
-        content: {
-          verdict: "APPROVED",
-          svgUrl: task.svgUrl,
-          mbaPngUrl: task.mbaPngUrl,
-          fourPanelImageUrl: task.fourPanelImageUrl,
-          svgLength: (task.svgContent || params2.editedSvgContent || "").length,
-          message: "Vektorgrafik gepr\xFCft und als MBA Print-PNG (4500x5400 px) f\xFCr den Upload freigegeben."
-        }
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      return { success: true, message: "SVG & MBA Print-PNG erfolgreich freigegeben und abgeschlossen." };
     }
     if (params2.action === "REGENERATE_VECTOR") {
       if (params2.maxColors) {
