@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   UploadCloud, 
   Play, 
+  Pause,
   Clock, 
   Lock, 
   Unlock, 
@@ -48,6 +49,7 @@ interface QueueItem {
   title: string;
   status: QueueItemStatus;
   isLocked: boolean;
+  isPaused?: boolean;
   allocatedSlots: number;
   totalBaseSlots: number;
   activeProductsMap: Record<string, string[]>;
@@ -161,6 +163,18 @@ export const QueueView: React.FC = () => {
       }
     } catch (err) {
       console.error('Lock error:', err);
+    }
+  };
+
+  const handleTogglePause = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/v1/queue/item/${encodeURIComponent(itemId)}/pause`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.state) {
+        setQueueState(data.state);
+      }
+    } catch (err) {
+      console.error('Pause error:', err);
     }
   };
 
@@ -818,28 +832,32 @@ export const QueueView: React.FC = () => {
               <div className="space-y-3">
                 {waitingOrUploadingDesigns.map((item, index) => {
                   const isUploading = item.status === 'UPLOADING';
+                  const isPaused = item.isPaused ?? false;
                   const isDraftMode = (queueState.uploadMode || globalMode) === 'draft';
-                  const canUploadToday = isDraftMode || (item.allocatedSlots && item.allocatedSlots > 0);
+                  const canUploadToday = !isPaused && (isDraftMode || (item.allocatedSlots && item.allocatedSlots > 0));
                   const isExpanded = expandedItemId === item.id;
                   const isDragging = draggedIndex === index;
                   const isDragOver = dragOverIndex === index;
                   const droppedCount = Object.values(item.droppedSlotsMap || {}).reduce((sum, list) => sum + list.length, 0);
 
-                  // Border & Glow styling depending on status:
-                  // Lila = Uploading
-                  // Grün = Heute einplanbar / Draft
-                  // Orange = Wartet auf nächste Tage (Slot-Limit erreicht)
-                  let borderClass = 'border-emerald-500/60 shadow-emerald-500/10 ring-1 ring-emerald-500/30 hover:border-emerald-500/80';
+                  // Border & Glow styling:
+                  // Lila = Uploading (gerade im Upload)
+                  // Orange = Pausiert (isPaused)
+                  // Gelb = Warteschlange / Bereit für Upload
+                  // Slate / Grau = Wartet auf nächste Tage (Slot-Limit im Live Mode erreicht)
+                  let borderClass = 'border-amber-300/80 shadow-amber-300/10 ring-1 ring-amber-300/30 hover:border-amber-300';
                   if (isUploading) {
                     borderClass = 'border-purple-500/80 shadow-purple-500/20 ring-1 ring-purple-500/50';
+                  } else if (isPaused) {
+                    borderClass = 'border-amber-500/80 shadow-amber-500/15 ring-1 ring-amber-500/40 hover:border-amber-500/90 opacity-80';
                   } else if (!canUploadToday) {
-                    borderClass = 'border-amber-500/60 shadow-amber-500/10 ring-1 ring-amber-500/30 hover:border-amber-500/80';
+                    borderClass = 'border-slate-700/80 shadow-slate-900/20 ring-1 ring-slate-700/30 hover:border-slate-600';
                   }
 
                   return (
                     <div
                       key={item.id}
-                      draggable
+                      draggable={!isUploading}
                       onDragStart={(e) => handleDragStart(e, index)}
                       onDragOver={(e) => handleDragOver(e, index)}
                       onDragLeave={handleDragLeave}
@@ -850,9 +868,9 @@ export const QueueView: React.FC = () => {
                         isDragOver ? 'border-accent-cyan ring-2 ring-accent-cyan/30 scale-[1.01]' : ''
                       } ${borderClass}`}
                     >
-                      {/* Top Row: Drag Handle, Thumbnail, Title, Badges, Lock & Actions */}
+                      {/* Top Row: Drag Handle, Pause Button, Thumbnail, Title, Badges, Lock & Actions */}
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-center space-x-3 sm:space-x-4">
+                        <div className="flex items-center space-x-2.5 sm:space-x-3">
                           {/* Drag Handle */}
                           <div 
                             className="cursor-grab active:cursor-grabbing text-slate-500 hover:text-slate-200 p-1 -ml-1 rounded transition-colors"
@@ -860,6 +878,27 @@ export const QueueView: React.FC = () => {
                           >
                             <GripVertical className="w-5 h-5" />
                           </div>
+
+                          {/* Pause / Resume Button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTogglePause(item.id);
+                            }}
+                            disabled={isUploading}
+                            className={`p-1.5 rounded-lg border transition-all shrink-0 ${
+                              isPaused
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm shadow-amber-500/20 hover:bg-amber-500/30'
+                                : 'bg-slate-900/90 text-slate-400 hover:text-amber-300 border-slate-800 hover:border-amber-500/30'
+                            } disabled:opacity-40`}
+                            title={isPaused ? 'Design fortsetzen (wieder in Queue einplanen)' : 'Design pausieren (von Upload & Slot-Berechnung ausschließen)'}
+                          >
+                            {isPaused ? (
+                              <Play className="w-3.5 h-3.5 fill-current text-amber-400" />
+                            ) : (
+                              <Pause className="w-3.5 h-3.5 text-slate-400 hover:text-amber-300" />
+                            )}
+                          </button>
 
                           {/* Image Thumbnail */}
                           <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shrink-0 relative group">
@@ -899,15 +938,19 @@ export const QueueView: React.FC = () => {
                             <span className={`px-3 py-1 rounded-xl text-xs font-bold font-mono border ${
                               isUploading
                                 ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 animate-pulse'
-                                : canUploadToday
-                                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                                  : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                : isPaused
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  : canUploadToday
+                                    ? 'bg-amber-400/15 text-amber-300 border-amber-400/30'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700'
                             }`}>
                               {isUploading 
                                 ? '🟣 Lädt hoch...' 
-                                : canUploadToday
-                                  ? `🟢 ${item.allocatedSlots} Slots`
-                                  : '🟠 Wartet auf freie Slots'}
+                                : isPaused
+                                  ? '⏸️ Pausiert'
+                                  : canUploadToday
+                                    ? `🟡 ${item.allocatedSlots} Slots`
+                                    : '⏳ Wartet auf Slots'}
                             </span>
                             {droppedCount > 0 && !isUploading && canUploadToday && (
                               <span className="text-[10px] text-amber-400/90 font-mono mt-0.5">
@@ -1160,7 +1203,7 @@ export const QueueView: React.FC = () => {
               {completedDesigns.map((item) => (
                 <div 
                   key={item.id}
-                  className="bg-surface/90 border border-amber-400/60 shadow-amber-400/10 ring-1 ring-amber-400/30 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  className="bg-surface/90 border border-teal-500/50 shadow-teal-500/10 ring-1 ring-teal-500/30 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
                   <div className="flex items-center space-x-3 sm:space-x-4">
                     <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shrink-0 relative">
@@ -1179,7 +1222,7 @@ export const QueueView: React.FC = () => {
 
                     <div>
                       <div className="flex items-center space-x-2">
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 font-bold">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/40 font-bold">
                           ✓ Hochgeladen
                         </span>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">

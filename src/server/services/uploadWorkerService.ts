@@ -107,8 +107,8 @@ export class UploadWorkerService {
     if (queueItemId) {
       targetItem = state.items.find(i => i.id === queueItemId);
     } else {
-      // Pick first scheduled or waiting item
-      targetItem = state.items.find(i => i.status === 'SCHEDULED_TODAY') || state.items.find(i => i.status === 'WAITING_FOR_SLOTS');
+      // Pick first non-paused waiting item
+      targetItem = state.items.find(i => i.status === 'WAITING' && !i.isPaused && (mode === 'draft' || (i.allocatedSlots && i.allocatedSlots > 0)));
     }
 
     if (!targetItem) {

@@ -1260,6 +1260,20 @@ app.post('/api/v1/queue/item/:id/lock', (req, res) => {
   }
 });
 
+// Toggle Pause on a queue item
+app.post('/api/v1/queue/item/:id/pause', (req, res) => {
+  try {
+    const item = QueueService.togglePause(req.params.id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Queue item not found' });
+    }
+    const state = QueueService.getState();
+    res.json({ success: true, item, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Retry / Re-enqueue item into WAITING
 app.post('/api/v1/queue/item/:id/retry', (req, res) => {
   try {

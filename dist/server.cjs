@@ -214766,6 +214766,9 @@ var init_queueService = __esm2({
             scheduledSlotsToday += item.allocatedSlots || item.totalBaseSlots || 0;
             scheduledItemsCount++;
           } else if (item.status === "WAITING") {
+            if (item.isPaused) {
+              continue;
+            }
             if (isDraftMode || item.allocatedSlots && item.allocatedSlots > 0) {
               scheduledSlotsToday += item.allocatedSlots || 0;
               scheduledItemsCount++;
@@ -214913,6 +214916,18 @@ var init_queueService = __esm2({
         return item;
       }
       /**
+       * Toggle Pause on a queue item (excludes from balancing & upload)
+       */
+      static togglePause(queueId) {
+        this.ensureLoaded();
+        const item = this.items.find((i) => i.id === queueId);
+        if (!item) return null;
+        item.isPaused = !item.isPaused;
+        this.saveQueue();
+        this.rebalanceQueue();
+        return item;
+      }
+      /**
        * Remove item from queue
        */
       static removeItem(queueId) {
@@ -214988,7 +215003,12 @@ var init_queueService = __esm2({
           uploadingSlotsReserved += total;
         }
         const availableSlotsForWaiting = Math.max(0, freeDailySlots - uploadingSlotsReserved);
-        const waitingItems = this.items.filter((i) => i.status === "WAITING");
+        const pausedWaitingItems = this.items.filter((i) => i.status === "WAITING" && i.isPaused);
+        for (const pItem of pausedWaitingItems) {
+          pItem.allocatedSlots = 0;
+          pItem.droppedSlotsMap = {};
+        }
+        const waitingItems = this.items.filter((i) => i.status === "WAITING" && !i.isPaused);
         const catalog = ProductCatalogService.getCatalog();
         for (const item of waitingItems) {
           const tmBlocked = new Set((item.tmBlockedProductIds || []).map((id) => id.toUpperCase()));
@@ -221616,7 +221636,7 @@ var UploadWorkerService = class _UploadWorkerService {
     if (queueItemId) {
       targetItem = state.items.find((i) => i.id === queueItemId);
     } else {
-      targetItem = state.items.find((i) => i.status === "SCHEDULED_TODAY") || state.items.find((i) => i.status === "WAITING_FOR_SLOTS");
+      targetItem = state.items.find((i) => i.status === "WAITING" && !i.isPaused && (mode === "draft" || i.allocatedSlots && i.allocatedSlots > 0));
     }
     if (!targetItem) {
       return { success: false, message: "Kein bereitstehendes Design in der Queue gefunden." };
@@ -223250,6 +223270,18 @@ app.get("/api/v1/upload/status", (req, res) => {
 app.post("/api/v1/queue/item/:id/lock", (req, res) => {
   try {
     const item = QueueService.toggleLock(req.params.id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: "Queue item not found" });
+    }
+    const state = QueueService.getState();
+    res.json({ success: true, item, state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/queue/item/:id/pause", (req, res) => {
+  try {
+    const item = QueueService.togglePause(req.params.id);
     if (!item) {
       return res.status(404).json({ success: false, error: "Queue item not found" });
     }

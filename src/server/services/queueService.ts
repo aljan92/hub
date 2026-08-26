@@ -32,6 +32,7 @@ export interface QueueItem {
   addedAt: string;
   status: QueueItemStatus;
   isLocked: boolean; // Hero-Design Lock: protects from dynamic slot dropping
+  isPaused?: boolean; // Paused by user: excluded from balancing and auto-upload
   allocatedSlots: number;
   totalBaseSlots: number;
   activeProductsMap: Record<string, string[]>; // productId -> array of active marketplaces (e.g. ['US', 'DE', 'GB'])
@@ -277,6 +278,10 @@ export class QueueService {
         scheduledSlotsToday += item.allocatedSlots || item.totalBaseSlots || 0;
         scheduledItemsCount++;
       } else if (item.status === 'WAITING') {
+        if (item.isPaused) {
+          // Paused items are completely excluded from balancing and scheduled counts
+          continue;
+        }
         if (isDraftMode || (item.allocatedSlots && item.allocatedSlots > 0)) {
           scheduledSlotsToday += item.allocatedSlots || 0;
           scheduledItemsCount++;
@@ -467,6 +472,20 @@ export class QueueService {
   }
 
   /**
+   * Toggle Pause on a queue item (excludes from balancing & upload)
+   */
+  public static togglePause(queueId: string): QueueItem | null {
+    this.ensureLoaded();
+    const item = this.items.find(i => i.id === queueId);
+    if (!item) return null;
+
+    item.isPaused = !item.isPaused;
+    this.saveQueue();
+    this.rebalanceQueue();
+    return item;
+  }
+
+  /**
    * Remove item from queue
    */
   public static removeItem(queueId: string): boolean {
@@ -553,7 +572,15 @@ export class QueueService {
     }
 
     const availableSlotsForWaiting = Math.max(0, freeDailySlots - uploadingSlotsReserved);
-    const waitingItems = this.items.filter(i => i.status === 'WAITING');
+    
+    // Set 0 slots for paused waiting items so they do not participate in balancing
+    const pausedWaitingItems = this.items.filter(i => i.status === 'WAITING' && i.isPaused);
+    for (const pItem of pausedWaitingItems) {
+      pItem.allocatedSlots = 0;
+      pItem.droppedSlotsMap = {};
+    }
+
+    const waitingItems = this.items.filter(i => i.status === 'WAITING' && !i.isPaused);
 
     // 2. Reset each waiting item to its full TM-compliant base allocation
     const catalog = ProductCatalogService.getCatalog();
