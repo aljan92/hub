@@ -1273,12 +1273,20 @@ app.post('/api/v1/queue/item/:id/retry', (req, res) => {
 });
 
 // Re-push / Enqueue Task into Upload Queue
-app.post('/api/v1/tasks/:id/enqueue', (req, res) => {
+app.post(['/api/v1/tasks/:id/enqueue', '/api/v1/tasks/enqueue'], (req, res) => {
   try {
-    const taskId = req.params.id;
+    const rawId = req.params.id || req.body?.taskId || req.query?.taskId;
+    if (!rawId) {
+      return res.status(400).json({ success: false, error: 'Keine Task-ID übergeben' });
+    }
+    const taskId = decodeURIComponent(String(rawId));
     const task = TaskLogService.getTaskById(taskId);
     if (!task) {
-      return res.status(404).json({ success: false, error: 'Task nicht gefunden' });
+      return res.status(404).json({ success: false, error: `Task #${taskId} nicht gefunden` });
+    }
+
+    if (!task.localMbaPngPath && !task.mbaPngUrl) {
+      return res.status(400).json({ success: false, error: `Task #${taskId} besitzt noch kein fertig generiertes Master-PNG.` });
     }
 
     TaskLogService.completeTaskAndEnqueue(task);

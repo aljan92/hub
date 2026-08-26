@@ -1898,6 +1898,10 @@ Please audit the listing based on your compliance rules:
     });
   }
 
+  static getTaskById(id: string): DesignTaskLog | undefined {
+    return this.getTaskLogById(id);
+  }
+
   static clearTaskLogs() {
     this.inMemoryLogs = [];
     this.saveLogs([]);
