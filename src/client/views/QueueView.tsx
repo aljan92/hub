@@ -789,11 +789,10 @@ export const QueueView: React.FC = () => {
               <button
                 onClick={handleRebalance}
                 disabled={isRebalancing}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700 flex items-center space-x-1.5 transition-all shadow-sm"
+                className="p-2 rounded-xl text-slate-400 hover:text-accent-cyan bg-slate-900 hover:bg-slate-800 border border-slate-700/80 flex items-center justify-center transition-all shadow-sm shrink-0"
                 title="Slot-Berechnung manuell neu anstoßen"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRebalancing ? 'animate-spin' : ''}`} />
-                <span>Neu ausbalancieren</span>
+                <RefreshCw className={`w-4 h-4 ${isRebalancing ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>
@@ -819,10 +818,23 @@ export const QueueView: React.FC = () => {
               <div className="space-y-3">
                 {waitingOrUploadingDesigns.map((item, index) => {
                   const isUploading = item.status === 'UPLOADING';
+                  const isDraftMode = (queueState.uploadMode || globalMode) === 'draft';
+                  const canUploadToday = isDraftMode || (item.allocatedSlots && item.allocatedSlots > 0);
                   const isExpanded = expandedItemId === item.id;
                   const isDragging = draggedIndex === index;
                   const isDragOver = dragOverIndex === index;
                   const droppedCount = Object.values(item.droppedSlotsMap || {}).reduce((sum, list) => sum + list.length, 0);
+
+                  // Border & Glow styling depending on status:
+                  // Lila = Uploading
+                  // Grün = Heute einplanbar / Draft
+                  // Orange = Wartet auf nächste Tage (Slot-Limit erreicht)
+                  let borderClass = 'border-emerald-500/60 shadow-emerald-500/10 ring-1 ring-emerald-500/30 hover:border-emerald-500/80';
+                  if (isUploading) {
+                    borderClass = 'border-purple-500/80 shadow-purple-500/20 ring-1 ring-purple-500/50';
+                  } else if (!canUploadToday) {
+                    borderClass = 'border-amber-500/60 shadow-amber-500/10 ring-1 ring-amber-500/30 hover:border-amber-500/80';
+                  }
 
                   return (
                     <div
@@ -836,11 +848,7 @@ export const QueueView: React.FC = () => {
                         isDragging ? 'opacity-40 scale-[0.99] border-dashed border-accent-cyan' : ''
                       } ${
                         isDragOver ? 'border-accent-cyan ring-2 ring-accent-cyan/30 scale-[1.01]' : ''
-                      } ${
-                        isUploading
-                          ? 'border-primary-500/50 shadow-primary-500/10 ring-1 ring-primary-500/30'
-                          : 'border-slate-800/80 hover:border-slate-700'
-                      }`}
+                      } ${borderClass}`}
                     >
                       {/* Top Row: Drag Handle, Thumbnail, Title, Badges, Lock & Actions */}
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -890,12 +898,18 @@ export const QueueView: React.FC = () => {
                           <div className="flex flex-col items-end">
                             <span className={`px-3 py-1 rounded-xl text-xs font-bold font-mono border ${
                               isUploading
-                                ? 'bg-primary-500/20 text-primary-300 border-primary-500/40 animate-pulse'
-                                : 'bg-accent-cyan/15 text-accent-cyan border-accent-cyan/30'
+                                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 animate-pulse'
+                                : canUploadToday
+                                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                  : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
                             }`}>
-                              {isUploading ? '⚡ Lädt hoch...' : `⏳ ${item.allocatedSlots} Slots`}
+                              {isUploading 
+                                ? '🟣 Lädt hoch...' 
+                                : canUploadToday
+                                  ? `🟢 ${item.allocatedSlots} Slots`
+                                  : '🟠 Wartet auf freie Slots'}
                             </span>
-                            {droppedCount > 0 && !isUploading && (
+                            {droppedCount > 0 && !isUploading && canUploadToday && (
                               <span className="text-[10px] text-amber-400/90 font-mono mt-0.5">
                                 ({droppedCount} Slots gekürzt)
                               </span>
@@ -1146,7 +1160,7 @@ export const QueueView: React.FC = () => {
               {completedDesigns.map((item) => (
                 <div 
                   key={item.id}
-                  className="bg-surface/90 border border-emerald-500/20 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  className="bg-surface/90 border border-amber-400/60 shadow-amber-400/10 ring-1 ring-amber-400/30 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
                   <div className="flex items-center space-x-3 sm:space-x-4">
                     <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shrink-0 relative">
@@ -1165,7 +1179,7 @@ export const QueueView: React.FC = () => {
 
                     <div>
                       <div className="flex items-center space-x-2">
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 font-bold">
                           ✓ Hochgeladen
                         </span>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
@@ -1235,7 +1249,7 @@ export const QueueView: React.FC = () => {
               {errorDesigns.map((item) => (
                 <div 
                   key={item.id}
-                  className="bg-surface/90 border border-rose-500/40 rounded-2xl p-4 shadow-sm backdrop-blur-md space-y-3"
+                  className="bg-surface/90 border border-rose-500/60 shadow-rose-500/10 ring-1 ring-rose-500/30 rounded-2xl p-4 shadow-sm backdrop-blur-md space-y-3"
                 >
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center space-x-3 sm:space-x-4">
