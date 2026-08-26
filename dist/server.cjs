@@ -221539,16 +221539,49 @@ var UploadWorkerService = class {
         if (err.message && err.message.includes("Limit")) throw err;
         this.log(`\u26A0\uFE0F Render-Check beendet, fahre fort...`);
       }
-      if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       this.log(`\u{1F4E6} \xD6ffne 'Select Products' Modal...`, "Konfiguriere Marktpl\xE4tze...", 40, 100);
-      const selectBtn = await page.waitForSelector("#select-marketplace-button-original", { timeout: 15e3 });
-      if (selectBtn) {
-        await selectBtn.click();
-        await page.waitForSelector(".modal-content, .modal-dialog, merch-modal", { timeout: 1e4 });
-        await page.waitForTimeout(400);
+      await page.waitForTimeout(2500);
+      let modalOpened = false;
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        const isNowOpen = await page.evaluate(() => {
+          const modal = Array.from(document.querySelectorAll(".modal-dialog, .modal-content, merch-modal, .modal-body, .modal, merch-select-marketplaces-modal")).find((el) => {
+            const r = el.getBoundingClientRect();
+            return r.height > 0 && r.width > 0;
+          });
+          if (modal) return true;
+          const btn = document.getElementById("select-marketplace-button-original") || document.querySelector('[id*="select-marketplace"]') || document.querySelector('button[aria-label*="Select Products"]') || document.querySelector("button.select-marketplaces-button");
+          if (btn) {
+            btn.click();
+            return false;
+          }
+          return false;
+        });
+        if (isNowOpen) {
+          modalOpened = true;
+          break;
+        }
+        await page.waitForTimeout(1500);
+        const checkModal = await page.evaluate(() => {
+          return Array.from(document.querySelectorAll(".modal-dialog, .modal-content, merch-modal, .modal-body, .modal, merch-select-marketplaces-modal")).some((el) => {
+            const r = el.getBoundingClientRect();
+            return r.height > 0 && r.width > 0;
+          });
+        });
+        if (checkModal) {
+          modalOpened = true;
+          break;
+        }
+      }
+      if (!modalOpened) {
+        this.log(`\u26A0\uFE0F 'Select Products' Button konnte nicht ge\xF6ffnet werden, fahre mit Standard-Auswahl fort...`);
+      } else {
+        await page.waitForTimeout(500);
         const modalResult = await page.evaluate(async (activeMap) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
-          const modal = document.querySelector(".modal-content, .modal-dialog, merch-modal, .modal");
+          const modal = Array.from(document.querySelectorAll(".modal-content, .modal-dialog, merch-modal, .modal")).find((el) => {
+            const r = el.getBoundingClientRect();
+            return r.height > 0 && r.width > 0;
+          });
           if (!modal) return { success: true, modifiedCount: 0 };
           let modifiedCount = 0;
           const products = Object.keys(activeMap);
