@@ -214577,6 +214577,7 @@ var init_queueService = __esm2({
     NON_US_DROP_ORDER = ["JP", "ES", "IT", "FR", "DE", "GB"];
     QueueService = class {
       static queueFilePath = import_path71.default.resolve(process.cwd(), "data", "upload_queue.json");
+      static tasksLogPath = import_path71.default.resolve(process.cwd(), "data", "tasks_log.json");
       static items = [];
       static isLoaded = false;
       static dailySlotsInfo = { free: 200, used: 0, total: 200 };
@@ -214586,7 +214587,7 @@ var init_queueService = __esm2({
         this.isLoaded = true;
       }
       /**
-       * Load queue from ./data/upload_queue.json
+       * Load queue from ./data/upload_queue.json with auto-enrichment from tasks_log.json
        */
       static loadQueue() {
         try {
@@ -214595,6 +214596,7 @@ var init_queueService = __esm2({
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) {
               this.items = parsed;
+              this.enrichListingsFromTasksLog();
               return this.items;
             }
           }
@@ -214603,6 +214605,64 @@ var init_queueService = __esm2({
         }
         this.items = [];
         return this.items;
+      }
+      /**
+       * Enrich items with full multi-language listings from tasks_log.json if missing
+       */
+      static enrichListingsFromTasksLog() {
+        try {
+          if (!import_fs76.default.existsSync(this.tasksLogPath)) return;
+          const tasksRaw = import_fs76.default.readFileSync(this.tasksLogPath, "utf-8");
+          const tasks = JSON.parse(tasksRaw);
+          if (!Array.isArray(tasks)) return;
+          const tasksMap = new Map(tasks.map((t) => [t.id, t]));
+          let hasChanges = false;
+          for (const item of this.items) {
+            const task = tasksMap.get(item.taskId);
+            if (task) {
+              const listing = task.listingResult || task.trademarkRefineResult || {};
+              const enListing = listing.en || (listing.title || listing.brand ? listing : {});
+              if (!item.brand || item.brand === "\u2014") item.brand = enListing.brand || task.payload?.brand || "";
+              if (!item.title || item.title === "Neues Design") item.title = enListing.title || task.payload?.title || task.payload?.quote || "";
+              if (!item.bullet1) item.bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
+              if (!item.bullet2) item.bullet2 = enListing.bullet2 || enListing.bullet_2 || "";
+              if (!item.description) item.description = enListing.description || "";
+              if (!item.niche && task.payload?.niche) item.niche = task.payload.niche;
+              if (!item.listings || Object.keys(item.listings).length === 0) {
+                const listings = {};
+                if (typeof listing === "object") {
+                  for (const [key, val] of Object.entries(listing)) {
+                    if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
+                      const langContent = val;
+                      listings[key.toLowerCase()] = {
+                        brand: langContent.brand || item.brand,
+                        title: langContent.title || item.title,
+                        bullet1: langContent.bullet1 || langContent.bullet_1 || "",
+                        bullet2: langContent.bullet2 || langContent.bullet_2 || "",
+                        description: langContent.description || ""
+                      };
+                    }
+                  }
+                }
+                if (!listings.en && (item.title || item.brand)) {
+                  listings.en = {
+                    brand: item.brand,
+                    title: item.title,
+                    bullet1: item.bullet1,
+                    bullet2: item.bullet2,
+                    description: item.description
+                  };
+                }
+                item.listings = listings;
+                hasChanges = true;
+              }
+            }
+          }
+          if (hasChanges) {
+            import_fs76.default.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), "utf-8");
+          }
+        } catch (e) {
+        }
       }
       /**
        * Save queue to ./data/upload_queue.json
@@ -214658,6 +214718,13 @@ var init_queueService = __esm2({
         this.ensureLoaded();
         const existing = this.items.find((i) => i.taskId === item.taskId);
         if (existing) {
+          if (item.listings) existing.listings = item.listings;
+          if (item.brand) existing.brand = item.brand;
+          if (item.title) existing.title = item.title;
+          if (item.bullet1) existing.bullet1 = item.bullet1;
+          if (item.bullet2) existing.bullet2 = item.bullet2;
+          if (item.description) existing.description = item.description;
+          this.saveQueue();
           return existing;
         }
         const catalog = ProductCatalogService.getCatalog();
@@ -214682,6 +214749,15 @@ var init_queueService = __esm2({
           bullet1: item.bullet1,
           bullet2: item.bullet2,
           description: item.description,
+          listings: item.listings || {
+            en: {
+              brand: item.brand,
+              title: item.title,
+              bullet1: item.bullet1,
+              bullet2: item.bullet2,
+              description: item.description
+            }
+          },
           imagePath: item.imagePath,
           pngPath: item.pngPath,
           addedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -218988,16 +219064,42 @@ var TaskLogService = class {
     task.checkpoint = void 0;
     task.hasError = false;
     try {
+      const listing = task.listingResult || task.trademarkRefineResult || {};
+      const enListing = listing.en || (listing.title || listing.brand ? listing : {});
+      const brand = enListing.brand || task.payload?.brand || "";
+      const title = enListing.title || task.payload?.title || task.payload?.quote || "Design #" + task.id;
+      const bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
+      const bullet2 = enListing.bullet2 || enListing.bullet_2 || "";
+      const description = enListing.description || "";
+      const listings = {};
+      if (typeof listing === "object") {
+        for (const [key, val] of Object.entries(listing)) {
+          if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
+            const langObj = val;
+            listings[key.toLowerCase()] = {
+              brand: langObj.brand || brand,
+              title: langObj.title || title,
+              bullet1: langObj.bullet1 || langObj.bullet_1 || "",
+              bullet2: langObj.bullet2 || langObj.bullet_2 || "",
+              description: langObj.description || ""
+            };
+          }
+        }
+      }
+      if (!listings.en && (title || brand)) {
+        listings.en = { brand, title, bullet1, bullet2, description };
+      }
       const { QueueService: QueueService2 } = (init_queueService(), __toCommonJS2(queueService_exports));
       const queueItem = QueueService2.enqueueDesign({
         taskId: task.id,
-        designTitle: task.resultTitle || task.title || task.payload?.quote || "Design #" + task.id,
+        designTitle: title || "Design #" + task.id,
         niche: task.payload?.niche || "",
-        brand: task.resultBrand || task.brand || "",
-        title: task.resultTitle || task.title || "",
-        bullet1: task.resultBullet1 || task.bullet1 || "",
-        bullet2: task.resultBullet2 || task.bullet2 || "",
-        description: task.resultDescription || task.description || "",
+        brand,
+        title,
+        bullet1,
+        bullet2,
+        description,
+        listings,
         imagePath: task.localImagePath || "",
         pngPath: task.localMbaPngPath || ""
       });

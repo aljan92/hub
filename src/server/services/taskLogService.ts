@@ -183,16 +183,45 @@ export class TaskLogService {
     task.hasError = false;
 
     try {
+      const listing = task.listingResult || task.trademarkRefineResult || {};
+      const enListing = listing.en || (listing.title || listing.brand ? listing : {});
+      const brand = enListing.brand || task.payload?.brand || '';
+      const title = enListing.title || task.payload?.title || task.payload?.quote || 'Design #' + task.id;
+      const bullet1 = enListing.bullet1 || enListing.bullet_1 || '';
+      const bullet2 = enListing.bullet2 || enListing.bullet_2 || '';
+      const description = enListing.description || '';
+
+      // Collect all language listings (en, de, fr, es, it, jp, etc.)
+      const listings: Record<string, any> = {};
+      if (typeof listing === 'object') {
+        for (const [key, val] of Object.entries(listing)) {
+          if (val && typeof val === 'object' && !Array.isArray(val) && !key.startsWith('_')) {
+            const langObj = val as any;
+            listings[key.toLowerCase()] = {
+              brand: langObj.brand || brand,
+              title: langObj.title || title,
+              bullet1: langObj.bullet1 || langObj.bullet_1 || '',
+              bullet2: langObj.bullet2 || langObj.bullet_2 || '',
+              description: langObj.description || ''
+            };
+          }
+        }
+      }
+      if (!listings.en && (title || brand)) {
+        listings.en = { brand, title, bullet1, bullet2, description };
+      }
+
       const { QueueService } = require('./queueService');
       const queueItem = QueueService.enqueueDesign({
         taskId: task.id,
-        designTitle: task.resultTitle || task.title || task.payload?.quote || 'Design #' + task.id,
+        designTitle: title || 'Design #' + task.id,
         niche: task.payload?.niche || '',
-        brand: task.resultBrand || task.brand || '',
-        title: task.resultTitle || task.title || '',
-        bullet1: task.resultBullet1 || task.bullet1 || '',
-        bullet2: task.resultBullet2 || task.bullet2 || '',
-        description: task.resultDescription || task.description || '',
+        brand,
+        title,
+        bullet1,
+        bullet2,
+        description,
+        listings,
         imagePath: task.localImagePath || '',
         pngPath: task.localMbaPngPath || ''
       });

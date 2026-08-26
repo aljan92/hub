@@ -5,6 +5,14 @@ import { loadSettings, saveSettings } from './settingsService';
 
 export type QueueItemStatus = 'SCHEDULED_TODAY' | 'WAITING_FOR_SLOTS' | 'UPLOADING' | 'COMPLETED' | 'ERROR';
 
+export interface ListingLanguageContent {
+  brand?: string;
+  title?: string;
+  bullet1?: string;
+  bullet2?: string;
+  description?: string;
+}
+
 export interface QueueItem {
   id: string;
   taskId: string;
@@ -15,6 +23,7 @@ export interface QueueItem {
   bullet1: string;
   bullet2: string;
   description: string;
+  listings?: Record<string, ListingLanguageContent>; // e.g. { en: {...}, de: {...}, fr: {...}, es: {...}, it: {...}, jp: {...} }
   imagePath: string;
   pngPath: string;
   addedAt: string;
@@ -46,6 +55,7 @@ const NON_US_DROP_ORDER = ['JP', 'ES', 'IT', 'FR', 'DE', 'GB'];
 
 export class QueueService {
   private static queueFilePath = path.resolve(process.cwd(), 'data', 'upload_queue.json');
+  private static tasksLogPath = path.resolve(process.cwd(), 'data', 'tasks_log.json');
   private static items: QueueItem[] = [];
   private static isLoaded = false;
   private static dailySlotsInfo = { free: 200, used: 0, total: 200 };
@@ -57,7 +67,7 @@ export class QueueService {
   }
 
   /**
-   * Load queue from ./data/upload_queue.json
+   * Load queue from ./data/upload_queue.json with auto-enrichment from tasks_log.json
    */
   public static loadQueue(): QueueItem[] {
     try {
@@ -66,6 +76,9 @@ export class QueueService {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           this.items = parsed;
+
+          // Auto-enrich any items that might be missing full multi-language listings
+          this.enrichListingsFromTasksLog();
           return this.items;
         }
       }
@@ -74,6 +87,72 @@ export class QueueService {
     }
     this.items = [];
     return this.items;
+  }
+
+  /**
+   * Enrich items with full multi-language listings from tasks_log.json if missing
+   */
+  private static enrichListingsFromTasksLog() {
+    try {
+      if (!fs.existsSync(this.tasksLogPath)) return;
+      const tasksRaw = fs.readFileSync(this.tasksLogPath, 'utf-8');
+      const tasks = JSON.parse(tasksRaw);
+      if (!Array.isArray(tasks)) return;
+
+      const tasksMap = new Map(tasks.map((t: any) => [t.id, t]));
+      let hasChanges = false;
+
+      for (const item of this.items) {
+        const task = tasksMap.get(item.taskId);
+        if (task) {
+          const listing = task.listingResult || task.trademarkRefineResult || {};
+          const enListing = listing.en || (listing.title || listing.brand ? listing : {});
+          
+          if (!item.brand || item.brand === '—') item.brand = enListing.brand || task.payload?.brand || '';
+          if (!item.title || item.title === 'Neues Design') item.title = enListing.title || task.payload?.title || task.payload?.quote || '';
+          if (!item.bullet1) item.bullet1 = enListing.bullet1 || enListing.bullet_1 || '';
+          if (!item.bullet2) item.bullet2 = enListing.bullet2 || enListing.bullet_2 || '';
+          if (!item.description) item.description = enListing.description || '';
+          if (!item.niche && task.payload?.niche) item.niche = task.payload.niche;
+
+          // Build multi-language listings map
+          if (!item.listings || Object.keys(item.listings).length === 0) {
+            const listings: Record<string, ListingLanguageContent> = {};
+            if (typeof listing === 'object') {
+              for (const [key, val] of Object.entries(listing)) {
+                if (val && typeof val === 'object' && !Array.isArray(val) && !key.startsWith('_')) {
+                  const langContent = val as any;
+                  listings[key.toLowerCase()] = {
+                    brand: langContent.brand || item.brand,
+                    title: langContent.title || item.title,
+                    bullet1: langContent.bullet1 || langContent.bullet_1 || '',
+                    bullet2: langContent.bullet2 || langContent.bullet_2 || '',
+                    description: langContent.description || ''
+                  };
+                }
+              }
+            }
+            if (!listings.en && (item.title || item.brand)) {
+              listings.en = {
+                brand: item.brand,
+                title: item.title,
+                bullet1: item.bullet1,
+                bullet2: item.bullet2,
+                description: item.description
+              };
+            }
+            item.listings = listings;
+            hasChanges = true;
+          }
+        }
+      }
+
+      if (hasChanges) {
+        fs.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), 'utf-8');
+      }
+    } catch (e) {
+      // ignore
+    }
   }
 
   /**
@@ -141,6 +220,7 @@ export class QueueService {
     bullet1: string;
     bullet2: string;
     description: string;
+    listings?: Record<string, ListingLanguageContent>;
     imagePath: string;
     pngPath: string;
     tmBlockedProductIds?: string[];
@@ -150,6 +230,13 @@ export class QueueService {
     // Check if already in queue
     const existing = this.items.find(i => i.taskId === item.taskId);
     if (existing) {
+      if (item.listings) existing.listings = item.listings;
+      if (item.brand) existing.brand = item.brand;
+      if (item.title) existing.title = item.title;
+      if (item.bullet1) existing.bullet1 = item.bullet1;
+      if (item.bullet2) existing.bullet2 = item.bullet2;
+      if (item.description) existing.description = item.description;
+      this.saveQueue();
       return existing;
     }
 
@@ -179,6 +266,15 @@ export class QueueService {
       bullet1: item.bullet1,
       bullet2: item.bullet2,
       description: item.description,
+      listings: item.listings || {
+        en: {
+          brand: item.brand,
+          title: item.title,
+          bullet1: item.bullet1,
+          bullet2: item.bullet2,
+          description: item.description
+        }
+      },
       imagePath: item.imagePath,
       pngPath: item.pngPath,
       addedAt: new Date().toISOString(),

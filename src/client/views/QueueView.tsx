@@ -27,11 +27,16 @@ interface QueueItem {
   taskId: string;
   designTitle: string;
   niche: string;
-  brand: string;
-  title: string;
   bullet1: string;
   bullet2: string;
   description: string;
+  listings?: Record<string, {
+    brand?: string;
+    title?: string;
+    bullet1?: string;
+    bullet2?: string;
+    description?: string;
+  }>;
   imagePath: string;
   pngPath: string;
   addedAt: string;
@@ -89,6 +94,7 @@ export const QueueView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
   const [globalMode, setGlobalMode] = useState<'live' | 'draft'>('draft');
   const [isUploading, setIsUploading] = useState(false);
 
@@ -540,17 +546,129 @@ export const QueueView: React.FC = () => {
                   {/* Expandable Accordion: Product & Marketplace Allocation Matrix */}
                   {isExpanded && (
                     <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-4 animate-fadeIn">
-                      {/* SEO Listing Summary */}
-                      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 space-y-1.5 text-xs">
-                        <div className="flex items-center justify-between text-slate-400 font-semibold text-[11px]">
-                          <span>SEO Listing:</span>
-                          <span className="font-mono text-[10px]">Task #{item.taskId}</span>
-                        </div>
-                        <div><strong className="text-slate-300">Titel:</strong> {item.title}</div>
-                        <div><strong className="text-slate-300">Brand:</strong> {item.brand}</div>
-                        {item.bullet1 && <div><strong className="text-slate-300">Bullet 1:</strong> {item.bullet1}</div>}
-                        {item.bullet2 && <div><strong className="text-slate-300">Bullet 2:</strong> {item.bullet2}</div>}
-                      </div>
+                      {/* SEO Listing Section with Multi-Language Switcher */}
+                      {(() => {
+                        const activeLang = itemLanguageMap[item.id] || 'en';
+                        const listingsObj = item.listings || {};
+                        const availableLangs = Object.keys(listingsObj).length > 0 ? Object.keys(listingsObj) : ['en'];
+                        if (!availableLangs.includes('en')) availableLangs.unshift('en');
+
+                        // Ensure standard languages are present in list if exists
+                        const standardLangs = ['en', 'de', 'fr', 'es', 'it', 'jp'];
+                        const allLangs = Array.from(new Set([...standardLangs.filter(l => listingsObj[l] || l === 'en'), ...availableLangs]));
+
+                        const currentListing = listingsObj[activeLang] || listingsObj.en || {
+                          brand: item.brand,
+                          title: item.title,
+                          bullet1: item.bullet1,
+                          bullet2: item.bullet2,
+                          description: item.description
+                        };
+
+                        const langFlags: Record<string, { label: string; flag: string }> = {
+                          en: { label: 'Englisch', flag: '🇺🇸 / 🇬🇧' },
+                          de: { label: 'Deutsch', flag: '🇩🇪' },
+                          fr: { label: 'Französisch', flag: '🇫🇷' },
+                          es: { label: 'Spanisch', flag: '🇪🇸' },
+                          it: { label: 'Italienisch', flag: '🇮🇹' },
+                          jp: { label: 'Japanisch', flag: '🇯🇵' }
+                        };
+
+                        return (
+                          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
+                              <div className="flex items-center space-x-2">
+                                <Globe className="w-4 h-4 text-accent-cyan" />
+                                <span className="text-xs font-bold text-slate-100 uppercase tracking-wider">
+                                  Vollständiges SEO Listing
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-500">Task #{item.taskId}</span>
+                              </div>
+
+                              {/* Language Switcher Tabs */}
+                              <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0">
+                                {allLangs.map((langKey) => {
+                                  const langInfo = langFlags[langKey] || { label: langKey.toUpperCase(), flag: '🌐' };
+                                  const isSelected = activeLang === langKey;
+                                  return (
+                                    <button
+                                      key={langKey}
+                                      onClick={() => setItemLanguageMap(prev => ({ ...prev, [item.id]: langKey }))}
+                                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                                        isSelected
+                                          ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/40 shadow-sm'
+                                          : 'bg-slate-950/80 text-slate-400 hover:text-slate-200 border border-slate-800 hover:bg-slate-800/60'
+                                      }`}
+                                    >
+                                      <span>{langInfo.flag}</span>
+                                      <span className="uppercase font-mono text-[11px]">{langKey}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Detailed Listing Fields */}
+                            <div className="space-y-2 text-xs">
+                              {/* Title */}
+                              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2.5">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider mb-1 flex items-center justify-between">
+                                  <span>Titel</span>
+                                  <span className="text-slate-500">{(currentListing.title || item.title || '').length} / 60 Zeichen</span>
+                                </div>
+                                <div className="text-slate-100 font-semibold leading-relaxed">
+                                  {currentListing.title || item.title || <span className="text-slate-600 italic">— Kein Titel hinterlegt —</span>}
+                                </div>
+                              </div>
+
+                              {/* Brand */}
+                              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2.5">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider mb-1 flex items-center justify-between">
+                                  <span>Brand / Marke</span>
+                                  <span className="text-slate-500">{(currentListing.brand || item.brand || '').length} / 50 Zeichen</span>
+                                </div>
+                                <div className="text-slate-200 font-medium">
+                                  {currentListing.brand || item.brand || <span className="text-slate-600 italic">— Keine Brand hinterlegt —</span>}
+                                </div>
+                              </div>
+
+                              {/* Bullet Points */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2.5">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider mb-1 flex items-center justify-between">
+                                    <span>Bullet Point 1</span>
+                                    <span className="text-slate-500">{(currentListing.bullet1 || item.bullet1 || '').length} / 256</span>
+                                  </div>
+                                  <div className="text-slate-300 text-[11px] leading-relaxed">
+                                    {currentListing.bullet1 || item.bullet1 || <span className="text-slate-600 italic">— Kein Bullet 1 —</span>}
+                                  </div>
+                                </div>
+
+                                <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2.5">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider mb-1 flex items-center justify-between">
+                                    <span>Bullet Point 2</span>
+                                    <span className="text-slate-500">{(currentListing.bullet2 || item.bullet2 || '').length} / 256</span>
+                                  </div>
+                                  <div className="text-slate-300 text-[11px] leading-relaxed">
+                                    {currentListing.bullet2 || item.bullet2 || <span className="text-slate-600 italic">— Kein Bullet 2 —</span>}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Description */}
+                              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2.5">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider mb-1 flex items-center justify-between">
+                                  <span>Produktbeschreibung (Description)</span>
+                                  <span className="text-slate-500">{(currentListing.description || item.description || '').length} / 2000</span>
+                                </div>
+                                <div className="text-slate-300 text-[11px] leading-relaxed whitespace-pre-line">
+                                  {currentListing.description || item.description || <span className="text-slate-600 italic">— Keine Beschreibung —</span>}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* TM Blocked Items Notice (if any) */}
                       {item.tmBlockedProductIds && item.tmBlockedProductIds.length > 0 && (
@@ -564,7 +682,6 @@ export const QueueView: React.FC = () => {
                       <div className="space-y-2">
                         <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
                           <span>Zugewiesene Produkte &amp; Marktplätze ({item.allocatedSlots} Slots)</span>
-                          <span className="text-emerald-400 font-mono">🇺🇸 US überall 100% aktiv</span>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
