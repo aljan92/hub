@@ -37,7 +37,7 @@ export const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background text-slate-100 flex flex-col">
+    <div className="h-screen bg-background text-slate-100 flex flex-col overflow-hidden">
       {/* Top Header */}
       <Header 
         tier={tier}
