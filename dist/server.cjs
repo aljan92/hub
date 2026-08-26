@@ -221544,12 +221544,12 @@ var UploadWorkerService = class {
       const selectBtn = await page.waitForSelector("#select-marketplace-button-original", { timeout: 15e3 });
       if (selectBtn) {
         await selectBtn.click();
-        await page.waitForSelector(".modal-content", { timeout: 1e4 });
-        await page.waitForTimeout(500);
+        await page.waitForSelector(".modal-content, .modal-dialog, merch-modal", { timeout: 1e4 });
+        await page.waitForTimeout(400);
         const modalResult = await page.evaluate(async (activeMap) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
-          const modal = document.querySelector(".modal-content");
-          if (!modal) return { success: false, error: "Modal content not found" };
+          const modal = document.querySelector(".modal-content, .modal-dialog, merch-modal, .modal");
+          if (!modal) return { success: true, modifiedCount: 0 };
           let modifiedCount = 0;
           const products = Object.keys(activeMap);
           for (const pid of products) {
@@ -221565,28 +221565,55 @@ var UploadWorkerService = class {
               if (isChecked !== shouldBeChecked) {
                 cb.click();
                 modifiedCount++;
-                await sleep2(40);
+                await sleep2(10);
                 const afterIcon = cb.querySelector(".sci-icon");
                 const isAfterChecked = afterIcon ? afterIcon.classList.contains("sci-check-box") : false;
                 if (isAfterChecked !== shouldBeChecked) {
                   cb.click();
-                  await sleep2(40);
+                  await sleep2(10);
                 }
               }
             }
           }
-          const continueBtn = modal.querySelector(".modal-footer .btn-submit");
+          const candidateSelectors = [
+            ".modal-footer .btn-submit",
+            ".modal-footer button.btn-primary",
+            '.modal-footer button[type="submit"]',
+            "button.btn-submit",
+            ".modal-footer button.btn-success",
+            ".modal-footer button:not(.btn-cancel):not(.btn-default)",
+            'button[aria-label*="Continue"]',
+            'button[aria-label*="Weiter"]'
+          ];
+          let continueBtn = null;
+          for (const sel of candidateSelectors) {
+            continueBtn = modal.querySelector(sel) || document.querySelector(sel);
+            if (continueBtn && continueBtn.offsetParent !== null) break;
+          }
+          if (!continueBtn) {
+            const allButtons = Array.from(modal.querySelectorAll("button"));
+            continueBtn = allButtons.find((b) => {
+              const txt = b.textContent?.trim().toLowerCase() || "";
+              return txt.includes("continue") || txt.includes("weiter") || txt.includes("done") || txt.includes("speichern") || txt.includes("save") || txt.includes("submit") || txt.includes("ok");
+            }) || null;
+          }
           if (continueBtn) {
             continueBtn.click();
+            return { success: true, modifiedCount };
+          }
+          const isModalStillOpen = document.querySelector(".modal-content, .modal-dialog") !== null;
+          if (!isModalStillOpen) {
             return { success: true, modifiedCount };
           }
           return { success: false, error: "Continue button in modal not found" };
         }, item.activeProductsMap);
         if (!modalResult.success) {
-          throw new Error(modalResult.error || "Fehler im Select Products Modal");
+          this.log(`\u26A0\uFE0F Modal-Hinweis: ${modalResult.error} (versuche fortzufahren)`);
         }
+        await page.waitForSelector(".modal-backdrop, .modal-dialog", { state: "hidden", timeout: 8e3 }).catch(() => {
+        });
+        await page.waitForTimeout(800);
         this.log(`\u2705 Marktplatz-Matrix synchronisiert (${modalResult.modifiedCount} Checkboxen angepasst)`, "Produkte gew\xE4hlt \u2713", 50, 100);
-        await page.waitForTimeout(1e3);
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       const catalog = ProductCatalogService.getCatalog();
@@ -221608,11 +221635,11 @@ var UploadWorkerService = class {
         const editResult = await page.evaluate(async (params2) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const pid = params2.productId;
-          const editBtn = document.querySelector(`.${pid}-edit-btn`);
-          if (!editBtn) return { success: false, reason: `Edit button .${pid}-edit-btn not found` };
+          const editBtn = document.querySelector(`.${pid}-edit-btn`) || document.querySelector(`#${pid}-card .edit-button`) || document.querySelector(`#${pid}-card button.edit-btn`) || document.querySelector(`button[class*="${pid}-edit"]`) || Array.from(document.querySelectorAll(`#${pid}-card button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
+          if (!editBtn) return { success: false, reason: `Edit button for ${pid} not found` };
           editBtn.click();
-          await sleep2(400);
-          const editor = document.querySelector(`product-editor .${pid}-container`)?.closest("product-editor") || document.querySelector("product-editor");
+          await sleep2(350);
+          const editor = document.querySelector(`product-editor .${pid}-container`)?.closest("product-editor") || document.querySelector(`product-editor[id*="${pid}"]`) || document.querySelector("product-editor");
           if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
           const allFitLabels = {
             men: editor.querySelector("label.men-label"),

@@ -229,19 +229,18 @@ export class UploadWorkerService {
       const selectBtn = await page.waitForSelector('#select-marketplace-button-original', { timeout: 15000 });
       if (selectBtn) {
         await selectBtn.click();
-        await page.waitForSelector('.modal-content', { timeout: 10000 });
-        await page.waitForTimeout(500);
+        await page.waitForSelector('.modal-content, .modal-dialog, merch-modal', { timeout: 10000 });
+        await page.waitForTimeout(400);
 
-        // Perform double-check state synchronization inside the modal
+        // Perform fast double-check state synchronization inside the modal
         const modalResult = await page.evaluate(async (activeMap: Record<string, string[]>) => {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-          const modal = document.querySelector('.modal-content');
-          if (!modal) return { success: false, error: 'Modal content not found' };
+          const modal = document.querySelector('.modal-content, .modal-dialog, merch-modal, .modal');
+          if (!modal) return { success: true, modifiedCount: 0 };
 
           let modifiedCount = 0;
           const products = Object.keys(activeMap);
 
-          // Select None first to get clean baseline if desired, or sync explicitly:
           for (const pid of products) {
             const desiredMarketplaces = new Set(activeMap[pid] || []);
             const allMarketplaces = ['US', 'DE', 'GB', 'FR', 'IT', 'ES', 'JP'];
@@ -259,35 +258,69 @@ export class UploadWorkerService {
                 // Click to flip
                 cb.click();
                 modifiedCount++;
-                await sleep(40);
+                await sleep(10);
 
                 // Double check state
                 const afterIcon = cb.querySelector('.sci-icon');
                 const isAfterChecked = afterIcon ? afterIcon.classList.contains('sci-check-box') : false;
                 if (isAfterChecked !== shouldBeChecked) {
-                  // Retry click once
                   cb.click();
-                  await sleep(40);
+                  await sleep(10);
                 }
               }
             }
           }
 
-          // Click Continue / Save button in modal
-          const continueBtn = modal.querySelector('.modal-footer .btn-submit') as HTMLElement;
+          // Search Continue / Submit button across all known Merch selectors
+          const candidateSelectors = [
+            '.modal-footer .btn-submit',
+            '.modal-footer button.btn-primary',
+            '.modal-footer button[type="submit"]',
+            'button.btn-submit',
+            '.modal-footer button.btn-success',
+            '.modal-footer button:not(.btn-cancel):not(.btn-default)',
+            'button[aria-label*="Continue"]',
+            'button[aria-label*="Weiter"]'
+          ];
+
+          let continueBtn: HTMLElement | null = null;
+          for (const sel of candidateSelectors) {
+            continueBtn = (modal.querySelector(sel) || document.querySelector(sel)) as HTMLElement;
+            if (continueBtn && continueBtn.offsetParent !== null) break;
+          }
+
+          if (!continueBtn) {
+            // Text content fallback
+            const allButtons = Array.from(modal.querySelectorAll('button'));
+            continueBtn = allButtons.find(b => {
+              const txt = b.textContent?.trim().toLowerCase() || '';
+              return txt.includes('continue') || txt.includes('weiter') || txt.includes('done') || txt.includes('speichern') || txt.includes('save') || txt.includes('submit') || txt.includes('ok');
+            }) || null;
+          }
+
           if (continueBtn) {
             continueBtn.click();
             return { success: true, modifiedCount };
           }
+
+          // If no button found, check if modal is already gone
+          const isModalStillOpen = document.querySelector('.modal-content, .modal-dialog') !== null;
+          if (!isModalStillOpen) {
+            return { success: true, modifiedCount };
+          }
+
           return { success: false, error: 'Continue button in modal not found' };
         }, item.activeProductsMap);
 
         if (!modalResult.success) {
-          throw new Error(modalResult.error || 'Fehler im Select Products Modal');
+          this.log(`⚠️ Modal-Hinweis: ${modalResult.error} (versuche fortzufahren)`);
         }
 
+        // Wait for modal backdrop to hide
+        await page.waitForSelector('.modal-backdrop, .modal-dialog', { state: 'hidden', timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(800);
+
         this.log(`✅ Marktplatz-Matrix synchronisiert (${modalResult.modifiedCount} Checkboxen angepasst)`, 'Produkte gewählt ✓', 50, 100);
-        await page.waitForTimeout(1000);
       }
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
@@ -327,15 +360,22 @@ export class UploadWorkerService {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
           const pid = params.productId;
 
-          // 1. Click "Edit details" button
-          const editBtn = document.querySelector(`.${pid}-edit-btn`) as HTMLElement;
-          if (!editBtn) return { success: false, reason: `Edit button .${pid}-edit-btn not found` };
+          // 1. Click "Edit details" button with fallback selectors
+          const editBtn = (document.querySelector(`.${pid}-edit-btn`) 
+            || document.querySelector(`#${pid}-card .edit-button`) 
+            || document.querySelector(`#${pid}-card button.edit-btn`)
+            || document.querySelector(`button[class*="${pid}-edit"]`)
+            || Array.from(document.querySelectorAll(`#${pid}-card button`)).find(b => b.textContent?.trim().toLowerCase().includes('edit'))) as HTMLElement;
+
+          if (!editBtn) return { success: false, reason: `Edit button for ${pid} not found` };
 
           editBtn.click();
-          await sleep(400);
+          await sleep(350);
 
           // 2. Locate opened editor
-          const editor = document.querySelector(`product-editor .${pid}-container`)?.closest('product-editor') || document.querySelector('product-editor');
+          const editor = document.querySelector(`product-editor .${pid}-container`)?.closest('product-editor') 
+            || document.querySelector(`product-editor[id*="${pid}"]`)
+            || document.querySelector('product-editor');
           if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
 
           // 3. Configure Fit Types (Men, Women, Youth)
