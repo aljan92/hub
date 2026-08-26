@@ -3,61 +3,223 @@ import {
   UploadCloud, 
   Play, 
   Clock, 
-  Coffee, 
-  Smartphone, 
+  Lock, 
+  Unlock, 
+  Trash2, 
+  Layers, 
   CheckCircle2, 
-  Trash2,
-  FolderOpen
+  AlertTriangle, 
+  RefreshCw, 
+  ChevronDown, 
+  ChevronUp, 
+  Globe, 
+  Sparkles, 
+  ShieldCheck, 
+  ShieldAlert, 
+  Scissors, 
+  ExternalLink,
+  Sliders,
+  Check
 } from 'lucide-react';
 
+interface QueueItem {
+  id: string;
+  taskId: string;
+  designTitle: string;
+  niche: string;
+  brand: string;
+  title: string;
+  bullet1: string;
+  bullet2: string;
+  description: string;
+  imagePath: string;
+  pngPath: string;
+  addedAt: string;
+  status: 'SCHEDULED_TODAY' | 'WAITING_FOR_SLOTS' | 'UPLOADING' | 'COMPLETED' | 'ERROR';
+  isLocked: boolean;
+  allocatedSlots: number;
+  totalBaseSlots: number;
+  activeProductsMap: Record<string, string[]>;
+  droppedSlotsMap: Record<string, string[]>;
+  tmBlockedProductIds: string[];
+  errorMessage?: string;
+  sortOrder: number;
+}
+
+interface QueueState {
+  items: QueueItem[];
+  freeDailySlots: number;
+  usedSlotsToday: number;
+  totalDailySlots: number;
+  scheduledSlotsToday: number;
+  uploadScheduleTime: string;
+  maxDropPerDesign: number;
+  autoBalance: boolean;
+  maxDroppableCapacity: number;
+}
+
+const SCHEDULE_OPTIONS = [
+  { value: 'off', label: 'Aus (Nur Manuell)' },
+  { value: '01:00', label: '01:00 Uhr' },
+  { value: '02:00', label: '02:00 Uhr' },
+  { value: '03:00', label: '03:00 Uhr' },
+  { value: '04:00', label: '04:00 Uhr (Standard)' },
+  { value: '05:00', label: '05:00 Uhr' },
+  { value: '06:00', label: '06:00 Uhr' },
+  { value: '07:00', label: '07:00 Uhr' },
+  { value: '08:00', label: '08:00 Uhr' },
+  { value: '12:00', label: '12:00 Uhr (Mittags)' },
+  { value: '18:00', label: '18:00 Uhr' },
+  { value: '22:00', label: '22:00 Uhr' },
+];
+
 export const QueueView: React.FC = () => {
+  const [queueState, setQueueState] = useState<QueueState>({
+    items: [],
+    freeDailySlots: 200,
+    usedSlotsToday: 0,
+    totalDailySlots: 200,
+    scheduledSlotsToday: 0,
+    uploadScheduleTime: 'off',
+    maxDropPerDesign: 10,
+    autoBalance: true,
+    maxDroppableCapacity: 0
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [isRebalancing, setIsRebalancing] = useState(false);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [globalMode, setGlobalMode] = useState<'live' | 'draft'>('draft');
   const [isUploading, setIsUploading] = useState(false);
-  const [queueItems, setQueueItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  const fetchQueue = () => {
-    setLoading(true);
-    fetch('/api/v1/queue')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && Array.isArray(data.queue)) {
-          setQueueItems(data.queue);
-        }
-      })
-      .catch(err => console.warn('[Queue] Fetch error:', err))
-      .finally(() => setLoading(false));
+  const fetchQueue = async () => {
+    try {
+      const res = await fetch('/api/v1/queue');
+      const data = await res.json();
+      if (data.success) {
+        setQueueState(data);
+      }
+    } catch (err) {
+      console.warn('[Queue] Fetch error:', err);
+    }
   };
 
   useEffect(() => {
     fetchQueue();
+    const interval = setInterval(fetchQueue, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  const handleStartQueue = () => {
-    if (queueItems.length === 0) return;
+  const handleRebalance = async () => {
+    setIsRebalancing(true);
+    try {
+      const res = await fetch('/api/v1/queue/rebalance', { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.state) {
+        setQueueState(data.state);
+      }
+    } catch (err) {
+      console.error('Rebalance error:', err);
+    } finally {
+      setIsRebalancing(false);
+    }
+  };
+
+  const handleUpdateSettings = async (updates: Partial<{ uploadScheduleTime: string; maxDropPerDesign: number; autoBalance: boolean }>) => {
+    try {
+      const res = await fetch('/api/v1/queue/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      const data = await res.json();
+      if (data.success && data.state) {
+        setQueueState(data.state);
+      }
+    } catch (err) {
+      console.error('Settings update error:', err);
+    }
+  };
+
+  const handleToggleLock = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/v1/queue/item/${itemId}/lock`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.state) {
+        setQueueState(data.state);
+      }
+    } catch (err) {
+      console.error('Lock toggle error:', err);
+    }
+  };
+
+  const handleRemoveItem = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/v1/queue/item/${itemId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success && data.state) {
+        setQueueState(data.state);
+      }
+    } catch (err) {
+      console.error('Remove item error:', err);
+    }
+  };
+
+  const handleClearQueue = async (onlyCompleted = true) => {
+    try {
+      const res = await fetch(`/api/v1/queue?onlyCompleted=${onlyCompleted}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success && data.state) {
+        setQueueState(data.state);
+      }
+    } catch (err) {
+      console.error('Clear queue error:', err);
+    }
+  };
+
+  const handleStartManualUpload = () => {
+    if (queueState.items.length === 0) return;
     setIsUploading(true);
     setTimeout(() => {
       setIsUploading(false);
-      alert('Upload-Queue gestartet! Der Chrome-Worker führt den Upload über die persistente Session durch.');
+      alert('Upload-Prozess über Session 2 (Upload Worker) gestartet.');
     }, 1500);
   };
 
+  const scheduledDesigns = queueState.items.filter(i => i.status === 'SCHEDULED_TODAY' || i.status === 'UPLOADING');
+  const waitingDesigns = queueState.items.filter(i => i.status === 'WAITING_FOR_SLOTS');
+  const slotUtilizationPct = queueState.freeDailySlots > 0 
+    ? Math.min(100, Math.round((queueState.scheduledSlotsToday / queueState.freeDailySlots) * 100))
+    : 0;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fadeIn pb-12">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-100 tracking-tight flex items-center">
-            <UploadCloud className="w-6 h-6 mr-2 text-accent-cyan" />
-            Upload Queue &amp; Slot-Optimierung
-          </h2>
-          <p className="text-sm text-slate-400">Automatische Upload-Warteschlange mit General Resize, Mug-Brush und dynamischem Slot-Filling.</p>
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan">
+              <UploadCloud className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+                Upload Queue &amp; Slot-Optimizer
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30">
+                  Phase 5
+                </span>
+              </h1>
+              <p className="text-xs text-slate-400">
+                Intelligentes Slot-Balancing, Kaskaden-Kürzung bei Überhang und 100% US-Marktplatz-Schutz
+              </p>
+            </div>
+          </div>
         </div>
 
-        {/* Global Live/Draft Toggle & Start Action */}
-        <div className="flex items-center space-x-4">
+        {/* Global Action & Upload Trigger */}
+        <div className="flex items-center space-x-3">
+          {/* Mode Selector */}
           <div className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2">
-            <span className="text-xs font-semibold text-slate-300">Upload Modus:</span>
+            <span className="text-xs font-semibold text-slate-300">Modus:</span>
             <button
               onClick={() => setGlobalMode(globalMode === 'draft' ? 'live' : 'draft')}
               className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
@@ -71,98 +233,337 @@ export const QueueView: React.FC = () => {
           </div>
 
           <button
-            onClick={handleStartQueue}
-            disabled={isUploading || queueItems.length === 0}
+            onClick={handleStartManualUpload}
+            disabled={isUploading || scheduledDesigns.length === 0}
             className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-accent-cyan to-primary-600 hover:from-accent-cyan/90 hover:to-primary-500 text-slate-950 shadow-lg shadow-accent-cyan/20 flex items-center space-x-2 transition-all active:scale-98 disabled:opacity-50"
           >
             <Play className="w-4 h-4 fill-current" />
-            <span>{isUploading ? 'Wird hochgeladen...' : 'Queue jetzt starten'}</span>
+            <span>{isUploading ? 'Lade hoch...' : 'Jetzt hochladen'}</span>
           </button>
         </div>
       </div>
 
-      {/* Dynamic Slot Filler Banner */}
-      <div className="glass-panel p-4 rounded-2xl border border-primary-500/30 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gradient-to-r from-primary-950/40 to-slate-900/80">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 rounded-xl bg-primary-500/20 text-primary-400">
-            <Clock className="w-5 h-5" />
+      {/* Top Metrics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Daily Free Slots */}
+        <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+            <span className="font-medium">Freie Tages-Slots</span>
+            <Layers className="w-4 h-4 text-accent-cyan" />
+          </div>
+          <div className="flex items-baseline space-x-2">
+            <span className="text-2xl font-bold text-slate-100 font-mono">{queueState.freeDailySlots}</span>
+            <span className="text-xs text-slate-400">von {queueState.totalDailySlots} Slots</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            Bereits verbraucht heute: {queueState.usedSlotsToday}
+          </div>
+        </div>
+
+        {/* Scheduled Today Slots */}
+        <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+            <span className="font-medium">Heute eingeplant</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="flex items-baseline space-x-2">
+            <span className="text-2xl font-bold text-emerald-400 font-mono">{queueState.scheduledSlotsToday}</span>
+            <span className="text-xs text-slate-400">/ {queueState.freeDailySlots} Slots</span>
+          </div>
+          <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
+            <div 
+              style={{ width: `${slotUtilizationPct}%` }}
+              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+            />
+          </div>
+        </div>
+
+        {/* Active Designs Today */}
+        <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+            <span className="font-medium">Designs Heute Aktiv</span>
+            <Sparkles className="w-4 h-4 text-primary-400" />
+          </div>
+          <div className="flex items-baseline space-x-2">
+            <span className="text-2xl font-bold text-slate-100 font-mono">{scheduledDesigns.length}</span>
+            <span className="text-xs text-slate-400">Designs geplant</span>
+          </div>
+          <div className="text-[11px] text-primary-300 mt-1">
+            {waitingDesigns.length > 0 ? `${waitingDesigns.length} Designs auf Warteliste` : 'Alle Designs abgedeckt'}
+          </div>
+        </div>
+
+        {/* Schedule Timer */}
+        <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+            <span className="font-medium">Upload-Zeitplan</span>
+            <Clock className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="flex items-baseline space-x-2">
+            <span className="text-sm font-bold text-slate-100 font-mono">
+              {queueState.uploadScheduleTime === 'off' ? 'Aus (Nur Manuell)' : `Täglich um ${queueState.uploadScheduleTime} Uhr`}
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            {queueState.uploadScheduleTime === 'off' ? 'Kein automatischer Start' : 'Automatischer Playwright Upload'}
+          </div>
+        </div>
+      </div>
+
+      {/* Configuration & Control Panel */}
+      <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-4 text-xs">
+          {/* Upload Schedule Selector */}
+          <div className="flex items-center space-x-2">
+            <Clock className="w-4 h-4 text-slate-400" />
+            <span className="text-slate-300 font-medium">Upload Startzeit:</span>
+            <select
+              value={queueState.uploadScheduleTime}
+              onChange={(e) => handleUpdateSettings({ uploadScheduleTime: e.target.value })}
+              className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-semibold focus:outline-none focus:border-accent-cyan"
+            >
+              {SCHEDULE_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Max Drop Tolerance Slider / Input */}
+          <div className="flex items-center space-x-2">
+            <Scissors className="w-4 h-4 text-amber-400" />
+            <span className="text-slate-300 font-medium">Max. Kürzungs-Toleranz:</span>
+            <select
+              value={queueState.maxDropPerDesign}
+              onChange={(e) => handleUpdateSettings({ maxDropPerDesign: Number(e.target.value) })}
+              className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-amber-300 font-bold font-mono focus:outline-none focus:border-amber-500"
+            >
+              {[0, 5, 6, 8, 10, 12, 15, 20, 25].map(num => (
+                <option key={num} value={num}>max. {num} Slots / Design</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center space-x-2.5">
+          <button
+            onClick={handleRebalance}
+            disabled={isRebalancing}
+            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 transition-all"
+            title="Berechnet die Slot-Verteilung aller Designs sofort neu"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRebalancing ? 'animate-spin text-accent-cyan' : ''}`} />
+            <span>Neu ausbalancieren</span>
+          </button>
+
+          <button
+            onClick={() => handleClearQueue(false)}
+            disabled={queueState.items.length === 0}
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-red-950/40 text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-500/30 transition-all"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Queue leeren</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Empty Queue State */}
+      {queueState.items.length === 0 && (
+        <div className="bg-surface/60 border border-dashed border-slate-700/80 rounded-2xl p-12 text-center max-w-xl mx-auto space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan flex items-center justify-center mx-auto">
+            <UploadCloud className="w-8 h-8" />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-slate-100">Automatischer Slot-Filler Scheduler</h4>
-            <p className="text-xs text-slate-400">
-              Nächster geplanter Durchlauf: <strong className="text-slate-200">Heute um 04:00 Uhr früh</strong> (Füllt verbleibende Tages-Slots automatisch).
+            <h3 className="text-lg font-bold text-slate-100">Upload-Queue ist aktuell leer</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Sobald ein Design im Task Co-Pilot final freigegeben wird, wandert es automatisch hierher und wird optimal auf deine freien Tages-Slots austariert.
             </p>
           </div>
         </div>
-        <div className="text-xs font-mono bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-accent-cyan">
-          Tages-Limit Ziel: 100 / 100 Slots
-        </div>
-      </div>
+      )}
 
       {/* Queue Items List */}
-      <div className="space-y-4">
-        <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
-          Warteschlangen-Einträge ({queueItems.length})
-        </div>
-
-        {queueItems.length === 0 ? (
-          <div className="glass-panel rounded-2xl p-12 text-center space-y-3">
-            <FolderOpen className="w-12 h-12 text-slate-600 mx-auto" />
-            <h3 className="text-base font-bold text-slate-200">Die Upload-Queue ist aktuell leer</h3>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
-              Sobald du generierte Designs im Menü <strong>Tasks</strong> freigibst oder Hermes Aufgaben übergibt, erscheinen sie hier bereit für den automatischen Amazon Merch Upload.
-            </p>
+      {queueState.items.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider px-1">
+            <span>Warteschlange ({queueState.items.length} Designs)</span>
+            <span>{scheduledDesigns.length} heute aktiv • {waitingDesigns.length} wartend</span>
           </div>
-        ) : (
-          queueItems.map((item) => (
-            <div key={item.id} className="glass-card p-5 rounded-2xl space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                {/* Item Info */}
-                <div className="flex items-center space-x-4">
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="w-16 h-16 rounded-xl object-cover border border-slate-800 shrink-0 bg-slate-950"
-                  />
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-100">{item.title}</h4>
-                    <div className="flex flex-wrap items-center gap-2 mt-1">
-                      <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 rounded-md border border-emerald-500/20">
-                        {item.status}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        Produkte: <strong className="text-slate-200">{item.optimizedCount || 100}</strong>
-                      </span>
+
+          <div className="space-y-3">
+            {queueState.items.map((item, index) => {
+              const isScheduled = item.status === 'SCHEDULED_TODAY' || item.status === 'UPLOADING';
+              const isExpanded = expandedItemId === item.id;
+              const droppedCount = Object.values(item.droppedSlotsMap).reduce((sum, list) => sum + list.length, 0);
+
+              return (
+                <div
+                  key={item.id}
+                  className={`bg-surface/90 border rounded-2xl p-4 shadow-sm backdrop-blur-md transition-all overflow-hidden ${
+                    isScheduled
+                      ? 'border-emerald-500/40 shadow-emerald-500/5'
+                      : 'border-slate-800/80 opacity-75 hover:opacity-100'
+                  }`}
+                >
+                  {/* Top Row: Thumbnail, Title, Badges, Lock & Actions */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center space-x-4">
+                      {/* Image Thumbnail */}
+                      <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shrink-0 relative group">
+                        {item.imagePath ? (
+                          <img 
+                            src={item.imagePath.startsWith('/') ? item.imagePath : `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`} 
+                            alt={item.designTitle}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-600">
+                            <Layers className="w-6 h-6" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Title & Metadata */}
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                            #{index + 1}
+                          </span>
+                          <h3 className="text-sm font-bold text-slate-100">{item.designTitle}</h3>
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5 flex items-center space-x-2">
+                          <span className="font-semibold text-slate-300">Brand:</span>
+                          <span>{item.brand || '—'}</span>
+                          <span className="text-slate-600">•</span>
+                          <span className="font-semibold text-slate-300">Nische:</span>
+                          <span>{item.niche || '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status Badges, Hero-Lock & Controls */}
+                    <div className="flex items-center flex-wrap gap-2.5">
+                      {/* Allocation Badge */}
+                      <div className="flex flex-col items-end">
+                        <span className={`px-3 py-1 rounded-xl text-xs font-bold font-mono border ${
+                          isScheduled
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                        }`}>
+                          {isScheduled 
+                            ? `⚡ ${item.allocatedSlots} Slots Heute Aktiv` 
+                            : `⏳ ${item.allocatedSlots} Slots Wartend`}
+                        </span>
+                        {droppedCount > 0 && isScheduled && (
+                          <span className="text-[10px] text-amber-400/90 font-mono mt-0.5">
+                            ({droppedCount} Nicht-US-Slots gekürzt)
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Hero-Lock Button */}
+                      <button
+                        onClick={() => handleToggleLock(item.id)}
+                        className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                          item.isLocked
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm shadow-amber-500/20'
+                            : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border-slate-700/80'
+                        }`}
+                        title={item.isLocked ? 'Hero-Lock aktiv: Behält 100% seiner Slots' : 'Hero-Lock aktivieren'}
+                      >
+                        {item.isLocked ? <Lock className="w-3.5 h-3.5 text-amber-400" /> : <Unlock className="w-3.5 h-3.5" />}
+                        <span>{item.isLocked ? 'Hero Locked' : 'Optimierbar'}</span>
+                      </button>
+
+                      {/* Expand / Details Button */}
+                      <button
+                        onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
+                        className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
+                        title="Details aufklappen"
+                      >
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+
+                      {/* Remove Button */}
+                      <button
+                        onClick={() => handleRemoveItem(item.id)}
+                        className="p-1.5 rounded-lg bg-slate-900 hover:bg-red-950/40 text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-500/30 transition-colors"
+                        title="Aus Queue entfernen"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                </div>
 
-                {/* Optimization Badges */}
-                <div className="flex items-center space-x-3">
-                  <div className="flex items-center space-x-1.5 text-xs text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
-                    {item.features?.mugBrush && (
-                      <span className="flex items-center text-accent-amber" title="Schwarzer Brush für weiße Tasse aktiv">
-                        <Coffee className="w-3.5 h-3.5 mr-1" /> Mug Brush
-                      </span>
-                    )}
-                    <span className="text-slate-600">•</span>
-                    <span className="flex items-center text-accent-cyan" title="Auto Resizing für PopSockets & Phone Cases">
-                      <Smartphone className="w-3.5 h-3.5 mr-1" /> General Resize
-                    </span>
-                  </div>
+                  {/* Expandable Accordion: Product & Marketplace Allocation Matrix */}
+                  {isExpanded && (
+                    <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-4 animate-fadeIn">
+                      {/* SEO Listing Summary */}
+                      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between text-slate-400 font-semibold text-[11px]">
+                          <span>SEO Listing:</span>
+                          <span className="font-mono text-[10px]">Task #{item.taskId}</span>
+                        </div>
+                        <div><strong className="text-slate-300">Titel:</strong> {item.title}</div>
+                        <div><strong className="text-slate-300">Brand:</strong> {item.brand}</div>
+                        {item.bullet1 && <div><strong className="text-slate-300">Bullet 1:</strong> {item.bullet1}</div>}
+                        {item.bullet2 && <div><strong className="text-slate-300">Bullet 2:</strong> {item.bullet2}</div>}
+                      </div>
 
-                  <button
-                    onClick={() => setQueueItems(queueItems.filter(q => q.id !== item.id))}
-                    className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                      {/* TM Blocked Items Notice (if any) */}
+                      {item.tmBlockedProductIds && item.tmBlockedProductIds.length > 0 && (
+                        <div className="flex items-center space-x-2 text-xs text-rose-300 bg-rose-950/30 border border-rose-500/30 p-2.5 rounded-xl">
+                          <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                          <span>Durch Trademark (TM) gesperrte Produkt-Klassen: <strong>{item.tmBlockedProductIds.join(', ')}</strong> (Hero-Lock hebt TM-Sperren nicht auf).</span>
+                        </div>
+                      )}
+
+                      {/* Active & Dropped Marketplace Matrix */}
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                          <span>Zugewiesene Produkte &amp; Marktplätze ({item.allocatedSlots} Slots)</span>
+                          <span className="text-emerald-400 font-mono">🇺🇸 US überall 100% aktiv</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {Object.entries(item.activeProductsMap).map(([prodId, mps]) => {
+                            const droppedMps = item.droppedSlotsMap[prodId] || [];
+                            return (
+                              <div key={prodId} className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                                <div className="font-bold text-slate-200 truncate">{prodId}</div>
+                                <div className="flex items-center flex-wrap gap-1 mt-1 font-mono text-[10px]">
+                                  {/* Active Markets */}
+                                  {mps.map(mp => (
+                                    <span key={mp} className={`px-1.5 py-0.2 rounded ${
+                                      mp.toUpperCase() === 'US' 
+                                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
+                                        : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
+                                    }`}>
+                                      {mp}
+                                    </span>
+                                  ))}
+                                  {/* Dropped Markets (Strikethrough) */}
+                                  {droppedMps.map(mp => (
+                                    <span key={mp} className="px-1.5 py-0.2 rounded bg-rose-950/40 text-rose-400/80 border border-rose-900/60 line-through">
+                                      {mp}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export default QueueView;

@@ -21,6 +21,7 @@ import { TaskLogService } from './services/taskLogService';
 import { SystemPromptService } from './services/systemPromptService';
 import { ProductCatalogService } from './services/productCatalogService';
 import { ProductScannerService } from './services/productScannerService';
+import { QueueService } from './services/queueService';
 
 dotenv.config();
 
@@ -201,7 +202,7 @@ setInterval(refreshStatsInBackground, 15000);
 
 app.get('/api/v1/stats', (req, res) => {
   cachedStats.tasksCount = TaskLogService.getAwaitingTasks().length;
-  cachedStats.queueCount = uploadQueue.length;
+  cachedStats.queueCount = QueueService.getState().items.length;
   res.json({
     success: true,
     ...cachedStats,
@@ -1150,9 +1151,101 @@ app.post('/api/v1/mcp/trademark/check', validateMcpAuth, async (req, res) => {
   }
 });
 
-// 11. Upload Queue Management
+// 11. Intelligent Upload Queue & Slot Balancing API
 app.get('/api/v1/queue', (req, res) => {
-  res.json({ success: true, queue: uploadQueue });
+  try {
+    const state = QueueService.getState();
+    res.json({ success: true, ...state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Rebalance Queue
+app.post('/api/v1/queue/rebalance', (req, res) => {
+  try {
+    const freeSlots = req.body.freeSlots !== undefined ? Number(req.body.freeSlots) : undefined;
+    const state = QueueService.rebalanceQueue(freeSlots);
+    res.json({ success: true, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update Queue Settings (Schedule Time, Max Drop, Auto Balance)
+app.patch('/api/v1/queue/settings', (req, res) => {
+  try {
+    const { uploadScheduleTime, maxDropPerDesign, autoBalance } = req.body;
+    const current = loadSettings();
+    const updated = {
+      ...current,
+      queueUploadScheduleTime: uploadScheduleTime !== undefined ? uploadScheduleTime : current.queueUploadScheduleTime,
+      queueMaxDropPerDesign: maxDropPerDesign !== undefined ? Number(maxDropPerDesign) : current.queueMaxDropPerDesign,
+      queueAutoBalance: autoBalance !== undefined ? Boolean(autoBalance) : current.queueAutoBalance
+    };
+    saveSettings(updated);
+    const state = QueueService.rebalanceQueue();
+    res.json({ success: true, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Toggle Hero-Lock on a queue item
+app.post('/api/v1/queue/item/:id/lock', (req, res) => {
+  try {
+    const item = QueueService.toggleLock(req.params.id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Queue item not found' });
+    }
+    const state = QueueService.getState();
+    res.json({ success: true, item, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete item from queue
+app.delete('/api/v1/queue/item/:id', (req, res) => {
+  try {
+    const removed = QueueService.removeItem(req.params.id);
+    const state = QueueService.getState();
+    res.json({ success: true, removed, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Clear completed or all items
+app.delete('/api/v1/queue', (req, res) => {
+  try {
+    const onlyCompleted = req.query.onlyCompleted === 'true';
+    QueueService.clearQueue(onlyCompleted);
+    const state = QueueService.getState();
+    res.json({ success: true, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update Droppable Products Configuration
+app.patch('/api/v1/products/drop-config', (req, res) => {
+  try {
+    const configs = req.body.configs || [];
+    ProductCatalogService.updateDropConfig(configs);
+    // Trigger queue rebalance with new drop configurations
+    const queueState = QueueService.rebalanceQueue();
+    const stats = ProductCatalogService.getStats();
+    const maxDroppableCapacity = ProductCatalogService.calculateMaxDroppableSlotsCount();
+    res.json({
+      success: true,
+      stats,
+      maxDroppableCapacity,
+      queueState
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ==============================================================================

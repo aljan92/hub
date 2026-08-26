@@ -17,7 +17,9 @@ import {
   X,
   SlidersHorizontal,
   ChevronRight,
-  ExternalLink
+  ShieldCheck,
+  Sliders,
+  Scissors
 } from 'lucide-react';
 
 interface MerchColorDef {
@@ -47,6 +49,8 @@ interface MerchProduct {
   sortOrder: number;
   presetHexColors?: string[];
   lastUpdated: string;
+  isDropAllowed?: boolean;
+  dropPriorityOrder?: number;
 }
 
 interface ProductCatalogStats {
@@ -92,10 +96,13 @@ export const ProductsView: React.FC = () => {
 
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterMode, setFilterMode] = useState<'all' | 'predefined' | 'customPicker'>('all');
+  const [filterMode, setFilterMode] = useState<'all' | 'predefined' | 'customPicker' | 'droppable'>('all');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isTriggering, setIsTriggering] = useState(false);
   const [copiedColor, setCopiedColor] = useState<string | null>(null);
+  const [maxDroppableCapacity, setMaxDroppableCapacity] = useState(0);
+  const [queueTolerance, setQueueTolerance] = useState(10);
+  const [isUpdatingDropConfig, setIsUpdatingDropConfig] = useState(false);
 
   // Fetch catalog & scanner state
   const fetchCatalogData = async () => {
@@ -118,6 +125,14 @@ export const ProductsView: React.FC = () => {
           });
         }
       }
+
+      // Fetch queue state for capacity comparisons
+      const qRes = await fetch('/api/v1/queue');
+      const qData = await qRes.json();
+      if (qData.success) {
+        setMaxDroppableCapacity(qData.maxDroppableCapacity || 0);
+        if (qData.maxDropPerDesign !== undefined) setQueueTolerance(qData.maxDropPerDesign);
+      }
     } catch (err) {
       console.error('Error fetching product catalog:', err);
     }
@@ -125,7 +140,6 @@ export const ProductsView: React.FC = () => {
 
   useEffect(() => {
     fetchCatalogData();
-    // Poll status frequently during active scan, otherwise every 8s
     const interval = setInterval(fetchCatalogData, scannerState.isScanning ? 2000 : 8000);
     return () => clearInterval(interval);
   }, [scannerState.isScanning]);
@@ -173,6 +187,65 @@ export const ProductsView: React.FC = () => {
     }
   };
 
+  const handleToggleDropAllowed = async (productId: string, currentVal: boolean, currentOrder: number) => {
+    setIsUpdatingDropConfig(true);
+    const updatedProducts = products.map(p => {
+      if (p.id === productId) {
+        return { ...p, isDropAllowed: !currentVal, dropPriorityOrder: currentOrder || 1 };
+      }
+      return p;
+    });
+    setProducts(updatedProducts);
+
+    try {
+      const configs = updatedProducts.map(p => ({
+        id: p.id,
+        isDropAllowed: p.isDropAllowed ?? false,
+        dropPriorityOrder: p.dropPriorityOrder ?? 99
+      }));
+
+      const res = await fetch('/api/v1/products/drop-config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ configs })
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.maxDroppableCapacity !== undefined) setMaxDroppableCapacity(data.maxDroppableCapacity);
+      }
+    } catch (err) {
+      console.error('Drop config update error:', err);
+    } finally {
+      setIsUpdatingDropConfig(false);
+    }
+  };
+
+  const handleChangeDropPriority = async (productId: string, newOrder: number) => {
+    const updatedProducts = products.map(p => {
+      if (p.id === productId) {
+        return { ...p, dropPriorityOrder: newOrder };
+      }
+      return p;
+    });
+    setProducts(updatedProducts);
+
+    try {
+      const configs = updatedProducts.map(p => ({
+        id: p.id,
+        isDropAllowed: p.isDropAllowed ?? false,
+        dropPriorityOrder: p.dropPriorityOrder ?? 99
+      }));
+
+      await fetch('/api/v1/products/drop-config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ configs })
+      });
+    } catch (err) {
+      console.error('Priority update error:', err);
+    }
+  };
+
   const handleCopyColor = (colorId: string) => {
     navigator.clipboard.writeText(colorId);
     setCopiedColor(colorId);
@@ -183,7 +256,8 @@ export const ProductsView: React.FC = () => {
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           product.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterMode === 'all' || product.colorMode === filterMode;
+    const matchesFilter = filterMode === 'all' || 
+                          (filterMode === 'droppable' ? product.isDropAllowed : product.colorMode === filterMode);
     return matchesSearch && matchesFilter;
   });
 
@@ -223,7 +297,7 @@ export const ProductsView: React.FC = () => {
                 </span>
               </h1>
               <p className="text-xs text-slate-400">
-                Automatisch gescannte Merch by Amazon Produkte, Farbvarianten, Color-Picker und Slot-Berechnungen
+                Automatisch gescannte Merch by Amazon Produkte, Farbvarianten, Kürzungs-Kaskade und Slot-Berechnungen
               </p>
             </div>
           </div>
@@ -289,37 +363,43 @@ export const ProductsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Marketplaces */}
+        {/* Droppable Capacity Indicator */}
         <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
-            <span className="font-medium">Marktplätze</span>
-            <Globe className="w-4 h-4 text-indigo-400" />
+            <span className="font-medium">Kürzungs-Kapazität</span>
+            <Scissors className="w-4 h-4 text-amber-400" />
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-2xl font-bold text-slate-100 font-mono">{stats.totalMarketplaces}</span>
-            <span className="text-xs text-slate-400">Regionen</span>
+            <span className="text-2xl font-bold text-amber-400 font-mono">{maxDroppableCapacity}</span>
+            <span className="text-xs text-slate-400">Slots abwählbar</span>
           </div>
-          <div className="text-[11px] text-indigo-300/90 mt-1 font-mono">
-            US, GB, DE, FR, IT, ES, JP
+          <div className="text-[11px] mt-1 flex items-center gap-1">
+            {maxDroppableCapacity >= queueTolerance ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <Check className="w-3 h-3" /> Reicht für Queue-Toleranz ({queueTolerance})
+              </span>
+            ) : (
+              <span className="text-amber-400/90 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Nur {maxDroppableCapacity} freigegeben (Toleranz: {queueTolerance})
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Scan Status & Schedule */}
+        {/* US Protection & Scan Status */}
         <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
-            <span className="font-medium">Scan-Intervall</span>
-            <Clock className="w-4 h-4 text-amber-400" />
+            <span className="font-medium">US-Marktplatz Schutz</span>
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-sm font-bold text-slate-100 font-mono">
-              {formatTimeAgo(stats.lastScanDate)}
-            </span>
+            <span className="text-sm font-bold text-emerald-400 font-mono">100% Geschützt</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-            <span>Auto: 12-18h Jitter</span>
+            <span>.com bleibt immer aktiv</span>
             {scannerState.nextScheduledScan && (
               <span className="text-amber-400 font-mono font-medium">
-                ~{formatScheduledTime(scannerState.nextScheduledScan)}
+                Scan ~{formatScheduledTime(scannerState.nextScheduledScan)}
               </span>
             )}
           </div>
@@ -384,10 +464,10 @@ export const ProductsView: React.FC = () => {
               </div>
 
               {/* Filter Chips */}
-              <div className="flex items-center space-x-1.5 text-xs">
+              <div className="flex items-center space-x-1.5 text-xs overflow-x-auto pb-1">
                 <button
                   onClick={() => setFilterMode('all')}
-                  className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                  className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition-all ${
                     filterMode === 'all'
                       ? 'bg-primary-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -396,8 +476,18 @@ export const ProductsView: React.FC = () => {
                   Alle ({products.length})
                 </button>
                 <button
+                  onClick={() => setFilterMode('droppable')}
+                  className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition-all ${
+                    filterMode === 'droppable'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  Abwählbar ({products.filter(p => p.isDropAllowed).length})
+                </button>
+                <button
                   onClick={() => setFilterMode('predefined')}
-                  className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                  className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition-all ${
                     filterMode === 'predefined'
                       ? 'bg-primary-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -407,7 +497,7 @@ export const ProductsView: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setFilterMode('customPicker')}
-                  className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                  className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition-all ${
                     filterMode === 'customPicker'
                       ? 'bg-primary-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -423,6 +513,7 @@ export const ProductsView: React.FC = () => {
               {filteredProducts.map((product) => {
                 const isSelected = selectedProduct?.id === product.id;
                 const slotCount = product.availableMarketplaces.length;
+                const nonUsSlots = product.availableMarketplaces.filter(mp => mp.toUpperCase() !== 'US').length;
 
                 return (
                   <div
@@ -436,8 +527,15 @@ export const ProductsView: React.FC = () => {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className={`text-sm font-bold transition-colors ${isSelected ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>
-                          {product.displayName}
+                        <div className="flex items-center space-x-2">
+                          <div className={`text-sm font-bold transition-colors ${isSelected ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>
+                            {product.displayName}
+                          </div>
+                          {product.isDropAllowed && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              Prio #{product.dropPriorityOrder || 1}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] font-mono text-slate-400 mt-0.5">
                           {product.id}
@@ -450,11 +548,11 @@ export const ProductsView: React.FC = () => {
                           {slotCount} {slotCount === 1 ? 'Slot' : 'Slots'}
                         </span>
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
-                          product.colorMode === 'predefined'
-                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-purple-500/15 text-purple-400 border border-purple-500/20'
+                          product.isDropAllowed
+                            ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
                         }`}>
-                          {product.colorMode === 'predefined' ? `${product.colors.length} Farben` : 'Color Picker'}
+                          {product.isDropAllowed ? `Kürzbar (${nonUsSlots} Slots)` : 'Fix (Nicht kürzbar)'}
                         </span>
                       </div>
                     </div>
@@ -514,6 +612,62 @@ export const ProductsView: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Slot-Optimizer & Drop Candidate Configuration Box */}
+                <div className="bg-slate-900/80 border border-amber-500/20 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+                        <Scissors className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-100">Slot-Optimierung & Kürzungs-Freigabe</div>
+                        <div className="text-[11px] text-slate-400">
+                          Darf dieses Produkt bei Slot-Mangel automatisch reduziert werden?
+                        </div>
+                      </div>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedProduct.isDropAllowed ?? false}
+                        onChange={() => handleToggleDropAllowed(
+                          selectedProduct.id,
+                          selectedProduct.isDropAllowed ?? false,
+                          selectedProduct.dropPriorityOrder ?? 1
+                        )}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                    </label>
+                  </div>
+
+                  {selectedProduct.isDropAllowed && (
+                    <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-slate-300 font-medium">Kürzungs-Priorität:</span>
+                        <select
+                          value={selectedProduct.dropPriorityOrder || 1}
+                          onChange={(e) => handleChangeDropPriority(selectedProduct.id, Number(e.target.value))}
+                          className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-500"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                            <option key={num} value={num}>Priorität #{num} {num === 1 ? '(Zuerst kürzen)' : ''}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="text-[11px] text-amber-400 font-mono flex items-center gap-1">
+                        <span>Drop-Kette:</span>
+                        <span className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                          JP ➔ ES ➔ IT ➔ FR ➔ DE ➔ GB
+                        </span>
+                        <span className="text-emerald-400 font-bold ml-1">(US geschützt)</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Marketplace Slots Breakdown */}
                 <div className="space-y-3">
                   <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -523,19 +677,25 @@ export const ProductsView: React.FC = () => {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     {marketplaces.map((mp) => {
                       const isAvailable = selectedProduct.availableMarketplaces.includes(mp.id);
+                      const isUs = mp.id.toUpperCase() === 'US';
+
                       return (
                         <div
                           key={mp.id}
                           className={`p-2.5 rounded-xl border transition-all ${
                             isAvailable
-                              ? 'bg-indigo-950/20 border-indigo-500/30 text-indigo-200'
+                              ? isUs
+                                ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+                                : 'bg-indigo-950/20 border-indigo-500/30 text-indigo-200'
                               : 'bg-slate-900/40 border-slate-800/40 text-slate-600 opacity-60'
                           }`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-xs">{mp.displayName}</span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700">
-                              {mp.id}
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                              isUs ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700' : 'bg-slate-900 border border-slate-700'
+                            }`}>
+                              {mp.id} {isUs ? '★' : ''}
                             </span>
                           </div>
                           <div className="mt-1 text-[11px] font-mono text-slate-400">

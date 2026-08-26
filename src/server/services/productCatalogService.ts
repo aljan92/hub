@@ -30,6 +30,8 @@ export interface MerchProduct {
   sortOrder: number;                   // Display / upload order
   presetHexColors?: string[];          // Preset hex values for custom picker
   lastUpdated: string;                 // ISO date string
+  isDropAllowed?: boolean;             // Whether this product can be dropped during slot shortage
+  dropPriorityOrder?: number;          // Order for drop cascade (1 = drop first, 2 = drop second, etc.)
 }
 
 export interface ProductCatalogData {
@@ -256,6 +258,53 @@ export class ProductCatalogService {
   public static getProductById(id: string): MerchProduct | undefined {
     this.ensureLoaded();
     return this.catalogData.products.find(p => p.id === id);
+  }
+
+  /**
+   * Update drop configuration (isDropAllowed, dropPriorityOrder) for products
+   */
+  public static updateDropConfig(configs: Array<{ id: string; isDropAllowed: boolean; dropPriorityOrder: number }>): ProductCatalogData {
+    this.ensureLoaded();
+    const configMap = new Map(configs.map(c => [c.id, c]));
+
+    for (const prod of this.catalogData.products) {
+      if (configMap.has(prod.id)) {
+        const conf = configMap.get(prod.id)!;
+        prod.isDropAllowed = conf.isDropAllowed;
+        prod.dropPriorityOrder = conf.dropPriorityOrder;
+      }
+    }
+
+    return this.saveCatalog(this.catalogData);
+  }
+
+  /**
+   * Get all products allowed to be dropped, ordered by user priority
+   */
+  public static getDroppableProductsOrdered(): MerchProduct[] {
+    this.ensureLoaded();
+    return this.catalogData.products
+      .filter(p => p.isDropAllowed === true)
+      .sort((a, b) => {
+        const orderA = a.dropPriorityOrder ?? 99;
+        const orderB = b.dropPriorityOrder ?? 99;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.sortOrder - b.sortOrder;
+      });
+  }
+
+  /**
+   * Calculate how many non-US slots can be dropped across all droppable products
+   */
+  public static calculateMaxDroppableSlotsCount(): number {
+    const droppables = this.getDroppableProductsOrdered();
+    let count = 0;
+    for (const prod of droppables) {
+      // US is NEVER droppable, count only non-US marketplaces
+      const nonUsMarketplaces = (prod.availableMarketplaces || []).filter(mp => mp.toUpperCase() !== 'US');
+      count += nonUsMarketplaces.length;
+    }
+    return count;
   }
 
   /**

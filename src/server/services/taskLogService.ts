@@ -185,6 +185,28 @@ export class TaskLogService {
     Object.assign(task, updates);
     this.saveLogs(logs);
     this.emitUpdate(task);
+
+    // If task is completed, automatically push into Intelligent Upload Queue
+    if (task.status === 'COMPLETED' && (task.localMbaPngPath || task.localImagePath)) {
+      try {
+        const { QueueService } = require('./queueService');
+        QueueService.enqueueDesign({
+          taskId: task.id,
+          designTitle: task.resultTitle || task.title || task.payload?.quote || 'Design #' + task.id,
+          niche: task.payload?.niche || '',
+          brand: task.resultBrand || task.brand || '',
+          title: task.resultTitle || task.title || '',
+          bullet1: task.resultBullet1 || task.bullet1 || '',
+          bullet2: task.resultBullet2 || task.bullet2 || '',
+          description: task.resultDescription || task.description || '',
+          imagePath: task.localImagePath || '',
+          pngPath: task.localMbaPngPath || ''
+        });
+      } catch (err: any) {
+        console.warn('[TaskLogService] Failed to auto-enqueue completed task:', err.message);
+      }
+    }
+
     return task;
   }
 
