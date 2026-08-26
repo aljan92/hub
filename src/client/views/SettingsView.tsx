@@ -64,6 +64,29 @@ export const SettingsView: React.FC = () => {
 
   const [vectorizerApiKey, setVectorizerApiKey] = useState<string>(initialSettings.vectorizerApiKey || '');
   const [vectorizerApiSecret, setVectorizerApiSecret] = useState<string>(initialSettings.vectorizerApiSecret || '');
+  const [vectorizerModePreview, setVectorizerModePreview] = useState<'test' | 'production'>(initialSettings.vectorizerModePreview || 'test');
+  const [vectorizerModeProduction, setVectorizerModeProduction] = useState<'test' | 'production'>(initialSettings.vectorizerModeProduction || 'production');
+  const [vectorizerMaxColors, setVectorizerMaxColors] = useState<number>(initialSettings.vectorizerMaxColors ?? 2);
+  const [vectorizerShapeStacking, setVectorizerShapeStacking] = useState<'cutouts' | 'stacked'>(initialSettings.vectorizerShapeStacking || 'cutouts');
+  const [vectorizerGroupBy, setVectorizerGroupBy] = useState<'color' | 'none'>(initialSettings.vectorizerGroupBy || 'none');
+  const [vectorizerMinArea, setVectorizerMinArea] = useState<number>(initialSettings.vectorizerMinArea ?? 10);
+  const [vectorizerDrawStyle, setVectorizerDrawStyle] = useState<'fill_shapes' | 'stroke_shapes' | 'stroke_edges'>(initialSettings.vectorizerDrawStyle || 'fill_shapes');
+  const [vectorizerOptimizedShapes, setVectorizerOptimizedShapes] = useState<boolean>(initialSettings.vectorizerOptimizedShapes ?? true);
+  const [vectorizerGapFiller, setVectorizerGapFiller] = useState<boolean>(initialSettings.vectorizerGapFiller ?? false);
+  const [vectorizerLineFitTolerance, setVectorizerLineFitTolerance] = useState<number>(initialSettings.vectorizerLineFitTolerance ?? 0.1);
+
+  const resetVectorizerDefaults = () => {
+    setVectorizerModePreview('test');
+    setVectorizerModeProduction('production');
+    setVectorizerMaxColors(2);
+    setVectorizerShapeStacking('cutouts');
+    setVectorizerGroupBy('none');
+    setVectorizerMinArea(10);
+    setVectorizerDrawStyle('fill_shapes');
+    setVectorizerOptimizedShapes(true);
+    setVectorizerGapFiller(false);
+    setVectorizerLineFitTolerance(0.1);
+  };
 
   const [supabaseUrl, setSupabaseUrl] = useState<string>(initialSettings.supabaseUrl || '');
   const [supabaseServiceRoleKey, setSupabaseServiceRoleKey] = useState<string>(initialSettings.supabaseServiceRoleKey || '');
@@ -96,6 +119,16 @@ export const SettingsView: React.FC = () => {
           setIdeogramMagicPromptOption(s.ideogramMagicPromptOption || 'AUTO');
           setVectorizerApiKey(s.vectorizerApiKey || '');
           setVectorizerApiSecret(s.vectorizerApiSecret || '');
+          setVectorizerModePreview(s.vectorizerModePreview || 'test');
+          setVectorizerModeProduction(s.vectorizerModeProduction || 'production');
+          setVectorizerMaxColors(s.vectorizerMaxColors ?? 2);
+          setVectorizerShapeStacking(s.vectorizerShapeStacking || 'cutouts');
+          setVectorizerGroupBy(s.vectorizerGroupBy || 'none');
+          setVectorizerMinArea(s.vectorizerMinArea ?? 10);
+          setVectorizerDrawStyle(s.vectorizerDrawStyle || 'fill_shapes');
+          setVectorizerOptimizedShapes(s.vectorizerOptimizedShapes ?? true);
+          setVectorizerGapFiller(s.vectorizerGapFiller ?? false);
+          setVectorizerLineFitTolerance(s.vectorizerLineFitTolerance ?? 0.1);
           setSupabaseUrl(s.supabaseUrl || '');
           setSupabaseServiceRoleKey(s.supabaseServiceRoleKey || '');
           setNasHost(s.nasHost || '192.168.178.141');
@@ -171,6 +204,16 @@ export const SettingsView: React.FC = () => {
         ideogramMagicPromptOption,
         vectorizerApiKey,
         vectorizerApiSecret,
+        vectorizerModePreview,
+        vectorizerModeProduction,
+        vectorizerMaxColors: Number(vectorizerMaxColors),
+        vectorizerShapeStacking,
+        vectorizerGroupBy,
+        vectorizerMinArea: Number(vectorizerMinArea),
+        vectorizerDrawStyle,
+        vectorizerOptimizedShapes,
+        vectorizerGapFiller,
+        vectorizerLineFitTolerance: Number(vectorizerLineFitTolerance),
         supabaseUrl,
         supabaseServiceRoleKey,
         nasHost,
@@ -527,21 +570,35 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* 4. Vectorizer.ai Card (Dedicated) */}
-        <div className="glass-card p-5 rounded-2xl space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
-              <Sparkles className="w-4 h-4 mr-2 text-accent-cyan" />
-              Vectorizer.ai API
-            </h3>
-            <button
-              onClick={() => runTest('vectorizer', { apiKey: vectorizerApiKey, apiSecret: vectorizerApiSecret })}
-              disabled={testResults['vectorizer']?.testing || !vectorizerApiKey || !vectorizerApiSecret}
-              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3 h-3 ${testResults['vectorizer']?.testing ? 'animate-spin text-accent-cyan' : ''}`} />
-              <span>Verbindung testen</span>
-            </button>
+        {/* 4. Vectorizer.ai Card (Dedicated & Extended) */}
+        <div className="glass-card p-5 rounded-2xl space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-2">
+              <Sparkles className="w-4 h-4 text-accent-cyan" />
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
+                Vectorizer.ai API &amp; Vektorisierung
+              </h3>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={resetVectorizerDefaults}
+                className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center space-x-1.5 transition-colors"
+                title="Auf MBA Manager Standard zurücksetzen"
+              >
+                <RefreshCw className="w-3 h-3 text-slate-400" />
+                <span>Standard</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => runTest('vectorizer', { apiKey: vectorizerApiKey, apiSecret: vectorizerApiSecret })}
+                disabled={testResults['vectorizer']?.testing || !vectorizerApiKey || !vectorizerApiSecret}
+                className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${testResults['vectorizer']?.testing ? 'animate-spin text-accent-cyan' : ''}`} />
+                <span>Verbindung testen</span>
+              </button>
+            </div>
           </div>
 
           {testResults['vectorizer'] && !testResults['vectorizer'].testing && (
@@ -567,7 +624,8 @@ export const SettingsView: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* API Credentials */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">API Key (ID)</label>
               <input
@@ -587,6 +645,255 @@ export const SettingsView: React.FC = () => {
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-600 focus:border-primary-500 focus:outline-none font-mono"
                 placeholder="Secret..."
               />
+            </div>
+          </div>
+
+          {/* Modus-Einstellungen */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center">
+              <Sliders className="w-3.5 h-3.5 mr-1.5 text-primary-400" />
+              Modus-Einstellungen
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-slate-900/60 border border-slate-800/60 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Vorschau-Modus</div>
+                  <div className="text-[11px] text-slate-400">Modus für Vorschau-Generierung</div>
+                </div>
+                <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setVectorizerModePreview('test')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                      vectorizerModePreview === 'test' 
+                        ? 'bg-primary-600 text-white shadow' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Test
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVectorizerModePreview('production')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                      vectorizerModePreview === 'production' 
+                        ? 'bg-primary-600 text-white shadow' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Produktion
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-800/60 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Produktions-Modus</div>
+                  <div className="text-[11px] text-slate-400">Modus für finale Vektorisierung</div>
+                </div>
+                <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setVectorizerModeProduction('test')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                      vectorizerModeProduction === 'test' 
+                        ? 'bg-primary-600 text-white shadow' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Test
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVectorizerModeProduction('production')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                      vectorizerModeProduction === 'production' 
+                        ? 'bg-primary-600 text-white shadow' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Produktion
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Vektorisierungs-Parameter */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center">
+              <Cpu className="w-3.5 h-3.5 mr-1.5 text-accent-cyan" />
+              Parameter (MBA Manager Standard)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* Draw Style */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Draw Style
+                </label>
+                <select
+                  value={vectorizerDrawStyle}
+                  onChange={(e) => setVectorizerDrawStyle(e.target.value as any)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:border-primary-500 focus:outline-none font-mono"
+                >
+                  <option value="fill_shapes">Fill Shapes (Standard)</option>
+                  <option value="stroke_shapes">Stroke Shapes (Konturen)</option>
+                  <option value="stroke_edges">Stroke Edges (Kanten)</option>
+                </select>
+                <div className="text-[10px] text-slate-500 mt-1">Bestimmt wie Formen gezeichnet werden</div>
+              </div>
+
+              {/* Maximale Anzahl an Farben */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Maximale Anzahl an Farben
+                </label>
+                <input
+                  type="number"
+                  min="2"
+                  max="256"
+                  value={vectorizerMaxColors}
+                  onChange={(e) => setVectorizerMaxColors(Math.max(2, Math.min(256, parseInt(e.target.value) || 2)))}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:border-primary-500 focus:outline-none font-mono"
+                />
+                <div className="text-[10px] text-slate-500 mt-1">Begrenzt die Farbpalette (2 - 256)</div>
+              </div>
+
+              {/* Kleine Formen filtern */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Kleine Formen filtern
+                </label>
+                <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 focus-within:border-primary-500">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={vectorizerMinArea}
+                    onChange={(e) => setVectorizerMinArea(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full bg-transparent text-xs text-slate-100 focus:outline-none font-mono"
+                  />
+                  <span className="text-xs font-semibold text-slate-500 ml-1">px</span>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Entfernt Bildrauschen &lt; Min. Fläche</div>
+              </div>
+
+              {/* Shape Stacking */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Shape Stacking
+                </label>
+                <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800 h-[38px] items-center">
+                  <button
+                    type="button"
+                    onClick={() => setVectorizerShapeStacking('cutouts')}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors text-center ${
+                      vectorizerShapeStacking === 'cutouts' 
+                        ? 'bg-primary-600 text-white shadow' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Cutouts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVectorizerShapeStacking('stacked')}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors text-center ${
+                      vectorizerShapeStacking === 'stacked' 
+                        ? 'bg-primary-600 text-white shadow' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Stacked
+                  </button>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Cutouts = Löcher für Textildruck (Empfohlen)</div>
+              </div>
+
+              {/* Gruppierung */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Gruppierung
+                </label>
+                <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800 h-[38px] items-center">
+                  <button
+                    type="button"
+                    onClick={() => setVectorizerGroupBy('none')}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors text-center ${
+                      vectorizerGroupBy === 'none' 
+                        ? 'bg-primary-600 text-white shadow' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Keine
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVectorizerGroupBy('color')}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors text-center ${
+                      vectorizerGroupBy === 'color' 
+                        ? 'bg-primary-600 text-white shadow' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Farbe
+                  </button>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Wie Formen im SVG organisiert werden</div>
+              </div>
+
+              {/* Linien Glätten (wenn Stroke aktiv) */}
+              {vectorizerDrawStyle.includes('stroke') && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Linien Glätten (Tolerance)
+                  </label>
+                  <div className="flex items-center space-x-2 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 h-[38px]">
+                    <input
+                      type="range"
+                      min="0.01"
+                      max="1.0"
+                      step="0.01"
+                      value={vectorizerLineFitTolerance}
+                      onChange={(e) => setVectorizerLineFitTolerance(parseFloat(e.target.value))}
+                      className="w-full accent-primary-500"
+                    />
+                    <span className="text-xs font-mono text-slate-300 w-10 text-right">
+                      {vectorizerLineFitTolerance.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Niedriger = glattere Linien</div>
+                </div>
+              )}
+            </div>
+
+            {/* Toggles: Optimierte Formen & Gap Filler */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              <div 
+                onClick={() => setVectorizerOptimizedShapes(!vectorizerOptimizedShapes)}
+                className="bg-slate-900/60 hover:bg-slate-900 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between cursor-pointer transition-colors"
+              >
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Optimierte Formen</div>
+                  <div className="text-[11px] text-slate-400">Verwendet Kreise und Rechtecke</div>
+                </div>
+                <div className={`w-10 h-5 flex items-center rounded-full p-1 transition-colors ${vectorizerOptimizedShapes ? 'bg-primary-600' : 'bg-slate-700'}`}>
+                  <div className={`bg-white w-3.5 h-3.5 rounded-full shadow-md transform transition-transform ${vectorizerOptimizedShapes ? 'translate-x-5' : 'translate-x-0'}`} />
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setVectorizerGapFiller(!vectorizerGapFiller)}
+                className="bg-slate-900/60 hover:bg-slate-900 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between cursor-pointer transition-colors"
+              >
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Gap Filler</div>
+                  <div className="text-[11px] text-slate-400">Verhindert weiße Linien zwischen Formen</div>
+                </div>
+                <div className={`w-10 h-5 flex items-center rounded-full p-1 transition-colors ${vectorizerGapFiller ? 'bg-primary-600' : 'bg-slate-700'}`}>
+                  <div className={`bg-white w-3.5 h-3.5 rounded-full shadow-md transform transition-transform ${vectorizerGapFiller ? 'translate-x-5' : 'translate-x-0'}`} />
+                </div>
+              </div>
             </div>
           </div>
         </div>

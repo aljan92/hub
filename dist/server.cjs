@@ -214196,6 +214196,17 @@ var DEFAULT_SETTINGS = {
   ideogramMagicPromptOption: "AUTO",
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || "",
   vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || "",
+  vectorizerModePreview: "test",
+  vectorizerModeProduction: "production",
+  vectorizerMaxColors: 2,
+  vectorizerAutoColorCountOffset: 0,
+  vectorizerShapeStacking: "cutouts",
+  vectorizerGroupBy: "none",
+  vectorizerMinArea: 10,
+  vectorizerDrawStyle: "fill_shapes",
+  vectorizerOptimizedShapes: true,
+  vectorizerGapFiller: false,
+  vectorizerLineFitTolerance: 0.1,
   supabaseUrl: process.env.SUPABASE_URL || "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   productorUsptoAuth: process.env.PRODUCTOR_USPTO_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
@@ -215287,9 +215298,56 @@ var VectorizerService = class {
     }
   }
   /**
-   * Vectorize an image URL or Buffer to SVG
+   * Helper to build FormData with complete MBA Manager parameters
    */
-  static async vectorizeImage(imageUrl) {
+  static buildFormData(imageField, isPreview = false, options2) {
+    const settings = loadSettings();
+    const formData = new FormData();
+    if (imageField.type === "url") {
+      formData.append("image.url", imageField.value);
+    } else {
+      const blob = new Blob([imageField.buffer], { type: imageField.mimeType || "image/png" });
+      formData.append("image", blob, imageField.filename || "design.png");
+    }
+    const mode = options2?.mode ?? (isPreview ? settings.vectorizerModePreview || "test" : settings.vectorizerModeProduction || "production");
+    formData.append("mode", mode);
+    const maxColors = options2?.maxColors ?? settings.vectorizerMaxColors ?? 2;
+    formData.append("processing.max_colors", String(maxColors));
+    const removeBg = options2?.removeBackground ?? false;
+    formData.append("processing.remove_background", String(removeBg));
+    const minArea = options2?.minArea ?? settings.vectorizerMinArea ?? 10;
+    if (minArea > 0) {
+      formData.append("processing.shapes.min_area_px", String(minArea));
+    }
+    formData.append("output.svg.version", "svg_1_1");
+    const drawStyle = options2?.drawStyle ?? settings.vectorizerDrawStyle ?? "fill_shapes";
+    formData.append("output.draw_style", drawStyle);
+    const shapeStacking = options2?.shapeStacking ?? settings.vectorizerShapeStacking ?? "cutouts";
+    formData.append("output.shape_stacking", shapeStacking);
+    const groupBy = options2?.groupBy ?? settings.vectorizerGroupBy ?? "none";
+    formData.append("output.group_by", groupBy);
+    formData.append("output.curves.allowed.quadratic_bezier", "true");
+    formData.append("output.curves.allowed.cubic_bezier", "true");
+    formData.append("output.curves.allowed.circular_arc", "true");
+    formData.append("output.curves.allowed.elliptical_arc", "true");
+    const optimized = options2?.optimizedShapes ?? settings.vectorizerOptimizedShapes ?? true;
+    formData.append("output.parameterized_shapes.flatten", String(!optimized));
+    const gapFiller = options2?.gapFiller ?? settings.vectorizerGapFiller ?? false;
+    formData.append("output.gap_filler.enabled", String(gapFiller));
+    if (gapFiller) {
+      formData.append("output.gap_filler.clip_overflow", "false");
+      formData.append("output.gap_filler.non_scaling_stroke", "true");
+    }
+    if (drawStyle.includes("stroke")) {
+      const lineFit = options2?.lineFitTolerance ?? settings.vectorizerLineFitTolerance ?? 0.1;
+      formData.append("output.curves.line_fit_tolerance", String(lineFit));
+    }
+    return formData;
+  }
+  /**
+   * Vectorize an image URL to SVG
+   */
+  static async vectorizeImage(imageUrl, isPreview = false, options2) {
     const settings = loadSettings();
     const key = settings.vectorizerApiKey;
     const secret = settings.vectorizerApiSecret;
@@ -215297,19 +215355,44 @@ var VectorizerService = class {
       throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
     }
     const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
-    const formData = new FormData();
-    formData.append("image.url", imageUrl);
-    formData.append("mode", "production");
+    const formData = this.buildFormData({ type: "url", value: imageUrl }, isPreview, options2);
     const res = await fetch("https://vectorizer.ai/api/v1/vectorize", {
       method: "POST",
       headers: {
         "Authorization": `Basic ${auth}`
       },
       body: formData,
-      signal: AbortSignal.timeout(6e4)
+      signal: AbortSignal.timeout(9e4)
     });
     if (!res.ok) {
-      throw new Error(`Vectorizer Fehler: HTTP ${res.status}`);
+      const errorText = await res.text().catch(() => "");
+      throw new Error(`Vectorizer Fehler (${res.status}): ${errorText || "Server Error"}`);
+    }
+    return await res.text();
+  }
+  /**
+   * Vectorize an image Buffer to SVG
+   */
+  static async vectorizeBuffer(buffer, mimeType = "image/png", isPreview = false, options2) {
+    const settings = loadSettings();
+    const key = settings.vectorizerApiKey;
+    const secret = settings.vectorizerApiSecret;
+    if (!key || !secret) {
+      throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
+    }
+    const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
+    const formData = this.buildFormData({ type: "buffer", buffer, mimeType }, isPreview, options2);
+    const res = await fetch("https://vectorizer.ai/api/v1/vectorize", {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${auth}`
+      },
+      body: formData,
+      signal: AbortSignal.timeout(9e4)
+    });
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "");
+      throw new Error(`Vectorizer Fehler (${res.status}): ${errorText || "Server Error"}`);
     }
     return await res.text();
   }

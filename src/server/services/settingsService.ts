@@ -16,6 +16,17 @@ export interface AppSettings {
   ideogramMagicPromptOption: string;
   vectorizerApiKey: string;
   vectorizerApiSecret: string;
+  vectorizerModePreview: 'test' | 'production';
+  vectorizerModeProduction: 'test' | 'production';
+  vectorizerMaxColors: number;
+  vectorizerAutoColorCountOffset: number;
+  vectorizerShapeStacking: 'cutouts' | 'stacked';
+  vectorizerGroupBy: 'color' | 'none';
+  vectorizerMinArea: number;
+  vectorizerDrawStyle: 'fill_shapes' | 'stroke_shapes' | 'stroke_edges';
+  vectorizerOptimizedShapes: boolean;
+  vectorizerGapFiller: boolean;
+  vectorizerLineFitTolerance: number;
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
   productorUsptoAuth: string;
@@ -45,6 +56,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   ideogramMagicPromptOption: 'AUTO',
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || '',
   vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || '',
+  vectorizerModePreview: 'test',
+  vectorizerModeProduction: 'production',
+  vectorizerMaxColors: 2,
+  vectorizerAutoColorCountOffset: 0,
+  vectorizerShapeStacking: 'cutouts',
+  vectorizerGroupBy: 'none',
+  vectorizerMinArea: 10,
+  vectorizerDrawStyle: 'fill_shapes',
+  vectorizerOptimizedShapes: true,
+  vectorizerGapFiller: false,
+  vectorizerLineFitTolerance: 0.1,
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   productorUsptoAuth: process.env.PRODUCTOR_USPTO_AUTH || 'Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==',
