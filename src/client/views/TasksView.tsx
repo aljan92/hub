@@ -303,7 +303,8 @@ export const TasksView: React.FC = () => {
         : (pred?.target_group?.selected || 'Men, Women');
       setSelectedAudience(activeTask.customAnswers?.audience || targetGroup);
       setSelectedAvoidColor(activeTask.customAnswers?.avoidColor || pred?.avoid_product_colors?.avoid || 'Keine');
-      setSelectedBgMode(activeTask.customAnswers?.reuseBackground || (pred?.background_analysis?.removal_mode === 'MANUAL' ? 'Ja (Hintergrund behalten)' : 'Nein (Auto Freistellen)'));
+      const isManual = activeTask.customAnswers?.reuseBackground === 'Manuell' || activeTask.customAnswers?.reuseBackground === 'Ja (Hintergrund behalten)' || pred?.background_analysis?.removal_mode === 'MANUAL';
+      setSelectedBgMode(activeTask.customAnswers?.reuseBackground ? (isManual ? 'Manuell' : 'Automatisch') : (isManual ? 'Manuell' : 'Automatisch'));
       setSelectedMaxColors(activeTask.customAnswers?.maxColors ?? pred?.color_analysis?.color_count ?? 2);
       setEditablePrompt(activeTask.resultPrompt || activeTask.payload?.quote || '');
 
@@ -912,19 +913,21 @@ export const TasksView: React.FC = () => {
                         {/* Question 4: Background */}
                         <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">4. Hintergrund</span>
+                            <span className="font-semibold text-slate-200">4. Hintergrund entfernen</span>
                             <span className="text-[10px] text-cyan-400 font-mono">
-                              KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' ? 'Behalten' : 'Auto Freistellen'}
+                              KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' ? 'Manuell' : 'Automatisch'}
                             </span>
                           </div>
                           <div className="flex gap-2">
-                            {['Nein (Auto Freistellen)', 'Ja (Hintergrund behalten)'].map((val) => (
+                            {['Automatisch', 'Manuell'].map((val) => (
                               <button
                                 key={val}
                                 onClick={() => setSelectedBgMode(val)}
-                                className={`px-3 py-1 text-xs rounded-lg border transition-all ${
-                                  selectedBgMode === val 
-                                    ? 'bg-cyan-600 text-white border-cyan-500 font-semibold'
+                                className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
+                                  selectedBgMode === val || 
+                                  (val === 'Automatisch' && (selectedBgMode === 'Nein (Auto Freistellen)' || selectedBgMode === 'AUTOMATIC')) ||
+                                  (val === 'Manuell' && (selectedBgMode === 'Ja (Hintergrund behalten)' || selectedBgMode === 'MANUAL'))
+                                    ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
                                     : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                                 }`}
                               >

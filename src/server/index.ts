@@ -375,7 +375,7 @@ app.post('/api/v1/system/update', async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Update erfolgreich installiert. Dashboard startet in 3 Sekunden neu...'
+      message: 'Update erfolgreich installiert. Dashboard startet in 10 Sekunden neu...'
     });
 
     // Exit process cleanly so Docker (restart: unless-stopped) reloads the updated app

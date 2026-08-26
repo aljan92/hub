@@ -219454,7 +219454,7 @@ Please audit the listing based on your compliance rules:
       });
       const bgAnswer = task.customAnswers?.reuseBackground || "";
       const bgAnalysis = task.analysisResult?.background_analysis || {};
-      const isManualBg = bgAnswer.includes("Ja") || bgAnswer.includes("behalten") || bgAnalysis.removal_mode === "MANUAL";
+      const isManualBg = bgAnswer === "Manuell" || bgAnswer === "MANUAL" || bgAnswer.includes("Ja") || bgAnswer.includes("behalten") || bgAnalysis.removal_mode === "MANUAL";
       const isAutoBg = !isManualBg;
       if (isAutoBg) {
         console.log(`[TaskLogService] \u26A1 Wende Auto BG Remove f\xFCr Task ${taskId} an...`);
@@ -219809,9 +219809,10 @@ Please audit the listing based on your compliance rules:
             };
           }
           if (params2.answers.reuseBackground) {
+            const isAuto = params2.answers.reuseBackground === "Automatisch" || params2.answers.reuseBackground === "AUTOMATIC" || params2.answers.reuseBackground.includes("Nein") || params2.answers.reuseBackground.includes("Auto");
             task.analysisResult.background_analysis = {
               ...task.analysisResult.background_analysis || {},
-              removal_mode: params2.answers.reuseBackground.includes("Nein") ? "AUTOMATIC" : "MANUAL"
+              removal_mode: isAuto ? "AUTOMATIC" : "MANUAL"
             };
           }
           if (params2.answers.maxColors) {
@@ -220394,7 +220395,7 @@ app.post("/api/v1/system/update", async (req, res) => {
     }
     res.json({
       success: true,
-      message: "Update erfolgreich installiert. Dashboard startet in 3 Sekunden neu..."
+      message: "Update erfolgreich installiert. Dashboard startet in 10 Sekunden neu..."
     });
     setTimeout(() => {
       console.log("[System Update] Restarting container process now with fresh bundle...");

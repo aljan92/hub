@@ -114,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
       const data = await res.json();
       if (data.success) {
         // Start countdown and reload
-        let count = 5;
+        let count = 10;
         setUpdateCountdown(count);
         const timer = setInterval(() => {
           count -= 1;

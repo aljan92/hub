@@ -1401,7 +1401,7 @@ Please audit the listing based on your compliance rules:
       // 3. Check if automatic background removal is requested
       const bgAnswer = task.customAnswers?.reuseBackground || '';
       const bgAnalysis = task.analysisResult?.background_analysis || {};
-      const isManualBg = bgAnswer.includes('Ja') || bgAnswer.includes('behalten') || bgAnalysis.removal_mode === 'MANUAL';
+      const isManualBg = bgAnswer === 'Manuell' || bgAnswer === 'MANUAL' || bgAnswer.includes('Ja') || bgAnswer.includes('behalten') || bgAnalysis.removal_mode === 'MANUAL';
       const isAutoBg = !isManualBg;
 
       if (isAutoBg) {
@@ -1821,9 +1821,10 @@ Please audit the listing based on your compliance rules:
             };
           }
           if (params.answers.reuseBackground) {
+            const isAuto = params.answers.reuseBackground === 'Automatisch' || params.answers.reuseBackground === 'AUTOMATIC' || params.answers.reuseBackground.includes('Nein') || params.answers.reuseBackground.includes('Auto');
             task.analysisResult.background_analysis = {
               ...(task.analysisResult.background_analysis || {}),
-              removal_mode: params.answers.reuseBackground.includes('Nein') ? 'AUTOMATIC' : 'MANUAL'
+              removal_mode: isAuto ? 'AUTOMATIC' : 'MANUAL'
             };
           }
           if (params.answers.maxColors) {
