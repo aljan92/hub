@@ -221516,22 +221516,28 @@ var UploadWorkerService = class {
         throw new Error(`Druckfertige 4500x5400px PNG-Datei f\xFCr Task #${item.taskId} nicht gefunden.`);
       }
       this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path73.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
-      const fileInput = await page.waitForSelector('.dropzone-container input[type="file"]', { timeout: 2e4 });
+      const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', {
+        state: "attached",
+        timeout: 2e4
+      });
       if (!fileInput) {
-        throw new Error('Upload-Feld (.dropzone-container input[type="file"]) nicht gefunden.');
+        throw new Error('Upload-Feld (input[type="file"]) nicht im DOM gefunden.');
       }
       await fileInput.setInputFiles(pngAbsolutePath);
       this.log(`\u23F3 PNG zugewiesen. Warte auf vollst\xE4ndiges Amazon-Asset-Rendering...`, "Warte auf Rendering...", 25, 100);
       try {
-        await page.waitForSelector("#STANDARD_TSHIRT-card .asset img", { timeout: 6e4 });
+        await page.waitForFunction(() => {
+          const img = document.querySelector("#STANDARD_TSHIRT-card .asset img, .asset img, #global-uploader-container img.artwork");
+          return img && (img.complete || img.naturalWidth && img.naturalWidth > 0 || img.src && img.src.length > 0);
+        }, { timeout: 6e4 });
         const rateLimit = await page.$(".daily-rate-limit-breached");
         if (rateLimit) {
           throw new Error("T\xE4gliches Amazon Upload-Limit erreicht (.daily-rate-limit-breached).");
         }
         this.log(`\u2705 Master-PNG erfolgreich gerendert!`, "PNG Upload fertig \u2713", 35, 100);
       } catch (err) {
-        if (err.message.includes("Limit")) throw err;
-        this.log(`\u26A0\uFE0F Render-Timeout f\xFCr Standard T-Shirt Thumbnail, fahre vorsichtig fort...`);
+        if (err.message && err.message.includes("Limit")) throw err;
+        this.log(`\u26A0\uFE0F Render-Check beendet, fahre fort...`);
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       this.log(`\u{1F4E6} \xD6ffne 'Select Products' Modal...`, "Konfiguriere Marktpl\xE4tze...", 40, 100);

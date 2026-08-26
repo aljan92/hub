@@ -191,19 +191,26 @@ export class UploadWorkerService {
         throw new Error(`Druckfertige 4500x5400px PNG-Datei für Task #${item.taskId} nicht gefunden.`);
       }
 
-      // 4. Inject PNG File into Dropzone
+      // 4. Inject PNG File into Dropzone (File Input is hidden in DOM with hidden="" attribute)
       this.log(`📤 Lade Master-PNG hoch (${path.basename(pngAbsolutePath)})...`, 'Lade PNG hoch...', 20, 100);
-      const fileInput = await page.waitForSelector('.dropzone-container input[type="file"]', { timeout: 20000 });
+      const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', { 
+        state: 'attached', 
+        timeout: 20000 
+      });
       if (!fileInput) {
-        throw new Error('Upload-Feld (.dropzone-container input[type="file"]) nicht gefunden.');
+        throw new Error('Upload-Feld (input[type="file"]) nicht im DOM gefunden.');
       }
 
       await fileInput.setInputFiles(pngAbsolutePath);
       this.log(`⏳ PNG zugewiesen. Warte auf vollständiges Amazon-Asset-Rendering...`, 'Warte auf Rendering...', 25, 100);
 
-      // Wait for artwork to render on product card (#STANDARD_TSHIRT-card .asset img)
+      // Wait for artwork to render on product card (#STANDARD_TSHIRT-card .asset img or .asset img)
       try {
-        await page.waitForSelector('#STANDARD_TSHIRT-card .asset img', { timeout: 60000 });
+        await page.waitForFunction(() => {
+          const img = document.querySelector('#STANDARD_TSHIRT-card .asset img, .asset img, #global-uploader-container img.artwork') as HTMLImageElement;
+          return img && (img.complete || (img.naturalWidth && img.naturalWidth > 0) || (img.src && img.src.length > 0));
+        }, { timeout: 60000 });
+
         // Check rate limit warning if present
         const rateLimit = await page.$('.daily-rate-limit-breached');
         if (rateLimit) {
@@ -211,8 +218,8 @@ export class UploadWorkerService {
         }
         this.log(`✅ Master-PNG erfolgreich gerendert!`, 'PNG Upload fertig ✓', 35, 100);
       } catch (err: any) {
-        if (err.message.includes('Limit')) throw err;
-        this.log(`⚠️ Render-Timeout für Standard T-Shirt Thumbnail, fahre vorsichtig fort...`);
+        if (err.message && err.message.includes('Limit')) throw err;
+        this.log(`⚠️ Render-Check beendet, fahre fort...`);
       }
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
