@@ -187,9 +187,21 @@ export class TaskLogService {
       const enListing = listing.en || (listing.title || listing.brand ? listing : {});
       const brand = enListing.brand || task.payload?.brand || '';
       const title = enListing.title || task.payload?.title || task.payload?.quote || 'Design #' + task.id;
-      const bullet1 = enListing.bullet1 || enListing.bullet_1 || '';
-      const bullet2 = enListing.bullet2 || enListing.bullet_2 || '';
-      const description = enListing.description || '';
+      const sanitizeText = (txt: string) => {
+        if (!txt) return '';
+        return txt
+          .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
+          .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'")
+          .replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
+          .replace(/\u2026/g, '...')
+          .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
+      const bullet1 = sanitizeText(enListing.bullet1 || enListing.bullet_1 || '');
+      const bullet2 = sanitizeText(enListing.bullet2 || enListing.bullet_2 || '');
+      const description = sanitizeText(enListing.description || '');
 
       // Collect all language listings (en, de, fr, es, it, jp, etc.)
       const listings: Record<string, any> = {};
@@ -198,11 +210,11 @@ export class TaskLogService {
           if (val && typeof val === 'object' && !Array.isArray(val) && !key.startsWith('_')) {
             const langObj = val as any;
             listings[key.toLowerCase()] = {
-              brand: langObj.brand || brand,
-              title: langObj.title || title,
-              bullet1: langObj.bullet1 || langObj.bullet_1 || '',
-              bullet2: langObj.bullet2 || langObj.bullet_2 || '',
-              description: langObj.description || ''
+              brand: sanitizeText(langObj.brand || brand),
+              title: sanitizeText(langObj.title || title),
+              bullet1: sanitizeText(langObj.bullet1 || langObj.bullet_1 || ''),
+              bullet2: sanitizeText(langObj.bullet2 || langObj.bullet_2 || ''),
+              description: sanitizeText(langObj.description || '')
             };
           }
         }

@@ -136,6 +136,43 @@ export class UploadWorkerService {
   }
 
   /**
+   * Cleans text to strictly conform to Amazon Merch on Demand character requirements:
+   * - Converts typographic quotes („ “ ” « ») to standard ASCII quotes (")
+   * - Converts curly single quotes/apostrophes (’ ‘ ‚ ‛) to standard ASCII apostrophe (')
+   * - Converts typographic hyphens/dashes (— – −) to standard ASCII hyphen (-)
+   * - Converts ellipsis (…) to (...)
+   * - Removes any other prohibited unicode characters not allowed on Amazon Merch
+   */
+  public static sanitizeListingText(text: string, locale = 'en'): string {
+    if (!text) return '';
+    let cleaned = text;
+
+    // 1. Replace typographic double quotes with standard quotes
+    cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"');
+
+    // 2. Replace typographic single quotes with standard apostrophes
+    cleaned = cleaned.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
+
+    // 3. Replace em/en dashes and minus signs with standard hyphens
+    cleaned = cleaned.replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+
+    // 4. Replace ellipsis with three dots
+    cleaned = cleaned.replace(/\u2026/g, '...');
+
+    // 5. Replace non-breaking and special spaces with standard space
+    cleaned = cleaned.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ');
+
+    // 6. Clean prohibited characters using Amazon's character set
+    const prohibitedRegex = /[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g;
+    cleaned = cleaned.replace(prohibitedRegex, '');
+
+    // 7. Collapse multi-spaces
+    cleaned = cleaned.replace(/\s+/g, ' ');
+
+    return cleaned.trim();
+  }
+
+  /**
    * Main Upload Execution Pipeline
    */
   private static async executeUploadPipeline(item: QueueItem, mode: 'draft' | 'publish') {
@@ -552,10 +589,23 @@ export class UploadWorkerService {
       await page.waitForTimeout(1000);
 
       // 8. Multi-Language Listings Injection (with Length Clamping & Angular Events)
-      this.log(`📝 Trage mehrsprachige SEO-Listings ein...`, 'Befülle Listings...', 85, 100);
-      const listings = item.listings || {
+      this.log(`📝 Trage mehrsprachige SEO-Listings ein (inkl. Zeichen-Bereinigung)...`, 'Befülle Listings...', 85, 100);
+      const rawListings = item.listings || {
         en: { brand: item.brand, title: item.title, bullet1: item.bullet1, bullet2: item.bullet2, description: item.description }
       };
+
+      // Sanitize all listings on server first
+      const sanitizedListings: Record<string, any> = {};
+      for (const [loc, content] of Object.entries(rawListings)) {
+        if (!content) continue;
+        sanitizedListings[loc] = {
+          brand: UploadWorkerService.sanitizeListingText(content.brand || '', loc),
+          title: UploadWorkerService.sanitizeListingText(content.title || '', loc),
+          bullet1: UploadWorkerService.sanitizeListingText(content.bullet1 || content.bullet_1 || '', loc),
+          bullet2: UploadWorkerService.sanitizeListingText(content.bullet2 || content.bullet_2 || '', loc),
+          description: UploadWorkerService.sanitizeListingText(content.description || '', loc),
+        };
+      }
 
       const fillResult = await page.evaluate(async (listingMap: Record<string, any>) => {
         const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -583,8 +633,17 @@ export class UploadWorkerService {
             }
           }
 
-          const setVal = (fieldKey: string, val: string, maxLen = 2000) => {
-            if (!val) return;
+          const setVal = (fieldKey: string, rawVal: string, maxLen = 2000) => {
+            if (!rawVal) return;
+            // Clean quotes and special chars inside browser as well
+            let val = rawVal
+              .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
+              .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'")
+              .replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
+              .replace(/\u2026/g, '...')
+              .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+              .replace(/\s+/g, ' ');
+
             const clamped = val.substring(0, maxLen).trim();
             const selectors = loc === 'en' ? [
               `#en #designCreator-productEditor-${fieldKey}`,
@@ -622,10 +681,13 @@ export class UploadWorkerService {
 
         // Also ensure root default English fields are populated to satisfy Angular Form validity
         const enContent = listingMap['en'] || listingMap['de'] || {};
-        const setRootVal = (id: string, val: string, maxLen = 2000) => {
-          if (!val) return;
+        const setRootVal = (id: string, rawVal: string, maxLen = 2000) => {
+          if (!rawVal) return;
           const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement;
           if (el) {
+            let val = rawVal
+              .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
+              .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
             el.focus();
             el.value = val.substring(0, maxLen).trim();
             el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -641,7 +703,7 @@ export class UploadWorkerService {
         setRootVal('designCreator-productEditor-description', enContent.description || '', 2000);
 
         return { success: true, filledLocales };
-      }, listings);
+      }, sanitizedListings);
 
       this.log(`✅ Listings für Sprachen [${fillResult.filledLocales.join(', ')}] eingetragen!`, 'Listings fertig ✓', 90, 100);
 
@@ -651,24 +713,33 @@ export class UploadWorkerService {
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
 
-      // 9. Final Action: Save Draft vs. Live Publish (with Force Click)
+      // 9. Final Action: Save Draft vs. Live Publish (with Strict Validation & State Verification)
       if (mode === 'publish') {
         this.log(`🚀 Klicke 'Publish' Button für Live-Veröffentlichung...`, 'Veröffentliche...', 95, 100);
 
-        // Click publish via DOM force-click
-        const publishClicked = await page.evaluate(() => {
-          const submitBtn = document.getElementById('submit-button') || document.querySelector('button[id*="submit"], button.btn-submit') as HTMLElement;
-          if (submitBtn) {
-            submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            submitBtn.click();
-            return true;
-          }
-          return false;
+        // Check form validity before clicking
+        const publishCheck = await page.evaluate(() => {
+          const submitBtn = document.getElementById('submit-button') || document.querySelector('button[id*="submit"], button.btn-submit') as HTMLButtonElement;
+          if (!submitBtn) return { found: false, isEnabled: false, errors: ['Publish-Button nicht gefunden'] };
+
+          const invalidElements = Array.from(document.querySelectorAll('.has-error, .invalid-feedback, .text-danger, .alert-danger'))
+            .map(el => el.textContent?.trim() || '')
+            .filter(t => t.length > 0);
+
+          const isEnabled = !submitBtn.disabled && !submitBtn.hasAttribute('disabled');
+          return { found: true, isEnabled, errors: invalidElements.slice(0, 5) };
         });
 
-        if (!publishClicked) {
-          throw new Error('Publish-Button im DOM nicht gefunden.');
+        if (!publishCheck.found) throw new Error('Publish-Button im DOM nicht gefunden.');
+        if (!publishCheck.isEnabled && publishCheck.errors.length > 0) {
+          throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(' | ')}`);
         }
+
+        await page.evaluate(() => {
+          const submitBtn = document.getElementById('submit-button') || document.querySelector('button[id*="submit"], button.btn-submit') as HTMLElement;
+          submitBtn?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          submitBtn?.click();
+        });
 
         this.log(`⏳ Warte auf Bestätigungs-Modal...`, 'Bestätige Publish...');
         const confirmBtn = await page.waitForSelector('.modal-footer .btn-primary.btn-submit, button.btn-submit', { timeout: 15000 });
@@ -681,8 +752,32 @@ export class UploadWorkerService {
       } else {
         this.log(`💾 Klicke 'Save Draft' Button für Entwurf-Speicherung...`, 'Speichere Entwurf...', 95, 100);
 
-        // Click draft via DOM force-click
-        const draftClicked = await page.evaluate(() => {
+        // Check if draft button is enabled and inspect any invalid characters / validation errors
+        const draftCheck = await page.evaluate(() => {
+          const draftBtn = (document.getElementById('draft-button') 
+            || document.getElementById('save-as-draft-button')
+            || document.querySelector('button[id*="draft"]')
+            || document.querySelector('button.btn-draft')) as HTMLButtonElement;
+
+          if (!draftBtn) return { found: false, isEnabled: false, errors: ['Draft-Button nicht gefunden'] };
+
+          const invalidElements = Array.from(document.querySelectorAll('.has-error, .invalid-feedback, .text-danger, .alert-danger'))
+            .map(el => el.textContent?.trim() || '')
+            .filter(t => t.length > 0);
+
+          const isEnabled = !draftBtn.disabled && !draftBtn.hasAttribute('disabled');
+          return { found: true, isEnabled, errors: invalidElements.slice(0, 5) };
+        });
+
+        if (!draftCheck.found) {
+          throw new Error('Save-Draft Button im DOM nicht gefunden.');
+        }
+
+        if (!draftCheck.isEnabled && draftCheck.errors.length > 0) {
+          throw new Error(`Save-Draft Button ist deaktiviert. Formularfehler: ${draftCheck.errors.join(' | ')}`);
+        }
+
+        await page.evaluate(() => {
           const draftBtn = (document.getElementById('draft-button') 
             || document.getElementById('save-as-draft-button')
             || document.querySelector('button[id*="draft"]')
@@ -691,14 +786,8 @@ export class UploadWorkerService {
           if (draftBtn) {
             draftBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
             draftBtn.click();
-            return true;
           }
-          return false;
         });
-
-        if (!draftClicked) {
-          throw new Error('Save-Draft Button im DOM nicht gefunden.');
-        }
 
         await page.waitForTimeout(4000);
         this.log(`🎉 Design sicher als Entwurf in Amazon Merch gespeichert!`, 'Entwurf gespeichert ✓', 100, 100);

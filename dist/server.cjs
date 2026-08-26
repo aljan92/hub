@@ -219136,20 +219136,24 @@ var TaskLogService = class {
       const enListing = listing.en || (listing.title || listing.brand ? listing : {});
       const brand = enListing.brand || task.payload?.brand || "";
       const title = enListing.title || task.payload?.title || task.payload?.quote || "Design #" + task.id;
-      const bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
-      const bullet2 = enListing.bullet2 || enListing.bullet_2 || "";
-      const description = enListing.description || "";
+      const sanitizeText = (txt) => {
+        if (!txt) return "";
+        return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/\s+/g, " ").trim();
+      };
+      const bullet1 = sanitizeText(enListing.bullet1 || enListing.bullet_1 || "");
+      const bullet2 = sanitizeText(enListing.bullet2 || enListing.bullet_2 || "");
+      const description = sanitizeText(enListing.description || "");
       const listings = {};
       if (typeof listing === "object") {
         for (const [key, val] of Object.entries(listing)) {
           if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
             const langObj = val;
             listings[key.toLowerCase()] = {
-              brand: langObj.brand || brand,
-              title: langObj.title || title,
-              bullet1: langObj.bullet1 || langObj.bullet_1 || "",
-              bullet2: langObj.bullet2 || langObj.bullet_2 || "",
-              description: langObj.description || ""
+              brand: sanitizeText(langObj.brand || brand),
+              title: sanitizeText(langObj.title || title),
+              bullet1: sanitizeText(langObj.bullet1 || langObj.bullet_1 || ""),
+              bullet2: sanitizeText(langObj.bullet2 || langObj.bullet_2 || ""),
+              description: sanitizeText(langObj.description || "")
             };
           }
         }
@@ -221377,7 +221381,7 @@ var import_path73 = __toESM2(require("path"), 1);
 var import_fs78 = __toESM2(require("fs"), 1);
 init_queueService();
 init_productCatalogService();
-var UploadWorkerService = class {
+var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
   static currentQueueId = null;
   static currentTaskId = null;
@@ -221474,6 +221478,27 @@ var UploadWorkerService = class {
       console.error("[UploadWorker] Critical pipeline error:", err);
     });
     return { success: true, message: `Upload f\xFCr Task #${targetItem.taskId} gestartet (${mode.toUpperCase()} Modus).` };
+  }
+  /**
+   * Cleans text to strictly conform to Amazon Merch on Demand character requirements:
+   * - Converts typographic quotes („ “ ” « ») to standard ASCII quotes (")
+   * - Converts curly single quotes/apostrophes (’ ‘ ‚ ‛) to standard ASCII apostrophe (')
+   * - Converts typographic hyphens/dashes (— – −) to standard ASCII hyphen (-)
+   * - Converts ellipsis (…) to (...)
+   * - Removes any other prohibited unicode characters not allowed on Amazon Merch
+   */
+  static sanitizeListingText(text2, locale = "en") {
+    if (!text2) return "";
+    let cleaned = text2;
+    cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"');
+    cleaned = cleaned.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
+    cleaned = cleaned.replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
+    cleaned = cleaned.replace(/\u2026/g, "...");
+    cleaned = cleaned.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
+    const prohibitedRegex = /[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g;
+    cleaned = cleaned.replace(prohibitedRegex, "");
+    cleaned = cleaned.replace(/\s+/g, " ");
+    return cleaned.trim();
   }
   /**
    * Main Upload Execution Pipeline
@@ -221777,10 +221802,21 @@ var UploadWorkerService = class {
         }
       });
       await page.waitForTimeout(1e3);
-      this.log(`\u{1F4DD} Trage mehrsprachige SEO-Listings ein...`, "Bef\xFClle Listings...", 85, 100);
-      const listings = item.listings || {
+      this.log(`\u{1F4DD} Trage mehrsprachige SEO-Listings ein (inkl. Zeichen-Bereinigung)...`, "Bef\xFClle Listings...", 85, 100);
+      const rawListings = item.listings || {
         en: { brand: item.brand, title: item.title, bullet1: item.bullet1, bullet2: item.bullet2, description: item.description }
       };
+      const sanitizedListings = {};
+      for (const [loc, content] of Object.entries(rawListings)) {
+        if (!content) continue;
+        sanitizedListings[loc] = {
+          brand: _UploadWorkerService.sanitizeListingText(content.brand || "", loc),
+          title: _UploadWorkerService.sanitizeListingText(content.title || "", loc),
+          bullet1: _UploadWorkerService.sanitizeListingText(content.bullet1 || content.bullet_1 || "", loc),
+          bullet2: _UploadWorkerService.sanitizeListingText(content.bullet2 || content.bullet_2 || "", loc),
+          description: _UploadWorkerService.sanitizeListingText(content.description || "", loc)
+        };
+      }
       const fillResult = await page.evaluate(async (listingMap) => {
         const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
         const locales = ["en", "de", "fr", "it", "es", "ja"];
@@ -221801,8 +221837,9 @@ var UploadWorkerService = class {
               await sleep2(350);
             }
           }
-          const setVal = (fieldKey, val, maxLen = 2e3) => {
-            if (!val) return;
+          const setVal = (fieldKey, rawVal, maxLen = 2e3) => {
+            if (!rawVal) return;
+            let val = rawVal.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/\s+/g, " ");
             const clamped = val.substring(0, maxLen).trim();
             const selectors2 = loc === "en" ? [
               `#en #designCreator-productEditor-${fieldKey}`,
@@ -221834,10 +221871,11 @@ var UploadWorkerService = class {
           await sleep2(200);
         }
         const enContent = listingMap["en"] || listingMap["de"] || {};
-        const setRootVal = (id, val, maxLen = 2e3) => {
-          if (!val) return;
+        const setRootVal = (id, rawVal, maxLen = 2e3) => {
+          if (!rawVal) return;
           const el = document.getElementById(id);
           if (el) {
+            let val = rawVal.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
             el.focus();
             el.value = val.substring(0, maxLen).trim();
             el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -221851,25 +221889,29 @@ var UploadWorkerService = class {
         setRootVal("designCreator-productEditor-featureBullet2", enContent.bullet2 || enContent.bullet_2 || "", 256);
         setRootVal("designCreator-productEditor-description", enContent.description || "", 2e3);
         return { success: true, filledLocales };
-      }, listings);
+      }, sanitizedListings);
       this.log(`\u2705 Listings f\xFCr Sprachen [${fillResult.filledLocales.join(", ")}] eingetragen!`, "Listings fertig \u2713", 90, 100);
       await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
       await page.waitForTimeout(1500);
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       if (mode === "publish") {
         this.log(`\u{1F680} Klicke 'Publish' Button f\xFCr Live-Ver\xF6ffentlichung...`, "Ver\xF6ffentliche...", 95, 100);
-        const publishClicked = await page.evaluate(() => {
+        const publishCheck = await page.evaluate(() => {
           const submitBtn = document.getElementById("submit-button") || document.querySelector('button[id*="submit"], button.btn-submit');
-          if (submitBtn) {
-            submitBtn.scrollIntoView({ behavior: "smooth", block: "center" });
-            submitBtn.click();
-            return true;
-          }
-          return false;
+          if (!submitBtn) return { found: false, isEnabled: false, errors: ["Publish-Button nicht gefunden"] };
+          const invalidElements = Array.from(document.querySelectorAll(".has-error, .invalid-feedback, .text-danger, .alert-danger")).map((el) => el.textContent?.trim() || "").filter((t) => t.length > 0);
+          const isEnabled = !submitBtn.disabled && !submitBtn.hasAttribute("disabled");
+          return { found: true, isEnabled, errors: invalidElements.slice(0, 5) };
         });
-        if (!publishClicked) {
-          throw new Error("Publish-Button im DOM nicht gefunden.");
+        if (!publishCheck.found) throw new Error("Publish-Button im DOM nicht gefunden.");
+        if (!publishCheck.isEnabled && publishCheck.errors.length > 0) {
+          throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(" | ")}`);
         }
+        await page.evaluate(() => {
+          const submitBtn = document.getElementById("submit-button") || document.querySelector('button[id*="submit"], button.btn-submit');
+          submitBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
+          submitBtn?.click();
+        });
         this.log(`\u23F3 Warte auf Best\xE4tigungs-Modal...`, "Best\xE4tige Publish...");
         const confirmBtn = await page.waitForSelector(".modal-footer .btn-primary.btn-submit, button.btn-submit", { timeout: 15e3 });
         if (!confirmBtn) throw new Error("Best\xE4tigungs-Button im Publish-Modal nicht gefunden.");
@@ -221879,18 +221921,26 @@ var UploadWorkerService = class {
         this.log(`\u{1F389} Design erfolgreich auf Amazon Merch ver\xF6ffentlicht!`, "Erfolgreich ver\xF6ffentlicht \u2713", 100, 100);
       } else {
         this.log(`\u{1F4BE} Klicke 'Save Draft' Button f\xFCr Entwurf-Speicherung...`, "Speichere Entwurf...", 95, 100);
-        const draftClicked = await page.evaluate(() => {
+        const draftCheck = await page.evaluate(() => {
+          const draftBtn = document.getElementById("draft-button") || document.getElementById("save-as-draft-button") || document.querySelector('button[id*="draft"]') || document.querySelector("button.btn-draft");
+          if (!draftBtn) return { found: false, isEnabled: false, errors: ["Draft-Button nicht gefunden"] };
+          const invalidElements = Array.from(document.querySelectorAll(".has-error, .invalid-feedback, .text-danger, .alert-danger")).map((el) => el.textContent?.trim() || "").filter((t) => t.length > 0);
+          const isEnabled = !draftBtn.disabled && !draftBtn.hasAttribute("disabled");
+          return { found: true, isEnabled, errors: invalidElements.slice(0, 5) };
+        });
+        if (!draftCheck.found) {
+          throw new Error("Save-Draft Button im DOM nicht gefunden.");
+        }
+        if (!draftCheck.isEnabled && draftCheck.errors.length > 0) {
+          throw new Error(`Save-Draft Button ist deaktiviert. Formularfehler: ${draftCheck.errors.join(" | ")}`);
+        }
+        await page.evaluate(() => {
           const draftBtn = document.getElementById("draft-button") || document.getElementById("save-as-draft-button") || document.querySelector('button[id*="draft"]') || document.querySelector("button.btn-draft");
           if (draftBtn) {
             draftBtn.scrollIntoView({ behavior: "smooth", block: "center" });
             draftBtn.click();
-            return true;
           }
-          return false;
         });
-        if (!draftClicked) {
-          throw new Error("Save-Draft Button im DOM nicht gefunden.");
-        }
         await page.waitForTimeout(4e3);
         this.log(`\u{1F389} Design sicher als Entwurf in Amazon Merch gespeichert!`, "Entwurf gespeichert \u2713", 100, 100);
       }
