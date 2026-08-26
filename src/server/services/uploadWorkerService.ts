@@ -527,7 +527,7 @@ export class UploadWorkerService {
               if (popover) {
                 let hexInput = popover.querySelector('color-editable-input[label="hex"] input, input[aria-label="hex"], input[type="text"]') as HTMLInputElement;
                 if (!hexInput) {
-                  const spans = Array.from(popover.querySelectorAll('span'));
+                  const spans = Array.from(popover.querySelectorAll('span, label'));
                   const hexSpan = spans.find(span => span.textContent?.trim().toLowerCase() === 'hex');
                   if (hexSpan) {
                     hexInput = (hexSpan.closest('.wrap')?.querySelector('input') || hexSpan.parentElement?.querySelector('input')) as HTMLInputElement;
@@ -537,21 +537,46 @@ export class UploadWorkerService {
                   hexInput = popover.querySelector('input') as HTMLInputElement;
                 }
 
-                const cleanHex = params.customBgColor.replace('#', '').toUpperCase();
+                const cleanHex = params.customBgColor.replace(/^#/, '').toUpperCase();
 
-                // 1. Simulate key typing into the hex input
+                // 1. First, check preset swatches in sketch-picker (fastest & most reliable)
+                const swatches = Array.from(popover.querySelectorAll('.sketch-swatches div, .sketch-swatches span, .sketch-swatches [title], .sketch-swatches [style]')) as HTMLElement[];
+                let matchedSwatch: HTMLElement | null = null;
+                for (const sw of swatches) {
+                  const title = (sw.getAttribute('title') || '').replace(/^#/, '').toUpperCase();
+                  const style = (sw.getAttribute('style') || '').toLowerCase();
+                  if (title === cleanHex || (cleanHex.length === 6 && title === cleanHex.slice(0, 3))) {
+                    matchedSwatch = sw;
+                    break;
+                  }
+                  if ((cleanHex === '000000' || cleanHex === '000') && (style.includes('rgb(0, 0, 0)') || style.includes('#000000') || title === '000000' || title === '#000000')) {
+                    matchedSwatch = sw;
+                    break;
+                  }
+                  if ((cleanHex === 'FFFFFF' || cleanHex === 'FFF') && (style.includes('rgb(255, 255, 255)') || style.includes('#ffffff') || title === 'FFFFFF' || title === '#FFFFFF')) {
+                    matchedSwatch = sw;
+                    break;
+                  }
+                }
+
+                if (matchedSwatch) {
+                  matchedSwatch.click();
+                  await sleep(150);
+                }
+
+                // 2. Set the Hex input value via prototype setter to properly trigger React/Angular bindings
                 if (hexInput) {
                   hexInput.focus();
-                  hexInput.value = '';
-                  hexInput.dispatchEvent(new Event('input', { bubbles: true }));
-                  for (let c = 0; c < cleanHex.length; c++) {
-                    const char = cleanHex[c];
-                    hexInput.dispatchEvent(new KeyboardEvent('keydown', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
-                    hexInput.value = cleanHex.slice(0, c + 1);
-                    hexInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    hexInput.dispatchEvent(new KeyboardEvent('keyup', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
-                    await sleep(25);
+                  hexInput.select();
+                  
+                  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                  if (nativeSetter) {
+                    nativeSetter.call(hexInput, cleanHex);
+                  } else {
+                    hexInput.value = cleanHex;
                   }
+                  
+                  hexInput.dispatchEvent(new Event('input', { bubbles: true }));
                   hexInput.dispatchEvent(new Event('change', { bubbles: true }));
                   hexInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
                   hexInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
@@ -560,29 +585,16 @@ export class UploadWorkerService {
                   await sleep(150);
                 }
 
-                // 2. Also click the preset swatch in sketch-picker if Black or White
-                if (cleanHex === '000000' || cleanHex === '000') {
-                  const blackPreset = popover.querySelector('.sketch-swatches div[title="#000000"], .sketch-swatches [style*="rgb(0, 0, 0)"], .sketch-swatches [style*="#000000"], .sketch-swatches span[title="#000000"]') as HTMLElement;
-                  if (blackPreset) {
-                    blackPreset.click();
-                    await sleep(100);
-                  }
-                } else if (cleanHex === 'FFFFFF' || cleanHex === 'FFF') {
-                  const whitePreset = popover.querySelector('.sketch-swatches div[title="#ffffff"], .sketch-swatches [style*="rgb(255, 255, 255)"], .sketch-swatches [style*="#ffffff"], .sketch-swatches span[title="#ffffff"]') as HTMLElement;
-                  if (whitePreset) {
-                    whitePreset.click();
-                    await sleep(100);
-                  }
-                }
-
-                // Close popover
+                // 3. Close popover cleanly
                 if (colorBtn.hasAttribute('aria-describedby')) {
                   colorBtn.click();
                   await sleep(200);
                 } else {
                   const doneBtn = popover.querySelector('button.done-button, button[type="submit"]') as HTMLElement;
                   if (doneBtn) doneBtn.click();
-                  else document.body.click();
+                  else {
+                    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+                  }
                   await sleep(200);
                 }
               }

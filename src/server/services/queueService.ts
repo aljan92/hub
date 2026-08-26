@@ -107,6 +107,11 @@ export class QueueService {
     return this.items;
   }
 
+  public static getActiveQueueCount(): number {
+    this.ensureLoaded();
+    return this.items.filter(i => i.status === 'WAITING' || i.status === 'UPLOADING').length;
+  }
+
   /**
    * Enrich items with full multi-language listings from tasks_log.json if missing
    */

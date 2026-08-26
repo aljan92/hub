@@ -382,7 +382,7 @@ export const TasksView: React.FC = () => {
   };
 
   // Actions for Checkpoint 2: Design Review
-  const handleDesignReview = async (action: 'APPROVE' | 'REGENERATE_IMAGE') => {
+  const handleDesignReview = async (action: 'APPROVE' | 'REGENERATE_IMAGE' | 'DISCARD' | 'REJECT') => {
     if (!activeTask) return;
     setIsSubmitting(true);
     try {
@@ -1017,14 +1017,24 @@ export const TasksView: React.FC = () => {
 
                     {/* Checkpoint 2 Action Buttons */}
                     <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-800">
-                      <button
-                        onClick={() => handleDesignReview('REGENERATE_IMAGE')}
-                        disabled={isSubmitting}
-                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Bild neu generieren</span>
-                      </button>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleDesignReview('DISCARD')}
+                          disabled={isSubmitting}
+                          className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Task abbrechen</span>
+                        </button>
+                        <button
+                          onClick={() => handleDesignReview('REGENERATE_IMAGE')}
+                          disabled={isSubmitting}
+                          className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Bild neu generieren</span>
+                        </button>
+                      </div>
 
                       <div className="flex items-center space-x-2">
                         <button

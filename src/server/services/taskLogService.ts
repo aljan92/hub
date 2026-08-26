@@ -1911,7 +1911,7 @@ Please audit the listing based on your compliance rules:
    * Checkpoint 2: Submit Design & Questions Review
    */
   static async submitDesignReview(taskId: string, params: {
-    action: 'APPROVE' | 'REGENERATE_IMAGE';
+    action: 'APPROVE' | 'REGENERATE_IMAGE' | 'DISCARD' | 'REJECT';
     answers?: {
       audience?: string;
       avoidColor?: string;
@@ -1922,6 +1922,28 @@ Please audit the listing based on your compliance rules:
   }) {
     const task = this.getTaskLogById(taskId);
     if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    if (params.action === 'DISCARD' || params.action === 'REJECT') {
+      task.status = 'REJECTED';
+      task.checkpoint = undefined;
+      task.hasError = false;
+      task.errorDetails = 'Task im Checkpoint 2 (Design-Prüfung) manuell abgebrochen.';
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TASK_HANDOFF',
+        title: 'Task verworfen (Design-Prüfung)',
+        content: {
+          action: 'DISCARD',
+          reason: 'Benutzer hat den Task bei der Design-/Fragenprüfung abgebrochen.'
+        }
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      return { success: true, message: `Task ${taskId} wurde abgebrochen und verworfen.` };
+    }
 
     if (params.action === 'REGENERATE_IMAGE') {
       const promptToUse = params.updatedPrompt || task.resultPrompt || task.payload?.quote || '';

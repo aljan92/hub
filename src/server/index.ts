@@ -186,7 +186,7 @@ async function refreshStatsInBackground() {
 
     cachedStats = {
       tasksCount: TaskLogService.getAwaitingTasks().length,
-      queueCount: uploadQueue.length,
+      queueCount: QueueService.getActiveQueueCount(),
       slots: liveSlots,
       tier: lastKnownTier,
       designsCount: supabaseStats.totalDesigns,
@@ -208,7 +208,7 @@ setInterval(refreshStatsInBackground, 15000);
 
 app.get('/api/v1/stats', (req, res) => {
   cachedStats.tasksCount = TaskLogService.getAwaitingTasks().length;
-  cachedStats.queueCount = QueueService.getState().items.length;
+  cachedStats.queueCount = QueueService.getActiveQueueCount();
   res.json({
     success: true,
     ...cachedStats,
@@ -1072,7 +1072,7 @@ app.all(['/api/v1/mcp/ping', '/api/v1/mcp/heartbeat'], (req, res) => {
     serverTime: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     activeTasksCount: TaskLogService.getAwaitingTasks().length,
-    uploadQueueCount: uploadQueue.length,
+    uploadQueueCount: QueueService.getActiveQueueCount(),
     heartbeat: {
       lastPingTime: hermesHeartbeat.lastPingTime,
       totalPings: hermesHeartbeat.totalPings

@@ -214623,6 +214623,10 @@ var init_queueService = __esm2({
         this.items = [];
         return this.items;
       }
+      static getActiveQueueCount() {
+        this.ensureLoaded();
+        return this.items.filter((i) => i.status === "WAITING" || i.status === "UPLOADING").length;
+      }
       /**
        * Enrich items with full multi-language listings from tasks_log.json if missing
        */
@@ -220803,6 +220807,24 @@ Please audit the listing based on your compliance rules:
   static async submitDesignReview(taskId, params2) {
     const task = this.getTaskLogById(taskId);
     if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+    if (params2.action === "DISCARD" || params2.action === "REJECT") {
+      task.status = "REJECTED";
+      task.checkpoint = void 0;
+      task.hasError = false;
+      task.errorDetails = "Task im Checkpoint 2 (Design-Pr\xFCfung) manuell abgebrochen.";
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TASK_HANDOFF",
+        title: "Task verworfen (Design-Pr\xFCfung)",
+        content: {
+          action: "DISCARD",
+          reason: "Benutzer hat den Task bei der Design-/Fragenpr\xFCfung abgebrochen."
+        }
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      return { success: true, message: `Task ${taskId} wurde abgebrochen und verworfen.` };
+    }
     if (params2.action === "REGENERATE_IMAGE") {
       const promptToUse = params2.updatedPrompt || task.resultPrompt || task.payload?.quote || "";
       task.status = "GENERATING_IMAGE";
@@ -221969,7 +221991,7 @@ var UploadWorkerService = class _UploadWorkerService {
               if (popover) {
                 let hexInput = popover.querySelector('color-editable-input[label="hex"] input, input[aria-label="hex"], input[type="text"]');
                 if (!hexInput) {
-                  const spans = Array.from(popover.querySelectorAll("span"));
+                  const spans = Array.from(popover.querySelectorAll("span, label"));
                   const hexSpan = spans.find((span) => span.textContent?.trim().toLowerCase() === "hex");
                   if (hexSpan) {
                     hexInput = hexSpan.closest(".wrap")?.querySelector("input") || hexSpan.parentElement?.querySelector("input");
@@ -221978,19 +222000,39 @@ var UploadWorkerService = class _UploadWorkerService {
                 if (!hexInput) {
                   hexInput = popover.querySelector("input");
                 }
-                const cleanHex = params2.customBgColor.replace("#", "").toUpperCase();
+                const cleanHex = params2.customBgColor.replace(/^#/, "").toUpperCase();
+                const swatches = Array.from(popover.querySelectorAll(".sketch-swatches div, .sketch-swatches span, .sketch-swatches [title], .sketch-swatches [style]"));
+                let matchedSwatch = null;
+                for (const sw of swatches) {
+                  const title = (sw.getAttribute("title") || "").replace(/^#/, "").toUpperCase();
+                  const style = (sw.getAttribute("style") || "").toLowerCase();
+                  if (title === cleanHex || cleanHex.length === 6 && title === cleanHex.slice(0, 3)) {
+                    matchedSwatch = sw;
+                    break;
+                  }
+                  if ((cleanHex === "000000" || cleanHex === "000") && (style.includes("rgb(0, 0, 0)") || style.includes("#000000") || title === "000000" || title === "#000000")) {
+                    matchedSwatch = sw;
+                    break;
+                  }
+                  if ((cleanHex === "FFFFFF" || cleanHex === "FFF") && (style.includes("rgb(255, 255, 255)") || style.includes("#ffffff") || title === "FFFFFF" || title === "#FFFFFF")) {
+                    matchedSwatch = sw;
+                    break;
+                  }
+                }
+                if (matchedSwatch) {
+                  matchedSwatch.click();
+                  await sleep2(150);
+                }
                 if (hexInput) {
                   hexInput.focus();
-                  hexInput.value = "";
-                  hexInput.dispatchEvent(new Event("input", { bubbles: true }));
-                  for (let c = 0; c < cleanHex.length; c++) {
-                    const char = cleanHex[c];
-                    hexInput.dispatchEvent(new KeyboardEvent("keydown", { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
-                    hexInput.value = cleanHex.slice(0, c + 1);
-                    hexInput.dispatchEvent(new Event("input", { bubbles: true }));
-                    hexInput.dispatchEvent(new KeyboardEvent("keyup", { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
-                    await sleep2(25);
+                  hexInput.select();
+                  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                  if (nativeSetter) {
+                    nativeSetter.call(hexInput, cleanHex);
+                  } else {
+                    hexInput.value = cleanHex;
                   }
+                  hexInput.dispatchEvent(new Event("input", { bubbles: true }));
                   hexInput.dispatchEvent(new Event("change", { bubbles: true }));
                   hexInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
                   hexInput.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
@@ -221998,26 +222040,15 @@ var UploadWorkerService = class _UploadWorkerService {
                   hexInput.dispatchEvent(new Event("blur", { bubbles: true }));
                   await sleep2(150);
                 }
-                if (cleanHex === "000000" || cleanHex === "000") {
-                  const blackPreset = popover.querySelector('.sketch-swatches div[title="#000000"], .sketch-swatches [style*="rgb(0, 0, 0)"], .sketch-swatches [style*="#000000"], .sketch-swatches span[title="#000000"]');
-                  if (blackPreset) {
-                    blackPreset.click();
-                    await sleep2(100);
-                  }
-                } else if (cleanHex === "FFFFFF" || cleanHex === "FFF") {
-                  const whitePreset = popover.querySelector('.sketch-swatches div[title="#ffffff"], .sketch-swatches [style*="rgb(255, 255, 255)"], .sketch-swatches [style*="#ffffff"], .sketch-swatches span[title="#ffffff"]');
-                  if (whitePreset) {
-                    whitePreset.click();
-                    await sleep2(100);
-                  }
-                }
                 if (colorBtn.hasAttribute("aria-describedby")) {
                   colorBtn.click();
                   await sleep2(200);
                 } else {
                   const doneBtn = popover.querySelector('button.done-button, button[type="submit"]');
                   if (doneBtn) doneBtn.click();
-                  else document.body.click();
+                  else {
+                    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+                  }
                   await sleep2(200);
                 }
               }
@@ -222416,7 +222447,7 @@ async function refreshStatsInBackground() {
     const liveSlots = ratelimiter?.slots || dailySlotStats;
     cachedStats = {
       tasksCount: TaskLogService.getAwaitingTasks().length,
-      queueCount: uploadQueue.length,
+      queueCount: QueueService.getActiveQueueCount(),
       slots: liveSlots,
       tier: lastKnownTier,
       designsCount: supabaseStats.totalDesigns,
@@ -222434,7 +222465,7 @@ refreshStatsInBackground();
 setInterval(refreshStatsInBackground, 15e3);
 app.get("/api/v1/stats", (req, res) => {
   cachedStats.tasksCount = TaskLogService.getAwaitingTasks().length;
-  cachedStats.queueCount = QueueService.getState().items.length;
+  cachedStats.queueCount = QueueService.getActiveQueueCount();
   res.json({
     success: true,
     ...cachedStats,
@@ -223168,7 +223199,7 @@ app.all(["/api/v1/mcp/ping", "/api/v1/mcp/heartbeat"], (req, res) => {
     serverTime: (/* @__PURE__ */ new Date()).toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     activeTasksCount: TaskLogService.getAwaitingTasks().length,
-    uploadQueueCount: uploadQueue.length,
+    uploadQueueCount: QueueService.getActiveQueueCount(),
     heartbeat: {
       lastPingTime: hermesHeartbeat.lastPingTime,
       totalPings: hermesHeartbeat.totalPings
