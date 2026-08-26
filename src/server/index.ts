@@ -22,6 +22,7 @@ import { SystemPromptService } from './services/systemPromptService';
 import { ProductCatalogService } from './services/productCatalogService';
 import { ProductScannerService } from './services/productScannerService';
 import { QueueService } from './services/queueService';
+import { UploadWorkerService } from './services/uploadWorkerService';
 
 dotenv.config();
 
@@ -46,6 +47,11 @@ function broadcast(type: string, payload: any) {
 
 // Connect broadcaster to TaskLogService
 TaskLogService.setBroadcaster(broadcast);
+
+// Connect broadcaster to UploadWorkerService
+UploadWorkerService.onStatusUpdate((status) => {
+  broadcast('UPLOAD_STATUS_UPDATE', status);
+});
 
 // Middleware
 app.use(cors());
@@ -1200,6 +1206,39 @@ app.patch('/api/v1/queue/settings', (req, res) => {
     saveSettings(updated);
     const state = QueueService.rebalanceQueue();
     res.json({ success: true, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==================== UPLOAD WORKER API ====================
+
+// Start Automated Upload
+app.post('/api/v1/upload/start', async (req, res) => {
+  try {
+    const { queueId, mode } = req.body;
+    const result = await UploadWorkerService.startUpload(queueId, mode || 'draft');
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Cancel Running Upload
+app.post('/api/v1/upload/cancel', (req, res) => {
+  try {
+    const success = UploadWorkerService.cancelUpload();
+    res.json({ success, message: success ? 'Upload-Abbruch angefordert' : 'Kein Upload aktiv' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get Live Upload Status
+app.get('/api/v1/upload/status', (req, res) => {
+  try {
+    const status = UploadWorkerService.getStatus();
+    res.json({ success: true, status });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

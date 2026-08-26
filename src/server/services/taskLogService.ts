@@ -207,9 +207,19 @@ export class TaskLogService {
           }
         }
       }
-      if (!listings.en && (title || brand)) {
-        listings.en = { brand, title, bullet1, bullet2, description };
-      }
+      // Extract fitTypes & color rules from Question Phase
+      const audience = (task.customAnswers?.audience || task.payload?.audience || 'Men, Women, Youth').toLowerCase();
+      const fitTypes: string[] = [];
+      if (audience.includes('men') || audience.includes('männer') || audience.includes('herren')) fitTypes.push('men');
+      if (audience.includes('women') || audience.includes('frauen') || audience.includes('damen')) fitTypes.push('women');
+      if (audience.includes('youth') || audience.includes('kids') || audience.includes('kinder') || audience.includes('jugend')) fitTypes.push('youth');
+
+      let avoidColor: 'white' | 'black' | 'none' = 'none';
+      const avoid = (task.customAnswers?.avoidColor || task.payload?.avoidColor || '').toLowerCase();
+      if (avoid.includes('white') || avoid.includes('weiß')) avoidColor = 'white';
+      else if (avoid.includes('black') || avoid.includes('schwarz')) avoidColor = 'black';
+
+      const customBackgroundColor = task.customAnswers?.reuseBackground;
 
       const { QueueService } = require('./queueService');
       const queueItem = QueueService.enqueueDesign({
@@ -222,6 +232,9 @@ export class TaskLogService {
         bullet2,
         description,
         listings,
+        fitTypes: fitTypes.length > 0 ? fitTypes : ['men', 'women', 'youth'],
+        avoidColor,
+        customBackgroundColor,
         imagePath: task.localImagePath || '',
         pngPath: task.localMbaPngPath || ''
       });

@@ -20,8 +20,14 @@ import {
   ExternalLink,
   Sliders,
   Check,
-  GripVertical
+  GripVertical,
+  Monitor,
+  Square,
+  X,
+  Users,
+  Palette
 } from 'lucide-react';
+import { BrowserScreencast } from '../components/BrowserScreencast';
 
 interface QueueItem {
   id: string;
@@ -38,6 +44,11 @@ interface QueueItem {
     bullet2?: string;
     description?: string;
   }>;
+  fitTypes?: string[];
+  avoidColor?: 'white' | 'black' | 'none';
+  customBackgroundColor?: string;
+  brand: string;
+  title: string;
   imagePath: string;
   pngPath: string;
   addedAt: string;
@@ -62,6 +73,20 @@ interface QueueState {
   maxDropPerDesign: number;
   autoBalance: boolean;
   maxDroppableCapacity: number;
+}
+
+interface UploadProgressState {
+  isUploading: boolean;
+  currentQueueId: string | null;
+  taskId: string | null;
+  designTitle: string | null;
+  mode: 'draft' | 'publish';
+  currentStep: string;
+  stepIndex: number;
+  totalSteps: number;
+  percent: number;
+  logs: string[];
+  error?: string;
 }
 
 const SCHEDULE_OPTIONS = [
@@ -99,7 +124,8 @@ export const QueueView: React.FC = () => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [globalMode, setGlobalMode] = useState<'live' | 'draft'>('draft');
-  const [isUploading, setIsUploading] = useState(false);
+  const [isScreencastOpen, setIsScreencastOpen] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
 
   const fetchQueue = async () => {
     try {
@@ -113,9 +139,25 @@ export const QueueView: React.FC = () => {
     }
   };
 
+  const fetchUploadStatus = async () => {
+    try {
+      const res = await fetch('/api/v1/upload/status');
+      const data = await res.json();
+      if (data.success && data.status) {
+        setUploadProgress(data.status);
+      }
+    } catch (err) {
+      console.warn('[Queue] Upload status error:', err);
+    }
+  };
+
   useEffect(() => {
     fetchQueue();
-    const interval = setInterval(fetchQueue, 5000);
+    fetchUploadStatus();
+    const interval = setInterval(() => {
+      fetchQueue();
+      fetchUploadStatus();
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -150,21 +192,22 @@ export const QueueView: React.FC = () => {
     }
   };
 
-  const handleToggleLock = async (itemId: string) => {
+  const handleToggleLock = async (queueId: string) => {
     try {
-      const res = await fetch(`/api/v1/queue/item/${itemId}/lock`, { method: 'POST' });
+      const res = await fetch(`/api/v1/queue/item/${queueId}/lock`, { method: 'POST' });
       const data = await res.json();
       if (data.success && data.state) {
         setQueueState(data.state);
       }
     } catch (err) {
-      console.error('Lock toggle error:', err);
+      console.error('Toggle lock error:', err);
     }
   };
 
-  const handleRemoveItem = async (itemId: string) => {
+  const handleRemoveItem = async (queueId: string) => {
+    if (!confirm('Dieses Design wirklich aus der Upload-Queue entfernen?')) return;
     try {
-      const res = await fetch(`/api/v1/queue/item/${itemId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/v1/queue/item/${queueId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success && data.state) {
         setQueueState(data.state);
@@ -234,13 +277,34 @@ export const QueueView: React.FC = () => {
     }
   };
 
-  const handleStartManualUpload = () => {
-    if (queueState.items.length === 0) return;
-    setIsUploading(true);
-    setTimeout(() => {
-      setIsUploading(false);
-      alert('Upload-Prozess über Session 2 (Upload Worker) gestartet.');
-    }, 1500);
+  const handleStartUpload = async (queueId?: string) => {
+    try {
+      const res = await fetch('/api/v1/upload/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queueId, mode: globalMode })
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchUploadStatus();
+        fetchQueue();
+      } else {
+        alert(data.message || data.error || 'Fehler beim Starten des Uploads');
+      }
+    } catch (err) {
+      console.error('Start upload error:', err);
+    }
+  };
+
+  const handleCancelUpload = async () => {
+    try {
+      const res = await fetch('/api/v1/upload/cancel', { method: 'POST' });
+      const data = await res.json();
+      fetchUploadStatus();
+      fetchQueue();
+    } catch (err) {
+      console.error('Cancel upload error:', err);
+    }
   };
 
   const scheduledDesigns = queueState.items.filter(i => i.status === 'SCHEDULED_TODAY' || i.status === 'UPLOADING');
@@ -248,6 +312,8 @@ export const QueueView: React.FC = () => {
   const slotUtilizationPct = queueState.freeDailySlots > 0 
     ? Math.min(100, Math.round((queueState.scheduledSlotsToday / queueState.freeDailySlots) * 100))
     : 0;
+
+  const isUploadActive = uploadProgress?.isUploading ?? false;
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -262,18 +328,28 @@ export const QueueView: React.FC = () => {
               <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
                 Upload Queue &amp; Slot-Optimizer
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30">
-                  Phase 5
+                  Phase 6 Upload Worker
                 </span>
               </h1>
               <p className="text-xs text-slate-400">
-                Intelligentes Slot-Balancing, Kaskaden-Kürzung bei Überhang und 100% US-Marktplatz-Schutz
+                Intelligentes Slot-Balancing, Kaskaden-Kürzung und vollautomatisierter Playwright-Upload in Session 2
               </p>
             </div>
           </div>
         </div>
 
         {/* Global Action & Upload Trigger */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center flex-wrap gap-3">
+          {/* Live Screencast Button */}
+          <button
+            onClick={() => setIsScreencastOpen(true)}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700/80 flex items-center space-x-2 transition-all shadow-sm"
+            title="Session 2 Live-Screencast ansehen"
+          >
+            <Monitor className="w-4 h-4 text-accent-cyan" />
+            <span>Screencast (Session 2)</span>
+          </button>
+
           {/* Mode Selector */}
           <div className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2">
             <span className="text-xs font-semibold text-slate-300">Modus:</span>
@@ -289,16 +365,112 @@ export const QueueView: React.FC = () => {
             </button>
           </div>
 
-          <button
-            onClick={handleStartManualUpload}
-            disabled={isUploading || scheduledDesigns.length === 0}
-            className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-accent-cyan to-primary-600 hover:from-accent-cyan/90 hover:to-primary-500 text-slate-950 shadow-lg shadow-accent-cyan/20 flex items-center space-x-2 transition-all active:scale-98 disabled:opacity-50"
-          >
-            <Play className="w-4 h-4 fill-current" />
-            <span>{isUploading ? 'Lade hoch...' : 'Jetzt hochladen'}</span>
-          </button>
+          {/* Start / Cancel Upload Button */}
+          {isUploadActive ? (
+            <button
+              onClick={handleCancelUpload}
+              className="px-5 py-2.5 rounded-xl text-xs font-bold bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 flex items-center space-x-2 transition-all active:scale-98"
+            >
+              <Square className="w-4 h-4 fill-current" />
+              <span>Upload abbrechen</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => handleStartUpload()}
+              disabled={scheduledDesigns.length === 0}
+              className="px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-accent-cyan to-primary-600 hover:from-accent-cyan/90 hover:to-primary-500 text-slate-950 shadow-lg shadow-accent-cyan/20 flex items-center space-x-2 transition-all active:scale-98 disabled:opacity-50"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              <span>Jetzt hochladen</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Live Upload Progress Banner (if upload is running or recently finished) */}
+      {uploadProgress && (uploadProgress.isUploading || uploadProgress.currentStep !== 'Bereit') && (
+        <div className={`border rounded-2xl p-4.5 shadow-lg backdrop-blur-md transition-all ${
+          uploadProgress.isUploading 
+            ? 'bg-primary-950/40 border-primary-500/40 shadow-primary-500/10 animate-pulse'
+            : uploadProgress.error 
+              ? 'bg-rose-950/40 border-rose-500/40 shadow-rose-500/10'
+              : 'bg-emerald-950/40 border-emerald-500/40 shadow-emerald-500/10'
+        }`}>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+            <div className="flex items-center space-x-3">
+              <div className={`p-2 rounded-xl border ${
+                uploadProgress.isUploading 
+                  ? 'bg-primary-500/20 text-primary-300 border-primary-500/30' 
+                  : uploadProgress.error
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+              }`}>
+                {uploadProgress.isUploading ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : uploadProgress.error ? (
+                  <AlertTriangle className="w-5 h-5" />
+                ) : (
+                  <CheckCircle2 className="w-5 h-5" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                    Task #{uploadProgress.taskId || '—'}
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-100">
+                    {uploadProgress.designTitle || 'Aktiver Upload-Vorgang'}
+                  </h3>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    uploadProgress.mode === 'publish'
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  }`}>
+                    {uploadProgress.mode === 'publish' ? '🔴 LIVE PUBLISH' : '🟡 DRAFT'}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-300 mt-1 font-medium flex items-center space-x-2">
+                  <span>{uploadProgress.currentStep}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <span className="text-xl font-bold font-mono text-slate-100">
+                {uploadProgress.percent}%
+              </span>
+              <button
+                onClick={() => setIsScreencastOpen(true)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700 flex items-center space-x-1.5 transition-all"
+              >
+                <Monitor className="w-3.5 h-3.5 text-accent-cyan" />
+                <span>Live ansehen</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="w-full bg-slate-900/80 rounded-full h-2 overflow-hidden border border-slate-800 mb-2">
+            <div 
+              className={`h-full transition-all duration-500 ${
+                uploadProgress.error 
+                  ? 'bg-rose-500' 
+                  : 'bg-gradient-to-r from-accent-cyan via-primary-500 to-emerald-400'
+              }`}
+              style={{ width: `${uploadProgress.percent}%` }}
+            />
+          </div>
+
+          {/* Recent Log Snippet */}
+          {uploadProgress.logs && uploadProgress.logs.length > 0 && (
+            <div className="text-[11px] font-mono text-slate-400 bg-slate-950/70 rounded-xl p-2 border border-slate-800/80 max-h-20 overflow-y-auto space-y-0.5">
+              {uploadProgress.logs.slice(-3).map((log, idx) => (
+                <div key={idx} className="truncate">{log}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Top Metrics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -320,173 +492,174 @@ export const QueueView: React.FC = () => {
         {/* Scheduled Today Slots */}
         <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
-            <span className="font-medium">Heute eingeplant</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span className="font-medium">Geplante Slots Heute</span>
+            <Sparkles className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="flex items-baseline space-x-2">
             <span className="text-2xl font-bold text-emerald-400 font-mono">{queueState.scheduledSlotsToday}</span>
-            <span className="text-xs text-slate-400">/ {queueState.freeDailySlots} Slots</span>
+            <span className="text-xs text-slate-400">Slots gebucht</span>
           </div>
-          <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
+          {/* Capacity Progress Bar */}
+          <div className="w-full bg-slate-800 rounded-full h-1.5 mt-2 overflow-hidden">
             <div 
+              className={`h-full transition-all duration-300 ${
+                slotUtilizationPct > 95 ? 'bg-amber-500' : 'bg-emerald-400'
+              }`}
               style={{ width: `${slotUtilizationPct}%` }}
-              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
             />
           </div>
         </div>
 
-        {/* Active Designs Today */}
+        {/* Designs in Queue */}
         <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
-            <span className="font-medium">Designs Heute Aktiv</span>
-            <Sparkles className="w-4 h-4 text-primary-400" />
+            <span className="font-medium">Designs in Queue</span>
+            <Clock className="w-4 h-4 text-primary-400" />
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-2xl font-bold text-slate-100 font-mono">{scheduledDesigns.length}</span>
-            <span className="text-xs text-slate-400">Designs geplant</span>
-          </div>
-          <div className="text-[11px] text-primary-300 mt-1">
-            {waitingDesigns.length > 0 ? `${waitingDesigns.length} Designs auf Warteliste` : 'Alle Designs abgedeckt'}
-          </div>
-        </div>
-
-        {/* Schedule Timer */}
-        <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
-            <span className="font-medium">Upload-Zeitplan</span>
-            <Clock className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="flex items-baseline space-x-2">
-            <span className="text-sm font-bold text-slate-100 font-mono">
-              {queueState.uploadScheduleTime === 'off' ? 'Aus (Nur Manuell)' : `Täglich um ${queueState.uploadScheduleTime} Uhr`}
+            <span className="text-2xl font-bold text-slate-100 font-mono">{queueState.items.length}</span>
+            <span className="text-xs text-slate-400">
+              ({scheduledDesigns.length} heute aktiv / {waitingDesigns.length} wartend)
             </span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1">
-            {queueState.uploadScheduleTime === 'off' ? 'Kein automatischer Start' : 'Automatischer Playwright Upload'}
+            Reihenfolge per Drag &amp; Drop anpassbar
+          </div>
+        </div>
+
+        {/* Droppable Capacity Indicator */}
+        <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+            <span className="font-medium">Kürzungs-Puffer</span>
+            <Scissors className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="flex items-baseline space-x-2">
+            <span className="text-2xl font-bold text-amber-400 font-mono">{queueState.maxDroppableCapacity}</span>
+            <span className="text-xs text-slate-400">Slots max. kürzbar</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            Max. {queueState.maxDropPerDesign} Slots pro Design
           </div>
         </div>
       </div>
 
-      {/* Configuration & Control Panel */}
-      <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-6 text-xs">
-          {/* Flexible Upload Schedule Selector */}
-          <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 p-2 rounded-xl">
+      {/* Control Panel: Scheduling & Balancing Settings */}
+      <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center flex-wrap gap-4">
+          {/* Upload Schedule Time Control */}
+          <div className="flex items-center space-x-2.5">
             <Clock className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-300 font-medium">Upload Startzeit:</span>
+            <span className="text-xs font-semibold text-slate-300">Upload Startzeit:</span>
 
-            {/* Toggle Active / Off */}
+            {/* Enable/Disable Toggle */}
             <button
               onClick={() => {
-                if (queueState.uploadScheduleTime === 'off') {
-                  handleUpdateSettings({ uploadScheduleTime: '04:00' });
-                } else {
-                  handleUpdateSettings({ uploadScheduleTime: 'off' });
-                }
+                const nextVal = queueState.uploadScheduleTime === 'off' ? '04:00' : 'off';
+                handleUpdateSettings({ uploadScheduleTime: nextVal });
               }}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all ${
                 queueState.uploadScheduleTime !== 'off'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                   : 'bg-slate-800 text-slate-400 border-slate-700'
               }`}
             >
               {queueState.uploadScheduleTime !== 'off' ? 'Aktiv' : 'Aus (Nur Manuell)'}
             </button>
 
-            {/* Hours & Minutes Picker (when active) */}
+            {/* Native Time Picker for precise Hours & Minutes */}
             {queueState.uploadScheduleTime !== 'off' && (
-              <div className="flex items-center space-x-1">
-                <input
-                  type="time"
-                  value={queueState.uploadScheduleTime}
-                  onChange={(e) => handleUpdateSettings({ uploadScheduleTime: e.target.value || '04:00' })}
-                  className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 font-bold font-mono focus:outline-none focus:border-amber-500"
-                />
-                <span className="text-slate-400 font-medium">Uhr</span>
-              </div>
+              <input
+                type="time"
+                value={queueState.uploadScheduleTime}
+                onChange={(e) => handleUpdateSettings({ uploadScheduleTime: e.target.value })}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-accent-cyan"
+              />
             )}
           </div>
 
-          {/* Stepper for Max Drop Tolerance */}
-          <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 p-2 rounded-xl">
-            <Scissors className="w-4 h-4 text-amber-400" />
-            <span className="text-slate-300 font-medium">Kürzungs-Toleranz:</span>
-
-            <div className="flex items-center space-x-1.5">
+          {/* Stepper for Max Drop Tolerance per Design */}
+          <div className="flex items-center space-x-2.5 border-l border-slate-800 pl-4">
+            <Sliders className="w-4 h-4 text-slate-400" />
+            <span className="text-xs font-semibold text-slate-300">Max. Kürzungs-Toleranz:</span>
+            
+            <div className="flex items-center space-x-1 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
               <button
-                onClick={() => handleUpdateSettings({ maxDropPerDesign: Math.max(0, queueState.maxDropPerDesign - 1) })}
-                className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold border border-slate-700 transition-colors"
-                title="1 Slot weniger kürzen"
+                onClick={() => {
+                  const next = Math.max(0, queueState.maxDropPerDesign - 1);
+                  handleUpdateSettings({ maxDropPerDesign: next });
+                }}
+                className="px-2 py-0.5 rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+                title="Toleranz verringern"
               >
                 -
               </button>
 
               <input
                 type="number"
-                min={0}
-                max={50}
+                min="0"
+                max="50"
                 value={queueState.maxDropPerDesign}
-                onChange={(e) => handleUpdateSettings({ maxDropPerDesign: Math.max(0, Math.min(50, Number(e.target.value) || 0)) })}
-                className="w-14 text-center bg-slate-950 border border-slate-700 rounded-lg py-1 text-xs text-amber-300 font-bold font-mono focus:outline-none focus:border-amber-500"
+                onChange={(e) => {
+                  const val = Math.max(0, Math.min(50, Number(e.target.value) || 0));
+                  handleUpdateSettings({ maxDropPerDesign: val });
+                }}
+                className="w-10 text-center bg-transparent text-xs font-mono font-bold text-slate-200 focus:outline-none"
               />
 
               <button
-                onClick={() => handleUpdateSettings({ maxDropPerDesign: Math.min(50, queueState.maxDropPerDesign + 1) })}
-                className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold border border-slate-700 transition-colors"
-                title="1 Slot mehr kürzen"
+                onClick={() => {
+                  const next = Math.min(50, queueState.maxDropPerDesign + 1);
+                  handleUpdateSettings({ maxDropPerDesign: next });
+                }}
+                className="px-2 py-0.5 rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+                title="Toleranz erhöhen"
               >
                 +
               </button>
-
-              <span className="text-slate-400 text-[11px] pl-1">Slots / Design</span>
             </div>
+            <span className="text-[11px] text-slate-500">Slots / Design</span>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center space-x-2.5">
+        {/* Action Controls */}
+        <div className="flex items-center space-x-2">
           <button
             onClick={handleRebalance}
             disabled={isRebalancing}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 transition-all"
-            title="Berechnet die Slot-Verteilung aller Designs sofort neu"
+            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700 flex items-center space-x-1.5 transition-all shadow-sm"
+            title="Slot-Berechnung manuell neu anstoßen"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRebalancing ? 'animate-spin text-accent-cyan' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isRebalancing ? 'animate-spin' : ''}`} />
             <span>Neu ausbalancieren</span>
           </button>
 
-          <button
-            onClick={() => handleClearQueue(false)}
-            disabled={queueState.items.length === 0}
-            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-red-950/40 text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-500/30 transition-all"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Queue leeren</span>
-          </button>
+          {queueState.items.some(i => i.status === 'COMPLETED') && (
+            <button
+              onClick={() => handleClearQueue(true)}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700 transition-all"
+            >
+              Erledigte leeren
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Empty Queue State */}
-      {queueState.items.length === 0 && (
-        <div className="bg-surface/60 border border-dashed border-slate-700/80 rounded-2xl p-12 text-center max-w-xl mx-auto space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan flex items-center justify-center mx-auto">
-            <UploadCloud className="w-8 h-8" />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-slate-100">Upload-Queue ist aktuell leer</h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Sobald ein Design im Task Co-Pilot final freigegeben wird, wandert es automatisch hierher und wird optimal auf deine freien Tages-Slots austariert.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Queue Items List */}
-      {queueState.items.length > 0 && (
+      {queueState.items.length === 0 ? (
+        <div className="bg-surface/50 border border-slate-800/80 rounded-2xl p-12 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto mb-3 text-slate-500">
+            <UploadCloud className="w-7 h-7" />
+          </div>
+          <h3 className="text-base font-bold text-slate-200">Keine Designs in der Queue</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+            Sobald ein Design in der Ideogram- &amp; Vision-Pipeline final freigegeben wird, wandert es vollautomatisch hier in die Queue.
+          </p>
+        </div>
+      ) : (
         <div className="space-y-4">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider px-1">
-            <span>Warteschlange ({queueState.items.length} Designs)</span>
-            <span>{scheduledDesigns.length} heute aktiv • {waitingDesigns.length} wartend</span>
+          <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+            <span>Reihenfolge der Designs (Priorität von oben nach unten)</span>
+            <span>{queueState.items.length} Designs in Warteschlange</span>
           </div>
 
           <div className="space-y-3">
@@ -562,20 +735,38 @@ export const QueueView: React.FC = () => {
                       {/* Allocation Badge */}
                       <div className="flex flex-col items-end">
                         <span className={`px-3 py-1 rounded-xl text-xs font-bold font-mono border ${
-                          isScheduled
-                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                            : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                          item.status === 'COMPLETED'
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : item.status === 'UPLOADING'
+                              ? 'bg-primary-500/20 text-primary-300 border-primary-500/40 animate-pulse'
+                              : isScheduled
+                                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
                         }`}>
-                          {isScheduled 
-                            ? `⚡ ${item.allocatedSlots} Slots Heute Aktiv` 
-                            : `⏳ ${item.allocatedSlots} Slots Wartend`}
+                          {item.status === 'COMPLETED'
+                            ? '✓ Hochgeladen'
+                            : item.status === 'UPLOADING'
+                              ? '⚡ Lädt hoch...'
+                              : isScheduled 
+                                ? `⚡ ${item.allocatedSlots} Slots Heute Aktiv` 
+                                : `⏳ ${item.allocatedSlots} Slots Wartend`}
                         </span>
-                        {droppedCount > 0 && isScheduled && (
+                        {droppedCount > 0 && isScheduled && item.status !== 'COMPLETED' && (
                           <span className="text-[10px] text-amber-400/90 font-mono mt-0.5">
                             ({droppedCount} Slots gekürzt)
                           </span>
                         )}
                       </div>
+
+                      {/* Upload Single Button */}
+                      <button
+                        onClick={() => handleStartUpload(item.id)}
+                        disabled={isUploadActive}
+                        className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-accent-cyan border border-slate-700 transition-colors disabled:opacity-50"
+                        title="Dieses Design einzeln hochladen"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                      </button>
 
                       {/* Hero-Lock Button */}
                       <button
@@ -611,9 +802,34 @@ export const QueueView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Expandable Accordion: Product & Marketplace Allocation Matrix */}
+                  {/* Expandable Accordion: Details & Question-Phase Settings */}
                   {isExpanded && (
                     <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-4 animate-fadeIn">
+                      {/* Question-Phase Preferences Bar */}
+                      <div className="flex flex-wrap items-center gap-2 text-xs bg-slate-950/50 border border-slate-800 p-2.5 rounded-xl">
+                        <div className="flex items-center space-x-1.5 text-slate-300">
+                          <Users className="w-3.5 h-3.5 text-primary-400" />
+                          <span className="font-semibold">Fit-Types:</span>
+                          <span className="font-mono text-slate-200">
+                            {(item.fitTypes && item.fitTypes.length > 0) ? item.fitTypes.join(', ').toUpperCase() : 'MEN, WOMEN, YOUTH'}
+                          </span>
+                        </div>
+
+                        <span className="text-slate-700">•</span>
+
+                        <div className="flex items-center space-x-1.5 text-slate-300">
+                          <Palette className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="font-semibold">Farbregel:</span>
+                          <span className="font-mono text-slate-200">
+                            {item.avoidColor === 'white' 
+                              ? 'Weiß vermieden (Raglan white_* ausgeschlossen)' 
+                              : item.avoidColor === 'black'
+                                ? 'Schwarz vermieden (Hex-Picker #FFFFFF)'
+                                : 'Standard (Alle Swatches / Hex #000000)'}
+                          </span>
+                        </div>
+                      </div>
+
                       {/* SEO Listing Section with Multi-Language Switcher */}
                       {(() => {
                         const activeLang = itemLanguageMap[item.id] || 'en';
@@ -786,6 +1002,35 @@ export const QueueView: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Live Screencast Modal */}
+      {isScreencastOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-surface border border-slate-800 rounded-3xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden shadow-2xl relative">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+              <div className="flex items-center space-x-2">
+                <Monitor className="w-5 h-5 text-accent-cyan" />
+                <h3 className="text-sm font-bold text-slate-100">
+                  Live Browser-Screencast (Session 2: Upload Worker)
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsScreencastOpen(false)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
+                title="Schließen"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Screencast Container */}
+            <div className="flex-1 p-2 bg-slate-950 overflow-hidden">
+              <BrowserScreencast onClose={() => setIsScreencastOpen(false)} />
+            </div>
           </div>
         </div>
       )}

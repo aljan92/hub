@@ -24,6 +24,9 @@ export interface QueueItem {
   bullet2: string;
   description: string;
   listings?: Record<string, ListingLanguageContent>; // e.g. { en: {...}, de: {...}, fr: {...}, es: {...}, it: {...}, jp: {...} }
+  fitTypes?: string[];                               // e.g. ['men', 'women', 'youth']
+  avoidColor?: 'white' | 'black' | 'none';          // e.g. 'white' or 'black'
+  customBackgroundColor?: string;                    // e.g. '#000000'
   imagePath: string;
   pngPath: string;
   addedAt: string;
@@ -36,6 +39,8 @@ export interface QueueItem {
   tmBlockedProductIds: string[];              // Product IDs blocked by TM
   errorMessage?: string;
   sortOrder: number;
+  uploadedAt?: string;
+  lastUploadAttempt?: string;
 }
 
 export interface QueueState {
@@ -144,6 +149,30 @@ export class QueueService {
             item.listings = listings;
             hasChanges = true;
           }
+
+          // Fit types & color rules from Question Phase
+          if (!item.fitTypes || item.fitTypes.length === 0) {
+            const audience = (task.customAnswers?.audience || task.payload?.audience || 'Men, Women, Youth').toLowerCase();
+            const types: string[] = [];
+            if (audience.includes('men') || audience.includes('männer') || audience.includes('herren')) types.push('men');
+            if (audience.includes('women') || audience.includes('frauen') || audience.includes('damen')) types.push('women');
+            if (audience.includes('youth') || audience.includes('kids') || audience.includes('kinder') || audience.includes('jugend')) types.push('youth');
+            item.fitTypes = types.length > 0 ? types : ['men', 'women', 'youth'];
+            hasChanges = true;
+          }
+
+          if (!item.avoidColor) {
+            const avoid = (task.customAnswers?.avoidColor || task.payload?.avoidColor || '').toLowerCase();
+            if (avoid.includes('white') || avoid.includes('weiß')) item.avoidColor = 'white';
+            else if (avoid.includes('black') || avoid.includes('schwarz')) item.avoidColor = 'black';
+            else item.avoidColor = 'none';
+            hasChanges = true;
+          }
+
+          if (!item.customBackgroundColor && task.customAnswers?.reuseBackground) {
+            item.customBackgroundColor = task.customAnswers.reuseBackground;
+            hasChanges = true;
+          }
         }
       }
 
@@ -221,6 +250,9 @@ export class QueueService {
     bullet2: string;
     description: string;
     listings?: Record<string, ListingLanguageContent>;
+    fitTypes?: string[];
+    avoidColor?: 'white' | 'black' | 'none';
+    customBackgroundColor?: string;
     imagePath: string;
     pngPath: string;
     tmBlockedProductIds?: string[];
@@ -236,6 +268,9 @@ export class QueueService {
       if (item.bullet1) existing.bullet1 = item.bullet1;
       if (item.bullet2) existing.bullet2 = item.bullet2;
       if (item.description) existing.description = item.description;
+      if (item.fitTypes) existing.fitTypes = item.fitTypes;
+      if (item.avoidColor) existing.avoidColor = item.avoidColor;
+      if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
       this.saveQueue();
       return existing;
     }
@@ -275,6 +310,9 @@ export class QueueService {
           description: item.description
         }
       },
+      fitTypes: item.fitTypes || ['men', 'women', 'youth'],
+      avoidColor: item.avoidColor || 'none',
+      customBackgroundColor: item.customBackgroundColor,
       imagePath: item.imagePath,
       pngPath: item.pngPath,
       addedAt: new Date().toISOString(),
@@ -295,6 +333,26 @@ export class QueueService {
     this.rebalanceQueue();
 
     return newItem;
+  }
+
+  /**
+   * Update item status during upload (UPLOADING, COMPLETED, ERROR)
+   */
+  public static updateItemStatus(queueId: string, status: QueueItemStatus, error?: string): QueueItem | null {
+    this.ensureLoaded();
+    const item = this.items.find(i => i.id === queueId);
+    if (!item) return null;
+
+    item.status = status;
+    item.lastUploadAttempt = new Date().toISOString();
+    if (error) {
+      item.errorMessage = error;
+    } else if (status === 'COMPLETED') {
+      item.errorMessage = undefined;
+      item.uploadedAt = new Date().toISOString();
+    }
+    this.saveQueue();
+    return item;
   }
 
   /**
