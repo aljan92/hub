@@ -218944,10 +218944,16 @@ Please audit the listing based on your compliance rules:
         } catch (e) {
         }
       }
+      const origFilename = `${cleanId}_original.svg`;
+      const origFilePath = import_path70.default.join(designsDir, origFilename);
+      import_fs75.default.writeFileSync(origFilePath, svgText, "utf-8");
       const svgFilename = `${cleanId}.svg`;
       const svgFilePath = import_path70.default.join(designsDir, svgFilename);
       import_fs75.default.writeFileSync(svgFilePath, svgText, "utf-8");
+      const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}`;
       const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+      task.originalSvgPath = origFilePath;
+      task.originalSvgUrl = origSvgUrl;
       task.localSvgPath = svgFilePath;
       task.svgUrl = localSvgUrl;
       task.svgContent = svgText;
@@ -218957,6 +218963,7 @@ Please audit the listing based on your compliance rules:
         title: `Empfangen von Vectorizer.ai (SVG Vektorgrafik)`,
         content: {
           svgUrl: localSvgUrl,
+          originalSvgUrl: origSvgUrl,
           svgLength: svgText.length,
           maxColorsUsed: maxColors,
           svgContent: svgText.length < 5e4 ? svgText : `${svgText.substring(0, 1e3)}...`
@@ -218966,11 +218973,23 @@ Please audit the listing based on your compliance rules:
           latencyMs
         }
       });
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TASK_HANDOFF",
+        title: `\xDCbergeben an Tasks (Checkpoint 4: SVG Vektor & Hintergrund-Pr\xFCfung)`,
+        content: {
+          checkpoint: "SVG_REVIEW",
+          svgUrl: localSvgUrl,
+          maxColorsUsed: maxColors,
+          reason: "Vektorisierung abgeschlossen. Wartet auf Pr\xFCfung & Hintergrundentfernung in Tasks."
+        }
+      });
       this.updateTaskStatus(taskId, {
-        status: "COMPLETED",
+        status: "AWAITING_SVG_REVIEW",
+        checkpoint: "SVG_REVIEW",
         hasError: false
       });
-      console.log(`[TaskLogService] \u{1F4D0} Vektorisierung f\xFCr Task ${taskId} erfolgreich in ${latencyMs}ms (Farben: ${maxColors}) \u2713`);
+      console.log(`[TaskLogService] \u{1F4D0} Vektorisierung f\xFCr Task ${taskId} erfolgreich in ${latencyMs}ms (Farben: ${maxColors}) -> Wartet auf SVG-Pr\xFCfung in Tasks \u2713`);
     } catch (err) {
       const latencyMs = Date.now() - start3;
       console.error(`[TaskLogService] Fehler bei der Vektorisierung f\xFCr Task ${taskId}:`, err);
@@ -219349,6 +219368,114 @@ Please audit the listing based on your compliance rules:
       return { success: true, message: "Pre-Flight \xFCbersprungen. Pipeline wird fortgesetzt." };
     }
     throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
+  }
+  /**
+   * Checkpoint 4: Submit SVG Vector & Background Review
+   */
+  static async submitSvgReview(taskId, params2) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const designsDir = import_path70.default.resolve(process.cwd(), "data", "designs");
+    if (params2.action === "APPROVE") {
+      if (params2.editedSvgContent) {
+        if (!import_fs75.default.existsSync(designsDir)) {
+          try {
+            import_fs75.default.mkdirSync(designsDir, { recursive: true });
+          } catch (e) {
+          }
+        }
+        const svgFilePath = import_path70.default.join(designsDir, `${cleanId}.svg`);
+        import_fs75.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
+        task.svgContent = params2.editedSvgContent;
+        task.localSvgPath = svgFilePath;
+        task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+      }
+      task.status = "COMPLETED";
+      task.checkpoint = void 0;
+      task.hasError = false;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "SVG_EDIT_RESPONSE",
+        title: `SVG Design & Vektor final freigegeben (Human Loop)`,
+        content: {
+          verdict: "APPROVED",
+          svgUrl: task.svgUrl,
+          svgLength: (task.svgContent || params2.editedSvgContent || "").length,
+          message: "Vektorgrafik gepr\xFCft und f\xFCr den Upload freigegeben."
+        }
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      return { success: true, message: "SVG Vektorgrafik erfolgreich freigegeben und abgeschlossen." };
+    }
+    if (params2.action === "REGENERATE_VECTOR") {
+      if (params2.maxColors) {
+        if (!task.customAnswers) task.customAnswers = {};
+        task.customAnswers.maxColors = params2.maxColors;
+      }
+      task.status = "VECTORIZING_DESIGN";
+      task.checkpoint = void 0;
+      task.hasError = false;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "VECTORIZE_REQUEST",
+        title: `Vektorisierung erneut angefordert (Human Loop: Farbanzahl angepasst)`,
+        content: {
+          maxColors: params2.maxColors || task.customAnswers?.maxColors || 2,
+          reason: "Manuell in Tasks zur Neu-Vektorisierung \xFCbergeben"
+        }
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      this.vectorizeDesignTask(taskId).catch((err) => {
+        console.error(`[TaskLogService] Re-vectorize failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: "Vektorisierung wird neu ausgef\xFChrt." };
+    }
+    if (params2.action === "REJECT") {
+      task.status = "REJECTED";
+      task.checkpoint = void 0;
+      this.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "SVG_EDIT_RESPONSE",
+        title: `Task in SVG-Pr\xFCfung abgelehnt & geschlossen (Human Loop)`,
+        content: {
+          verdict: "REJECTED",
+          reason: "Design / Vektorisierung manuell im Tasks-Workspace verworfen."
+        }
+      });
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      return { success: true, message: "Task verworfen." };
+    }
+    throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
+  }
+  /**
+   * Reset editable SVG to the original untouched vector
+   */
+  static async resetSvg(taskId) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const designsDir = import_path70.default.resolve(process.cwd(), "data", "designs");
+    const origFilePath = import_path70.default.join(designsDir, `${cleanId}_original.svg`);
+    const svgFilePath = import_path70.default.join(designsDir, `${cleanId}.svg`);
+    if (!import_fs75.default.existsSync(origFilePath)) {
+      throw new Error(`Original-SVG f\xFCr Task ${taskId} nicht gefunden.`);
+    }
+    const originalSvgContent = import_fs75.default.readFileSync(origFilePath, "utf-8");
+    import_fs75.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
+    task.svgContent = originalSvgContent;
+    task.localSvgPath = svgFilePath;
+    task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+    this.saveLogs(this.loadLogs());
+    this.emitUpdate(task);
+    return {
+      success: true,
+      svgContent: originalSvgContent,
+      message: "SVG erfolgreich auf Originalzustand zur\xFCckgesetzt."
+    };
   }
 };
 
@@ -219967,6 +220094,27 @@ app.post("/api/v1/tasks/:taskId/override-preflight", async (req, res) => {
     res.status(400).json({ success: false, error: err.message });
   }
 });
+app.post("/api/v1/tasks/:taskId/submit-svg-review", async (req, res) => {
+  const { taskId } = req.params;
+  const { action, editedSvgContent, maxColors } = req.body;
+  try {
+    const result2 = await TaskLogService.submitSvgReview(taskId, { action, editedSvgContent, maxColors });
+    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    res.json(result2);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/tasks/:taskId/reset-svg", async (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const result2 = await TaskLogService.resetSvg(taskId);
+    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    res.json(result2);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
 function validateMcpAuth(req, res, next) {
   const isInternal = req.query.source === "test" || req.query.source === "designer" || req.headers["x-internal-source"] === "hub-ui" || req.headers["sec-fetch-site"] === "same-origin";
   if (isInternal) {
@@ -220101,10 +220249,26 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   const filePath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
   if (import_fs76.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Cache-Control", "no-cache");
     return import_fs76.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("Design SVG not found");
+});
+app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const filePath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
+  if (import_fs76.default.existsSync(filePath)) {
+    res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "no-cache");
+    return import_fs76.default.createReadStream(filePath).pipe(res);
+  }
+  const fallbackPath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  if (import_fs76.default.existsSync(fallbackPath)) {
+    res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "no-cache");
+    return import_fs76.default.createReadStream(fallbackPath).pipe(res);
+  }
+  res.status(404).send("Original SVG not found");
 });
 app.post("/api/v1/hermes/task", async (req, res) => {
   const payload = req.body || {};

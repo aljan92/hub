@@ -20,10 +20,13 @@ import {
   Trash2, 
   Search,
   Check,
-  FileText
+  FileText,
+  Palette,
+  Layers
 } from 'lucide-react';
 
 import { DesignTaskLog } from '../../types/tasks';
+import { SvgEditor } from '../components/SvgEditor';
 
 // ---------------------------------------------------------------------------
 // Helper: Detailed Word-by-Word Trademark Hits Display per Field
@@ -38,14 +41,14 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
 
   const totalHits = fieldData.totalHits ?? 0;
   const hasK25 = Boolean(fieldData.hasInfringementClass25 || fieldData.hasClass25);
-  const rawHits = fieldData.hits || {};
+  const rawHits = fieldData.hits || fieldData.detectedTrademarks || [];
 
   // If 0 hits, show a clean "Sauber" indicator
   if (totalHits === 0) {
     return (
-      <div className="flex items-center space-x-1.5 text-[11px] text-emerald-400 font-medium pt-1">
+      <div className="flex items-center space-x-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 mt-1">
         <CheckCircle2 className="w-3.5 h-3.5" />
-        <span>Keine Markentreffer in {label} (0 Treffer)</span>
+        <span>0 Treffer in {label} (Sauber für Bekleidung)</span>
       </div>
     );
   }
@@ -120,13 +123,13 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
                 <span className="font-bold text-white text-xs underline decoration-dotted underline-offset-2">
                   "{term}"
                 </span>
-                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
-                  isK25 ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'
+                <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold shrink-0 ${
+                  isK25 ? 'bg-rose-500/30 text-rose-300 border border-rose-500/40' : 'bg-slate-800 text-slate-400'
                 }`}>
-                  Klasse {classes}
+                  {isK25 ? 'Klasse 25' : `Klasse ${classes}`}
                 </span>
               </div>
-              <div className="text-[10px] text-slate-400 flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
                 <span className="truncate max-w-[180px]" title={markName}>Marke: {markName}</span>
                 <span className="shrink-0">{status} {regOrSerial ? `• #${regOrSerial}` : ''}</span>
               </div>
@@ -145,7 +148,7 @@ export const TasksView: React.FC = () => {
   const [tasks, setTasks] = useState<DesignTaskLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string>('');
-  const [filter, setFilter] = useState<'ALL' | 'PRE_FLIGHT' | 'DESIGN' | 'TRADEMARK'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'PRE_FLIGHT' | 'DESIGN' | 'TRADEMARK' | 'SVG'>('ALL');
   const [aiAutonomyEnabled, setAiAutonomyEnabled] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -171,6 +174,10 @@ export const TasksView: React.FC = () => {
   });
   const [liveTmResult, setLiveTmResult] = useState<any>(null);
   const [isCheckingTm, setIsCheckingTm] = useState(false);
+
+  // Checkpoint 4 (SVG Review) State
+  const [editedSvgData, setEditedSvgData] = useState<string>('');
+  const [revectorizeMaxColors, setRevectorizeMaxColors] = useState<number>(2);
 
   // Helper to extract listing fields safely from all sources
   const extractListingFields = (task?: DesignTaskLog) => {
@@ -304,6 +311,10 @@ export const TasksView: React.FC = () => {
       const fields = extractListingFields(activeTask);
       setEditableListing(fields);
       setLiveTmResult(activeTask.trademarkCheckResult || null);
+
+      // SVG Review fields
+      setEditedSvgData(activeTask.svgContent || '');
+      setRevectorizeMaxColors(activeTask.customAnswers?.maxColors ?? activeTask.analysisResult?.color_analysis?.color_count ?? 2);
     }
   }, [selectedTaskId, activeTask?.status]);
 
@@ -423,17 +434,47 @@ export const TasksView: React.FC = () => {
     }
   };
 
+  // Actions for Checkpoint 4: SVG Vector & Background Review
+  const handleSvgDecision = async (action: 'APPROVE' | 'REGENERATE_VECTOR' | 'REJECT', maxColorsOverride?: number) => {
+    if (!activeTask) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/submit-svg-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          editedSvgContent: editedSvgData || activeTask.svgContent,
+          maxColors: maxColorsOverride || revectorizeMaxColors || activeTask.customAnswers?.maxColors || 2
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotification('success', data.message);
+        fetchTasks();
+      } else {
+        showNotification('error', data.error || 'Aktion fehlgeschlagen');
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Verbindungsfehler');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Filter Tasks
   const filteredTasks = tasks.filter(t => {
     if (filter === 'PRE_FLIGHT') return t.status === 'AWAITING_PRE_FLIGHT_REVIEW';
     if (filter === 'DESIGN') return t.status === 'AWAITING_DESIGN_REVIEW';
     if (filter === 'TRADEMARK') return t.status === 'AWAITING_TM_REVIEW';
+    if (filter === 'SVG') return t.status === 'AWAITING_SVG_REVIEW';
     return true;
   });
 
   const preFlightCount = tasks.filter(t => t.status === 'AWAITING_PRE_FLIGHT_REVIEW').length;
   const designCount = tasks.filter(t => t.status === 'AWAITING_DESIGN_REVIEW').length;
   const tmCount = tasks.filter(t => t.status === 'AWAITING_TM_REVIEW').length;
+  const svgCount = tasks.filter(t => t.status === 'AWAITING_SVG_REVIEW').length;
 
   // Extract field summaries for Checkpoint 3
   const fieldSummaries = liveTmResult?.fieldSummaries || liveTmResult?.fieldResults || activeTask?.trademarkCheckResult?.fieldSummaries || activeTask?.trademarkCheckResult?.fieldResults || {};
@@ -535,6 +576,13 @@ export const TasksView: React.FC = () => {
                 {tmCount > 0 && <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-purple-400 text-slate-950 font-bold">{tmCount}</span>}
               </button>
               <button
+                onClick={() => setFilter('SVG')}
+                className={`flex-1 py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${filter === 'SVG' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                <span>SVG</span>
+                {svgCount > 0 && <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-400 text-slate-950 font-bold">{svgCount}</span>}
+              </button>
+              <button
                 onClick={() => setFilter('PRE_FLIGHT')}
                 className={`flex-1 py-1 rounded-lg transition-all flex items-center justify-center gap-1 ${filter === 'PRE_FLIGHT' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'}`}
               >
@@ -550,6 +598,7 @@ export const TasksView: React.FC = () => {
                 const isPreFlight = t.status === 'AWAITING_PRE_FLIGHT_REVIEW';
                 const isDesign = t.status === 'AWAITING_DESIGN_REVIEW';
                 const isTm = t.status === 'AWAITING_TM_REVIEW';
+                const isSvg = t.status === 'AWAITING_SVG_REVIEW';
                 const displayQuote = t.payload?.quote || t.payload?.quote_or_phrase || t.payload?.text || t.id;
 
                 return (
@@ -594,6 +643,12 @@ export const TasksView: React.FC = () => {
                           {isTm && (
                             <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
                               Listing TM
+                            </span>
+                          )}
+                          {isSvg && (
+                            <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30 flex items-center space-x-1">
+                              <Palette className="w-2.5 h-2.5" />
+                              <span>SVG</span>
                             </span>
                           )}
                         </div>
@@ -653,6 +708,12 @@ export const TasksView: React.FC = () => {
                       <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center space-x-1.5">
                         <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
                         <span>Trademark-Prüfung</span>
+                      </span>
+                    )}
+                    {activeTask.status === 'AWAITING_SVG_REVIEW' && (
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center space-x-1.5">
+                        <Palette className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>SVG Hintergrund &amp; Vektor-Prüfung</span>
                       </span>
                     )}
                   </div>
@@ -1106,6 +1167,96 @@ export const TasksView: React.FC = () => {
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>Freigeben</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* CHECKPOINT 4: SVG HINTERGRUND & VEKTOR-PRÜFUNG                            */}
+                {/* ========================================================================= */}
+                {activeTask.status === 'AWAITING_SVG_REVIEW' && (
+                  <div className="space-y-4">
+                    {/* Top Info Banner & Vectorizer Controls */}
+                    <div className="bg-slate-950 p-3.5 rounded-xl border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center space-x-2 text-emerald-300 font-semibold text-xs">
+                          <Palette className="w-4 h-4 text-emerald-400" />
+                          <span>Interaktiver SVG Vektor-Editor &amp; Hintergrundentfernung</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400">
+                          Entferne Hintergrundflächen mit <strong>Auto BG Remove</strong> oder wähle mit <strong>Remove Color</strong> / <strong>Remove Connected</strong> gezielt Flächen aus (Löschen mit <kbd className="px-1 py-0.2 rounded bg-slate-800 text-slate-300 font-mono text-[10px]">Backspace</kbd>).
+                        </p>
+                      </div>
+
+                      {/* Farbanzahl Stepper / Buttons for quick re-vectorization */}
+                      <div className="flex items-center space-x-2 shrink-0 bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                        <span className="text-[11px] text-slate-300 font-semibold flex items-center gap-1">
+                          <Sliders className="w-3 h-3 text-cyan-400" />
+                          Farben:
+                        </span>
+                        <div className="flex items-center space-x-1">
+                          {[1, 2, 3, 4, 6, 8, 12].map(n => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => {
+                                setRevectorizeMaxColors(n);
+                                handleSvgDecision('REGENERATE_VECTOR', n);
+                              }}
+                              disabled={isSubmitting}
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono border transition-all ${
+                                revectorizeMaxColors === n
+                                  ? 'bg-cyan-600 text-white border-cyan-500 font-bold shadow'
+                                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                              }`}
+                              title={`Mit ${n} Farben neu vektorisieren`}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SvgEditor Component */}
+                    <SvgEditor
+                      taskId={activeTask.id}
+                      initialSvgContent={activeTask.svgContent}
+                      onSave={(updatedSvg) => setEditedSvgData(updatedSvg)}
+                      isSaving={isSubmitting}
+                    />
+
+                    {/* Checkpoint 4 Action Buttons */}
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-800">
+                      <button
+                        onClick={() => handleSvgDecision('REJECT')}
+                        disabled={isSubmitting}
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                      >
+                        <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Verwerfen</span>
+                      </button>
+
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleSvgDecision('REGENERATE_VECTOR')}
+                          disabled={isSubmitting}
+                          className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                          title="Vektorisierung mit aktuellen Farbeinstellungen neu starten"
+                        >
+                          <RotateCcw className={`w-3.5 h-3.5 ${isSubmitting ? 'animate-spin' : ''}`} />
+                          <span>Neu vektorisieren ({revectorizeMaxColors} Farben)</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleSvgDecision('APPROVE')}
+                          disabled={isSubmitting}
+                          className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-1.5 transition-all disabled:opacity-50 shadow-sm"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Design &amp; Vektor freigeben</span>
                         </button>
                       </div>
                     </div>

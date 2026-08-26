@@ -13,11 +13,12 @@ export type TaskStatus =
   | 'CHECKING_TRADEMARKS'
   | 'AWAITING_TM_REVIEW'
   | 'VECTORIZING_DESIGN'
+  | 'AWAITING_SVG_REVIEW'
   | 'COMPLETED'
   | 'REJECTED'
   | 'ERROR';
 
-export type CheckpointType = 'PRE_FLIGHT' | 'DESIGN_REVIEW' | 'TM_REVIEW';
+export type CheckpointType = 'PRE_FLIGHT' | 'DESIGN_REVIEW' | 'TM_REVIEW' | 'SVG_REVIEW';
 
 export type EventType = 
   | 'INCOMING_PAYLOAD'
@@ -37,6 +38,8 @@ export type EventType =
   | 'TM_REFINE_RESPONSE'
   | 'VECTORIZE_REQUEST'
   | 'VECTORIZE_RESPONSE'
+  | 'SVG_EDIT_REQUEST'
+  | 'SVG_EDIT_RESPONSE'
   | 'ERROR';
 
 export interface EventMetadata {
@@ -73,6 +76,8 @@ export interface DesignTaskLog {
   resultPrompt?: string;
   imageUrl?: string;
   localImagePath?: string;
+  originalSvgUrl?: string;
+  originalSvgPath?: string;
   svgUrl?: string;
   localSvgPath?: string;
   svgContent?: string;
@@ -99,4 +104,5 @@ export type RetryStepType =
   | 'PREFLIGHT_TM_REQUEST'
   | 'TM_CHECK_REQUEST' 
   | 'TM_REFINE_REQUEST'
-  | 'VECTORIZE_REQUEST';
+  | 'VECTORIZE_REQUEST'
+  | 'SVG_REVIEW';

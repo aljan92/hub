@@ -1355,16 +1355,24 @@ Please audit the listing based on your compliance rules:
 
       const latencyMs = Date.now() - start;
 
-      // Save SVG locally to data/designs/
+      // Save original SVG & editable SVG locally to data/designs/
       const designsDir = path.resolve(process.cwd(), 'data', 'designs');
       if (!fs.existsSync(designsDir)) {
         try { fs.mkdirSync(designsDir, { recursive: true }); } catch (e) {}
       }
+
+      const origFilename = `${cleanId}_original.svg`;
+      const origFilePath = path.join(designsDir, origFilename);
+      fs.writeFileSync(origFilePath, svgText, 'utf-8');
+
       const svgFilename = `${cleanId}.svg`;
       const svgFilePath = path.join(designsDir, svgFilename);
       fs.writeFileSync(svgFilePath, svgText, 'utf-8');
 
+      const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}`;
       const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+      task.originalSvgPath = origFilePath;
+      task.originalSvgUrl = origSvgUrl;
       task.localSvgPath = svgFilePath;
       task.svgUrl = localSvgUrl;
       task.svgContent = svgText;
@@ -1376,6 +1384,7 @@ Please audit the listing based on your compliance rules:
         title: `Empfangen von Vectorizer.ai (SVG Vektorgrafik)`,
         content: {
           svgUrl: localSvgUrl,
+          originalSvgUrl: origSvgUrl,
           svgLength: svgText.length,
           maxColorsUsed: maxColors,
           svgContent: svgText.length < 50000 ? svgText : `${svgText.substring(0, 1000)}...`
@@ -1386,12 +1395,26 @@ Please audit the listing based on your compliance rules:
         }
       });
 
+      // 3. Task an Tasks-Workspace übergeben für Checkpoint 4 (SVG Hintergrund & Vektor-Prüfung)
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TASK_HANDOFF',
+        title: `Übergeben an Tasks (Checkpoint 4: SVG Vektor & Hintergrund-Prüfung)`,
+        content: {
+          checkpoint: 'SVG_REVIEW',
+          svgUrl: localSvgUrl,
+          maxColorsUsed: maxColors,
+          reason: 'Vektorisierung abgeschlossen. Wartet auf Prüfung & Hintergrundentfernung in Tasks.'
+        }
+      });
+
       this.updateTaskStatus(taskId, {
-        status: 'COMPLETED',
+        status: 'AWAITING_SVG_REVIEW',
+        checkpoint: 'SVG_REVIEW',
         hasError: false
       });
 
-      console.log(`[TaskLogService] 📐 Vektorisierung für Task ${taskId} erfolgreich in ${latencyMs}ms (Farben: ${maxColors}) ✓`);
+      console.log(`[TaskLogService] 📐 Vektorisierung für Task ${taskId} erfolgreich in ${latencyMs}ms (Farben: ${maxColors}) -> Wartet auf SVG-Prüfung in Tasks ✓`);
     } catch (err: any) {
       const latencyMs = Date.now() - start;
       console.error(`[TaskLogService] Fehler bei der Vektorisierung für Task ${taskId}:`, err);
@@ -1852,6 +1875,139 @@ Please audit the listing based on your compliance rules:
     }
 
     throw new Error(`Ungültige Aktion: ${params.action}`);
+  }
+
+  /**
+   * Checkpoint 4: Submit SVG Vector & Background Review
+   */
+  static async submitSvgReview(taskId: string, params: {
+    action: 'APPROVE' | 'REGENERATE_VECTOR' | 'REJECT';
+    editedSvgContent?: string;
+    maxColors?: number;
+  }) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+
+    if (params.action === 'APPROVE') {
+      if (params.editedSvgContent) {
+        if (!fs.existsSync(designsDir)) {
+          try { fs.mkdirSync(designsDir, { recursive: true }); } catch (e) {}
+        }
+        const svgFilePath = path.join(designsDir, `${cleanId}.svg`);
+        fs.writeFileSync(svgFilePath, params.editedSvgContent, 'utf-8');
+        task.svgContent = params.editedSvgContent;
+        task.localSvgPath = svgFilePath;
+        task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+      }
+
+      task.status = 'COMPLETED';
+      task.checkpoint = undefined;
+      task.hasError = false;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'SVG_EDIT_RESPONSE',
+        title: `SVG Design & Vektor final freigegeben (Human Loop)`,
+        content: {
+          verdict: 'APPROVED',
+          svgUrl: task.svgUrl,
+          svgLength: (task.svgContent || params.editedSvgContent || '').length,
+          message: 'Vektorgrafik geprüft und für den Upload freigegeben.'
+        }
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      return { success: true, message: 'SVG Vektorgrafik erfolgreich freigegeben und abgeschlossen.' };
+    }
+
+    if (params.action === 'REGENERATE_VECTOR') {
+      if (params.maxColors) {
+        if (!task.customAnswers) task.customAnswers = {};
+        task.customAnswers.maxColors = params.maxColors;
+      }
+      task.status = 'VECTORIZING_DESIGN';
+      task.checkpoint = undefined;
+      task.hasError = false;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'VECTORIZE_REQUEST',
+        title: `Vektorisierung erneut angefordert (Human Loop: Farbanzahl angepasst)`,
+        content: {
+          maxColors: params.maxColors || task.customAnswers?.maxColors || 2,
+          reason: 'Manuell in Tasks zur Neu-Vektorisierung übergeben'
+        }
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      this.vectorizeDesignTask(taskId).catch(err => {
+        console.error(`[TaskLogService] Re-vectorize failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Vektorisierung wird neu ausgeführt.' };
+    }
+
+    if (params.action === 'REJECT') {
+      task.status = 'REJECTED';
+      task.checkpoint = undefined;
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'SVG_EDIT_RESPONSE',
+        title: `Task in SVG-Prüfung abgelehnt & geschlossen (Human Loop)`,
+        content: {
+          verdict: 'REJECTED',
+          reason: 'Design / Vektorisierung manuell im Tasks-Workspace verworfen.'
+        }
+      });
+
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+
+      return { success: true, message: 'Task verworfen.' };
+    }
+
+    throw new Error(`Ungültige Aktion: ${params.action}`);
+  }
+
+  /**
+   * Reset editable SVG to the original untouched vector
+   */
+  static async resetSvg(taskId: string): Promise<{ success: boolean; svgContent: string; message: string }> {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+    const origFilePath = path.join(designsDir, `${cleanId}_original.svg`);
+    const svgFilePath = path.join(designsDir, `${cleanId}.svg`);
+
+    if (!fs.existsSync(origFilePath)) {
+      throw new Error(`Original-SVG für Task ${taskId} nicht gefunden.`);
+    }
+
+    const originalSvgContent = fs.readFileSync(origFilePath, 'utf-8');
+    fs.writeFileSync(svgFilePath, originalSvgContent, 'utf-8');
+
+    task.svgContent = originalSvgContent;
+    task.localSvgPath = svgFilePath;
+    task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+
+    this.saveLogs(this.loadLogs());
+    this.emitUpdate(task);
+
+    return {
+      success: true,
+      svgContent: originalSvgContent,
+      message: 'SVG erfolgreich auf Originalzustand zurückgesetzt.'
+    };
   }
 }
 

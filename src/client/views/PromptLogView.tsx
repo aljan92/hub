@@ -551,6 +551,12 @@ export const PromptLogView: React.FC = () => {
                     {task.status === 'AWAITING_TM_REVIEW' && (
                       <span className="text-purple-300 font-semibold">Wartet: TM Review</span>
                     )}
+                    {task.status === 'VECTORIZING_DESIGN' && (
+                      <span className="text-emerald-400 font-semibold animate-pulse">Vektorisierung...</span>
+                    )}
+                    {task.status === 'AWAITING_SVG_REVIEW' && (
+                      <span className="text-emerald-300 font-semibold">Wartet: SVG Prüfung</span>
+                    )}
                     {task.status === 'COMPLETED' && (
                       <span className="text-emerald-400 font-semibold">Abgeschlossen</span>
                     )}

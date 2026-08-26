@@ -755,6 +755,29 @@ app.post('/api/v1/tasks/:taskId/override-preflight', async (req, res) => {
   }
 });
 
+app.post('/api/v1/tasks/:taskId/submit-svg-review', async (req, res) => {
+  const { taskId } = req.params;
+  const { action, editedSvgContent, maxColors } = req.body;
+  try {
+    const result = await TaskLogService.submitSvgReview(taskId, { action, editedSvgContent, maxColors });
+    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/tasks/:taskId/reset-svg', async (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const result = await TaskLogService.resetSvg(taskId);
+    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // Auth middleware for Hermes / MCP / Remote endpoints
 function validateMcpAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   // Allow internal requests from Dashboard / Playground / Designer
@@ -912,16 +935,34 @@ app.get('/api/v1/designs/image/:taskId', (req, res) => {
   res.status(404).send('Design image not found');
 });
 
-// 8.4 Design SVG Serving Endpoint
+// 8.4 Design SVG Serving Endpoints
 app.get('/api/v1/designs/svg/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.svg`);
   if (fs.existsSync(filePath)) {
     res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', 'no-cache');
     return fs.createReadStream(filePath).pipe(res);
   }
   res.status(404).send('Design SVG not found');
+});
+
+app.get('/api/v1/designs/svg-original/:taskId', (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_original.svg`);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'no-cache');
+    return fs.createReadStream(filePath).pipe(res);
+  }
+  // Fallback to active svg if original not separate yet
+  const fallbackPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.svg`);
+  if (fs.existsSync(fallbackPath)) {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'no-cache');
+    return fs.createReadStream(fallbackPath).pipe(res);
+  }
+  res.status(404).send('Original SVG not found');
 });
 
 // 8.2 Hermes REST Webhook Endpoint (Task Submission)
