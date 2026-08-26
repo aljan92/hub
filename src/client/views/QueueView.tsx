@@ -842,16 +842,16 @@ export const QueueView: React.FC = () => {
 
                   // Border & Glow styling:
                   // Lila = Uploading (gerade im Upload)
+                  // Grün = Heute eingeplant / zum Upload bereit (canUploadToday)
+                  // Gelb = Wartend, aber heute nicht mehr dran (Slot-Limit im Live Mode erreicht)
                   // Orange = Pausiert (isPaused)
-                  // Gelb = Warteschlange / Bereit für Upload
-                  // Slate / Grau = Wartet auf nächste Tage (Slot-Limit im Live Mode erreicht)
-                  let borderClass = 'border-amber-300/80 shadow-amber-300/10 ring-1 ring-amber-300/30 hover:border-amber-300';
+                  let borderClass = 'border-emerald-500/70 shadow-emerald-500/10 ring-1 ring-emerald-500/30 hover:border-emerald-400';
                   if (isUploading) {
                     borderClass = 'border-purple-500/80 shadow-purple-500/20 ring-1 ring-purple-500/50';
                   } else if (isPaused) {
                     borderClass = 'border-amber-500/80 shadow-amber-500/15 ring-1 ring-amber-500/40 hover:border-amber-500/90 opacity-80';
                   } else if (!canUploadToday) {
-                    borderClass = 'border-slate-700/80 shadow-slate-900/20 ring-1 ring-slate-700/30 hover:border-slate-600';
+                    borderClass = 'border-amber-300/80 shadow-amber-300/10 ring-1 ring-amber-300/30 hover:border-amber-300';
                   }
 
                   return (
@@ -941,16 +941,16 @@ export const QueueView: React.FC = () => {
                                 : isPaused
                                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                                   : canUploadToday
-                                    ? 'bg-amber-400/15 text-amber-300 border-amber-400/30'
-                                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                    : 'bg-amber-300/15 text-amber-300 border-amber-300/30'
                             }`}>
                               {isUploading 
                                 ? '🟣 Lädt hoch...' 
                                 : isPaused
                                   ? '⏸️ Pausiert'
                                   : canUploadToday
-                                    ? `🟡 ${item.allocatedSlots} Slots`
-                                    : '⏳ Wartet auf Slots'}
+                                    ? `🟢 ${item.allocatedSlots} Slots`
+                                    : '🟡 Wartet auf freie Slots'}
                             </span>
                             {droppedCount > 0 && !isUploading && canUploadToday && (
                               <span className="text-[10px] text-amber-400/90 font-mono mt-0.5">
