@@ -5,6 +5,7 @@ import { SystemPromptService } from './systemPromptService';
 import { IdeogramService } from './ideogramService';
 import { TrademarkService } from './trademarkService';
 import { BannedWordsService } from './bannedWordsService';
+import { VectorizerService } from './vectorizerService';
 
 export * from '../../types/tasks';
 import { 
@@ -1016,7 +1017,7 @@ export class TaskLogService {
           };
 
           this.updateTaskStatus(taskId, {
-            status: 'COMPLETED',
+            status: 'CHECKING_TRADEMARKS',
             listingResult: task.listingResult,
             trademarkCheckResult: {
               totalHits: 0,
@@ -1028,7 +1029,10 @@ export class TaskLogService {
             hasError: false
           });
 
-          console.log(`[TaskLogService] 🛡️ Task ${taskId} sofort freigegeben (0 Treffer) ✓`);
+          console.log(`[TaskLogService] 🛡️ Task ${taskId} sofort freigegeben (0 Treffer) -> Starte Vektorisierung ✓`);
+          this.vectorizeDesignTask(taskId).catch(err => {
+            console.error(`[TaskLogService] Vektorisierung für Task ${taskId} fehlgeschlagen:`, err);
+          });
           return;
         }
 
@@ -1256,7 +1260,7 @@ Please audit the listing based on your compliance rules:
           const finalBlockedProducts = (batchResult.blockedProducts || []).filter(p => !APPAREL_SET.has(p));
 
           this.updateTaskStatus(taskId, {
-            status: 'COMPLETED',
+            status: 'CHECKING_TRADEMARKS',
             listingResult: task.listingResult,
             trademarkCheckResult: {
               totalHits,
@@ -1268,7 +1272,10 @@ Please audit the listing based on your compliance rules:
             hasError: false
           });
 
-          console.log(`[TaskLogService] 🛡️ Task ${taskId} in Runde ${checkRound} erfolgreich durch Trademark-Auditor freigegeben ✓`);
+          console.log(`[TaskLogService] 🛡️ Task ${taskId} in Runde ${checkRound} erfolgreich durch Trademark-Auditor freigegeben -> Starte Vektorisierung ✓`);
+          this.vectorizeDesignTask(taskId).catch(err => {
+            console.error(`[TaskLogService] Vektorisierung für Task ${taskId} fehlgeschlagen:`, err);
+          });
           return;
         }
       }
@@ -1279,6 +1286,121 @@ Please audit the listing based on your compliance rules:
         type: 'ERROR',
         title: 'Fehler beim Trademark Audit',
         content: err.message || 'Fehler bei der USPTO TM Prüfung'
+      });
+      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
+    }
+  }
+
+  /**
+   * Vectorize the approved design using Vectorizer.ai with settings & dynamic maxColors
+   */
+  static async vectorizeDesignTask(taskId: string): Promise<void> {
+    const task = this.getTaskLogById(taskId);
+    if (!task) return;
+
+    const settings = loadSettings();
+    const hasKey = Boolean(settings.vectorizerApiKey && settings.vectorizerApiKey.trim());
+    const hasSecret = Boolean(settings.vectorizerApiSecret && settings.vectorizerApiSecret.trim());
+
+    if (!hasKey || !hasSecret) {
+      console.log(`[TaskLogService] ℹ️ Vectorizer.ai API Credentials nicht konfiguriert -> Task ${taskId} ohne Vektorisierung abgeschlossen.`);
+      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
+      return;
+    }
+
+    const maxColors = task.customAnswers?.maxColors ?? task.analysisResult?.color_analysis?.color_count ?? 2;
+    const cleanId = task.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const localImagePath = task.localImagePath || path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+    const hasLocalImage = fs.existsSync(localImagePath);
+
+    if (!hasLocalImage && !task.imageUrl) {
+      console.warn(`[TaskLogService] ⚠️ Kein Bild für Vektorisierung bei Task ${taskId} gefunden.`);
+      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
+      return;
+    }
+
+    this.updateTaskStatus(taskId, { status: 'VECTORIZING_DESIGN', hasError: false });
+
+    // 1. Log Event: Senden an Vectorizer.ai
+    this.addEvent(taskId, {
+      timestamp: new Date().toISOString(),
+      type: 'VECTORIZE_REQUEST',
+      title: `Senden an Vectorizer.ai (Vektorisierung)`,
+      content: {
+        mode: settings.vectorizerModeProduction || 'production',
+        maxColors,
+        drawStyle: settings.vectorizerDrawStyle || 'fill_shapes',
+        shapeStacking: settings.vectorizerShapeStacking || 'cutouts',
+        groupBy: settings.vectorizerGroupBy || 'none',
+        minArea: settings.vectorizerMinArea ?? 10,
+        optimizedShapes: settings.vectorizerOptimizedShapes ?? true,
+        gapFiller: settings.vectorizerGapFiller ?? false,
+        imageSource: hasLocalImage ? `data/designs/${cleanId}.png` : task.imageUrl
+      },
+      metadata: {
+        provider: 'Vectorizer.ai',
+        model: 'vectorizer-v1'
+      }
+    });
+
+    const start = Date.now();
+    try {
+      let svgText = '';
+      if (hasLocalImage) {
+        const buffer = fs.readFileSync(localImagePath);
+        svgText = await VectorizerService.vectorizeBuffer(buffer, 'image/png', false, { maxColors });
+      } else if (task.imageUrl) {
+        svgText = await VectorizerService.vectorizeImage(task.imageUrl, false, { maxColors });
+      }
+
+      const latencyMs = Date.now() - start;
+
+      // Save SVG locally to data/designs/
+      const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+      if (!fs.existsSync(designsDir)) {
+        try { fs.mkdirSync(designsDir, { recursive: true }); } catch (e) {}
+      }
+      const svgFilename = `${cleanId}.svg`;
+      const svgFilePath = path.join(designsDir, svgFilename);
+      fs.writeFileSync(svgFilePath, svgText, 'utf-8');
+
+      const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+      task.localSvgPath = svgFilePath;
+      task.svgUrl = localSvgUrl;
+      task.svgContent = svgText;
+
+      // 2. Log Event: Empfangen von Vectorizer.ai
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'VECTORIZE_RESPONSE',
+        title: `Empfangen von Vectorizer.ai (SVG Vektorgrafik)`,
+        content: {
+          svgUrl: localSvgUrl,
+          svgLength: svgText.length,
+          maxColorsUsed: maxColors,
+          svgContent: svgText.length < 50000 ? svgText : `${svgText.substring(0, 1000)}...`
+        },
+        metadata: {
+          provider: 'Vectorizer.ai',
+          latencyMs
+        }
+      });
+
+      this.updateTaskStatus(taskId, {
+        status: 'COMPLETED',
+        hasError: false
+      });
+
+      console.log(`[TaskLogService] 📐 Vektorisierung für Task ${taskId} erfolgreich in ${latencyMs}ms (Farben: ${maxColors}) ✓`);
+    } catch (err: any) {
+      const latencyMs = Date.now() - start;
+      console.error(`[TaskLogService] Fehler bei der Vektorisierung für Task ${taskId}:`, err);
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: 'Fehler bei der Vektorisierung (Vectorizer.ai)',
+        content: err.message || 'Fehler beim Vectorizer.ai API Aufruf',
+        metadata: { latencyMs }
       });
       this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
     }
@@ -1325,12 +1447,15 @@ Please audit the listing based on your compliance rules:
       currentTask.imageUrl = undefined;
       currentTask.localImagePath = undefined;
       currentTask.analysisResult = undefined;
+      currentTask.listingResult = undefined;
+      currentTask.trademarkCheckResult = undefined;
+      currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
       this.saveLogs(logs);
 
-      this.generateImageWithIdeogram(taskId).catch(err => {
-        console.error(`[TaskLogService] Retry Image failed for task ${taskId}:`, err);
+      this.processTaskWithIdeogram(taskId).catch(err => {
+        console.error(`[TaskLogService] Retry Ideogram failed for task ${taskId}:`, err);
       });
       return { success: true, message: 'Ideogram Bild-Generierung neu gestartet.' };
     }
@@ -1342,20 +1467,14 @@ Please audit the listing based on your compliance rules:
       }
       currentTask.status = 'ANALYZING_DESIGN';
       currentTask.analysisResult = undefined;
-      currentTask.listingResult = undefined;
-      currentTask.trademarkCheckResult = undefined;
-      currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
       this.saveLogs(logs);
 
-      const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const localFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
-
-      this.analyzeDesignWithOpenRouter(taskId, localFilePath, currentTask.imageUrl || '').catch(err => {
+      this.analyzeDesignWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Retry Analysis failed for task ${taskId}:`, err);
       });
-      return { success: true, message: 'Vision Design-Analyse neu gestartet.' };
+      return { success: true, message: 'Design QA-Analyse neu gestartet.' };
     }
 
     if (stepType === 'LISTING_REQUEST') {
@@ -1374,7 +1493,7 @@ Please audit the listing based on your compliance rules:
       this.generateListingWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Retry Listing failed for task ${taskId}:`, err);
       });
-      return { success: true, message: 'MBA Listing-Generierung neu gestartet.' };
+      return { success: true, message: 'Listing-Erstellung neu gestartet.' };
     }
 
     if (stepType === 'PREFLIGHT_TM_REQUEST') {
@@ -1383,6 +1502,7 @@ Please audit the listing based on your compliance rules:
         if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
       }
       currentTask.status = 'PROCESSING';
+      currentTask.trademarkCheckResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
       this.saveLogs(logs);
@@ -1417,6 +1537,27 @@ Please audit the listing based on your compliance rules:
         console.error(`[TaskLogService] Retry Listing TM Check failed for task ${taskId}:`, err);
       });
       return { success: true, message: 'USPTO Trademark-Prüfung & Audit neu gestartet.' };
+    }
+
+    if (stepType === 'VECTORIZE_REQUEST') {
+      if (typeof eventIndex !== 'number') {
+        const lastVecIdx = currentTask.events.findIndex(e => e.type === 'VECTORIZE_REQUEST');
+        if (lastVecIdx !== -1) {
+          currentTask.events = currentTask.events.slice(0, lastVecIdx);
+        }
+      }
+      currentTask.status = 'VECTORIZING_DESIGN';
+      currentTask.svgUrl = undefined;
+      currentTask.localSvgPath = undefined;
+      currentTask.svgContent = undefined;
+      currentTask.hasError = false;
+      currentTask.errorDetails = undefined;
+      this.saveLogs(logs);
+
+      this.vectorizeDesignTask(taskId).catch(err => {
+        console.error(`[TaskLogService] Retry Vectorization failed for task ${taskId}:`, err);
+      });
+      return { success: true, message: 'Vectorizer.ai Vektorisierung neu gestartet.' };
     }
 
     throw new Error(`Unbekannter Step-Typ: ${stepType}`);
@@ -1597,14 +1738,14 @@ Please audit the listing based on your compliance rules:
         }
       }
 
-      task.status = 'COMPLETED';
+      task.status = 'CHECKING_TRADEMARKS';
       task.checkpoint = undefined;
       task.hasError = false;
 
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TM_REFINE_RESPONSE',
-        title: `Task manuell freigegeben (Human Loop) & in Upload-Queue verschoben`,
+        title: `Task manuell freigegeben (Human Loop) & Vektorisierung gestartet`,
         content: {
           verdict: 'APPROVED',
           refinedListing: params.refinedListing,
@@ -1615,7 +1756,11 @@ Please audit the listing based on your compliance rules:
       this.saveLogs(this.loadLogs());
       this.emitUpdate(task);
 
-      return { success: true, message: 'Listing manuell freigegeben und abgeschlossen.' };
+      this.vectorizeDesignTask(taskId).catch(err => {
+        console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe für Task ${taskId} fehlgeschlagen:`, err);
+      });
+
+      return { success: true, message: 'Listing manuell freigegeben und Vektorisierung gestartet.' };
     }
 
     if (params.action === 'REJECT') {

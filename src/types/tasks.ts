@@ -12,6 +12,7 @@ export type TaskStatus =
   | 'GENERATING_LISTING'
   | 'CHECKING_TRADEMARKS'
   | 'AWAITING_TM_REVIEW'
+  | 'VECTORIZING_DESIGN'
   | 'COMPLETED'
   | 'REJECTED'
   | 'ERROR';
@@ -34,6 +35,8 @@ export type EventType =
   | 'TM_CHECK_RESPONSE'
   | 'TM_REFINE_REQUEST'
   | 'TM_REFINE_RESPONSE'
+  | 'VECTORIZE_REQUEST'
+  | 'VECTORIZE_RESPONSE'
   | 'ERROR';
 
 export interface EventMetadata {
@@ -70,6 +73,9 @@ export interface DesignTaskLog {
   resultPrompt?: string;
   imageUrl?: string;
   localImagePath?: string;
+  svgUrl?: string;
+  localSvgPath?: string;
+  svgContent?: string;
   analysisResult?: any;
   customAnswers?: {
     audience?: string;
@@ -92,4 +98,5 @@ export type RetryStepType =
   | 'LISTING_REQUEST' 
   | 'PREFLIGHT_TM_REQUEST'
   | 'TM_CHECK_REQUEST' 
-  | 'TM_REFINE_REQUEST';
+  | 'TM_REFINE_REQUEST'
+  | 'VECTORIZE_REQUEST';

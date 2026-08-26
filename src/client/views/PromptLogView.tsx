@@ -610,7 +610,8 @@ export const PromptLogView: React.FC = () => {
                     event.type === 'ANALYSIS_REQUEST' ? 'ANALYSIS_REQUEST' :
                     event.type === 'LISTING_REQUEST' ? 'LISTING_REQUEST' :
                     event.type === 'TM_CHECK_REQUEST' ? (isPreFlight ? 'PREFLIGHT_TM_REQUEST' : 'TM_CHECK_REQUEST') :
-                    event.type === 'TM_REFINE_REQUEST' ? 'TM_REFINE_REQUEST' : undefined;
+                    event.type === 'TM_REFINE_REQUEST' ? 'TM_REFINE_REQUEST' :
+                    event.type === 'VECTORIZE_REQUEST' ? 'VECTORIZE_REQUEST' : undefined;
 
                   return (
                     <div key={idx} className="relative pl-7 space-y-2">
@@ -618,12 +619,14 @@ export const PromptLogView: React.FC = () => {
                       <div className={`absolute left-1.5 top-1.5 w-3 h-3 rounded-full border-2 -translate-x-1/2 transition-colors ${
                         event.type === 'ERROR'
                           ? 'bg-rose-500 border-rose-950'
+                          : event.type.startsWith('VECTORIZE_')
+                          ? 'bg-cyan-400 border-cyan-950 ring-2 ring-cyan-500/20'
                           : event.type.startsWith('TM_')
                           ? 'bg-amber-400 border-amber-950'
                           : event.type.startsWith('LISTING_')
                           ? 'bg-emerald-400 border-emerald-950'
                           : event.type.startsWith('ANALYSIS_')
-                          ? 'bg-cyan-400 border-cyan-950'
+                          ? 'bg-blue-400 border-blue-950'
                           : event.type.startsWith('IDEOGRAM_')
                           ? 'bg-purple-400 border-purple-950'
                           : 'bg-slate-500 border-slate-900'
@@ -956,6 +959,107 @@ export const PromptLogView: React.FC = () => {
                           </div>
                         );
                       })()}
+
+                      {event.type === 'VECTORIZE_REQUEST' && (
+                        <div className="bg-slate-950 rounded-xl p-3.5 border border-cyan-500/20 space-y-2.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                              <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                              Vektorisierungs-Anfrage (Vectorizer.ai)
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                              Max. {event.content?.maxColors || 2} Farben (aus QA-Phase)
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                            <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                              <span className="text-[10px] text-slate-500 block">Farben (QA-Phase)</span>
+                              <span className="font-semibold text-cyan-300">{event.content?.maxColors} Farben</span>
+                            </div>
+                            <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                              <span className="text-[10px] text-slate-500 block">Modus</span>
+                              <span className="font-mono text-slate-200">{event.content?.mode || 'production'}</span>
+                            </div>
+                            <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                              <span className="text-[10px] text-slate-500 block">Shape Stacking</span>
+                              <span className="font-mono text-slate-200">{event.content?.shapeStacking || 'cutouts'}</span>
+                            </div>
+                            <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                              <span className="text-[10px] text-slate-500 block">Draw Style</span>
+                              <span className="font-mono text-slate-200">{event.content?.drawStyle || 'fill_shapes'}</span>
+                            </div>
+                          </div>
+
+                          <JsonDetails title="Gesamte Vektorisierungs-Parameter" data={event.content} />
+                        </div>
+                      )}
+
+                      {event.type === 'VECTORIZE_RESPONSE' && (
+                        <div className="bg-slate-950 rounded-xl p-3.5 border border-cyan-500/40 space-y-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                              Vektorisierung erfolgreich (SVG generiert)
+                            </span>
+                            <div className="flex items-center space-x-2">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                {event.content?.maxColorsUsed || 2} Farben
+                              </span>
+                              {event.content?.svgUrl && (
+                                <a
+                                  href={event.content.svgUrl}
+                                  download={`design-${selectedTask.id}.svg`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition-colors shadow-sm"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  <span>SVG Download</span>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* SVG Preview Card */}
+                          {event.content?.svgUrl && (
+                            <div className="bg-slate-900/90 rounded-xl p-4 border border-slate-800 flex flex-col md:flex-row items-center gap-4">
+                              <div className="w-44 h-44 rounded-lg bg-slate-950/80 border border-slate-800 p-2 flex items-center justify-center overflow-hidden shrink-0">
+                                <img
+                                  src={event.content.svgUrl}
+                                  alt="Vectorized SVG"
+                                  className="max-w-full max-h-full object-contain"
+                                />
+                              </div>
+                              <div className="flex-1 space-y-2 text-xs">
+                                <div className="text-slate-200 font-semibold flex items-center space-x-2">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                                  <span>Reine Vektorgrafik (SVG) verlustfrei skaliert</span>
+                                </div>
+                                <p className="text-slate-400 text-[11px] leading-relaxed">
+                                  Die Grafik wurde basierend auf den {event.content?.maxColorsUsed || 2} gewählten Farben mit Vectorizer.ai aufbereitet und für den Merch by Amazon Export optimiert.
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                  {event.content?.svgContent && (
+                                    <CopyButton text={event.content.svgContent} label="SVG Quellcode kopieren" />
+                                  )}
+                                  <a
+                                    href={event.content.svgUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                    <span>In neuem Tab öffnen</span>
+                                  </a>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <JsonDetails title="Details zur SVG Vektorisierung" data={event.content} />
+                        </div>
+                      )}
 
                       {event.type === 'TASK_HANDOFF' && (
                         <div className="bg-slate-950 rounded-xl p-3.5 border border-amber-500/30 space-y-2">
