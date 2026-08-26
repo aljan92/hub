@@ -19,6 +19,23 @@ export const MBA_HUB_TOOLS: ToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
+        quote: {
+          type: 'string',
+          description: 'Quick check: Main design quote or slogan (e.g. "Just a Girl who loves Frisians")'
+        },
+        phrase: {
+          type: 'string',
+          description: 'Alias for quote / phrase to check'
+        },
+        text: {
+          type: 'string',
+          description: 'Alias for raw text to extract keywords and check'
+        },
+        terms: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional explicit list of keywords / terms to check'
+        },
         offices: {
           type: 'array',
           items: {
@@ -33,7 +50,7 @@ export const MBA_HUB_TOOLS: ToolDefinition[] = [
         },
         fields: {
           type: 'object',
-          description: 'Listing text fields to check for trademark violations. Must contain at least one field.',
+          description: 'Listing text fields to check for trademark violations.',
           properties: {
             phrase: {
               type: 'string',
@@ -61,8 +78,7 @@ export const MBA_HUB_TOOLS: ToolDefinition[] = [
             }
           }
         }
-      },
-      required: ['fields']
+      }
     }
   },
   {

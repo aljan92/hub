@@ -215591,17 +215591,46 @@ var TrademarkService = class {
       verdict = "SAFE_ALL";
       message = "Keine aktiven Schutzrechte gefunden. Listing ist sauber \u2713";
     }
+    const rawInputPhrases = /* @__PURE__ */ new Set();
+    for (const rawValue of Object.values(fields)) {
+      if (rawValue && typeof rawValue === "string") {
+        const tr = rawValue.trim().toLowerCase();
+        if (tr.length > 0) rawInputPhrases.add(tr);
+      }
+    }
+    const exactPhraseHits = [];
+    const keywordHits = [];
+    const affectedClassesSet = /* @__PURE__ */ new Set();
+    const seenHitKeys = /* @__PURE__ */ new Set();
+    for (const [term, hits] of Object.entries(globalHits)) {
+      for (const hit of hits) {
+        const uniqueKey = `${hit.source}-${hit.trademark}-${hit.classNumber}-${hit.term}`;
+        if (seenHitKeys.has(uniqueKey)) continue;
+        seenHitKeys.add(uniqueKey);
+        (hit.classes || []).forEach((c) => affectedClassesSet.add(c));
+        if (rawInputPhrases.has(term.toLowerCase())) {
+          exactPhraseHits.push(hit);
+        } else {
+          keywordHits.push(hit);
+        }
+      }
+    }
     return {
       success: true,
       safe: !hasBrandTitleClass25,
       hasInfringementClass25: globalHasInfringementClass25,
+      affectedClasses: Array.from(affectedClassesSet).sort((a, b) => Number(a) - Number(b)),
       blockedProducts: Array.from(globalBlockedProducts),
       officesChecked: offices,
       summary: {
         totalHits: totalGlobalHits,
         verdict,
-        message
+        message,
+        exactPhraseHitsCount: exactPhraseHits.length,
+        keywordHitsCount: keywordHits.length
       },
+      exactPhraseHits,
+      keywordHits,
       fieldResults
     };
   }
@@ -218334,6 +218363,23 @@ var MBA_HUB_TOOLS = [
     parameters: {
       type: "object",
       properties: {
+        quote: {
+          type: "string",
+          description: 'Quick check: Main design quote or slogan (e.g. "Just a Girl who loves Frisians")'
+        },
+        phrase: {
+          type: "string",
+          description: "Alias for quote / phrase to check"
+        },
+        text: {
+          type: "string",
+          description: "Alias for raw text to extract keywords and check"
+        },
+        terms: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional explicit list of keywords / terms to check"
+        },
         offices: {
           type: "array",
           items: {
@@ -218348,7 +218394,7 @@ var MBA_HUB_TOOLS = [
         },
         fields: {
           type: "object",
-          description: "Listing text fields to check for trademark violations. Must contain at least one field.",
+          description: "Listing text fields to check for trademark violations.",
           properties: {
             phrase: {
               type: "string",
@@ -218376,8 +218422,7 @@ var MBA_HUB_TOOLS = [
             }
           }
         }
-      },
-      required: ["fields"]
+      }
     }
   },
   {
@@ -223165,22 +223210,31 @@ app.get(["/api/v1/mcp/health", "/health"], (req, res) => {
 app.get("/api/v1/mcp/schema", (req, res) => {
   res.json(getMcpSchema());
 });
-app.post("/api/v1/mcp/trademark/check", validateMcpAuth, async (req, res) => {
+app.post(["/api/v1/mcp/trademark/check", "/api/v1/trademark/check", "/api/v1/mcp/trademark", "/api/v1/trademark", "/trademark"], validateMcpAuth, async (req, res) => {
   try {
-    const { offices, marketplace, fields, phrase, title, brand, bullet1, bullet2, description } = req.body;
+    const { offices, marketplace, fields, phrase, quote: quote5, text: text2, terms, title, brand, bullet1, bullet2, description } = req.body || {};
     const resolvedFields = {
       ...fields && typeof fields === "object" ? fields : {}
     };
+    if (quote5 && typeof quote5 === "string") resolvedFields.quote = quote5;
     if (phrase && typeof phrase === "string") resolvedFields.phrase = phrase;
+    if (text2 && typeof text2 === "string") resolvedFields.text = text2;
     if (title && typeof title === "string") resolvedFields.title = title;
     if (brand && typeof brand === "string") resolvedFields.brand = brand;
     if (bullet1 && typeof bullet1 === "string") resolvedFields.bullet1 = bullet1;
     if (bullet2 && typeof bullet2 === "string") resolvedFields.bullet2 = bullet2;
     if (description && typeof description === "string") resolvedFields.description = description;
+    if (Array.isArray(terms) && terms.length > 0) {
+      terms.forEach((t, i) => {
+        if (typeof t === "string" && t.trim()) {
+          resolvedFields[`term_${i + 1}`] = t.trim();
+        }
+      });
+    }
     if (Object.keys(resolvedFields).length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Missing fields to check. Please provide at least one of: phrase, title, brand, bullet1, bullet2, description (either top-level or inside a "fields" object).'
+        error: 'Missing fields to check. Please provide at least one of: quote, phrase, text, title, brand, bullet1, bullet2, description, terms (array), or inside a "fields" object.'
       });
     }
     const result2 = await TrademarkService.checkBatchFields({

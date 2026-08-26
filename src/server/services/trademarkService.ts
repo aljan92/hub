@@ -48,13 +48,18 @@ export interface BatchCheckResult {
   success: boolean;
   safe: boolean;
   hasInfringementClass25: boolean;
+  affectedClasses: string[];
   blockedProducts: string[];
   officesChecked: TrademarkOffice[];
   summary: {
     totalHits: number;
     verdict: 'SAFE_ALL' | 'SAFE_FOR_APPAREL' | 'NEEDS_AUDIT' | 'REJECTED_CLASS_25';
     message: string;
+    exactPhraseHitsCount: number;
+    keywordHitsCount: number;
   };
+  exactPhraseHits: TrademarkHit[];
+  keywordHits: TrademarkHit[];
   fieldResults: Record<string, FieldCheckResult>;
 }
 
@@ -557,17 +562,51 @@ export class TrademarkService {
       message = 'Keine aktiven Schutzrechte gefunden. Listing ist sauber ✓';
     }
 
+    const rawInputPhrases = new Set<string>();
+    for (const rawValue of Object.values(fields)) {
+      if (rawValue && typeof rawValue === 'string') {
+        const tr = rawValue.trim().toLowerCase();
+        if (tr.length > 0) rawInputPhrases.add(tr);
+      }
+    }
+
+    const exactPhraseHits: TrademarkHit[] = [];
+    const keywordHits: TrademarkHit[] = [];
+    const affectedClassesSet = new Set<string>();
+    const seenHitKeys = new Set<string>();
+
+    for (const [term, hits] of Object.entries(globalHits)) {
+      for (const hit of hits) {
+        const uniqueKey = `${hit.source}-${hit.trademark}-${hit.classNumber}-${hit.term}`;
+        if (seenHitKeys.has(uniqueKey)) continue;
+        seenHitKeys.add(uniqueKey);
+
+        (hit.classes || []).forEach(c => affectedClassesSet.add(c));
+
+        if (rawInputPhrases.has(term.toLowerCase())) {
+          exactPhraseHits.push(hit);
+        } else {
+          keywordHits.push(hit);
+        }
+      }
+    }
+
     return {
       success: true,
       safe: !hasBrandTitleClass25,
       hasInfringementClass25: globalHasInfringementClass25,
+      affectedClasses: Array.from(affectedClassesSet).sort((a, b) => Number(a) - Number(b)),
       blockedProducts: Array.from(globalBlockedProducts),
       officesChecked: offices,
       summary: {
         totalHits: totalGlobalHits,
         verdict,
-        message
+        message,
+        exactPhraseHitsCount: exactPhraseHits.length,
+        keywordHitsCount: keywordHits.length
       },
+      exactPhraseHits,
+      keywordHits,
       fieldResults
     };
   }

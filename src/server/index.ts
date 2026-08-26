@@ -1121,26 +1121,36 @@ app.get('/api/v1/mcp/schema', (req, res) => {
 });
 
 // 10. Dedicated MBA_HUB MCP Trademark Check Endpoint
-app.post('/api/v1/mcp/trademark/check', validateMcpAuth, async (req, res) => {
+app.post(['/api/v1/mcp/trademark/check', '/api/v1/trademark/check', '/api/v1/mcp/trademark', '/api/v1/trademark', '/trademark'], validateMcpAuth, async (req, res) => {
   try {
-    const { offices, marketplace, fields, phrase, title, brand, bullet1, bullet2, description } = req.body;
+    const { offices, marketplace, fields, phrase, quote, text, terms, title, brand, bullet1, bullet2, description } = req.body || {};
 
     // Support both nested { fields: { ... } } and top-level fields
     const resolvedFields: Record<string, string> = {
       ...(fields && typeof fields === 'object' ? fields : {}),
     };
 
+    if (quote && typeof quote === 'string') resolvedFields.quote = quote;
     if (phrase && typeof phrase === 'string') resolvedFields.phrase = phrase;
+    if (text && typeof text === 'string') resolvedFields.text = text;
     if (title && typeof title === 'string') resolvedFields.title = title;
     if (brand && typeof brand === 'string') resolvedFields.brand = brand;
     if (bullet1 && typeof bullet1 === 'string') resolvedFields.bullet1 = bullet1;
     if (bullet2 && typeof bullet2 === 'string') resolvedFields.bullet2 = bullet2;
     if (description && typeof description === 'string') resolvedFields.description = description;
 
+    if (Array.isArray(terms) && terms.length > 0) {
+      terms.forEach((t, i) => {
+        if (typeof t === 'string' && t.trim()) {
+          resolvedFields[`term_${i + 1}`] = t.trim();
+        }
+      });
+    }
+
     if (Object.keys(resolvedFields).length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Missing fields to check. Please provide at least one of: phrase, title, brand, bullet1, bullet2, description (either top-level or inside a "fields" object).'
+        error: 'Missing fields to check. Please provide at least one of: quote, phrase, text, title, brand, bullet1, bullet2, description, terms (array), or inside a "fields" object.'
       });
     }
 
