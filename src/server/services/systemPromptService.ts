@@ -34,17 +34,20 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - Options for "avoid": "Black", "White", or "None".
 
 4. BACKGROUND HANDLING (AUTOMATED TRANSPARENCY / ISOLATION):
-- Is the background color an active artistic design element (e.g. detailed scenery, gradient, texture, non-solid backdrop, complex illustration environment)?
-- "is_design_element": true (Yes) or false (No).
-- "removal_mode": "AUTOMATIC" if the background is a completely uniform, solid, flat single-color backdrop suitable for automated background removal.
-- "removal_mode": "MANUAL" if the background is non-uniform, gradient, textured, illustrated scenery, or part of the design artwork itself requiring manual clipping.
-- "reason": "<Brief explanation why AUTOMATIC or MANUAL was chosen>"
+- STRICT UNIFORMITY RULE:
+  * "AUTOMATIC" is ONLY PERMITTED if the entire background is 100% flat, completely solid, single uniform RGB hex color from edge to edge and corner to corner (e.g. flat pure black #000000 or flat pure white #ffffff) with ZERO texture, ZERO gradient, ZERO vignetting, ZERO lighting falloff, and NO radial glow.
+  * "MANUAL" MUST BE CHOSEN if the background has ANY subtle shading, vignette (darker edges/corners, lighter center), radial glow, texture, brush strokes, light rays blending into the background, or non-uniform color variations across the canvas.
+- "is_design_element": true if background has gradients, textures, vignette, or scenery; false ONLY if 100% solid flat single color.
+- "removal_mode": "AUTOMATIC" (only for 100% solid flat single color) or "MANUAL" (for any gradient, vignette, texture, shading, or complex background).
+- "reason": "<Explicit explanation of background uniformity vs gradient/vignette/texture>"
 
 5. COLOR COUNT ESTIMATION (VECTORIZATION MAX COLORS):
-- Estimate how many distinct, sensible colors are visible in the graphic design artwork (excluding any solid background to be removed).
+- CRITICAL RULE: Count ALL distinct sensible colors across the ENTIRE image, MANDATORILY INCLUDING THE BACKGROUND COLOR(S)!
+  * Reason: Vectorizer.ai vectorizes the whole image first (including the background) before transparency is applied. If background colors are omitted, the vectorizer will crush or blend necessary palette shades.
+  * Example: If graphic has Ivory (1) and Gold (2) on a Dark Blue (3) background, the count MUST BE AT LEAST 3 colors! If there is a gradient, shadow, or secondary accent, count that as well (e.g. 4 or 5 colors).
 - Range: Integer between 1 and 12 (maximum 12 colors).
 - "color_count": Integer from 1 to 12.
-- "reason": "<Brief explanation of dominant visible colors in the artwork>"
+- "reason": "<List all counted colors including background color and artwork colors, e.g. 'Ivory typography, gold accents/outlines, and dark blue background = 3-4 colors'>"
 
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
@@ -71,8 +74,8 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
     "reason": "<Brief explanation>"
   },
   "color_analysis": {
-    "color_count": 2,
-    "reason": "<Brief explanation of dominant visible colors in the artwork>"
+    "color_count": 3,
+    "reason": "<Brief explanation of dominant visible colors in the entire image including background>"
   },
   "overall_verdict": "APPROVED"
 }`;
