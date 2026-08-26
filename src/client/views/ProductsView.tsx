@@ -108,9 +108,14 @@ export const ProductsView: React.FC = () => {
         if (data.stats) setStats(data.stats);
         if (data.scannerState) setScannerState(data.scannerState);
 
-        // Auto-select first product if none selected
-        if (!selectedProductId && data.catalog.products && data.catalog.products.length > 0) {
-          setSelectedProductId(data.catalog.products[0].id);
+        // Auto-select first product only if no valid product is currently selected
+        if (data.catalog.products && data.catalog.products.length > 0) {
+          setSelectedProductId(prev => {
+            if (prev && data.catalog.products.some((p: MerchProduct) => p.id === prev)) {
+              return prev; // Keep user's active selection
+            }
+            return data.catalog.products[0].id;
+          });
         }
       }
     } catch (err) {
