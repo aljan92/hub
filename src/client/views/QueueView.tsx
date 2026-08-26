@@ -327,13 +327,7 @@ export const QueueView: React.FC = () => {
             <div>
               <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
                 Upload Queue &amp; Slot-Optimizer
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30">
-                  Phase 6 Upload Worker
-                </span>
               </h1>
-              <p className="text-xs text-slate-400">
-                Intelligentes Slot-Balancing, Kaskaden-Kürzung und vollautomatisierter Playwright-Upload in Session 2
-              </p>
             </div>
           </div>
         </div>
@@ -343,11 +337,10 @@ export const QueueView: React.FC = () => {
           {/* Live Screencast Button */}
           <button
             onClick={() => setIsScreencastOpen(true)}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700/80 flex items-center space-x-2 transition-all shadow-sm"
+            className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700/80 flex items-center justify-center transition-all shadow-sm"
             title="Session 2 Live-Screencast ansehen"
           >
             <Monitor className="w-4 h-4 text-accent-cyan" />
-            <span>Screencast (Session 2)</span>
           </button>
 
           {/* Mode Selector */}
