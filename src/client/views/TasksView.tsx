@@ -157,6 +157,7 @@ export const TasksView: React.FC = () => {
   const [selectedAudience, setSelectedAudience] = useState('Men, Women');
   const [selectedAvoidColor, setSelectedAvoidColor] = useState('Keine');
   const [selectedBgMode, setSelectedBgMode] = useState('Nein (Auto Freistellen)');
+  const [selectedMaxColors, setSelectedMaxColors] = useState<number>(2);
   const [editablePrompt, setEditablePrompt] = useState('');
   const [showImageZoom, setShowImageZoom] = useState(false);
 
@@ -296,6 +297,7 @@ export const TasksView: React.FC = () => {
       setSelectedAudience(activeTask.customAnswers?.audience || targetGroup);
       setSelectedAvoidColor(activeTask.customAnswers?.avoidColor || pred?.avoid_product_colors?.avoid || 'Keine');
       setSelectedBgMode(activeTask.customAnswers?.reuseBackground || (pred?.background_analysis?.removal_mode === 'MANUAL' ? 'Ja (Hintergrund behalten)' : 'Nein (Auto Freistellen)'));
+      setSelectedMaxColors(activeTask.customAnswers?.maxColors ?? pred?.color_analysis?.color_count ?? 2);
       setEditablePrompt(activeTask.resultPrompt || activeTask.payload?.quote || '');
 
       // TM Review Listing fields
@@ -337,7 +339,8 @@ export const TasksView: React.FC = () => {
       const answers = useDefaultAiAnswers ? undefined : {
         audience: selectedAudience,
         avoidColor: selectedAvoidColor,
-        reuseBackground: selectedBgMode
+        reuseBackground: selectedBgMode,
+        maxColors: selectedMaxColors
       };
 
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/submit-design-review`, {
@@ -867,6 +870,35 @@ export const TasksView: React.FC = () => {
                                 {val}
                               </button>
                             ))}
+                          </div>
+                        </div>
+
+                        {/* Question 5: Max Colors for Vectorization */}
+                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-slate-200">5. Maximale Anzahl an Farben (Vektorisierung)</span>
+                            <span className="text-[10px] text-cyan-400 font-mono">
+                              KI: {activeTask.analysisResult?.color_analysis?.color_count ? `${activeTask.analysisResult.color_analysis.color_count} Farben` : '2 Farben'}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 items-center">
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => setSelectedMaxColors(num)}
+                                className={`w-7 h-7 text-xs font-semibold rounded-lg border transition-all flex items-center justify-center ${
+                                  selectedMaxColors === num
+                                    ? 'bg-cyan-600 text-white border-cyan-500 shadow-md scale-105'
+                                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                                }`}
+                              >
+                                {num}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            Wird als <code className="text-slate-400 font-mono">processing.max_colors</code> an Vectorizer.ai übergeben (max. 12).
                           </div>
                         </div>
                       </div>

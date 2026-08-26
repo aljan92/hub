@@ -1517,6 +1517,13 @@ Please audit the listing based on your compliance rules:
               removal_mode: params.answers.reuseBackground.includes('Nein') ? 'AUTOMATIC' : 'MANUAL'
             };
           }
+          if (params.answers.maxColors) {
+            task.analysisResult.color_analysis = {
+              ...(task.analysisResult.color_analysis || {}),
+              color_count: params.answers.maxColors,
+              reason: 'Manuell in Tasks angepasst'
+            };
+          }
         }
       }
 

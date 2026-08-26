@@ -217232,6 +217232,12 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - If false ("No"), automated background removal (magic wand / chroma key) can be safely applied.
 - If true ("Yes"), manual clipping / isolation by the user is required.
 
+5. COLOR COUNT ESTIMATION (VECTORIZATION MAX COLORS):
+- Estimate how many distinct, sensible colors are visible in the graphic design artwork (excluding any solid background to be removed).
+- Range: Integer between 1 and 12 (maximum 12 colors).
+- "color_count": Integer from 1 to 12.
+- "reason": "<Brief explanation of dominant visible colors in the artwork>"
+
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
 {
@@ -217255,6 +217261,10 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
     "background_color_detected": "<Detected background color>",
     "removal_mode": "AUTOMATIC",
     "reason": "<Brief explanation>"
+  },
+  "color_analysis": {
+    "color_count": 2,
+    "reason": "<Brief explanation of dominant visible colors in the artwork>"
   },
   "overall_verdict": "APPROVED"
 }`;
@@ -219058,6 +219068,13 @@ Please audit the listing based on your compliance rules:
             task.analysisResult.background_analysis = {
               ...task.analysisResult.background_analysis || {},
               removal_mode: params2.answers.reuseBackground.includes("Nein") ? "AUTOMATIC" : "MANUAL"
+            };
+          }
+          if (params2.answers.maxColors) {
+            task.analysisResult.color_analysis = {
+              ...task.analysisResult.color_analysis || {},
+              color_count: params2.answers.maxColors,
+              reason: "Manuell in Tasks angepasst"
             };
           }
         }

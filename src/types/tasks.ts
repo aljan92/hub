@@ -75,6 +75,7 @@ export interface DesignTaskLog {
     audience?: string;
     avoidColor?: string;
     reuseBackground?: string;
+    maxColors?: number;
     notes?: string;
   };
   listingResult?: any;
