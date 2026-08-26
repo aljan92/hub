@@ -471,20 +471,15 @@ export const QueueView: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Title & Metadata */}
-                      <div>
+                      {/* Title */}
+                      <div className="max-w-xl">
                         <div className="flex items-center space-x-2">
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
                             #{index + 1}
                           </span>
-                          <h3 className="text-sm font-bold text-slate-100">{item.designTitle}</h3>
-                        </div>
-                        <div className="text-xs text-slate-400 mt-0.5 flex items-center space-x-2">
-                          <span className="font-semibold text-slate-300">Brand:</span>
-                          <span>{item.brand || '—'}</span>
-                          <span className="text-slate-600">•</span>
-                          <span className="font-semibold text-slate-300">Nische:</span>
-                          <span>{item.niche || '—'}</span>
+                          <h3 className="text-sm font-bold text-slate-100 leading-snug" title={item.title || item.designTitle}>
+                            {item.title || item.designTitle}
+                          </h3>
                         </div>
                       </div>
                     </div>
