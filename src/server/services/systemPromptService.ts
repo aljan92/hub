@@ -34,12 +34,12 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - Options for "avoid": "Black", "White", or "None".
 
 4. BACKGROUND HANDLING (AUTOMATED TRANSPARENCY / ISOLATION):
-- STRICT UNIFORMITY RULE:
-  * "AUTOMATIC" is ONLY PERMITTED if the entire background is 100% flat, completely solid, single uniform RGB hex color from edge to edge and corner to corner (e.g. flat pure black #000000 or flat pure white #ffffff) with ZERO texture, ZERO gradient, ZERO vignetting, ZERO lighting falloff, and NO radial glow.
-  * "MANUAL" MUST BE CHOSEN if the background has ANY subtle shading, vignette (darker edges/corners, lighter center), radial glow, texture, brush strokes, light rays blending into the background, or non-uniform color variations across the canvas.
-- "is_design_element": true if background has gradients, textures, vignette, or scenery; false ONLY if 100% solid flat single color.
-- "removal_mode": "AUTOMATIC" (only for 100% solid flat single color) or "MANUAL" (for any gradient, vignette, texture, shading, or complex background).
-- "reason": "<Explicit explanation of background uniformity vs gradient/vignette/texture>"
+- MANDATORY CORNER & BORDER INSPECTION:
+  * Carefully examine the 4 outer corners, top/bottom edges, and perimeter of the canvas under high attention.
+  * Check for subtle textures: Leather crackles/craquelé, paper grain, canvas weave, noise, grunge, brush strokes, starfield specks, or vignetting (edges/corners darker or colored differently than the center).
+  * If ANY non-flat texture, grain, craquelé, vignette, radial glow, or non-uniform shading exists -> you MUST set "removal_mode": "MANUAL" and "is_design_element": true!
+  * ONLY set "AUTOMATIC" and "is_design_element": false if the entire background is 100% flat, completely solid single digital vector hex color with ZERO surface texture and ZERO gradient across all 4 corners.
+- "reason": "<Explicitly describe the background surface: flat solid color vs textured/vignetted/gradient>"
 
 5. COLOR COUNT ESTIMATION (VECTORIZATION MAX COLORS):
 - CRITICAL RULE: Count ALL distinct sensible colors across the ENTIRE image, MANDATORILY INCLUDING THE BACKGROUND COLOR(S)!
