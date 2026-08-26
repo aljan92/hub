@@ -977,6 +977,30 @@ app.get('/api/v1/designs/svg-original/:taskId', (req, res) => {
   res.status(404).send('Original SVG not found');
 });
 
+// 8.5 MBA Print-PNG (4500x5400) Serving Endpoint
+app.get('/api/v1/designs/mba-png/:taskId', (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'no-cache');
+    return fs.createReadStream(filePath).pipe(res);
+  }
+  res.status(404).send('MBA PNG not found');
+});
+
+// 8.6 4-Panel Multifarben Verification Image Serving Endpoint
+app.get('/api/v1/designs/4panel/:taskId', (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_4panel.png`);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'no-cache');
+    return fs.createReadStream(filePath).pipe(res);
+  }
+  res.status(404).send('4-Panel image not found');
+});
+
 // 8.2 Hermes REST Webhook Endpoint (Task Submission)
 app.post('/api/v1/hermes/task', async (req, res) => {
   const payload = req.body || {};

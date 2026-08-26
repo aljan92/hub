@@ -6,6 +6,8 @@ import { IdeogramService } from './ideogramService';
 import { TrademarkService } from './trademarkService';
 import { BannedWordsService } from './bannedWordsService';
 import { VectorizerService } from './vectorizerService';
+import { SvgRenderService } from './svgRenderService';
+import { LLMService } from './llmService';
 
 export * from '../../types/tasks';
 import { 
@@ -1395,26 +1397,151 @@ Please audit the listing based on your compliance rules:
         }
       });
 
-      // 3. Task an Tasks-Workspace übergeben für Checkpoint 4 (SVG Hintergrund & Vektor-Prüfung)
-      this.addEvent(taskId, {
-        timestamp: new Date().toISOString(),
-        type: 'TASK_HANDOFF',
-        title: `Übergeben an Tasks (Checkpoint 4: SVG Vektor & Hintergrund-Prüfung)`,
-        content: {
-          checkpoint: 'SVG_REVIEW',
-          svgUrl: localSvgUrl,
-          maxColorsUsed: maxColors,
-          reason: 'Vektorisierung abgeschlossen. Wartet auf Prüfung & Hintergrundentfernung in Tasks.'
+      // 3. Check if automatic background removal is requested
+      const bgAnswer = task.customAnswers?.reuseBackground || '';
+      const bgAnalysis = task.analysisResult?.background_analysis || {};
+      const isManualBg = bgAnswer.includes('Ja') || bgAnswer.includes('behalten') || bgAnalysis.removal_mode === 'MANUAL';
+      const isAutoBg = !isManualBg;
+
+      if (isAutoBg) {
+        console.log(`[TaskLogService] ⚡ Wende Auto BG Remove für Task ${taskId} an...`);
+        const bgResult = await SvgRenderService.autoRemoveCornerBackground(svgText);
+        if (bgResult.success && bgResult.removedCount > 0) {
+          svgText = bgResult.modifiedSvg;
+          fs.writeFileSync(svgFilePath, svgText, 'utf-8');
+          task.svgContent = svgText;
+
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'SVG_EDIT_RESPONSE',
+            title: `Auto BG Remove angewendet (${bgResult.removedCount} Hintergrund-Elemente entfernt)`,
+            content: {
+              removedElementsCount: bgResult.removedCount,
+              method: 'Auto Corner Detection'
+            }
+          });
         }
-      });
 
-      this.updateTaskStatus(taskId, {
-        status: 'AWAITING_SVG_REVIEW',
-        checkpoint: 'SVG_REVIEW',
-        hasError: false
-      });
+        // Render 4-Panel Test Image for Vision Audit
+        console.log(`[TaskLogService] 🖼️ Rendere 4-Panel Multifarben-Testbild für Task ${taskId}...`);
+        const fourPanelFilename = `${cleanId}_4panel.png`;
+        const fourPanelFilePath = path.join(designsDir, fourPanelFilename);
+        const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
+        fs.writeFileSync(fourPanelFilePath, fourPanelBuffer);
 
-      console.log(`[TaskLogService] 📐 Vektorisierung für Task ${taskId} erfolgreich in ${latencyMs}ms (Farben: ${maxColors}) -> Wartet auf SVG-Prüfung in Tasks ✓`);
+        const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+        task.localFourPanelImagePath = fourPanelFilePath;
+        task.fourPanelImageUrl = fourPanelUrl;
+
+        // Log: Senden an LLM Vision zur 4-Panel Cutout-Prüfung
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'SVG_AUDIT_REQUEST',
+          title: `Senden an LLM Vision (4-Panel Cutout-Prüfung auf Weiß/Schwarz/Rot/Slate)`,
+          content: {
+            fourPanelImageUrl: fourPanelUrl,
+            quote: task.payload?.quote
+          },
+          metadata: {
+            provider: 'OpenRouter Vision'
+          }
+        });
+
+        // Run LLM Cutout Audit
+        console.log(`[TaskLogService] 🤖 Führe LLM Vision Cutout-Audit für Task ${taskId} durch...`);
+        const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
+        task.svgAuditResult = auditResult;
+
+        // Log: Empfangen von LLM Vision Cutout Audit
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'SVG_AUDIT_RESPONSE',
+          title: `Empfangen von LLM Vision (${auditResult.cutout_verdict === 'APPROVED' ? 'Cutout Freigegeben ✓' : 'Korrektur nötig ⚠️'})`,
+          content: {
+            verdict: auditResult.cutout_verdict,
+            backgroundClean: auditResult.background_removed_cleanly,
+            detectedIssues: auditResult.detected_issues,
+            explanation: auditResult.explanation,
+            fourPanelImageUrl: fourPanelUrl
+          },
+          metadata: {
+            provider: 'OpenRouter Vision',
+            latencyMs: auditResult.latencyMs,
+            tokens: auditResult.tokens
+          }
+        });
+
+        if (auditResult.cutout_verdict === 'APPROVED') {
+          // Render Final MBA Print PNG (4500x5400 px, 300 DPI, Transparent)
+          console.log(`[TaskLogService] 🖨️ Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) für Task ${taskId}...`);
+          const mbaFilename = `${cleanId}_mba.png`;
+          const mbaFilePath = path.join(designsDir, mbaFilename);
+          const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgText);
+          fs.writeFileSync(mbaFilePath, mbaBuffer);
+
+          const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}`;
+          task.localMbaPngPath = mbaFilePath;
+          task.mbaPngUrl = mbaUrl;
+
+          this.updateTaskStatus(taskId, {
+            status: 'COMPLETED',
+            checkpoint: undefined,
+            hasError: false
+          });
+
+          console.log(`[TaskLogService] 🎉 Task ${taskId} vollautonom freigestellt, geprüft & als MBA PNG abgeschlossen ✓`);
+        } else {
+          // AI found remaining background or issues -> Route to Tasks (Checkpoint 4) for quick manual fix!
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'TASK_HANDOFF',
+            title: `Übergeben an Tasks (Checkpoint 4: Manuelle Nachkorrektur empfohlen)`,
+            content: {
+              checkpoint: 'SVG_REVIEW',
+              reason: auditResult.explanation,
+              detectedIssues: auditResult.detected_issues,
+              fourPanelImageUrl: fourPanelUrl,
+              svgUrl: localSvgUrl
+            }
+          });
+
+          this.updateTaskStatus(taskId, {
+            status: 'AWAITING_SVG_REVIEW',
+            checkpoint: 'SVG_REVIEW',
+            hasError: false
+          });
+
+          console.log(`[TaskLogService] ⚠️ Task ${taskId}: KI empfiehlt manuelle Korrektur -> In Tasks übergeben ✓`);
+        }
+      } else {
+        // Manual mode explicitly requested
+        try {
+          const fourPanelFilename = `${cleanId}_4panel.png`;
+          const fourPanelFilePath = path.join(designsDir, fourPanelFilename);
+          const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
+          fs.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+          task.localFourPanelImagePath = fourPanelFilePath;
+          task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+        } catch (e) {}
+
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'TASK_HANDOFF',
+          title: `Übergeben an Tasks (Checkpoint 4: Manuelle SVG-Prüfung gewünscht)`,
+          content: {
+            checkpoint: 'SVG_REVIEW',
+            svgUrl: localSvgUrl,
+            maxColorsUsed: maxColors,
+            reason: 'Manueller Hintergrund-Modus in Checkpoint 2 gewählt.'
+          }
+        });
+
+        this.updateTaskStatus(taskId, {
+          status: 'AWAITING_SVG_REVIEW',
+          checkpoint: 'SVG_REVIEW',
+          hasError: false
+        });
+      }
     } catch (err: any) {
       const latencyMs = Date.now() - start;
       console.error(`[TaskLogService] Fehler bei der Vektorisierung für Task ${taskId}:`, err);
@@ -1581,6 +1708,22 @@ Please audit the listing based on your compliance rules:
         console.error(`[TaskLogService] Retry Vectorization failed for task ${taskId}:`, err);
       });
       return { success: true, message: 'Vectorizer.ai Vektorisierung neu gestartet.' };
+    }
+
+    if (stepType === 'SVG_AUDIT_REQUEST' || stepType === 'SVG_REVIEW') {
+      if (typeof eventIndex !== 'number') {
+        const lastAuditIdx = currentTask.events.findIndex(e => e.type === 'SVG_AUDIT_REQUEST' || e.type === 'SVG_EDIT_REQUEST');
+        if (lastAuditIdx !== -1) {
+          currentTask.events = currentTask.events.slice(0, lastAuditIdx);
+        }
+      }
+      currentTask.status = 'AWAITING_SVG_REVIEW';
+      currentTask.checkpoint = 'SVG_REVIEW';
+      currentTask.hasError = false;
+      currentTask.errorDetails = undefined;
+      this.saveLogs(logs);
+      this.emitUpdate(currentTask);
+      return { success: true, message: 'In den manuellen SVG-Editor (Tasks Checkpoint 4) übergeben.' };
     }
 
     throw new Error(`Unbekannter Step-Typ: ${stepType}`);
@@ -1904,6 +2047,24 @@ Please audit the listing based on your compliance rules:
         task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
       }
 
+      // Render Final MBA Master-PNG (4500x5400 px, 300 DPI) & 4-Panel Image
+      const finalSvg = task.svgContent || params.editedSvgContent || '';
+      try {
+        const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
+        const mbaFilePath = path.join(designsDir, `${cleanId}_mba.png`);
+        fs.writeFileSync(mbaFilePath, mbaBuffer);
+        task.localMbaPngPath = mbaFilePath;
+        task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}`;
+
+        const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
+        const fourPanelFilePath = path.join(designsDir, `${cleanId}_4panel.png`);
+        fs.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+        task.localFourPanelImagePath = fourPanelFilePath;
+        task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+      } catch (e: any) {
+        console.warn(`[TaskLogService] Warning rendering final PNGs for task ${taskId}:`, e);
+      }
+
       task.status = 'COMPLETED';
       task.checkpoint = undefined;
       task.hasError = false;
@@ -1911,19 +2072,21 @@ Please audit the listing based on your compliance rules:
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'SVG_EDIT_RESPONSE',
-        title: `SVG Design & Vektor final freigegeben (Human Loop)`,
+        title: `SVG Design & MBA Print-PNG final freigegeben (Human Loop)`,
         content: {
           verdict: 'APPROVED',
           svgUrl: task.svgUrl,
+          mbaPngUrl: task.mbaPngUrl,
+          fourPanelImageUrl: task.fourPanelImageUrl,
           svgLength: (task.svgContent || params.editedSvgContent || '').length,
-          message: 'Vektorgrafik geprüft und für den Upload freigegeben.'
+          message: 'Vektorgrafik geprüft und als MBA Print-PNG (4500x5400 px) für den Upload freigegeben.'
         }
       });
 
       this.saveLogs(this.loadLogs());
       this.emitUpdate(task);
 
-      return { success: true, message: 'SVG Vektorgrafik erfolgreich freigegeben und abgeschlossen.' };
+      return { success: true, message: 'SVG & MBA Print-PNG erfolgreich freigegeben und abgeschlossen.' };
     }
 
     if (params.action === 'REGENERATE_VECTOR') {

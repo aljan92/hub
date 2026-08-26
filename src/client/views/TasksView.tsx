@@ -1220,6 +1220,41 @@ export const TasksView: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* AI Cutout Audit Warning (if flagged) */}
+                    {activeTask.svgAuditResult && activeTask.svgAuditResult.cutout_verdict === 'REJECTED' && (
+                      <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-3.5 space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2 text-amber-300 font-semibold">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                            <span>KI Cutout-Audit: Manuelle Nacharbeit empfohlen</span>
+                          </div>
+                          {activeTask.fourPanelImageUrl && (
+                            <a
+                              href={activeTask.fourPanelImageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] font-semibold text-cyan-300 hover:underline flex items-center gap-1"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>4-Panel Kontrollbild ansehen</span>
+                            </a>
+                          )}
+                        </div>
+                        <p className="text-slate-300 text-[11px] leading-relaxed">
+                          {activeTask.svgAuditResult.explanation}
+                        </p>
+                        {Array.isArray(activeTask.svgAuditResult.detected_issues) && activeTask.svgAuditResult.detected_issues.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {activeTask.svgAuditResult.detected_issues.map((issue: string, idx: number) => (
+                              <span key={idx} className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-500/30 text-[10px] font-mono">
+                                ⚠️ {issue}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* SvgEditor Component */}
                     <SvgEditor
                       taskId={activeTask.id}

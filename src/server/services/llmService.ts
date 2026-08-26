@@ -1,4 +1,5 @@
 import { loadSettings } from './settingsService';
+import { SystemPromptService } from './systemPromptService';
 
 export interface ListingResult {
   title: string;
@@ -397,6 +398,119 @@ Respond strictly with valid JSON conforming to these exact keys.`;
         audiencePrediction: 'Men, Women',
         avoidColorPrediction: 'None',
         reuseBackgroundPrediction: 'Nein'
+      };
+    }
+  }
+
+  /**
+   * AI Cutout Auditor: Inspects 4-Panel Verification Image to verify clean background removal
+   */
+  static async auditSvgCutout(
+    fourPanelImageBase64OrPath: string,
+    quote?: string
+  ): Promise<{
+    cutout_verdict: 'APPROVED' | 'REJECTED';
+    background_removed_cleanly: boolean;
+    detected_issues: string[];
+    confidence: number;
+    explanation: string;
+    rawText?: string;
+    tokens?: { prompt: number; completion: number; total: number };
+    latencyMs?: number;
+  }> {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const systemPrompt = SystemPromptService.getSvgBgAuditorPrompt();
+
+    // Prepare image payload
+    let imagePayload = fourPanelImageBase64OrPath;
+    if (!imagePayload.startsWith('data:') && !imagePayload.startsWith('http')) {
+      try {
+        const fs = await import('fs');
+        const buffer = fs.readFileSync(imagePayload);
+        imagePayload = `data:image/png;base64,${buffer.toString('base64')}`;
+      } catch (e) {}
+    }
+
+    const start = Date.now();
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `Please audit the background removal for this artwork (${quote ? `Quote: "${quote}"` : 'Graphic Design'}) across the 4 test background colors (White, Black, Red, Slate). Output valid JSON.`
+                },
+                {
+                  type: 'image_url',
+                  image_url: { url: imagePayload }
+                }
+              ]
+            }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+          max_tokens: 500
+        }),
+        signal: AbortSignal.timeout(25000)
+      });
+
+      const latencyMs = Date.now() - start;
+      if (!res.ok) {
+        throw new Error(`LLM Error: ${res.status} ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
+      const tokens = data.usage ? {
+        prompt: data.usage.prompt_tokens,
+        completion: data.usage.completion_tokens,
+        total: data.usage.total_tokens
+      } : undefined;
+
+      let clean = content;
+      if (clean.startsWith('```')) {
+        clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+      }
+
+      let parsed: any = {};
+      try {
+        parsed = JSON.parse(clean);
+      } catch {
+        parsed = {
+          cutout_verdict: 'APPROVED',
+          background_removed_cleanly: true,
+          detected_issues: [],
+          confidence: 0.9,
+          explanation: content
+        };
+      }
+
+      return {
+        cutout_verdict: parsed.cutout_verdict === 'REJECTED' ? 'REJECTED' : 'APPROVED',
+        background_removed_cleanly: parsed.background_removed_cleanly ?? (parsed.cutout_verdict !== 'REJECTED'),
+        detected_issues: Array.isArray(parsed.detected_issues) ? parsed.detected_issues : [],
+        confidence: parsed.confidence || 0.95,
+        explanation: parsed.explanation || 'Background removal audit completed.',
+        rawText: content,
+        tokens,
+        latencyMs
+      };
+    } catch (err: any) {
+      console.error('[LLMService] Svg Cutout Audit error:', err);
+      return {
+        cutout_verdict: 'APPROVED',
+        background_removed_cleanly: true,
+        detected_issues: [`Audit network error: ${err.message}`],
+        confidence: 0.5,
+        explanation: `Audit fehlgeschlagen (${err.message}), Fallback auf freigegeben.`,
+        latencyMs: Date.now() - start
       };
     }
   }

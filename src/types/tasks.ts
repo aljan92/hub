@@ -40,6 +40,8 @@ export type EventType =
   | 'VECTORIZE_RESPONSE'
   | 'SVG_EDIT_REQUEST'
   | 'SVG_EDIT_RESPONSE'
+  | 'SVG_AUDIT_REQUEST'
+  | 'SVG_AUDIT_RESPONSE'
   | 'ERROR';
 
 export interface EventMetadata {
@@ -81,6 +83,11 @@ export interface DesignTaskLog {
   svgUrl?: string;
   localSvgPath?: string;
   svgContent?: string;
+  mbaPngUrl?: string;
+  localMbaPngPath?: string;
+  fourPanelImageUrl?: string;
+  localFourPanelImagePath?: string;
+  svgAuditResult?: any;
   analysisResult?: any;
   customAnswers?: {
     audience?: string;
@@ -105,4 +112,5 @@ export type RetryStepType =
   | 'TM_CHECK_REQUEST' 
   | 'TM_REFINE_REQUEST'
   | 'VECTORIZE_REQUEST'
+  | 'SVG_AUDIT_REQUEST'
   | 'SVG_REVIEW';

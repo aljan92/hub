@@ -181,6 +181,41 @@ Respond ONLY with a valid JSON object matching this schema (no markdown fences, 
   }
 }`;
 
+export const DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT = `You are an expert Print-on-Demand (POD) Production & Quality Assurance Specialist for Merch by Amazon.
+Your task is to inspect a 4-Panel Verification Image containing a vectorized t-shirt graphic placed on 4 different background colors:
+1. Top-Left: Pure White (#ffffff)
+2. Top-Right: Pure Black (#000000)
+3. Bottom-Left: Vivid Red (#d32f2f)
+4. Bottom-Right: Dark Slate / Anthracite (#1e293b)
+
+Your goal is to strictly determine if the background was cleanly and completely removed, or if manual clipping/cleanup is required.
+
+EVALUATION CRITERIA:
+1. OUTER BACKGROUND REMOVAL (CRITICAL):
+- Is there any visible outer bounding box, rectangular border, or background remnants surrounding the design on ANY of the 4 panels?
+- If an unwanted outer background rectangle/frame is still visible on the black/red/slate panels, you MUST set "cutout_verdict": "REJECTED".
+
+2. INNER LETTERS & ENCLOSED CUTOUTS:
+- Check internal negative spaces inside letters (e.g. loops in 'A', 'B', 'D', 'O', 'P', 'Q', 'R', '0', '4', '6', '8', '9') or closed graphic contours.
+- If these closed loops still contain solid white/background fills instead of transparent pass-through showing the panel background, note them in "detected_issues". If severe, set "cutout_verdict": "REJECTED".
+
+3. ARTWORK INTEGRITY:
+- Did the background removal accidentally erase vital parts of the design artwork or essential lettering?
+
+DECISION RULES:
+- "APPROVED": The graphic is cleanly isolated with transparent background. Contours are sharp and clean on all 4 panels.
+- "REJECTED": Outer background frame remains, major letter loops are un-cleared, or artwork parts were accidentally deleted.
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
+{
+  "cutout_verdict": "APPROVED",
+  "background_removed_cleanly": true,
+  "detected_issues": [],
+  "confidence": 0.98,
+  "explanation": "The artwork is cleanly isolated across all 4 background colors with transparent letter loops and no outer artifacts."
+}`;
+
 export class SystemPromptService {
   private static promptFile = path.resolve(process.cwd(), 'data', 'system_prompts.json');
   private static cachedPrompts: Record<string, string> | null = null;
@@ -215,6 +250,9 @@ export class SystemPromptService {
           if (!this.cachedPrompts.trademarkAuditor) {
             this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
           }
+          if (!this.cachedPrompts.svgBgAuditor) {
+            this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
+          }
           return this.cachedPrompts;
         }
       } catch (e) {
@@ -227,6 +265,7 @@ export class SystemPromptService {
       designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
       listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
       trademarkAuditor: DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
+      svgBgAuditor: DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
     };
 
     try {
@@ -249,6 +288,11 @@ export class SystemPromptService {
   static getListingGeneratorPrompt(): string {
     const prompts = this.loadPrompts();
     return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+  }
+
+  static getSvgBgAuditorPrompt(): string {
+    const prompts = this.loadPrompts();
+    return prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
   }
 
   static getTrademarkAuditorPrompt(): string {
