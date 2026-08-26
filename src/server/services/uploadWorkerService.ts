@@ -514,12 +514,18 @@ export class UploadWorkerService {
               || editor.querySelector('.color-picker-button')) as HTMLElement;
 
             if (colorBtn) {
-              colorBtn.click();
-              await sleep(400);
+              const isPopoverOpen = colorBtn.hasAttribute('aria-describedby');
+              if (!isPopoverOpen) {
+                colorBtn.click();
+                await sleep(450);
+              }
 
-              const popover = document.querySelector('.sketch-picker, .color-picker-container, ngb-popover-window, color-sketch, .color-picker-popover');
+              const popoverId = colorBtn.getAttribute('aria-describedby');
+              const popover = (popoverId ? document.getElementById(popoverId) : null)
+                || document.querySelector('.sketch-picker, .color-picker-container, ngb-popover-window, color-sketch, .color-picker-popover') as HTMLElement;
+
               if (popover) {
-                let hexInput = popover.querySelector('color-editable-input[label="hex"] input, input[type="text"]') as HTMLInputElement;
+                let hexInput = popover.querySelector('color-editable-input[label="hex"] input, input[aria-label="hex"], input[type="text"]') as HTMLInputElement;
                 if (!hexInput) {
                   const spans = Array.from(popover.querySelectorAll('span'));
                   const hexSpan = spans.find(span => span.textContent?.trim().toLowerCase() === 'hex');
@@ -531,24 +537,54 @@ export class UploadWorkerService {
                   hexInput = popover.querySelector('input') as HTMLInputElement;
                 }
 
+                const cleanHex = params.customBgColor.replace('#', '').toUpperCase();
+
+                // 1. Simulate key typing into the hex input
                 if (hexInput) {
-                  const cleanHex = params.customBgColor.replace('#', '').toUpperCase();
                   hexInput.focus();
-                  hexInput.value = cleanHex;
+                  hexInput.value = '';
                   hexInput.dispatchEvent(new Event('input', { bubbles: true }));
+                  for (let c = 0; c < cleanHex.length; c++) {
+                    const char = cleanHex[c];
+                    hexInput.dispatchEvent(new KeyboardEvent('keydown', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
+                    hexInput.value = cleanHex.slice(0, c + 1);
+                    hexInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    hexInput.dispatchEvent(new KeyboardEvent('keyup', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
+                    await sleep(25);
+                  }
                   hexInput.dispatchEvent(new Event('change', { bubbles: true }));
                   hexInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
                   hexInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
                   hexInput.blur();
-                  await sleep(200);
+                  hexInput.dispatchEvent(new Event('blur', { bubbles: true }));
+                  await sleep(150);
+                }
+
+                // 2. Also click the preset swatch in sketch-picker if Black or White
+                if (cleanHex === '000000' || cleanHex === '000') {
+                  const blackPreset = popover.querySelector('.sketch-swatches div[title="#000000"], .sketch-swatches [style*="rgb(0, 0, 0)"], .sketch-swatches [style*="#000000"], .sketch-swatches span[title="#000000"]') as HTMLElement;
+                  if (blackPreset) {
+                    blackPreset.click();
+                    await sleep(100);
+                  }
+                } else if (cleanHex === 'FFFFFF' || cleanHex === 'FFF') {
+                  const whitePreset = popover.querySelector('.sketch-swatches div[title="#ffffff"], .sketch-swatches [style*="rgb(255, 255, 255)"], .sketch-swatches [style*="#ffffff"], .sketch-swatches span[title="#ffffff"]') as HTMLElement;
+                  if (whitePreset) {
+                    whitePreset.click();
+                    await sleep(100);
+                  }
                 }
 
                 // Close popover
-                const doneBtn = popover.querySelector('button.done-button, button[type="submit"]') as HTMLElement;
-                if (doneBtn) doneBtn.click();
-                else if (colorBtn.hasAttribute('aria-describedby')) colorBtn.click();
-                else document.body.click();
-                await sleep(200);
+                if (colorBtn.hasAttribute('aria-describedby')) {
+                  colorBtn.click();
+                  await sleep(200);
+                } else {
+                  const doneBtn = popover.querySelector('button.done-button, button[type="submit"]') as HTMLElement;
+                  if (doneBtn) doneBtn.click();
+                  else document.body.click();
+                  await sleep(200);
+                }
               }
             }
 
@@ -561,30 +597,81 @@ export class UploadWorkerService {
               directHexInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
           } else {
-            // Swatches mode (Apparel)
-            const colorCheckboxes = Array.from(editor.querySelectorAll('colorcheckbox'));
+            // Swatches mode (Apparel, Jerseys, Hats, Raglan)
+            const colorCheckboxes = Array.from(editor.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]'));
+            const uPid = pid.toUpperCase();
+            const isSoccer = uPid.includes('SOCCER') || uPid.includes('JERSEY_SOCCER');
+            const isBasketball = uPid.includes('BASKETBALL');
+            const isRaglan = uPid.includes('RAGLAN');
+            const isTrucker = uPid.includes('TRUCKER') || uPid.includes('HAT');
+            const isVisor = uPid.includes('VISOR') || uPid.includes('SUN_VISOR');
+
             for (const cb of colorCheckboxes) {
-              const colorClass = Array.from(cb.classList).find(c => c.endsWith('-checkbox')) || '';
+              const colorClass = Array.from(cb.classList).find(c => c.endsWith('-checkbox')) || cb.className || '';
               const colorName = colorClass.replace('-checkbox', '').toLowerCase().replace(/[\s_]+/g, '');
 
               let shouldBeChecked = true;
+
               if (params.avoidColor === 'white') {
-                if (colorName === 'white' || (pid.toUpperCase().includes('RAGLAN') && colorName.includes('white'))) {
+                if (colorName === 'white') {
                   shouldBeChecked = false;
+                } else if (isSoccer) {
+                  // Soccer Jersey: deselect white_black and white_white
+                  if (colorClass.includes('white_black') || colorClass.includes('white_white') || colorName.includes('white_black') || colorName.includes('whitewhite') || colorName === 'white') {
+                    shouldBeChecked = false;
+                  }
+                } else if (isBasketball) {
+                  // Basketball Jersey: deselect white_white
+                  if (colorClass.includes('white_white') || colorName.includes('whitewhite') || colorName === 'white') {
+                    shouldBeChecked = false;
+                  }
+                } else if (isRaglan) {
+                  // Raglan: deselect black_white, dark_heather_white, navy_white, red_white, royal_blue_white and any white combination
+                  if (
+                    colorClass.includes('black_white') ||
+                    colorClass.includes('dark_heather_white') ||
+                    colorClass.includes('navy_white') ||
+                    colorClass.includes('red_white') ||
+                    colorClass.includes('royal_blue_white') ||
+                    colorName.includes('white')
+                  ) {
+                    shouldBeChecked = false;
+                  }
+                } else if (isTrucker || isVisor) {
+                  // Trucker Hat & Sun Visor: deselect all colors containing 'white'
+                  if (colorName.includes('white') || colorClass.includes('white')) {
+                    shouldBeChecked = false;
+                  }
                 }
               } else if (params.avoidColor === 'black') {
                 if (colorName === 'black') {
                   shouldBeChecked = false;
+                } else if (isBasketball) {
+                  // Basketball Jersey: deselect black_white and black_black
+                  if (colorClass.includes('black_white') || colorClass.includes('black_black') || colorName.includes('blackwhite') || colorName === 'black') {
+                    shouldBeChecked = false;
+                  }
+                } else if (isSoccer) {
+                  // Soccer Jersey: deselect any black base
+                  if (colorClass.includes('black_black') || colorClass.includes('black_white') || colorName.includes('black')) {
+                    shouldBeChecked = false;
+                  }
+                } else if (isTrucker || isVisor) {
+                  // Trucker Hat & Sun Visor: deselect all colors containing 'black'
+                  if (colorName.includes('black') || colorClass.includes('black')) {
+                    shouldBeChecked = false;
+                  }
                 }
               }
 
-              const icon = cb.querySelector('i.sci-icon');
-              const isChecked = icon ? icon.classList.contains('checkmark') : false;
+              const icon = cb.querySelector('.sci-icon, i.sci-icon');
+              const isChecked = icon 
+                ? (icon.classList.contains('checkmark') || icon.classList.contains('sci-check-box') || icon.classList.contains('sci-check'))
+                : ((cb.querySelector('input') as HTMLInputElement)?.checked ?? false);
 
               if (isChecked !== shouldBeChecked) {
-                const input = cb.querySelector('input[type="checkbox"]') as HTMLElement;
-                if (input) input.click();
-                else (cb as HTMLElement).click();
+                const input = (cb.querySelector('input[type="checkbox"]') || cb.querySelector('.sci-icon') || cb) as HTMLElement;
+                input.click();
                 await sleep(40);
               }
             }
