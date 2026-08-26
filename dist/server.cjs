@@ -218983,32 +218983,53 @@ var TaskLogService = class {
     this.emitUpdate(task);
     return task;
   }
+  static completeTaskAndEnqueue(task) {
+    task.status = "COMPLETED";
+    task.checkpoint = void 0;
+    task.hasError = false;
+    try {
+      const { QueueService: QueueService2 } = (init_queueService(), __toCommonJS2(queueService_exports));
+      const queueItem = QueueService2.enqueueDesign({
+        taskId: task.id,
+        designTitle: task.resultTitle || task.title || task.payload?.quote || "Design #" + task.id,
+        niche: task.payload?.niche || "",
+        brand: task.resultBrand || task.brand || "",
+        title: task.resultTitle || task.title || "",
+        bullet1: task.resultBullet1 || task.bullet1 || "",
+        bullet2: task.resultBullet2 || task.bullet2 || "",
+        description: task.resultDescription || task.description || "",
+        imagePath: task.localImagePath || "",
+        pngPath: task.localMbaPngPath || ""
+      });
+      this.addEvent(task.id, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TASK_HANDOFF",
+        title: `\u{1F4E6} Design erfolgreich in die Upload-Queue \xFCbergeben`,
+        content: {
+          queueId: queueItem.id,
+          allocatedSlots: queueItem.allocatedSlots,
+          status: queueItem.status,
+          message: `Design mit 4500x5400px Master-PNG und Listing an die Queue \xFCbergeben (${queueItem.allocatedSlots} Slots geplant).`
+        }
+      });
+      console.log(`[TaskLogService] \u{1F4E6} Task ${task.id} erfolgreich in Queue enqueued (${queueItem.allocatedSlots} Slots).`);
+    } catch (err) {
+      console.warn("[TaskLogService] Failed to auto-enqueue completed task:", err.message);
+    }
+    this.saveLogs(this.loadLogs());
+    this.emitUpdate(task);
+  }
   static updateTaskStatus(taskId, updates) {
     const logs = this.loadLogs();
     const task = logs.find((t) => t.id === taskId);
     if (!task) return void 0;
     Object.assign(task, updates);
+    if (updates.status === "COMPLETED" || task.status === "COMPLETED") {
+      this.completeTaskAndEnqueue(task);
+      return task;
+    }
     this.saveLogs(logs);
     this.emitUpdate(task);
-    if (task.status === "COMPLETED" && (task.localMbaPngPath || task.localImagePath)) {
-      try {
-        const { QueueService: QueueService2 } = (init_queueService(), __toCommonJS2(queueService_exports));
-        QueueService2.enqueueDesign({
-          taskId: task.id,
-          designTitle: task.resultTitle || task.title || task.payload?.quote || "Design #" + task.id,
-          niche: task.payload?.niche || "",
-          brand: task.resultBrand || task.brand || "",
-          title: task.resultTitle || task.title || "",
-          bullet1: task.resultBullet1 || task.bullet1 || "",
-          bullet2: task.resultBullet2 || task.bullet2 || "",
-          description: task.resultDescription || task.description || "",
-          imagePath: task.localImagePath || "",
-          pngPath: task.localMbaPngPath || ""
-        });
-      } catch (err) {
-        console.warn("[TaskLogService] Failed to auto-enqueue completed task:", err.message);
-      }
-    }
     return task;
   }
   /**
@@ -220654,9 +220675,6 @@ Please audit the listing based on your compliance rules:
         import_fs77.default.writeFileSync(mbaFilePath, mbaBuffer);
         task.localMbaPngPath = mbaFilePath;
         task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
-        task.status = "COMPLETED";
-        task.checkpoint = void 0;
-        task.hasError = false;
         this.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "SVG_EDIT_RESPONSE",
@@ -220670,9 +220688,8 @@ Please audit the listing based on your compliance rules:
             message: "Vektorgrafik gepr\xFCft, Cutout von Vision-KI freigegeben und MBA Master-PNG (4500x5400 px) erzeugt."
           }
         });
-        this.saveLogs(this.loadLogs());
-        this.emitUpdate(task);
-        return { success: true, message: "Cutout von Vision-KI freigegeben & MBA Master-PNG generiert \u2713" };
+        this.completeTaskAndEnqueue(task);
+        return { success: true, message: "Cutout von Vision-KI freigegeben, MBA Master-PNG generiert & an Queue \xFCbergeben \u2713" };
       } else {
         task.status = "AWAITING_SVG_REVIEW";
         task.checkpoint = "SVG_REVIEW";

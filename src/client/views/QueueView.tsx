@@ -311,36 +311,78 @@ export const QueueView: React.FC = () => {
       </div>
 
       {/* Configuration & Control Panel */}
-      <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-4 text-xs">
-          {/* Upload Schedule Selector */}
-          <div className="flex items-center space-x-2">
+      <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-6 text-xs">
+          {/* Flexible Upload Schedule Selector */}
+          <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 p-2 rounded-xl">
             <Clock className="w-4 h-4 text-slate-400" />
             <span className="text-slate-300 font-medium">Upload Startzeit:</span>
-            <select
-              value={queueState.uploadScheduleTime}
-              onChange={(e) => handleUpdateSettings({ uploadScheduleTime: e.target.value })}
-              className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-semibold focus:outline-none focus:border-accent-cyan"
+
+            {/* Toggle Active / Off */}
+            <button
+              onClick={() => {
+                if (queueState.uploadScheduleTime === 'off') {
+                  handleUpdateSettings({ uploadScheduleTime: '04:00' });
+                } else {
+                  handleUpdateSettings({ uploadScheduleTime: 'off' });
+                }
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+                queueState.uploadScheduleTime !== 'off'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  : 'bg-slate-800 text-slate-400 border-slate-700'
+              }`}
             >
-              {SCHEDULE_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+              {queueState.uploadScheduleTime !== 'off' ? 'Aktiv' : 'Aus (Nur Manuell)'}
+            </button>
+
+            {/* Hours & Minutes Picker (when active) */}
+            {queueState.uploadScheduleTime !== 'off' && (
+              <div className="flex items-center space-x-1">
+                <input
+                  type="time"
+                  value={queueState.uploadScheduleTime}
+                  onChange={(e) => handleUpdateSettings({ uploadScheduleTime: e.target.value || '04:00' })}
+                  className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 font-bold font-mono focus:outline-none focus:border-amber-500"
+                />
+                <span className="text-slate-400 font-medium">Uhr</span>
+              </div>
+            )}
           </div>
 
-          {/* Max Drop Tolerance Slider / Input */}
-          <div className="flex items-center space-x-2">
+          {/* Stepper for Max Drop Tolerance */}
+          <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 p-2 rounded-xl">
             <Scissors className="w-4 h-4 text-amber-400" />
-            <span className="text-slate-300 font-medium">Max. Kürzungs-Toleranz:</span>
-            <select
-              value={queueState.maxDropPerDesign}
-              onChange={(e) => handleUpdateSettings({ maxDropPerDesign: Number(e.target.value) })}
-              className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-amber-300 font-bold font-mono focus:outline-none focus:border-amber-500"
-            >
-              {[0, 5, 6, 8, 10, 12, 15, 20, 25].map(num => (
-                <option key={num} value={num}>max. {num} Slots / Design</option>
-              ))}
-            </select>
+            <span className="text-slate-300 font-medium">Kürzungs-Toleranz:</span>
+
+            <div className="flex items-center space-x-1.5">
+              <button
+                onClick={() => handleUpdateSettings({ maxDropPerDesign: Math.max(0, queueState.maxDropPerDesign - 1) })}
+                className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold border border-slate-700 transition-colors"
+                title="1 Slot weniger kürzen"
+              >
+                -
+              </button>
+
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={queueState.maxDropPerDesign}
+                onChange={(e) => handleUpdateSettings({ maxDropPerDesign: Math.max(0, Math.min(50, Number(e.target.value) || 0)) })}
+                className="w-14 text-center bg-slate-950 border border-slate-700 rounded-lg py-1 text-xs text-amber-300 font-bold font-mono focus:outline-none focus:border-amber-500"
+              />
+
+              <button
+                onClick={() => handleUpdateSettings({ maxDropPerDesign: Math.min(50, queueState.maxDropPerDesign + 1) })}
+                className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold border border-slate-700 transition-colors"
+                title="1 Slot mehr kürzen"
+              >
+                +
+              </button>
+
+              <span className="text-slate-400 text-[11px] pl-1">Slots / Design</span>
+            </div>
           </div>
         </div>
 
