@@ -1192,16 +1192,18 @@ app.post('/api/v1/queue/reorder', (req, res) => {
   }
 });
 
-// Update Queue Settings (Schedule Time, Max Drop, Auto Balance)
+// Update Queue Settings (Schedule Time, Max Drop, Auto Balance, Upload Mode, Draft Products)
 app.patch('/api/v1/queue/settings', (req, res) => {
   try {
-    const { uploadScheduleTime, maxDropPerDesign, autoBalance } = req.body;
+    const { uploadScheduleTime, maxDropPerDesign, autoBalance, uploadMode, draftProductsPerDesign } = req.body;
     const current = loadSettings();
     const updated = {
       ...current,
       queueUploadScheduleTime: uploadScheduleTime !== undefined ? uploadScheduleTime : current.queueUploadScheduleTime,
       queueMaxDropPerDesign: maxDropPerDesign !== undefined ? Number(maxDropPerDesign) : current.queueMaxDropPerDesign,
-      queueAutoBalance: autoBalance !== undefined ? Boolean(autoBalance) : current.queueAutoBalance
+      queueAutoBalance: autoBalance !== undefined ? Boolean(autoBalance) : current.queueAutoBalance,
+      queueUploadMode: uploadMode !== undefined ? uploadMode : current.queueUploadMode,
+      queueDraftProductsPerDesign: draftProductsPerDesign !== undefined ? Number(draftProductsPerDesign) : current.queueDraftProductsPerDesign
     };
     saveSettings(updated);
     const state = QueueService.rebalanceQueue();

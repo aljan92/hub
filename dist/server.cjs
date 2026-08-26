@@ -49902,7 +49902,9 @@ var init_settingsService = __esm2({
       aiAutonomyEnabled: false,
       queueUploadScheduleTime: "off",
       queueMaxDropPerDesign: 10,
-      queueAutoBalance: true
+      queueAutoBalance: true,
+      queueUploadMode: "draft",
+      queueDraftProductsPerDesign: 106
     };
     cachedSettings = null;
   }
@@ -214533,6 +214535,13 @@ var init_productCatalogService = __esm2({
       static getMaxDroppableSlots() {
         return this.calculateMaxDroppableSlotsCount();
       }
+      static getTotalBaseSlotsCount() {
+        let count = 0;
+        for (const prod of this.catalogData.products) {
+          count += (prod.availableMarketplaces || []).length;
+        }
+        return count;
+      }
       /**
        * Enrich color objects with hex preview codes
        */
@@ -214740,6 +214749,13 @@ var init_queueService = __esm2({
       static getState() {
         this.ensureLoaded();
         const settings = loadSettings();
+        const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
+        const maxDrop = settings.queueMaxDropPerDesign ?? 10;
+        const defaultDraftProducts = Math.max(1, maxCatalogSlots);
+        const draftProductsPerDesign = Math.max(
+          Math.max(1, maxCatalogSlots - maxDrop),
+          Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? defaultDraftProducts)
+        );
         const activeItems = this.items.filter((i) => i.status === "UPLOADING" || i.status === "WAITING");
         const scheduledSlotsToday = activeItems.reduce((sum, item) => sum + (item.allocatedSlots || item.totalBaseSlots || 0), 0);
         return {
@@ -214749,9 +214765,12 @@ var init_queueService = __esm2({
           totalDailySlots: this.dailySlotsInfo.total,
           scheduledSlotsToday,
           uploadScheduleTime: settings.queueUploadScheduleTime || "off",
-          maxDropPerDesign: settings.queueMaxDropPerDesign ?? 10,
+          maxDropPerDesign: maxDrop,
           autoBalance: settings.queueAutoBalance ?? true,
-          maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots()
+          maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),
+          uploadMode: settings.queueUploadMode || "draft",
+          draftProductsPerDesign,
+          maxCatalogSlots
         };
       }
       /**
@@ -214932,9 +214951,11 @@ var init_queueService = __esm2({
       static rebalanceQueue(freeSlotsOverride) {
         this.ensureLoaded();
         const settings = loadSettings();
+        const isDraftMode = (settings.queueUploadMode || "draft") === "draft";
         const freeDailySlots = freeSlotsOverride !== void 0 ? freeSlotsOverride : this.dailySlotsInfo.free;
         const maxDrop = settings.queueMaxDropPerDesign ?? 10;
         const droppableProducts = ProductCatalogService.getDroppableProductsOrdered();
+        const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
         if (this.items.length === 0) {
           return this.getState();
         }
@@ -214966,52 +214987,75 @@ var init_queueService = __esm2({
           item.totalBaseSlots = baseSlots;
           item.allocatedSlots = baseSlots;
         }
-        let accumulatedMinSlots = 0;
-        const scheduledWaitingItems = [];
-        const overflowWaitingItems = [];
-        for (const item of waitingItems) {
-          const minRequired = item.isLocked ? item.totalBaseSlots : Math.max(1, item.totalBaseSlots - maxDrop);
-          if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting || scheduledWaitingItems.length === 0) {
-            accumulatedMinSlots += minRequired;
-            scheduledWaitingItems.push(item);
-          } else {
-            overflowWaitingItems.push(item);
+        if (isDraftMode) {
+          const targetDraftProducts = Math.max(
+            Math.max(1, maxCatalogSlots - maxDrop),
+            Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? maxCatalogSlots)
+          );
+          for (const item of waitingItems) {
+            if (item.isLocked) {
+              item.allocatedSlots = item.totalBaseSlots;
+              continue;
+            }
+            const dropsNeeded = Math.max(0, item.totalBaseSlots - targetDraftProducts);
+            for (let d = 0; d < dropsNeeded; d++) {
+              const dropped = this.dropOneSlotFromItem(item, droppableProducts);
+              if (!dropped) break;
+            }
+            let total = 0;
+            for (const prodId in item.activeProductsMap) {
+              total += (item.activeProductsMap[prodId] || []).length;
+            }
+            item.allocatedSlots = total;
           }
-        }
-        const totalRequestedSlots = scheduledWaitingItems.reduce((sum, item) => sum + item.totalBaseSlots, 0);
-        if (totalRequestedSlots > availableSlotsForWaiting && scheduledWaitingItems.length > 0) {
-          let slotsToDropTotal = totalRequestedSlots - availableSlotsForWaiting;
-          const unlockedScheduled = scheduledWaitingItems.filter((i) => !i.isLocked);
-          const dropsPerItem = {};
-          unlockedScheduled.forEach((i) => {
-            dropsPerItem[i.id] = 0;
-          });
-          let progressMade = true;
-          while (slotsToDropTotal > 0 && progressMade && unlockedScheduled.length > 0) {
-            progressMade = false;
-            for (const item of unlockedScheduled) {
-              if (slotsToDropTotal <= 0) break;
-              const currentDrops = dropsPerItem[item.id];
-              if (currentDrops < maxDrop) {
-                const dropped = this.dropOneSlotFromItem(item, droppableProducts);
-                if (dropped) {
-                  dropsPerItem[item.id]++;
-                  slotsToDropTotal--;
-                  progressMade = true;
+        } else {
+          let accumulatedMinSlots = 0;
+          const scheduledWaitingItems = [];
+          const overflowWaitingItems = [];
+          for (const item of waitingItems) {
+            const minRequired = item.isLocked ? item.totalBaseSlots : Math.max(1, item.totalBaseSlots - maxDrop);
+            if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting || scheduledWaitingItems.length === 0) {
+              accumulatedMinSlots += minRequired;
+              scheduledWaitingItems.push(item);
+            } else {
+              overflowWaitingItems.push(item);
+            }
+          }
+          const totalRequestedSlots = scheduledWaitingItems.reduce((sum, item) => sum + item.totalBaseSlots, 0);
+          if (totalRequestedSlots > availableSlotsForWaiting && scheduledWaitingItems.length > 0) {
+            let slotsToDropTotal = totalRequestedSlots - availableSlotsForWaiting;
+            const unlockedScheduled = scheduledWaitingItems.filter((i) => !i.isLocked);
+            const dropsPerItem = {};
+            unlockedScheduled.forEach((i) => {
+              dropsPerItem[i.id] = 0;
+            });
+            let progressMade = true;
+            while (slotsToDropTotal > 0 && progressMade && unlockedScheduled.length > 0) {
+              progressMade = false;
+              for (const item of unlockedScheduled) {
+                if (slotsToDropTotal <= 0) break;
+                const currentDrops = dropsPerItem[item.id];
+                if (currentDrops < maxDrop) {
+                  const dropped = this.dropOneSlotFromItem(item, droppableProducts);
+                  if (dropped) {
+                    dropsPerItem[item.id]++;
+                    slotsToDropTotal--;
+                    progressMade = true;
+                  }
                 }
               }
             }
           }
-        }
-        for (const item of scheduledWaitingItems) {
-          let total = 0;
-          for (const prodId in item.activeProductsMap) {
-            total += (item.activeProductsMap[prodId] || []).length;
+          for (const item of scheduledWaitingItems) {
+            let total = 0;
+            for (const prodId in item.activeProductsMap) {
+              total += (item.activeProductsMap[prodId] || []).length;
+            }
+            item.allocatedSlots = total;
           }
-          item.allocatedSlots = total;
-        }
-        for (const item of overflowWaitingItems) {
-          item.allocatedSlots = item.totalBaseSlots;
+          for (const item of overflowWaitingItems) {
+            item.allocatedSlots = item.totalBaseSlots;
+          }
         }
         this.saveQueue();
         return this.getState();
@@ -223143,13 +223187,15 @@ app.post("/api/v1/queue/reorder", (req, res) => {
 });
 app.patch("/api/v1/queue/settings", (req, res) => {
   try {
-    const { uploadScheduleTime, maxDropPerDesign, autoBalance } = req.body;
+    const { uploadScheduleTime, maxDropPerDesign, autoBalance, uploadMode, draftProductsPerDesign } = req.body;
     const current = loadSettings();
     const updated = {
       ...current,
       queueUploadScheduleTime: uploadScheduleTime !== void 0 ? uploadScheduleTime : current.queueUploadScheduleTime,
       queueMaxDropPerDesign: maxDropPerDesign !== void 0 ? Number(maxDropPerDesign) : current.queueMaxDropPerDesign,
-      queueAutoBalance: autoBalance !== void 0 ? Boolean(autoBalance) : current.queueAutoBalance
+      queueAutoBalance: autoBalance !== void 0 ? Boolean(autoBalance) : current.queueAutoBalance,
+      queueUploadMode: uploadMode !== void 0 ? uploadMode : current.queueUploadMode,
+      queueDraftProductsPerDesign: draftProductsPerDesign !== void 0 ? Number(draftProductsPerDesign) : current.queueDraftProductsPerDesign
     };
     saveSettings(updated);
     const state = QueueService.rebalanceQueue();

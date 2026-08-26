@@ -311,6 +311,14 @@ export class ProductCatalogService {
     return this.calculateMaxDroppableSlotsCount();
   }
 
+  public static getTotalBaseSlotsCount(): number {
+    let count = 0;
+    for (const prod of this.catalogData.products) {
+      count += (prod.availableMarketplaces || []).length;
+    }
+    return count;
+  }
+
   /**
    * Enrich color objects with hex preview codes
    */

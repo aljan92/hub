@@ -24,7 +24,8 @@ import {
   Users, 
   Palette,
   RotateCcw,
-  ListOrdered
+  ListOrdered,
+  Package
 } from 'lucide-react';
 import { BrowserScreencast } from '../components/BrowserScreencast';
 
@@ -43,25 +44,23 @@ interface QueueItem {
     bullet2?: string;
     description?: string;
   }>;
-  fitTypes?: string[];
-  avoidColor?: 'white' | 'black' | 'none';
-  customBackgroundColor?: string;
   brand: string;
   title: string;
-  imagePath: string;
-  pngPath: string;
-  addedAt: string;
-  status: 'WAITING' | 'UPLOADING' | 'COMPLETED' | 'ERROR';
+  status: QueueItemStatus;
   isLocked: boolean;
   allocatedSlots: number;
   totalBaseSlots: number;
   activeProductsMap: Record<string, string[]>;
   droppedSlotsMap: Record<string, string[]>;
   tmBlockedProductIds: string[];
-  errorMessage?: string;
   sortOrder: number;
+  addedAt: string;
   uploadedAt?: string;
   lastUploadAttempt?: string;
+  errorMessage?: string;
+  fitTypes?: string[];
+  avoidColor?: 'white' | 'black' | 'none';
+  customBackgroundColor?: string;
 }
 
 interface QueueState {
@@ -74,6 +73,9 @@ interface QueueState {
   maxDropPerDesign: number;
   autoBalance: boolean;
   maxDroppableCapacity: number;
+  uploadMode?: 'draft' | 'live';
+  draftProductsPerDesign?: number;
+  maxCatalogSlots?: number;
 }
 
 interface UploadProgressState {
@@ -356,14 +358,18 @@ export const QueueView: React.FC = () => {
           <div className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2">
             <span className="text-xs font-semibold text-slate-300">Modus:</span>
             <button
-              onClick={() => setGlobalMode(globalMode === 'draft' ? 'live' : 'draft')}
+              onClick={() => {
+                const nextMode = (queueState?.uploadMode || globalMode) === 'draft' ? 'live' : 'draft';
+                setGlobalMode(nextMode);
+                handleUpdateSettings({ uploadMode: nextMode });
+              }}
               className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
-                globalMode === 'live' 
+                (queueState?.uploadMode || globalMode) === 'live' 
                   ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                   : 'bg-primary-500/20 text-primary-300 border-primary-500/40'
               }`}
             >
-              {globalMode === 'live' ? '🔴 Live Publish' : '🟡 Draft (Entwurf)'}
+              {(queueState?.uploadMode || globalMode) === 'live' ? '🔴 Live Publish' : '🟡 Draft (Entwurf)'}
             </button>
           </div>
 
@@ -669,6 +675,63 @@ export const QueueView: React.FC = () => {
                 </div>
                 <span className="text-[11px] text-slate-500">Slots / Design</span>
               </div>
+
+              {/* Draft Mode Specific Stepper: Produkte pro Design */}
+              {(queueState.uploadMode || globalMode) === 'draft' && (
+                <div className="flex items-center space-x-2.5 border-l border-slate-800 pl-4">
+                  <Package className="w-4 h-4 text-accent-cyan" />
+                  <span className="text-xs font-semibold text-slate-300">Produkte pro Design:</span>
+                  
+                  {(() => {
+                    const maxSlots = queueState.maxCatalogSlots || 106;
+                    const minSlots = Math.max(1, maxSlots - (queueState.maxDropPerDesign || 10));
+                    const currentVal = queueState.draftProductsPerDesign !== undefined ? queueState.draftProductsPerDesign : maxSlots;
+
+                    return (
+                      <div className="flex items-center space-x-1 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
+                        <button
+                          onClick={() => {
+                            const next = Math.max(minSlots, currentVal - 1);
+                            handleUpdateSettings({ draftProductsPerDesign: next });
+                          }}
+                          disabled={currentVal <= minSlots}
+                          className="px-2 py-0.5 rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={`Verringern (Mindestens ${minSlots} Produkte)`}
+                        >
+                          -
+                        </button>
+
+                        <input
+                          type="number"
+                          min={minSlots}
+                          max={maxSlots}
+                          value={currentVal}
+                          onChange={(e) => {
+                            const val = Math.max(minSlots, Math.min(maxSlots, Number(e.target.value) || minSlots));
+                            handleUpdateSettings({ draftProductsPerDesign: val });
+                          }}
+                          className="w-11 text-center bg-transparent text-xs font-mono font-bold text-accent-cyan focus:outline-none"
+                        />
+
+                        <button
+                          onClick={() => {
+                            const next = Math.min(maxSlots, currentVal + 1);
+                            handleUpdateSettings({ draftProductsPerDesign: next });
+                          }}
+                          disabled={currentVal >= maxSlots}
+                          className="px-2 py-0.5 rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={`Erhöhen (Maximal ${maxSlots} Produkte)`}
+                        >
+                          +
+                        </button>
+                      </div>
+                    );
+                  })()}
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    (Min: {Math.max(1, (queueState.maxCatalogSlots || 106) - (queueState.maxDropPerDesign || 10))} / Max: {queueState.maxCatalogSlots || 106})
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Action Controls */}

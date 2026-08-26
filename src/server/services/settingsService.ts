@@ -41,6 +41,8 @@ export interface AppSettings {
   queueUploadScheduleTime: string; // e.g. "04:00" or "off"
   queueMaxDropPerDesign: number;   // e.g. 10
   queueAutoBalance: boolean;       // e.g. true
+  queueUploadMode: 'draft' | 'live'; // e.g. 'draft' or 'live'
+  queueDraftProductsPerDesign: number; // e.g. 106
 }
 
 export function generateApiKey(): string {
@@ -84,6 +86,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   queueUploadScheduleTime: 'off',
   queueMaxDropPerDesign: 10,
   queueAutoBalance: true,
+  queueUploadMode: 'draft',
+  queueDraftProductsPerDesign: 106,
 };
 
 function getSettingsFilePath(): string {
