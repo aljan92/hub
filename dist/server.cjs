@@ -217918,7 +217918,8 @@ E. ALL PROHIBITED WORDS LIST:
 var sharedBrowser = null;
 async function getBrowser() {
   if (!sharedBrowser || !sharedBrowser.isConnected()) {
-    sharedBrowser = await chromium.launch({
+    const executablePath = findChromiumExecutable();
+    const launchOptions = {
       headless: true,
       args: [
         "--no-sandbox",
@@ -217926,7 +217927,11 @@ async function getBrowser() {
         "--disable-dev-shm-usage",
         "--disable-gpu"
       ]
-    });
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    sharedBrowser = await chromium.launch(launchOptions);
   }
   return sharedBrowser;
 }

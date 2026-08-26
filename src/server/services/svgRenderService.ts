@@ -1,12 +1,14 @@
 import { chromium, Browser } from 'playwright';
 import fs from 'fs';
 import path from 'path';
+import { findChromiumExecutable } from './browserSessionService';
 
 let sharedBrowser: Browser | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (!sharedBrowser || !sharedBrowser.isConnected()) {
-    sharedBrowser = await chromium.launch({
+    const executablePath = findChromiumExecutable();
+    const launchOptions: any = {
       headless: true,
       args: [
         '--no-sandbox',
@@ -14,7 +16,11 @@ async function getBrowser(): Promise<Browser> {
         '--disable-dev-shm-usage',
         '--disable-gpu'
       ]
-    });
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    sharedBrowser = await chromium.launch(launchOptions);
   }
   return sharedBrowser;
 }

@@ -13,7 +13,7 @@ interface ActiveSession {
   isStreaming: boolean;
 }
 
-function findChromiumExecutable(): string | undefined {
+export function findChromiumExecutable(): string | undefined {
   // 1. Direct environment variable
   if (process.env.CHROME_BIN && fs.existsSync(process.env.CHROME_BIN)) {
     return process.env.CHROME_BIN;
