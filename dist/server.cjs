@@ -220252,6 +220252,12 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     return import_fs76.default.createReadStream(filePath).pipe(res);
   }
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (task && task.svgContent) {
+    res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "no-cache");
+    return res.send(task.svgContent);
+  }
   res.status(404).send("Design SVG not found");
 });
 app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
@@ -220267,6 +220273,12 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
     res.setHeader("Content-Type", "image/svg+xml");
     res.setHeader("Cache-Control", "no-cache");
     return import_fs76.default.createReadStream(fallbackPath).pipe(res);
+  }
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (task && task.svgContent) {
+    res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "no-cache");
+    return res.send(task.svgContent);
   }
   res.status(404).send("Original SVG not found");
 });

@@ -9,7 +9,8 @@ import {
   ZoomOut, 
   Check, 
   MousePointer, 
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 export type SvgTool = 'remove-color' | 'remove-connected' | 'none';
@@ -23,6 +24,15 @@ interface SvgEditorProps {
   isSaving?: boolean;
 }
 
+// Clean XML declaration, DOCTYPE and redundant wrapper noise from raw SVG
+const cleanSvgString = (raw: string | undefined | null): string => {
+  if (!raw) return '';
+  return raw
+    .replace(/<\?xml[^>]*\?>/gi, '')
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+    .trim();
+};
+
 export const SvgEditor: React.FC<SvgEditorProps> = ({
   taskId,
   initialSvgContent,
@@ -31,7 +41,7 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
   isSaving = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [svgContent, setSvgContent] = useState<string>(initialSvgContent || '');
+  const [svgContent, setSvgContent] = useState<string>(cleanSvgString(initialSvgContent));
   const [activeTool, setActiveTool] = useState<SvgTool>('remove-color');
   const [selectedCount, setSelectedCount] = useState<number>(0);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
@@ -39,7 +49,8 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
   const [bgMode, setBgMode] = useState<SvgBackgroundMode>('checkerboard');
   const [zoom, setZoom] = useState<number>(1.0);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [loading, setLoading] = useState<boolean>(!initialSvgContent);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // References to keep event handlers fresh without re-binding
   const selectedElementsRef = useRef<Element[]>([]);
@@ -51,6 +62,44 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 3000);
   };
+
+  // Fetch SVG from API
+  const fetchSvg = useCallback(async () => {
+    if (!taskId) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`/api/v1/designs/svg/${encodeURIComponent(taskId)}`);
+      if (!res.ok) {
+        throw new Error(`SVG konnte nicht geladen werden (${res.status})`);
+      }
+      const text = await res.text();
+      const cleaned = cleanSvgString(text);
+      if (!cleaned || !cleaned.includes('<svg')) {
+        throw new Error('Ungültiges SVG-Format empfangen');
+      }
+      setSvgContent(cleaned);
+      if (onSave) onSave(cleaned);
+    } catch (err: any) {
+      console.warn('[SvgEditor] Load error:', err);
+      setLoadError(err.message || 'Fehler beim Laden des SVGs');
+    } finally {
+      setLoading(false);
+    }
+  }, [taskId, onSave]);
+
+  // Synchronize when initialSvgContent or taskId prop changes
+  useEffect(() => {
+    if (initialSvgContent && initialSvgContent.includes('<svg')) {
+      setSvgContent(cleanSvgString(initialSvgContent));
+      setLoading(false);
+      setLoadError(null);
+    } else {
+      fetchSvg();
+    }
+    clearSelection();
+    setUndoStack([]);
+  }, [taskId, initialSvgContent]);
 
   // Color normalization and tolerant matching (from MBA Manager)
   const parseColorToRGB = (colorStr: string | null): { r: number; g: number; b: number } | null => {
@@ -259,9 +308,10 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
       const data = await res.json();
       if (data.success && data.svgContent) {
         saveState();
-        setSvgContent(data.svgContent);
+        const cleaned = cleanSvgString(data.svgContent);
+        setSvgContent(cleaned);
         clearSelection();
-        if (onSave) onSave(data.svgContent);
+        if (onSave) onSave(cleaned);
         showToast('success', 'SVG auf Originalzustand zurückgesetzt.');
       } else {
         showToast('error', data.error || 'Fehler beim Zurücksetzen');
@@ -304,7 +354,7 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
     if (tool === 'remove-color') {
       // Normal click: Select all elements of same color
       clearSelection();
-      const svg = containerRef.current.querySelector('svg');
+      const svg = containerRef.current?.querySelector('svg');
       if (!svg) return;
 
       const matched: Element[] = [];
@@ -326,26 +376,6 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
       setSelectedCount(1);
     }
   }, [clearSelection]);
-
-  // Load SVG from API if not provided in props
-  useEffect(() => {
-    if (!svgContent && taskId) {
-      setLoading(true);
-      fetch(`/api/v1/designs/svg/${encodeURIComponent(taskId)}`)
-        .then(res => {
-          if (!res.ok) throw new Error('SVG konnte nicht geladen werden');
-          return res.text();
-        })
-        .then(text => {
-          setSvgContent(text);
-        })
-        .catch(err => {
-          console.warn('[SvgEditor] Load error:', err);
-          showToast('error', 'Fehler beim Laden des SVGs');
-        })
-        .finally(() => setLoading(false));
-    }
-  }, [taskId]);
 
   // Bind DOM events to SVG elements whenever svgContent renders
   useEffect(() => {
@@ -551,39 +581,80 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
 
       {/* SVG Canvas Area */}
       <div 
-        className={`relative w-full h-[460px] rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center transition-colors ${bgClasses[bgMode]}`}
+        className={`relative w-full h-[520px] rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center transition-colors p-4 ${bgClasses[bgMode]}`}
       >
         {loading ? (
           <div className="flex flex-col items-center space-y-2 text-slate-500">
-            <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs">Lade SVG-Vektorgrafik...</span>
+            <div className="w-7 h-7 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-mono">Lade SVG-Vektorgrafik...</span>
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center space-y-3 text-center max-w-sm">
+            <AlertCircle className="w-8 h-8 text-amber-400" />
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-slate-200 block">Vektorgrafik nicht gefunden</span>
+              <p className="text-[11px] text-slate-400">{loadError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchSvg}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 shadow"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>Erneut versuchen</span>
+            </button>
           </div>
         ) : svgContent ? (
           <div 
             ref={containerRef}
             style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 0.15s ease-out' }}
-            className={`svg-editor-container ${activeTool !== 'none' ? 'tool-active' : ''} max-w-[90%] max-h-[90%] flex items-center justify-center`}
+            className={`svg-editor-container ${activeTool !== 'none' ? 'tool-active' : ''} w-full h-full flex items-center justify-center`}
             dangerouslySetInnerHTML={{ __html: svgContent }}
           />
         ) : (
-          <div className="text-xs text-slate-500">Keine Vektorgrafik verfügbar.</div>
+          <div className="flex flex-col items-center space-y-2 text-slate-500">
+            <span className="text-xs">Keine Vektorgrafik verfügbar.</span>
+            <button
+              type="button"
+              onClick={fetchSvg}
+              className="px-3 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+            >
+              Neu laden
+            </button>
+          </div>
         )}
 
         {/* Hint footer overlay */}
-        <div className="absolute bottom-2 left-3 text-[10px] font-mono text-slate-500 bg-slate-950/80 px-2 py-0.5 rounded border border-slate-800/80 pointer-events-none">
-          Klick = Auswahl • Shift + Klick = Mehrfachauswahl • Backspace = Löschen • Cmd+Z = Undo
+        <div className="absolute bottom-2 left-3 text-[10px] font-mono text-slate-400 bg-slate-950/85 px-2.5 py-1 rounded border border-slate-800/80 pointer-events-none shadow-sm flex items-center space-x-2">
+          <span>Klick = Auswählen</span>
+          <span>•</span>
+          <span>Shift + Klick = Mehrfachauswahl</span>
+          <span>•</span>
+          <span>Backspace = Löschen</span>
+          <span>•</span>
+          <span>Cmd+Z = Undo</span>
         </div>
       </div>
 
       {/* Embedded CSS for Highlighting & Interactive Hover */}
       <style>{`
+        .svg-editor-container {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
         .svg-editor-container svg {
           max-width: 100%;
-          max-height: 420px;
-          height: auto;
-          width: auto;
+          max-height: 480px;
+          width: 100%;
+          height: 100%;
           object-fit: contain;
           user-select: none;
+          display: block;
+          margin: auto;
         }
 
         /* Pulsierender roter Glow für ausgewählte Vektorelemente (aus MBA Manager) */
