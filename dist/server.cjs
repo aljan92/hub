@@ -219428,8 +219428,9 @@ Please audit the listing based on your compliance rules:
       const svgFilename = `${cleanId}.svg`;
       const svgFilePath = import_path70.default.join(designsDir, svgFilename);
       import_fs75.default.writeFileSync(svgFilePath, svgText, "utf-8");
-      const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}`;
-      const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+      const ts = Date.now();
+      const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}?t=${ts}`;
+      const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${ts}`;
       task.originalSvgPath = origFilePath;
       task.originalSvgUrl = origSvgUrl;
       task.localSvgPath = svgFilePath;
@@ -219477,7 +219478,7 @@ Please audit the listing based on your compliance rules:
         const fourPanelFilePath = import_path70.default.join(designsDir, fourPanelFilename);
         const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
         import_fs75.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
-        const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+        const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${Date.now()}`;
         task.localFourPanelImagePath = fourPanelFilePath;
         task.fourPanelImageUrl = fourPanelUrl;
         this.addEvent(taskId, {
@@ -219518,7 +219519,7 @@ Please audit the listing based on your compliance rules:
           const mbaFilePath = import_path70.default.join(designsDir, mbaFilename);
           const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgText);
           import_fs75.default.writeFileSync(mbaFilePath, mbaBuffer);
-          const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}`;
+          const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
           task.localMbaPngPath = mbaFilePath;
           task.mbaPngUrl = mbaUrl;
           this.updateTaskStatus(taskId, {
@@ -219988,20 +219989,21 @@ Please audit the listing based on your compliance rules:
         import_fs75.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
         task.svgContent = params2.editedSvgContent;
         task.localSvgPath = svgFilePath;
-        task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+        task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
       }
       const finalSvg = task.svgContent || params2.editedSvgContent || "";
       try {
+        const ts = Date.now();
         const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
         const mbaFilePath = import_path70.default.join(designsDir, `${cleanId}_mba.png`);
         import_fs75.default.writeFileSync(mbaFilePath, mbaBuffer);
         task.localMbaPngPath = mbaFilePath;
-        task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}`;
+        task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
         const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
         const fourPanelFilePath = import_path70.default.join(designsDir, `${cleanId}_4panel.png`);
         import_fs75.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
         task.localFourPanelImagePath = fourPanelFilePath;
-        task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+        task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
       } catch (e) {
         console.warn(`[TaskLogService] Warning rendering final PNGs for task ${taskId}:`, e);
       }
@@ -220849,9 +220851,11 @@ app.post("/api/v1/systemprompts/reset", (req, res) => {
 app.get("/api/v1/designs/image/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const filePath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   if (import_fs76.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    res.setHeader("Cache-Control", "public, max-age=86400");
     return import_fs76.default.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
@@ -220863,15 +220867,16 @@ app.get("/api/v1/designs/image/:taskId", (req, res) => {
 app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const filePath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   if (import_fs76.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    res.setHeader("Cache-Control", "no-cache");
     return import_fs76.default.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader("Content-Type", "image/svg+xml");
-    res.setHeader("Cache-Control", "no-cache");
     return res.send(task.svgContent);
   }
   res.status(404).send("Design SVG not found");
@@ -220879,21 +220884,21 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
 app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const filePath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   if (import_fs76.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    res.setHeader("Cache-Control", "no-cache");
     return import_fs76.default.createReadStream(filePath).pipe(res);
   }
   const fallbackPath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
   if (import_fs76.default.existsSync(fallbackPath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    res.setHeader("Cache-Control", "no-cache");
     return import_fs76.default.createReadStream(fallbackPath).pipe(res);
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader("Content-Type", "image/svg+xml");
-    res.setHeader("Cache-Control", "no-cache");
     return res.send(task.svgContent);
   }
   res.status(404).send("Original SVG not found");
@@ -220901,9 +220906,11 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
 app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const filePath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   if (import_fs76.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    res.setHeader("Cache-Control", "no-cache");
     return import_fs76.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("MBA PNG not found");
@@ -220911,9 +220918,11 @@ app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
 app.get("/api/v1/designs/4panel/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const filePath = import_path71.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   if (import_fs76.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    res.setHeader("Cache-Control", "no-cache");
     return import_fs76.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("4-Panel image not found");

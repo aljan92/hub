@@ -923,9 +923,11 @@ app.post('/api/v1/systemprompts/reset', (req, res) => {
 app.get('/api/v1/designs/image/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   if (fs.existsSync(filePath)) {
     res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
     return fs.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
@@ -939,15 +941,16 @@ app.get('/api/v1/designs/image/:taskId', (req, res) => {
 app.get('/api/v1/designs/svg/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.svg`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   if (fs.existsSync(filePath)) {
     res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Cache-Control', 'no-cache');
     return fs.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Cache-Control', 'no-cache');
     return res.send(task.svgContent);
   }
   res.status(404).send('Design SVG not found');
@@ -956,22 +959,22 @@ app.get('/api/v1/designs/svg/:taskId', (req, res) => {
 app.get('/api/v1/designs/svg-original/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_original.svg`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   if (fs.existsSync(filePath)) {
     res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Cache-Control', 'no-cache');
     return fs.createReadStream(filePath).pipe(res);
   }
   // Fallback to active svg if original not separate yet
   const fallbackPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.svg`);
   if (fs.existsSync(fallbackPath)) {
     res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Cache-Control', 'no-cache');
     return fs.createReadStream(fallbackPath).pipe(res);
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Cache-Control', 'no-cache');
     return res.send(task.svgContent);
   }
   res.status(404).send('Original SVG not found');
@@ -981,9 +984,11 @@ app.get('/api/v1/designs/svg-original/:taskId', (req, res) => {
 app.get('/api/v1/designs/mba-png/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   if (fs.existsSync(filePath)) {
     res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'no-cache');
     return fs.createReadStream(filePath).pipe(res);
   }
   res.status(404).send('MBA PNG not found');
@@ -993,9 +998,11 @@ app.get('/api/v1/designs/mba-png/:taskId', (req, res) => {
 app.get('/api/v1/designs/4panel/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_4panel.png`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   if (fs.existsSync(filePath)) {
     res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'no-cache');
     return fs.createReadStream(filePath).pipe(res);
   }
   res.status(404).send('4-Panel image not found');

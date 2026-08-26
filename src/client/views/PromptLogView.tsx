@@ -117,6 +117,15 @@ const JsonDetails: React.FC<{ title: string; data: any; defaultOpen?: boolean }>
 };
 
 // ---------------------------------------------------------------------------
+// Helper: Cache-Busting Image URLs
+// ---------------------------------------------------------------------------
+const getCacheBustedUrl = (url?: string, timestamp?: string) => {
+  if (!url) return '';
+  const buster = timestamp ? new Date(timestamp).getTime() : Date.now();
+  return url.includes('?') ? `${url}&_t=${buster}` : `${url}?_t=${buster}`;
+};
+
+// ---------------------------------------------------------------------------
 // Helper: Event Timeline Header
 // ---------------------------------------------------------------------------
 interface EventHeaderProps {
@@ -1017,7 +1026,7 @@ export const PromptLogView: React.FC = () => {
                               </span>
                               {event.content?.svgUrl && (
                                 <a
-                                  href={event.content.svgUrl}
+                                  href={getCacheBustedUrl(event.content.svgUrl, event.timestamp)}
                                   download={`design-${selectedTask.id}.svg`}
                                   target="_blank"
                                   rel="noreferrer"
@@ -1035,7 +1044,7 @@ export const PromptLogView: React.FC = () => {
                             <div className="bg-slate-900/90 rounded-xl p-4 border border-slate-800 flex flex-col md:flex-row items-center gap-4">
                               <div className="w-44 h-44 rounded-lg bg-slate-950/80 border border-slate-800 p-2 flex items-center justify-center overflow-hidden shrink-0">
                                 <img
-                                  src={event.content.svgUrl}
+                                  src={getCacheBustedUrl(event.content.svgUrl, event.timestamp)}
                                   alt="Vectorized SVG"
                                   className="max-w-full max-h-full object-contain"
                                 />
@@ -1053,7 +1062,7 @@ export const PromptLogView: React.FC = () => {
                                     <CopyButton text={event.content.svgContent} label="SVG Quellcode kopieren" />
                                   )}
                                   <a
-                                    href={event.content.svgUrl}
+                                    href={getCacheBustedUrl(event.content.svgUrl, event.timestamp)}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="inline-flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
@@ -1085,7 +1094,7 @@ export const PromptLogView: React.FC = () => {
                           {event.content?.fourPanelImageUrl && (
                             <div className="flex flex-col sm:flex-row items-center gap-3 bg-slate-900/80 p-3 rounded-lg border border-slate-800">
                               <img
-                                src={event.content.fourPanelImageUrl}
+                                src={getCacheBustedUrl(event.content.fourPanelImageUrl, event.timestamp)}
                                 alt="4-Panel Test Preview"
                                 className="w-32 h-32 rounded-lg object-cover border border-slate-700 shrink-0"
                               />
@@ -1135,7 +1144,7 @@ export const PromptLogView: React.FC = () => {
                             <div className="bg-slate-900/90 rounded-xl p-3.5 border border-slate-800 flex flex-col md:flex-row items-center gap-4">
                               <div className="w-48 h-48 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden shrink-0">
                                 <img
-                                  src={event.content.fourPanelImageUrl}
+                                  src={getCacheBustedUrl(event.content.fourPanelImageUrl, event.timestamp)}
                                   alt="4-Panel Verification Image"
                                   className="w-full h-full object-contain"
                                 />
@@ -1161,7 +1170,7 @@ export const PromptLogView: React.FC = () => {
 
                                 <div className="flex flex-wrap items-center gap-2 pt-2">
                                   <a
-                                    href={event.content.fourPanelImageUrl}
+                                    href={getCacheBustedUrl(event.content.fourPanelImageUrl, event.timestamp)}
                                     download={`4panel-${selectedTask.id}.png`}
                                     target="_blank"
                                     rel="noreferrer"
@@ -1172,7 +1181,7 @@ export const PromptLogView: React.FC = () => {
                                   </a>
                                   {selectedTask.mbaPngUrl && (
                                     <a
-                                      href={selectedTask.mbaPngUrl}
+                                      href={getCacheBustedUrl(selectedTask.mbaPngUrl, event.timestamp)}
                                       download={`mba-print-${selectedTask.id}.png`}
                                       target="_blank"
                                       rel="noreferrer"

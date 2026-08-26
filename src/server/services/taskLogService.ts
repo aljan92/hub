@@ -1371,8 +1371,9 @@ Please audit the listing based on your compliance rules:
       const svgFilePath = path.join(designsDir, svgFilename);
       fs.writeFileSync(svgFilePath, svgText, 'utf-8');
 
-      const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}`;
-      const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+      const ts = Date.now();
+      const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}?t=${ts}`;
+      const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${ts}`;
       task.originalSvgPath = origFilePath;
       task.originalSvgUrl = origSvgUrl;
       task.localSvgPath = svgFilePath;
@@ -1429,7 +1430,7 @@ Please audit the listing based on your compliance rules:
         const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
         fs.writeFileSync(fourPanelFilePath, fourPanelBuffer);
 
-        const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+        const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${Date.now()}`;
         task.localFourPanelImagePath = fourPanelFilePath;
         task.fourPanelImageUrl = fourPanelUrl;
 
@@ -1479,7 +1480,7 @@ Please audit the listing based on your compliance rules:
           const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgText);
           fs.writeFileSync(mbaFilePath, mbaBuffer);
 
-          const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}`;
+          const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
           task.localMbaPngPath = mbaFilePath;
           task.mbaPngUrl = mbaUrl;
 
@@ -2044,23 +2045,24 @@ Please audit the listing based on your compliance rules:
         fs.writeFileSync(svgFilePath, params.editedSvgContent, 'utf-8');
         task.svgContent = params.editedSvgContent;
         task.localSvgPath = svgFilePath;
-        task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+        task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
       }
 
       // Render Final MBA Master-PNG (4500x5400 px, 300 DPI) & 4-Panel Image
       const finalSvg = task.svgContent || params.editedSvgContent || '';
       try {
+        const ts = Date.now();
         const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
         const mbaFilePath = path.join(designsDir, `${cleanId}_mba.png`);
         fs.writeFileSync(mbaFilePath, mbaBuffer);
         task.localMbaPngPath = mbaFilePath;
-        task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}`;
+        task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
 
         const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
         const fourPanelFilePath = path.join(designsDir, `${cleanId}_4panel.png`);
         fs.writeFileSync(fourPanelFilePath, fourPanelBuffer);
         task.localFourPanelImagePath = fourPanelFilePath;
-        task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+        task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
       } catch (e: any) {
         console.warn(`[TaskLogService] Warning rendering final PNGs for task ${taskId}:`, e);
       }

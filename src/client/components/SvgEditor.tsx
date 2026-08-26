@@ -69,7 +69,7 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`/api/v1/designs/svg/${encodeURIComponent(taskId)}`);
+      const res = await fetch(`/api/v1/designs/svg/${encodeURIComponent(taskId)}?_t=${Date.now()}`);
       if (!res.ok) {
         throw new Error(`SVG konnte nicht geladen werden (${res.status})`);
       }
