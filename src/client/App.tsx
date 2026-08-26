@@ -6,6 +6,7 @@ import { DesignerView } from './views/DesignerView';
 import { TasksView } from './views/TasksView';
 import { QueueView } from './views/QueueView';
 import { DatabaseView } from './views/DatabaseView';
+import { ProductsView } from './views/ProductsView';
 import { LogsView } from './views/LogsView';
 import { SettingsView } from './views/SettingsView';
 import { PromptLogView } from './views/PromptLogView';
@@ -61,6 +62,7 @@ export const App: React.FC = () => {
             {activeTab === 'designer' && <DesignerView />}
             {activeTab === 'tasks' && <TasksView />}
             {activeTab === 'queue' && <QueueView />}
+            {activeTab === 'products' && <ProductsView />}
             {activeTab === 'database' && <DatabaseView />}
             {activeTab === 'logs' && <LogsView />}
             {activeTab === 'settings' && <SettingsView />}

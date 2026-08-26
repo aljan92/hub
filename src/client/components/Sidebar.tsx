@@ -8,10 +8,11 @@ import {
   Terminal,
   Settings as SettingsIcon,
   Bot,
-  Sliders
+  Sliders,
+  Shirt
 } from 'lucide-react';
 
-export type ActiveTab = 'dashboard' | 'promptlog' | 'systemprompts' | 'designer' | 'tasks' | 'queue' | 'database' | 'logs' | 'settings';
+export type ActiveTab = 'dashboard' | 'promptlog' | 'systemprompts' | 'designer' | 'tasks' | 'queue' | 'products' | 'database' | 'logs' | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -66,6 +67,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: queueCount > 0 ? queueCount : undefined,
       badgeColor: 'bg-accent-cyan text-slate-900',
       description: 'Upload & Slot-Filling',
+    },
+    {
+      id: 'products' as ActiveTab,
+      label: 'Products',
+      icon: Shirt,
+      description: 'Produktdatenbank & Slots',
     },
     {
       id: 'database' as ActiveTab,

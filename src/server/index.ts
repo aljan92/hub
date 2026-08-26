@@ -19,6 +19,8 @@ import { BrowserSessionService } from './services/browserSessionService';
 import { getMcpSchema } from './services/mcpSchemaService';
 import { TaskLogService } from './services/taskLogService';
 import { SystemPromptService } from './services/systemPromptService';
+import { ProductCatalogService } from './services/productCatalogService';
+import { ProductScannerService } from './services/productScannerService';
 
 dotenv.config();
 
@@ -1154,6 +1156,67 @@ app.get('/api/v1/queue', (req, res) => {
 });
 
 // ==============================================================================
+// 12. Product Database & CDP Scanner API
+// ==============================================================================
+
+// Get current product catalog and slot statistics
+app.get('/api/v1/products/catalog', (req, res) => {
+  try {
+    const catalog = ProductCatalogService.getCatalog();
+    const stats = ProductCatalogService.getStats();
+    const scannerState = ProductScannerService.getState();
+    res.json({
+      success: true,
+      catalog,
+      stats,
+      scannerState
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Fehler beim Laden des Katalogs' });
+  }
+});
+
+// Get scanner status and audit logs
+app.get('/api/v1/products/scan/status', (req, res) => {
+  try {
+    const state = ProductScannerService.getState();
+    res.json({
+      success: true,
+      state
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Trigger manual product scan
+app.post('/api/v1/products/scan', async (req, res) => {
+  try {
+    // Run scan asynchronously to not block HTTP response
+    ProductScannerService.startScan().catch(err => {
+      console.error('[API /products/scan] Background error:', err);
+    });
+
+    res.json({
+      success: true,
+      message: 'Produkt-Scan wurde in Session 1 gestartet.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete product database and immediately trigger fresh rescan
+app.delete('/api/v1/products/catalog', async (req, res) => {
+  try {
+    const result = await ProductScannerService.clearAndRescan();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==============================================================================
 // Serve Static Frontend in Production
 // ==============================================================================
 const clientDistPath = path.resolve(currentDir, 'client');
@@ -1178,6 +1241,13 @@ server.listen(Number(PORT), HOST, () => {
     SyncEngine.init();
   } catch (err: any) {
     console.warn('[MBA Hub] SyncEngine.init warning:', err.message);
+  }
+
+  // Initialize ProductScannerService background scheduler
+  try {
+    ProductScannerService.init();
+  } catch (err: any) {
+    console.warn('[MBA Hub] ProductScannerService.init warning:', err.message);
   }
 
   // Pre-warm browser sessions in background so they are immediately ready
