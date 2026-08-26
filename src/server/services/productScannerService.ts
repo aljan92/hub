@@ -361,23 +361,32 @@ export class ProductScannerService {
             inputContainer = allEditors[allEditors.length - 1];
           }
 
-          // 1. Scrape Fits
-          const fitInputs = Array.from(inputContainer.querySelectorAll('input[name="fitType"], input[id*="fitType"], flowcheckbox[class*="-checkbox"]'));
+          // 1. Scrape Fits (Men, Women, Youth, Girls, Adult Unisex)
+          const fitInputs = Array.from(inputContainer.querySelectorAll('input[name="fitType"], input[id*="fitType"], flowcheckbox[class*="-checkbox"], label[class*="-label"], label'));
           fitInputs.forEach(el => {
             let fitVal = '';
-            if (el.tagName.toLowerCase() === 'input') {
-              fitVal = (el as HTMLInputElement).value.toLowerCase();
-            } else {
-              const match = el.className.match(/([a-z]+)-checkbox/i);
-              if (match) fitVal = match[1].toLowerCase();
+            const txt = el.textContent?.trim().toLowerCase() || '';
+            const className = (el.className || '').toLowerCase();
+
+            if (className.includes('adult_unisex') || className.includes('unisex') || txt.includes('adult unisex') || txt.includes('unisex')) {
+              fitVal = 'adult_unisex';
+            } else if (className.includes('girls') || txt.includes('girls') || txt.includes('mädchen')) {
+              fitVal = 'girls';
+            } else if (className.includes('youth') || className.includes('kids') || txt.includes('youth') || txt.includes('kinder')) {
+              fitVal = 'youth';
+            } else if (className.includes('women') || txt.includes('women') || txt.includes('frauen') || txt.includes('damen')) {
+              fitVal = 'women';
+            } else if (className.includes('men') || txt.includes('men') || txt.includes('männer') || txt.includes('herren')) {
+              fitVal = 'men';
             }
+
             if (fitVal && !catalog[productId].fits.includes(fitVal)) {
               catalog[productId].fits.push(fitVal);
             }
           });
 
-          const validFits = catalog[productId].fits.filter(f => ['men', 'women', 'youth', 'girls'].includes(f));
-          if (validFits.length >= 2 || productId.includes('TSHIRT') || productId.includes('VNECK')) {
+          const validFits = catalog[productId].fits.filter(f => ['men', 'women', 'youth', 'girls', 'adult_unisex', 'unisex'].includes(f));
+          if (validFits.length >= 1 || productId.includes('TSHIRT') || productId.includes('VNECK')) {
             catalog[productId].fits = validFits;
           } else {
             catalog[productId].fits = [];

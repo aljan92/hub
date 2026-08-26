@@ -411,7 +411,14 @@ export class UploadWorkerService {
       this.log(`👕 Bearbeite ${totalActiveProducts} aktive Produkte sequenziell...`, 'Bearbeite Produktdetails...', 52, 100);
 
       const avoidColor = item.avoidColor || 'none';
-      const fitTypes = item.fitTypes || ['men', 'women', 'youth'];
+      let fitTypes = item.fitTypes || ['men', 'women', 'youth'];
+      
+      // Rule: If in question phase only 'Youth' is selected, automatically include 'Men' as well
+      const normalizedFits = fitTypes.map(f => f.toLowerCase());
+      if (normalizedFits.includes('youth') && !normalizedFits.includes('men') && !normalizedFits.includes('women')) {
+        fitTypes = [...fitTypes, 'men'];
+      }
+
       const customBgColor = item.customBackgroundColor || (avoidColor === 'black' ? '#FFFFFF' : '#000000');
 
       for (let i = 0; i < totalActiveProducts; i++) {
@@ -452,21 +459,45 @@ export class UploadWorkerService {
             || document.querySelector('product-editor') as HTMLElement;
           if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
 
-          // 3. Configure Fit Types (Men, Women, Youth)
-          const allFitLabels: Record<string, HTMLElement | null> = {
-            men: editor.querySelector('label.men-label'),
-            women: editor.querySelector('label.women-label'),
-            youth: editor.querySelector('label.youth-label')
-          };
+          // 3. Configure Fit Types (Men, Women, Youth, Girls, Adult Unisex)
+          let desiredFits = params.fitTypes.map(f => f.toLowerCase());
+          // Rule A: If only youth is selected, add men
+          if (desiredFits.includes('youth') && !desiredFits.includes('men') && !desiredFits.includes('women')) {
+            desiredFits.push('men');
+          }
+          // Rule B: If youth is selected, girls is always selected
+          if (desiredFits.includes('youth') && !desiredFits.includes('girls')) {
+            desiredFits.push('girls');
+          }
+          // Rule C: Adult Unisex is always selected whenever present
+          desiredFits.push('adult_unisex', 'unisex');
 
-          for (const [ft, label] of Object.entries(allFitLabels)) {
-            if (label) {
-              const icon = label.querySelector('i.sci-icon');
-              const isChecked = icon ? icon.classList.contains('sci-check-box') : false;
-              const shouldBeChecked = params.fitTypes.includes(ft);
+          const fitCandidateLabels = Array.from(editor.querySelectorAll('label[class*="-label"], flowcheckbox, .fit-checkbox, label'));
+          for (const el of fitCandidateLabels) {
+            const text = (el.textContent || '').trim().toLowerCase();
+            const className = (el.className || '').toLowerCase();
+            let fitKey = '';
+
+            if (className.includes('adult_unisex') || className.includes('unisex') || text.includes('adult unisex') || text.includes('unisex')) {
+              fitKey = 'adult_unisex';
+            } else if (className.includes('girls') || text.includes('girls') || text.includes('mädchen')) {
+              fitKey = 'girls';
+            } else if (className.includes('youth') || className.includes('kids') || text.includes('youth') || text.includes('kinder')) {
+              fitKey = 'youth';
+            } else if (className.includes('women') || text.includes('women') || text.includes('frauen') || text.includes('damen')) {
+              fitKey = 'women';
+            } else if (className.includes('men') || text.includes('men') || text.includes('männer') || text.includes('herren')) {
+              fitKey = 'men';
+            }
+
+            if (fitKey) {
+              const icon = el.querySelector('i.sci-icon');
+              const isChecked = icon ? icon.classList.contains('sci-check-box') : (el.querySelector('input')?.checked ?? false);
+              const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === 'adult_unisex';
 
               if (isChecked !== shouldBeChecked) {
-                label.click();
+                const targetToClick = (el.querySelector('input') || el.querySelector('i.sci-icon') || el) as HTMLElement;
+                targetToClick.click();
                 await sleep(80);
               }
             }
@@ -789,8 +820,23 @@ export class UploadWorkerService {
           }
         });
 
-        await page.waitForTimeout(4000);
-        this.log(`🎉 Design sicher als Entwurf in Amazon Merch gespeichert!`, 'Entwurf gespeichert ✓', 100, 100);
+        // Wait for Draft Saved confirmation message/toast or timer
+        try {
+          await page.waitForFunction(() => {
+            const txt = (document.body.innerText || '').toLowerCase();
+            const toast = document.querySelector('.toast, .notification, .alert-success, .success-message, [class*="alert"]');
+            return txt.includes('draft saved') || txt.includes('saved as draft') || (toast && (toast.textContent || '').toLowerCase().includes('saved'));
+          }, { timeout: 15000 });
+          this.log(`✅ 'Draft Saved' Bestätigung von Amazon erhalten!`);
+        } catch (e) {
+          this.log(`⏳ Wartezeit nach Save-Draft beendet...`);
+        }
+
+        // Navigate to https://merch.amazon.com/dashboard
+        this.log(`🏠 Navigiere zurück zum Dashboard (https://merch.amazon.com/dashboard)...`, 'Navigiere zu Dashboard...');
+        await page.goto('https://merch.amazon.com/dashboard', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(2000);
+        this.log(`🎉 Design sicher als Entwurf in Amazon Merch gespeichert & zurück auf Dashboard!`, 'Entwurf gespeichert ✓', 100, 100);
       }
 
       // 10. Complete Queue Item

@@ -221287,21 +221287,28 @@ var ProductScannerService = class {
           } else if (allEditors.length > 0) {
             inputContainer = allEditors[allEditors.length - 1];
           }
-          const fitInputs = Array.from(inputContainer.querySelectorAll('input[name="fitType"], input[id*="fitType"], flowcheckbox[class*="-checkbox"]'));
+          const fitInputs = Array.from(inputContainer.querySelectorAll('input[name="fitType"], input[id*="fitType"], flowcheckbox[class*="-checkbox"], label[class*="-label"], label'));
           fitInputs.forEach((el) => {
             let fitVal = "";
-            if (el.tagName.toLowerCase() === "input") {
-              fitVal = el.value.toLowerCase();
-            } else {
-              const match = el.className.match(/([a-z]+)-checkbox/i);
-              if (match) fitVal = match[1].toLowerCase();
+            const txt = el.textContent?.trim().toLowerCase() || "";
+            const className = (el.className || "").toLowerCase();
+            if (className.includes("adult_unisex") || className.includes("unisex") || txt.includes("adult unisex") || txt.includes("unisex")) {
+              fitVal = "adult_unisex";
+            } else if (className.includes("girls") || txt.includes("girls") || txt.includes("m\xE4dchen")) {
+              fitVal = "girls";
+            } else if (className.includes("youth") || className.includes("kids") || txt.includes("youth") || txt.includes("kinder")) {
+              fitVal = "youth";
+            } else if (className.includes("women") || txt.includes("women") || txt.includes("frauen") || txt.includes("damen")) {
+              fitVal = "women";
+            } else if (className.includes("men") || txt.includes("men") || txt.includes("m\xE4nner") || txt.includes("herren")) {
+              fitVal = "men";
             }
             if (fitVal && !catalog[productId].fits.includes(fitVal)) {
               catalog[productId].fits.push(fitVal);
             }
           });
-          const validFits = catalog[productId].fits.filter((f) => ["men", "women", "youth", "girls"].includes(f));
-          if (validFits.length >= 2 || productId.includes("TSHIRT") || productId.includes("VNECK")) {
+          const validFits = catalog[productId].fits.filter((f) => ["men", "women", "youth", "girls", "adult_unisex", "unisex"].includes(f));
+          if (validFits.length >= 1 || productId.includes("TSHIRT") || productId.includes("VNECK")) {
             catalog[productId].fits = validFits;
           } else {
             catalog[productId].fits = [];
@@ -221729,7 +221736,11 @@ var UploadWorkerService = class _UploadWorkerService {
       const totalActiveProducts = activeProductsToProcess.length;
       this.log(`\u{1F455} Bearbeite ${totalActiveProducts} aktive Produkte sequenziell...`, "Bearbeite Produktdetails...", 52, 100);
       const avoidColor = item.avoidColor || "none";
-      const fitTypes = item.fitTypes || ["men", "women", "youth"];
+      let fitTypes = item.fitTypes || ["men", "women", "youth"];
+      const normalizedFits = fitTypes.map((f) => f.toLowerCase());
+      if (normalizedFits.includes("youth") && !normalizedFits.includes("men") && !normalizedFits.includes("women")) {
+        fitTypes = [...fitTypes, "men"];
+      }
       const customBgColor = item.customBackgroundColor || (avoidColor === "black" ? "#FFFFFF" : "#000000");
       for (let i = 0; i < totalActiveProducts; i++) {
         if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
@@ -221747,18 +221758,37 @@ var UploadWorkerService = class _UploadWorkerService {
           await sleep2(400);
           const editor = document.querySelector(`product-editor .${pid}-container`)?.closest("product-editor") || document.querySelector(`product-editor[id*="${pid}"]`) || document.querySelector("product-editor");
           if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
-          const allFitLabels = {
-            men: editor.querySelector("label.men-label"),
-            women: editor.querySelector("label.women-label"),
-            youth: editor.querySelector("label.youth-label")
-          };
-          for (const [ft, label] of Object.entries(allFitLabels)) {
-            if (label) {
-              const icon = label.querySelector("i.sci-icon");
-              const isChecked = icon ? icon.classList.contains("sci-check-box") : false;
-              const shouldBeChecked = params2.fitTypes.includes(ft);
+          let desiredFits = params2.fitTypes.map((f) => f.toLowerCase());
+          if (desiredFits.includes("youth") && !desiredFits.includes("men") && !desiredFits.includes("women")) {
+            desiredFits.push("men");
+          }
+          if (desiredFits.includes("youth") && !desiredFits.includes("girls")) {
+            desiredFits.push("girls");
+          }
+          desiredFits.push("adult_unisex", "unisex");
+          const fitCandidateLabels = Array.from(editor.querySelectorAll('label[class*="-label"], flowcheckbox, .fit-checkbox, label'));
+          for (const el of fitCandidateLabels) {
+            const text2 = (el.textContent || "").trim().toLowerCase();
+            const className = (el.className || "").toLowerCase();
+            let fitKey = "";
+            if (className.includes("adult_unisex") || className.includes("unisex") || text2.includes("adult unisex") || text2.includes("unisex")) {
+              fitKey = "adult_unisex";
+            } else if (className.includes("girls") || text2.includes("girls") || text2.includes("m\xE4dchen")) {
+              fitKey = "girls";
+            } else if (className.includes("youth") || className.includes("kids") || text2.includes("youth") || text2.includes("kinder")) {
+              fitKey = "youth";
+            } else if (className.includes("women") || text2.includes("women") || text2.includes("frauen") || text2.includes("damen")) {
+              fitKey = "women";
+            } else if (className.includes("men") || text2.includes("men") || text2.includes("m\xE4nner") || text2.includes("herren")) {
+              fitKey = "men";
+            }
+            if (fitKey) {
+              const icon = el.querySelector("i.sci-icon");
+              const isChecked = icon ? icon.classList.contains("sci-check-box") : el.querySelector("input")?.checked ?? false;
+              const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === "adult_unisex";
               if (isChecked !== shouldBeChecked) {
-                label.click();
+                const targetToClick = el.querySelector("input") || el.querySelector("i.sci-icon") || el;
+                targetToClick.click();
                 await sleep2(80);
               }
             }
@@ -221993,8 +222023,20 @@ var UploadWorkerService = class _UploadWorkerService {
             draftBtn.click();
           }
         });
-        await page.waitForTimeout(4e3);
-        this.log(`\u{1F389} Design sicher als Entwurf in Amazon Merch gespeichert!`, "Entwurf gespeichert \u2713", 100, 100);
+        try {
+          await page.waitForFunction(() => {
+            const txt = (document.body.innerText || "").toLowerCase();
+            const toast = document.querySelector('.toast, .notification, .alert-success, .success-message, [class*="alert"]');
+            return txt.includes("draft saved") || txt.includes("saved as draft") || toast && (toast.textContent || "").toLowerCase().includes("saved");
+          }, { timeout: 15e3 });
+          this.log(`\u2705 'Draft Saved' Best\xE4tigung von Amazon erhalten!`);
+        } catch (e) {
+          this.log(`\u23F3 Wartezeit nach Save-Draft beendet...`);
+        }
+        this.log(`\u{1F3E0} Navigiere zur\xFCck zum Dashboard (https://merch.amazon.com/dashboard)...`, "Navigiere zu Dashboard...");
+        await page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 });
+        await page.waitForTimeout(2e3);
+        this.log(`\u{1F389} Design sicher als Entwurf in Amazon Merch gespeichert & zur\xFCck auf Dashboard!`, "Entwurf gespeichert \u2713", 100, 100);
       }
       QueueService.updateItemStatus(item.id, "COMPLETED");
       QueueService.rebalanceQueue();
