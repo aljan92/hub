@@ -69,6 +69,8 @@ interface QueueState {
   usedSlotsToday: number;
   totalDailySlots: number;
   scheduledSlotsToday: number;
+  scheduledItemsCount?: number;
+  overflowItemsCount?: number;
   uploadScheduleTime: string;
   maxDropPerDesign: number;
   autoBalance: boolean;
@@ -542,31 +544,90 @@ export const QueueView: React.FC = () => {
         <div className="space-y-6 animate-fadeIn">
           {/* Slot Metrics & Capacity Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Daily Capacity */}
+            {/* Card 1: Tages-Uploads (Amazon Kontingent) */}
             <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
-                <span className="font-medium">Tages-Upload Kapazität</span>
+                <span className="font-medium">Tages-Uploads (Amazon)</span>
                 <Layers className="w-4 h-4 text-accent-cyan" />
               </div>
               <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-bold text-slate-100 font-mono">{queueState.scheduledSlotsToday}</span>
-                <span className="text-xs text-slate-400 font-mono">/ {queueState.freeDailySlots} Slots frei</span>
+                <span className="text-2xl font-bold text-slate-100 font-mono">
+                  {queueState.usedSlotsToday || 0} von {queueState.totalDailySlots || 200}
+                </span>
+                <span className="text-xs text-slate-400">verbraucht</span>
               </div>
               <div className="w-full bg-slate-900 rounded-full h-1.5 mt-3 overflow-hidden border border-slate-800">
                 <div 
                   className={`h-full transition-all duration-500 ${
-                    slotUtilizationPct > 90 
+                    ((queueState.usedSlotsToday || 0) / (queueState.totalDailySlots || 200)) * 100 > 90 
                       ? 'bg-rose-500' 
-                      : slotUtilizationPct > 70 
+                      : ((queueState.usedSlotsToday || 0) / (queueState.totalDailySlots || 200)) * 100 > 70 
                         ? 'bg-amber-400' 
                         : 'bg-accent-cyan'
                   }`}
-                  style={{ width: `${slotUtilizationPct}%` }}
+                  style={{ width: `${Math.min(100, Math.max(0, ((queueState.usedSlotsToday || 0) / (queueState.totalDailySlots || 200)) * 100))}%` }}
                 />
+              </div>
+              <div className="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
+                <span>{queueState.freeDailySlots || 0} freie Slots heute</span>
+                {(queueState.uploadMode || globalMode) === 'draft' && (
+                  <span className="text-primary-300 font-medium">🟡 Drafts aktiv</span>
+                )}
               </div>
             </div>
 
-            {/* Designs in Queue */}
+            {/* Card 2: Geplante Slots (Queue) */}
+            <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
+              <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+                <span className="font-medium">Geplante Slots (Queue)</span>
+                <UploadCloud className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="flex items-baseline space-x-2">
+                {(queueState.uploadMode || globalMode) === 'live' ? (
+                  <>
+                    <span className="text-2xl font-bold text-slate-100 font-mono">
+                      {queueState.scheduledSlotsToday || 0} von {queueState.freeDailySlots || 0}
+                    </span>
+                    <span className="text-xs text-slate-400">Slots belegt</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-2xl font-bold text-accent-cyan font-mono">
+                      {queueState.scheduledSlotsToday || 0} Produkte
+                    </span>
+                    <span className="text-xs text-slate-400">geplant</span>
+                  </>
+                )}
+              </div>
+              <div className="w-full bg-slate-900 rounded-full h-1.5 mt-3 overflow-hidden border border-slate-800">
+                <div 
+                  className={`h-full transition-all duration-500 ${
+                    (queueState.uploadMode || globalMode) === 'live'
+                      ? (queueState.scheduledSlotsToday || 0) > (queueState.freeDailySlots || 0)
+                        ? 'bg-rose-500'
+                        : 'bg-emerald-500'
+                      : 'bg-gradient-to-r from-accent-cyan to-primary-500'
+                  }`}
+                  style={{ 
+                    width: (queueState.uploadMode || globalMode) === 'live'
+                      ? `${Math.min(100, Math.max(0, ((queueState.scheduledSlotsToday || 0) / (queueState.freeDailySlots || 1)) * 100))}%`
+                      : '100%' 
+                  }}
+                />
+              </div>
+              <div className="text-[11px] text-slate-400 mt-2">
+                {(queueState.uploadMode || globalMode) === 'live' ? (
+                  <span>
+                    {queueState.scheduledItemsCount || 0} von {waitingOrUploadingDesigns.length} Designs heute einplanbar
+                    {(queueState.overflowItemsCount || 0) > 0 ? ` (${queueState.overflowItemsCount} warten auf freie Slots)` : ''}
+                  </span>
+                ) : (
+                  <span>Alle {waitingOrUploadingDesigns.length} Designs bereit zum Upload</span>
+                )}
+              </div>
+            </div>
+
+            {/* Card 3: Designs in Warteschlange */}
             <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
                 <span className="font-medium">Designs in Warteschlange</span>
@@ -574,38 +635,25 @@ export const QueueView: React.FC = () => {
               </div>
               <div className="flex items-baseline space-x-2">
                 <span className="text-2xl font-bold text-slate-100 font-mono">{waitingOrUploadingDesigns.length}</span>
-                <span className="text-xs text-slate-400">
-                  (Insgesamt {queueState.scheduledSlotsToday} geplante Slots)
-                </span>
+                <span className="text-xs text-slate-400">Designs</span>
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">
-                Reihenfolge per Drag &amp; Drop anpassbar
-              </div>
-            </div>
-
-            {/* Droppable Capacity Indicator */}
-            <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
-              <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
-                <span className="font-medium">Kürzungs-Puffer</span>
-                <Scissors className="w-4 h-4 text-amber-400" />
-              </div>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-bold text-amber-400 font-mono">{queueState.maxDroppableCapacity}</span>
-                <span className="text-xs text-slate-400">Slots max. kürzbar</span>
-              </div>
-              <div className="text-[11px] text-slate-400 mt-1">
-                Max. {queueState.maxDropPerDesign} Slots pro Design
+              <div className="text-[11px] text-slate-400 mt-3 pt-1 border-t border-slate-800/60">
+                {(queueState.uploadMode || globalMode) === 'live' ? (
+                  <span>Kürzungs-Puffer: Max. {queueState.maxDropPerDesign || 10} Slots / Design</span>
+                ) : (
+                  <span>Eingestellt: {queueState.draftProductsPerDesign || queueState.maxCatalogSlots || 106} Produkte / Design</span>
+                )}
               </div>
             </div>
           </div>
 
           {/* Control Panel: Scheduling & Balancing Settings */}
-          <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="bg-surface/80 border border-slate-800/80 rounded-2xl px-4 py-3 shadow-sm backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center flex-wrap gap-4">
-              {/* Upload Schedule Time Control */}
-              <div className="flex items-center space-x-2.5">
-                <Clock className="w-4 h-4 text-slate-400" />
-                <span className="text-xs font-semibold text-slate-300">Upload Startzeit:</span>
+              {/* Upload Startzeit */}
+              <div className="flex items-center space-x-2">
+                <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+                <span className="font-semibold text-slate-300">Upload Startzeit:</span>
 
                 {/* Enable/Disable Toggle */}
                 <button
@@ -634,9 +682,9 @@ export const QueueView: React.FC = () => {
               </div>
 
               {/* Stepper for Max Drop Tolerance per Design */}
-              <div className="flex items-center space-x-2.5 border-l border-slate-800 pl-4">
-                <Sliders className="w-4 h-4 text-slate-400" />
-                <span className="text-xs font-semibold text-slate-300">Max. Kürzungs-Toleranz:</span>
+              <div className="flex items-center space-x-2 border-l border-slate-800 pl-4">
+                <Sliders className="w-4 h-4 text-slate-400 shrink-0" />
+                <span className="font-semibold text-slate-300">Max. Kürzungs-Toleranz:</span>
                 
                 <div className="flex items-center space-x-1 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
                   <button
@@ -644,7 +692,7 @@ export const QueueView: React.FC = () => {
                       const next = Math.max(0, queueState.maxDropPerDesign - 1);
                       handleUpdateSettings({ maxDropPerDesign: next });
                     }}
-                    className="px-2 py-0.5 rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+                    className="w-6 h-6 flex items-center justify-center rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
                     title="Toleranz verringern"
                   >
                     -
@@ -659,7 +707,7 @@ export const QueueView: React.FC = () => {
                       const val = Math.max(0, Math.min(50, Number(e.target.value) || 0));
                       handleUpdateSettings({ maxDropPerDesign: val });
                     }}
-                    className="w-10 text-center bg-transparent text-xs font-mono font-bold text-slate-200 focus:outline-none"
+                    className="w-8 text-center bg-transparent text-xs font-mono font-bold text-slate-200 focus:outline-none"
                   />
 
                   <button
@@ -667,7 +715,7 @@ export const QueueView: React.FC = () => {
                       const next = Math.min(50, queueState.maxDropPerDesign + 1);
                       handleUpdateSettings({ maxDropPerDesign: next });
                     }}
-                    className="px-2 py-0.5 rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+                    className="w-6 h-6 flex items-center justify-center rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
                     title="Toleranz erhöhen"
                   >
                     +
@@ -678,9 +726,9 @@ export const QueueView: React.FC = () => {
 
               {/* Draft Mode Specific Stepper: Produkte pro Design */}
               {(queueState.uploadMode || globalMode) === 'draft' && (
-                <div className="flex items-center space-x-2.5 border-l border-slate-800 pl-4">
-                  <Package className="w-4 h-4 text-accent-cyan" />
-                  <span className="text-xs font-semibold text-slate-300">Produkte pro Design:</span>
+                <div className="flex items-center space-x-2 border-l border-slate-800 pl-4">
+                  <Package className="w-4 h-4 text-accent-cyan shrink-0" />
+                  <span className="font-semibold text-slate-300">Produkte pro Design:</span>
                   
                   {(() => {
                     const maxSlots = queueState.maxCatalogSlots || 106;
@@ -688,48 +736,50 @@ export const QueueView: React.FC = () => {
                     const currentVal = queueState.draftProductsPerDesign !== undefined ? queueState.draftProductsPerDesign : maxSlots;
 
                     return (
-                      <div className="flex items-center space-x-1 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
-                        <button
-                          onClick={() => {
-                            const next = Math.max(minSlots, currentVal - 1);
-                            handleUpdateSettings({ draftProductsPerDesign: next });
-                          }}
-                          disabled={currentVal <= minSlots}
-                          className="px-2 py-0.5 rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={`Verringern (Mindestens ${minSlots} Produkte)`}
-                        >
-                          -
-                        </button>
+                      <div className="flex items-center space-x-1.5">
+                        <div className="flex items-center space-x-1 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
+                          <button
+                            onClick={() => {
+                              const next = Math.max(minSlots, currentVal - 1);
+                              handleUpdateSettings({ draftProductsPerDesign: next });
+                            }}
+                            disabled={currentVal <= minSlots}
+                            className="w-6 h-6 flex items-center justify-center rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={`Verringern (Mindestens ${minSlots} Produkte)`}
+                          >
+                            -
+                          </button>
 
-                        <input
-                          type="number"
-                          min={minSlots}
-                          max={maxSlots}
-                          value={currentVal}
-                          onChange={(e) => {
-                            const val = Math.max(minSlots, Math.min(maxSlots, Number(e.target.value) || minSlots));
-                            handleUpdateSettings({ draftProductsPerDesign: val });
-                          }}
-                          className="w-11 text-center bg-transparent text-xs font-mono font-bold text-accent-cyan focus:outline-none"
-                        />
+                          <input
+                            type="number"
+                            min={minSlots}
+                            max={maxSlots}
+                            value={currentVal}
+                            onChange={(e) => {
+                              const val = Math.max(minSlots, Math.min(maxSlots, Number(e.target.value) || minSlots));
+                              handleUpdateSettings({ draftProductsPerDesign: val });
+                            }}
+                            className="w-9 text-center bg-transparent text-xs font-mono font-bold text-accent-cyan focus:outline-none"
+                          />
 
-                        <button
-                          onClick={() => {
-                            const next = Math.min(maxSlots, currentVal + 1);
-                            handleUpdateSettings({ draftProductsPerDesign: next });
-                          }}
-                          disabled={currentVal >= maxSlots}
-                          className="px-2 py-0.5 rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={`Erhöhen (Maximal ${maxSlots} Produkte)`}
-                        >
-                          +
-                        </button>
+                          <button
+                            onClick={() => {
+                              const next = Math.min(maxSlots, currentVal + 1);
+                              handleUpdateSettings({ draftProductsPerDesign: next });
+                            }}
+                            disabled={currentVal >= maxSlots}
+                            className="w-6 h-6 flex items-center justify-center rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={`Erhöhen (Maximal ${maxSlots} Produkte)`}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <span className="text-[11px] text-slate-400 font-mono">
+                          (Min: {minSlots} / Max: {maxSlots})
+                        </span>
                       </div>
                     );
                   })()}
-                  <span className="text-[11px] text-slate-500 font-mono">
-                    (Min: {Math.max(1, (queueState.maxCatalogSlots || 106) - (queueState.maxDropPerDesign || 10))} / Max: {queueState.maxCatalogSlots || 106})
-                  </span>
                 </div>
               )}
             </div>
@@ -739,7 +789,7 @@ export const QueueView: React.FC = () => {
               <button
                 onClick={handleRebalance}
                 disabled={isRebalancing}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700 flex items-center space-x-1.5 transition-all shadow-sm"
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700 flex items-center space-x-1.5 transition-all shadow-sm"
                 title="Slot-Berechnung manuell neu anstoßen"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isRebalancing ? 'animate-spin' : ''}`} />

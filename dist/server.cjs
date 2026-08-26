@@ -214749,6 +214749,7 @@ var init_queueService = __esm2({
       static getState() {
         this.ensureLoaded();
         const settings = loadSettings();
+        const isDraftMode = (settings.queueUploadMode || "draft") === "draft";
         const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
         const maxDrop = settings.queueMaxDropPerDesign ?? 10;
         const defaultDraftProducts = Math.max(1, maxCatalogSlots);
@@ -214757,13 +214758,30 @@ var init_queueService = __esm2({
           Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? defaultDraftProducts)
         );
         const activeItems = this.items.filter((i) => i.status === "UPLOADING" || i.status === "WAITING");
-        const scheduledSlotsToday = activeItems.reduce((sum, item) => sum + (item.allocatedSlots || item.totalBaseSlots || 0), 0);
+        let scheduledSlotsToday = 0;
+        let scheduledItemsCount = 0;
+        let overflowItemsCount = 0;
+        for (const item of activeItems) {
+          if (item.status === "UPLOADING") {
+            scheduledSlotsToday += item.allocatedSlots || item.totalBaseSlots || 0;
+            scheduledItemsCount++;
+          } else if (item.status === "WAITING") {
+            if (isDraftMode || item.allocatedSlots && item.allocatedSlots > 0) {
+              scheduledSlotsToday += item.allocatedSlots || 0;
+              scheduledItemsCount++;
+            } else {
+              overflowItemsCount++;
+            }
+          }
+        }
         return {
           items: this.items,
           freeDailySlots: this.dailySlotsInfo.free,
           usedSlotsToday: this.dailySlotsInfo.used,
           totalDailySlots: this.dailySlotsInfo.total,
           scheduledSlotsToday,
+          scheduledItemsCount,
+          overflowItemsCount,
           uploadScheduleTime: settings.queueUploadScheduleTime || "off",
           maxDropPerDesign: maxDrop,
           autoBalance: settings.queueAutoBalance ?? true,
@@ -215054,7 +215072,7 @@ var init_queueService = __esm2({
             item.allocatedSlots = total;
           }
           for (const item of overflowWaitingItems) {
-            item.allocatedSlots = item.totalBaseSlots;
+            item.allocatedSlots = 0;
           }
         }
         this.saveQueue();
