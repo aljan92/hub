@@ -471,11 +471,14 @@ export const QueueView: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Title */}
+                      {/* Title & Task ID */}
                       <div className="max-w-xl">
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center flex-wrap gap-2">
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
                             #{index + 1}
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary-500/15 text-primary-300 border border-primary-500/30 shrink-0 font-bold">
+                            Task {item.taskId.startsWith('#') ? item.taskId : `#${item.taskId}`}
                           </span>
                           <h3 className="text-sm font-bold text-slate-100 leading-snug" title={item.title || item.designTitle}>
                             {item.title || item.designTitle}
