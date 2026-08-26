@@ -327,6 +327,35 @@ export class QueueService {
   }
 
   /**
+   * Reorder items in the queue and trigger dynamic rebalance
+   */
+  public static reorderItems(orderedIds: string[]): QueueState {
+    this.ensureLoaded();
+    const idMap = new Map(this.items.map(i => [i.id, i]));
+    const reordered: QueueItem[] = [];
+
+    for (let index = 0; index < orderedIds.length; index++) {
+      const id = orderedIds[index];
+      if (idMap.has(id)) {
+        const item = idMap.get(id)!;
+        item.sortOrder = index;
+        reordered.push(item);
+        idMap.delete(id);
+      }
+    }
+
+    // Append any items that weren't in orderedIds
+    for (const remaining of idMap.values()) {
+      remaining.sortOrder = reordered.length;
+      reordered.push(remaining);
+    }
+
+    this.items = reordered;
+    this.saveQueue();
+    return this.rebalanceQueue();
+  }
+
+  /**
    * Clear completed or all items
    */
   public static clearQueue(onlyCompleted = true) {

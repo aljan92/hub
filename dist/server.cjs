@@ -214802,6 +214802,30 @@ var init_queueService = __esm2({
         return false;
       }
       /**
+       * Reorder items in the queue and trigger dynamic rebalance
+       */
+      static reorderItems(orderedIds) {
+        this.ensureLoaded();
+        const idMap = new Map(this.items.map((i) => [i.id, i]));
+        const reordered = [];
+        for (let index = 0; index < orderedIds.length; index++) {
+          const id = orderedIds[index];
+          if (idMap.has(id)) {
+            const item = idMap.get(id);
+            item.sortOrder = index;
+            reordered.push(item);
+            idMap.delete(id);
+          }
+        }
+        for (const remaining of idMap.values()) {
+          remaining.sortOrder = reordered.length;
+          reordered.push(remaining);
+        }
+        this.items = reordered;
+        this.saveQueue();
+        return this.rebalanceQueue();
+      }
+      /**
        * Clear completed or all items
        */
       static clearQueue(onlyCompleted = true) {
@@ -222249,6 +222273,18 @@ app.post("/api/v1/queue/rebalance", (req, res) => {
   try {
     const freeSlots = req.body.freeSlots !== void 0 ? Number(req.body.freeSlots) : void 0;
     const state = QueueService.rebalanceQueue(freeSlots);
+    res.json({ success: true, state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/queue/reorder", (req, res) => {
+  try {
+    const { itemIds } = req.body;
+    if (!Array.isArray(itemIds)) {
+      return res.status(400).json({ success: false, error: "itemIds array is required" });
+    }
+    const state = QueueService.reorderItems(itemIds);
     res.json({ success: true, state });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

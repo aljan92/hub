@@ -19,7 +19,8 @@ import {
   Scissors, 
   ExternalLink,
   Sliders,
-  Check
+  Check,
+  GripVertical
 } from 'lucide-react';
 
 interface QueueItem {
@@ -95,6 +96,8 @@ export const QueueView: React.FC = () => {
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [globalMode, setGlobalMode] = useState<'live' | 'draft'>('draft');
   const [isUploading, setIsUploading] = useState(false);
 
@@ -180,6 +183,54 @@ export const QueueView: React.FC = () => {
       }
     } catch (err) {
       console.error('Clear queue error:', err);
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      return;
+    }
+
+    const newItems = [...queueState.items];
+    const [movedItem] = newItems.splice(draggedIndex, 1);
+    newItems.splice(dropIndex, 0, movedItem);
+
+    // Instant optimistic UI update
+    setQueueState(prev => ({ ...prev, items: newItems }));
+    setDraggedIndex(null);
+
+    // Persist reorder to server & rebalance
+    try {
+      const itemIds = newItems.map(i => i.id);
+      const res = await fetch('/api/v1/queue/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemIds })
+      });
+      const data = await res.json();
+      if (data.success && data.state) {
+        setQueueState(data.state);
+      }
+    } catch (err) {
+      console.error('Reorder error:', err);
     }
   };
 
@@ -442,20 +493,39 @@ export const QueueView: React.FC = () => {
             {queueState.items.map((item, index) => {
               const isScheduled = item.status === 'SCHEDULED_TODAY' || item.status === 'UPLOADING';
               const isExpanded = expandedItemId === item.id;
+              const isDragging = draggedIndex === index;
+              const isDragOver = dragOverIndex === index;
               const droppedCount = Object.values(item.droppedSlotsMap).reduce((sum, list) => sum + list.length, 0);
 
               return (
                 <div
                   key={item.id}
-                  className={`bg-surface/90 border rounded-2xl p-4 shadow-sm backdrop-blur-md transition-all overflow-hidden ${
-                    isScheduled
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, index)}
+                  className={`bg-surface/90 border rounded-2xl p-4 shadow-sm backdrop-blur-md transition-all overflow-hidden relative ${
+                    isDragging ? 'opacity-40 scale-[0.99] border-dashed border-accent-cyan' : ''
+                  } ${
+                    isDragOver ? 'border-accent-cyan ring-2 ring-accent-cyan/30 scale-[1.01]' : ''
+                  } ${
+                    isScheduled && !isDragging && !isDragOver
                       ? 'border-emerald-500/40 shadow-emerald-500/5'
-                      : 'border-slate-800/80 opacity-75 hover:opacity-100'
+                      : (!isDragging && !isDragOver ? 'border-slate-800/80 opacity-75 hover:opacity-100' : '')
                   }`}
                 >
-                  {/* Top Row: Thumbnail, Title, Badges, Lock & Actions */}
+                  {/* Top Row: Drag Handle, Thumbnail, Title, Badges, Lock & Actions */}
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-3 sm:space-x-4">
+                      {/* Drag Handle */}
+                      <div 
+                        className="cursor-grab active:cursor-grabbing text-slate-500 hover:text-slate-200 p-1 -ml-1 rounded transition-colors"
+                        title="Ziehen um Reihenfolge zu ändern"
+                      >
+                        <GripVertical className="w-5 h-5" />
+                      </div>
+
                       {/* Image Thumbnail */}
                       <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shrink-0 relative group">
                         {item.imagePath ? (
@@ -502,7 +572,7 @@ export const QueueView: React.FC = () => {
                         </span>
                         {droppedCount > 0 && isScheduled && (
                           <span className="text-[10px] text-amber-400/90 font-mono mt-0.5">
-                            ({droppedCount} Nicht-US-Slots gekürzt)
+                            ({droppedCount} Slots gekürzt)
                           </span>
                         )}
                       </div>

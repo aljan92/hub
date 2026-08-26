@@ -1172,6 +1172,20 @@ app.post('/api/v1/queue/rebalance', (req, res) => {
   }
 });
 
+// Reorder Queue Items (Drag and Drop)
+app.post('/api/v1/queue/reorder', (req, res) => {
+  try {
+    const { itemIds } = req.body;
+    if (!Array.isArray(itemIds)) {
+      return res.status(400).json({ success: false, error: 'itemIds array is required' });
+    }
+    const state = QueueService.reorderItems(itemIds);
+    res.json({ success: true, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Update Queue Settings (Schedule Time, Max Drop, Auto Balance)
 app.patch('/api/v1/queue/settings', (req, res) => {
   try {
