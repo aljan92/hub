@@ -1199,18 +1199,19 @@ export class SyncEngine {
   } | null = null;
 
   /**
-   * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard
+   * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard in Session 1
    */
-  public static async fetchDashboardRatelimiter(page?: any): Promise<{
+  public static async fetchDashboardRatelimiter(page?: any, forceRefresh = false): Promise<{
     tier?: number;
     slots: { used: number; total: number; free: number };
   } | null> {
     const now = Date.now();
-    if (this.cachedRatelimiter && (now - this.cachedRatelimiter.timestamp) < 45000) {
+    if (!forceRefresh && this.cachedRatelimiter && (now - this.cachedRatelimiter.timestamp) < 45000) {
       return this.cachedRatelimiter.data;
     }
 
     try {
+      // Session 1 is the dedicated sync session
       const p = page || await this.getAmazonPage();
 
       const result = await p.evaluate(async () => {

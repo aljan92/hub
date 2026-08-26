@@ -218170,11 +218170,11 @@ var SyncEngine = class _SyncEngine {
   }
   static cachedRatelimiter = null;
   /**
-   * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard
+   * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard in Session 1
    */
-  static async fetchDashboardRatelimiter(page) {
+  static async fetchDashboardRatelimiter(page, forceRefresh = false) {
     const now = Date.now();
-    if (this.cachedRatelimiter && now - this.cachedRatelimiter.timestamp < 45e3) {
+    if (!forceRefresh && this.cachedRatelimiter && now - this.cachedRatelimiter.timestamp < 45e3) {
       return this.cachedRatelimiter.data;
     }
     try {
@@ -222055,14 +222055,14 @@ var UploadWorkerService = class _UploadWorkerService {
       }
       QueueService.updateItemStatus(item.id, "COMPLETED");
       try {
-        this.log(`\u{1F4CA} Frage aktuelle freie Tages-Upload-Slots von Amazon Merch ab...`, "Aktualisiere freie Slots...");
-        const ratelimiter = await SyncEngine.fetchDashboardRatelimiter(page);
+        this.log(`\u{1F4CA} Frage aktuelle freie Tages-Upload-Slots \xFCber Session 1 (Sync & Metadata) ab...`, "Aktualisiere freie Slots...");
+        const ratelimiter = await SyncEngine.fetchDashboardRatelimiter(void 0, true);
         if (ratelimiter?.slots) {
-          this.log(`\u{1F4C8} Aktuelle Slots: ${ratelimiter.slots.free} frei (${ratelimiter.slots.used}/${ratelimiter.slots.total} verbraucht)`);
+          this.log(`\u{1F4C8} Aktuelle Slots (Session 1): ${ratelimiter.slots.free} frei (${ratelimiter.slots.used}/${ratelimiter.slots.total} verbraucht)`);
           QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
         }
       } catch (err) {
-        console.warn("[UploadWorker] Could not refresh ratelimiter metadata:", err?.message);
+        console.warn("[UploadWorker] Could not refresh ratelimiter metadata in Session 1:", err?.message);
       }
       QueueService.rebalanceQueue();
       this.isUploading = false;

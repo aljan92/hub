@@ -840,18 +840,19 @@ export class UploadWorkerService {
         this.log(`🎉 Design sicher als Entwurf in Amazon Merch gespeichert & zurück auf Dashboard!`, 'Entwurf gespeichert ✓', 100, 100);
       }
 
-      // 10. Complete Queue Item & Live Slot Refresh
+      // 10. Complete Queue Item & Live Slot Refresh via Session 1
       QueueService.updateItemStatus(item.id, 'COMPLETED');
 
       try {
-        this.log(`📊 Frage aktuelle freie Tages-Upload-Slots von Amazon Merch ab...`, 'Aktualisiere freie Slots...');
-        const ratelimiter = await SyncEngine.fetchDashboardRatelimiter(page);
+        this.log(`📊 Frage aktuelle freie Tages-Upload-Slots über Session 1 (Sync & Metadata) ab...`, 'Aktualisiere freie Slots...');
+        // Undefined page forces SyncEngine to query using Session 1
+        const ratelimiter = await SyncEngine.fetchDashboardRatelimiter(undefined, true);
         if (ratelimiter?.slots) {
-          this.log(`📈 Aktuelle Slots: ${ratelimiter.slots.free} frei (${ratelimiter.slots.used}/${ratelimiter.slots.total} verbraucht)`);
+          this.log(`📈 Aktuelle Slots (Session 1): ${ratelimiter.slots.free} frei (${ratelimiter.slots.used}/${ratelimiter.slots.total} verbraucht)`);
           QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
         }
       } catch (err: any) {
-        console.warn('[UploadWorker] Could not refresh ratelimiter metadata:', err?.message);
+        console.warn('[UploadWorker] Could not refresh ratelimiter metadata in Session 1:', err?.message);
       }
 
       QueueService.rebalanceQueue();
