@@ -219148,7 +219148,7 @@ Please audit the listing based on your compliance rules:
   static getAwaitingTasks() {
     const logs = this.loadLogs();
     return logs.filter(
-      (t) => t.status === "AWAITING_PRE_FLIGHT_REVIEW" || t.status === "AWAITING_DESIGN_REVIEW" || t.status === "AWAITING_TM_REVIEW"
+      (t) => t.status === "AWAITING_PRE_FLIGHT_REVIEW" || t.status === "AWAITING_DESIGN_REVIEW" || t.status === "AWAITING_TM_REVIEW" || t.status === "AWAITING_SVG_REVIEW"
     );
   }
   static getTaskLogById(id) {
