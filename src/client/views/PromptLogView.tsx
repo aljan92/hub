@@ -29,7 +29,8 @@ import {
   XCircle,
   ShieldCheck,
   ShieldAlert,
-  AlertTriangle
+  AlertTriangle,
+  UploadCloud
 } from 'lucide-react';
 
 import { 
@@ -206,6 +207,8 @@ export const PromptLogView: React.FC = () => {
   const [playQuote, setPlayQuote] = useState('111 Manifest Your Reality');
   const [submittingTest, setSubmittingTest] = useState(false);
   const [testSuccessMessage, setTestSuccessMessage] = useState<string | null>(null);
+  const [pushingToQueueTaskId, setPushingToQueueTaskId] = useState<string | null>(null);
+  const [pushSuccessTaskId, setPushSuccessTaskId] = useState<string | null>(null);
 
   const selectedTask = tasks.find(t => t.id === selectedTaskId) || tasks[0] || null;
 
@@ -287,6 +290,25 @@ export const PromptLogView: React.FC = () => {
       alert(`Netzwerkfehler: ${err.message}`);
     } finally {
       setSubmittingTest(false);
+    }
+  };
+
+  const handlePushToQueue = async (taskId: string) => {
+    setPushingToQueueTaskId(taskId);
+    try {
+      const res = await fetch(`/api/v1/tasks/${taskId}/enqueue`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setPushSuccessTaskId(taskId);
+        setTimeout(() => setPushSuccessTaskId(null), 3000);
+        fetchTasks();
+      } else {
+        alert(`Fehler: ${data.error || 'Konnte nicht in Queue übertragen werden'}`);
+      }
+    } catch (err: any) {
+      alert(`Fehler beim Übertragen: ${err.message}`);
+    } finally {
+      setPushingToQueueTaskId(null);
     }
   };
 
@@ -1248,19 +1270,69 @@ export const PromptLogView: React.FC = () => {
                       )}
 
                       {event.type === 'TASK_HANDOFF' && (
-                        <div className="bg-slate-950 rounded-xl p-3.5 border border-amber-500/30 space-y-2">
+                        <div className={`bg-slate-950 rounded-xl p-3.5 border space-y-3 ${
+                          event.title?.includes('Upload-Queue') || event.content?.queueId
+                            ? 'border-accent-cyan/40 bg-accent-cyan/5 shadow-sm shadow-accent-cyan/10'
+                            : 'border-amber-500/30'
+                        }`}>
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-amber-300 flex items-center gap-1.5">
-                              <CheckSquare className="w-3.5 h-3.5 text-amber-400" />
+                            <span className={`font-semibold flex items-center gap-1.5 ${
+                              event.title?.includes('Upload-Queue') || event.content?.queueId ? 'text-accent-cyan' : 'text-amber-300'
+                            }`}>
+                              {event.title?.includes('Upload-Queue') || event.content?.queueId ? (
+                                <UploadCloud className="w-4 h-4 text-accent-cyan" />
+                              ) : (
+                                <CheckSquare className="w-3.5 h-3.5 text-amber-400" />
+                              )}
                               {event.title || 'Übergeben an Tasks'}
                             </span>
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300 font-semibold">
-                              REVIEW
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                              event.title?.includes('Upload-Queue') || event.content?.queueId
+                                ? 'bg-accent-cyan/20 text-accent-cyan border-accent-cyan/40' 
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                            }`}>
+                              {event.title?.includes('Upload-Queue') || event.content?.queueId ? 'IN QUEUE' : 'REVIEW'}
                             </span>
                           </div>
+
                           <p className="text-xs text-slate-300 leading-relaxed">
-                            {event.content?.reason || 'Pausiert für manuelle Prüfung in Tasks.'}
+                            {event.content?.message || event.content?.reason || 'Pausiert für manuelle Prüfung in Tasks.'}
                           </p>
+
+                          {/* Re-Push / Enqueue Button */}
+                          {selectedTask && (
+                            <div className="pt-2 flex items-center justify-between border-t border-slate-800/80">
+                              <span className="text-[11px] text-slate-400 font-mono">
+                                Task #{selectedTask.id} {event.content?.allocatedSlots ? `• ${event.content.allocatedSlots} Slots geplant` : ''}
+                              </span>
+
+                              <button
+                                onClick={() => handlePushToQueue(selectedTask.id)}
+                                disabled={pushingToQueueTaskId === selectedTask.id}
+                                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all shadow-sm active:scale-98 disabled:opacity-50 ${
+                                  pushSuccessTaskId === selectedTask.id
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                    : 'bg-gradient-to-r from-accent-cyan to-primary-600 hover:from-accent-cyan/90 hover:to-primary-500 text-slate-950 shadow-accent-cyan/20'
+                                }`}
+                                title="Dieses Design erneut in die Upload-Queue übertragen"
+                              >
+                                {pushingToQueueTaskId === selectedTask.id ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                                ) : pushSuccessTaskId === selectedTask.id ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <UploadCloud className="w-3.5 h-3.5" />
+                                )}
+                                <span>
+                                  {pushingToQueueTaskId === selectedTask.id 
+                                    ? 'Pushe in Queue...' 
+                                    : pushSuccessTaskId === selectedTask.id 
+                                      ? 'In Queue übertragen ✓' 
+                                      : 'Erneut in Queue pushen'}
+                                </span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
 

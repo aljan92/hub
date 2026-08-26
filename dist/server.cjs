@@ -214756,8 +214756,27 @@ var init_queueService = __esm2({
        */
       static enqueueDesign(item) {
         this.ensureLoaded();
+        const cleanStr = (txt) => {
+          if (!txt) return "";
+          return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
+        };
         const existing = this.items.find((i) => i.taskId === item.taskId);
         if (existing) {
+          existing.status = "WAITING";
+          existing.errorMessage = void 0;
+          if (item.title) existing.title = cleanStr(item.title);
+          if (item.brand) existing.brand = cleanStr(item.brand);
+          if (item.bullet1) existing.bullet1 = cleanStr(item.bullet1);
+          if (item.bullet2) existing.bullet2 = cleanStr(item.bullet2);
+          if (item.description) existing.description = cleanStr(item.description);
+          if (item.listings) existing.listings = item.listings;
+          if (item.fitTypes) existing.fitTypes = item.fitTypes;
+          if (item.avoidColor) existing.avoidColor = item.avoidColor;
+          if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
+          if (item.pngPath) existing.pngPath = item.pngPath;
+          if (item.imagePath) existing.imagePath = item.imagePath;
+          this.saveQueue();
+          this.rebalanceQueue();
           return existing;
         }
         const catalog = ProductCatalogService.getCatalog();
@@ -214770,10 +214789,6 @@ var init_queueService = __esm2({
           activeProductsMap[prod.id] = mps;
           totalBaseSlots += mps.length;
         }
-        const cleanStr = (txt) => {
-          if (!txt) return "";
-          return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
-        };
         const newItem = {
           id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           taskId: item.taskId,
@@ -223182,6 +223197,20 @@ app.post("/api/v1/queue/item/:id/retry", (req, res) => {
     }
     const state = QueueService.getState();
     res.json({ success: true, item, state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/tasks/:id/enqueue", (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const task = TaskLogService.getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({ success: false, error: "Task nicht gefunden" });
+    }
+    TaskLogService.completeTaskAndEnqueue(task);
+    const queueState = QueueService.getState();
+    res.json({ success: true, message: `Task #${taskId} erfolgreich in die Upload-Queue \xFCbertragen!`, task, queueState });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

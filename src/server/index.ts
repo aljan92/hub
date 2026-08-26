@@ -1272,6 +1272,23 @@ app.post('/api/v1/queue/item/:id/retry', (req, res) => {
   }
 });
 
+// Re-push / Enqueue Task into Upload Queue
+app.post('/api/v1/tasks/:id/enqueue', (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const task = TaskLogService.getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({ success: false, error: 'Task nicht gefunden' });
+    }
+
+    TaskLogService.completeTaskAndEnqueue(task);
+    const queueState = QueueService.getState();
+    res.json({ success: true, message: `Task #${taskId} erfolgreich in die Upload-Queue übertragen!`, task, queueState });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Delete item from queue
 app.delete('/api/v1/queue/item/:id', (req, res) => {
   try {
