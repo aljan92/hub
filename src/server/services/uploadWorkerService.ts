@@ -511,13 +511,17 @@ export class UploadWorkerService {
               || editor.querySelector('button[id*="color-btn"]')
               || editor.querySelector('.background-color-picker-button')
               || editor.querySelector('button.color-btn')
-              || editor.querySelector('.color-picker-button')) as HTMLElement;
+              || editor.querySelector('.color-picker-button')
+              || document.querySelector('#color-btn')) as HTMLElement;
 
             if (colorBtn) {
               const isPopoverOpen = colorBtn.hasAttribute('aria-describedby');
               if (!isPopoverOpen) {
+                // Force click button to open color popover
+                colorBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                colorBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
                 colorBtn.click();
-                await sleep(450);
+                await sleep(500);
               }
 
               const popoverId = colorBtn.getAttribute('aria-describedby');
@@ -525,21 +529,9 @@ export class UploadWorkerService {
                 || document.querySelector('.sketch-picker, .color-picker-container, ngb-popover-window, color-sketch, .color-picker-popover') as HTMLElement;
 
               if (popover) {
-                let hexInput = popover.querySelector('color-editable-input[label="hex"] input, input[aria-label="hex"], input[type="text"]') as HTMLInputElement;
-                if (!hexInput) {
-                  const spans = Array.from(popover.querySelectorAll('span, label'));
-                  const hexSpan = spans.find(span => span.textContent?.trim().toLowerCase() === 'hex');
-                  if (hexSpan) {
-                    hexInput = (hexSpan.closest('.wrap')?.querySelector('input') || hexSpan.parentElement?.querySelector('input')) as HTMLInputElement;
-                  }
-                }
-                if (!hexInput) {
-                  hexInput = popover.querySelector('input') as HTMLInputElement;
-                }
+                const cleanHex = (params.customBgColor || '000000').replace(/^#/, '').toUpperCase();
 
-                const cleanHex = params.customBgColor.replace(/^#/, '').toUpperCase();
-
-                // 1. First, check preset swatches in sketch-picker (fastest & most reliable)
+                // 1. Check preset swatches in sketch-picker (e.g. pure black or pure white)
                 const swatches = Array.from(popover.querySelectorAll('.sketch-swatches div, .sketch-swatches span, .sketch-swatches [title], .sketch-swatches [style]')) as HTMLElement[];
                 let matchedSwatch: HTMLElement | null = null;
                 for (const sw of swatches) {
@@ -560,53 +552,79 @@ export class UploadWorkerService {
                 }
 
                 if (matchedSwatch) {
+                  matchedSwatch.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                  matchedSwatch.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
                   matchedSwatch.click();
                   await sleep(150);
                 }
 
-                // 2. Set the Hex input value via prototype setter to properly trigger React/Angular bindings
+                // 2. Locate hex input field inside color-editable-input or wrap
+                let hexInput = (popover.querySelector('color-editable-input[label="hex"] input, div[label="hex"] input, input[aria-label="hex"]')
+                  || popover.querySelector('.wrap input')
+                  || popover.querySelector('input[type="text"]')
+                  || popover.querySelector('input')) as HTMLInputElement;
+
+                if (!hexInput) {
+                  const spans = Array.from(popover.querySelectorAll('span, label'));
+                  const hexSpan = spans.find(span => span.textContent?.trim().toLowerCase() === 'hex');
+                  if (hexSpan) {
+                    hexInput = (hexSpan.closest('.wrap')?.querySelector('input') || hexSpan.parentElement?.querySelector('input')) as HTMLInputElement;
+                  }
+                }
+
+                // 3. Robust character-by-character simulateTyping (tested pattern from MBA Manager & Listing Optimizer)
                 if (hexInput) {
                   hexInput.focus();
-                  hexInput.select();
                   
-                  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-                  if (nativeSetter) {
-                    nativeSetter.call(hexInput, cleanHex);
-                  } else {
-                    hexInput.value = cleanHex;
-                  }
-                  
+                  // Clear the field first
+                  hexInput.value = '';
                   hexInput.dispatchEvent(new Event('input', { bubbles: true }));
                   hexInput.dispatchEvent(new Event('change', { bubbles: true }));
-                  hexInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
-                  hexInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
+                  await sleep(50);
+
+                  // Type character by character
+                  for (const char of cleanHex) {
+                    hexInput.value += char;
+                    hexInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    await sleep(30);
+                  }
+
+                  // Trigger change, Enter key events (with keyCode 13 and which 13), and blur
+                  hexInput.dispatchEvent(new Event('change', { bubbles: true }));
+                  hexInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+                  hexInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
                   hexInput.blur();
                   hexInput.dispatchEvent(new Event('blur', { bubbles: true }));
                   await sleep(150);
                 }
 
-                // 3. Close popover cleanly
-                if (colorBtn.hasAttribute('aria-describedby')) {
+                // 4. Close popover cleanly
+                const doneBtn = popover.querySelector('button.done-button, button[type="submit"]') as HTMLElement;
+                if (doneBtn) {
+                  doneBtn.click();
+                } else if (colorBtn.hasAttribute('aria-describedby')) {
                   colorBtn.click();
-                  await sleep(200);
                 } else {
-                  const doneBtn = popover.querySelector('button.done-button, button[type="submit"]') as HTMLElement;
-                  if (doneBtn) doneBtn.click();
-                  else {
-                    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
-                  }
-                  await sleep(200);
+                  document.body.click();
                 }
+                await sleep(200);
               }
             }
 
             // Also check for direct text input on card if present
             const directHexInput = editor.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]') as HTMLInputElement;
             if (directHexInput) {
-              const cleanHex = params.customBgColor.replace('#', '').toUpperCase();
-              directHexInput.value = cleanHex;
+              const cleanHex = (params.customBgColor || '000000').replace(/^#/, '').toUpperCase();
+              directHexInput.focus();
+              directHexInput.value = '';
               directHexInput.dispatchEvent(new Event('input', { bubbles: true }));
+              for (const char of cleanHex) {
+                directHexInput.value += char;
+                directHexInput.dispatchEvent(new Event('input', { bubbles: true }));
+                await sleep(30);
+              }
               directHexInput.dispatchEvent(new Event('change', { bubbles: true }));
+              directHexInput.blur();
             }
           } else {
             // Swatches mode (Apparel, Jerseys, Hats, Raglan)

@@ -221981,28 +221981,19 @@ var UploadWorkerService = class _UploadWorkerService {
             }
           }
           if (params2.colorMode === "customPicker") {
-            const colorBtn = editor.querySelector("#color-btn") || editor.querySelector('button[id*="color-btn"]') || editor.querySelector(".background-color-picker-button") || editor.querySelector("button.color-btn") || editor.querySelector(".color-picker-button");
+            const colorBtn = editor.querySelector("#color-btn") || editor.querySelector('button[id*="color-btn"]') || editor.querySelector(".background-color-picker-button") || editor.querySelector("button.color-btn") || editor.querySelector(".color-picker-button") || document.querySelector("#color-btn");
             if (colorBtn) {
               const isPopoverOpen = colorBtn.hasAttribute("aria-describedby");
               if (!isPopoverOpen) {
+                colorBtn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+                colorBtn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
                 colorBtn.click();
-                await sleep2(450);
+                await sleep2(500);
               }
               const popoverId = colorBtn.getAttribute("aria-describedby");
               const popover = (popoverId ? document.getElementById(popoverId) : null) || document.querySelector(".sketch-picker, .color-picker-container, ngb-popover-window, color-sketch, .color-picker-popover");
               if (popover) {
-                let hexInput = popover.querySelector('color-editable-input[label="hex"] input, input[aria-label="hex"], input[type="text"]');
-                if (!hexInput) {
-                  const spans = Array.from(popover.querySelectorAll("span, label"));
-                  const hexSpan = spans.find((span) => span.textContent?.trim().toLowerCase() === "hex");
-                  if (hexSpan) {
-                    hexInput = hexSpan.closest(".wrap")?.querySelector("input") || hexSpan.parentElement?.querySelector("input");
-                  }
-                }
-                if (!hexInput) {
-                  hexInput = popover.querySelector("input");
-                }
-                const cleanHex = params2.customBgColor.replace(/^#/, "").toUpperCase();
+                const cleanHex = (params2.customBgColor || "000000").replace(/^#/, "").toUpperCase();
                 const swatches = Array.from(popover.querySelectorAll(".sketch-swatches div, .sketch-swatches span, .sketch-swatches [title], .sketch-swatches [style]"));
                 let matchedSwatch = null;
                 for (const sw of swatches) {
@@ -222022,45 +222013,61 @@ var UploadWorkerService = class _UploadWorkerService {
                   }
                 }
                 if (matchedSwatch) {
+                  matchedSwatch.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+                  matchedSwatch.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
                   matchedSwatch.click();
                   await sleep2(150);
                 }
+                let hexInput = popover.querySelector('color-editable-input[label="hex"] input, div[label="hex"] input, input[aria-label="hex"]') || popover.querySelector(".wrap input") || popover.querySelector('input[type="text"]') || popover.querySelector("input");
+                if (!hexInput) {
+                  const spans = Array.from(popover.querySelectorAll("span, label"));
+                  const hexSpan = spans.find((span) => span.textContent?.trim().toLowerCase() === "hex");
+                  if (hexSpan) {
+                    hexInput = hexSpan.closest(".wrap")?.querySelector("input") || hexSpan.parentElement?.querySelector("input");
+                  }
+                }
                 if (hexInput) {
                   hexInput.focus();
-                  hexInput.select();
-                  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-                  if (nativeSetter) {
-                    nativeSetter.call(hexInput, cleanHex);
-                  } else {
-                    hexInput.value = cleanHex;
-                  }
+                  hexInput.value = "";
                   hexInput.dispatchEvent(new Event("input", { bubbles: true }));
                   hexInput.dispatchEvent(new Event("change", { bubbles: true }));
-                  hexInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
-                  hexInput.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
+                  await sleep2(50);
+                  for (const char of cleanHex) {
+                    hexInput.value += char;
+                    hexInput.dispatchEvent(new Event("input", { bubbles: true }));
+                    await sleep2(30);
+                  }
+                  hexInput.dispatchEvent(new Event("change", { bubbles: true }));
+                  hexInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+                  hexInput.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
                   hexInput.blur();
                   hexInput.dispatchEvent(new Event("blur", { bubbles: true }));
                   await sleep2(150);
                 }
-                if (colorBtn.hasAttribute("aria-describedby")) {
+                const doneBtn = popover.querySelector('button.done-button, button[type="submit"]');
+                if (doneBtn) {
+                  doneBtn.click();
+                } else if (colorBtn.hasAttribute("aria-describedby")) {
                   colorBtn.click();
-                  await sleep2(200);
                 } else {
-                  const doneBtn = popover.querySelector('button.done-button, button[type="submit"]');
-                  if (doneBtn) doneBtn.click();
-                  else {
-                    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
-                  }
-                  await sleep2(200);
+                  document.body.click();
                 }
+                await sleep2(200);
               }
             }
             const directHexInput = editor.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]');
             if (directHexInput) {
-              const cleanHex = params2.customBgColor.replace("#", "").toUpperCase();
-              directHexInput.value = cleanHex;
+              const cleanHex = (params2.customBgColor || "000000").replace(/^#/, "").toUpperCase();
+              directHexInput.focus();
+              directHexInput.value = "";
               directHexInput.dispatchEvent(new Event("input", { bubbles: true }));
+              for (const char of cleanHex) {
+                directHexInput.value += char;
+                directHexInput.dispatchEvent(new Event("input", { bubbles: true }));
+                await sleep2(30);
+              }
               directHexInput.dispatchEvent(new Event("change", { bubbles: true }));
+              directHexInput.blur();
             }
           } else {
             const colorCheckboxes = Array.from(editor.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]'));
