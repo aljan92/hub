@@ -126,6 +126,10 @@ graph TD
   * **Tab 1: Warteschlange:** Aktive Warteliste mit Drag & Drop Priorisierung. *(Sidebar-Badge reflektiert exklusiv die Anzahl aktiver Warteschlangen-Elemente `WAITING` / `UPLOADING`)*.
   * **Tab 2: Hochgeladen (`COMPLETED`):** Historie mit Re-Enqueue Option.
   * **Tab 3: Fehler (`ERROR`):** Fehlgeschlagene Uploads mit 1-Click *„Wieder einreihen“* (`POST /api/v1/queue/item/:id/retry`) und Lösch-Modal.
+* **Transparente Master-PNG Thumbnails & 1s Hover Zoom Popover:**
+  * Backend `/api/v1/designs/image/:taskId` priorisiert automatisch die finale, hintergrundfreie **4500x5400px Master-PNG** (`_mba.png`).
+  * Alle Thumbnails sind auf einem edlen dunklen **Schachbrett-/Transparenzgitter** (`object-contain`) eingebettet.
+  * **1-Sekunden Hover Zoom:** Beim Verweilen mit der Maus über einem Thumbnail poppt nach exakt 1 Sekunde eine hochauflösende Großansicht mit Gitterhintergrund, Task-ID, Master-PNG Badge und Listing-Details auf.
 * **Draft Mode vs. Live Mode:**
   * **Live Mode:** Mathematisches Slot-Balancing gegen verbleibende freie Tages-Slots. US-Marktplätze (.com) bleiben 100% geschützt; Non-US Slots werden nach Priorität gekürzt ($\mathbf{JP} \rightarrow \mathbf{ES} \rightarrow \mathbf{IT} \rightarrow \mathbf{FR} \rightarrow \mathbf{DE} \rightarrow \mathbf{GB}$). Hero-Designs (`🔒`) behalten 100% aller Slots.
   * **Draft Mode:** Draft-Uploads belasten kein tägliches Kontingent. Neuer Stepper **„Produkte pro Design“** (Bereich: $\text{Max} - \text{Toleranz}$ bis $\text{Max}$, z. B. 89 bis 106) für persistente Produktanzahl pro Design.
