@@ -229,25 +229,27 @@ export const TasksView: React.FC = () => {
   };
 
   // Fetch Tasks
-  const fetchTasks = async () => {
-    setLoading(true);
+  const fetchTasks = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const res = await fetch('/api/v1/tasks');
       const data = await res.json();
       if (data.success && Array.isArray(data.tasks)) {
         setTasks(data.tasks);
-        if (data.tasks.length > 0) {
-          if (!selectedTaskId || !data.tasks.find((t: DesignTaskLog) => t.id === selectedTaskId)) {
-            setSelectedTaskId(data.tasks[0].id);
+        setSelectedTaskId(prevId => {
+          if (data.tasks.length === 0) return '';
+          // If previous selection still exists in the task list, retain it!
+          if (prevId && data.tasks.some((t: DesignTaskLog) => t.id === prevId)) {
+            return prevId;
           }
-        } else {
-          setSelectedTaskId('');
-        }
+          // Otherwise default to first task
+          return data.tasks[0].id;
+        });
       }
     } catch (err) {
       console.warn('[Tasks] Fetch error:', err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -282,13 +284,13 @@ export const TasksView: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchTasks();
+    fetchTasks(false);
     fetchSettings();
-    const interval = setInterval(fetchTasks, 10000);
+    const interval = setInterval(() => fetchTasks(true), 8000);
     return () => clearInterval(interval);
   }, []);
 
-  const activeTask = tasks.find(t => t.id === selectedTaskId) || tasks[0];
+  const activeTask = tasks.find(t => t.id === selectedTaskId) || (tasks.length > 0 ? tasks[0] : null);
 
   // Sync active task form fields when selection changes
   useEffect(() => {
