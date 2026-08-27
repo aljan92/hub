@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   UploadCloud, 
   Play, 
@@ -63,6 +63,7 @@ interface QueueItem {
   fitTypes?: string[];
   avoidColor?: 'white' | 'black' | 'none';
   customBackgroundColor?: string;
+  imagePath?: string;
 }
 
 interface QueueState {
@@ -119,6 +120,42 @@ export const QueueView: React.FC = () => {
   const [globalMode, setGlobalMode] = useState<'live' | 'draft'>('draft');
   const [isScreencastOpen, setIsScreencastOpen] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
+
+  // 1-Second Delayed Hover Popover State
+  const [hoveredItem, setHoveredItem] = useState<QueueItem | null>(null);
+  const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleMouseEnterThumbnail = (item: QueueItem, e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setHoveredItem(item);
+      const popoverWidth = 320;
+      const popoverHeight = 440;
+      let x = rect.right + 12;
+      if (x + popoverWidth > window.innerWidth) {
+        x = rect.left - popoverWidth - 12;
+      }
+      let y = rect.top - 80;
+      if (y + popoverHeight > window.innerHeight) {
+        y = window.innerHeight - popoverHeight - 16;
+      }
+      if (y < 70) {
+        y = 70;
+      }
+      setHoverPosition({ x, y });
+    }, 1000);
+  };
+
+  const handleMouseLeaveThumbnail = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setHoveredItem(null);
+    setHoverPosition(null);
+  };
 
   const fetchQueue = async () => {
     try {
@@ -900,13 +937,28 @@ export const QueueView: React.FC = () => {
                             )}
                           </button>
 
-                          {/* Image Thumbnail */}
-                          <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shrink-0 relative group">
+                          {/* Image Thumbnail with 1s Hover Zoom Trigger */}
+                          <div 
+                            onMouseEnter={(e) => handleMouseEnterThumbnail(item, e)}
+                            onMouseLeave={handleMouseLeaveThumbnail}
+                            className="w-14 h-14 rounded-xl border border-slate-800 overflow-hidden shrink-0 relative group cursor-zoom-in transition-transform hover:scale-105"
+                            style={{
+                              backgroundImage: `
+                                linear-gradient(45deg, #1e293b 25%, transparent 25%),
+                                linear-gradient(-45deg, #1e293b 25%, transparent 25%),
+                                linear-gradient(45deg, transparent 75%, #1e293b 75%),
+                                linear-gradient(-45deg, transparent 75%, #1e293b 75%)
+                              `,
+                              backgroundSize: '10px 10px',
+                              backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                              backgroundColor: '#090d16'
+                            }}
+                          >
                             {item.imagePath ? (
                               <img 
                                 src={item.imagePath.startsWith('/') ? item.imagePath : `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`} 
                                 alt={item.designTitle}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-contain p-0.5"
                               />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-slate-600">
@@ -1206,12 +1258,27 @@ export const QueueView: React.FC = () => {
                   className="bg-surface/90 border border-teal-500/50 shadow-teal-500/10 ring-1 ring-teal-500/30 rounded-2xl p-4 shadow-sm backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
                   <div className="flex items-center space-x-3 sm:space-x-4">
-                    <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shrink-0 relative">
+                    <div 
+                      onMouseEnter={(e) => handleMouseEnterThumbnail(item, e)}
+                      onMouseLeave={handleMouseLeaveThumbnail}
+                      className="w-14 h-14 rounded-xl border border-slate-800 overflow-hidden shrink-0 relative group cursor-zoom-in transition-transform hover:scale-105"
+                      style={{
+                        backgroundImage: `
+                          linear-gradient(45deg, #1e293b 25%, transparent 25%),
+                          linear-gradient(-45deg, #1e293b 25%, transparent 25%),
+                          linear-gradient(45deg, transparent 75%, #1e293b 75%),
+                          linear-gradient(-45deg, transparent 75%, #1e293b 75%)
+                        `,
+                        backgroundSize: '10px 10px',
+                        backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                        backgroundColor: '#090d16'
+                      }}
+                    >
                       {item.imagePath ? (
                         <img 
                           src={item.imagePath.startsWith('/') ? item.imagePath : `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`} 
                           alt={item.designTitle}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain p-0.5"
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-600">
@@ -1296,12 +1363,27 @@ export const QueueView: React.FC = () => {
                 >
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center space-x-3 sm:space-x-4">
-                      <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-800 overflow-hidden shrink-0 relative">
+                      <div 
+                        onMouseEnter={(e) => handleMouseEnterThumbnail(item, e)}
+                        onMouseLeave={handleMouseLeaveThumbnail}
+                        className="w-14 h-14 rounded-xl border border-slate-800 overflow-hidden shrink-0 relative group cursor-zoom-in transition-transform hover:scale-105"
+                        style={{
+                          backgroundImage: `
+                            linear-gradient(45deg, #1e293b 25%, transparent 25%),
+                            linear-gradient(-45deg, #1e293b 25%, transparent 25%),
+                            linear-gradient(45deg, transparent 75%, #1e293b 75%),
+                            linear-gradient(-45deg, transparent 75%, #1e293b 75%)
+                          `,
+                          backgroundSize: '10px 10px',
+                          backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                          backgroundColor: '#090d16'
+                        }}
+                      >
                         {item.imagePath ? (
                           <img 
                             src={item.imagePath.startsWith('/') ? item.imagePath : `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`} 
                             alt={item.designTitle}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-contain p-0.5"
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-slate-600">
@@ -1424,6 +1506,60 @@ export const QueueView: React.FC = () => {
             {/* Screencast Container */}
             <div className="flex-1 p-2 bg-slate-950 overflow-hidden">
               <BrowserScreencast onClose={() => setIsScreencastOpen(false)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1-Second Delayed High-Res Hover Preview Popover with Checkerboard Grid */}
+      {hoveredItem && hoverPosition && (
+        <div 
+          className="fixed z-50 pointer-events-none animate-fadeIn shadow-2xl rounded-2xl border border-slate-700/80 bg-slate-950/95 backdrop-blur-xl p-3 w-80 max-w-sm space-y-2.5"
+          style={{
+            left: hoveredItem ? `${hoverPosition.x}px` : undefined,
+            top: hoveredItem ? `${hoverPosition.y}px` : undefined,
+          }}
+        >
+          {/* Header Info */}
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-primary-500/20 text-primary-300 border border-primary-500/40">
+              Task #{hoveredItem.taskId}
+            </span>
+            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 font-semibold">
+              4500×5400 Master-PNG
+            </span>
+          </div>
+
+          {/* Big Preview Area with Transparency Checkerboard */}
+          <div 
+            className="w-full h-80 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center p-3 relative shadow-inner"
+            style={{
+              backgroundImage: `
+                linear-gradient(45deg, #1e293b 25%, transparent 25%),
+                linear-gradient(-45deg, #1e293b 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #1e293b 75%),
+                linear-gradient(-45deg, transparent 75%, #1e293b 75%)
+              `,
+              backgroundSize: '16px 16px',
+              backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0',
+              backgroundColor: '#090d16'
+            }}
+          >
+            <img 
+              src={hoveredItem.imagePath && hoveredItem.imagePath.startsWith('/') ? hoveredItem.imagePath : `/api/v1/designs/image/${encodeURIComponent(hoveredItem.taskId)}`}
+              alt={hoveredItem.designTitle}
+              className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]"
+            />
+          </div>
+
+          {/* Title & Details */}
+          <div className="space-y-0.5">
+            <h4 className="text-xs font-bold text-slate-100 line-clamp-2 leading-snug">
+              {hoveredItem.title || hoveredItem.designTitle}
+            </h4>
+            <div className="text-[11px] text-slate-400 flex items-center justify-between">
+              <span>Brand: <strong className="text-slate-300">{hoveredItem.brand || '—'}</strong></span>
+              <span className="font-mono text-slate-400">{hoveredItem.allocatedSlots} Slots</span>
             </div>
           </div>
         </div>

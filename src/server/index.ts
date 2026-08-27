@@ -959,17 +959,25 @@ app.post('/api/v1/systemprompts/reset', (req, res) => {
   });
 });
 
-// 8.3 Design Image Serving Endpoint
+// 8.3 Design Image Serving Endpoint (Prioritizes transparent cutout master PNG _mba.png)
 app.get('/api/v1/designs/image/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+  const mbaFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+  const rawFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  if (fs.existsSync(filePath)) {
+
+  if (fs.existsSync(mbaFilePath)) {
     res.setHeader('Content-Type', 'image/png');
-    return fs.createReadStream(filePath).pipe(res);
+    return fs.createReadStream(mbaFilePath).pipe(res);
   }
+
+  if (fs.existsSync(rawFilePath)) {
+    res.setHeader('Content-Type', 'image/png');
+    return fs.createReadStream(rawFilePath).pipe(res);
+  }
+
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
