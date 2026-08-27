@@ -9,8 +9,20 @@ import {
   DownloadCloud, 
   CheckCircle2, 
   AlertTriangle,
+  DollarSign,
+  Tag,
+  Coins,
   X
 } from 'lucide-react';
+
+interface CostStatsSummary {
+  totalCosts: number;
+  costPerDesign: number;
+  openRouterCost: number;
+  imagesCost: number;
+  vectorizationsCost: number;
+  activeDesignsCount: number;
+}
 
 interface HeaderProps {
   tier?: number;
@@ -23,6 +35,15 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
   } | null>(() => {
     try {
       const cached = localStorage.getItem('mba_cached_credits');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [costStats, setCostStats] = useState<CostStatsSummary | null>(() => {
+    try {
+      const cached = localStorage.getItem('mba_cached_cost_stats');
       return cached ? JSON.parse(cached) : null;
     } catch {
       return null;
@@ -53,7 +74,7 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
-  const fetchCredits = () => {
+  const fetchCreditsAndCosts = () => {
     fetch('/api/v1/credits')
       .then(res => res.json())
       .then(data => {
@@ -71,11 +92,23 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
         }
       })
       .catch(() => {});
+
+    fetch('/api/v1/stats/costs')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setCostStats(data);
+          try {
+            localStorage.setItem('mba_cached_cost_stats', JSON.stringify(data));
+          } catch {}
+        }
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
-    fetchCredits();
-    const interval = setInterval(fetchCredits, 20000); // refresh every 20s
+    fetchCreditsAndCosts();
+    const interval = setInterval(fetchCreditsAndCosts, 15000); // refresh every 15s
     return () => clearInterval(interval);
   }, []);
 
@@ -156,8 +189,32 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
           </div>
         </div>
 
-        {/* Center Status & Live API Credits */}
+        {/* Center Status & Live API Credits / Costs */}
         <div className="flex items-center space-x-2 sm:space-x-3 overflow-x-auto py-1">
+          {/* Total Costs Badge */}
+          {costStats && (
+            <div 
+              className="flex items-center space-x-1.5 bg-slate-900/90 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-mono shadow-sm"
+              title={`Gesamtausgaben:\n• OpenRouter: $${costStats.openRouterCost.toFixed(2)}\n• Ideogram Bilder: $${costStats.imagesCost.toFixed(2)}\n• Vectorizer.ai: $${costStats.vectorizationsCost.toFixed(2)}`}
+            >
+              <DollarSign className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-slate-400 text-[11px]">Total:</span>
+              <span className="font-bold text-emerald-400">${costStats.totalCosts.toFixed(2)}</span>
+            </div>
+          )}
+
+          {/* Cost per Design Badge */}
+          {costStats && (
+            <div 
+              className="flex items-center space-x-1.5 bg-slate-900/90 border border-purple-500/30 px-3 py-1.5 rounded-xl text-xs font-mono shadow-sm"
+              title={`Durchschnittskosten pro Design:\nTotal Ausgaben ($${costStats.totalCosts.toFixed(2)}) / ${costStats.activeDesignsCount} aktive Designs in Warteschlange & Hochgeladen`}
+            >
+              <Tag className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+              <span className="text-slate-400 text-[11px]">Ø/Design:</span>
+              <span className="font-bold text-purple-300">${costStats.costPerDesign.toFixed(2)}</span>
+            </div>
+          )}
+
           {/* OpenRouter Credits (Rest & Used) */}
           {credits?.openrouter?.hasKey && (
             <div className="flex items-center space-x-1.5 bg-slate-900/90 border border-accent-amber/30 px-3 py-1.5 rounded-xl text-xs font-mono">

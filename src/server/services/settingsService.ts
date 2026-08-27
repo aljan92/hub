@@ -43,6 +43,10 @@ export interface AppSettings {
   queueAutoBalance: boolean;       // e.g. true
   queueUploadMode: 'draft' | 'live'; // e.g. 'draft' or 'live'
   queueDraftProductsPerDesign: number; // e.g. 106
+  costPerImage: number;            // e.g. 0.08 ($ / image)
+  costPerVectorization: number;    // e.g. 0.05 ($ / vectorization)
+  costStatsResetTimestamp?: string;// e.g. ISO string for stats reset
+  costStatsBaselineOpenRouterUsage?: number; // e.g. OpenRouter baseline usage at reset
 }
 
 export function generateApiKey(): string {
@@ -88,6 +92,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   queueAutoBalance: true,
   queueUploadMode: 'draft',
   queueDraftProductsPerDesign: 106,
+  costPerImage: 0.08,
+  costPerVectorization: 0.05,
 };
 
 function getSettingsFilePath(): string {

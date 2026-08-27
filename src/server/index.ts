@@ -23,6 +23,7 @@ import { ProductCatalogService } from './services/productCatalogService';
 import { ProductScannerService } from './services/productScannerService';
 import { QueueService } from './services/queueService';
 import { UploadWorkerService } from './services/uploadWorkerService';
+import { CostTrackingService } from './services/costTrackingService';
 
 dotenv.config();
 
@@ -206,14 +207,44 @@ async function refreshStatsInBackground() {
 refreshStatsInBackground();
 setInterval(refreshStatsInBackground, 15000);
 
-app.get('/api/v1/stats', (req, res) => {
+app.get('/api/v1/stats', async (req, res) => {
   cachedStats.tasksCount = TaskLogService.getAwaitingTasks().length;
   cachedStats.queueCount = QueueService.getActiveQueueCount();
+  const costStats = await CostTrackingService.getCostStats().catch(() => null);
   res.json({
     success: true,
     ...cachedStats,
-    tier: lastKnownTier
+    tier: lastKnownTier,
+    costs: costStats ? {
+      totalCosts: costStats.totalCosts,
+      costPerDesign: costStats.costPerDesign,
+      openRouterCost: costStats.openRouterCost,
+      imagesCost: costStats.imagesCost,
+      vectorizationsCost: costStats.vectorizationsCost,
+      activeDesignsCount: costStats.activeDesignsCount,
+      waitingDesignsCount: costStats.waitingDesignsCount,
+      completedDesignsCount: costStats.completedDesignsCount
+    } : undefined
   });
+});
+
+// Cost Statistics Endpoints
+app.get('/api/v1/stats/costs', async (req, res) => {
+  try {
+    const costStats = await CostTrackingService.getCostStats();
+    res.json({ success: true, ...costStats });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/stats/costs/reset', async (req, res) => {
+  try {
+    const costStats = await CostTrackingService.resetCostStats();
+    res.json({ success: true, message: 'Kostenstatistik erfolgreich zurückgesetzt', ...costStats });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // 2.0.1 Sync Engine Endpoints (Ported from mba-supabase-sync)

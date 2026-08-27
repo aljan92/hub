@@ -22,7 +22,10 @@ import {
   Eye,
   EyeOff,
   Globe,
-  Terminal
+  Terminal,
+  RotateCcw,
+  Tag,
+  Calculator
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -100,6 +103,23 @@ export const SettingsView: React.FC = () => {
   const [copiedMcpKey, setCopiedMcpKey] = useState(false);
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
 
+  // Cost tracking settings & stats
+  const [costPerImage, setCostPerImage] = useState<number>(initialSettings.costPerImage ?? 0.08);
+  const [costPerVectorization, setCostPerVectorization] = useState<number>(initialSettings.costPerVectorization ?? 0.05);
+  const [costStats, setCostStats] = useState<any>(null);
+  const [resettingCosts, setResettingCosts] = useState(false);
+
+  const fetchCostStats = () => {
+    fetch('/api/v1/stats/costs')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setCostStats(data);
+        }
+      })
+      .catch(() => {});
+  };
+
   // Load existing settings and models on mount
   useEffect(() => {
     // 1. Settings
@@ -135,6 +155,8 @@ export const SettingsView: React.FC = () => {
           setNasUser(s.nasUser || 'aljan92');
           setAutoSlotFillHour(s.autoSlotFillHour || 4);
           setMcpApiKey(s.mcpApiKey || '');
+          setCostPerImage(s.costPerImage ?? 0.08);
+          setCostPerVectorization(s.costPerVectorization ?? 0.05);
           try {
             localStorage.setItem('mba_cached_settings_data', JSON.stringify(s));
           } catch {}
@@ -154,6 +176,9 @@ export const SettingsView: React.FC = () => {
         }
       })
       .catch(() => {});
+
+    // 4. Fetch cost statistics
+    fetchCostStats();
   }, []);
 
   const generateNewMcpKey = () => {
@@ -189,6 +214,24 @@ export const SettingsView: React.FC = () => {
       .finally(() => setLoadingModels(false));
   };
 
+  const handleResetCostStats = async () => {
+    if (!window.confirm('Möchtest du die Kostenstatistik wirklich auf $0.00 zurücksetzen? Die Ausgaben für OpenRouter, Ideogram und Vectorizer werden ab sofort neu gezählt.')) {
+      return;
+    }
+    setResettingCosts(true);
+    try {
+      const res = await fetch('/api/v1/stats/costs/reset', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setCostStats(data);
+      }
+    } catch (err) {
+      alert('Fehler beim Zurücksetzen der Kostenstatistik');
+    } finally {
+      setResettingCosts(false);
+    }
+  };
+
   const handleSave = async () => {
     setLoading(true);
     try {
@@ -220,6 +263,8 @@ export const SettingsView: React.FC = () => {
         nasUser,
         autoSlotFillHour: Number(autoSlotFillHour),
         mcpApiKey,
+        costPerImage: Number(costPerImage),
+        costPerVectorization: Number(costPerVectorization),
       };
 
       const res = await fetch('/api/v1/settings', {
@@ -234,6 +279,7 @@ export const SettingsView: React.FC = () => {
         } catch {}
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
+        fetchCostStats();
       }
     } catch (err) {
       alert('Fehler beim Speichern der Einstellungen');
@@ -1142,6 +1188,111 @@ export const SettingsView: React.FC = () => {
               <div className="font-mono text-[10px] text-slate-400 bg-slate-900/90 p-1.5 rounded border border-slate-800 truncate">
                 Header: <span className="text-accent-cyan">x-mba-api-key: {mcpApiKey ? mcpApiKey.substring(0, 10) + '...' : 'mba_...'}</span>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 8. Cost & Budget Statistics Card */}
+        <div className="glass-card p-5 rounded-2xl space-y-5 md:col-span-2 border border-emerald-500/30 shadow-xl relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 text-white shadow-md shadow-emerald-500/20">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center">
+                  Kosten- &amp; Budget-Statistik (OpenRouter, Ideogram &amp; Vectorizer)
+                </h3>
+                <p className="text-xs text-slate-400">Verwalte Stückkosten pro Bild &amp; Vektorisierung und verfolge Gesamtausgaben sowie durchschnittliche Designkosten.</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleResetCostStats}
+              disabled={resettingCosts}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center space-x-1.5 transition-all self-start sm:self-auto disabled:opacity-50"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${resettingCosts ? 'animate-spin' : ''}`} />
+              <span>Statistik zurücksetzen</span>
+            </button>
+          </div>
+
+          {/* Metrics Overview Grid */}
+          {costStats && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">OpenRouter LLM</div>
+                <div className="text-base font-bold text-accent-amber font-mono">${costStats.openRouterCost !== undefined ? Number(costStats.openRouterCost).toFixed(2) : '0.00'}</div>
+                <div className="text-[10px] text-slate-500 font-mono">Gesamt: ${costStats.openRouterUsageTotal !== undefined ? Number(costStats.openRouterUsageTotal).toFixed(2) : '0.00'}</div>
+              </div>
+
+              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Ideogram Bilder</div>
+                <div className="text-base font-bold text-purple-400 font-mono">${costStats.imagesCost !== undefined ? Number(costStats.imagesCost).toFixed(2) : '0.00'}</div>
+                <div className="text-[10px] text-slate-500 font-mono">{costStats.imageGenerationsCount || 0} Bilder (${costPerImage}/Bild)</div>
+              </div>
+
+              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Vectorizer.ai</div>
+                <div className="text-base font-bold text-accent-cyan font-mono">${costStats.vectorizationsCost !== undefined ? Number(costStats.vectorizationsCost).toFixed(2) : '0.00'}</div>
+                <div className="text-[10px] text-slate-500 font-mono">{costStats.vectorizationsCount || 0} Vecs (${costPerVectorization}/Vec)</div>
+              </div>
+
+              <div className="bg-slate-950/80 p-3 rounded-xl border border-emerald-500/30 space-y-1 bg-emerald-950/10">
+                <div className="text-[10px] font-semibold text-emerald-300 uppercase tracking-wider">Gesamtausgaben</div>
+                <div className="text-base font-bold text-emerald-400 font-mono">${costStats.totalCosts !== undefined ? Number(costStats.totalCosts).toFixed(2) : '0.00'}</div>
+                <div className="text-[10px] text-emerald-400/80 font-mono">Total Costs</div>
+              </div>
+
+              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Designs (Queue + Live)</div>
+                <div className="text-base font-bold text-slate-200 font-mono">{costStats.activeDesignsCount || 0}</div>
+                <div className="text-[10px] text-slate-500 font-mono">{costStats.waitingDesignsCount || 0} Wartend • {costStats.completedDesignsCount || 0} Live</div>
+              </div>
+
+              <div className="bg-slate-950/80 p-3 rounded-xl border border-purple-500/30 space-y-1 bg-purple-950/10">
+                <div className="text-[10px] font-semibold text-purple-300 uppercase tracking-wider">Ø Kosten / Design</div>
+                <div className="text-base font-bold text-purple-300 font-mono">${costStats.costPerDesign !== undefined ? Number(costStats.costPerDesign).toFixed(2) : '0.00'}</div>
+                <div className="text-[10px] text-purple-400/80 font-mono">Total / Designs</div>
+              </div>
+            </div>
+          )}
+
+          {/* Cost Configuration Inputs */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800/80">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 flex items-center">
+                <ImageIcon className="w-3.5 h-3.5 mr-1 text-purple-400" />
+                Kosten pro Ideogram Bildgenerierung ($)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={costPerImage}
+                onChange={(e) => setCostPerImage(parseFloat(e.target.value) || 0)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 font-mono focus:border-primary-500 focus:outline-none"
+                placeholder="0.08"
+              />
+              <p className="text-[10px] text-slate-500">Stückpreis in USD für jedes generierte Bild (z.B. 0.08 für Ideogram 3.0).</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 flex items-center">
+                <Sparkles className="w-3.5 h-3.5 mr-1 text-accent-cyan" />
+                Kosten pro Vectorizer.ai Vektorisierung ($)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={costPerVectorization}
+                onChange={(e) => setCostPerVectorization(parseFloat(e.target.value) || 0)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 font-mono focus:border-primary-500 focus:outline-none"
+                placeholder="0.05"
+              />
+              <p className="text-[10px] text-slate-500">Stückpreis in USD für jede durchgeführte SVG-Vektorisierung (z.B. 0.05 für Vectorizer API Credit).</p>
             </div>
           </div>
         </div>
