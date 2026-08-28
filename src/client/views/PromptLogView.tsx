@@ -573,6 +573,28 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
+  const handleDeleteTask = async (taskId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm(`Möchtest du den Task ${taskId} wirklich löschen?`)) return;
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setTasks(prev => {
+          const updated = prev.filter(t => t.id !== taskId);
+          if (selectedTaskId === taskId) {
+            setSelectedTaskId(updated[0]?.id || null);
+          }
+          return updated;
+        });
+      } else {
+        alert(data.error || 'Fehler beim Löschen des Tasks');
+      }
+    } catch (err: any) {
+      alert(`Netzwerkfehler: ${err.message}`);
+    }
+  };
+
   const handleClearLogs = async () => {
     if (!confirm('Möchtest du wirklich alle Logs leeren?')) return;
     try {
@@ -754,7 +776,7 @@ export const PromptLogView: React.FC = () => {
 
         {/* Input Bar & Actions */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
-          <div className="lg:col-span-4 space-y-1">
+          <div className="lg:col-span-5 space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
               <span>Design ID (UUID)</span>
               <span className="text-[9px] font-normal text-slate-500 font-mono">Format: xxxxxxxx-...</span>
@@ -792,27 +814,15 @@ export const PromptLogView: React.FC = () => {
             </button>
           </div>
 
-          <div className="lg:col-span-2">
-            <button
-              onClick={handleCreateUpdateTask}
-              disabled={creatingUpdateTask || !inspectDesignId.trim()}
-              className="w-full flex items-center justify-center space-x-1 px-2.5 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/40 disabled:opacity-50 transition-all shadow-sm active:scale-95"
-              title="Erstellt den Task und lädt das Original-Design (U1-U2)"
-            >
-              <PlusCircle className={`w-3.5 h-3.5 ${creatingUpdateTask ? 'animate-spin' : ''}`} />
-              <span>3. ➕ Nur Task</span>
-            </button>
-          </div>
-
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-3">
             <button
               onClick={() => handleRunFullUpdatePipeline(inspectDesignId.trim())}
               disabled={creatingUpdateTask || !inspectDesignId.trim()}
               className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white disabled:opacity-50 transition-all shadow-lg active:scale-95 border border-amber-400/30"
-              title="Führt den gesamten Update-Workflow von U1 bis U7 durch und reiht in die Queue ein"
+              title="Führt die gesamte Update-Pipeline von U1 bis U7 durch und reiht in die Queue ein"
             >
               <Sparkles className={`w-3.5 h-3.5 ${creatingUpdateTask ? 'animate-spin' : ''}`} />
-              <span>4. 🚀 Full Pipeline</span>
+              <span>{creatingUpdateTask ? 'Pipeline läuft...' : '3. 🚀 Pipeline Starten'}</span>
             </button>
           </div>
         </div>
@@ -1010,10 +1020,19 @@ export const PromptLogView: React.FC = () => {
                         <span>{task.source}</span>
                       </span>
                     </div>
-                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatRelativeTime(task.receivedAt)}
-                    </span>
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatRelativeTime(task.receivedAt)}
+                      </span>
+                      <button
+                        onClick={(e) => handleDeleteTask(task.id, e)}
+                        className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                        title={`Task ${task.id} löschen`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -1125,6 +1144,14 @@ export const PromptLogView: React.FC = () => {
                     <Clock className="w-3 h-3" />
                     <span>{new Date(selectedTask.receivedAt).toLocaleTimeString()}</span>
                   </div>
+                  <button
+                    onClick={(e) => handleDeleteTask(selectedTask.id, e)}
+                    className="flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 border border-rose-500/30 transition-colors"
+                    title="Diesen Task löschen"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Löschen</span>
+                  </button>
                 </div>
               </div>
 
@@ -1141,17 +1168,7 @@ export const PromptLogView: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => handleResumeUpdatePipeline(selectedTask.id)}
-                        disabled={runningUpdatePipelineTaskId === selectedTask.id}
-                        className="flex items-center space-x-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white border border-amber-400/40 disabled:opacity-50 transition-all shadow-md active:scale-95"
-                        title="Führt die restlichen Schritte (U3 Vision, U4 Rewrite, U5 Trademark, U6 Übersetzung, U7 Queue) aus"
-                      >
-                        <Sparkles className={`w-3.5 h-3.5 ${runningUpdatePipelineTaskId === selectedTask.id ? 'animate-spin' : ''}`} />
-                        <span>{runningUpdatePipelineTaskId === selectedTask.id ? 'Pipeline läuft...' : '🚀 Pipeline fortsetzen (U3–U7)'}</span>
-                      </button>
-
+                    <div className="flex items-center space-x-2">
                       <button
                         onClick={() => handleDownloadArtwork(selectedTask.id, selectedTask.payload.designId)}
                         disabled={downloadingArtworkTaskId === selectedTask.id}
@@ -1309,40 +1326,66 @@ export const PromptLogView: React.FC = () => {
 
                       {event.type === 'LLM_REQUEST' && (
                         <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 space-y-2">
-                          <JsonDetails title="System Prompt (Klick zum Aufklappen)" data={event.content.systemPrompt} />
+                          {event.content?.systemPrompt && (
+                            <JsonDetails title="System Prompt (Klick zum Aufklappen)" data={event.content.systemPrompt} />
+                          )}
                           <div className="space-y-1">
-                            <span className="text-[10px] font-semibold uppercase text-slate-400 block">User Message:</span>
+                            <span className="text-[10px] font-semibold uppercase text-slate-400 block">Prompt / Request:</span>
                             <pre className="p-2 bg-slate-900 rounded-lg text-xs text-cyan-300 font-mono whitespace-pre-wrap border border-slate-800">
-                              {event.content.userMessage}
+                              {typeof event.content === 'string'
+                                ? event.content
+                                : (event.content?.userMessage || JSON.stringify(event.content, null, 2))}
                             </pre>
                           </div>
                         </div>
                       )}
 
                       {event.type === 'LLM_RESPONSE' && (() => {
-                        let displayPrompt = event.content;
-                        try {
-                          let str = String(event.content).trim();
+                        let displayPrompt = '';
+                        let isJson = false;
+
+                        if (typeof event.content === 'string') {
+                          let str = event.content.trim();
                           if (str.startsWith('```')) {
                             str = str.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
                           }
-                          const parsed = JSON.parse(str);
-                          if (parsed && typeof parsed.prompt === 'string') {
-                            displayPrompt = parsed.prompt;
+                          try {
+                            const parsed = JSON.parse(str);
+                            if (parsed && typeof parsed === 'object') {
+                              if (typeof parsed.prompt === 'string') {
+                                displayPrompt = parsed.prompt;
+                              } else {
+                                displayPrompt = JSON.stringify(parsed, null, 2);
+                                isJson = true;
+                              }
+                            } else {
+                              displayPrompt = str;
+                            }
+                          } catch {
+                            displayPrompt = str;
                           }
-                        } catch {}
+                        } else if (typeof event.content === 'object' && event.content !== null) {
+                          if (typeof event.content.prompt === 'string') {
+                            displayPrompt = event.content.prompt;
+                          } else {
+                            displayPrompt = JSON.stringify(event.content, null, 2);
+                            isJson = true;
+                          }
+                        } else {
+                          displayPrompt = String(event.content ?? '');
+                        }
 
                         return (
                           <div className="bg-slate-950 rounded-xl p-3.5 border border-emerald-500/30 space-y-2.5">
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-semibold text-emerald-400">
-                                Generierter Ideogram-Prompt:
+                                {isJson ? 'Generierte Daten (JSON):' : 'Generierter Ideogram-Prompt:'}
                               </span>
-                              <CopyButton text={displayPrompt} label="Prompt kopieren" />
+                              <CopyButton text={displayPrompt} label="Kopieren" />
                             </div>
-                            <p className="font-mono text-xs text-slate-100 bg-slate-900 p-2.5 rounded-lg border border-slate-800 leading-relaxed select-all">
+                            <pre className="font-mono text-xs text-slate-100 bg-slate-900 p-2.5 rounded-lg border border-slate-800 leading-relaxed select-all whitespace-pre-wrap">
                               {displayPrompt}
-                            </p>
+                            </pre>
                           </div>
                         );
                       })()}
@@ -1351,17 +1394,17 @@ export const PromptLogView: React.FC = () => {
                         <div className="bg-slate-950 rounded-xl p-3 border border-purple-500/30 space-y-2">
                           <div className="flex flex-wrap gap-1.5 text-[11px] font-mono">
                             <span className="bg-slate-900 text-purple-300 px-2 py-0.5 rounded border border-slate-800">
-                              Speed: {event.content.renderingSpeed}
+                              Speed: {event.content?.renderingSpeed || 'default'}
                             </span>
                             <span className="bg-slate-900 text-purple-300 px-2 py-0.5 rounded border border-slate-800">
-                              Ratio: {event.content.aspectRatio}
+                              Ratio: {event.content?.aspectRatio || '1:1'}
                             </span>
                             <span className="bg-slate-900 text-purple-300 px-2 py-0.5 rounded border border-slate-800">
-                              Style: {event.content.style}
+                              Style: {event.content?.style || 'AUTO'}
                             </span>
                           </div>
                           <p className="text-xs text-slate-300 font-mono bg-slate-900 p-2 rounded-lg border border-slate-800 line-clamp-2">
-                            {event.content.prompt}
+                            {event.content?.prompt || JSON.stringify(event.content)}
                           </p>
                         </div>
                       )}
@@ -1375,20 +1418,20 @@ export const PromptLogView: React.FC = () => {
                             </span>
                             <div className="flex items-center space-x-1.5">
                               <a
-                                href={event.content.localUrl || event.content.imageUrl}
+                                href={event.content?.localUrl || event.content?.imageUrl}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors"
                               >
-                                <ExternalLink className="w-3 h-3" />
+                                <ExternalLink className="w-3.5 h-3.5" />
                                 <span>Vollbild</span>
                               </a>
                               <a
-                                href={event.content.localUrl || event.content.imageUrl}
+                                href={event.content?.localUrl || event.content?.imageUrl}
                                 download={`${selectedTask.id}.png`}
                                 className="flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 transition-colors"
                               >
-                                <Download className="w-3 h-3" />
+                                <Download className="w-3.5 h-3.5" />
                                 <span>PNG</span>
                               </a>
                             </div>
@@ -1396,7 +1439,7 @@ export const PromptLogView: React.FC = () => {
 
                           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
                             <img
-                              src={event.content.localUrl || event.content.imageUrl}
+                              src={event.content?.localUrl || event.content?.imageUrl}
                               alt="Design"
                               className="w-36 h-36 object-contain rounded-lg border border-slate-800 bg-slate-950"
                               loading="lazy"
@@ -1404,7 +1447,7 @@ export const PromptLogView: React.FC = () => {
                             <div className="flex-1 space-y-1 text-xs">
                               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Prompt:</span>
                               <p className="text-slate-300 font-mono text-[11px] bg-slate-950 p-2 rounded-lg border border-slate-800 max-h-24 overflow-y-auto custom-scrollbar">
-                                {event.content.prompt}
+                                {event.content?.prompt || JSON.stringify(event.content)}
                               </p>
                             </div>
                           </div>
@@ -1413,7 +1456,11 @@ export const PromptLogView: React.FC = () => {
 
                       {event.type === 'ANALYSIS_REQUEST' && (
                         <div className="bg-slate-950 rounded-xl p-3 border border-cyan-500/30 space-y-2">
-                          <JsonDetails title="Vision System Prompt (Klick zum Aufklappen)" data={event.content.systemPrompt} />
+                          {event.content?.systemPrompt ? (
+                            <JsonDetails title="Vision System Prompt (Klick zum Aufklappen)" data={event.content.systemPrompt} />
+                          ) : (
+                            <JsonDetails title="Vision Request Details" data={event.content} />
+                          )}
                         </div>
                       )}
 
@@ -1498,7 +1545,7 @@ export const PromptLogView: React.FC = () => {
                                     )}
                                   </div>
                                   <p className="text-slate-400 text-[11px] leading-relaxed pt-1">
-                                    Die unkomprimierte Master-Grafik steht nun lokal für den Update-Prozess und automatische Resizes (z. B. PopSockets, Mugs, Hoodies) bereit.
+                                    Die unkomprimierte Master-Grafik steht nun lokal für den Update-Prozess und automatische Resizes bereit.
                                   </p>
                                 </div>
                               </div>
@@ -1507,18 +1554,49 @@ export const PromptLogView: React.FC = () => {
                         }
 
                         const analysis = typeof event.content === 'object' && event.content !== null ? event.content : null;
+                        const isUpdateVision = analysis && analysis.rewriteNeeded !== undefined;
 
                         return (
                           <div className="bg-slate-950 rounded-xl p-3.5 border border-cyan-500/30 space-y-3">
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-semibold text-cyan-300 flex items-center gap-1.5">
                                 <CheckSquare className="w-3.5 h-3.5 text-cyan-400" />
-                                Vision-Analyse Befund
+                                {isUpdateVision ? 'Update Vision & Quality Audit (U3)' : 'Vision-Analyse Befund'}
                               </span>
                               <CopyButton text={JSON.stringify(event.content, null, 2)} label="JSON" />
                             </div>
 
-                            {analysis ? (
+                            {isUpdateVision ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-slate-300">Rewrite nötig?</span>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                      analysis.rewriteNeeded ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    }`}>
+                                      {analysis.rewriteNeeded ? 'JA (Optimieren)' : 'NEIN (Behalten)'}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-400">
+                                    {analysis.reasoning || '-'}
+                                  </div>
+                                </div>
+
+                                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 space-y-1">
+                                  <span className="font-semibold text-slate-300 block">Zielgruppe</span>
+                                  <div className="text-purple-300 font-semibold text-[11px]">
+                                    {Array.isArray(analysis.fitTypes) ? analysis.fitTypes.join(', ') : (analysis.fitTypes || 'Standard')}
+                                  </div>
+                                </div>
+
+                                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 space-y-1">
+                                  <span className="font-semibold text-slate-300 block">Avoid Color</span>
+                                  <div className="text-cyan-300 font-semibold text-[11px]">
+                                    {analysis.avoidColor || 'None'}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : analysis ? (
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                                 <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 space-y-1">
                                   <div className="flex items-center justify-between">
@@ -1557,14 +1635,23 @@ export const PromptLogView: React.FC = () => {
 
                       {event.type === 'LISTING_REQUEST' && (
                         <div className="bg-slate-950 rounded-xl p-3 border border-emerald-500/30 space-y-2">
-                          <JsonDetails title="Listing System Prompt (Klick zum Aufklappen)" data={event.content.systemPrompt} />
+                          {event.content?.systemPrompt ? (
+                            <JsonDetails title="Listing System Prompt (Klick zum Aufklappen)" data={event.content.systemPrompt} />
+                          ) : (
+                            <JsonDetails title="Listing Request Details" data={event.content} />
+                          )}
                         </div>
                       )}
 
                       {event.type === 'LISTING_RESPONSE' && (() => {
                         const listing = typeof event.content === 'object' && event.content !== null ? event.content : null;
                         const currentLang = selectedListingLang[selectedTask.id] || 'en';
-                        const langListing = listing ? listing[currentLang] || listing['en'] : null;
+                        
+                        const langListing = listing 
+                          ? (listing[currentLang] || listing['en'] || (listing.title ? listing : null))
+                          : null;
+
+                        const isMultiLang = listing && (listing.en || listing.de || listing.fr);
 
                         const languages = [
                           { code: 'en', label: 'EN' },
@@ -1576,7 +1663,7 @@ export const PromptLogView: React.FC = () => {
                         ];
 
                         const fullListingText = langListing 
-                          ? `Brand: ${langListing.brand || ''}\nTitle: ${langListing.title || ''}\nBullet 1: ${langListing.bullet1 || ''}\nBullet 2: ${langListing.bullet2 || ''}\nDescription:\n${langListing.description || ''}`
+                          ? `Brand: ${langListing.brand || langListing.brandName || ''}\nTitle: ${langListing.title || ''}\nBullet 1: ${langListing.bullet1 || ''}\nBullet 2: ${langListing.bullet2 || ''}\nDescription:\n${langListing.description || ''}`
                           : '';
 
                         return (
@@ -1584,7 +1671,7 @@ export const PromptLogView: React.FC = () => {
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
                                 <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                                MBA SEO Listing
+                                {isMultiLang ? 'MBA SEO Listing (Multi-Marketplace)' : 'Optimiertes Listing'}
                               </span>
                               <div className="flex items-center space-x-1.5">
                                 <CopyButton text={fullListingText} label="Alle kopieren" />
@@ -1592,28 +1679,30 @@ export const PromptLogView: React.FC = () => {
                               </div>
                             </div>
 
-                            {/* Language Sub-Tabs */}
-                            <div className="flex space-x-1 border-b border-slate-800 pb-2">
-                              {languages.map(lang => (
-                                <button
-                                  key={lang.code}
-                                  onClick={() => setSelectedListingLang(prev => ({ ...prev, [selectedTask.id]: lang.code }))}
-                                  className={`px-2.5 py-0.5 rounded text-xs font-semibold transition-all ${
-                                    currentLang === lang.code
-                                      ? 'bg-emerald-600 text-white'
-                                      : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
-                                  }`}
-                                >
-                                  {lang.label}
-                                </button>
-                              ))}
-                            </div>
+                            {/* Language Sub-Tabs (only for multi-language listings) */}
+                            {isMultiLang && (
+                              <div className="flex space-x-1 border-b border-slate-800 pb-2">
+                                {languages.map(lang => (
+                                  <button
+                                    key={lang.code}
+                                    onClick={() => setSelectedListingLang(prev => ({ ...prev, [selectedTask.id]: lang.code }))}
+                                    className={`px-2.5 py-0.5 rounded text-xs font-semibold transition-all ${
+                                      currentLang === lang.code
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                                    }`}
+                                  >
+                                    {lang.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
 
                             {langListing && (
                               <div className="space-y-2 text-xs">
                                 <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
                                   <span className="text-[10px] font-semibold text-slate-400 uppercase block">Brand</span>
-                                  <p className="font-mono text-slate-200">{langListing.brand || '-'}</p>
+                                  <p className="font-mono text-slate-200">{langListing.brand || langListing.brandName || '-'}</p>
                                 </div>
                                 <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
                                   <span className="text-[10px] font-semibold text-slate-400 uppercase block">Title</span>
@@ -1630,7 +1719,7 @@ export const PromptLogView: React.FC = () => {
                               </div>
                             )}
 
-                            <JsonDetails title="Vollständiges Listing-JSON aller Sprachen" data={event.content} />
+                            <JsonDetails title="Vollständiges Listing-JSON" data={event.content} />
                           </div>
                         );
                       })()}

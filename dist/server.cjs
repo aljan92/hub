@@ -221569,6 +221569,26 @@ Please audit the listing based on your compliance rules:
         this.inMemoryLogs = [];
         this.saveLogs([]);
       }
+      static deleteTaskLog(taskId) {
+        const logs = this.loadLogs();
+        const initialLen = logs.length;
+        const filtered = logs.filter((t) => t.id !== taskId);
+        if (filtered.length !== initialLen) {
+          this.inMemoryLogs = filtered;
+          this.saveLogs(filtered);
+          try {
+            const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+            const imgPath = import_path73.default.resolve(process.cwd(), "data", "designs", `${safeId}.png`);
+            if (import_fs79.default.existsSync(imgPath)) import_fs79.default.unlinkSync(imgPath);
+          } catch (e) {
+          }
+          if (this.eventBroadcaster) {
+            this.eventBroadcaster("TASK_DELETED", { taskId });
+          }
+          return true;
+        }
+        return false;
+      }
       /**
        * Checkpoint 2: Submit Design & Questions Review
        */
@@ -224656,6 +224676,14 @@ app.delete("/api/v1/tasks/log", (req, res) => {
   TaskLogService.clearTaskLogs();
   broadcast("TASK_LOGS_CLEARED", {});
   res.json({ success: true, message: "All task logs cleared" });
+});
+app.delete("/api/v1/tasks/:taskId", (req, res) => {
+  const { taskId } = req.params;
+  const deleted = TaskLogService.deleteTaskLog(taskId);
+  if (deleted) {
+    return res.json({ success: true, message: `Task ${taskId} gel\xF6scht.` });
+  }
+  return res.status(404).json({ success: false, error: `Task ${taskId} nicht gefunden.` });
 });
 app.post("/api/v1/tasks/:taskId/retry", async (req, res) => {
   const { taskId } = req.params;

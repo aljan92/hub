@@ -1921,6 +1921,26 @@ Please audit the listing based on your compliance rules:
     this.saveLogs([]);
   }
 
+  static deleteTaskLog(taskId: string): boolean {
+    const logs = this.loadLogs();
+    const initialLen = logs.length;
+    const filtered = logs.filter(t => t.id !== taskId);
+    if (filtered.length !== initialLen) {
+      this.inMemoryLogs = filtered;
+      this.saveLogs(filtered);
+      try {
+        const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const imgPath = path.resolve(process.cwd(), 'data', 'designs', `${safeId}.png`);
+        if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+      } catch (e) {}
+      if (this.eventBroadcaster) {
+        this.eventBroadcaster('TASK_DELETED', { taskId });
+      }
+      return true;
+    }
+    return false;
+  }
+
   /**
    * Checkpoint 2: Submit Design & Questions Review
    */

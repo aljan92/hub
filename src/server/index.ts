@@ -1046,6 +1046,15 @@ app.delete('/api/v1/tasks/log', (req, res) => {
   res.json({ success: true, message: 'All task logs cleared' });
 });
 
+app.delete('/api/v1/tasks/:taskId', (req, res) => {
+  const { taskId } = req.params;
+  const deleted = TaskLogService.deleteTaskLog(taskId);
+  if (deleted) {
+    return res.json({ success: true, message: `Task ${taskId} gelöscht.` });
+  }
+  return res.status(404).json({ success: false, error: `Task ${taskId} nicht gefunden.` });
+});
+
 app.post('/api/v1/tasks/:taskId/retry', async (req, res) => {
   const { taskId } = req.params;
   const { stepType, eventIndex } = req.body;
