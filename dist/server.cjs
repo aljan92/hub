@@ -219343,7 +219343,9 @@ var TaskLogService = class {
     this.saveLogs(logs);
     console.log(`[TaskLogService] \u{1F4CB} Task ${taskLog.id} registriert (${taskLog.source}) von ${taskLog.clientIp || "local"}`);
     this.emitUpdate(taskLog);
-    this.processTaskWithOpenRouter(taskLog.id);
+    if (params2.source !== "UPDATE") {
+      this.processTaskWithOpenRouter(taskLog.id);
+    }
     return taskLog;
   }
   static addEvent(taskId, event) {

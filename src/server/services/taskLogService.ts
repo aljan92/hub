@@ -202,8 +202,10 @@ export class TaskLogService {
     console.log(`[TaskLogService] 📋 Task ${taskLog.id} registriert (${taskLog.source}) von ${taskLog.clientIp || 'local'}`);
     this.emitUpdate(taskLog);
 
-    // Asynchronously trigger OpenRouter LLM session
-    this.processTaskWithOpenRouter(taskLog.id);
+    // Asynchronously trigger OpenRouter LLM session only for new design generation (HERMES, TEST, DESIGNER)
+    if (params.source !== 'UPDATE') {
+      this.processTaskWithOpenRouter(taskLog.id);
+    }
 
     return taskLog;
   }
