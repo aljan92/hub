@@ -221,6 +221,65 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "explanation": "The artwork is cleanly isolated across all 4 background colors with transparent letter loops and no outer artifacts."
 }`;
 
+export const DEFAULT_UPDATE_VISION_SYSTEM_PROMPT = `You are a Senior Amazon Merch on Demand Quality & SEO Auditor.
+Your task is to analyze the existing Merch on Demand design and its current English listing.
+
+Tasks:
+1. Determine the optimal Target Audience (fitTypes: choose from ["men", "women", "youth"]).
+2. Determine if any background color must be avoided (avoidColor: "black" | "white" | "none").
+3. Evaluate if the existing listing requires a rewrite. If it already has high-converting keywords, no banned words, and concise bullets, set rewriteNeeded: false. If it is keyword-stuffed, low quality, or outdated, set rewriteNeeded: true.
+4. Provide clear reasoning.
+
+Return ONLY valid JSON matching this schema:
+{
+  "fitTypes": ["men", "women", "youth"],
+  "avoidColor": "black" | "white" | "none",
+  "rewriteNeeded": boolean,
+  "reasoning": "string explaining the decision",
+  "designTheme": "short description of visual style"
+}`;
+
+export const DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT = `You are a world-class Amazon Merch on Demand Listing Copywriter.
+Rewrite and optimize the existing English listing to maximize organic search visibility and conversion rate without trademark infringements.
+
+Guidelines:
+1. Brand: Max 50 chars, catchy and niche-specific.
+2. Title: Max 60 chars, highly relevant primary keywords, natural sentence structure.
+3. Feature Bullets (Bullet 1 & Bullet 2): Max 256 chars each. Natural English, focusing on the theme/gift angle. NO mentions of print quality, garment fit, shipping, or copyrighted terms.
+4. Description: Short atmospheric summary (max 300 chars).
+
+Return ONLY valid JSON:
+{
+  "brand": "string",
+  "title": "string",
+  "bullet1": "string",
+  "bullet2": "string",
+  "description": "string"
+}`;
+
+export const DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT = `You are a professional multi-language Amazon Merch on Demand localization expert.
+Translate and SEO-optimize the English listing into German (de), French (fr), Spanish (es), and Italian (it).
+Adapt natural phrasing rather than literal translation.
+
+Return ONLY valid JSON matching this schema:
+{
+  "de": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
+  "fr": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
+  "es": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
+  "it": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" }
+}`;
+
+export interface AllSystemPrompts {
+  promptGenerator: string;
+  designAnalyzer: string;
+  listingGenerator: string;
+  trademarkAuditor: string;
+  svgBgAuditor: string;
+  updateVisionAnalyzer: string;
+  updateListingRewriter: string;
+  updateLocalizationTranslator: string;
+}
+
 export class SystemPromptService {
   private static promptFile = path.resolve(process.cwd(), 'data', 'system_prompts.json');
   private static cachedPrompts: Record<string, string> | null = null;
@@ -243,21 +302,14 @@ export class SystemPromptService {
         const fileContent = fs.readFileSync(this.promptFile, 'utf-8');
         this.cachedPrompts = JSON.parse(fileContent);
         if (this.cachedPrompts) {
-          if (!this.cachedPrompts.promptGenerator) {
-            this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
-          }
-          if (!this.cachedPrompts.designAnalyzer) {
-            this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
-          }
-          if (!this.cachedPrompts.listingGenerator) {
-            this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
-          }
-          if (!this.cachedPrompts.trademarkAuditor) {
-            this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
-          }
-          if (!this.cachedPrompts.svgBgAuditor) {
-            this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-          }
+          if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.designAnalyzer) this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.listingGenerator) this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.updateVisionAnalyzer) this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.updateListingRewriter) this.cachedPrompts.updateListingRewriter = DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.updateLocalizationTranslator) this.cachedPrompts.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
           return this.cachedPrompts;
         }
       } catch (e) {
@@ -271,6 +323,9 @@ export class SystemPromptService {
       listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
       trademarkAuditor: DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
       svgBgAuditor: DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
+      updateVisionAnalyzer: DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
+      updateListingRewriter: DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT,
+      updateLocalizationTranslator: DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT,
     };
 
     try {
@@ -295,40 +350,52 @@ export class SystemPromptService {
     return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
   }
 
-  static getSvgBgAuditorPrompt(): string {
-    const prompts = this.loadPrompts();
-    return prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-  }
-
   static getTrademarkAuditorPrompt(): string {
     const prompts = this.loadPrompts();
     return prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
   }
 
-  static getAllPrompts(): { promptGenerator: string; designAnalyzer: string; listingGenerator: string; trademarkAuditor: string } {
+  static getSvgBgAuditorPrompt(): string {
+    const prompts = this.loadPrompts();
+    return prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
+  }
+
+  static getUpdateVisionPrompt(): string {
+    const prompts = this.loadPrompts();
+    return prompts.updateVisionAnalyzer || DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
+  }
+
+  static getUpdateRewritePrompt(): string {
+    const prompts = this.loadPrompts();
+    return prompts.updateListingRewriter || DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+  }
+
+  static getUpdateTranslationPrompt(): string {
+    const prompts = this.loadPrompts();
+    return prompts.updateLocalizationTranslator || DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
+  }
+
+  static getAllPrompts(): AllSystemPrompts {
     const prompts = this.loadPrompts();
     return {
       promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
       listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
       trademarkAuditor: prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
+      svgBgAuditor: prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
+      updateVisionAnalyzer: prompts.updateVisionAnalyzer || DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
+      updateListingRewriter: prompts.updateListingRewriter || DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT,
+      updateLocalizationTranslator: prompts.updateLocalizationTranslator || DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT,
     };
   }
 
-  static savePrompts(updates: { promptGenerator?: string; designAnalyzer?: string; listingGenerator?: string; trademarkAuditor?: string }): void {
+  static savePrompts(updates: Partial<AllSystemPrompts>): void {
     this.ensureDataDir();
     const prompts = this.loadPrompts();
-    if (typeof updates.promptGenerator === 'string') {
-      prompts.promptGenerator = updates.promptGenerator;
-    }
-    if (typeof updates.designAnalyzer === 'string') {
-      prompts.designAnalyzer = updates.designAnalyzer;
-    }
-    if (typeof updates.listingGenerator === 'string') {
-      prompts.listingGenerator = updates.listingGenerator;
-    }
-    if (typeof updates.trademarkAuditor === 'string') {
-      prompts.trademarkAuditor = updates.trademarkAuditor;
+    for (const [k, v] of Object.entries(updates)) {
+      if (typeof v === 'string') {
+        prompts[k] = v;
+      }
     }
     this.cachedPrompts = prompts;
 
@@ -340,30 +407,22 @@ export class SystemPromptService {
     }
   }
 
-  static resetToDefault(type: 'promptGenerator' | 'designAnalyzer' | 'listingGenerator' | 'trademarkAuditor' | 'all' = 'all'): { promptGenerator: string; designAnalyzer: string; listingGenerator: string; trademarkAuditor: string } {
+  static resetToDefault(type: keyof AllSystemPrompts | 'all' = 'all'): AllSystemPrompts {
     const current = this.loadPrompts();
-    if (type === 'promptGenerator' || type === 'all') {
-      current.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
-    }
-    if (type === 'designAnalyzer' || type === 'all') {
-      current.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
-    }
-    if (type === 'listingGenerator' || type === 'all') {
-      current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
-    }
-    if (type === 'trademarkAuditor' || type === 'all') {
-      current.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
-    }
+    if (type === 'promptGenerator' || type === 'all') current.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
+    if (type === 'designAnalyzer' || type === 'all') current.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+    if (type === 'listingGenerator' || type === 'all') current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+    if (type === 'trademarkAuditor' || type === 'all') current.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+    if (type === 'svgBgAuditor' || type === 'all') current.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
+    if (type === 'updateVisionAnalyzer' || type === 'all') current.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
+    if (type === 'updateListingRewriter' || type === 'all') current.updateListingRewriter = DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+    if (type === 'updateLocalizationTranslator' || type === 'all') current.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
+    
     this.cachedPrompts = current;
     try {
       fs.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), 'utf-8');
     } catch (e) {}
 
-    return {
-      promptGenerator: current.promptGenerator,
-      designAnalyzer: current.designAnalyzer,
-      listingGenerator: current.listingGenerator,
-      trademarkAuditor: current.trademarkAuditor,
-    };
+    return this.getAllPrompts();
   }
 }

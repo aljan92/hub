@@ -26,6 +26,7 @@ import { UploadWorkerService } from './services/uploadWorkerService';
 import { CostTrackingService } from './services/costTrackingService';
 import { AmazonInspectService } from './services/amazonInspectService';
 import { UpdatePipelineService } from './services/updatePipelineService';
+import { DesignPipelineService } from './services/designPipelineService';
 
 dotenv.config();
 
@@ -667,6 +668,32 @@ app.post('/api/v1/update-pipeline/run', async (req, res) => {
   }
 });
 
+// Design Pipeline Single Step Execution (D1 to D8)
+app.post('/api/v1/design-pipeline/step', async (req, res) => {
+  const { taskId, step } = req.body;
+  try {
+    if (!taskId) return res.status(400).json({ success: false, error: 'Task ID erforderlich' });
+    const result = await DesignPipelineService.runStep(taskId, step);
+    return res.json(result);
+  } catch (err: any) {
+    console.error(`[DesignPipeline] Fehler bei Step ${step}:`, err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Design Pipeline Full Sequential Run
+app.post('/api/v1/design-pipeline/run', async (req, res) => {
+  const { taskId } = req.body;
+  try {
+    if (!taskId) return res.status(400).json({ success: false, error: 'Task ID erforderlich' });
+    const result = await DesignPipelineService.runDesignPipeline(taskId);
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[DesignPipeline] Fehler bei runDesignPipeline:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Hermes Heartbeat State with Persistent Disk Storage
 const heartbeatFile = path.resolve(process.cwd(), 'data', 'hermes_heartbeat.json');
 
@@ -1035,23 +1062,16 @@ app.get('/api/v1/systemprompts', (req, res) => {
   const prompts = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
-    promptGenerator: prompts.promptGenerator,
-    designAnalyzer: prompts.designAnalyzer,
-    listingGenerator: prompts.listingGenerator,
-    trademarkAuditor: prompts.trademarkAuditor
+    ...prompts
   });
 });
 
 app.post('/api/v1/systemprompts', (req, res) => {
-  const { promptGenerator, designAnalyzer, listingGenerator, trademarkAuditor } = req.body;
-  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer, listingGenerator, trademarkAuditor });
+  SystemPromptService.savePrompts(req.body);
   const updated = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
-    promptGenerator: updated.promptGenerator,
-    designAnalyzer: updated.designAnalyzer,
-    listingGenerator: updated.listingGenerator,
-    trademarkAuditor: updated.trademarkAuditor
+    ...updated
   });
 });
 
@@ -1060,10 +1080,7 @@ app.post('/api/v1/systemprompts/reset', (req, res) => {
   const resetPrompts = SystemPromptService.resetToDefault(type || 'all');
   res.json({
     success: true,
-    promptGenerator: resetPrompts.promptGenerator,
-    designAnalyzer: resetPrompts.designAnalyzer,
-    listingGenerator: resetPrompts.listingGenerator,
-    trademarkAuditor: resetPrompts.trademarkAuditor
+    ...resetPrompts
   });
 });
 

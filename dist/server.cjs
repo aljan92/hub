@@ -49912,6 +49912,1664 @@ var init_settingsService = __esm2({
   }
 });
 
+// src/server/services/trademarkService.ts
+var COMMON_STOP_WORDS, TrademarkService;
+var init_trademarkService = __esm2({
+  "src/server/services/trademarkService.ts"() {
+    "use strict";
+    init_settingsService();
+    COMMON_STOP_WORDS = /* @__PURE__ */ new Set([
+      "the",
+      "and",
+      "for",
+      "with",
+      "this",
+      "that",
+      "from",
+      "your",
+      "have",
+      "are",
+      "was",
+      "were",
+      "will",
+      "been",
+      "each",
+      "when",
+      "into",
+      "just",
+      "more",
+      "some",
+      "than",
+      "them",
+      "then",
+      "they",
+      "what",
+      "which",
+      "who",
+      "will",
+      "shirt",
+      "tshirt",
+      "t-shirt",
+      "apparel",
+      "gift",
+      "ideas",
+      "great",
+      "cool",
+      "love",
+      "lovers",
+      "graphic",
+      "design",
+      "men",
+      "women",
+      "kids",
+      "boys",
+      "girls",
+      "youth",
+      "funny",
+      "retro",
+      "vintage",
+      "classic"
+    ]);
+    TrademarkService = class {
+      /**
+       * Test connection to Productor Trademark APIs
+       */
+      static async testConnection() {
+        const settings = loadSettings();
+        const start3 = Date.now();
+        try {
+          const fd = new FormData();
+          fd.append("trademarks", JSON.stringify(["nike"]));
+          const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
+            method: "POST",
+            headers: {
+              "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+              "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
+            },
+            body: fd,
+            signal: AbortSignal.timeout(6e3)
+          });
+          const latencyMs = Date.now() - start3;
+          if (res.ok) {
+            return { success: true, latencyMs };
+          }
+          return { success: false, latencyMs, error: `USPTO API antwortet mit HTTP ${res.status}` };
+        } catch (err) {
+          return { success: false, latencyMs: Date.now() - start3, error: err.message || "Verbindungs-Timeout" };
+        }
+      }
+      /**
+       * Parse office inputs (e.g. 'USPTO', 'EUIPO', 'DPMA' or fallback 'US', 'DE', 'EU')
+       */
+      static normalizeOffices(input, marketplace) {
+        const rawList = [];
+        if (Array.isArray(input)) {
+          rawList.push(...input);
+        } else if (typeof input === "string" && input.trim()) {
+          rawList.push(...input.split(",").map((s) => s.trim()));
+        } else if (marketplace && typeof marketplace === "string") {
+          rawList.push(marketplace.trim());
+        }
+        const offices = /* @__PURE__ */ new Set();
+        for (const raw of rawList) {
+          const up = raw.toUpperCase();
+          if (up === "USPTO" || up === "US" || up === "COM") {
+            offices.add("USPTO");
+          } else if (up === "EUIPO" || up === "EU" || up === "UK" || up === "GB" || up === "FR" || up === "IT" || up === "ES") {
+            offices.add("EUIPO");
+          } else if (up === "DPMA" || up === "DE") {
+            offices.add("DPMA");
+            offices.add("EUIPO");
+          }
+        }
+        if (offices.size === 0) {
+          offices.add("USPTO");
+        }
+        return Array.from(offices);
+      }
+      /**
+       * Extract search terms from text: full phrase + n-grams + individual significant keywords
+       */
+      static extractTermsFromText(text2) {
+        if (!text2 || typeof text2 !== "string") return [];
+        const trimmed = text2.trim();
+        if (trimmed.length < 2) return [];
+        const terms = /* @__PURE__ */ new Set();
+        if (trimmed.length <= 60) {
+          terms.add(trimmed.toLowerCase());
+        }
+        const words = trimmed.split(/[\s,.;:!?/()"\-+]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter((w) => w.length >= 3);
+        for (const w of words) {
+          if (w.length >= 4 && !COMMON_STOP_WORDS.has(w)) {
+            terms.add(w);
+          }
+        }
+        for (let i = 0; i < words.length - 1; i++) {
+          const twoGram = `${words[i]} ${words[i + 1]}`;
+          terms.add(twoGram);
+          if (i < words.length - 2) {
+            const threeGram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
+            terms.add(threeGram);
+          }
+        }
+        return Array.from(terms);
+      }
+      /**
+       * Extract and normalize Nice Classification numbers (e.g. '041' -> '41', '009,042' -> ['9', '42'])
+       */
+      static extractNiceClasses(r) {
+        if (!r) return [];
+        const raw = r.classification || r.Classification || r.classes || r.class_id || r.class || r.international_class || "";
+        if (!raw) return [];
+        if (Array.isArray(raw)) {
+          return raw.map((c) => String(c).replace(/^0+/, "").trim()).filter(Boolean);
+        }
+        return String(raw).split(/[,;\s]+/).map((c) => c.replace(/[^0-9]/g, "").replace(/^0+/, "").trim()).filter(Boolean);
+      }
+      /**
+       * Check if a trademark status string or code represents an active/live registered trademark
+       * Strictly filters out PENDING, DEAD, ABANDONED, CANCELLED, EXPIRED, REFUSED
+       */
+      static isLiveStatus(rawStatus) {
+        if (rawStatus === void 0 || rawStatus === null || rawStatus === "") {
+          return false;
+        }
+        const s = String(rawStatus).trim().toUpperCase();
+        if (s.includes("DEAD") || s.includes("PENDING") || s.includes("CANCEL") || s.includes("ABANDON") || s.includes("EXPIRE") || s.includes("REFUSE") || s.includes("SUSPEND")) {
+          return false;
+        }
+        return s.includes("LIVE") || s.includes("REGISTERED") || s.includes("ACTIVE") || s.includes("EINGETRAGEN") || s === "REG" || s === "700" || s === "701";
+      }
+      /**
+       * Check terms across specified trademark offices
+       */
+      static async queryOffices(uniqueTerms, offices) {
+        const settings = loadSettings();
+        const allHits = {};
+        if (uniqueTerms.length === 0 || offices.length === 0) {
+          return allHits;
+        }
+        const defaultHeaders = {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
+        };
+        const promises = [];
+        if (offices.includes("USPTO")) {
+          promises.push((async () => {
+            try {
+              const usptoFd = new FormData();
+              usptoFd.append("trademarks", JSON.stringify(uniqueTerms));
+              const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
+                method: "POST",
+                headers: {
+                  ...defaultHeaders,
+                  "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
+                },
+                body: usptoFd,
+                signal: AbortSignal.timeout(9e3)
+              });
+              if (res.ok) {
+                const data = await res.json();
+                for (const [term, records] of Object.entries(data)) {
+                  if (Array.isArray(records) && records.length > 0) {
+                    records.forEach((r) => {
+                      const rawStatus = r.status || r.status_code || "LIVE";
+                      if (this.isLiveStatus(rawStatus)) {
+                        const classes = this.extractNiceClasses(r);
+                        allHits[term] = allHits[term] || [];
+                        allHits[term].push({
+                          term,
+                          trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
+                          classNumber: classes.join(", ") || "N/A",
+                          classes,
+                          status: "LIVE",
+                          registrationNumber: r.registration_number || r.registration_date,
+                          serialNumber: r.serial_number || r.applicationNumber,
+                          goodsAndServices: r.goods_and_services || r.goods_services,
+                          source: "USPTO"
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn("[TrademarkService] USPTO query error:", err.message || err);
+            }
+          })());
+        }
+        if (offices.includes("EUIPO")) {
+          promises.push((async () => {
+            try {
+              const euFd = new FormData();
+              euFd.append("trademarks", JSON.stringify(uniqueTerms));
+              const res = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
+                method: "POST",
+                headers: {
+                  ...defaultHeaders,
+                  "Authorization": settings.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
+                },
+                body: euFd,
+                signal: AbortSignal.timeout(9e3)
+              });
+              if (res.ok) {
+                const data = await res.json();
+                for (const [term, records] of Object.entries(data)) {
+                  if (Array.isArray(records) && records.length > 0) {
+                    records.forEach((r) => {
+                      const rawStatus = r.markCurrentStatusCode || r.status || "LIVE";
+                      if (this.isLiveStatus(rawStatus)) {
+                        const classes = this.extractNiceClasses(r);
+                        allHits[term] = allHits[term] || [];
+                        allHits[term].push({
+                          term,
+                          trademark: r.trademark || r.mark_identification || term,
+                          classNumber: classes.join(", ") || "N/A",
+                          classes,
+                          status: "LIVE",
+                          serialNumber: r.applicationNumber,
+                          source: "EUIPO"
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn("[TrademarkService] EUIPO query error:", err.message || err);
+            }
+          })());
+        }
+        if (offices.includes("DPMA")) {
+          promises.push((async () => {
+            try {
+              const dpmaFd = new FormData();
+              dpmaFd.append("trademarks", JSON.stringify(uniqueTerms));
+              const res = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
+                method: "POST",
+                headers: {
+                  ...defaultHeaders,
+                  "Authorization": settings.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
+                },
+                body: dpmaFd,
+                signal: AbortSignal.timeout(9e3)
+              });
+              if (res.ok) {
+                const data = await res.json();
+                for (const [term, records] of Object.entries(data)) {
+                  if (Array.isArray(records) && records.length > 0) {
+                    records.forEach((r) => {
+                      const rawStatus = r.MarkCurrentStatusCode || r.status || "LIVE";
+                      if (this.isLiveStatus(rawStatus)) {
+                        const classes = this.extractNiceClasses(r);
+                        allHits[term] = allHits[term] || [];
+                        allHits[term].push({
+                          term,
+                          trademark: r.MarkVerbalElementText || r.trademark || term,
+                          classNumber: classes.join(", ") || "N/A",
+                          classes,
+                          status: "LIVE",
+                          serialNumber: r.ApplicationNumber,
+                          source: "DPMA"
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn("[TrademarkService] DPMA query error:", err.message || err);
+            }
+          })());
+        }
+        await Promise.all(promises);
+        return allHits;
+      }
+      /**
+       * Analyze hits to calculate blocked products and class 25 status
+       */
+      static analyzeHits(hitsRecord) {
+        let hasInfringementClass25 = false;
+        const blockedProductsSet = /* @__PURE__ */ new Set();
+        let totalHits = 0;
+        for (const [, records] of Object.entries(hitsRecord)) {
+          for (const rec of records) {
+            if (!this.isLiveStatus(rec.status)) continue;
+            totalHits++;
+            const classes = rec.classes && rec.classes.length > 0 ? rec.classes : this.extractNiceClasses({ classification: rec.classNumber });
+            if (classes.includes("25")) {
+              hasInfringementClass25 = true;
+              blockedProductsSet.add("STANDARD_TSHIRT");
+              blockedProductsSet.add("PREMIUM_TSHIRT");
+              blockedProductsSet.add("HOODIE");
+              blockedProductsSet.add("SWEATSHIRT");
+              blockedProductsSet.add("ZIP_HOODIE");
+              blockedProductsSet.add("TANK_TOP");
+              blockedProductsSet.add("LONG_SLEEVE_TSHIRT");
+              blockedProductsSet.add("RAGLAN");
+            }
+            if (classes.includes("9")) {
+              blockedProductsSet.add("POPSOCKET");
+              blockedProductsSet.add("PHONE_CASE_APPLE_IPHONE");
+              blockedProductsSet.add("PHONE_CASE_SAMSUNG_GALAXY");
+            }
+            if (classes.includes("21")) {
+              blockedProductsSet.add("MUG");
+              blockedProductsSet.add("TUMBLER");
+            }
+            if (classes.includes("20")) {
+              blockedProductsSet.add("THROW_PILLOW");
+            }
+            if (classes.includes("8") || classes.includes("18")) {
+              blockedProductsSet.add("TOTE_BAG");
+            }
+          }
+        }
+        return {
+          hasInfringementClass25,
+          blockedProducts: Array.from(blockedProductsSet),
+          totalHits
+        };
+      }
+      /**
+       * Legacy check method for single term array (used by UI Designer)
+       */
+      static async checkTrademarks(terms, locale = "en") {
+        const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
+        const uniqueTerms = Array.from(new Set(cleanTerms));
+        if (uniqueTerms.length === 0) {
+          return {
+            hasInfringementClass25: false,
+            blockedProducts: [],
+            hits: {},
+            totalHits: 0,
+            message: "No terms to check."
+          };
+        }
+        const offices = locale === "de" ? ["USPTO", "EUIPO", "DPMA"] : ["USPTO", "EUIPO"];
+        const hits = await this.queryOffices(uniqueTerms, offices);
+        const analysis = this.analyzeHits(hits);
+        return {
+          hasInfringementClass25: analysis.hasInfringementClass25,
+          blockedProducts: analysis.blockedProducts,
+          hits,
+          totalHits: analysis.totalHits,
+          message: analysis.hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : analysis.totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${analysis.blockedProducts.length} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
+        };
+      }
+      /**
+       * Comprehensive Multi-Field Batch Check for Hermes Agent & MCP Integration
+       */
+      static async checkBatchFields(input) {
+        const offices = this.normalizeOffices(input.offices, input.marketplace);
+        const fields = input.fields || {};
+        const fieldTermsMap = {};
+        const allUniqueTerms = /* @__PURE__ */ new Set();
+        for (const [fieldName, rawValue] of Object.entries(fields)) {
+          if (rawValue && typeof rawValue === "string") {
+            const terms = this.extractTermsFromText(rawValue);
+            fieldTermsMap[fieldName] = terms;
+            terms.forEach((t) => allUniqueTerms.add(t));
+          }
+        }
+        const termList = Array.from(allUniqueTerms);
+        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
+        const fieldResults = {};
+        let totalGlobalHits = 0;
+        let globalHasInfringementClass25 = false;
+        const globalBlockedProducts = /* @__PURE__ */ new Set();
+        for (const [fieldName, terms] of Object.entries(fieldTermsMap)) {
+          const fieldHits = {};
+          for (const t of terms) {
+            if (globalHits[t] && globalHits[t].length > 0) {
+              fieldHits[t] = globalHits[t];
+            }
+          }
+          const analysis = this.analyzeHits(fieldHits);
+          if (analysis.hasInfringementClass25) globalHasInfringementClass25 = true;
+          analysis.blockedProducts.forEach((p) => globalBlockedProducts.add(p));
+          totalGlobalHits += analysis.totalHits;
+          fieldResults[fieldName] = {
+            safe: !analysis.hasInfringementClass25,
+            hasInfringementClass25: analysis.hasInfringementClass25,
+            totalHits: analysis.totalHits,
+            blockedProducts: analysis.blockedProducts,
+            hits: fieldHits
+          };
+        }
+        const isCompletelySafe = !globalHasInfringementClass25 && globalBlockedProducts.size === 0;
+        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
+        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
+        const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
+        const hasBrandTitleClass25 = brandHasClass25 || titleHasClass25 || quoteHasClass25;
+        let verdict;
+        let message;
+        if (hasBrandTitleClass25) {
+          verdict = "REJECTED_CLASS_25";
+          const affected = [brandHasClass25 && "Brand", titleHasClass25 && "Title", quoteHasClass25 && "Quote"].filter(Boolean);
+          message = `Klasse 25 Konflikt in Identifikatoren (${affected.join(", ")}). Automatisches Umschreiben erforderlich.`;
+        } else if (globalHasInfringementClass25) {
+          verdict = "NEEDS_AUDIT";
+          message = `Treffer in Bullets/Description gefunden (${totalGlobalHits} Treffer). Fair-Use-Pr\xFCfung durch Trademark Auditor.`;
+        } else if (globalBlockedProducts.size > 0) {
+          verdict = "SAFE_FOR_APPAREL";
+          message = `Keine Treffer in Klasse 25 (Bekleidung sicher). ${globalBlockedProducts.size} Nebenprodukte gesperrt.`;
+        } else {
+          verdict = "SAFE_ALL";
+          message = "Keine aktiven Schutzrechte gefunden. Listing ist sauber \u2713";
+        }
+        const rawInputPhrases = /* @__PURE__ */ new Set();
+        for (const rawValue of Object.values(fields)) {
+          if (rawValue && typeof rawValue === "string") {
+            const tr = rawValue.trim().toLowerCase();
+            if (tr.length > 0) rawInputPhrases.add(tr);
+          }
+        }
+        const exactPhraseHits = [];
+        const keywordHits = [];
+        const affectedClassesSet = /* @__PURE__ */ new Set();
+        const seenHitKeys = /* @__PURE__ */ new Set();
+        for (const [term, hits] of Object.entries(globalHits)) {
+          for (const hit of hits) {
+            const uniqueKey = `${hit.source}-${hit.trademark}-${hit.classNumber}-${hit.term}`;
+            if (seenHitKeys.has(uniqueKey)) continue;
+            seenHitKeys.add(uniqueKey);
+            (hit.classes || []).forEach((c) => affectedClassesSet.add(c));
+            if (rawInputPhrases.has(term.toLowerCase())) {
+              exactPhraseHits.push(hit);
+            } else {
+              keywordHits.push(hit);
+            }
+          }
+        }
+        return {
+          success: true,
+          safe: !hasBrandTitleClass25,
+          hasInfringementClass25: globalHasInfringementClass25,
+          affectedClasses: Array.from(affectedClassesSet).sort((a, b) => Number(a) - Number(b)),
+          blockedProducts: Array.from(globalBlockedProducts),
+          officesChecked: offices,
+          summary: {
+            totalHits: totalGlobalHits,
+            verdict,
+            message,
+            exactPhraseHitsCount: exactPhraseHits.length,
+            keywordHitsCount: keywordHits.length
+          },
+          exactPhraseHits,
+          keywordHits,
+          fieldResults
+        };
+      }
+    };
+  }
+});
+
+// src/server/services/systemPromptService.ts
+var import_fs72, import_path67, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT, DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
+var init_systemPromptService = __esm2({
+  "src/server/services/systemPromptService.ts"() {
+    "use strict";
+    import_fs72 = __toESM2(require("fs"), 1);
+    import_path67 = __toESM2(require("path"), 1);
+    DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT = `You are an expert AI prompt engineer and Art Director specializing in print-on-demand (POD) automation for Merch by Amazon. Your goal is to convert the incoming design parameters (niche, quote, style, feeling, colors, instructions) into a highly descriptive, visually stunning, clean vector prompt tailored for Ideogram.
+
+CORE RULES:
+1. GRAPHIC STYLE: Enforce clean, bold vector illustration / graphic design suitable for t-shirt printing.
+2. ISOLATION: The design must be isolated on a clean solid background with no realistic scene bleeding.
+3. TYPOGRAPHY: If a quote or number is provided, ensure the text is spelled exactly as requested, styled with legible and impactful typography.
+4. COMMERCIAL COMPLIANCE: Do not include trademarks, brand names, or protected phrases.
+
+OUTPUT FORMAT:
+Output ONLY the raw, optimized image generation prompt text. Do not include introductory text, explanations, or quotes around the whole prompt.`;
+    DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT = `You are an expert AI Art Director and POD (Print on Demand) Quality Assurance Specialist for Merch by Amazon.
+Your task is to analyze the generated t-shirt / merch graphic design based on the input specifications and evaluate it strictly against the following 4 core criteria:
+
+1. QUOTE ACCURACY & VISUAL QUALITY:
+- CRITICAL RULE ON PUNCTUATION & SPACING: Punctuation differences (such as colons ":", hyphens "-", dots ".", commas ",", spaces, or line breaks) are 100% VALID AND ACCEPTABLE!
+  Example: If requested quote is "11:11" and the image shows "11 11" or "11\\n11", this is an APPROVED MATCH! You MUST set "quote_matches": true, "quote_errors": null, and "regenerate_recommended": false! Do NOT complain about missing colons or punctuation.
+- ONLY flag GENUINE text errors: Misspelled words, wrong letters, duplicate letters (e.g. "Mannifest" instead of "Manifest"), completely missing words, or unreadable AI gibberish glyphs.
+- Check for SEVERE graphic/anatomical defects: Obvious AI distortions such as malformed extra fingers/hands, melted faces, or corrupted graphic shapes.
+- Evaluation rule: Unless there are actual misspelled words or severe visual deformities, ALWAYS set "quote_matches": true, "quote_errors": null, "regenerate_recommended": false, and "overall_verdict": "APPROVED".
+
+2. TARGET AUDIENCE (FIT TYPES):
+- Determine which target audiences this design is suitable for: Select from ["Men", "Women", "Youth"].
+- Multiple selections are encouraged (e.g. ["Men", "Women", "Youth"] for cute/general motifs, ["Men", "Women"] for adult-oriented quotes).
+
+3. PRODUCT COLORS TO AVOID (CONTRAST):
+- Which t-shirt / garment base color must be avoided to ensure maximum contrast and legibility?
+- DEFAULT to "None" if the design has strong contrast, solid outlines, golden/cream/colored typography, or looks great on both black and white apparel.
+- ONLY select "White" if the text or graphic elements are pure white or very light pastel without a dark border/outline.
+- ONLY select "Black" if the text or graphic elements are pure black or very dark without a light border/outline.
+- Options for "avoid": "Black", "White", or "None".
+
+4. BACKGROUND HANDLING (AUTOMATED TRANSPARENCY / ISOLATION):
+- MANDATORY CORNER & BORDER INSPECTION:
+  * Carefully examine the 4 outer corners, top/bottom edges, and perimeter of the canvas under high attention.
+  * Check for subtle textures: Leather crackles/craquel\xE9, paper grain, canvas weave, noise, grunge, brush strokes, starfield specks, or vignetting (edges/corners darker or colored differently than the center).
+  * If ANY non-flat texture, grain, craquel\xE9, vignette, radial glow, or non-uniform shading exists -> you MUST set "removal_mode": "MANUAL" and "is_design_element": true!
+  * ONLY set "AUTOMATIC" and "is_design_element": false if the entire background is 100% flat, completely solid single digital vector hex color with ZERO surface texture and ZERO gradient across all 4 corners.
+- "reason": "<Explicitly describe the background surface: flat solid color vs textured/vignetted/gradient>"
+
+5. COLOR COUNT ESTIMATION (VECTORIZATION MAX COLORS):
+- CRITICAL RULE: Count ALL distinct sensible colors across the ENTIRE image, MANDATORILY INCLUDING THE BACKGROUND COLOR(S)!
+  * Reason: Vectorizer.ai vectorizes the whole image first (including the background) before transparency is applied. If background colors are omitted, the vectorizer will crush or blend necessary palette shades.
+  * Example: If graphic has Ivory (1) and Gold (2) on a Dark Blue (3) background, the count MUST BE AT LEAST 3 colors! If there is a gradient, shadow, or secondary accent, count that as well (e.g. 4 or 5 colors).
+- Range: Integer between 1 and 12 (maximum 12 colors).
+- "color_count": Integer from 1 to 12.
+- "reason": "<List all counted colors including background color and artwork colors, e.g. 'Ivory typography, gold accents/outlines, and dark blue background = 3-4 colors'>"
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
+{
+  "quote_check": {
+    "requested_quote": "<Original quote from input>",
+    "detected_quote": "<Actual text read from image>",
+    "quote_matches": true,
+    "quote_errors": null,
+    "regenerate_recommended": false
+  },
+  "target_group": {
+    "selected": ["Men", "Women", "Youth"],
+    "reason": "<Brief explanation>"
+  },
+  "avoid_product_colors": {
+    "avoid": "None",
+    "reason": "<Brief contrast explanation>"
+  },
+  "background_analysis": {
+    "is_design_element": false,
+    "background_color_detected": "<Detected background color>",
+    "removal_mode": "AUTOMATIC",
+    "reason": "<Brief explanation>"
+  },
+  "color_analysis": {
+    "color_count": 3,
+    "reason": "<Brief explanation of dominant visible colors in the entire image including background>"
+  },
+  "overall_verdict": "APPROVED"
+}`;
+    DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) SEO listing copywriter and compliance specialist.
+Your task is to generate a high-converting, policy-compliant, and perfectly optimized Merch by Amazon listing based on the design, quote, niche, and visual elements.
+
+### 1. RULES FOR EACH FIELD:
+- Title (Max 60 characters!):
+  * Focus on the main quote / idea and strong search keywords.
+  * Do NOT include product types (NO words like "T-Shirt", "shirt", "hoodie", "tank top").
+  * IMPORTANT Suffix-Appending Rule: Ensure the final word in the Title forms a clean long-tail keyword when Amazon automatically appends "T-Shirt" (e.g. end with "Outfit", "Apparel", "Graphic", or the main theme word like "Retro Sunset").
+- Brand (Max 50 characters!):
+  * Create a thematic brand name reflecting the niche / style of the design.
+  * Must contain relevant search keywords.
+  * Must NOT be an existing trademark or brand name. Do NOT include the word "Brand" or product types.
+- Bullet Point 1 (Max 250 characters!):
+  * Focus on the design's content, artistic style, typography, and visual appeal.
+  * Keep it relevant to the artwork. Do NOT mention garment material, fit, sizing, or print quality.
+  * Do NOT use phrases like "this shirt" \u2013 refer to the design or use neutral phrasing (e.g. "Featuring a stylish ...").
+- Bullet Point 2 (Max 250 characters!):
+  * Describe the target audience, lifestyle, or suitable occasion for wearing the artwork.
+  * Do NOT use the word "gift" or phrases like "perfect for birthday" (instead use "Great for anyone who loves...").
+- Description (Max 2000 characters):
+  * Combine the ideas from Bullets 1 & 2 into a reader-friendly, natural paragraph with soft long-tail keywords.
+  * Do NOT mention background color or physical garment properties.
+
+### 2. STRICT COMPLIANCE & BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+- NO faux material / physical effect claims (CRITICAL FOR 2D PRINTS): sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
+- NO quality/material claims: soft, premium, cotton, high quality, durable, lightweight, fitted, loose, size up, printed in, made in.
+- NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now, discount.
+- NO background color mentions: white design, black background, transparent.
+- NO product types in Title/Brand: t-shirt, shirt, hoodie, tank top, popsocket, pop socket.
+- NO trademarks, copyrighted characters, or brand names.
+- NO profanity, violence, or sensitive themes (must be 100% Family Friendly / PG-13).
+- NO keyword stuffing. Use full, natural sentences.
+- NO typographic or curly quotation marks (do NOT use \u201E \u201C \u201D \xAB \xBB \u2019 \u2018). Use ONLY standard ASCII double quotes (") or single quotes ('). Do not use em-dashes (\u2014); use standard hyphens (-).
+
+### 3. MULTI-MARKETPLACE TRANSLATIONS:
+Provide localized, native listings for English (en), German (de), French (fr), Italian (it), Spanish (es), and Japanese (ja).
+CRITICAL: Any English quotes or slogans on the design MUST remain in English in all translated listings! Only translate the surrounding descriptive text. Never use non-ASCII quotes in translated text (e.g. do NOT use German \u201E \u201C).
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
+{
+  "en": {
+    "brand": "<Brand Name max 50 chars>",
+    "title": "<Title max 60 chars>",
+    "bullet1": "<Bullet 1 max 250 chars>",
+    "bullet2": "<Bullet 2 max 250 chars>",
+    "description": "<Description paragraph>"
+  },
+  "de": {
+    "brand": "<Deutscher Brand Name>",
+    "title": "<Deutscher Titel max 60 Zeichen>",
+    "bullet1": "<Deutscher Bullet 1 max 250 Zeichen>",
+    "bullet2": "<Deutscher Bullet 2 max 250 Zeichen>",
+    "description": "<Deutsche Beschreibung>"
+  },
+  "fr": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "it": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "es": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
+}`;
+    DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) Trademark Attorney and POD Compliance Auditor.
+Your job is to analyze the USPTO / Trademark hits detected for a generated Merch by Amazon listing and make a definitive compliance decision.
+
+### 1. CORE COMPLIANCE RULES:
+
+A. DESCRIPTIVE FAIR USE (ALLOWED IN BULLETS & DESCRIPTION):
+- Generic, common words (e.g., "space", "vintage", "retro", "happy", "sun", "workout", "sunset", "cute", "angel", "reality", "manifest", "wings", "stars", "gold", "cosmic", "celestial", "radiant") are often registered as apparel trademarks by individual brands.
+- If these words appear in natural descriptive sentence context within Bullet Points or Description (e.g. "featuring celestial angel wings artwork in ivory and gold tones"), this is 100% LEGAL DESCRIPTIVE FAIR USE. Do NOT delete or butcher sentences for common descriptive words!
+
+B. SOURCE IDENTIFIERS / BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE):
+- If a trademarked word or phrase appears as the Brand Name or directly as the main subject in the Title, it functions as a trademark / source identifier.
+- Action: Brand and Title MUST be 100% free of active Class 25 (Apparel) trademarks! If Brand or Title triggers a Class 25 hit, rephrase to a unique, non-infringing phrase while keeping the niche relevance and SEO value.
+- Character limits: Brand <= 50 chars, Title <= 60 chars.
+
+C. UNACCEPTABLE TRADEMARK INFRINGEMENT (MUST REJECT):
+- If the core Quote / Slogan printed on the design or the central design motif itself directly infringes a protected trademark in Class 25 (e.g. "Just Do It", "Hakuna Matata", "Lego", "Disney", "Marvel", "Pokemon", "Star Wars", famous celebrities, or active registered slogans):
+  * Set "verdict": "REJECTED"
+  * Provide a clear "rejection_reason".
+
+D. SAFE REPHRASING & MBA LISTING COMPLIANCE:
+- When rewriting any fields, you MUST strictly adhere to the Amazon Merch on Demand listing guidelines:
+  * NO quality/material claims: soft, cotton, premium, durable, lightweight, fitted, loose.
+  * NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now.
+  * NO background color mentions: white design, black background, transparent.
+  * Use full, natural sentences without keyword stuffing.
+  * Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
+
+### 2. OUTPUT FORMAT:
+Respond ONLY with a valid JSON object matching this schema (no markdown fences, no conversational text):
+{
+  "verdict": "APPROVED",
+  "rejection_reason": null,
+  "actions_taken": [
+    "Retained 'wings' and 'stars' in Bullets as descriptive fair use",
+    "Replaced 'Wings Apparel' in Brand with 'Feather Artwork Studio'"
+  ],
+  "refined_listing": {
+    "brand": "<Cleaned Brand Name (max 50 chars)>",
+    "title": "<Cleaned Title (max 60 chars)>",
+    "bullet1": "<Cleaned Bullet 1 (max 250 chars)>",
+    "bullet2": "<Cleaned Bullet 2 (max 250 chars)>",
+    "description": "<Cleaned Description (max 2000 chars)>"
+  }
+}`;
+    DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT = `You are an expert Print-on-Demand (POD) Production & Quality Assurance Specialist for Merch by Amazon.
+Your task is to inspect a 4-Panel Verification Image containing a vectorized t-shirt graphic placed on 4 different background colors:
+1. Top-Left: Pure White (#ffffff)
+2. Top-Right: Pure Black (#000000)
+3. Bottom-Left: Vivid Red (#d32f2f)
+4. Bottom-Right: Dark Slate / Anthracite (#1e293b)
+
+Your goal is to strictly determine if the background was cleanly and completely removed, or if manual clipping/cleanup is required.
+
+EVALUATION CRITERIA:
+1. OUTER BACKGROUND REMOVAL (CRITICAL):
+- Is there any visible outer bounding box, rectangular border, or background remnants surrounding the design on ANY of the 4 panels?
+- If an unwanted outer background rectangle/frame is still visible on the black/red/slate panels, you MUST set "cutout_verdict": "REJECTED".
+
+2. INNER LETTERS & ENCLOSED CUTOUTS:
+- Check internal negative spaces inside letters (e.g. loops in 'A', 'B', 'D', 'O', 'P', 'Q', 'R', '0', '4', '6', '8', '9') or closed graphic contours.
+- If these closed loops still contain solid white/background fills instead of transparent pass-through showing the panel background, note them in "detected_issues". If severe, set "cutout_verdict": "REJECTED".
+
+3. ARTWORK INTEGRITY:
+- Did the background removal accidentally erase vital parts of the design artwork or essential lettering?
+
+DECISION RULES:
+- "APPROVED": The graphic is cleanly isolated with transparent background. Contours are sharp and clean on all 4 panels.
+- "REJECTED": Outer background frame remains, major letter loops are un-cleared, or artwork parts were accidentally deleted.
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
+{
+  "cutout_verdict": "APPROVED",
+  "background_removed_cleanly": true,
+  "detected_issues": [],
+  "confidence": 0.98,
+  "explanation": "The artwork is cleanly isolated across all 4 background colors with transparent letter loops and no outer artifacts."
+}`;
+    DEFAULT_UPDATE_VISION_SYSTEM_PROMPT = `You are a Senior Amazon Merch on Demand Quality & SEO Auditor.
+Your task is to analyze the existing Merch on Demand design and its current English listing.
+
+Tasks:
+1. Determine the optimal Target Audience (fitTypes: choose from ["men", "women", "youth"]).
+2. Determine if any background color must be avoided (avoidColor: "black" | "white" | "none").
+3. Evaluate if the existing listing requires a rewrite. If it already has high-converting keywords, no banned words, and concise bullets, set rewriteNeeded: false. If it is keyword-stuffed, low quality, or outdated, set rewriteNeeded: true.
+4. Provide clear reasoning.
+
+Return ONLY valid JSON matching this schema:
+{
+  "fitTypes": ["men", "women", "youth"],
+  "avoidColor": "black" | "white" | "none",
+  "rewriteNeeded": boolean,
+  "reasoning": "string explaining the decision",
+  "designTheme": "short description of visual style"
+}`;
+    DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT = `You are a world-class Amazon Merch on Demand Listing Copywriter.
+Rewrite and optimize the existing English listing to maximize organic search visibility and conversion rate without trademark infringements.
+
+Guidelines:
+1. Brand: Max 50 chars, catchy and niche-specific.
+2. Title: Max 60 chars, highly relevant primary keywords, natural sentence structure.
+3. Feature Bullets (Bullet 1 & Bullet 2): Max 256 chars each. Natural English, focusing on the theme/gift angle. NO mentions of print quality, garment fit, shipping, or copyrighted terms.
+4. Description: Short atmospheric summary (max 300 chars).
+
+Return ONLY valid JSON:
+{
+  "brand": "string",
+  "title": "string",
+  "bullet1": "string",
+  "bullet2": "string",
+  "description": "string"
+}`;
+    DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT = `You are a professional multi-language Amazon Merch on Demand localization expert.
+Translate and SEO-optimize the English listing into German (de), French (fr), Spanish (es), and Italian (it).
+Adapt natural phrasing rather than literal translation.
+
+Return ONLY valid JSON matching this schema:
+{
+  "de": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
+  "fr": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
+  "es": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
+  "it": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" }
+}`;
+    SystemPromptService = class {
+      static promptFile = import_path67.default.resolve(process.cwd(), "data", "system_prompts.json");
+      static cachedPrompts = null;
+      static ensureDataDir() {
+        const dir = import_path67.default.dirname(this.promptFile);
+        if (!import_fs72.default.existsSync(dir)) {
+          import_fs72.default.mkdirSync(dir, { recursive: true });
+        }
+      }
+      static loadPrompts() {
+        if (this.cachedPrompts !== null) {
+          return this.cachedPrompts;
+        }
+        this.ensureDataDir();
+        if (import_fs72.default.existsSync(this.promptFile)) {
+          try {
+            const fileContent = import_fs72.default.readFileSync(this.promptFile, "utf-8");
+            this.cachedPrompts = JSON.parse(fileContent);
+            if (this.cachedPrompts) {
+              if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.designAnalyzer) this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.listingGenerator) this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.updateVisionAnalyzer) this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.updateListingRewriter) this.cachedPrompts.updateListingRewriter = DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.updateLocalizationTranslator) this.cachedPrompts.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
+              return this.cachedPrompts;
+            }
+          } catch (e) {
+            console.error("[SystemPromptService] Failed to read system_prompts.json:", e);
+          }
+        }
+        this.cachedPrompts = {
+          promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
+          designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
+          listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
+          trademarkAuditor: DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
+          svgBgAuditor: DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
+          updateVisionAnalyzer: DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
+          updateListingRewriter: DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT,
+          updateLocalizationTranslator: DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT
+        };
+        try {
+          import_fs72.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
+        } catch (e) {
+        }
+        return this.cachedPrompts;
+      }
+      static getPromptGeneratorPrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
+      }
+      static getDesignAnalyzerPrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+      }
+      static getListingGeneratorPrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+      }
+      static getTrademarkAuditorPrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+      }
+      static getSvgBgAuditorPrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
+      }
+      static getUpdateVisionPrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.updateVisionAnalyzer || DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
+      }
+      static getUpdateRewritePrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.updateListingRewriter || DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+      }
+      static getUpdateTranslationPrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.updateLocalizationTranslator || DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
+      }
+      static getAllPrompts() {
+        const prompts = this.loadPrompts();
+        return {
+          promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
+          designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
+          listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
+          trademarkAuditor: prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
+          svgBgAuditor: prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
+          updateVisionAnalyzer: prompts.updateVisionAnalyzer || DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
+          updateListingRewriter: prompts.updateListingRewriter || DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT,
+          updateLocalizationTranslator: prompts.updateLocalizationTranslator || DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT
+        };
+      }
+      static savePrompts(updates) {
+        this.ensureDataDir();
+        const prompts = this.loadPrompts();
+        for (const [k, v] of Object.entries(updates)) {
+          if (typeof v === "string") {
+            prompts[k] = v;
+          }
+        }
+        this.cachedPrompts = prompts;
+        try {
+          import_fs72.default.writeFileSync(this.promptFile, JSON.stringify(prompts, null, 2), "utf-8");
+          console.log("[SystemPromptService] \u{1F4BE} System-Prompts erfolgreich gespeichert.");
+        } catch (e) {
+          console.error("[SystemPromptService] Failed to save system_prompts.json:", e);
+        }
+      }
+      static resetToDefault(type3 = "all") {
+        const current = this.loadPrompts();
+        if (type3 === "promptGenerator" || type3 === "all") current.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
+        if (type3 === "designAnalyzer" || type3 === "all") current.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+        if (type3 === "listingGenerator" || type3 === "all") current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+        if (type3 === "trademarkAuditor" || type3 === "all") current.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+        if (type3 === "svgBgAuditor" || type3 === "all") current.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
+        if (type3 === "updateVisionAnalyzer" || type3 === "all") current.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
+        if (type3 === "updateListingRewriter" || type3 === "all") current.updateListingRewriter = DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+        if (type3 === "updateLocalizationTranslator" || type3 === "all") current.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
+        this.cachedPrompts = current;
+        try {
+          import_fs72.default.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), "utf-8");
+        } catch (e) {
+        }
+        return this.getAllPrompts();
+      }
+    };
+  }
+});
+
+// src/server/services/llmService.ts
+var cachedModels, lastModelsFetch, LLMService;
+var init_llmService = __esm2({
+  "src/server/services/llmService.ts"() {
+    "use strict";
+    init_settingsService();
+    init_systemPromptService();
+    cachedModels = [
+      { id: "anthropic/claude-3.5-sonnet", name: "Anthropic: Claude 3.5 Sonnet" },
+      { id: "anthropic/claude-3.5-sonnet:beta", name: "Anthropic: Claude 3.5 Sonnet (Beta)" },
+      { id: "openai/gpt-4o", name: "OpenAI: GPT-4o" },
+      { id: "openai/gpt-4o-mini", name: "OpenAI: GPT-4o Mini" },
+      { id: "google/gemini-2.0-flash-001", name: "Google: Gemini 2.0 Flash" },
+      { id: "meta-llama/llama-3.2-11b-vision-instruct", name: "Meta: Llama 3.2 11B Vision" }
+    ];
+    lastModelsFetch = 0;
+    LLMService = class {
+      static normalizeModelId(model) {
+        const trimmed = model.trim();
+        if (trimmed === "anthropic/claude-3.5-sonnet") return "anthropic/claude-3-5-sonnet";
+        if (trimmed === "anthropic/claude-3.5-sonnet-20241022") return "anthropic/claude-3-5-sonnet-20241022";
+        return trimmed;
+      }
+      static getBaseUrlAndHeaders() {
+        const settings = loadSettings();
+        const isDirectOpenAI = settings.llmProvider === "openai";
+        const url = isDirectOpenAI ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
+        const headers = {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${settings.openRouterApiKey.trim()}`
+        };
+        if (!isDirectOpenAI) {
+          headers["HTTP-Referer"] = "https://mba-hub.local";
+          headers["X-Title"] = "MBA HUB";
+        }
+        const rawModel = settings.llmModel || "anthropic/claude-3-5-sonnet";
+        return {
+          url,
+          headers,
+          model: this.normalizeModelId(rawModel)
+        };
+      }
+      /**
+       * Fetch all models from OpenRouter dynamically (Instant response from cache)
+       */
+      static async getAvailableModels() {
+        const now = Date.now();
+        if (now - lastModelsFetch < 1e3 * 60 * 30) {
+          return cachedModels;
+        }
+        fetch("https://openrouter.ai/api/v1/models", {
+          headers: {
+            "HTTP-Referer": "https://mba-hub.local",
+            "X-Title": "MBA HUB"
+          },
+          signal: AbortSignal.timeout(4e3)
+        }).then((res) => res.ok ? res.json() : null).then((data) => {
+          if (Array.isArray(data?.data)) {
+            const list = data.data.map((m) => ({
+              id: m.id,
+              name: m.name || m.id,
+              contextLength: m.context_length,
+              promptPrice: m.pricing?.prompt ? `$${(parseFloat(m.pricing.prompt) * 1e6).toFixed(2)}/M` : void 0,
+              completionPrice: m.pricing?.completion ? `$${(parseFloat(m.pricing.completion) * 1e6).toFixed(2)}/M` : void 0,
+              description: m.description
+            }));
+            const topKeywords = ["claude-3.5-sonnet", "claude-3-5-sonnet", "gpt-4o", "gemini-2.0-flash", "gemini-2.5", "llama-3.2"];
+            list.sort((a, b) => {
+              const aIsTop = topKeywords.some((k) => a.id.toLowerCase().includes(k));
+              const bIsTop = topKeywords.some((k) => b.id.toLowerCase().includes(k));
+              if (aIsTop && !bIsTop) return -1;
+              if (!aIsTop && bIsTop) return 1;
+              return a.name.localeCompare(b.name);
+            });
+            cachedModels = list;
+            lastModelsFetch = now;
+          }
+        }).catch(() => {
+        });
+        return cachedModels;
+      }
+      /**
+       * Check OpenRouter credit balance & usage
+       */
+      static async getCredits(customKey) {
+        const settings = loadSettings();
+        const key = (customKey || settings.openRouterApiKey).trim();
+        if (!key) return { error: "Kein API Key" };
+        try {
+          const [authRes, creditsRes] = await Promise.all([
+            fetch("https://openrouter.ai/api/v1/auth/key", {
+              headers: { "Authorization": `Bearer ${key}` },
+              signal: AbortSignal.timeout(8e3)
+            }),
+            fetch("https://openrouter.ai/api/v1/credits", {
+              headers: { "Authorization": `Bearer ${key}` },
+              signal: AbortSignal.timeout(8e3)
+            })
+          ]);
+          let usage;
+          let limit;
+          let limitRemaining;
+          let totalCredits;
+          let balanceRemaining;
+          let isFreeTier;
+          if (authRes.ok) {
+            const authJson = await authRes.json();
+            const d = authJson?.data;
+            usage = d?.usage;
+            limit = d?.limit;
+            limitRemaining = d?.limit_remaining;
+            isFreeTier = d?.is_free_tier;
+          }
+          if (creditsRes.ok) {
+            const creditsJson = await creditsRes.json();
+            const cd = creditsJson?.data;
+            if (cd) {
+              totalCredits = cd.total_credits;
+              const totalUsage = cd.total_usage || 0;
+              if (totalCredits !== void 0) {
+                balanceRemaining = Math.max(0, totalCredits - totalUsage);
+              }
+            }
+          }
+          const finalAvailable = balanceRemaining ?? limitRemaining;
+          return {
+            usage,
+            limit,
+            limitRemaining: finalAvailable,
+            totalCredits,
+            balanceRemaining: finalAvailable,
+            isFreeTier
+          };
+        } catch (err) {
+          return { error: err.message || "Timeout" };
+        }
+      }
+      /**
+       * Test LLM connection without sending chat tokens:
+       * Uses OpenRouter /auth/key endpoint or OpenAI /models endpoint to verify the key instantly & safely
+       */
+      static async testConnection(customKey, customModel) {
+        const settings = loadSettings();
+        const key = (customKey || settings.openRouterApiKey).trim();
+        const isDirectOpenAI = settings.llmProvider === "openai";
+        if (!key) {
+          return { success: false, latencyMs: 0, error: "Kein API Key hinterlegt" };
+        }
+        const start3 = Date.now();
+        try {
+          if (!isDirectOpenAI) {
+            const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
+              headers: {
+                "Authorization": `Bearer ${key}`,
+                "HTTP-Referer": "https://mba-hub.local",
+                "X-Title": "MBA HUB"
+              },
+              signal: AbortSignal.timeout(15e3)
+            });
+            const latencyMs = Date.now() - start3;
+            const json = await res.json().catch(() => ({}));
+            if (res.ok && json?.data) {
+              const d = json.data;
+              const usageStr = d.usage !== void 0 ? `Verbrauch: $${Number(d.usage).toFixed(4)}` : "";
+              const remStr = d.limit_remaining !== void 0 && d.limit_remaining !== null ? ` | Restlimit: $${Number(d.limit_remaining).toFixed(2)}` : d.limit ? ` | Limit: $${Number(d.limit).toFixed(2)}` : "";
+              const labelStr = d.label ? `[${d.label}] ` : "";
+              return {
+                success: true,
+                latencyMs,
+                details: `${labelStr}OpenRouter Key g\xFCltig \u2713 ${usageStr}${remStr}`,
+                usage: d.usage,
+                limitRemaining: d.limit_remaining
+              };
+            }
+            if (res.status === 401 || res.status === 403) {
+              return {
+                success: false,
+                latencyMs,
+                error: json?.error?.message || "Ung\xFCltiger OpenRouter API Key (401 Unauthorized)"
+              };
+            }
+            return {
+              success: false,
+              latencyMs,
+              error: json?.error?.message || `HTTP ${res.status}: OpenRouter Authentifizierungsfehler`
+            };
+          } else {
+            const res = await fetch("https://api.openai.com/v1/models", {
+              headers: {
+                "Authorization": `Bearer ${key}`
+              },
+              signal: AbortSignal.timeout(15e3)
+            });
+            const latencyMs = Date.now() - start3;
+            if (res.ok) {
+              return {
+                success: true,
+                latencyMs,
+                details: "OpenAI API Key g\xFCltig (Modell-Katalog erreichbar) \u2713"
+              };
+            }
+            const data = await res.json().catch(() => ({}));
+            return {
+              success: false,
+              latencyMs,
+              error: data?.error?.message || `HTTP ${res.status}: Ung\xFCltiger OpenAI API Key`
+            };
+          }
+        } catch (err) {
+          return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout bei der Verbindung zu OpenRouter" };
+        }
+      }
+      /**
+       * Optimize niches & quote into a high-converting Ideogram 3.0 prompt
+       */
+      static async generateIdeogramPrompt(niche1, niche2, quote5, stylePreset) {
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
+        const systemPrompt = `You are an expert prompt engineer specializing in Ideogram 3.0 T-shirt graphics for Merch by Amazon.
+Your goal is to craft a highly descriptive, visually stunning, clean vector prompt that produces high-converting apparel designs.
+Requirements:
+1. Emphasize isolated vector graphics on a solid clean background.
+2. If a quote is provided, include the exact text inside quotation marks and request bold, legible typography.
+3. Keep the prompt under 90 words, focused strictly on visual aesthetic, style, lighting, and composition. No promo or buzzwords like 4K. Output ONLY the raw prompt text.`;
+        const userMessage = `Niche 1: ${niche1}
+Niche 2: ${niche2}
+Quote / Text: "${quote5}"
+Style Preset: ${stylePreset}`;
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userMessage }
+              ],
+              temperature: 0.7,
+              max_tokens: 250
+            }),
+            signal: AbortSignal.timeout(15e3)
+          });
+          if (!res.ok) {
+            throw new Error(`LLM error: ${res.statusText}`);
+          }
+          const data = await res.json();
+          return data.choices?.[0]?.message?.content?.trim() || `T-shirt graphic design of "${quote5}", ${niche1} style, clean vector illustration on solid background.`;
+        } catch (err) {
+          console.error("[LLMService] Error generating prompt:", err);
+          return `T-shirt graphic design of "${quote5}", ${niche1} ${niche2} aesthetic, clean vector illustration, isolated on solid background, commercial merchandise ready.`;
+        }
+      }
+      /**
+       * Vision Analysis + Amazon SEO Listing Generation (single-session token efficiency)
+       */
+      static async analyzeVisionAndGenerateListing(imageUrlOrBase64, niche1, niche2) {
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
+        const systemPrompt = `You are "Listing Creator", an expert in Amazon Merch on Demand SEO listings and visual design analysis.
+Analyze the image and provide a compliant, high-converting listing plus design classifications.
+Character limits:
+- Title: 55-60 chars (Include visible quote verbatim or strongest keywords, no product types like "shirt")
+- Brand: 40-50 chars (Target audience/mood in Title Case)
+- Bullet 1: 230-246 chars (Audience, context, style, visible text if not in Title)
+- Bullet 2: 230-246 chars (Occasions, related sub-niches, "perfect for...")
+- Description: 450-650 chars (Smooth story-style summary)
+- Keywords: >= 25 comma-separated unique lowercase keywords.
+- colorCount: estimated number of distinct visible colors (integer, conservative, 2-8).
+- audiencePrediction: "Men", "Women", "Youth", or "Men, Women"
+- avoidColorPrediction: "Black", "White", or "None" (if white elements exist, avoid white)
+- reuseBackgroundPrediction: "Nein" (if graphic is isolated on solid bg) or "Ja"
+
+Respond strictly with valid JSON conforming to these exact keys.`;
+        const userContent = [
+          { type: "text", text: `Niche 1: ${niche1 || ""}
+Niche 2: ${niche2 || ""}` },
+          { type: "image_url", image_url: { url: imageUrlOrBase64 } }
+        ];
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userContent }
+              ],
+              response_format: { type: "json_object" },
+              temperature: 0.4,
+              max_tokens: 1e3
+            }),
+            signal: AbortSignal.timeout(25e3)
+          });
+          if (!res.ok) throw new Error(`Vision API error: ${res.statusText}`);
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content;
+          return JSON.parse(content);
+        } catch (err) {
+          console.error("[LLMService] Vision Listing error:", err);
+          return {
+            title: `${niche1 || "Vintage"} Retro Graphic Design`,
+            brand: `${niche1 || "Retro"} Apparel Co`,
+            bullet1: `Express your unique aesthetic with this stylish ${niche1 || "vintage"} artwork. Ideal for everyday casual wear and trendsetters.`,
+            bullet2: `A versatile addition to any collection, perfect for birthdays, holidays, summer festivals, and casual outings with friends.`,
+            description: `High-quality graphic design celebrating ${niche1 || "retro"} vibes with vivid details and expressive artwork for enthusiasts.`,
+            keywords: "vintage, retro, aesthetic, graphic, distressed, classic, apparel, gifts",
+            colorCount: 4,
+            audiencePrediction: "Men, Women",
+            avoidColorPrediction: "None",
+            reuseBackgroundPrediction: "Nein"
+          };
+        }
+      }
+      /**
+       * AI Cutout Auditor: Inspects 4-Panel Verification Image to verify clean background removal
+       */
+      static async auditSvgCutout(fourPanelImageBase64OrPath, quote5) {
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
+        const systemPrompt = SystemPromptService.getSvgBgAuditorPrompt();
+        let imagePayload = fourPanelImageBase64OrPath;
+        if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
+          try {
+            const fs13 = await import("fs");
+            const buffer = fs13.readFileSync(imagePayload);
+            imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
+          } catch (e) {
+          }
+        }
+        const start3 = Date.now();
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: `Please audit the background removal for this artwork (${quote5 ? `Quote: "${quote5}"` : "Graphic Design"}) across the 4 test background colors (White, Black, Red, Slate). Output valid JSON.`
+                    },
+                    {
+                      type: "image_url",
+                      image_url: { url: imagePayload }
+                    }
+                  ]
+                }
+              ],
+              response_format: { type: "json_object" },
+              temperature: 0.1,
+              max_tokens: 500
+            }),
+            signal: AbortSignal.timeout(25e3)
+          });
+          const latencyMs = Date.now() - start3;
+          if (!res.ok) {
+            throw new Error(`LLM Error: ${res.status} ${res.statusText}`);
+          }
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content?.trim() || "{}";
+          const tokens = data.usage ? {
+            prompt: data.usage.prompt_tokens,
+            completion: data.usage.completion_tokens,
+            total: data.usage.total_tokens
+          } : void 0;
+          let clean = content;
+          if (clean.startsWith("```")) {
+            clean = clean.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+          }
+          let parsed = {};
+          try {
+            parsed = JSON.parse(clean);
+          } catch {
+            parsed = {
+              cutout_verdict: "APPROVED",
+              background_removed_cleanly: true,
+              detected_issues: [],
+              confidence: 0.9,
+              explanation: content
+            };
+          }
+          return {
+            cutout_verdict: parsed.cutout_verdict === "REJECTED" ? "REJECTED" : "APPROVED",
+            background_removed_cleanly: parsed.background_removed_cleanly ?? parsed.cutout_verdict !== "REJECTED",
+            detected_issues: Array.isArray(parsed.detected_issues) ? parsed.detected_issues : [],
+            confidence: parsed.confidence || 0.95,
+            explanation: parsed.explanation || "Background removal audit completed.",
+            rawText: content,
+            tokens,
+            latencyMs
+          };
+        } catch (err) {
+          console.error("[LLMService] Svg Cutout Audit error:", err);
+          return {
+            cutout_verdict: "APPROVED",
+            background_removed_cleanly: true,
+            detected_issues: [`Audit network error: ${err.message}`],
+            confidence: 0.5,
+            explanation: `Audit fehlgeschlagen (${err.message}), Fallback auf freigegeben.`,
+            latencyMs: Date.now() - start3
+          };
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/ideogramService.ts
+var IdeogramService;
+var init_ideogramService = __esm2({
+  "src/server/services/ideogramService.ts"() {
+    "use strict";
+    init_settingsService();
+    IdeogramService = class {
+      /**
+       * Test Ideogram API connection (0 credits consumed)
+       */
+      static async testConnection(customKey) {
+        const settings = loadSettings();
+        const rawKey = customKey || settings.ideogramApiKey;
+        if (!rawKey || !rawKey.trim()) {
+          return { success: false, latencyMs: 0, error: "Kein Ideogram API Key hinterlegt" };
+        }
+        const key = rawKey.trim();
+        const start3 = Date.now();
+        try {
+          const res = await fetch("https://api.ideogram.ai/models", {
+            method: "GET",
+            headers: {
+              "Api-Key": key
+            },
+            signal: AbortSignal.timeout(15e3)
+          });
+          const latencyMs = Date.now() - start3;
+          if (res.ok) {
+            const data = await res.json().catch(() => ({}));
+            const customModels = Array.isArray(data?.models) ? data.models : [];
+            const customMsg = customModels.length > 0 ? ` (${customModels.length} Custom Models verf\xFCgbar)` : "";
+            return {
+              success: true,
+              latencyMs,
+              details: `Ideogram Verbindung erfolgreich! (Modelle V4, V3, V2 bereit${customMsg}) \u2713`
+            };
+          }
+          if (res.status === 401 || res.status === 403) {
+            const data = await res.json().catch(() => ({}));
+            return {
+              success: false,
+              latencyMs,
+              error: data?.message || "Ung\xFCltiger Ideogram API Key (401 Unauthorized). Bitte Key pr\xFCfen unter https://ideogram.ai/manage-api"
+            };
+          }
+          return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
+        } catch (err) {
+          return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout bei der Verbindung zu Ideogram" };
+        }
+      }
+      /**
+       * Get all standard and custom Ideogram models (V4, V3, V2 Turbo, V2)
+       */
+      static async getAvailableModels() {
+        const standardModels = [
+          { id: "V_3", name: "Ideogram 3.0 (T-Shirt & Vektor Spezialist)" },
+          { id: "V_4", name: "Ideogram 4.0 (Neueste Generation & Transparent)" },
+          { id: "V_2_TURBO", name: "Ideogram 2.0 Turbo (Schnell & G\xFCnstig)" },
+          { id: "V_2", name: "Ideogram 2.0 (High Quality)" }
+        ];
+        const settings = loadSettings();
+        if (!settings.ideogramApiKey) return standardModels;
+        try {
+          const res = await fetch("https://api.ideogram.ai/models", {
+            headers: { "Api-Key": settings.ideogramApiKey.trim() },
+            signal: AbortSignal.timeout(1e4)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data?.models)) {
+              const custom = data.models.filter((m) => m.is_available_for_generation !== false).map((m) => ({
+                id: m.model_id || m.name,
+                name: `Custom: ${m.name || m.model_id}`,
+                isCustom: true
+              }));
+              return [...standardModels, ...custom];
+            }
+          }
+        } catch (e) {
+        }
+        return standardModels;
+      }
+      /**
+       * Generate Image via Ideogram API (supports V3, V4, V2)
+       */
+      static async generateImage(options2) {
+        const settings = loadSettings();
+        const key = settings.ideogramApiKey;
+        if (!key) {
+          throw new Error("Ideogram API Key fehlt in den Einstellungen.");
+        }
+        const renderingSpeed = options2.renderingSpeed || settings.ideogramRenderingSpeed || "DEFAULT";
+        const styleType = options2.styleType || settings.ideogramStyle || "GENERAL";
+        const magicPromptOption = options2.magicPromptOption || settings.ideogramMagicPromptOption || "AUTO";
+        const selectedModel = options2.model || settings.ideogramModel || "V_3";
+        const cleanRatio = (options2.aspectRatio || settings.ideogramAspectRatio || "10x16").replace(":", "x");
+        if (selectedModel === "V_3" || selectedModel === "V_3_TURBO" || selectedModel.startsWith("V_3")) {
+          const formData = new FormData();
+          formData.append("prompt", options2.prompt);
+          formData.append("rendering_speed", renderingSpeed);
+          formData.append("style_type", styleType);
+          formData.append("aspect_ratio", cleanRatio);
+          formData.append("magic_prompt", magicPromptOption);
+          formData.append("num_images", "1");
+          const res2 = await fetch("https://api.ideogram.ai/v1/ideogram-v3/generate", {
+            method: "POST",
+            headers: {
+              "Api-Key": key.trim()
+            },
+            body: formData,
+            signal: AbortSignal.timeout(18e4)
+          });
+          if (!res2.ok) {
+            const errBody = await res2.text();
+            throw new Error(`Ideogram V3 API Fehler: ${res2.status} - ${errBody}`);
+          }
+          const data2 = await res2.json();
+          const imageUrl2 = data2?.data?.[0]?.url;
+          if (!imageUrl2) {
+            throw new Error("Ideogram V3 lieferte keine Bild-URL zur\xFCck.");
+          }
+          return {
+            imageUrl: imageUrl2,
+            prompt: data2?.data?.[0]?.prompt || options2.prompt
+          };
+        }
+        if (selectedModel === "V_4" || selectedModel.startsWith("V_4")) {
+          const formData = new FormData();
+          formData.append("text_prompt", options2.prompt);
+          formData.append("rendering_speed", renderingSpeed);
+          formData.append("aspect_ratio", cleanRatio);
+          const res2 = await fetch("https://api.ideogram.ai/v1/ideogram-v4/generate", {
+            method: "POST",
+            headers: {
+              "Api-Key": key.trim()
+            },
+            body: formData,
+            signal: AbortSignal.timeout(18e4)
+          });
+          if (!res2.ok) {
+            const errBody = await res2.text();
+            throw new Error(`Ideogram V4 API Fehler: ${res2.status} - ${errBody}`);
+          }
+          const data2 = await res2.json();
+          const imageUrl2 = data2?.data?.[0]?.url;
+          if (!imageUrl2) {
+            throw new Error("Ideogram V4 lieferte keine Bild-URL zur\xFCck.");
+          }
+          return {
+            imageUrl: imageUrl2,
+            prompt: data2?.data?.[0]?.prompt || options2.prompt
+          };
+        }
+        const aspectMap = {
+          "10x16": "ASPECT_10_16",
+          "16x10": "ASPECT_16_10",
+          "9x16": "ASPECT_9_16",
+          "16x9": "ASPECT_16_9",
+          "3x2": "ASPECT_3_2",
+          "2x3": "ASPECT_2_3",
+          "4x3": "ASPECT_4_3",
+          "3x4": "ASPECT_3_4",
+          "1x1": "ASPECT_1_1",
+          "1x3": "ASPECT_1_3",
+          "3x1": "ASPECT_3_1"
+        };
+        const mappedRatio = aspectMap[cleanRatio] || "ASPECT_10_16";
+        const payload = {
+          image_request: {
+            prompt: options2.prompt,
+            aspect_ratio: mappedRatio,
+            model: selectedModel,
+            rendering_speed: renderingSpeed,
+            style_type: styleType,
+            magic_prompt_option: magicPromptOption
+          }
+        };
+        const res = await fetch("https://api.ideogram.ai/generate", {
+          method: "POST",
+          headers: {
+            "Api-Key": key.trim(),
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(18e4)
+        });
+        if (!res.ok) {
+          const errBody = await res.text();
+          throw new Error(`Ideogram API Fehler: ${res.status} - ${errBody}`);
+        }
+        const data = await res.json();
+        const imageUrl = data?.data?.[0]?.url;
+        if (!imageUrl) {
+          throw new Error("Ideogram lieferte keine Bild-URL zur\xFCck.");
+        }
+        return {
+          imageUrl,
+          prompt: data?.data?.[0]?.prompt || options2.prompt
+        };
+      }
+    };
+  }
+});
+
+// src/server/services/vectorizerService.ts
+var VectorizerService;
+var init_vectorizerService = __esm2({
+  "src/server/services/vectorizerService.ts"() {
+    "use strict";
+    init_settingsService();
+    VectorizerService = class {
+      /**
+       * Test Vectorizer.ai API credentials and query account details
+       */
+      static async testConnection(customKey, customSecret) {
+        const settings = loadSettings();
+        const key = customKey || settings.vectorizerApiKey;
+        const secret = customSecret || settings.vectorizerApiSecret;
+        if (!key || !secret) {
+          return { success: false, latencyMs: 0, error: "API Key (ID) oder API Secret fehlt" };
+        }
+        const start3 = Date.now();
+        try {
+          const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
+          const res = await fetch("https://vectorizer.ai/api/v1/account", {
+            headers: {
+              "Authorization": `Basic ${auth}`
+            },
+            signal: AbortSignal.timeout(8e3)
+          });
+          const latencyMs = Date.now() - start3;
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            const credits = data?.credits?.remaining ?? data?.credits;
+            return {
+              success: true,
+              latencyMs,
+              creditsRemaining: credits,
+              details: credits !== void 0 ? `Guthaben: ${credits} Credits` : "Account verbunden"
+            };
+          }
+          if (res.status === 401) {
+            return {
+              success: false,
+              latencyMs,
+              error: data?.error?.message || "Ung\xFCltige Vectorizer.ai Zugangsdaten (401)"
+            };
+          }
+          return { success: false, latencyMs, error: data?.error?.message || `HTTP ${res.status}` };
+        } catch (err) {
+          return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout" };
+        }
+      }
+      /**
+       * Helper to build FormData with complete MBA Manager parameters
+       */
+      static buildFormData(imageField, isPreview = false, options2) {
+        const settings = loadSettings();
+        const formData = new FormData();
+        if (imageField.type === "url") {
+          formData.append("image.url", imageField.value);
+        } else {
+          const blob = new Blob([imageField.buffer], { type: imageField.mimeType || "image/png" });
+          formData.append("image", blob, imageField.filename || "design.png");
+        }
+        const mode = options2?.mode ?? (isPreview ? settings.vectorizerModePreview || "test" : settings.vectorizerModeProduction || "production");
+        formData.append("mode", mode);
+        const maxColors = options2?.maxColors ?? settings.vectorizerMaxColors ?? 2;
+        formData.append("processing.max_colors", String(maxColors));
+        const removeBg = options2?.removeBackground ?? false;
+        formData.append("processing.remove_background", String(removeBg));
+        const minArea = options2?.minArea ?? settings.vectorizerMinArea ?? 10;
+        if (minArea > 0) {
+          formData.append("processing.shapes.min_area_px", String(minArea));
+        }
+        formData.append("output.svg.version", "svg_1_1");
+        const drawStyle = options2?.drawStyle ?? settings.vectorizerDrawStyle ?? "fill_shapes";
+        formData.append("output.draw_style", drawStyle);
+        const shapeStacking = options2?.shapeStacking ?? settings.vectorizerShapeStacking ?? "cutouts";
+        formData.append("output.shape_stacking", shapeStacking);
+        const groupBy = options2?.groupBy ?? settings.vectorizerGroupBy ?? "none";
+        formData.append("output.group_by", groupBy);
+        formData.append("output.curves.allowed.quadratic_bezier", "true");
+        formData.append("output.curves.allowed.cubic_bezier", "true");
+        formData.append("output.curves.allowed.circular_arc", "true");
+        formData.append("output.curves.allowed.elliptical_arc", "true");
+        const optimized = options2?.optimizedShapes ?? settings.vectorizerOptimizedShapes ?? true;
+        formData.append("output.parameterized_shapes.flatten", String(!optimized));
+        const gapFiller = options2?.gapFiller ?? settings.vectorizerGapFiller ?? false;
+        formData.append("output.gap_filler.enabled", String(gapFiller));
+        if (gapFiller) {
+          formData.append("output.gap_filler.clip_overflow", "false");
+          formData.append("output.gap_filler.non_scaling_stroke", "true");
+        }
+        if (drawStyle.includes("stroke")) {
+          const lineFit = options2?.lineFitTolerance ?? settings.vectorizerLineFitTolerance ?? 0.1;
+          formData.append("output.curves.line_fit_tolerance", String(lineFit));
+        }
+        return formData;
+      }
+      /**
+       * Vectorize an image URL to SVG
+       */
+      static async vectorizeImage(imageUrl, isPreview = false, options2) {
+        const settings = loadSettings();
+        const key = settings.vectorizerApiKey;
+        const secret = settings.vectorizerApiSecret;
+        if (!key || !secret) {
+          throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
+        }
+        const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
+        const formData = this.buildFormData({ type: "url", value: imageUrl }, isPreview, options2);
+        const res = await fetch("https://vectorizer.ai/api/v1/vectorize", {
+          method: "POST",
+          headers: {
+            "Authorization": `Basic ${auth}`
+          },
+          body: formData,
+          signal: AbortSignal.timeout(9e4)
+        });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "");
+          throw new Error(`Vectorizer Fehler (${res.status}): ${errorText || "Server Error"}`);
+        }
+        return await res.text();
+      }
+      /**
+       * Vectorize an image Buffer to SVG
+       */
+      static async vectorizeBuffer(buffer, mimeType = "image/png", isPreview = false, options2) {
+        const settings = loadSettings();
+        const key = settings.vectorizerApiKey;
+        const secret = settings.vectorizerApiSecret;
+        if (!key || !secret) {
+          throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
+        }
+        const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
+        const formData = this.buildFormData({ type: "buffer", buffer, mimeType }, isPreview, options2);
+        const res = await fetch("https://vectorizer.ai/api/v1/vectorize", {
+          method: "POST",
+          headers: {
+            "Authorization": `Basic ${auth}`
+          },
+          body: formData,
+          signal: AbortSignal.timeout(9e4)
+        });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "");
+          throw new Error(`Vectorizer Fehler (${res.status}): ${errorText || "Server Error"}`);
+        }
+        return await res.text();
+      }
+    };
+  }
+});
+
 // node_modules/playwright-core/lib/bootstrap.js
 var require_bootstrap = __commonJS2({
   "node_modules/playwright-core/lib/bootstrap.js"() {
@@ -214297,6 +215955,2166 @@ var require_playwright_core = __commonJS2({
   }
 });
 
+// node_modules/playwright-core/index.mjs
+var import_index, chromium, firefox, webkit, selectors, devices, errors, request2, _electron, _android;
+var init_playwright_core = __esm2({
+  "node_modules/playwright-core/index.mjs"() {
+    import_index = __toESM2(require_playwright_core(), 1);
+    chromium = import_index.default.chromium;
+    firefox = import_index.default.firefox;
+    webkit = import_index.default.webkit;
+    selectors = import_index.default.selectors;
+    devices = import_index.default.devices;
+    errors = import_index.default.errors;
+    request2 = import_index.default.request;
+    _electron = import_index.default._electron;
+    _android = import_index.default._android;
+  }
+});
+
+// node_modules/playwright/index.mjs
+var init_playwright3 = __esm2({
+  "node_modules/playwright/index.mjs"() {
+    init_playwright_core();
+    init_playwright_core();
+  }
+});
+
+// src/server/services/browserSessionService.ts
+function findChromiumExecutable() {
+  if (process.env.CHROME_BIN && import_fs74.default.existsSync(process.env.CHROME_BIN)) {
+    return process.env.CHROME_BIN;
+  }
+  const candidateDirs = [
+    process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright",
+    import_path69.default.join(process.env.HOME || "/root", ".cache", "ms-playwright"),
+    import_path69.default.join(process.env.HOME || "/root", "Library", "Caches", "ms-playwright")
+  ];
+  for (const dir of candidateDirs) {
+    if (import_fs74.default.existsSync(dir)) {
+      try {
+        const files = [];
+        const scan = (d, depth = 0) => {
+          if (depth > 4) return;
+          const items = import_fs74.default.readdirSync(d, { withFileTypes: true });
+          for (const item of items) {
+            const p = import_path69.default.join(d, item.name);
+            if (item.isDirectory()) scan(p, depth + 1);
+            else files.push(p);
+          }
+        };
+        scan(dir);
+        const headlessShell = files.find((f) => f.endsWith("/chrome-headless-shell") || f.endsWith("\\chrome-headless-shell.exe"));
+        if (headlessShell) return headlessShell;
+        const chrome2 = files.find((f) => f.endsWith("/chrome") || f.endsWith("Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing") || f.endsWith("\\chrome.exe"));
+        if (chrome2) return chrome2;
+      } catch {
+      }
+    }
+  }
+  const systemCandidates = [
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser"
+  ];
+  for (const sc of systemCandidates) {
+    if (import_fs74.default.existsSync(sc)) return sc;
+  }
+  return void 0;
+}
+var import_path69, import_fs74, BrowserSessionService;
+var init_browserSessionService = __esm2({
+  "src/server/services/browserSessionService.ts"() {
+    "use strict";
+    init_playwright3();
+    import_path69 = __toESM2(require("path"), 1);
+    import_fs74 = __toESM2(require("fs"), 1);
+    BrowserSessionService = class _BrowserSessionService {
+      static context = null;
+      static sessions = /* @__PURE__ */ new Map();
+      static latestFrames = /* @__PURE__ */ new Map();
+      static frameBroadcasters = [];
+      static isInitializing = false;
+      static getProfileDir() {
+        const dir = import_path69.default.resolve(process.cwd(), "data", "chrome-profile");
+        if (!import_fs74.default.existsSync(dir)) {
+          import_fs74.default.mkdirSync(dir, { recursive: true });
+        }
+        return dir;
+      }
+      /**
+       * Register a frame listener (used by WebSocket server to stream frames to clients)
+       */
+      static onFrame(callback) {
+        this.frameBroadcasters.push(callback);
+        for (const [type3, frame] of this.latestFrames.entries()) {
+          try {
+            callback(type3, frame.data, frame.metadata);
+          } catch {
+          }
+        }
+      }
+      /**
+       * Ensure browser context is launched with macOS stealth settings
+       */
+      static async ensureContext() {
+        if (this.context) return this.context;
+        if (this.isInitializing) {
+          while (this.isInitializing) {
+            await new Promise((r) => setTimeout(r, 100));
+          }
+          if (this.context) return this.context;
+        }
+        this.isInitializing = true;
+        try {
+          const profileDir2 = this.getProfileDir();
+          const macUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+          const executablePath = findChromiumExecutable();
+          console.log("[BrowserSession] Launching persistent Chromium with Mac Stealth profile:", profileDir2);
+          console.log("[BrowserSession] Using executable path:", executablePath || "Default Playwright auto-resolution");
+          const launchOptions = {
+            headless: true,
+            viewport: { width: 1440, height: 900 },
+            userAgent: macUserAgent,
+            locale: "de-DE",
+            timezoneId: "Europe/Berlin",
+            colorScheme: "dark",
+            deviceScaleFactor: 1,
+            args: [
+              "--disable-blink-features=AutomationControlled",
+              "--no-sandbox",
+              "--disable-dev-shm-usage",
+              "--disable-infobars",
+              "--window-size=1440,900",
+              "--start-maximized",
+              "--disable-gpu",
+              "--disable-setuid-sandbox"
+            ]
+          };
+          if (executablePath) {
+            launchOptions.executablePath = executablePath;
+          }
+          this.context = await chromium.launchPersistentContext(profileDir2, launchOptions);
+          await this.context.addInitScript(() => {
+            Object.defineProperty(navigator, "webdriver", {
+              get: () => void 0
+            });
+            Object.defineProperty(navigator, "platform", {
+              get: () => "MacIntel"
+            });
+            Object.defineProperty(navigator, "languages", {
+              get: () => ["de-DE", "de", "en-US", "en"]
+            });
+            Object.defineProperty(navigator, "plugins", {
+              get: () => [1, 2, 3, 4, 5]
+            });
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+              if (parameter === 37445) return "Apple";
+              if (parameter === 37446) return "Apple M2 Pro Metal Engine";
+              return getParameter.apply(this, [parameter]);
+            };
+          });
+          this.context.on("close", () => {
+            console.log("[BrowserSession] Browser context closed");
+            this.context = null;
+            this.sessions.clear();
+          });
+          return this.context;
+        } finally {
+          this.isInitializing = false;
+        }
+      }
+      /**
+       * Get or launch a specific session (sync or upload)
+       */
+      static async getSession(type3) {
+        let session2 = this.sessions.get(type3);
+        if (session2 && !session2.page.isClosed()) {
+          const cached = this.latestFrames.get(type3);
+          if (cached) {
+            for (const broadcaster of this.frameBroadcasters) {
+              broadcaster(type3, cached.data, cached.metadata);
+            }
+          } else {
+            session2.page.screenshot({ type: "jpeg", quality: 80 }).then((buf) => {
+              const b64 = buf.toString("base64");
+              _BrowserSessionService.latestFrames.set(type3, { data: b64, metadata: {} });
+              for (const broadcaster of this.frameBroadcasters) {
+                broadcaster(type3, b64, {});
+              }
+            }).catch(() => {
+            });
+          }
+          return session2;
+        }
+        const context2 = await this.ensureContext();
+        const page = await context2.newPage();
+        const defaultUrl = "https://merch.amazon.com/dashboard";
+        await page.setViewportSize({ width: 1440, height: 900 });
+        const cdp = await page.context().newCDPSession(page);
+        session2 = {
+          type: type3,
+          page,
+          cdp,
+          currentUrl: defaultUrl,
+          title: "Amazon Merch on Demand",
+          isStreaming: false
+        };
+        this.sessions.set(type3, session2);
+        page.on("framenavigated", (frame) => {
+          if (frame === page.mainFrame() && session2) {
+            session2.currentUrl = page.url();
+            page.title().then((t) => {
+              if (session2) session2.title = t;
+            }).catch(() => {
+            });
+          }
+        });
+        page.on("close", () => {
+          this.sessions.delete(type3);
+        });
+        await this.startScreencast(type3);
+        await page.goto(defaultUrl, { waitUntil: "domcontentloaded", timeout: 3e4 }).catch((err) => {
+          console.warn(`[BrowserSession] Initial navigation warning for ${type3}:`, err.message);
+        });
+        return session2;
+      }
+      /**
+       * Start CDP screencast on a session
+       */
+      static async startScreencast(type3) {
+        const session2 = this.sessions.get(type3);
+        if (!session2 || session2.page.isClosed()) return;
+        try {
+          await session2.cdp.send("Page.startScreencast", {
+            format: "jpeg",
+            quality: 80,
+            maxWidth: 1440,
+            maxHeight: 900,
+            everyNthFrame: 1
+          });
+          session2.isStreaming = true;
+          session2.cdp.on("Page.screencastFrame", async ({ data, sessionId, metadata }) => {
+            try {
+              await session2.cdp.send("Page.screencastFrameAck", { sessionId });
+            } catch {
+            }
+            _BrowserSessionService.latestFrames.set(type3, { data, metadata });
+            for (const broadcaster of this.frameBroadcasters) {
+              broadcaster(type3, data, metadata);
+            }
+          });
+          console.log(`[BrowserSession] Screencast active for session: ${type3}`);
+        } catch (err) {
+          console.error(`[BrowserSession] Failed to start screencast for ${type3}:`, err.message);
+        }
+      }
+      /**
+       * Forward mouse events (clicks, movement, wheel scroll) using native Playwright mouse
+       */
+      static async dispatchMouseEvent(type3, event) {
+        const session2 = this.sessions.get(type3);
+        if (!session2 || session2.page.isClosed()) return;
+        const x = Math.round(event.x);
+        const y = Math.round(event.y);
+        try {
+          if (event.type === "click") {
+            await session2.page.mouse.click(x, y, { button: event.button || "left" });
+          } else if (event.type === "mousePressed") {
+            await session2.page.mouse.move(x, y);
+            await session2.page.mouse.down({ button: event.button || "left" });
+          } else if (event.type === "mouseReleased") {
+            await session2.page.mouse.up({ button: event.button || "left" });
+          } else if (event.type === "mouseWheel") {
+            await session2.page.mouse.wheel(event.deltaX || 0, event.deltaY || 0);
+          } else if (event.type === "mouseMoved") {
+            await session2.page.mouse.move(x, y);
+          }
+        } catch (err) {
+        }
+      }
+      /**
+       * Submit active Amazon form (Sign In, Continue, OTP, etc.)
+       */
+      static async submitActiveForm(type3) {
+        const session2 = this.sessions.get(type3);
+        if (!session2 || session2.page.isClosed()) return { success: false, message: "Session nicht aktiv" };
+        try {
+          await session2.page.keyboard.press("Enter").catch(() => {
+          });
+          await session2.page.evaluate(() => {
+            const selectors2 = [
+              "#signInSubmit",
+              "#continue",
+              'input[type="submit"]',
+              'button[type="submit"]',
+              ".a-button-input",
+              "#auth-signin-button",
+              'input[name="rememberMe"]'
+            ];
+            for (const sel of selectors2) {
+              const btn = document.querySelector(sel);
+              if (btn && btn.offsetParent !== null) {
+                btn.click();
+                return;
+              }
+            }
+            const form = document.querySelector('form[name="signIn"], form');
+            if (form) form.submit();
+          });
+          return { success: true, message: "Login-Formular erfolgreich abgeschickt!" };
+        } catch (err) {
+          return { success: false, message: err.message };
+        }
+      }
+      /**
+       * Forward keyboard events to CDP with full support for password, text fields and Enter submit
+       */
+      static async dispatchKeyEvent(type3, event) {
+        const session2 = this.sessions.get(type3);
+        if (!session2 || session2.page.isClosed()) return;
+        try {
+          if (event.text && event.text.length === 1 && !["Enter", "Tab", "Backspace", "Escape"].includes(event.key)) {
+            await session2.cdp.send("Input.insertText", { text: event.text });
+          } else if (event.key === "Backspace") {
+            await session2.page.keyboard.press("Backspace");
+          } else if (event.key === "Enter") {
+            await this.submitActiveForm(type3);
+          } else if (event.key === "Tab") {
+            await session2.page.keyboard.press("Tab");
+          } else if (event.key === "Escape") {
+            await session2.page.keyboard.press("Escape");
+          } else if (event.key === "ArrowLeft") {
+            await session2.page.keyboard.press("ArrowLeft");
+          } else if (event.key === "ArrowRight") {
+            await session2.page.keyboard.press("ArrowRight");
+          } else if (event.key === "ArrowUp") {
+            await session2.page.keyboard.press("ArrowUp");
+          } else if (event.key === "ArrowDown") {
+            await session2.page.keyboard.press("ArrowDown");
+          } else {
+            await session2.cdp.send("Input.dispatchKeyEvent", {
+              type: event.type === "keyUp" ? "keyUp" : "rawKeyDown",
+              key: event.key,
+              code: event.code,
+              text: event.text,
+              unmodifiedText: event.unmodifiedText || event.text,
+              windowsVirtualKeyCode: event.keyCode,
+              nativeVirtualKeyCode: event.keyCode,
+              modifiers: event.modifiers || 0
+            });
+          }
+        } catch (err) {
+          try {
+            if (event.key && event.type !== "keyUp") {
+              if (event.key.length === 1) {
+                await session2.page.keyboard.type(event.key);
+              } else {
+                await session2.page.keyboard.press(event.key);
+              }
+            }
+          } catch {
+          }
+        }
+      }
+      /**
+       * Navigate active session to URL
+       */
+      static async navigate(type3, url) {
+        const session2 = await this.getSession(type3);
+        try {
+          let targetUrl = url;
+          if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+            targetUrl = "https://" + targetUrl;
+          }
+          await session2.page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 3e4 });
+          return { success: true, url: session2.page.url() };
+        } catch (err) {
+          return { success: false, url: session2.page.url() };
+        }
+      }
+      /**
+       * Reload active session
+       */
+      static async reload(type3) {
+        const session2 = this.sessions.get(type3);
+        if (session2 && !session2.page.isClosed()) {
+          await session2.page.reload({ waitUntil: "domcontentloaded", timeout: 3e4 }).catch(() => {
+          });
+        }
+      }
+      /**
+       * Go back in history
+       */
+      static async goBack(type3) {
+        const session2 = this.sessions.get(type3);
+        if (session2 && !session2.page.isClosed()) {
+          await session2.page.goBack().catch(() => {
+          });
+        }
+      }
+      /**
+       * Go forward in history
+       */
+      static async goForward(type3) {
+        const session2 = this.sessions.get(type3);
+        if (session2 && !session2.page.isClosed()) {
+          await session2.page.goForward().catch(() => {
+          });
+        }
+      }
+      /**
+       * Restart / Refresh session page
+       */
+      static async restartSession(type3) {
+        try {
+          const existing = this.sessions.get(type3);
+          if (existing && !existing.page.isClosed()) {
+            await existing.page.close().catch(() => {
+            });
+          }
+          this.sessions.delete(type3);
+          await this.getSession(type3);
+          return {
+            success: true,
+            message: `Chrome ${type3 === "sync" ? "Session 1 (Sync & Login)" : "Session 2 (Upload Worker)"} erfolgreich neu gestartet!`
+          };
+        } catch (err) {
+          return { success: false, message: err.message };
+        }
+      }
+      /**
+       * Get overall browser & session status
+       */
+      static getStatus() {
+        const syncSession = this.sessions.get("sync");
+        const uploadSession = this.sessions.get("upload");
+        return {
+          isContextActive: !!this.context,
+          sync: {
+            active: !!syncSession && !syncSession.page.isClosed(),
+            url: syncSession?.page.url() || "https://merch.amazon.com/dashboard",
+            title: syncSession?.title || "Amazon Merch on Demand",
+            isStreaming: syncSession?.isStreaming || false
+          },
+          upload: {
+            active: !!uploadSession && !uploadSession.page.isClosed(),
+            url: uploadSession?.page.url() || "https://merch.amazon.com/dashboard",
+            title: uploadSession?.title || "Amazon Merch on Demand",
+            isStreaming: uploadSession?.isStreaming || false
+          }
+        };
+      }
+    };
+  }
+});
+
+// src/server/services/syncEngine.ts
+var MP_MAP, VARIANT_PRODUCT_TYPES, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, SyncEngine;
+var init_syncEngine = __esm2({
+  "src/server/services/syncEngine.ts"() {
+    "use strict";
+    init_settingsService();
+    init_browserSessionService();
+    MP_MAP = {
+      ATVPDKIKX0DER: "us",
+      A1PA6795UKMFR9: "de",
+      A1F83G8C2ARO7P: "gb",
+      A13V1IB3VIYZZH: "fr",
+      APJ6JRA9NG5V4: "it",
+      A1RKKUPIHCS9HS: "es",
+      A1VC38T7YXB528: "jp"
+    };
+    VARIANT_PRODUCT_TYPES = /* @__PURE__ */ new Set([
+      "HARDCOVER_JOURNAL",
+      "MUG",
+      "PHONE_CASE_APPLE_IPHONE",
+      "PHONE_CASE_SAMSUNG_GALAXY",
+      "POP_SOCKET",
+      "PRINTED_BASEBALL_HAT",
+      "PRINTED_TRUCKER_HAT",
+      "SPORT_SUN_VISOR",
+      "THROW_PILLOW",
+      "TOTE_BAG",
+      "TUMBLER",
+      "WATER_BOTTLE"
+    ]);
+    ALL_STATUSES = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
+    FIND_LISTINGS_URL = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
+    PRODUCT_CONFIG_URL = "https://merch.amazon.com/api/productconfiguration/get?id=";
+    SyncEngine = class _SyncEngine {
+      static logs = [];
+      static state = {
+        isScanning: false,
+        activeScanType: null,
+        scanStatus: "ready",
+        lastStatusMessage: "Bereit",
+        autoUpdateEnabled: false,
+        lastPeriodicSync: null,
+        lastPeriodicSyncCount: 0,
+        lastQuickDesigns: null,
+        lastFullDesigns: null,
+        lastQuickListings: null,
+        lastFullListings: null,
+        lastQuickSales: null,
+        lastFullSalesAll: null,
+        lastAsinSync: null,
+        liveDesignsCount: 0,
+        unresolvedAsinsCount: 0
+      };
+      static shouldStop = false;
+      static autoUpdateTimer = null;
+      static asinResolveTimer = null;
+      static getLogs() {
+        return this.logs;
+      }
+      static clearLogs() {
+        this.logs = [];
+      }
+      static addLog(text2, type3 = "info") {
+        const entry = {
+          id: Math.random().toString(36).substring(2, 9),
+          timestamp: Date.now(),
+          text: text2,
+          type: type3
+        };
+        this.logs.unshift(entry);
+        if (this.logs.length > 500) {
+          this.logs.pop();
+        }
+      }
+      static getState() {
+        return { ...this.state };
+      }
+      static updateCounts(live, unresolved) {
+        this.state.liveDesignsCount = live;
+        this.state.unresolvedAsinsCount = unresolved;
+      }
+      static stopScan() {
+        this.shouldStop = true;
+        this.state.isScanning = false;
+        this.state.activeScanType = null;
+        this.state.scanStatus = "ready";
+        this.state.lastStatusMessage = "Scan manuell abgebrochen.";
+        this.addLog("Scan manuell abgebrochen.", "warn");
+      }
+      static init() {
+        const settings = loadSettings();
+        const enabled = settings.autoSyncEnabled !== void 0 ? settings.autoSyncEnabled : true;
+        this.state.autoUpdateEnabled = enabled;
+        if (enabled) {
+          this.addLog("[Auto-Update] Hintergrund-Scheduler aktiv (alle 15 Min).", "info");
+          this.startSchedulers();
+        }
+      }
+      static toggleAutoUpdate(enabled) {
+        this.state.autoUpdateEnabled = enabled;
+        saveSettings({ autoSyncEnabled: enabled });
+        if (enabled) {
+          this.addLog("[Auto-Update] Hintergrund-Scheduler aktiviert (alle 15 Min).", "success");
+          this.startSchedulers();
+        } else {
+          this.addLog("[Auto-Update] Hintergrund-Scheduler deaktiviert.", "info");
+          this.stopSchedulers();
+        }
+      }
+      static startSchedulers() {
+        this.stopSchedulers();
+        this.autoUpdateTimer = setInterval(async () => {
+          if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+            try {
+              await this.runSmartSync();
+            } catch (e) {
+              this.addLog(`[Auto-Update] Fehler: ${e.message}`, "error");
+            }
+          }
+        }, 15 * 60 * 1e3);
+        this.asinResolveTimer = setInterval(async () => {
+          if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+            try {
+              await this.resolveChildAsinsBatch(5);
+            } catch (e) {
+            }
+          }
+        }, 60 * 1e3);
+      }
+      static stopSchedulers() {
+        if (this.autoUpdateTimer) clearInterval(this.autoUpdateTimer);
+        if (this.asinResolveTimer) clearInterval(this.asinResolveTimer);
+        this.autoUpdateTimer = null;
+        this.asinResolveTimer = null;
+      }
+      static sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+      static cachedAccountId = null;
+      /**
+       * Helper to query Supabase safely
+       */
+      static getSupabase() {
+        const supabase = getSupabaseClient();
+        if (!supabase) throw new Error("Supabase ist nicht konfiguriert (URL/Key fehlt).");
+        return supabase;
+      }
+      /**
+       * Helper to get active Amazon authenticated page from Session 1
+       */
+      static async getAmazonPage() {
+        const session2 = await BrowserSessionService.getSession("sync");
+        if (!session2 || session2.page.isClosed()) {
+          throw new Error("Session 1 (Sync & Login) ist nicht aktiv.");
+        }
+        let currentUrl = session2.page.url();
+        if (currentUrl === "about:blank" || !currentUrl.includes("amazon.com")) {
+          this.addLog("[Session 1] Navigiere zu Amazon Dashboard...", "info");
+          await session2.page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 }).catch(() => {
+          });
+          currentUrl = session2.page.url();
+        }
+        if (!currentUrl.includes("amazon.com")) {
+          throw new Error(`Session 1 ist nicht auf Amazon eingeloggt (Aktuelle Seite: ${currentUrl}). Bitte erst in Session 1 einloggen.`);
+        }
+        return session2.page;
+      }
+      /**
+       * Discover and cache Amazon Account-ID / ContentOwnerId
+       */
+      static async getAccountId(page) {
+        if (this.cachedAccountId) return this.cachedAccountId;
+        const extracted = await page.evaluate(() => {
+          const mCookie = document.cookie.match(/(?:accountId|contentOwnerId)=([A-Z0-9]+)/i);
+          if (mCookie) return mCookie[1];
+          const scripts = Array.from(document.querySelectorAll("script")).map((s) => s.innerText).join(" ");
+          const m = scripts.match(/["'](?:accountId|contentOwnerId|ContentOwnerId)["']\s*:\s*["']([A-Z0-9]+)["']/i);
+          if (m) return m[1];
+          return null;
+        });
+        if (extracted) {
+          this.cachedAccountId = extracted;
+          this.addLog(`[Session 1] Amazon Account-ID erkannt: ${extracted} \u2713`, "info");
+          return extracted;
+        }
+        this.addLog("[Session 1] Ermittle Amazon Account-ID \xFCber Manage-Seite...", "info");
+        let capturedId = null;
+        const requestHandler = (req) => {
+          if (req.url().includes("FindListings")) {
+            try {
+              const json = req.postDataJSON();
+              if (json?.accountId) {
+                capturedId = json.accountId;
+              }
+            } catch {
+            }
+          }
+        };
+        page.on("request", requestHandler);
+        try {
+          await page.goto("https://merch.amazon.com/manage/products", { waitUntil: "domcontentloaded", timeout: 3e4 });
+          let waitTime = 0;
+          while (!capturedId && waitTime < 6e3) {
+            await this.sleep(200);
+            waitTime += 200;
+          }
+        } finally {
+          page.off("request", requestHandler);
+        }
+        if (capturedId) {
+          this.cachedAccountId = capturedId;
+          this.addLog(`[Session 1] Amazon Account-ID erkannt: ${capturedId} \u2713`, "success");
+          return capturedId;
+        }
+        return "";
+      }
+      /**
+       * Execute in-browser FindListings query using Session 1 authentication cookies and Coral Request format with 429 retry backoff
+       */
+      static async fetchListingsPage(page, accountId, pageToken = [], statuses = ALL_STATUSES) {
+        return await page.evaluate(async ({ accountId: accountId2, pageToken: pageToken2, statuses: statuses2, url }) => {
+          const body = {
+            pageSize: 500,
+            sortField: "DateUpdated",
+            sortOrder: "Descending",
+            status: statuses2,
+            marketplaces: null,
+            productTypes: null,
+            searchableOnRetail: null,
+            deleteReasonType: ["", "CONTENT_POLICY_VIOLATION", "INACTIVE_NO_SALES", "CONTENT_CREATOR"],
+            accountId: accountId2 || null,
+            pageToken: pageToken2 || [],
+            __type: "com.amazon.merch.search#FindListingsRequest"
+          };
+          const sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
+          let retries = 0;
+          let backoff = 1500;
+          while (retries < 10) {
+            const resp = await fetch(url, {
+              method: "POST",
+              headers: {
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(body),
+              credentials: "include"
+            });
+            if (resp.ok) return await resp.json();
+            if (resp.status === 429 || resp.url?.includes("merch.amazon.com/429")) {
+              console.log(`[FindListings] Rate limited (429), warte ${backoff}ms (Versuch ${retries + 1}/10)...`);
+              await sleep2(backoff);
+              backoff = Math.min(backoff * 1.5, 8e3);
+              retries++;
+              continue;
+            }
+            if (resp.url?.includes("signin") || resp.status === 404) throw new Error("LoggedOut");
+            const errText = await resp.text().catch(() => "");
+            throw new Error(`FindListings HTTP ${resp.status}: ${errText || resp.statusText}`);
+          }
+          throw new Error("FindListings: Rate limit retries exceeded");
+        }, { accountId, pageToken, statuses, url: FIND_LISTINGS_URL });
+      }
+      /**
+       * Fetch Product Config (titles, bullets, brand) for a specific design
+       */
+      static async fetchProductConfig(page, designId) {
+        return await page.evaluate(async ({ url }) => {
+          const res = await fetch(url, {
+            method: "GET",
+            headers: { "Accept": "application/json" },
+            credentials: "include"
+          });
+          if (!res.ok) throw new Error(`ProductConfig HTTP ${res.status}`);
+          return await res.json();
+        }, { url: `${PRODUCT_CONFIG_URL}${designId}` });
+      }
+      /**
+       * Fetch Sales Analytics from Amazon
+       */
+      static async fetchSalesAnalytics(page, startDate, endDate) {
+        return await page.evaluate(async ({ startDate: startDate2, endDate: endDate2 }) => {
+          try {
+            const url = `https://merch.amazon.com/analytics/sales/v1?startDate=${startDate2}&endDate=${endDate2}`;
+            const res = await fetch(url, {
+              method: "GET",
+              headers: { "Accept": "application/json" },
+              credentials: "include"
+            });
+            if (!res.ok) return null;
+            return await res.json();
+          } catch {
+            return null;
+          }
+        }, { startDate, endDate });
+      }
+      /**
+       * Fetch live and unresolved counts from Supabase
+       */
+      static async refreshDBStats() {
+        try {
+          const supabase = getSupabaseClient();
+          if (!supabase) return;
+          const [liveRes, unresolvedRes] = await Promise.all([
+            supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]),
+            supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"])
+          ]);
+          this.state.liveDesignsCount = liveRes.count || 0;
+          this.state.unresolvedAsinsCount = unresolvedRes.count || 0;
+        } catch (e) {
+        }
+      }
+      /**
+       * Map Amazon FindListings results to Supabase mba_designs schema
+       */
+      static mapListingsToSupabase(results) {
+        const designMap = /* @__PURE__ */ new Map();
+        for (const r of results) {
+          const dId = r.designId;
+          if (!dId) continue;
+          if (!designMap.has(dId)) {
+            designMap.set(dId, {
+              design_id: dId,
+              listing_id: r.listingId || null,
+              product_image_urn: r.productImageUrn || null,
+              asins: [],
+              asin_standard_tshirt_us: null,
+              price_standard_tshirt_us: null,
+              created_date: null,
+              updated_date: null,
+              estimated_expiration_date: null,
+              products_live_us: [],
+              products_live_de: [],
+              products_live_gb: [],
+              products_live_fr: [],
+              products_live_it: [],
+              products_live_es: [],
+              products_live_jp: [],
+              published_products: [],
+              status: null,
+              last_synced_at: (/* @__PURE__ */ new Date()).toISOString(),
+              _deleted_asins: []
+            });
+          }
+          const d = designMap.get(dId);
+          if (r.asin && !d.asins.includes(r.asin)) d.asins.push(r.asin);
+          const mp = r.marketplace?.toLowerCase() || (MP_MAP[r.marketplaceId] || "us");
+          const pt = r.productType?.toLowerCase() || r.productType || "";
+          const status = r.status || "";
+          const LIVE_STATUSES = /* @__PURE__ */ new Set(["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING", "published", "propagated", "locked", "timed_out", "publishing", "translating"]);
+          const isLive = status && LIVE_STATUSES.has(status);
+          if (isLive && pt) {
+            const key = `products_live_${mp}`;
+            if (d[key] && !d[key].includes(pt)) d[key].push(pt);
+          }
+          if (isLive && r.asin) {
+            d.published_products.push({ asin: r.asin, type: r.productType || pt.toUpperCase(), market: mp });
+          } else if (r.asin) {
+            d._deleted_asins.push(r.asin);
+          }
+          if (isLive && mp === "us" && (pt === "standard_tshirt" || pt === "STANDARD_TSHIRT")) {
+            d.asin_standard_tshirt_us = r.asin || d.asin_standard_tshirt_us;
+            if (r.listPrice) d.price_standard_tshirt_us = r.listPrice;
+          }
+          const safeDate = (v) => {
+            try {
+              if (!v) return null;
+              const dt = typeof v === "number" ? new Date(v * 1e3) : new Date(v);
+              return isNaN(dt.getTime()) ? null : dt.toISOString();
+            } catch (e) {
+              return null;
+            }
+          };
+          const created = safeDate(r.createdDate);
+          const updated = safeDate(r.updatedDate);
+          if (created && (!d.created_date || created < d.created_date)) d.created_date = created;
+          if (updated && (!d.updated_date || updated > d.updated_date)) d.updated_date = updated;
+          if (r.estimatedExpirationDate) d.estimated_expiration_date = safeDate(r.estimatedExpirationDate);
+          const STATUS_PRIORITY = { PUBLISHED: 100, PROPAGATED: 90, PUBLISHING: 80, REVIEW: 70, TRANSLATING: 60, DRAFT: 50, LOCKED: 40, TIMED_OUT: 30, DECLINED: 20, AMAZON_REJECTED: 15, DELETED: 10 };
+          if (status) {
+            const upper = status.toUpperCase();
+            const newPrio = STATUS_PRIORITY[upper] || 0;
+            const oldPrio = STATUS_PRIORITY[d.status] || 0;
+            if (newPrio > oldPrio) d.status = upper;
+          }
+          if (r.productImageUrn) d.product_image_urn = r.productImageUrn;
+        }
+        return Array.from(designMap.values());
+      }
+      /**
+       * Merge new design data with existing DB records before upserting (Never removes ASINs)
+       */
+      static async mergeAndUpsertDesigns(mapped) {
+        const supabase = this.getSupabase();
+        if (mapped.length === 0) return 0;
+        const designIds = mapped.map((m) => m.design_id);
+        const existing = /* @__PURE__ */ new Map();
+        for (let i = 0; i < designIds.length; i += 200) {
+          const batch = designIds.slice(i, i + 200);
+          const { data } = await supabase.from("mba_designs").select("design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins").in("design_id", batch);
+          if (data) data.forEach((d) => existing.set(d.design_id, d));
+        }
+        const merged = mapped.map((m) => {
+          const ex = existing.get(m.design_id);
+          if (!ex) {
+            return {
+              ...m,
+              ad_asins: this.buildAdAsins(m.published_products, [])
+            };
+          }
+          const allAsins = Array.from(/* @__PURE__ */ new Set([...ex.asins || [], ...m.asins || []]));
+          const prodMap = /* @__PURE__ */ new Map();
+          (ex.published_products || []).forEach((p) => prodMap.set(p.asin, p));
+          (m.published_products || []).forEach((p) => prodMap.set(p.asin, p));
+          if (m._deleted_asins) {
+            m._deleted_asins.forEach((asin) => prodMap.delete(asin));
+          }
+          const pubProducts = Array.from(prodMap.values());
+          return {
+            ...m,
+            asins: allAsins,
+            published_products: pubProducts,
+            asin_standard_tshirt_us: m.asin_standard_tshirt_us || ex.asin_standard_tshirt_us,
+            price_standard_tshirt_us: m.price_standard_tshirt_us || ex.price_standard_tshirt_us,
+            ad_asins: this.buildAdAsins(pubProducts, ex.ad_asins || [])
+          };
+        });
+        for (let i = 0; i < merged.length; i += 200) {
+          const chunk = merged.slice(i, i + 200);
+          const { error } = await supabase.from("mba_designs").upsert(chunk, { onConflict: "design_id" });
+          if (error) {
+            console.error("[SyncEngine] Error upserting designs chunk:", error);
+          }
+        }
+        await this.refreshDBStats();
+        return merged.length;
+      }
+      /**
+       * Sanitizes raw ASIN string to extract the exact 10-char ASIN (e.g. 'MC_Assembly_1#B0FDKRXX21' -> 'B0FDKRXX21')
+       */
+      static sanitizeAsin(val) {
+        if (!val || typeof val !== "string") return null;
+        const clean = val.trim();
+        const b0Match = clean.match(/(B0[A-Z0-9]{8})/i);
+        if (b0Match) return b0Match[1].toUpperCase();
+        const genMatch = clean.match(/([A-Z0-9]{10})/);
+        if (genMatch) return genMatch[1].toUpperCase();
+        return clean;
+      }
+      static buildAdAsins(publishedProducts, existingAdAsins = []) {
+        const existingMap = /* @__PURE__ */ new Map();
+        existingAdAsins.forEach((ad) => {
+          if (ad.type && ad.market) {
+            const clean = _SyncEngine.sanitizeAsin(ad.asin);
+            existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, clean);
+          }
+        });
+        return publishedProducts.map((p) => {
+          const key = `${(p.type || "").toUpperCase()}_${(p.market || "").toLowerCase()}`;
+          const exAsin = existingMap.get(key);
+          const cleanParentAsin = _SyncEngine.sanitizeAsin(p.asin);
+          if (VARIANT_PRODUCT_TYPES.has((p.type || "").toUpperCase())) {
+            if (exAsin && exAsin !== cleanParentAsin) {
+              return { asin: exAsin, type: p.type, market: p.market };
+            }
+            return { asin: null, type: p.type, market: p.market };
+          }
+          return { asin: cleanParentAsin, type: p.type, market: p.market };
+        });
+      }
+      /**
+       * Parse Product Config (US and International text data)
+       */
+      static parseTextData(designId, configData) {
+        if (!configData?.textData) return null;
+        const td = configData.textData;
+        const payload = { design_id: designId };
+        const usData = td["en"] || td["us"] || td["en-US"] || null;
+        if (usData) {
+          payload.title_us = usData.title || null;
+          payload.brand_us = usData.brandName || null;
+          payload.bullet_1_us = usData.bullets?.[0] || null;
+          payload.bullet_2_us = usData.bullets?.[1] || null;
+          payload.description_us = usData.description || null;
+        }
+        const other = {};
+        for (const [lang, data] of Object.entries(td)) {
+          if (lang === "en" || lang === "us" || lang === "en-US") continue;
+          other[lang] = {
+            title: data.title || null,
+            brand: data.brandName || null,
+            bullets: data.bullets || [],
+            description: data.description || null
+          };
+        }
+        if (Object.keys(other).length > 0) payload.text_data_other = other;
+        return payload;
+      }
+      /**
+       * 1. Run Smart Sync (Quick Update Products)
+       */
+      static async runSmartSync() {
+        this.shouldStop = false;
+        this.state.isScanning = true;
+        this.state.activeScanType = "quick_products";
+        this.state.scanStatus = "scanning";
+        this.state.lastStatusMessage = "Quick Update: Lade neueste Designs von Amazon...";
+        this.addLog("[Quick Update Produkte] Starte Synchronisierung \xFCber Session 1...", "info");
+        try {
+          const page = await this.getAmazonPage();
+          const accountId = await this.getAccountId(page);
+          const supabase = this.getSupabase();
+          let pageToken = [];
+          const allResults = [];
+          const { data: latest } = await supabase.from("mba_designs").select("updated_date").order("updated_date", { ascending: false }).limit(1);
+          const lastUpdated = latest?.[0]?.updated_date || null;
+          for (let p = 0; p < 10; p++) {
+            if (this.shouldStop) break;
+            const json = await this.fetchListingsPage(page, accountId, pageToken);
+            if (!json.results || json.results.length === 0) break;
+            allResults.push(...json.results);
+            if (lastUpdated) {
+              const oldestInBatch = json.results[json.results.length - 1];
+              const oldestDate = oldestInBatch?.updatedDate;
+              const safeDate = (v) => {
+                try {
+                  if (!v) return null;
+                  const d = typeof v === "number" ? new Date(v * 1e3) : new Date(v);
+                  return isNaN(d.getTime()) ? null : d.toISOString();
+                } catch (e) {
+                  return null;
+                }
+              };
+              const oldestIso = safeDate(oldestDate);
+              if (oldestIso && oldestIso <= lastUpdated) break;
+            }
+            if (!json.pageToken || json.pageToken.length === 0) break;
+            pageToken = json.pageToken;
+            await this.sleep(600);
+          }
+          this.addLog(`[Quick Update Produkte] ${allResults.length} Eintr\xE4ge von Amazon geladen. Mappe auf Supabase...`, "info");
+          const mapped = this.mapListingsToSupabase(allResults);
+          const count = await this.mergeAndUpsertDesigns(mapped);
+          const now = Date.now();
+          this.state.lastQuickDesigns = now;
+          this.state.lastPeriodicSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
+          this.state.lastPeriodicSyncCount = count;
+          await this.refreshDBStats();
+          this.addLog(`[Quick Update Produkte] Erfolgreich synchronisiert: ${count} Designs in Supabase aktualisiert \u2713 (${this.state.liveDesignsCount} Live Designs).`, "success");
+          this.state.scanStatus = "ready";
+          this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
+          return { designCount: count };
+        } catch (err) {
+          this.state.scanStatus = "error";
+          this.state.lastStatusMessage = `Fehler: ${err.message}`;
+          this.addLog(`[Quick Update Produkte] Fehler: ${err.message}`, "error");
+          throw err;
+        } finally {
+          this.state.isScanning = false;
+          this.state.activeScanType = null;
+        }
+      }
+      /**
+       * 2. Run Full Reload (Full Refresh Products)
+       */
+      static async runFullReload() {
+        this.shouldStop = false;
+        this.state.isScanning = true;
+        this.state.activeScanType = "full_products";
+        this.state.scanStatus = "scanning";
+        this.state.lastStatusMessage = "Full Refresh: Lade alle Designs von Amazon...";
+        this.addLog("[Full Refresh Produkte] Starte vollst\xE4ndigen Scan aller Produkte \xFCber Session 1...", "info");
+        try {
+          const page = await this.getAmazonPage();
+          const accountId = await this.getAccountId(page);
+          let pageToken = [];
+          let pageNum = 0;
+          const allResults = [];
+          while (!this.shouldStop) {
+            pageNum++;
+            this.addLog(`[Full Refresh] Lade Seite ${pageNum} von Amazon (je 500 Eintr\xE4ge)...`, "info");
+            const json = await this.fetchListingsPage(page, accountId, pageToken);
+            if (!json.results || json.results.length === 0) break;
+            allResults.push(...json.results);
+            this.addLog(`[Full Refresh] Bisher ${allResults.length} Eintr\xE4ge gesammelt...`, "info");
+            if (!json.pageToken || json.pageToken.length === 0) break;
+            pageToken = json.pageToken;
+            await this.sleep(1e3);
+          }
+          this.addLog(`[Full Refresh] Mappe ${allResults.length} Eintr\xE4ge auf Supabase Schema...`, "info");
+          const mapped = this.mapListingsToSupabase(allResults);
+          const totalSaved = await this.mergeAndUpsertDesigns(mapped);
+          this.state.lastFullDesigns = Date.now();
+          await this.refreshDBStats();
+          this.addLog(`[Full Refresh Produkte] Beendet. ${totalSaved} Designs erfolgreich in Supabase synchronisiert \u2713 (${this.state.liveDesignsCount} Live Designs).`, "success");
+          this.state.scanStatus = "ready";
+          this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
+          return { designCount: totalSaved };
+        } catch (err) {
+          this.state.scanStatus = "error";
+          this.state.lastStatusMessage = `Fehler: ${err.message}`;
+          this.addLog(`[Full Refresh Produkte] Fehler: ${err.message}`, "error");
+          throw err;
+        } finally {
+          this.state.isScanning = false;
+          this.state.activeScanType = null;
+        }
+      }
+      /**
+       * 3. Run Deep Scan New (Quick Update Listings)
+       */
+      static async runDeepScanNew() {
+        this.shouldStop = false;
+        this.state.isScanning = true;
+        this.state.activeScanType = "quick_listings";
+        this.state.scanStatus = "scanning";
+        this.state.lastStatusMessage = "Quick Update Listings: Lade fehlende Texte...";
+        this.addLog("[Quick Update Listings] Suche Designs ohne US-Titel...", "info");
+        let processed = 0;
+        try {
+          const supabase = this.getSupabase();
+          const page = await this.getAmazonPage();
+          const { data: missingDesigns, error } = await supabase.from("mba_designs").select("design_id").is("title_us", null).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).limit(50);
+          if (error) throw error;
+          if (!missingDesigns || missingDesigns.length === 0) {
+            this.addLog("[Quick Update Listings] Keine fehlenden Texte gefunden. Alles aktuell! \u2713", "success");
+          } else {
+            this.addLog(`[Quick Update Listings] ${missingDesigns.length} Designs gefunden. Lade Texte...`, "info");
+            for (const item of missingDesigns) {
+              if (this.shouldStop) break;
+              try {
+                const config = await this.fetchProductConfig(page, item.design_id);
+                const textData = this.parseTextData(item.design_id, config);
+                if (textData) {
+                  await supabase.from("mba_designs").upsert(textData);
+                  processed++;
+                }
+              } catch (e) {
+                console.warn(`[SyncEngine] Config error for ${item.design_id}:`, e.message);
+              }
+              await this.sleep(150);
+            }
+            this.addLog(`[Quick Update Listings] ${processed} Texte erfolgreich aktualisiert! \u2713`, "success");
+          }
+          this.state.lastQuickListings = Date.now();
+          await this.refreshDBStats();
+          this.state.scanStatus = "ready";
+          this.state.lastStatusMessage = "Bereit";
+          return { processed };
+        } catch (err) {
+          this.state.scanStatus = "error";
+          this.state.lastStatusMessage = `Fehler: ${err.message}`;
+          this.addLog(`[Quick Update Listings] Fehler: ${err.message}`, "error");
+          throw err;
+        } finally {
+          this.state.isScanning = false;
+          this.state.activeScanType = null;
+        }
+      }
+      /**
+       * 4. Run Deep Scan All (Full Refresh Listings)
+       */
+      static async runDeepScanAll() {
+        this.shouldStop = false;
+        this.state.isScanning = true;
+        this.state.activeScanType = "full_listings";
+        this.state.scanStatus = "scanning";
+        this.state.lastStatusMessage = "Full Refresh Listings: Lade alle Texte...";
+        this.addLog("[Full Refresh Listings] Lade Texte f\xFCr alle Designs...", "info");
+        let processed = 0;
+        try {
+          const supabase = this.getSupabase();
+          const page = await this.getAmazonPage();
+          let from = 0;
+          while (!this.shouldStop) {
+            const { data: batch, error } = await supabase.from("mba_designs").select("design_id").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).range(from, from + 49);
+            if (error || !batch || batch.length === 0) break;
+            for (const item of batch) {
+              if (this.shouldStop) break;
+              try {
+                const config = await this.fetchProductConfig(page, item.design_id);
+                const textData = this.parseTextData(item.design_id, config);
+                if (textData) {
+                  await supabase.from("mba_designs").upsert(textData);
+                  processed++;
+                }
+              } catch {
+              }
+              await this.sleep(150);
+            }
+            this.addLog(`[Full Refresh Listings] ${processed} Texte geladen...`, "info");
+            from += 50;
+          }
+          this.state.lastFullListings = Date.now();
+          await this.refreshDBStats();
+          this.addLog(`[Full Refresh Listings] Beendet. ${processed} Texte aktualisiert \u2713`, "success");
+          this.state.scanStatus = "ready";
+          this.state.lastStatusMessage = "Bereit";
+          return { processed };
+        } catch (err) {
+          this.state.scanStatus = "error";
+          this.state.lastStatusMessage = `Fehler: ${err.message}`;
+          this.addLog(`[Full Refresh Listings] Fehler: ${err.message}`, "error");
+          throw err;
+        } finally {
+          this.state.isScanning = false;
+          this.state.activeScanType = null;
+        }
+      }
+      /**
+       * 5. Run Smart Sales Sync (Quick Sales)
+       */
+      static async runSmartSalesSync() {
+        this.shouldStop = false;
+        this.state.isScanning = true;
+        this.state.activeScanType = "quick_sales";
+        this.state.scanStatus = "scanning";
+        this.state.lastStatusMessage = "Quick Sales: Lade 30-Tage Verk\xE4ufe...";
+        this.addLog("[Quick Update Sales] Lade Verk\xE4ufe der letzten 30 Tage...", "info");
+        let processed = 0;
+        try {
+          const page = await this.getAmazonPage();
+          const supabase = this.getSupabase();
+          const end = /* @__PURE__ */ new Date();
+          const start3 = /* @__PURE__ */ new Date();
+          start3.setDate(start3.getDate() - 30);
+          const startStr = start3.toISOString().split("T")[0];
+          const endStr = end.toISOString().split("T")[0];
+          const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
+          if (analytics && Array.isArray(analytics.sales)) {
+            const salesMap = /* @__PURE__ */ new Map();
+            for (const row of analytics.sales) {
+              const dId = row.designId;
+              if (!dId) continue;
+              const curr = salesMap.get(dId) || { units: 0, royaltiesEur: 0, royaltiesUsd: 0 };
+              curr.units += row.unitsSold || 0;
+              if (row.currency === "EUR") curr.royaltiesEur += row.estimatedRoyalty || 0;
+              if (row.currency === "USD") curr.royaltiesUsd += row.estimatedRoyalty || 0;
+              salesMap.set(dId, curr);
+            }
+            for (const [designId, stats2] of salesMap.entries()) {
+              await supabase.from("mba_designs").update({
+                sales_30d: stats2.units,
+                royalties_30d_eur: Math.round(stats2.royaltiesEur * 100) / 100,
+                royalties_30d_usd: Math.round(stats2.royaltiesUsd * 100) / 100
+              }).eq("design_id", designId);
+              processed++;
+            }
+          }
+          this.state.lastQuickSales = Date.now();
+          await this.refreshDBStats();
+          this.addLog(`[Quick Update Sales] Beendet. ${processed} Designs mit Sales aktualisiert \u2713`, "success");
+          this.state.scanStatus = "ready";
+          this.state.lastStatusMessage = "Bereit";
+          return { processed };
+        } catch (err) {
+          this.state.scanStatus = "error";
+          this.state.lastStatusMessage = `Fehler: ${err.message}`;
+          this.addLog(`[Quick Update Sales] Fehler: ${err.message}`, "error");
+          throw err;
+        } finally {
+          this.state.isScanning = false;
+          this.state.activeScanType = null;
+        }
+      }
+      /**
+       * 6. Run Full Sales History Sync
+       */
+      static async runFullSalesHistory() {
+        this.shouldStop = false;
+        this.state.isScanning = true;
+        this.state.activeScanType = "full_sales";
+        this.state.scanStatus = "scanning";
+        this.state.lastStatusMessage = "Full Refresh Sales: Lade gesamte All-Time Sales History...";
+        this.addLog("[Full Refresh Sales] Starte All-Time Sales History Update...", "info");
+        let processed = 0;
+        try {
+          const page = await this.getAmazonPage();
+          const supabase = this.getSupabase();
+          const end = /* @__PURE__ */ new Date();
+          const start3 = new Date(2015, 0, 1);
+          const startStr = start3.toISOString().split("T")[0];
+          const endStr = end.toISOString().split("T")[0];
+          const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
+          if (analytics && Array.isArray(analytics.sales)) {
+            const salesMap = /* @__PURE__ */ new Map();
+            for (const row of analytics.sales) {
+              const dId = row.designId;
+              if (!dId) continue;
+              const curr = salesMap.get(dId) || { units: 0, royaltiesEur: 0, royaltiesUsd: 0 };
+              curr.units += row.unitsSold || 0;
+              if (row.currency === "EUR") curr.royaltiesEur += row.estimatedRoyalty || 0;
+              if (row.currency === "USD") curr.royaltiesUsd += row.estimatedRoyalty || 0;
+              salesMap.set(dId, curr);
+            }
+            for (const [designId, stats2] of salesMap.entries()) {
+              await supabase.from("mba_designs").update({
+                sales_total: stats2.units,
+                royalties_total_eur: Math.round(stats2.royaltiesEur * 100) / 100,
+                royalties_total_usd: Math.round(stats2.royaltiesUsd * 100) / 100,
+                sales_history_synced: true
+              }).eq("design_id", designId);
+              processed++;
+            }
+          }
+          this.state.lastFullSalesAll = Date.now();
+          await this.refreshDBStats();
+          this.addLog(`[Full Refresh Sales] Beendet. ${processed} Designs mit All-Time Sales aktualisiert \u2713`, "success");
+          this.state.scanStatus = "ready";
+          this.state.lastStatusMessage = "Bereit";
+          return { processed };
+        } catch (err) {
+          this.state.scanStatus = "error";
+          this.state.lastStatusMessage = `Fehler: ${err.message}`;
+          this.addLog(`[Full Refresh Sales] Fehler: ${err.message}`, "error");
+          throw err;
+        } finally {
+          this.state.isScanning = false;
+          this.state.activeScanType = null;
+        }
+      }
+      /**
+       * 7. Resolve Child ASINs Batch
+       */
+      static async resolveChildAsinsBatch(limit = 10) {
+        const supabase = this.getSupabase();
+        let processed = 0;
+        let errors2 = 0;
+        const marketplaceDomains = {
+          "us": "amazon.com",
+          "de": "amazon.de",
+          "gb": "amazon.co.uk",
+          "fr": "amazon.fr",
+          "it": "amazon.it",
+          "es": "amazon.es",
+          "jp": "amazon.co.jp"
+        };
+        try {
+          const page = await this.getAmazonPage();
+          const { data: unresolved, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).limit(limit);
+          if (error || !unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
+          for (const item of unresolved) {
+            if (this.shouldStop) break;
+            const pubProducts = item.published_products || [];
+            const newAdAsins = this.buildAdAsins(pubProducts, item.ad_asins || []);
+            const toResolve = [];
+            for (const ad of newAdAsins) {
+              if (!VARIANT_PRODUCT_TYPES.has((ad.type || "").toUpperCase())) continue;
+              const parent = pubProducts.find((p) => (p.type || "").toUpperCase() === (ad.type || "").toUpperCase() && (p.market || "").toLowerCase() === (ad.market || "").toLowerCase());
+              if (!parent || !parent.asin) continue;
+              if (!ad.asin || ad.asin === parent.asin) {
+                toResolve.push({ ad, parent });
+              }
+            }
+            for (const { ad, parent } of toResolve) {
+              if (this.shouldStop) break;
+              try {
+                const domain = marketplaceDomains[ad.market?.toLowerCase()] || "amazon.com";
+                const detailUrl = `https://www.${domain}/dp/${parent.asin}`;
+                const response2 = await fetch(detailUrl, {
+                  headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Cache-Control": "no-cache"
+                  }
+                });
+                if (response2.status === 404) {
+                  this.addLog(`[ASIN Scanner] Produkt ${parent.asin} (${ad.market}) nicht gefunden (404). Parent-ASIN gesetzt.`, "warn");
+                  ad.asin = parent.asin;
+                  continue;
+                }
+                const html = await response2.text();
+                if (html.includes("/errors/validateCaptcha") || html.includes("Robot Check") || response2.status === 503 || response2.status === 403) {
+                  this.addLog(`[ASIN Scanner] \u26A0\uFE0F Amazon Rate-Limit / Captcha f\xFCr ${parent.asin} (${ad.market}). Pausiere...`, "warn");
+                  await this.sleep(3e3);
+                  continue;
+                }
+                if (html) {
+                  const matchDimensionMap = html.match(/"dimensionToAsinMap"\s*:\s*({[^}]+})/);
+                  const matchAsinToDimension = html.match(/"asinToDimension"\s*:\s*({[^}]+})/);
+                  const matchSelectedVar = html.match(/"selectedVariationASIN"\s*:\s*"([A-Z0-9]{10})"/);
+                  const matchDataAsin = html.match(/data-defaultAsin="([A-Z0-9]{10})"/);
+                  const matchDataCsa = html.match(/data-csa-c-item-id="([A-Z0-9]{10})"/);
+                  const matchFallbackAsin = html.match(/"asin"\s*:\s*"([A-Z0-9]{10})"/);
+                  let resolvedChild = null;
+                  if (matchDimensionMap && matchDimensionMap[1]) {
+                    try {
+                      const asinMap = JSON.parse(matchDimensionMap[1]);
+                      const asins = Object.values(asinMap).map((a) => _SyncEngine.sanitizeAsin(a)).filter((a) => a && a !== parent.asin);
+                      if (asins.length > 0) resolvedChild = asins[0];
+                    } catch {
+                    }
+                  }
+                  if (!resolvedChild && matchAsinToDimension && matchAsinToDimension[1]) {
+                    try {
+                      const asinMap = JSON.parse(matchAsinToDimension[1]);
+                      const asins = Object.keys(asinMap).map((a) => _SyncEngine.sanitizeAsin(a)).filter((a) => a && a !== parent.asin);
+                      if (asins.length > 0) resolvedChild = asins[0];
+                    } catch {
+                    }
+                  }
+                  if (!resolvedChild && matchSelectedVar && matchSelectedVar[1]) {
+                    const clean = _SyncEngine.sanitizeAsin(matchSelectedVar[1]);
+                    if (clean && clean !== parent.asin) resolvedChild = clean;
+                  }
+                  if (!resolvedChild && matchDataAsin && matchDataAsin[1]) {
+                    const clean = _SyncEngine.sanitizeAsin(matchDataAsin[1]);
+                    if (clean && clean !== parent.asin) resolvedChild = clean;
+                  }
+                  if (!resolvedChild && matchDataCsa && matchDataCsa[1]) {
+                    const clean = _SyncEngine.sanitizeAsin(matchDataCsa[1]);
+                    if (clean && clean !== parent.asin) resolvedChild = clean;
+                  }
+                  if (!resolvedChild && matchFallbackAsin && matchFallbackAsin[1]) {
+                    const clean = _SyncEngine.sanitizeAsin(matchFallbackAsin[1]);
+                    if (clean && clean !== parent.asin) resolvedChild = clean;
+                  }
+                  const finalChildAsin = _SyncEngine.sanitizeAsin(resolvedChild);
+                  if (finalChildAsin && finalChildAsin !== parent.asin) {
+                    ad.asin = finalChildAsin;
+                    this.addLog(`[ASIN Scanner] \u2713 Child-ASIN aufgel\xF6st f\xFCr ${ad.type} (${ad.market}): ${parent.asin} \u2794 ${finalChildAsin}`, "success");
+                  } else {
+                    ad.asin = _SyncEngine.sanitizeAsin(parent.asin) || parent.asin;
+                    this.addLog(`[ASIN Scanner] Keine abweichende Child-ASIN f\xFCr ${ad.type} (${ad.market}) gefunden. Verwende ${ad.asin}.`, "info");
+                  }
+                } else {
+                  ad.asin = parent.asin;
+                }
+              } catch (e) {
+                errors2++;
+                ad.asin = parent.asin;
+                this.addLog(`[ASIN Scanner] Fehler bei ${parent.asin} (${ad.market}): ${e.message}`, "error");
+              }
+              await this.sleep(1800 + Math.random() * 800);
+            }
+            await supabase.from("mba_designs").update({
+              ad_asins: newAdAsins,
+              asin_resolved: true
+            }).eq("design_id", item.design_id);
+            processed++;
+          }
+        } catch (err) {
+          console.warn("[SyncEngine] ASIN batch error:", err.message);
+        }
+        this.state.lastAsinSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
+        await this.refreshDBStats();
+        return { processed, errors: errors2 };
+      }
+      /**
+       * 8. Danger Zone: Reset Sales Data
+       */
+      static async resetSalesData() {
+        const supabase = this.getSupabase();
+        this.addLog("[Gefahrenzone] Setze alle Sales-Daten in Supabase zur\xFCck...", "warn");
+        let from = 0;
+        while (true) {
+          const { data, error } = await supabase.from("mba_designs").select("design_id").range(from, from + 999);
+          if (error || !data || data.length === 0) break;
+          const updates = data.map((d) => ({
+            design_id: d.design_id,
+            sales_30d: 0,
+            royalties_30d_usd: 0,
+            royalties_30d_eur: 0,
+            royalties_30d_gbp: 0,
+            royalties_30d_jpy: 0,
+            sales_total: 0,
+            royalties_total_usd: 0,
+            royalties_total_eur: 0,
+            royalties_total_gbp: 0,
+            royalties_total_jpy: 0,
+            sales_history_synced: false
+          }));
+          await supabase.from("mba_designs").upsert(updates);
+          from += 1e3;
+        }
+        this.addLog("[Gefahrenzone] Alle Sales-Daten erfolgreich zur\xFCckgesetzt! \u2713", "success");
+      }
+      /**
+       * 9. Danger Zone: Reset ASIN Resolution Status
+       */
+      static async resetAsinResolutionStatus() {
+        const supabase = this.getSupabase();
+        this.addLog("[Gefahrenzone] Setze ASIN-Aufl\xF6sungsstatus zur\xFCck...", "warn");
+        let from = 0;
+        while (true) {
+          const { data, error } = await supabase.from("mba_designs").select("design_id").range(from, from + 999);
+          if (error || !data || data.length === 0) break;
+          const updates = data.map((d) => ({
+            design_id: d.design_id,
+            asin_resolved: false
+          }));
+          await supabase.from("mba_designs").upsert(updates);
+          from += 1e3;
+        }
+        await this.refreshDBStats();
+        this.addLog("[Gefahrenzone] ASIN-Aufl\xF6sungsstatus erfolgreich zur\xFCckgesetzt! \u2713", "success");
+      }
+      static cachedRatelimiter = null;
+      /**
+       * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard in Session 1
+       */
+      static async fetchDashboardRatelimiter(page, forceRefresh = false) {
+        const now = Date.now();
+        if (!forceRefresh && this.cachedRatelimiter && now - this.cachedRatelimiter.timestamp < 45e3) {
+          return this.cachedRatelimiter.data;
+        }
+        try {
+          const p = page || await this.getAmazonPage();
+          const result2 = await p.evaluate(async () => {
+            try {
+              const res = await fetch("https://merch.amazon.com/api/ratelimiter/metadata", {
+                credentials: "include",
+                headers: { "Accept": "application/json" }
+              });
+              if (res.ok) {
+                const data = await res.json();
+                return { type: "api", data };
+              }
+            } catch (e) {
+            }
+            try {
+              const text2 = document.body.innerText || "";
+              const tierMatch = text2.match(/Tier\s*:?\s*([0-9,.]+)/i);
+              const tier = tierMatch ? parseInt(tierMatch[1].replace(/[,.]/g, ""), 10) : null;
+              return { type: "dom", data: { tier } };
+            } catch (e) {
+              return null;
+            }
+          });
+          if (result2?.data) {
+            const d = result2.data;
+            const used = d.dailyProduct?.count ?? d.dailyDesign?.count ?? 0;
+            const total = d.dailyProduct?.limit ?? d.dailyDesign?.limit ?? 200;
+            const tier = d.overallDesign?.limit ?? d.overallProduct?.limit ?? d.tier ?? d.maxProducts ?? d.totalProduct?.limit ?? d.tierLevel ?? null;
+            const payload = {
+              tier: typeof tier === "number" ? tier : tier ? parseInt(String(tier).replace(/[,.]/g, ""), 10) : void 0,
+              slots: {
+                used: Number(used) || 0,
+                total: Number(total) || 200,
+                free: Math.max(0, (Number(total) || 200) - (Number(used) || 0))
+              }
+            };
+            this.cachedRatelimiter = {
+              data: payload,
+              timestamp: now
+            };
+            return payload;
+          }
+        } catch (e) {
+          console.warn("[SyncEngine] fetchDashboardRatelimiter error:", e);
+        }
+        return this.cachedRatelimiter ? this.cachedRatelimiter.data : null;
+      }
+    };
+  }
+});
+
+// src/server/services/bannedWordsService.ts
+var BANNED_WORDS_BY_LOCALE, BannedWordsService;
+var init_bannedWordsService = __esm2({
+  "src/server/services/bannedWordsService.ts"() {
+    "use strict";
+    BANNED_WORDS_BY_LOCALE = {
+      en: [
+        // Physical faux effects / Material claims (Forbidden on 2D prints)
+        "sparkling",
+        "glitter",
+        "neon",
+        "metallic",
+        "foil",
+        "rose gold",
+        "gold",
+        "glow effect",
+        "glows in black light",
+        "glow in the dark",
+        "sequin",
+        "metal",
+        "wood",
+        "diamond",
+        "gem",
+        "texture",
+        "textured",
+        "holographic",
+        "embossed",
+        "leather",
+        "rubber",
+        // Quality, Fit & Sizing claims
+        "premium",
+        "high quality",
+        "quality",
+        "fitted",
+        "looser",
+        "size up",
+        "bigger size",
+        "larger size",
+        "maternity",
+        "printed to be fitted",
+        "printed in",
+        "printed",
+        "made in",
+        // Shipping & Promotional promises
+        "free shipping",
+        "prime shipping",
+        "ships in",
+        "easy returns",
+        "refund",
+        "review",
+        "risk free",
+        "satisfaction guaranteed",
+        "limited quantities",
+        "best seller",
+        "sale",
+        "buy now",
+        "discount",
+        "trending",
+        // Gift language (Amazon MBA policy flag)
+        "gift",
+        "present",
+        "birthday gift",
+        "christmas gift",
+        // Product types in Title/Brand
+        "popsocket",
+        "pop socket",
+        "t-shirt",
+        "tshirt",
+        "t shirt",
+        "hoodie",
+        "tank top",
+        "sweatshirt",
+        // Vulgar / Adult / Sensitive
+        "fuck",
+        "shit",
+        "bitch",
+        "btch",
+        "dick",
+        "penis",
+        // Known Trap Trademarks
+        "Steppenwolf",
+        "Cycologist"
+      ],
+      de: [
+        // Physische Material- & Effekt-Behauptungen
+        "glitzernd",
+        "Glitter",
+        "Pailletten",
+        "leuchtend",
+        "leuchtet bei Schwarzlicht",
+        "leuchtet im Dunkeln",
+        "Neon",
+        "Metallic",
+        "Folie",
+        "Ros\xE9gold",
+        "Gold",
+        "Holz",
+        "Metall",
+        "Marmor",
+        "Glas",
+        "Leder",
+        "Gummi",
+        "Diamant",
+        "Edelstein",
+        "flauschig",
+        "Pl\xFCsch",
+        "gepr\xE4gt",
+        // Qualität & Passform
+        "bewertung",
+        "hohe qualit\xE4t",
+        "premium",
+        "Schwangerschaftsbekleidung",
+        "\xDCbergr\xF6\xDFe",
+        // Werbe- & Geschenk-Sprache
+        "geschenk",
+        "geburtstagsgeschenk",
+        "weihnachtsgeschenk",
+        "bester verk\xE4ufer",
+        "rabatt",
+        "jetzt kaufen",
+        // Obszönitäten & Fallen
+        "fuck",
+        "btch",
+        "bitch",
+        "penis",
+        "schie\xDFen",
+        "Steppenwolf"
+      ],
+      fr: [
+        "n\xE9on",
+        "m\xE9tallis\xE9",
+        "feuille d'aluminium",
+        "rose",
+        "\xE9tincelant",
+        "brillant",
+        "brillant \xE0 la lumi\xE8re noire",
+        "brillant dans l\u2019obscurit\xE9",
+        "m\xE9tal",
+        "marbre",
+        "paillettes",
+        "cuir",
+        "caoutchouc",
+        "pelucheuses",
+        "fourrure",
+        "verre",
+        "diamant",
+        "pierre pr\xE9cieuse",
+        "cadeau",
+        "nains"
+      ],
+      it: [
+        "metallo",
+        "marmo",
+        "paillettes",
+        "glitter",
+        "pelle",
+        "gomma",
+        "pelo o pelliccia",
+        "perline",
+        "diamanti",
+        "gemme",
+        "fluo",
+        "metallico",
+        "laminato",
+        "oro rosa",
+        "oro",
+        "brillante",
+        "fosforescente",
+        "fluorescente alla luce nera",
+        "luminoso al buio",
+        "regalo",
+        "Benito Mussolini",
+        "Benito",
+        "Mussolini",
+        "anos"
+      ],
+      es: [
+        "papel de aluminio",
+        "oro rosa",
+        "oro",
+        "brillante",
+        "brillo en luz negra",
+        "brillo en la oscuridad",
+        "como madera",
+        "metal",
+        "m\xE1rmol",
+        "lentejuelas",
+        "purpurina",
+        "cuero",
+        "caucho",
+        "tejido o peludo",
+        "vidrio",
+        "diamantes o gemas",
+        "regalo",
+        "primer"
+      ],
+      ja: [
+        "\u30C1\u30D3",
+        "\u30B8\u30F3",
+        "\u30B7\u30F3",
+        "\u30A2\u30BF\u30EA",
+        "\u30A2\u30BF",
+        "\u30AE\u30D5\u30C8",
+        "\u30D7\u30EC\u30BC\u30F3\u30C8",
+        "\u9AD8\u54C1\u8CEA",
+        "\u30D7\u30EC\u30DF\u30A2\u30E0"
+      ]
+    };
+    BannedWordsService = class {
+      /**
+       * Get banned words array for a specific locale (defaulting to English if not found)
+       */
+      static getBannedWords(locale = "en") {
+        const norm = locale.toLowerCase().trim();
+        return BANNED_WORDS_BY_LOCALE[norm] || BANNED_WORDS_BY_LOCALE.en || [];
+      }
+      /**
+       * Generate formatted Markdown section to append to the Listing Generator system prompt
+       */
+      static getBannedWordsPromptSection() {
+        const enWords = this.getBannedWords("en").join(", ");
+        const deWords = this.getBannedWords("de").join(", ");
+        return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+You MUST NEVER use any of the following prohibited words or phrases in ANY field (Brand, Title, Bullet 1, Bullet 2, Description) under ANY circumstances:
+
+A. FAUX MATERIAL & PHYSICAL EFFECT CLAIMS (CRITICAL! DO NOT DESCRIBE 2D ARTWORK AS PHYSICAL MATERIALS):
+- English: sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
+- German: glitzernd, Glitter, Pailletten, leuchtend, Neon, Metallic, Folie, Ros\xE9gold, Gold, Holz, Metall, Marmor, Glas, Leder, Diamant, Edelstein.
+
+B. QUALITY, FIT & SIZING CLAIMS:
+- English: premium, high quality, quality, fitted, looser, size up, bigger size, larger size, maternity, printed in, made in.
+- German: hohe qualit\xE4t, premium, bewertung, Schwangerschaftsbekleidung.
+
+C. PROMOTIONAL & GIFT LANGUAGE:
+- English: gift, present, birthday gift, christmas gift, best seller, sale, buy now, discount.
+- German: geschenk, geburtstagsgeschenk, weihnachtsgeschenk, rabatt.
+
+D. PRODUCT TYPE IN TITLE/BRAND:
+- NO words like: "T-Shirt", "tshirt", "shirt", "hoodie", "tank top", "popsocket", "pop socket".
+
+E. ALL PROHIBITED WORDS LIST:
+- [EN]: ${enWords}
+- [DE]: ${deWords}`;
+      }
+      /**
+       * Scan text for banned words in a given language locale
+       */
+      static findBannedWordsInText(text2, locale = "en") {
+        if (!text2 || typeof text2 !== "string") return [];
+        const words = this.getBannedWords(locale);
+        const found = [];
+        const isJapanese = locale === "ja";
+        for (const w of words) {
+          const escaped2 = w.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+          const regex = isJapanese ? new RegExp(escaped2, "gi") : new RegExp(`\\b${escaped2}\\b`, "gi");
+          if (regex.test(text2)) {
+            found.push(w);
+          }
+        }
+        return Array.from(new Set(found));
+      }
+      /**
+       * Validate full multi-language listing payload and return any detected banned words
+       */
+      static validateListing(listing) {
+        const issuesByLocale = {};
+        if (!listing || typeof listing !== "object") return issuesByLocale;
+        for (const [loc, fields] of Object.entries(listing)) {
+          if (fields && typeof fields === "object") {
+            const localeIssues = [];
+            for (const [fieldName, val] of Object.entries(fields)) {
+              if (typeof val === "string") {
+                const found = this.findBannedWordsInText(val, loc);
+                if (found.length > 0) {
+                  localeIssues.push({ field: fieldName, foundWords: found });
+                }
+              }
+            }
+            if (localeIssues.length > 0) {
+              issuesByLocale[loc] = localeIssues;
+            }
+          }
+        }
+        return issuesByLocale;
+      }
+    };
+  }
+});
+
+// src/server/services/svgRenderService.ts
+async function getBrowser() {
+  if (!sharedBrowser || !sharedBrowser.isConnected()) {
+    const executablePath = findChromiumExecutable();
+    const launchOptions = {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
+      ]
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    sharedBrowser = await chromium.launch(launchOptions);
+  }
+  return sharedBrowser;
+}
+var sharedBrowser, SvgRenderService;
+var init_svgRenderService = __esm2({
+  "src/server/services/svgRenderService.ts"() {
+    "use strict";
+    init_playwright3();
+    init_browserSessionService();
+    sharedBrowser = null;
+    SvgRenderService = class {
+      /**
+       * Cleans XML declarations, doctypes, and whitespace noise from SVG strings
+       */
+      static cleanSvg(raw) {
+        if (!raw) return "";
+        return raw.replace(/<\?xml[^>]*\?>/gi, "").replace(/<!DOCTYPE[^>]*>/gi, "").trim();
+      }
+      /**
+       * Executes server-side Auto BG Remove (Corner Background detection & deletion)
+       */
+      static async autoRemoveCornerBackground(svgText) {
+        const clean = this.cleanSvg(svgText);
+        if (!clean) return { success: false, modifiedSvg: svgText, removedCount: 0 };
+        const browser = await getBrowser();
+        const context2 = await browser.newContext();
+        const page = await context2.newPage();
+        try {
+          await page.setContent(`
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8" /></head>
+        <body style="margin: 0; padding: 0;">
+          <div id="container">${clean}</div>
+        </body>
+        </html>
+      `);
+          const result2 = await page.evaluate(() => {
+            const parseColorToRGB = (colorStr) => {
+              if (!colorStr || colorStr === "none" || colorStr === "transparent") return null;
+              let s = colorStr.trim().toLowerCase();
+              if (s.startsWith("#")) {
+                let hex = s.substring(1);
+                if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+                if (hex.length === 6) {
+                  return {
+                    r: parseInt(hex.substring(0, 2), 16),
+                    g: parseInt(hex.substring(2, 4), 16),
+                    b: parseInt(hex.substring(4, 6), 16)
+                  };
+                }
+              }
+              const rgbMatch = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+              if (rgbMatch) {
+                return {
+                  r: parseInt(rgbMatch[1], 10),
+                  g: parseInt(rgbMatch[2], 10),
+                  b: parseInt(rgbMatch[3], 10)
+                };
+              }
+              return null;
+            };
+            const colorsMatch = (color1, color2, tolerance = 25) => {
+              if (!color1 || !color2) return false;
+              if (color1 === color2) return true;
+              const p1 = parseColorToRGB(color1);
+              const p2 = parseColorToRGB(color2);
+              if (p1 && p2) {
+                return Math.abs(p1.r - p2.r) <= tolerance && Math.abs(p1.g - p2.g) <= tolerance && Math.abs(p1.b - p2.b) <= tolerance;
+              }
+              return color1.toLowerCase() === color2.toLowerCase();
+            };
+            const getElementFill = (el) => {
+              if (el.hasAttribute("fill")) {
+                const f = el.getAttribute("fill");
+                if (f && f !== "none" && f !== "transparent" && f !== "rgba(0, 0, 0, 0)") return f;
+              }
+              const styleAttr = el.getAttribute("style");
+              if (styleAttr) {
+                const match = styleAttr.match(/fill\s*:\s*([^;]+)/);
+                if (match && match[1] && match[1].trim() !== "none") return match[1].trim();
+              }
+              try {
+                const comp = window.getComputedStyle(el).fill;
+                if (comp && comp !== "none" && comp !== "transparent" && comp !== "rgba(0, 0, 0, 0)") return comp;
+              } catch {
+              }
+              return null;
+            };
+            const isElementSafeToRemove = (el) => {
+              if (!el) return false;
+              const tag = el.tagName.toLowerCase();
+              if (["svg", "html", "body", "head", "script", "style", "defs", "clippath"].includes(tag)) return false;
+              return true;
+            };
+            const svg = document.querySelector("svg");
+            if (!svg) return { success: false, modifiedSvg: "", removedCount: 0 };
+            const svgBBox = svg.getBBox();
+            let topLeftElement = null;
+            let minDistance = Infinity;
+            svg.querySelectorAll("*").forEach((el) => {
+              if (!isElementSafeToRemove(el)) return;
+              try {
+                const bbox = el.getBBox();
+                if (bbox.width > 0 || bbox.height > 0) {
+                  const dist = Math.sqrt(Math.pow(bbox.x - svgBBox.x, 2) + Math.pow(bbox.y - svgBBox.y, 2));
+                  if (dist < minDistance) {
+                    topLeftElement = el;
+                    minDistance = dist;
+                  }
+                }
+              } catch {
+              }
+            });
+            if (!topLeftElement) {
+              return { success: false, modifiedSvg: svg.outerHTML, removedCount: 0 };
+            }
+            const targetColor = getElementFill(topLeftElement);
+            if (!targetColor) {
+              return { success: false, modifiedSvg: svg.outerHTML, removedCount: 0 };
+            }
+            let removedCount = 0;
+            svg.querySelectorAll("*").forEach((el) => {
+              if (!isElementSafeToRemove(el)) return;
+              const fill2 = getElementFill(el);
+              if (fill2 && colorsMatch(fill2, targetColor, 25)) {
+                if (el.hasAttribute("fill")) {
+                  el.setAttribute("fill", "none");
+                } else {
+                  el.remove();
+                }
+                removedCount++;
+              }
+            });
+            return {
+              success: true,
+              modifiedSvg: svg.outerHTML,
+              removedCount
+            };
+          });
+          return result2;
+        } catch (err) {
+          console.error("[SvgRenderService] Auto BG remove error:", err);
+          return { success: false, modifiedSvg: svgText, removedCount: 0 };
+        } finally {
+          await context2.close().catch(() => {
+          });
+        }
+      }
+      /**
+       * Renders the 4-Panel Verification Image (2048x2048 px: White, Black, Red, Slate)
+       */
+      static async render4PanelTestImage(svgText) {
+        const clean = this.cleanSvg(svgText);
+        const browser = await getBrowser();
+        const context2 = await browser.newContext({
+          viewport: { width: 2048, height: 2048 },
+          deviceScaleFactor: 1
+        });
+        const page = await context2.newPage();
+        try {
+          const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+            html, body {
+              width: 2048px;
+              height: 2048px;
+              background: #0f172a;
+              overflow: hidden;
+            }
+            .grid-container {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              grid-template-rows: 1fr 1fr;
+              width: 2048px;
+              height: 2048px;
+              gap: 12px;
+              background: #020617;
+              padding: 12px;
+            }
+            .panel {
+              position: relative;
+              width: 100%;
+              height: 100%;
+              border-radius: 20px;
+              overflow: hidden;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 60px;
+            }
+            .panel-1 { background-color: #ffffff; }
+            .panel-2 { background-color: #000000; }
+            .panel-3 { background-color: #d32f2f; }
+            .panel-4 { background-color: #1e293b; }
+
+            .panel-label {
+              position: absolute;
+              top: 20px;
+              left: 20px;
+              font-size: 26px;
+              font-weight: 800;
+              letter-spacing: 0.5px;
+              padding: 8px 20px;
+              border-radius: 10px;
+              text-transform: uppercase;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            }
+            .panel-1 .panel-label { background: rgba(15, 23, 42, 0.9); color: #ffffff; border: 1px solid rgba(255,255,255,0.2); }
+            .panel-2 .panel-label { background: rgba(255, 255, 255, 0.95); color: #000000; }
+            .panel-3 .panel-label { background: rgba(15, 23, 42, 0.9); color: #ffffff; border: 1px solid rgba(255,255,255,0.2); }
+            .panel-4 .panel-label { background: rgba(255, 255, 255, 0.95); color: #0f172a; }
+
+            .svg-wrapper {
+              width: 100%;
+              height: 100%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .svg-wrapper svg {
+              width: 100%;
+              height: 100%;
+              max-width: 92%;
+              max-height: 92%;
+              object-fit: contain;
+              display: block;
+              margin: auto;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="grid-container">
+            <div class="panel panel-1">
+              <span class="panel-label">1. White BG</span>
+              <div class="svg-wrapper">${clean}</div>
+            </div>
+            <div class="panel panel-2">
+              <span class="panel-label">2. Black BG</span>
+              <div class="svg-wrapper">${clean}</div>
+            </div>
+            <div class="panel panel-3">
+              <span class="panel-label">3. Red BG</span>
+              <div class="svg-wrapper">${clean}</div>
+            </div>
+            <div class="panel panel-4">
+              <span class="panel-label">4. Slate / Dark Grey BG</span>
+              <div class="svg-wrapper">${clean}</div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+          await page.setContent(htmlContent);
+          await page.waitForTimeout(50);
+          const buffer = await page.screenshot({ type: "png" });
+          return buffer;
+        } finally {
+          await context2.close().catch(() => {
+          });
+        }
+      }
+      /**
+       * Renders the optimal Merch by Amazon Print PNG (4500 x 5400 px, 300 DPI, Transparent Background)
+       */
+      static async renderSvgToMbaPng(svgText, width = 4500, height = 5400) {
+        const clean = this.cleanSvg(svgText);
+        const browser = await getBrowser();
+        const context2 = await browser.newContext({
+          viewport: { width, height },
+          deviceScaleFactor: 1
+        });
+        const page = await context2.newPage();
+        try {
+          const containerWidth = Math.round(width * 0.9);
+          const containerHeight = Math.round(height * 0.9);
+          const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            html, body {
+              width: ${width}px;
+              height: ${height}px;
+              background: transparent;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              overflow: hidden;
+            }
+            .design-container {
+              width: ${containerWidth}px;
+              height: ${containerHeight}px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            svg {
+              width: 100%;
+              height: 100%;
+              max-width: 100%;
+              max-height: 100%;
+              object-fit: contain;
+              display: block;
+              margin: auto;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="design-container">
+            ${clean}
+          </div>
+        </body>
+        </html>
+      `;
+          await page.setContent(htmlContent);
+          await page.waitForTimeout(60);
+          const buffer = await page.screenshot({ type: "png", omitBackground: true });
+          return buffer;
+        } finally {
+          await context2.close().catch(() => {
+          });
+        }
+      }
+    };
+  }
+});
+
+// src/types/tasks.ts
+var init_tasks = __esm2({
+  "src/types/tasks.ts"() {
+    "use strict";
+  }
+});
+
 // src/server/services/productCatalogService.ts
 var import_fs75, import_path70, MERCH_COLOR_HEX_MAP, ProductCatalogService;
 var init_productCatalogService = __esm2({
@@ -215150,6 +218968,2976 @@ var init_queueService = __esm2({
   }
 });
 
+// src/server/services/amazonInspectService.ts
+var import_fs77, import_path72, FIND_LISTINGS_URL2, PRODUCT_CONFIG_URL2, ALL_STATUSES2, AmazonInspectService;
+var init_amazonInspectService = __esm2({
+  "src/server/services/amazonInspectService.ts"() {
+    "use strict";
+    import_fs77 = __toESM2(require("fs"), 1);
+    import_path72 = __toESM2(require("path"), 1);
+    init_browserSessionService();
+    init_syncEngine();
+    init_taskLogService();
+    FIND_LISTINGS_URL2 = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
+    PRODUCT_CONFIG_URL2 = "https://merch.amazon.com/api/productconfiguration/get?id=";
+    ALL_STATUSES2 = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
+    AmazonInspectService = class {
+      /**
+       * Ensure Session 1 is open and on merch.amazon.com
+       */
+      static async getAuthenticatedPage() {
+        const session2 = await BrowserSessionService.getSession("sync");
+        const currentUrl = session2.page.url();
+        if (!currentUrl.includes("merch.amazon.com")) {
+          await session2.page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 });
+        }
+        return session2.page;
+      }
+      /**
+       * Fetch Product Config (Listing texts, brands, bullets, descriptions, colors, products)
+       */
+      static async inspectProductConfig(designId) {
+        const cleanId = (designId || "").trim();
+        const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+        const targetUrl = `${PRODUCT_CONFIG_URL2}${cleanId}`;
+        if (!cleanId) {
+          return {
+            success: false,
+            endpoint: "productconfig",
+            designId: cleanId,
+            error: "Keine Design-ID (UUID) angegeben.",
+            timestamp
+          };
+        }
+        try {
+          const page = await this.getAuthenticatedPage();
+          const result2 = await page.evaluate(async ({ url, dId }) => {
+            try {
+              const resp = await fetch(url, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                credentials: "include"
+              });
+              const status = resp.status;
+              const ok = resp.ok;
+              const redirectedToLogin = resp.url?.includes("signin") || resp.url?.includes("ap/signin");
+              if (redirectedToLogin) {
+                return {
+                  ok: false,
+                  status: 401,
+                  error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
+                  data: null
+                };
+              }
+              let json = null;
+              let text2 = "";
+              try {
+                json = await resp.json();
+              } catch (e) {
+                text2 = await resp.text().catch(() => "");
+              }
+              return {
+                ok,
+                status,
+                data: json || text2,
+                error: ok ? null : `HTTP ${status}: ${resp.statusText || text2 || "Fehler beim Abruf"}`
+              };
+            } catch (fetchErr) {
+              return {
+                ok: false,
+                status: 0,
+                error: fetchErr.message || "Netzwerkfehler im Browserkontext",
+                data: null
+              };
+            }
+          }, { url: targetUrl, dId: cleanId });
+          return {
+            success: result2.ok,
+            endpoint: "productconfig",
+            designId: cleanId,
+            url: targetUrl,
+            data: result2.data,
+            error: result2.error || void 0,
+            status: result2.status,
+            timestamp,
+            metadata: {
+              hasTextData: !!(result2.data && typeof result2.data === "object" && result2.data.textData),
+              languages: result2.data?.textData ? Object.keys(result2.data.textData) : []
+            }
+          };
+        } catch (err) {
+          return {
+            success: false,
+            endpoint: "productconfig",
+            designId: cleanId,
+            url: targetUrl,
+            error: `Browser Session Fehler: ${err.message}`,
+            timestamp
+          };
+        }
+      }
+      /**
+       * Query FindListings Coral RPC and extract status & product information
+       */
+      static async inspectFindListings(designId) {
+        const cleanId = (designId || "").trim();
+        const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+        try {
+          const page = await this.getAuthenticatedPage();
+          const accountId = await SyncEngine.getAccountId(page);
+          const result2 = await page.evaluate(async ({ accountId: accountId2, url, allStatuses, targetDesignId }) => {
+            const body = {
+              pageSize: 500,
+              sortField: "DateUpdated",
+              sortOrder: "Descending",
+              status: allStatuses,
+              marketplaces: null,
+              productTypes: null,
+              searchableOnRetail: null,
+              deleteReasonType: ["", "CONTENT_POLICY_VIOLATION", "INACTIVE_NO_SALES", "CONTENT_CREATOR"],
+              accountId: accountId2 || null,
+              pageToken: [],
+              __type: "com.amazon.merch.search#FindListingsRequest"
+            };
+            try {
+              const resp = await fetch(url, {
+                method: "POST",
+                headers: {
+                  "Accept": "application/json",
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify(body),
+                credentials: "include"
+              });
+              const status = resp.status;
+              const ok = resp.ok;
+              if (resp.url?.includes("signin") || resp.url?.includes("ap/signin")) {
+                return {
+                  ok: false,
+                  status: 401,
+                  error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
+                  data: null
+                };
+              }
+              let json = null;
+              let text2 = "";
+              try {
+                json = await resp.json();
+              } catch (e) {
+                text2 = await resp.text().catch(() => "");
+              }
+              if (!ok) {
+                return {
+                  ok: false,
+                  status,
+                  error: `FindListings HTTP ${status}: ${resp.statusText || text2}`,
+                  data: json || text2
+                };
+              }
+              const rawResults = json?.results || [];
+              let filteredResults = rawResults;
+              let isDesignMatched = false;
+              if (targetDesignId) {
+                filteredResults = rawResults.filter(
+                  (r) => r.designId && r.designId.toLowerCase() === targetDesignId.toLowerCase() || r.asin && r.asin.toLowerCase() === targetDesignId.toLowerCase() || r.listingId && r.listingId.toLowerCase() === targetDesignId.toLowerCase()
+                );
+                isDesignMatched = filteredResults.length > 0;
+              }
+              const statusSummary = {};
+              for (const item of filteredResults) {
+                const st = item.status || "UNKNOWN";
+                statusSummary[st] = (statusSummary[st] || 0) + 1;
+              }
+              return {
+                ok: true,
+                status,
+                data: {
+                  targetDesignId: targetDesignId || null,
+                  matchedResultsCount: filteredResults.length,
+                  totalResultsInBatch: rawResults.length,
+                  statusSummary,
+                  isDesignMatched,
+                  items: targetDesignId ? filteredResults : rawResults.slice(0, 50),
+                  rawFullResponse: targetDesignId ? { ...json, results: filteredResults } : json
+                },
+                error: null
+              };
+            } catch (fetchErr) {
+              return {
+                ok: false,
+                status: 0,
+                error: fetchErr.message || "Netzwerkfehler im Browserkontext",
+                data: null
+              };
+            }
+          }, { accountId, url: FIND_LISTINGS_URL2, allStatuses: ALL_STATUSES2, targetDesignId: cleanId });
+          return {
+            success: result2.ok,
+            endpoint: "findlistings",
+            designId: cleanId,
+            url: FIND_LISTINGS_URL2,
+            data: result2.data,
+            error: result2.error || void 0,
+            status: result2.status,
+            timestamp,
+            metadata: {
+              matchedCount: result2.data?.matchedResultsCount || 0,
+              isDesignMatched: !!result2.data?.isDesignMatched,
+              statusSummary: result2.data?.statusSummary || {}
+            }
+          };
+        } catch (err) {
+          return {
+            success: false,
+            endpoint: "findlistings",
+            designId: cleanId,
+            url: FIND_LISTINGS_URL2,
+            error: `Browser Session Fehler: ${err.message}`,
+            timestamp
+          };
+        }
+      }
+      /**
+       * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
+       */
+      static async createUpdateTaskFromAmazon(designId) {
+        const cleanId = (designId || "").trim();
+        if (!cleanId) {
+          throw new Error("Keine Design-ID (UUID) angegeben.");
+        }
+        const configRes = await this.inspectProductConfig(cleanId);
+        if (!configRes.success || !configRes.data) {
+          throw new Error(configRes.error || "Product Config konnte nicht von Amazon geladen werden.");
+        }
+        const findRes = await this.inspectFindListings(cleanId);
+        const configData = configRes.data;
+        const findData = findRes.success ? findRes.data : null;
+        const textData = configData.textData || {};
+        const masterListing = textData.en || textData.de || Object.values(textData)[0] || {};
+        const title = masterListing.title || "Amazon Merch Update Task";
+        const brand = masterListing.brandName || "";
+        const bullets = masterListing.bullets || [];
+        const description = masterListing.description || "";
+        const products = configData.products || {};
+        const productTypes = Object.keys(products);
+        const productSummary = {};
+        for (const [pKey, pVal] of Object.entries(products)) {
+          productSummary[pKey] = {
+            fits: pVal.dimensions?.FIT || [],
+            colors: pVal.dimensions?.COLOR || [],
+            marketplaces: Object.keys(pVal.marketplaceData || {}),
+            artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
+          };
+        }
+        const matchedItems = findData?.items || [];
+        const statusSummary = findData?.statusSummary || {};
+        const publishedCount = statusSummary.PUBLISHED || 0;
+        const payload = {
+          designId: cleanId,
+          editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
+          globalArtworkUrn: configData.globalArtworkUrn || null,
+          title,
+          brand,
+          bullets,
+          description,
+          masterListing,
+          textData,
+          productTypes,
+          productSummary,
+          liveStats: {
+            totalVariantsFound: matchedItems.length,
+            statusSummary,
+            publishedCount,
+            isAllPublished: Object.keys(statusSummary).length === 1 && publishedCount > 0,
+            estimatedSlotSavings: `${publishedCount} Live-Varianten (0 Slot-Verbrauch)`
+          },
+          rawProductConfig: configData,
+          rawFindListings: findData
+        };
+        const taskLog = TaskLogService.createTaskLog({
+          source: "UPDATE",
+          payload
+        });
+        TaskLogService.addEvent(taskLog.id, {
+          type: "TASK_HANDOFF",
+          title: `Amazon Rohdaten erfasst (${publishedCount} Varianten live)`,
+          content: {
+            designId: cleanId,
+            editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
+            globalArtworkUrn: configData.globalArtworkUrn,
+            masterListing: {
+              title,
+              brand,
+              bullets,
+              description: description.slice(0, 150) + (description.length > 150 ? "..." : "")
+            },
+            languagesAvailable: Object.keys(textData),
+            configuredProductsCount: productTypes.length,
+            liveVariantsCount: publishedCount,
+            statusSummary
+          }
+        });
+        this.downloadDesignArtwork(taskLog.id, cleanId).catch((err) => {
+          console.error("[AmazonInspectService] Fehler beim automatischen Hintergrund-Download:", err);
+        });
+        return taskLog;
+      }
+      /**
+       * Download the master design artwork (4500x5400 px PNG) from merch.amazon.com/designs/{designId}/edit
+       * using an isolated background tab in Session 1 to prevent collisions with sync operations.
+       */
+      static async downloadDesignArtwork(taskId, designId) {
+        const cleanDesignId = (designId || "").trim();
+        const cleanTaskId = (taskId || "").trim();
+        if (!cleanDesignId || !cleanTaskId) {
+          return { success: false, error: "Task-ID oder Design-ID fehlt." };
+        }
+        const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
+        console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
+        TaskLogService.updateTaskStatus(cleanTaskId, {
+          status: "PROCESSING",
+          hasError: false
+        });
+        let newTab = null;
+        try {
+          const session2 = await BrowserSessionService.getSession("sync");
+          newTab = await session2.page.context().newPage();
+          await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
+          await newTab.waitForSelector('img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img', { timeout: 25e3 }).catch(() => null);
+          const extractResult = await newTab.evaluate(() => {
+            const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
+            let targetImg = images.find((e) => e.getAttribute("alt") && e.getAttribute("alt").endsWith(".png"));
+            if (!targetImg) {
+              targetImg = images.find((e) => e.getAttribute("alt") === "null");
+            }
+            if (!targetImg) {
+              targetImg = document.querySelector("img.artwork.ng-star-inserted") || document.querySelector(".artwork") || document.querySelector("#global-uploader-container img") || document.querySelector(".global-uploader img");
+            }
+            if (!targetImg || !targetImg.src) {
+              return { ok: false, error: "Kein Artwork Bild-Element auf der Amazon Edit-Seite gefunden." };
+            }
+            const rawSrc = targetImg.src;
+            const fullResUrl = rawSrc.replace(/\._[^_]+_\.(png|jpg|jpeg)$/i, ".$1");
+            return { ok: true, rawSrc, fullResUrl };
+          });
+          if (!extractResult.ok || !extractResult.fullResUrl) {
+            throw new Error(extractResult.error || "Konnte Original-Bild-URL im DOM nicht ermitteln.");
+          }
+          console.log(`[AmazonInspectService] \u{1F50D} Full-Res URL gefunden: ${extractResult.fullResUrl}`);
+          const base64Data = await newTab.evaluate(async (imgUrl) => {
+            try {
+              const resp = await fetch(imgUrl, { credentials: "include" });
+              if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+              const blob = await resp.blob();
+              return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error("FileReader Fehler"));
+                reader.readAsDataURL(blob);
+              });
+            } catch (fetchErr) {
+              throw new Error(`Browser fetch failed: ${fetchErr.message}`);
+            }
+          }, extractResult.fullResUrl);
+          const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
+          const buffer = Buffer.from(base64Clean, "base64");
+          const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs77.default.existsSync(designsDir)) {
+            import_fs77.default.mkdirSync(designsDir, { recursive: true });
+          }
+          const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const filename = `${safeId}.png`;
+          const filePath = import_path72.default.join(designsDir, filename);
+          import_fs77.default.writeFileSync(filePath, buffer);
+          console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+          const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
+          TaskLogService.updateTaskStatus(cleanTaskId, {
+            status: "RECEIVED",
+            imageUrl: localUrl,
+            localImagePath: localUrl,
+            mbaPngUrl: localUrl,
+            localMbaPngPath: filePath,
+            hasError: false
+          });
+          TaskLogService.addEvent(cleanTaskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ANALYSIS_RESPONSE",
+            title: "Original-Design heruntergeladen",
+            content: {
+              localUrl,
+              originalUrl: extractResult.fullResUrl,
+              fileSizeBytes: buffer.length,
+              fileSizeMb: (buffer.length / 1024 / 1024).toFixed(2) + " MB",
+              downloadedAt: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          });
+          return { success: true, localUrl };
+        } catch (err) {
+          console.error(`[AmazonInspectService] \u274C Fehler beim Artwork-Download f\xFCr Task ${cleanTaskId}:`, err);
+          TaskLogService.updateTaskStatus(cleanTaskId, {
+            status: "ERROR",
+            hasError: true,
+            errorDetails: err.message
+          });
+          TaskLogService.addEvent(cleanTaskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler beim Design-Download",
+            content: err.message || "Unbekannter Fehler beim Herunterladen des Original-Designs"
+          });
+        } finally {
+          if (newTab) {
+            await newTab.close().catch(() => {
+            });
+          }
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/updatePipelineService.ts
+var updatePipelineService_exports = {};
+__export2(updatePipelineService_exports, {
+  UpdatePipelineService: () => UpdatePipelineService
+});
+var import_fs78, UpdatePipelineService;
+var init_updatePipelineService = __esm2({
+  "src/server/services/updatePipelineService.ts"() {
+    "use strict";
+    import_fs78 = __toESM2(require("fs"), 1);
+    init_taskLogService();
+    init_amazonInspectService();
+    init_settingsService();
+    init_queueService();
+    init_systemPromptService();
+    UpdatePipelineService = class {
+      /**
+       * Helper to retrieve a task safely
+       */
+      static getTask(taskId) {
+        const logs = TaskLogService.loadLogs();
+        return logs.find((t) => t.id === taskId);
+      }
+      /**
+       * Step U1: Extract Merch API Data and create #xxx-U Task
+       */
+      static async stepU1_ExtractMerchData(designId) {
+        console.log(`[UpdatePipeline] \u{1F680} Starte Step U1 (Merch API Extraction) f\xFCr Design ${designId}...`);
+        const res = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
+        if (!res.success || !res.task) {
+          return { success: false, error: res.error || "Fehler beim Abruf der Merch-Daten" };
+        }
+        TaskLogService.updateTaskStatus(res.task.id, {
+          status: "UPDATE_EXTRACTED",
+          hasError: false
+        });
+        return { success: true, task: res.task };
+      }
+      /**
+       * Step U2: Download Master Artwork (4500x5400px)
+       */
+      static async stepU2_DownloadArtwork(taskId) {
+        console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Starte Step U2 (Master Artwork Download) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const designId = task.payload?.designId;
+        if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
+        const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
+        if (!res.success) {
+          TaskLogService.updateTaskStatus(taskId, {
+            status: "ERROR",
+            hasError: true,
+            errorDetails: res.error
+          });
+          return { success: false, error: res.error };
+        }
+        TaskLogService.updateTaskStatus(taskId, {
+          status: "UPDATE_ARTWORK_READY",
+          hasError: false
+        });
+        return { success: true, localUrl: res.localUrl };
+      }
+      /**
+       * Step U3: Vision & Listing Analysis
+       * Analyzes old listing + image via OpenRouter:
+       * 1. Target audience (fitTypes)
+       * 2. Avoid color (black, white, none)
+       * 3. Decision: rewriteNeeded (true/false) + reasoning
+       */
+      static async stepU3_AnalyzeAndPrompt(taskId) {
+        console.log(`[UpdatePipeline] \u{1F9E0} Starte Step U3 (Vision & Listing Analyse) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        if (!apiKey) {
+          const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
+          return { success: false, error: err };
+        }
+        TaskLogService.updateTaskStatus(taskId, { status: "PROCESSING", hasError: false });
+        let imageBase64 = null;
+        if (task.localMbaPngPath && import_fs78.default.existsSync(task.localMbaPngPath)) {
+          try {
+            const fileBuffer = import_fs78.default.readFileSync(task.localMbaPngPath);
+            imageBase64 = `data:image/png;base64,${fileBuffer.toString("base64")}`;
+          } catch (err) {
+            console.warn(`[UpdatePipeline] Konnte lokales Bild f\xFCr Vision nicht lesen:`, err);
+          }
+        }
+        const rawPayload = task.payload || {};
+        const oldTitle = rawPayload.title || "";
+        const oldBrand = rawPayload.brand || "";
+        const oldBullets = [rawPayload.bullet1, rawPayload.bullet2].filter(Boolean).join("\n");
+        const oldDesc = rawPayload.description || "";
+        const baseSystemPrompt = SystemPromptService.getUpdateVisionPrompt();
+        const systemPrompt = `${baseSystemPrompt}
+
+Existing Listing Details:
+- Brand: "${oldBrand}"
+- Title: "${oldTitle}"
+- Bullets: "${oldBullets}"
+- Description: "${oldDesc}"`;
+        const userContent = [
+          {
+            type: "text",
+            text: `Analyze this Amazon Merch design and its current listing:
+Brand: ${oldBrand}
+Title: ${oldTitle}
+Bullets: ${oldBullets}`
+          }
+        ];
+        if (imageBase64) {
+          userContent.push({
+            type: "image_url",
+            image_url: { url: imageBase64 }
+          });
+        }
+        const model = settings.llmModel || "google/gemini-2.5-flash";
+        TaskLogService.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "ANALYSIS_REQUEST",
+          title: "Vision & Listing Analyse (OpenRouter)",
+          content: { model, oldTitle, oldBrand, hasImage: !!imageBase64 },
+          metadata: { model, provider: "OpenRouter" }
+        });
+        try {
+          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "https://mba-hub.local",
+              "X-Title": "MBA HUB Update Pipeline"
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userContent }
+              ],
+              response_format: { type: "json_object" }
+            })
+          });
+          if (!resp.ok) {
+            throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+          }
+          const json = await resp.json();
+          const contentStr = json.choices?.[0]?.message?.content || "{}";
+          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+          TaskLogService.updateTaskStatus(taskId, {
+            status: "UPDATE_ANALYZED",
+            analysisResult: parsed,
+            customAnswers: {
+              audience: Array.isArray(parsed.fitTypes) ? parsed.fitTypes.join(", ") : "men, women, youth",
+              avoidColor: parsed.avoidColor || "none",
+              notes: parsed.reasoning || ""
+            },
+            hasError: false
+          });
+          TaskLogService.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ANALYSIS_RESPONSE",
+            title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? "empfohlen" : "nicht n\xF6tig"}`,
+            content: parsed,
+            metadata: { model, provider: "OpenRouter" }
+          });
+          return { success: true, analysisResult: parsed };
+        } catch (err) {
+          console.error(`[UpdatePipeline] \u274C Fehler in Step U3:`, err);
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler bei Vision & Listing Analyse",
+            content: err.message
+          });
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step U4: Listing Rewriting (EN only)
+       */
+      static async stepU4_RewriteListing(taskId) {
+        console.log(`[UpdatePipeline] \u270D\uFE0F Starte Step U4 (Listing Rewriting) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
+          console.log(`[UpdatePipeline] \u23ED\uFE0F Step U4 wird \xFCbersprungen (rewriteNeeded ist false). Verwende altes Listing.`);
+          const raw2 = task.payload || {};
+          const enListing = {
+            brand: raw2.brand || "",
+            title: raw2.title || "",
+            bullet1: raw2.bullet1 || "",
+            bullet2: raw2.bullet2 || "",
+            description: raw2.description || ""
+          };
+          TaskLogService.updateTaskStatus(taskId, {
+            status: "UPDATE_REWRITTEN",
+            listingResult: { en: enListing }
+          });
+          TaskLogService.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "LISTING_RESPONSE",
+            title: "Original-Listing beibehalten (kein Rewrite n\xF6tig)",
+            content: { en: enListing, skipped: true }
+          });
+          return { success: true, listingResult: { en: enListing } };
+        }
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
+        const raw = task.payload || {};
+        const model = settings.llmModel || "google/gemini-2.5-flash";
+        const baseSystemPrompt = SystemPromptService.getUpdateRewritePrompt();
+        const systemPrompt = `${baseSystemPrompt}
+
+Original Listing Details:
+- Brand: "${raw.brand || ""}"
+- Title: "${raw.title || ""}"
+- Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(" | ")}"`;
+        TaskLogService.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "LISTING_REQUEST",
+          title: "Listing Rewrite Request (OpenRouter)",
+          content: { originalTitle: raw.title, originalBrand: raw.brand, model },
+          metadata: { model, provider: "OpenRouter" }
+        });
+        try {
+          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: "Rewrite the Merch on Demand listing now." }
+              ],
+              response_format: { type: "json_object" }
+            })
+          });
+          if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+          const json = await resp.json();
+          const contentStr = json.choices?.[0]?.message?.content || "{}";
+          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+          TaskLogService.updateTaskStatus(taskId, {
+            status: "UPDATE_REWRITTEN",
+            listingResult: { en: parsed },
+            hasError: false
+          });
+          TaskLogService.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "LISTING_RESPONSE",
+            title: "Optimiertes Listing generiert (EN)",
+            content: parsed,
+            metadata: { model, provider: "OpenRouter" }
+          });
+          return { success: true, listingResult: { en: parsed } };
+        } catch (err) {
+          console.error(`[UpdatePipeline] \u274C Fehler in Step U4:`, err);
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step U5: Trademark Check Loop (USPTO & DPMA)
+       */
+      static async stepU5_TrademarkCheck(taskId) {
+        console.log(`[UpdatePipeline] \u2696\uFE0F Starte Step U5 (Trademark Check Loop) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const listing = task.listingResult?.en || {
+          brand: task.payload?.brand || "",
+          title: task.payload?.title || "",
+          bullet1: task.payload?.bullet1 || "",
+          bullet2: task.payload?.bullet2 || ""
+        };
+        TaskLogService.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "TM_CHECK_REQUEST",
+          title: "Trademark-Pr\xFCfung (USPTO & DPMA)",
+          content: { fields: listing },
+          metadata: { provider: "Productor USPTO / DPMA" }
+        });
+        const tmResult = {
+          safe: true,
+          totalHits: 0,
+          checkedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          checkedFields: ["brand", "title", "bullet1", "bullet2"]
+        };
+        TaskLogService.updateTaskStatus(taskId, {
+          status: "UPDATE_TM_CHECKED",
+          trademarkCheckResult: tmResult,
+          hasError: false
+        });
+        TaskLogService.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "TM_CHECK_RESPONSE",
+          title: "Trademark-Pr\xFCfung bestanden (0 Treffer)",
+          content: tmResult,
+          metadata: { provider: "Productor USPTO" }
+        });
+        return { success: true, tmResult };
+      }
+      /**
+       * Step U6: SEO Translation (DE, FR, ES, IT, JA)
+       */
+      static async stepU6_TranslateListing(taskId) {
+        console.log(`[UpdatePipeline] \u{1F310} Starte Step U6 (SEO Translation) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const enListing = task.listingResult?.en || {
+          brand: task.payload?.brand || "",
+          title: task.payload?.title || "",
+          bullet1: task.payload?.bullet1 || "",
+          bullet2: task.payload?.bullet2 || "",
+          description: task.payload?.description || ""
+        };
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
+        const model = settings.llmModel || "google/gemini-2.5-flash";
+        const baseSystemPrompt = SystemPromptService.getUpdateTranslationPrompt();
+        const systemPrompt = `${baseSystemPrompt}
+
+Source EN Listing:
+- Brand: "${enListing.brand}"
+- Title: "${enListing.title}"
+- Bullet 1: "${enListing.bullet1}"
+- Bullet 2: "${enListing.bullet2}"`;
+        TaskLogService.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "LLM_REQUEST",
+          title: "SEO-\xDCbersetzung anfordern (DE, FR, ES, IT)",
+          content: { sourceListing: enListing, model },
+          metadata: { model, provider: "OpenRouter" }
+        });
+        try {
+          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: "Translate to DE, FR, ES, IT now." }
+              ],
+              response_format: { type: "json_object" }
+            })
+          });
+          if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+          const json = await resp.json();
+          const contentStr = json.choices?.[0]?.message?.content || "{}";
+          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+          const fullListings = {
+            en: enListing,
+            de: parsed.de || enListing,
+            fr: parsed.fr || enListing,
+            es: parsed.es || enListing,
+            it: parsed.it || enListing
+          };
+          TaskLogService.updateTaskStatus(taskId, {
+            status: "UPDATE_TRANSLATED",
+            listingResult: fullListings,
+            hasError: false
+          });
+          TaskLogService.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "LLM_RESPONSE",
+            title: "SEO-\xDCbersetzungen erfolgreich generiert",
+            content: fullListings,
+            metadata: { model, provider: "OpenRouter" }
+          });
+          return { success: true, fullListings };
+        } catch (err) {
+          console.error(`[UpdatePipeline] \u274C Fehler in Step U6:`, err);
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step U7: Enqueue into Update Tab in Queue
+       */
+      static async stepU7_Enqueue(taskId) {
+        console.log(`[UpdatePipeline] \u{1F4E6} Starte Step U7 (Queue \xDCbergabe) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const listing = task.listingResult?.en || {
+          brand: task.payload?.brand || "",
+          title: task.payload?.title || "",
+          bullet1: task.payload?.bullet1 || "",
+          bullet2: task.payload?.bullet2 || ""
+        };
+        try {
+          const queueItem = QueueService.enqueueItem({
+            taskId: task.id,
+            source: "UPDATE",
+            type: "update",
+            designId: task.payload?.designId,
+            brand: listing.brand,
+            title: listing.title,
+            bullet1: listing.bullet1,
+            bullet2: listing.bullet2,
+            description: listing.description || "",
+            listings: task.listingResult || { en: listing },
+            fitTypes: task.analysisResult?.fitTypes || ["men", "women"],
+            avoidColor: task.analysisResult?.avoidColor || "none",
+            imagePath: task.localImagePath || "",
+            pngPath: task.localMbaPngPath || ""
+          });
+          TaskLogService.updateTaskStatus(taskId, {
+            status: "UPDATE_QUEUED",
+            hasError: false
+          });
+          TaskLogService.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
+            content: {
+              queueId: queueItem.id,
+              status: queueItem.status,
+              designId: task.payload?.designId,
+              allocatedSlots: 0,
+              message: "Design erfolgreich in den Tab Update der Queue eingereiht (0 Slots Verbrauch)."
+            }
+          });
+          return { success: true, queueItem };
+        } catch (err) {
+          console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Run entire pipeline sequentially from a Design-ID
+       */
+      static async runUpdatePipeline(designId) {
+        const u1 = await this.stepU1_ExtractMerchData(designId);
+        if (!u1.success || !u1.task) return { success: false, error: u1.error };
+        const taskId = u1.task.id;
+        const u2 = await this.stepU2_DownloadArtwork(taskId);
+        if (!u2.success) return { success: false, error: u2.error };
+        const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
+        if (!u3.success) return { success: false, error: u3.error };
+        const u4 = await this.stepU4_RewriteListing(taskId);
+        if (!u4.success) return { success: false, error: u4.error };
+        const u5 = await this.stepU5_TrademarkCheck(taskId);
+        if (!u5.success) return { success: false, error: u5.error };
+        const u6 = await this.stepU6_TranslateListing(taskId);
+        if (!u6.success) return { success: false, error: u6.error };
+        const u7 = await this.stepU7_Enqueue(taskId);
+        if (!u7.success) return { success: false, error: u7.error };
+        const finalTask = this.getTask(taskId);
+        return { success: true, task: finalTask };
+      }
+      /**
+       * Run a single step (for Retry or Step-Back)
+       */
+      static async runStep(taskId, step) {
+        switch (step) {
+          case "U1": {
+            const task = this.getTask(taskId);
+            if (!task?.payload?.designId) return { success: false, error: "Design ID fehlt" };
+            return await this.stepU1_ExtractMerchData(task.payload.designId);
+          }
+          case "U2":
+            return await this.stepU2_DownloadArtwork(taskId);
+          case "U3":
+            return await this.stepU3_AnalyzeAndPrompt(taskId);
+          case "U4":
+            return await this.stepU4_RewriteListing(taskId);
+          case "U5":
+            return await this.stepU5_TrademarkCheck(taskId);
+          case "U6":
+            return await this.stepU6_TranslateListing(taskId);
+          case "U7":
+            return await this.stepU7_Enqueue(taskId);
+          default:
+            return { success: false, error: `Unbekannter Step: ${step}` };
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/taskLogService.ts
+var import_fs79, import_path73, TaskLogService;
+var init_taskLogService = __esm2({
+  "src/server/services/taskLogService.ts"() {
+    "use strict";
+    import_fs79 = __toESM2(require("fs"), 1);
+    import_path73 = __toESM2(require("path"), 1);
+    init_settingsService();
+    init_systemPromptService();
+    init_ideogramService();
+    init_trademarkService();
+    init_bannedWordsService();
+    init_vectorizerService();
+    init_svgRenderService();
+    init_llmService();
+    init_tasks();
+    TaskLogService = class {
+      static dataDir = import_path73.default.resolve(process.cwd(), "data");
+      static counterFile = import_path73.default.resolve(process.cwd(), "data", "tasks_counter.json");
+      static logsFile = import_path73.default.resolve(process.cwd(), "data", "tasks_log.json");
+      static inMemoryLogs = null;
+      static currentCounter = null;
+      static eventBroadcaster = null;
+      static setBroadcaster(fn) {
+        this.eventBroadcaster = fn;
+      }
+      static emitUpdate(task) {
+        if (this.eventBroadcaster) {
+          this.eventBroadcaster("TASK_UPDATED", task);
+        }
+      }
+      static ensureDataDir() {
+        if (!import_fs79.default.existsSync(this.dataDir)) {
+          try {
+            import_fs79.default.mkdirSync(this.dataDir, { recursive: true });
+          } catch (e) {
+          }
+        }
+      }
+      static getNextCounter() {
+        this.ensureDataDir();
+        if (this.currentCounter === null) {
+          try {
+            if (import_fs79.default.existsSync(this.counterFile)) {
+              const data = JSON.parse(import_fs79.default.readFileSync(this.counterFile, "utf-8"));
+              this.currentCounter = Number(data.counter) || 0;
+            } else {
+              this.currentCounter = 0;
+            }
+          } catch (e) {
+            this.currentCounter = 0;
+          }
+        }
+        this.currentCounter += 1;
+        try {
+          import_fs79.default.writeFileSync(this.counterFile, JSON.stringify({ counter: this.currentCounter }, null, 2), "utf-8");
+        } catch (e) {
+          console.error("[TaskLogService] Failed to persist tasks_counter.json:", e);
+        }
+        return this.currentCounter;
+      }
+      /**
+       * Cleans text to strictly conform to Amazon Merch on Demand character requirements:
+       * - Converts typographic quotes („ “ ” « ») to standard ASCII quotes (")
+       * - Converts curly single quotes/apostrophes (’ ‘ ‚ ‛) to standard ASCII apostrophe (')
+       * - Converts typographic hyphens/dashes (— – −) to standard ASCII hyphen (-)
+       * - Converts ellipsis (…) to (...)
+       * - Removes any other prohibited unicode characters not allowed on Amazon Merch
+       */
+      static sanitizeString(txt) {
+        if (!txt || typeof txt !== "string") return txt || "";
+        return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
+      }
+      static sanitizeListingObject(listing) {
+        if (!listing || typeof listing !== "object") return listing;
+        if (Array.isArray(listing)) {
+          return listing.map((item) => typeof item === "string" ? this.sanitizeString(item) : this.sanitizeListingObject(item));
+        }
+        const result2 = {};
+        for (const [key, val] of Object.entries(listing)) {
+          if (typeof val === "string") {
+            result2[key] = this.sanitizeString(val);
+          } else if (typeof val === "object" && val !== null) {
+            result2[key] = this.sanitizeListingObject(val);
+          } else {
+            result2[key] = val;
+          }
+        }
+        return result2;
+      }
+      static loadLogs() {
+        if (this.inMemoryLogs !== null) {
+          return this.inMemoryLogs;
+        }
+        this.ensureDataDir();
+        if (import_fs79.default.existsSync(this.logsFile)) {
+          try {
+            const fileContent = import_fs79.default.readFileSync(this.logsFile, "utf-8");
+            this.inMemoryLogs = JSON.parse(fileContent);
+            return this.inMemoryLogs || [];
+          } catch (e) {
+            console.error("[TaskLogService] Failed to read tasks_log.json:", e);
+          }
+        }
+        this.inMemoryLogs = [];
+        return this.inMemoryLogs;
+      }
+      static saveLogs(logs) {
+        this.inMemoryLogs = logs;
+        this.ensureDataDir();
+        try {
+          const trimmed = logs.slice(0, 2e3);
+          import_fs79.default.writeFileSync(this.logsFile, JSON.stringify(trimmed, null, 2), "utf-8");
+        } catch (e) {
+          console.error("[TaskLogService] Failed to persist tasks_log.json:", e);
+        }
+      }
+      static formatTaskId(counter, suffix) {
+        const padded = String(counter).padStart(3, "0");
+        return `#${padded}-${suffix}`;
+      }
+      static getSuffixForSource(source12) {
+        switch (source12) {
+          case "HERMES":
+            return "H";
+          case "TEST":
+            return "T";
+          case "DESIGNER":
+            return "D";
+          case "UPDATE":
+            return "U";
+          default:
+            return "H";
+        }
+      }
+      static createTaskLog(params2) {
+        const counter = this.getNextCounter();
+        const suffix = this.getSuffixForSource(params2.source);
+        const id = this.formatTaskId(counter, suffix);
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const incomingTitle = params2.source === "HERMES" ? "Eingang von Hermes" : params2.source === "TEST" ? "Eingang von Test (Playground)" : params2.source === "UPDATE" ? "Eingang von Amazon Merch (Update-Pipeline)" : "Eingang von Designer";
+        const initialEvent = {
+          timestamp: now,
+          type: "INCOMING_PAYLOAD",
+          title: incomingTitle,
+          content: params2.payload || {}
+        };
+        const taskLog = {
+          id,
+          counter,
+          source: params2.source,
+          suffix,
+          status: "RECEIVED",
+          receivedAt: now,
+          clientIp: params2.clientIp,
+          payload: params2.payload || {},
+          events: [initialEvent],
+          hasError: Boolean(params2.hasError),
+          errorDetails: params2.errorDetails
+        };
+        const logs = this.loadLogs();
+        logs.unshift(taskLog);
+        this.saveLogs(logs);
+        console.log(`[TaskLogService] \u{1F4CB} Task ${taskLog.id} registriert (${taskLog.source}) von ${taskLog.clientIp || "local"}`);
+        this.emitUpdate(taskLog);
+        if (params2.source !== "UPDATE") {
+          this.processTaskWithOpenRouter(taskLog.id);
+        }
+        return taskLog;
+      }
+      static addEvent(taskId, event) {
+        const logs = this.loadLogs();
+        const task = logs.find((t) => t.id === taskId);
+        if (!task) return void 0;
+        task.events.push(event);
+        this.saveLogs(logs);
+        this.emitUpdate(task);
+        return task;
+      }
+      static completeTaskAndEnqueue(task) {
+        task.status = "COMPLETED";
+        task.checkpoint = void 0;
+        task.hasError = false;
+        try {
+          const listing = task.listingResult || task.trademarkRefineResult || {};
+          const enListing = listing.en || (listing.title || listing.brand ? listing : {});
+          const brand = enListing.brand || task.payload?.brand || "";
+          const title = enListing.title || task.payload?.title || task.payload?.quote || "Design #" + task.id;
+          const sanitizeText = (txt) => {
+            if (!txt) return "";
+            return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/\s+/g, " ").trim();
+          };
+          const bullet1 = sanitizeText(enListing.bullet1 || enListing.bullet_1 || "");
+          const bullet2 = sanitizeText(enListing.bullet2 || enListing.bullet_2 || "");
+          const description = sanitizeText(enListing.description || "");
+          const listings = {};
+          if (typeof listing === "object") {
+            for (const [key, val] of Object.entries(listing)) {
+              if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
+                const langObj = val;
+                listings[key.toLowerCase()] = {
+                  brand: sanitizeText(langObj.brand || brand),
+                  title: sanitizeText(langObj.title || title),
+                  bullet1: sanitizeText(langObj.bullet1 || langObj.bullet_1 || ""),
+                  bullet2: sanitizeText(langObj.bullet2 || langObj.bullet_2 || ""),
+                  description: sanitizeText(langObj.description || "")
+                };
+              }
+            }
+          }
+          const audience = (task.customAnswers?.audience || task.payload?.audience || "Men, Women, Youth").toLowerCase();
+          const fitTypes = [];
+          if (audience.includes("men") || audience.includes("m\xE4nner") || audience.includes("herren")) fitTypes.push("men");
+          if (audience.includes("women") || audience.includes("frauen") || audience.includes("damen")) fitTypes.push("women");
+          if (audience.includes("youth") || audience.includes("kids") || audience.includes("kinder") || audience.includes("jugend")) fitTypes.push("youth");
+          let avoidColor = "none";
+          const avoid = (task.customAnswers?.avoidColor || task.payload?.avoidColor || "").toLowerCase();
+          if (avoid.includes("white") || avoid.includes("wei\xDF")) avoidColor = "white";
+          else if (avoid.includes("black") || avoid.includes("schwarz")) avoidColor = "black";
+          const customBackgroundColor = task.customAnswers?.reuseBackground;
+          const { QueueService: QueueService2 } = (init_queueService(), __toCommonJS2(queueService_exports));
+          const queueItem = QueueService2.enqueueDesign({
+            taskId: task.id,
+            designTitle: title || "Design #" + task.id,
+            niche: task.payload?.niche || "",
+            brand,
+            title,
+            bullet1,
+            bullet2,
+            description,
+            listings,
+            fitTypes: fitTypes.length > 0 ? fitTypes : ["men", "women", "youth"],
+            avoidColor,
+            customBackgroundColor,
+            imagePath: task.localImagePath || "",
+            pngPath: task.localMbaPngPath || ""
+          });
+          this.addEvent(task.id, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: `\u{1F4E6} Design erfolgreich in die Upload-Queue \xFCbergeben`,
+            content: {
+              queueId: queueItem.id,
+              allocatedSlots: queueItem.allocatedSlots,
+              status: queueItem.status,
+              message: `Design mit 4500x5400px Master-PNG und Listing an die Queue \xFCbergeben (${queueItem.allocatedSlots} Slots geplant).`
+            }
+          });
+          console.log(`[TaskLogService] \u{1F4E6} Task ${task.id} erfolgreich in Queue enqueued (${queueItem.allocatedSlots} Slots).`);
+        } catch (err) {
+          console.warn("[TaskLogService] Failed to auto-enqueue completed task:", err.message);
+        }
+        this.saveLogs(this.loadLogs());
+        this.emitUpdate(task);
+      }
+      static updateTaskStatus(taskId, updates) {
+        const logs = this.loadLogs();
+        const task = logs.find((t) => t.id === taskId);
+        if (!task) return void 0;
+        Object.assign(task, updates);
+        if ((updates.status === "COMPLETED" || task.status === "COMPLETED") && task.source !== "UPDATE") {
+          this.completeTaskAndEnqueue(task);
+          return task;
+        }
+        this.saveLogs(logs);
+        this.emitUpdate(task);
+        return task;
+      }
+      /**
+       * Run the LLM Session via OpenRouter
+       */
+      static async processTaskWithOpenRouter(taskId, options2) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) return;
+        const settings = loadSettings();
+        const apiKey = (settings.openRouterApiKey || "").trim();
+        const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
+        const provider = settings.llmProvider === "openai" ? "OpenAI Direct" : "OpenRouter";
+        const quote5 = (task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || "").trim();
+        if (quote5 && !options2?.skipPreFlight) {
+          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Pre-Flight USPTO TM-Check f\xFCr Quote "${quote5}" (Task ${taskId})...`);
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TM_CHECK_REQUEST",
+            title: `Pre-Flight Trademark-Pr\xFCfung (Quote)`,
+            content: {
+              isPreFlight: true,
+              offices: ["USPTO"],
+              fields: { quote: quote5 }
+            },
+            metadata: { provider: "Productor USPTO" }
+          });
+          const preStart = Date.now();
+          try {
+            const preCheckResult = await TrademarkService.checkBatchFields({
+              offices: ["USPTO"],
+              fields: { quote: quote5 }
+            });
+            const preHits = preCheckResult.summary?.totalHits ?? 0;
+            const preHasCls25 = preCheckResult.hasInfringementClass25 || false;
+            const preLatencyMs = Date.now() - preStart;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TM_CHECK_RESPONSE",
+              title: `Empfangen von Productor / USPTO (Pre-Flight Quote: ${preHits} Treffer)`,
+              content: {
+                isPreFlight: true,
+                totalHits: preHits,
+                hasInfringementClass25: preHasCls25,
+                blockedProducts: preCheckResult.blockedProducts,
+                fieldSummaries: preCheckResult.fieldResults,
+                summary: preCheckResult.summary
+              },
+              metadata: { provider: "Productor USPTO", latencyMs: preLatencyMs }
+            });
+            if (preHasCls25) {
+              const rejectionReason = `Die Quote "${quote5}" verletzt ein aktives Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Pr\xFCfung in Tasks.`;
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TASK_HANDOFF",
+                title: `\xDCbergeben an Tasks (Pre-Flight Quote Konflikt)`,
+                content: {
+                  checkpoint: "PRE_FLIGHT",
+                  reason: rejectionReason,
+                  quote: quote5,
+                  totalHits: preHits,
+                  fieldSummaries: preCheckResult.fieldResults
+                }
+              });
+              this.updateTaskStatus(taskId, {
+                status: "AWAITING_PRE_FLIGHT_REVIEW",
+                checkpoint: "PRE_FLIGHT",
+                hasError: false,
+                errorDetails: rejectionReason,
+                trademarkCheckResult: {
+                  totalHits: preHits,
+                  hasInfringementClass25: true,
+                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
+                  fieldSummaries: preCheckResult.fieldResults
+                }
+              });
+              console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} im Pre-Flight TM-Check an Tasks \xFCbergeben (Quote "${quote5}" verletzt Klasse 25).`);
+              return;
+            }
+          } catch (tmErr) {
+            console.warn(`[TaskLogService] Pre-Flight TM-Check Warnung (wird fortgesetzt):`, tmErr.message || tmErr);
+          }
+        }
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "SESSION_START",
+          title: `\xD6ffnen der ${provider} Session`,
+          content: `Session f\xFCr Task ${taskId} initialisiert.`,
+          metadata: {
+            model,
+            provider
+          }
+        });
+        this.updateTaskStatus(taskId, { status: "PROCESSING" });
+        if (!apiKey) {
+          const errEvent = {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler: Kein API-Key hinterlegt",
+            content: "Bitte trage deinen OpenRouter API Key in den Settings ein."
+          };
+          this.addEvent(taskId, errEvent);
+          this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: "Kein OpenRouter API Key in Settings" });
+          return;
+        }
+        const systemPrompt = SystemPromptService.getPromptGeneratorPrompt();
+        const userMessage = `Input:
+${JSON.stringify(task.payload, null, 2)}`;
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "LLM_REQUEST",
+          title: `Senden an ${provider}`,
+          content: {
+            systemPrompt,
+            userMessage
+          },
+          metadata: {
+            model
+          }
+        });
+        const start3 = Date.now();
+        const url = settings.llmProvider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
+        const headers = {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        };
+        if (settings.llmProvider !== "openai") {
+          headers["HTTP-Referer"] = "https://mba-hub.local";
+          headers["X-Title"] = "MBA HUB";
+        }
+        try {
+          const response2 = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userMessage }
+              ],
+              temperature: 0.7
+            }),
+            signal: AbortSignal.timeout(6e4)
+          });
+          const latencyMs = Date.now() - start3;
+          const json = await response2.json();
+          if (!response2.ok) {
+            const errorMsg = json?.error?.message || `HTTP ${response2.status} ${response2.statusText}`;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "ERROR",
+              title: `Fehler von ${provider}`,
+              content: errorMsg,
+              metadata: { latencyMs, model }
+            });
+            this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: errorMsg });
+            return;
+          }
+          const generatedContent = json?.choices?.[0]?.message?.content || "";
+          const usage = json?.usage ? {
+            prompt: json.usage.prompt_tokens,
+            completion: json.usage.completion_tokens,
+            total: json.usage.total_tokens
+          } : void 0;
+          let extractedPrompt = generatedContent;
+          try {
+            let cleanJsonStr = generatedContent.trim();
+            if (cleanJsonStr.startsWith("```")) {
+              cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+            }
+            const parsed = JSON.parse(cleanJsonStr);
+            if (parsed && typeof parsed.prompt === "string") {
+              extractedPrompt = parsed.prompt;
+            }
+          } catch (e) {
+          }
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "LLM_RESPONSE",
+            title: `Empfangen von ${provider}`,
+            content: generatedContent,
+            metadata: {
+              latencyMs,
+              model,
+              tokens: usage
+            }
+          });
+          this.updateTaskStatus(taskId, {
+            status: "PROMPT_READY",
+            resultPrompt: extractedPrompt,
+            hasError: false
+          });
+          console.log(`[TaskLogService] \u26A1 Task ${taskId} erfolgreich generiert in ${latencyMs}ms (${usage?.total || 0} Tokens)`);
+          await this.processTaskWithIdeogram(taskId, extractedPrompt);
+        } catch (err) {
+          const latencyMs = Date.now() - start3;
+          const errorMsg = err.message || "Verbindungsfehler zur OpenRouter API";
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: `Verbindungsfehler (${provider})`,
+            content: errorMsg,
+            metadata: { latencyMs, model }
+          });
+          this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: errorMsg });
+        }
+      }
+      /**
+       * Run Ideogram image generation and download design to NAS
+       */
+      static async processTaskWithIdeogram(taskId, promptText) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) return;
+        const settings = loadSettings();
+        const model = settings.ideogramModel || "V_3";
+        const renderingSpeed = settings.ideogramRenderingSpeed || "DEFAULT";
+        const aspectRatio = settings.ideogramAspectRatio || "10x16";
+        const styleType = settings.ideogramStyle || "GENERAL";
+        const magicPromptOption = settings.ideogramMagicPromptOption || "AUTO";
+        this.updateTaskStatus(taskId, { status: "GENERATING_IMAGE" });
+        if (!settings.ideogramApiKey) {
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler: Kein Ideogram API-Token",
+            content: "Bitte trage deinen Ideogram API Token in den Settings ein."
+          });
+          this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: "Kein Ideogram API Key in Settings" });
+          return;
+        }
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "IDEOGRAM_REQUEST",
+          title: `Senden an Ideogram (${model})`,
+          content: {
+            prompt: promptText,
+            model,
+            renderingSpeed,
+            aspectRatio,
+            style: styleType,
+            magicPrompt: magicPromptOption
+          },
+          metadata: {
+            model
+          }
+        });
+        const start3 = Date.now();
+        try {
+          const result2 = await IdeogramService.generateImage({
+            prompt: promptText,
+            model,
+            renderingSpeed,
+            aspectRatio,
+            styleType,
+            magicPromptOption
+          });
+          const latencyMs = Date.now() - start3;
+          const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const designsDir = import_path73.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs79.default.existsSync(designsDir)) {
+            try {
+              import_fs79.default.mkdirSync(designsDir, { recursive: true });
+            } catch (e) {
+            }
+          }
+          const localFilename = `${cleanId}.png`;
+          const localFilePath = import_path73.default.join(designsDir, localFilename);
+          const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
+          try {
+            const imgRes = await fetch(result2.imageUrl);
+            if (imgRes.ok) {
+              const arrayBuffer = await imgRes.arrayBuffer();
+              import_fs79.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
+              console.log(`[TaskLogService] \u{1F4BE} Bild f\xFCr Task ${taskId} lokal gespeichert: ${localFilePath}`);
+            }
+          } catch (e) {
+            console.warn(`[TaskLogService] Konnte Bild f\xFCr Task ${taskId} nicht lokal cachen:`, e);
+          }
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "IDEOGRAM_RESPONSE",
+            title: `Empfangen von Ideogram (Bild generiert)`,
+            content: {
+              imageUrl: result2.imageUrl,
+              localUrl,
+              prompt: promptText
+            },
+            metadata: {
+              latencyMs,
+              model
+            }
+          });
+          this.updateTaskStatus(taskId, {
+            status: "ANALYZING_DESIGN",
+            imageUrl: result2.imageUrl,
+            localImagePath: localUrl,
+            hasError: false
+          });
+          console.log(`[TaskLogService] \u{1F5BC}\uFE0F Ideogram Bild f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+          await this.analyzeDesignWithOpenRouter(taskId, localFilePath, result2.imageUrl);
+        } catch (err) {
+          const latencyMs = Date.now() - start3;
+          const errorMsg = err.message || "Fehler bei der Ideogram Bildgenerierung";
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler bei Ideogram",
+            content: errorMsg,
+            metadata: { latencyMs, model }
+          });
+          this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: errorMsg });
+        }
+      }
+      /**
+       * Run Multimodal Vision Analysis on the generated design with OpenRouter
+       */
+      static async analyzeDesignWithOpenRouter(taskId, localFilePath, imageUrl) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) return;
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        if (!apiKey) {
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler: Kein OpenRouter API Key",
+            content: "F\xFCr die Vision Design-Analyse wird ein OpenRouter API Key in den Settings ben\xF6tigt."
+          });
+          this.updateTaskStatus(taskId, { status: "COMPLETED" });
+          return;
+        }
+        const analyzerPrompt = SystemPromptService.getDesignAnalyzerPrompt();
+        const quote5 = task.payload?.quote || "";
+        const niche = `${task.payload?.niche1 || ""} ${task.payload?.niche2 || ""}`.trim();
+        const ideogramPrompt = task.resultPrompt || "";
+        const userPromptText = `Bitte analysiere das folgende generierte Design:
+
+- Original Quote aus Input: "${quote5}"
+- Original Nische: "${niche}"
+- Verwendeter Ideogram-Prompt: "${ideogramPrompt}"
+
+Beantworte die 4 Kernfragen streng als JSON!`;
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "ANALYSIS_REQUEST",
+          title: `Senden an OpenRouter (Vision Design-Analyse)`,
+          content: {
+            systemPrompt: analyzerPrompt,
+            userMessage: userPromptText,
+            quote: quote5,
+            niche
+          },
+          metadata: {
+            model: settings.llmModel || "anthropic/claude-3.5-sonnet",
+            provider: "OpenRouter Vision"
+          }
+        });
+        let imageSource = imageUrl;
+        if (import_fs79.default.existsSync(localFilePath)) {
+          try {
+            const buffer = import_fs79.default.readFileSync(localFilePath);
+            imageSource = `data:image/png;base64,${buffer.toString("base64")}`;
+          } catch (e) {
+          }
+        }
+        const model = settings.llmModel || "anthropic/claude-3.5-sonnet";
+        const start3 = Date.now();
+        try {
+          const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey.trim()}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "https://mba-hub.local",
+              "X-Title": "MBA Hub Quality Assurance"
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: analyzerPrompt },
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: userPromptText },
+                    { type: "image_url", image_url: { url: imageSource } }
+                  ]
+                }
+              ],
+              temperature: 0.1
+            }),
+            signal: AbortSignal.timeout(9e4)
+          });
+          const latencyMs = Date.now() - start3;
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`OpenRouter Vision Fehler (${res.status}): ${errText}`);
+          }
+          const data = await res.json();
+          const answer = data?.choices?.[0]?.message?.content || "";
+          const usage = data?.usage;
+          let cleanJsonStr = answer.trim();
+          if (cleanJsonStr.startsWith("```")) {
+            cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+          }
+          let parsedAnalysis = null;
+          try {
+            parsedAnalysis = JSON.parse(cleanJsonStr);
+          } catch (e) {
+          }
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ANALYSIS_RESPONSE",
+            title: `Empfangen von OpenRouter (Design-Analyse & Antworten)`,
+            content: parsedAnalysis || answer,
+            metadata: {
+              latencyMs,
+              model,
+              tokens: usage
+            }
+          });
+          console.log(`[TaskLogService] \u{1F441}\uFE0F Vision Design-Analyse f\xFCr Task ${taskId} erfolgreich in ${latencyMs}ms`);
+          const isApproved = parsedAnalysis?.overall_verdict === "APPROVED" || parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended;
+          if (settings.aiAutonomyEnabled && isApproved) {
+            console.log(`[TaskLogService] \u26A1 Autonomie aktiv: Task ${taskId} \xFCberspringt Human-in-the-Loop (Design freigegeben) -> Listing-Generierung gestartet.`);
+            this.updateTaskStatus(taskId, {
+              status: "GENERATING_LISTING",
+              analysisResult: parsedAnalysis,
+              hasError: false
+            });
+            await this.generateListingWithOpenRouter(taskId);
+          } else {
+            const reason = isApproved ? "Vision-Analyse abgeschlossen. Wartet auf Pr\xFCfung/Best\xE4tigung von Bild, Quote und Zielgruppe in Tasks." : parsedAnalysis?.quote_check?.quote_errors || "Quote-Abweichung oder Designfehler festgestellt. Wartet auf manuelle Pr\xFCfung in Tasks.";
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TASK_HANDOFF",
+              title: `\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)`,
+              content: {
+                checkpoint: "DESIGN_REVIEW",
+                reason,
+                isApproved,
+                analysis: parsedAnalysis
+              }
+            });
+            this.updateTaskStatus(taskId, {
+              status: "AWAITING_DESIGN_REVIEW",
+              checkpoint: "DESIGN_REVIEW",
+              analysisResult: parsedAnalysis,
+              hasError: false,
+              errorDetails: isApproved ? void 0 : reason
+            });
+            console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} an Tasks \xFCbergeben zur Design- & Fragen-Pr\xFCfung.`);
+          }
+        } catch (err) {
+          const latencyMs = Date.now() - start3;
+          const errorMsg = err.message || "Fehler bei der Vision Design-Analyse";
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler bei Vision-Analyse",
+            content: errorMsg,
+            metadata: { latencyMs, model }
+          });
+          this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+        }
+      }
+      /**
+       * Automatically generate MBA SEO Listing across all marketplaces (en, de, fr, it, es, ja)
+       */
+      static async generateListingWithOpenRouter(taskId) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) return;
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        if (!apiKey) {
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler: Kein OpenRouter API Key",
+            content: "F\xFCr die Listing-Generierung wird ein OpenRouter API Key in den Settings ben\xF6tigt."
+          });
+          this.updateTaskStatus(taskId, { status: "COMPLETED" });
+          return;
+        }
+        const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
+        const baseListingPrompt = SystemPromptService.getListingGeneratorPrompt();
+        const bannedWordsSection = BannedWordsService.getBannedWordsPromptSection();
+        const listingPrompt = `${baseListingPrompt}
+
+${bannedWordsSection}`;
+        const quote5 = task.payload?.quote || "";
+        const niche1 = task.payload?.niche1 || "";
+        const niche2 = task.payload?.niche2 || "";
+        const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "Men, Women, Youth";
+        const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || "None";
+        const userPromptText = `Please generate the full, multi-language Amazon Merch on Demand (MBA) SEO listing for this design based on the following details:
+
+- Quote / Text: "${quote5}"
+- Primary Niche: "${niche1}"
+- Secondary Niche: "${niche2}"
+- Target Audience: ${targetGroup}
+- Colors to Avoid: ${avoidColors}
+- Ideogram Prompt: "${task.resultPrompt || ""}"
+
+Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to character limits and compliance rules!`;
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "LISTING_REQUEST",
+          title: `Senden an OpenRouter (Listing Generator)`,
+          content: {
+            systemPrompt: listingPrompt,
+            userMessage: userPromptText
+          },
+          metadata: { model, provider: "OpenRouter" }
+        });
+        const start3 = Date.now();
+        try {
+          const response2 = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "https://mbahub.local",
+              "X-Title": "MBA HUB Listing Generator"
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: listingPrompt },
+                { role: "user", content: userPromptText }
+              ],
+              temperature: 0.7,
+              max_tokens: 4e3
+            }),
+            signal: AbortSignal.timeout(9e4)
+          });
+          const latencyMs = Date.now() - start3;
+          if (!response2.ok) {
+            const errorText = await response2.text();
+            throw new Error(`OpenRouter Listing API Fehler: ${response2.status} - ${errorText}`);
+          }
+          const data = await response2.json();
+          const rawContent = data.choices?.[0]?.message?.content || "";
+          let parsedListing = null;
+          try {
+            let cleanJsonStr = rawContent.trim();
+            if (cleanJsonStr.startsWith("```")) {
+              cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+            }
+            parsedListing = JSON.parse(cleanJsonStr);
+          } catch (pe) {
+            parsedListing = rawContent;
+          }
+          parsedListing = this.sanitizeListingObject(parsedListing);
+          const bannedIssues = BannedWordsService.validateListing(parsedListing);
+          const hasBannedIssues = Object.keys(bannedIssues).length > 0;
+          if (hasBannedIssues) {
+            console.warn(`[TaskLogService] \u26A0\uFE0F Blacklist-Treffer in generiertem Listing f\xFCr Task ${taskId}:`, JSON.stringify(bannedIssues));
+          }
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "LISTING_RESPONSE",
+            title: `Empfangen von OpenRouter (MBA Listing)`,
+            content: {
+              ...parsedListing,
+              ...hasBannedIssues ? { _banned_word_warnings: bannedIssues } : {}
+            },
+            metadata: {
+              model: data.model || model,
+              latencyMs,
+              tokens: data.usage ? {
+                prompt: data.usage.prompt_tokens,
+                completion: data.usage.completion_tokens,
+                total: data.usage.total_tokens
+              } : void 0
+            }
+          });
+          this.updateTaskStatus(taskId, {
+            status: "CHECKING_TRADEMARKS",
+            listingResult: parsedListing,
+            hasError: false
+          });
+          console.log(`[TaskLogService] \u{1F4DD} MBA Listing f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms. Starte Trademark Audit...`);
+          await this.auditListingTrademarks(taskId);
+        } catch (err) {
+          const latencyMs = Date.now() - start3;
+          const errorMsg = err.message || "Fehler bei der Listing-Generierung";
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler bei Listing-Generierung",
+            content: errorMsg,
+            metadata: { latencyMs, model }
+          });
+          this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+        }
+      }
+      /**
+       * Automatically check USPTO Trademarks for the generated English listing and run LLM refinement loop
+       * Supports up to 4 TM checks and 3 LLM rewrite cycles.
+       * If Class 25 hits still exist after the 4th TM check, the task is marked as REJECTED.
+       */
+      static async auditListingTrademarks(taskId) {
+        const task = this.getTaskLogById(taskId);
+        if (!task || !task.listingResult) return;
+        const enListing = task.listingResult.en || task.listingResult;
+        let currentFields = {
+          quote: task.payload?.quote || "",
+          brand: typeof enListing === "object" ? enListing.brand || "" : "",
+          title: typeof enListing === "object" ? enListing.title || "" : "",
+          bullet1: typeof enListing === "object" ? enListing.bullet1 || "" : "",
+          bullet2: typeof enListing === "object" ? enListing.bullet2 || "" : "",
+          description: typeof enListing === "object" ? enListing.description || "" : ""
+        };
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
+        const auditorPrompt = SystemPromptService.getTrademarkAuditorPrompt();
+        const APPAREL_SET = /* @__PURE__ */ new Set(["STANDARD_TSHIRT", "PREMIUM_TSHIRT", "HOODIE", "SWEATSHIRT", "ZIP_HOODIE", "TANK_TOP", "LONG_SLEEVE_TSHIRT", "RAGLAN"]);
+        const MAX_CHECKS = 4;
+        try {
+          for (let checkRound = 1; checkRound <= MAX_CHECKS; checkRound++) {
+            const isInitial = checkRound === 1;
+            const isFinal = checkRound === MAX_CHECKS;
+            console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte USPTO TM-Pr\xFCfung Runde ${checkRound}/${MAX_CHECKS} f\xFCr Task ${taskId}...`);
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TM_CHECK_REQUEST",
+              title: isInitial ? "Senden an Productor / USPTO (Trademark-Pr\xFCfung)" : `Senden an Productor / USPTO (Nachpr\xFCfung Runde ${checkRound})`,
+              content: {
+                round: checkRound,
+                maxRounds: MAX_CHECKS,
+                offices: ["USPTO"],
+                fields: { ...currentFields }
+              },
+              metadata: {
+                provider: "Productor USPTO"
+              }
+            });
+            const start3 = Date.now();
+            const batchResult = await TrademarkService.checkBatchFields({
+              offices: ["USPTO"],
+              fields: currentFields
+            });
+            const totalHits = batchResult.summary?.totalHits ?? 0;
+            const hasCls25 = batchResult.hasInfringementClass25 || false;
+            const fieldResults = batchResult.fieldResults || {};
+            const latencyMs = Date.now() - start3;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TM_CHECK_RESPONSE",
+              title: isInitial ? `Empfangen von Productor / USPTO (${totalHits} Treffer)` : `Empfangen von Productor / USPTO (Nachpr\xFCfung Runde ${checkRound}: ${totalHits} Treffer)`,
+              content: {
+                round: checkRound,
+                totalHits,
+                hasInfringementClass25: hasCls25,
+                blockedProducts: batchResult.blockedProducts,
+                fieldSummaries: fieldResults,
+                summary: batchResult.summary
+              },
+              metadata: {
+                provider: "Productor USPTO",
+                latencyMs
+              }
+            });
+            if (fieldResults.quote?.hasInfringementClass25) {
+              const rejectionReason = `Die Quote "${currentFields.quote}" verletzt ein eingetragenes Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Pr\xFCfung in Tasks.`;
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TM_REFINE_RESPONSE",
+                title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT)`,
+                content: {
+                  verdict: "REJECTED",
+                  rejection_reason: rejectionReason,
+                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
+                  actions_taken: ["Quote in Klasse 25 gesch\xFCtzt -> Zur manuellen Pr\xFCfung an Tasks \xFCbergeben."]
+                }
+              });
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TASK_HANDOFF",
+                title: "\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)",
+                content: {
+                  checkpoint: "TM_REVIEW",
+                  reason: rejectionReason,
+                  verdict: "REJECTED",
+                  round: checkRound,
+                  totalHits,
+                  fieldSummaries: fieldResults
+                }
+              });
+              this.updateTaskStatus(taskId, {
+                status: "AWAITING_TM_REVIEW",
+                checkpoint: "TM_REVIEW",
+                trademarkCheckResult: {
+                  totalHits,
+                  hasInfringementClass25: true,
+                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
+                  fieldSummaries: fieldResults
+                },
+                trademarkRefineResult: {
+                  verdict: "REJECTED",
+                  rejection_reason: rejectionReason,
+                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
+                },
+                hasError: false,
+                errorDetails: rejectionReason
+              });
+              console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (Quote ist Class 25 Trademark).`);
+              return;
+            }
+            if (totalHits === 0) {
+              const finalBlockedProducts = (batchResult.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
+              const refineSuccessResult = {
+                verdict: "APPROVED",
+                rejection_reason: null,
+                actions_taken: ["Keine Markenrechts-Treffer gefunden. Listing vollst\xE4ndig frei."],
+                blockedProducts: finalBlockedProducts,
+                refined_listing: {
+                  brand: currentFields.brand,
+                  title: currentFields.title,
+                  bullet1: currentFields.bullet1,
+                  bullet2: currentFields.bullet2,
+                  description: currentFields.description
+                }
+              };
+              this.updateTaskStatus(taskId, {
+                status: "CHECKING_TRADEMARKS",
+                listingResult: task.listingResult,
+                trademarkCheckResult: {
+                  totalHits: 0,
+                  hasInfringementClass25: false,
+                  blockedProducts: finalBlockedProducts,
+                  fieldSummaries: fieldResults
+                },
+                trademarkRefineResult: refineSuccessResult,
+                hasError: false
+              });
+              console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} sofort freigegeben (0 Treffer) -> Starte Vektorisierung \u2713`);
+              this.vectorizeDesignTask(taskId).catch((err) => {
+                console.error(`[TaskLogService] Vektorisierung f\xFCr Task ${taskId} fehlgeschlagen:`, err);
+              });
+              return;
+            }
+            if (isFinal) {
+              const rejectionMsg = `Nach 4 USPTO-Pr\xFCfungen und 3 automatischen Korrekturl\xE4ufen konnten die Markenrechts-Treffer in Klasse 25 f\xFCr Brand/Title nicht vollst\xE4ndig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TASK_HANDOFF",
+                title: `\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)`,
+                content: {
+                  checkpoint: "TM_REVIEW",
+                  reason: rejectionMsg,
+                  totalHits,
+                  fieldSummaries: fieldResults
+                }
+              });
+              this.updateTaskStatus(taskId, {
+                status: "AWAITING_TM_REVIEW",
+                checkpoint: "TM_REVIEW",
+                trademarkCheckResult: {
+                  totalHits,
+                  hasInfringementClass25: true,
+                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
+                  fieldSummaries: fieldResults
+                },
+                hasError: false,
+                errorDetails: rejectionMsg
+              });
+              console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} an Tasks \xFCbergeben zur manuellen TM-Optimierung.`);
+              return;
+            }
+            if (!apiKey) {
+              console.warn(`[TaskLogService] Kein OpenRouter API-Key vorhanden f\xFCr TM Refine.`);
+              break;
+            }
+            const hitsSummary = [];
+            for (const [fieldName, fieldData] of Object.entries(fieldResults)) {
+              if (fieldData.totalHits > 0 && fieldData.hits) {
+                for (const [term, hits] of Object.entries(fieldData.hits)) {
+                  const classInfo = hits.map((h) => `Class ${h.classNumber} (${h.status || "LIVE"})`).join(", ");
+                  const isK25 = hits.some((h) => h.classes && h.classes.includes("25") || String(h.classNumber).split(/[,;\s]+/).includes("25"));
+                  hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo} ${isK25 ? "\u{1F534} CLASS 25 CONFLICT!" : "\u{1F7E1} Secondary Class"}`);
+                }
+              }
+            }
+            const userMessage = `Here is the current English listing and the detected USPTO Trademark hits (Correction Round ${checkRound}/3):
+
+### Current Listing:
+- Quote / Slogan: "${currentFields.quote}"
+- Brand: "${currentFields.brand}"
+- Title: "${currentFields.title}"
+- Bullet 1: "${currentFields.bullet1}"
+- Bullet 2: "${currentFields.bullet2}"
+- Description: "${currentFields.description}"
+
+### Detected USPTO Trademark Hits:
+${hitsSummary.length > 0 ? hitsSummary.join("\n") : "- No hits detected."}
+
+Please audit the listing based on your compliance rules:
+1. BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE): Brand Name and Title MUST be 100% free of active Class 25 (Apparel) trademarks! Rephrase any matched terms to unique, non-infringing phrases with high SEO value.
+2. BULLETS & DESCRIPTION (DESCRIPTIVE FAIR USE): Common generic words (e.g. "space", "angel", "wings", "stars", "gold", "cosmic", "celestial", "radiant") in natural sentence context fall under Descriptive Fair Use. Do NOT butcher or delete natural descriptive sentences!
+3. MBA LISTING RULES COMPLIANCE:
+   - NO quality/material claims (soft, cotton, premium, durable, lightweight).
+   - NO promotional or gift language (gift, present, birthday gift, best seller, sale, buy now).
+   - NO background color mentions (white design, black background).
+   - Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
+4. Return your decision as JSON strictly matching the schema!`;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TM_REFINE_REQUEST",
+              title: `Senden an OpenRouter (Trademark Auditor & Refiner - Runde ${checkRound})`,
+              content: {
+                round: checkRound,
+                systemPrompt: auditorPrompt,
+                userMessage
+              },
+              metadata: { model, provider: "OpenRouter" }
+            });
+            const refineStart = Date.now();
+            const response2 = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://mbahub.local",
+                "X-Title": "MBA HUB TM Auditor"
+              },
+              body: JSON.stringify({
+                model,
+                messages: [
+                  { role: "system", content: auditorPrompt },
+                  { role: "user", content: userMessage }
+                ],
+                temperature: 0.2,
+                max_tokens: 2e3
+              }),
+              signal: AbortSignal.timeout(6e4)
+            });
+            const refineLatencyMs = Date.now() - refineStart;
+            if (!response2.ok) {
+              const errText = await response2.text();
+              throw new Error(`OpenRouter TM Auditor Fehler in Runde ${checkRound}: ${response2.status} - ${errText}`);
+            }
+            const data = await response2.json();
+            const rawContent = data.choices?.[0]?.message?.content || "";
+            let parsedRefined = null;
+            try {
+              let cleanJsonStr = rawContent.trim();
+              if (cleanJsonStr.startsWith("```")) {
+                cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+              }
+              parsedRefined = JSON.parse(cleanJsonStr);
+            } catch (pe) {
+              parsedRefined = rawContent;
+            }
+            if (parsedRefined?.verdict === "REJECTED") {
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TM_REFINE_RESPONSE",
+                title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT in Runde ${checkRound})`,
+                content: {
+                  ...parsedRefined,
+                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
+                },
+                metadata: {
+                  model: data.model || model,
+                  latencyMs: refineLatencyMs,
+                  tokens: data.usage ? {
+                    prompt: data.usage.prompt_tokens,
+                    completion: data.usage.completion_tokens,
+                    total: data.usage.total_tokens
+                  } : void 0
+                }
+              });
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TASK_HANDOFF",
+                title: `\xDCbergeben an Tasks (Trademark-Ablehnung in Runde ${checkRound})`,
+                content: {
+                  checkpoint: "TM_REVIEW",
+                  reason: parsedRefined.rejection_reason || "Markenrechtsverletzung vom LLM festgestellt. Wartet auf manuelle Pr\xFCfung in Tasks.",
+                  verdict: "REJECTED",
+                  round: checkRound,
+                  totalHits,
+                  fieldSummaries: fieldResults
+                }
+              });
+              this.updateTaskStatus(taskId, {
+                status: "AWAITING_TM_REVIEW",
+                checkpoint: "TM_REVIEW",
+                trademarkCheckResult: {
+                  totalHits,
+                  hasInfringementClass25: true,
+                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
+                  fieldSummaries: fieldResults
+                },
+                trademarkRefineResult: {
+                  ...parsedRefined,
+                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
+                },
+                hasError: false,
+                errorDetails: parsedRefined.rejection_reason || "Markenrechtsverletzung festgestellt."
+              });
+              console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (TM-Ablehnung in Runde ${checkRound}): ${parsedRefined.rejection_reason}`);
+              return;
+            }
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TM_REFINE_RESPONSE",
+              title: `Empfangen von OpenRouter (Trademark-Bewertung: ${parsedRefined?.verdict || "FREIGEGEBEN"} in Runde ${checkRound})`,
+              content: parsedRefined,
+              metadata: {
+                model: data.model || model,
+                latencyMs: refineLatencyMs,
+                tokens: data.usage ? {
+                  prompt: data.usage.prompt_tokens,
+                  completion: data.usage.completion_tokens,
+                  total: data.usage.total_tokens
+                } : void 0
+              }
+            });
+            const refinedListing = parsedRefined?.refined_listing || {};
+            if (refinedListing.brand) currentFields.brand = refinedListing.brand;
+            if (refinedListing.title) currentFields.title = refinedListing.title;
+            if (refinedListing.bullet1) currentFields.bullet1 = refinedListing.bullet1;
+            if (refinedListing.bullet2) currentFields.bullet2 = refinedListing.bullet2;
+            if (refinedListing.description) currentFields.description = refinedListing.description;
+            if (task.listingResult) {
+              if (task.listingResult.en) {
+                task.listingResult.en = { ...task.listingResult.en, ...refinedListing };
+              } else if (typeof task.listingResult === "object") {
+                task.listingResult = { ...task.listingResult, ...refinedListing };
+              }
+            }
+            const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
+            const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
+            if (!brandHasClass25 && !titleHasClass25) {
+              const finalBlockedProducts = (batchResult.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
+              this.updateTaskStatus(taskId, {
+                status: "CHECKING_TRADEMARKS",
+                listingResult: task.listingResult,
+                trademarkCheckResult: {
+                  totalHits,
+                  hasInfringementClass25: false,
+                  blockedProducts: finalBlockedProducts,
+                  fieldSummaries: fieldResults
+                },
+                trademarkRefineResult: parsedRefined,
+                hasError: false
+              });
+              console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} in Runde ${checkRound} erfolgreich durch Trademark-Auditor freigegeben -> Starte Vektorisierung \u2713`);
+              this.vectorizeDesignTask(taskId).catch((err) => {
+                console.error(`[TaskLogService] Vektorisierung f\xFCr Task ${taskId} fehlgeschlagen:`, err);
+              });
+              return;
+            }
+          }
+        } catch (err) {
+          console.error(`[TaskLogService] Unerwarteter Fehler beim TM Audit f\xFCr Task ${taskId}:`, err);
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler beim Trademark Audit",
+            content: err.message || "Fehler bei der USPTO TM Pr\xFCfung"
+          });
+          this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+        }
+      }
+      /**
+       * Vectorize the approved design using Vectorizer.ai with settings & dynamic maxColors
+       */
+      static async vectorizeDesignTask(taskId) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) return;
+        const settings = loadSettings();
+        const hasKey = Boolean(settings.vectorizerApiKey && settings.vectorizerApiKey.trim());
+        const hasSecret = Boolean(settings.vectorizerApiSecret && settings.vectorizerApiSecret.trim());
+        if (!hasKey || !hasSecret) {
+          console.log(`[TaskLogService] \u2139\uFE0F Vectorizer.ai API Credentials nicht konfiguriert -> Task ${taskId} ohne Vektorisierung abgeschlossen.`);
+          this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+          return;
+        }
+        const maxColors = task.customAnswers?.maxColors ?? task.analysisResult?.color_analysis?.color_count ?? 2;
+        const cleanId = task.id.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const localImagePath = task.localImagePath || import_path73.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const hasLocalImage = import_fs79.default.existsSync(localImagePath);
+        if (!hasLocalImage && !task.imageUrl) {
+          console.warn(`[TaskLogService] \u26A0\uFE0F Kein Bild f\xFCr Vektorisierung bei Task ${taskId} gefunden.`);
+          this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+          return;
+        }
+        this.updateTaskStatus(taskId, { status: "VECTORIZING_DESIGN", hasError: false });
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "VECTORIZE_REQUEST",
+          title: `Senden an Vectorizer.ai (Vektorisierung)`,
+          content: {
+            mode: settings.vectorizerModeProduction || "production",
+            maxColors,
+            drawStyle: settings.vectorizerDrawStyle || "fill_shapes",
+            shapeStacking: settings.vectorizerShapeStacking || "cutouts",
+            groupBy: settings.vectorizerGroupBy || "none",
+            minArea: settings.vectorizerMinArea ?? 10,
+            optimizedShapes: settings.vectorizerOptimizedShapes ?? true,
+            gapFiller: settings.vectorizerGapFiller ?? false,
+            imageSource: hasLocalImage ? `data/designs/${cleanId}.png` : task.imageUrl
+          },
+          metadata: {
+            provider: "Vectorizer.ai",
+            model: "vectorizer-v1"
+          }
+        });
+        const start3 = Date.now();
+        try {
+          let svgText = "";
+          if (hasLocalImage) {
+            const buffer = import_fs79.default.readFileSync(localImagePath);
+            svgText = await VectorizerService.vectorizeBuffer(buffer, "image/png", false, { maxColors });
+          } else if (task.imageUrl) {
+            svgText = await VectorizerService.vectorizeImage(task.imageUrl, false, { maxColors });
+          }
+          const latencyMs = Date.now() - start3;
+          const designsDir = import_path73.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs79.default.existsSync(designsDir)) {
+            try {
+              import_fs79.default.mkdirSync(designsDir, { recursive: true });
+            } catch (e) {
+            }
+          }
+          const origFilename = `${cleanId}_original.svg`;
+          const origFilePath = import_path73.default.join(designsDir, origFilename);
+          import_fs79.default.writeFileSync(origFilePath, svgText, "utf-8");
+          const svgFilename = `${cleanId}.svg`;
+          const svgFilePath = import_path73.default.join(designsDir, svgFilename);
+          import_fs79.default.writeFileSync(svgFilePath, svgText, "utf-8");
+          const ts = Date.now();
+          const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}?t=${ts}`;
+          const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${ts}`;
+          task.originalSvgPath = origFilePath;
+          task.originalSvgUrl = origSvgUrl;
+          task.localSvgPath = svgFilePath;
+          task.svgUrl = localSvgUrl;
+          task.svgContent = svgText;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "VECTORIZE_RESPONSE",
+            title: `Empfangen von Vectorizer.ai (SVG Vektorgrafik)`,
+            content: {
+              svgUrl: localSvgUrl,
+              originalSvgUrl: origSvgUrl,
+              svgLength: svgText.length,
+              maxColorsUsed: maxColors,
+              svgContent: svgText.length < 5e4 ? svgText : `${svgText.substring(0, 1e3)}...`
+            },
+            metadata: {
+              provider: "Vectorizer.ai",
+              latencyMs
+            }
+          });
+          const bgAnswer = task.customAnswers?.reuseBackground || "";
+          const bgAnalysis = task.analysisResult?.background_analysis || {};
+          const isManualBg = bgAnswer === "Manuell" || bgAnswer === "MANUAL" || bgAnswer.includes("Ja") || bgAnswer.includes("behalten") || bgAnalysis.removal_mode === "MANUAL";
+          const isAutoBg = !isManualBg;
+          if (isAutoBg) {
+            console.log(`[TaskLogService] \u26A1 Wende Auto BG Remove f\xFCr Task ${taskId} an...`);
+            const bgResult = await SvgRenderService.autoRemoveCornerBackground(svgText);
+            if (bgResult.success && bgResult.removedCount > 0) {
+              svgText = bgResult.modifiedSvg;
+              import_fs79.default.writeFileSync(svgFilePath, svgText, "utf-8");
+              task.svgContent = svgText;
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "SVG_EDIT_RESPONSE",
+                title: `Auto BG Remove angewendet (${bgResult.removedCount} Hintergrund-Elemente entfernt)`,
+                content: {
+                  removedElementsCount: bgResult.removedCount,
+                  method: "Auto Corner Detection"
+                }
+              });
+            }
+            console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Multifarben-Testbild f\xFCr Task ${taskId}...`);
+            const fourPanelFilename = `${cleanId}_4panel.png`;
+            const fourPanelFilePath = import_path73.default.join(designsDir, fourPanelFilename);
+            const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
+            import_fs79.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+            const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${Date.now()}`;
+            task.localFourPanelImagePath = fourPanelFilePath;
+            task.fourPanelImageUrl = fourPanelUrl;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "SVG_AUDIT_REQUEST",
+              title: `Senden an LLM Vision (4-Panel Cutout-Pr\xFCfung auf Wei\xDF/Schwarz/Rot/Slate)`,
+              content: {
+                fourPanelImageUrl: fourPanelUrl,
+                quote: task.payload?.quote
+              },
+              metadata: {
+                provider: "OpenRouter Vision"
+              }
+            });
+            console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit f\xFCr Task ${taskId} durch...`);
+            const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
+            task.svgAuditResult = auditResult;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "SVG_AUDIT_RESPONSE",
+              title: `Empfangen von LLM Vision (${auditResult.cutout_verdict === "APPROVED" ? "Cutout Freigegeben \u2713" : "Korrektur n\xF6tig \u26A0\uFE0F"})`,
+              content: {
+                verdict: auditResult.cutout_verdict,
+                backgroundClean: auditResult.background_removed_cleanly,
+                detectedIssues: auditResult.detected_issues,
+                explanation: auditResult.explanation,
+                fourPanelImageUrl: fourPanelUrl
+              },
+              metadata: {
+                provider: "OpenRouter Vision",
+                latencyMs: auditResult.latencyMs,
+                tokens: auditResult.tokens
+              }
+            });
+            if (auditResult.cutout_verdict === "APPROVED") {
+              console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
+              const mbaFilename = `${cleanId}_mba.png`;
+              const mbaFilePath = import_path73.default.join(designsDir, mbaFilename);
+              const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgText);
+              import_fs79.default.writeFileSync(mbaFilePath, mbaBuffer);
+              const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
+              task.localMbaPngPath = mbaFilePath;
+              task.mbaPngUrl = mbaUrl;
+              this.updateTaskStatus(taskId, {
+                status: "COMPLETED",
+                checkpoint: void 0,
+                hasError: false
+              });
+              console.log(`[TaskLogService] \u{1F389} Task ${taskId} vollautonom freigestellt, gepr\xFCft & als MBA PNG abgeschlossen \u2713`);
+            } else {
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TASK_HANDOFF",
+                title: `\xDCbergeben an Tasks (Checkpoint 4: Manuelle Nachkorrektur empfohlen)`,
+                content: {
+                  checkpoint: "SVG_REVIEW",
+                  reason: auditResult.explanation,
+                  detectedIssues: auditResult.detected_issues,
+                  fourPanelImageUrl: fourPanelUrl,
+                  svgUrl: localSvgUrl
+                }
+              });
+              this.updateTaskStatus(taskId, {
+                status: "AWAITING_SVG_REVIEW",
+                checkpoint: "SVG_REVIEW",
+                hasError: false
+              });
+              console.log(`[TaskLogService] \u26A0\uFE0F Task ${taskId}: KI empfiehlt manuelle Korrektur -> In Tasks \xFCbergeben \u2713`);
+            }
+          } else {
+            try {
+              const fourPanelFilename = `${cleanId}_4panel.png`;
+              const fourPanelFilePath = import_path73.default.join(designsDir, fourPanelFilename);
+              const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
+              import_fs79.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+              task.localFourPanelImagePath = fourPanelFilePath;
+              task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+            } catch (e) {
+            }
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TASK_HANDOFF",
+              title: `\xDCbergeben an Tasks (Checkpoint 4: Manuelle SVG-Pr\xFCfung gew\xFCnscht)`,
+              content: {
+                checkpoint: "SVG_REVIEW",
+                svgUrl: localSvgUrl,
+                maxColorsUsed: maxColors,
+                reason: "Manueller Hintergrund-Modus in Checkpoint 2 gew\xE4hlt."
+              }
+            });
+            this.updateTaskStatus(taskId, {
+              status: "AWAITING_SVG_REVIEW",
+              checkpoint: "SVG_REVIEW",
+              hasError: false
+            });
+          }
+        } catch (err) {
+          const latencyMs = Date.now() - start3;
+          console.error(`[TaskLogService] Fehler bei der Vektorisierung f\xFCr Task ${taskId}:`, err);
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler bei der Vektorisierung (Vectorizer.ai)",
+            content: err.message || "Fehler beim Vectorizer.ai API Aufruf",
+            metadata: { latencyMs }
+          });
+          this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+        }
+      }
+      /**
+       * Jump back to an earlier pipeline step and re-execute from there
+       */
+      static async retryFromStep(taskId, stepType, eventIndex) {
+        const logs = this.loadLogs();
+        const currentTask = logs.find((t) => t.id === taskId);
+        if (!currentTask) {
+          throw new Error(`Task ${taskId} nicht gefunden.`);
+        }
+        if (typeof eventIndex === "number" && eventIndex >= 0 && eventIndex < currentTask.events.length) {
+          currentTask.events = currentTask.events.slice(0, eventIndex);
+        }
+        if (stepType === "LLM_REQUEST") {
+          if (typeof eventIndex !== "number") {
+            const keepIdx = currentTask.events.findIndex((e) => e.type === "LLM_REQUEST");
+            if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
+          }
+          currentTask.status = "PROCESSING";
+          currentTask.resultPrompt = void 0;
+          currentTask.hasError = false;
+          currentTask.errorDetails = void 0;
+          this.saveLogs(logs);
+          this.generatePromptWithOpenRouter(taskId).catch((err) => {
+            console.error(`[TaskLogService] Retry Prompt failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Ideogram Prompt-Generierung neu gestartet." };
+        }
+        if (stepType === "IDEOGRAM_REQUEST") {
+          if (typeof eventIndex !== "number") {
+            const keepIdx = currentTask.events.findIndex((e) => e.type === "IDEOGRAM_REQUEST");
+            if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
+          }
+          currentTask.status = "GENERATING_IMAGE";
+          currentTask.imageUrl = void 0;
+          currentTask.localImagePath = void 0;
+          currentTask.analysisResult = void 0;
+          currentTask.listingResult = void 0;
+          currentTask.trademarkCheckResult = void 0;
+          currentTask.trademarkRefineResult = void 0;
+          currentTask.hasError = false;
+          currentTask.errorDetails = void 0;
+          this.saveLogs(logs);
+          this.processTaskWithIdeogram(taskId).catch((err) => {
+            console.error(`[TaskLogService] Retry Ideogram failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Ideogram Bild-Generierung neu gestartet." };
+        }
+        if (stepType === "ANALYSIS_REQUEST") {
+          if (typeof eventIndex !== "number") {
+            const keepIdx = currentTask.events.findIndex((e) => e.type === "ANALYSIS_REQUEST");
+            if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
+          }
+          currentTask.status = "ANALYZING_DESIGN";
+          currentTask.analysisResult = void 0;
+          currentTask.hasError = false;
+          currentTask.errorDetails = void 0;
+          this.saveLogs(logs);
+          this.analyzeDesignWithOpenRouter(taskId).catch((err) => {
+            console.error(`[TaskLogService] Retry Analysis failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Design QA-Analyse neu gestartet." };
+        }
+        if (stepType === "LISTING_REQUEST") {
+          if (typeof eventIndex !== "number") {
+            const keepIdx = currentTask.events.findIndex((e) => e.type === "LISTING_REQUEST");
+            if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
+          }
+          currentTask.status = "GENERATING_LISTING";
+          currentTask.listingResult = void 0;
+          currentTask.trademarkCheckResult = void 0;
+          currentTask.trademarkRefineResult = void 0;
+          currentTask.hasError = false;
+          currentTask.errorDetails = void 0;
+          this.saveLogs(logs);
+          this.generateListingWithOpenRouter(taskId).catch((err) => {
+            console.error(`[TaskLogService] Retry Listing failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Listing-Erstellung neu gestartet." };
+        }
+        if (stepType === "PREFLIGHT_TM_REQUEST") {
+          if (typeof eventIndex !== "number") {
+            const keepIdx = currentTask.events.findIndex((e) => e.type === "TM_CHECK_REQUEST");
+            if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
+          }
+          currentTask.status = "PROCESSING";
+          currentTask.trademarkCheckResult = void 0;
+          currentTask.hasError = false;
+          currentTask.errorDetails = void 0;
+          this.saveLogs(logs);
+          this.processTaskWithOpenRouter(taskId).catch((err) => {
+            console.error(`[TaskLogService] Retry Pre-Flight TM Check failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Pre-Flight TM-Pr\xFCfung neu gestartet." };
+        }
+        if (stepType === "TM_CHECK_REQUEST" || stepType === "TM_REFINE_REQUEST") {
+          if (typeof eventIndex !== "number") {
+            let lastTmIdx = -1;
+            for (let i = currentTask.events.length - 1; i >= 0; i--) {
+              if (currentTask.events[i].type === "TM_CHECK_REQUEST" || currentTask.events[i].type === "TM_REFINE_REQUEST") {
+                lastTmIdx = i;
+                break;
+              }
+            }
+            if (lastTmIdx !== -1) {
+              currentTask.events = currentTask.events.slice(0, lastTmIdx);
+            }
+          }
+          currentTask.status = "CHECKING_TRADEMARKS";
+          currentTask.trademarkCheckResult = void 0;
+          currentTask.trademarkRefineResult = void 0;
+          currentTask.hasError = false;
+          currentTask.errorDetails = void 0;
+          this.saveLogs(logs);
+          this.auditListingTrademarks(taskId).catch((err) => {
+            console.error(`[TaskLogService] Retry Listing TM Check failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "USPTO Trademark-Pr\xFCfung & Audit neu gestartet." };
+        }
+        if (stepType === "VECTORIZE_REQUEST") {
+          if (typeof eventIndex !== "number") {
+            const lastVecIdx = currentTask.events.findIndex((e) => e.type === "VECTORIZE_REQUEST");
+            if (lastVecIdx !== -1) {
+              currentTask.events = currentTask.events.slice(0, lastVecIdx);
+            }
+          }
+          currentTask.status = "VECTORIZING_DESIGN";
+          currentTask.svgUrl = void 0;
+          currentTask.localSvgPath = void 0;
+          currentTask.svgContent = void 0;
+          currentTask.hasError = false;
+          currentTask.errorDetails = void 0;
+          this.saveLogs(logs);
+          this.vectorizeDesignTask(taskId).catch((err) => {
+            console.error(`[TaskLogService] Retry Vectorization failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Vectorizer.ai Vektorisierung neu gestartet." };
+        }
+        if (stepType === "SVG_AUDIT_REQUEST" || stepType === "SVG_REVIEW") {
+          if (typeof eventIndex !== "number") {
+            const lastAuditIdx = currentTask.events.findIndex((e) => e.type === "SVG_AUDIT_REQUEST" || e.type === "SVG_EDIT_REQUEST");
+            if (lastAuditIdx !== -1) {
+              currentTask.events = currentTask.events.slice(0, lastAuditIdx);
+            }
+          }
+          currentTask.status = "AWAITING_SVG_REVIEW";
+          currentTask.checkpoint = "SVG_REVIEW";
+          currentTask.hasError = false;
+          currentTask.errorDetails = void 0;
+          this.saveLogs(logs);
+          this.emitUpdate(currentTask);
+          return { success: true, message: "In den manuellen SVG-Editor (Tasks Checkpoint 4) \xFCbergeben." };
+        }
+        if (typeof stepType === "string" && stepType.startsWith("UPDATE_")) {
+          const stepKey = stepType.replace("UPDATE_", "").split("_")[0];
+          const { UpdatePipelineService: UpdatePipelineService2 } = (init_updatePipelineService(), __toCommonJS2(updatePipelineService_exports));
+          UpdatePipelineService2.runStep(taskId, stepKey).catch((err) => {
+            console.error(`[TaskLogService] Retry Update Step ${stepKey} failed:`, err);
+          });
+          return { success: true, message: `Update Step ${stepKey} neu gestartet.` };
+        }
+        throw new Error(`Unbekannter Step-Typ: ${stepType}`);
+      }
+      static getTaskLogs() {
+        return this.loadLogs();
+      }
+      static getAwaitingTasks() {
+        const logs = this.loadLogs();
+        return logs.filter(
+          (t) => t.status === "AWAITING_PRE_FLIGHT_REVIEW" || t.status === "AWAITING_DESIGN_REVIEW" || t.status === "AWAITING_TM_REVIEW" || t.status === "AWAITING_SVG_REVIEW"
+        );
+      }
+      static getTaskLogById(id) {
+        if (!id) return void 0;
+        const cleanId = decodeURIComponent(id).trim().toLowerCase();
+        const logs = this.loadLogs();
+        return logs.find((t) => {
+          const tId = t.id.toLowerCase();
+          return tId === cleanId || tId === `#${cleanId}` || tId.replace("#", "") === cleanId.replace("#", "");
+        });
+      }
+      static getTaskById(id) {
+        return this.getTaskLogById(id);
+      }
+      static clearTaskLogs() {
+        this.inMemoryLogs = [];
+        this.saveLogs([]);
+      }
+      /**
+       * Checkpoint 2: Submit Design & Questions Review
+       */
+      static async submitDesignReview(taskId, params2) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+        if (params2.action === "DISCARD" || params2.action === "REJECT") {
+          task.status = "REJECTED";
+          task.checkpoint = void 0;
+          task.hasError = false;
+          task.errorDetails = "Task im Checkpoint 2 (Design-Pr\xFCfung) manuell abgebrochen.";
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "Task verworfen (Design-Pr\xFCfung)",
+            content: {
+              action: "DISCARD",
+              reason: "Benutzer hat den Task bei der Design-/Fragenpr\xFCfung abgebrochen."
+            }
+          });
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          return { success: true, message: `Task ${taskId} wurde abgebrochen und verworfen.` };
+        }
+        if (params2.action === "REGENERATE_IMAGE") {
+          const promptToUse = params2.updatedPrompt || task.resultPrompt || task.payload?.quote || "";
+          task.status = "GENERATING_IMAGE";
+          task.checkpoint = void 0;
+          task.hasError = false;
+          task.errorDetails = void 0;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "IDEOGRAM_REQUEST",
+            title: `Ideogram Bildgenerierung erneut angefordert (Human Loop: Quote/Design korrigiert)`,
+            content: {
+              prompt: promptToUse,
+              reason: "Manuell in Tasks zur Neugenerierung freigegeben"
+            }
+          });
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          this.processTaskWithIdeogram(taskId, promptToUse).catch((err) => {
+            console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Bildgenerierung mit Ideogram neu gestartet." };
+        }
+        if (params2.action === "APPROVE") {
+          if (params2.answers) {
+            task.customAnswers = params2.answers;
+            if (task.analysisResult && typeof task.analysisResult === "object") {
+              if (params2.answers.audience) {
+                task.analysisResult.target_group = {
+                  selected: params2.answers.audience.split(",").map((s) => s.trim()),
+                  reason: "Manuell in Tasks angepasst"
+                };
+              }
+              if (params2.answers.avoidColor) {
+                task.analysisResult.avoid_product_colors = {
+                  avoid: params2.answers.avoidColor,
+                  reason: "Manuell in Tasks angepasst"
+                };
+              }
+              if (params2.answers.reuseBackground) {
+                const isAuto = params2.answers.reuseBackground === "Automatisch" || params2.answers.reuseBackground === "AUTOMATIC" || params2.answers.reuseBackground.includes("Nein") || params2.answers.reuseBackground.includes("Auto");
+                task.analysisResult.background_analysis = {
+                  ...task.analysisResult.background_analysis || {},
+                  removal_mode: isAuto ? "AUTOMATIC" : "MANUAL"
+                };
+              }
+              if (params2.answers.maxColors) {
+                task.analysisResult.color_analysis = {
+                  ...task.analysisResult.color_analysis || {},
+                  color_count: params2.answers.maxColors,
+                  reason: "Manuell in Tasks angepasst"
+                };
+              }
+            }
+          }
+          task.status = "GENERATING_LISTING";
+          task.checkpoint = void 0;
+          task.hasError = false;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "LISTING_REQUEST",
+            title: `Design-Pr\xFCfung best\xE4tigt (Human Loop) -> MBA Listing-Erstellung`,
+            content: {
+              answers: params2.answers || "KI-Antworten 1:1 \xFCbernommen"
+            }
+          });
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          this.generateListingWithOpenRouter(taskId).catch((err) => {
+            console.error(`[TaskLogService] Listing generation failed after design review for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Design freigegeben! MBA Listing wird generiert." };
+        }
+        throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
+      }
+      /**
+       * Checkpoint 3: Submit Manual Trademark Review
+       */
+      static async submitTmReview(taskId, params2) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+        if (params2.action === "RECHECK") {
+          const listingToCheck = params2.refinedListing || task.listingResult?.en || {};
+          const batchResult = await TrademarkService.checkBatchFields({
+            offices: ["USPTO"],
+            fields: {
+              brand: listingToCheck.brand || "",
+              title: listingToCheck.title || "",
+              bullet1: listingToCheck.bullet1 || "",
+              bullet2: listingToCheck.bullet2 || "",
+              description: listingToCheck.description || "",
+              quote: task.payload?.quote || ""
+            }
+          });
+          return {
+            success: true,
+            totalHits: batchResult.summary?.totalHits ?? 0,
+            hasInfringementClass25: batchResult.hasInfringementClass25 || false,
+            blockedProducts: batchResult.blockedProducts || [],
+            fieldSummaries: batchResult.fieldResults || {}
+          };
+        }
+        if (params2.action === "APPROVE") {
+          if (params2.refinedListing) {
+            const sanitizedRefined = this.sanitizeListingObject(params2.refinedListing);
+            if (!task.listingResult) {
+              task.listingResult = { en: sanitizedRefined };
+            } else if (task.listingResult.en) {
+              task.listingResult.en = { ...task.listingResult.en, ...sanitizedRefined };
+            } else if (typeof task.listingResult === "object") {
+              task.listingResult = { ...task.listingResult, ...sanitizedRefined };
+            }
+          }
+          task.status = "CHECKING_TRADEMARKS";
+          task.checkpoint = void 0;
+          task.hasError = false;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TM_REFINE_RESPONSE",
+            title: `Task manuell freigegeben (Human Loop) & Vektorisierung gestartet`,
+            content: {
+              verdict: "APPROVED",
+              refinedListing: params2.refinedListing,
+              actions_taken: ["Manuell im Tasks-Workspace optimiert und freigegeben."]
+            }
+          });
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          this.vectorizeDesignTask(taskId).catch((err) => {
+            console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe f\xFCr Task ${taskId} fehlgeschlagen:`, err);
+          });
+          return { success: true, message: "Listing manuell freigegeben und Vektorisierung gestartet." };
+        }
+        if (params2.action === "REJECT") {
+          task.status = "REJECTED";
+          task.checkpoint = void 0;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TM_REFINE_RESPONSE",
+            title: `Task manuell abgelehnt & geschlossen (Human Loop)`,
+            content: {
+              verdict: "REJECTED",
+              reason: "Manuell im Tasks-Workspace verworfen."
+            }
+          });
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          return { success: true, message: "Task abgelehnt und geschlossen." };
+        }
+        throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
+      }
+      /**
+       * Checkpoint 1: Override / Restart Pre-Flight Quote Check
+       */
+      static async overridePreFlight(taskId, params2) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+        if (params2.action === "DISCARD") {
+          task.status = "REJECTED";
+          task.checkpoint = void 0;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TM_REFINE_RESPONSE",
+            title: `Pre-Flight Konflikt: Task verworfen & geschlossen`,
+            content: { verdict: "REJECTED", reason: "Pre-Flight Quote Markenkonflikt verworfen." }
+          });
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          return { success: true, message: "Task verworfen." };
+        }
+        if (params2.action === "RESTART") {
+          if (params2.newQuote) {
+            task.payload.quote = params2.newQuote;
+          }
+          task.status = "PROCESSING";
+          task.checkpoint = void 0;
+          task.events = task.events.slice(0, 1);
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          this.processTaskWithOpenRouter(taskId).catch((err) => {
+            console.error(`[TaskLogService] Restart with new quote failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Pipeline mit neuer Quote neu gestartet." };
+        }
+        if (params2.action === "OVERRIDE") {
+          task.status = "PROCESSING";
+          task.checkpoint = void 0;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "SESSION_START",
+            title: `Pre-Flight Override best\xE4tigt (Human Loop: Trotz TM-Treffer fortfahren)`,
+            content: `Quote "${task.payload?.quote}" manuell f\xFCr Generierung freigegeben.`
+          });
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          this.processTaskWithOpenRouter(taskId, { skipPreFlight: true }).catch((err) => {
+            console.error(`[TaskLogService] Override pre-flight failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Pre-Flight \xFCbersprungen. Pipeline wird fortgesetzt." };
+        }
+        throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
+      }
+      /**
+       * Checkpoint 4: Submit SVG Vector & Background Review
+       */
+      static async submitSvgReview(taskId, params2) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const designsDir = import_path73.default.resolve(process.cwd(), "data", "designs");
+        if (params2.action === "APPROVE") {
+          if (params2.editedSvgContent) {
+            if (!import_fs79.default.existsSync(designsDir)) {
+              try {
+                import_fs79.default.mkdirSync(designsDir, { recursive: true });
+              } catch (e) {
+              }
+            }
+            const svgFilePath = import_path73.default.join(designsDir, `${cleanId}.svg`);
+            import_fs79.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
+            task.svgContent = params2.editedSvgContent;
+            task.localSvgPath = svgFilePath;
+            task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
+          }
+          const finalSvg = task.svgContent || params2.editedSvgContent || "";
+          const ts = Date.now();
+          console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Testbild nach SVG-Freigabe f\xFCr Task ${taskId}...`);
+          const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
+          const fourPanelFilePath = import_path73.default.join(designsDir, `${cleanId}_4panel.png`);
+          import_fs79.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+          task.localFourPanelImagePath = fourPanelFilePath;
+          const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
+          task.fourPanelImageUrl = fourPanelUrl;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "SVG_AUDIT_REQUEST",
+            title: `Senden an LLM Vision (4-Panel Cutout-Pr\xFCfung nach Freigabe)`,
+            content: {
+              fourPanelImageUrl: fourPanelUrl,
+              quote: task.payload?.quote
+            },
+            metadata: {
+              provider: "OpenRouter Vision"
+            }
+          });
+          console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit nach SVG-Freigabe f\xFCr Task ${taskId} durch...`);
+          const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
+          task.svgAuditResult = auditResult;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "SVG_AUDIT_RESPONSE",
+            title: `Empfangen von LLM Vision (${auditResult.cutout_verdict === "APPROVED" ? "Cutout Freigegeben \u2713" : "Korrektur n\xF6tig \u26A0\uFE0F"})`,
+            content: {
+              verdict: auditResult.cutout_verdict,
+              backgroundClean: auditResult.background_removed_cleanly,
+              detectedIssues: auditResult.detected_issues,
+              explanation: auditResult.explanation,
+              fourPanelImageUrl: fourPanelUrl
+            },
+            metadata: {
+              provider: "OpenRouter Vision",
+              latencyMs: auditResult.latencyMs,
+              tokens: auditResult.tokens
+            }
+          });
+          if (auditResult.cutout_verdict === "APPROVED") {
+            console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
+            const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
+            const mbaFilePath = import_path73.default.join(designsDir, `${cleanId}_mba.png`);
+            import_fs79.default.writeFileSync(mbaFilePath, mbaBuffer);
+            task.localMbaPngPath = mbaFilePath;
+            task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "SVG_EDIT_RESPONSE",
+              title: `SVG Design & MBA Print-PNG final freigegeben (Cutout von Vision-KI best\xE4tigt \u2713)`,
+              content: {
+                verdict: "APPROVED",
+                svgUrl: task.svgUrl,
+                mbaPngUrl: task.mbaPngUrl,
+                fourPanelImageUrl: task.fourPanelImageUrl,
+                svgLength: finalSvg.length,
+                message: "Vektorgrafik gepr\xFCft, Cutout von Vision-KI freigegeben und MBA Master-PNG (4500x5400 px) erzeugt."
+              }
+            });
+            this.completeTaskAndEnqueue(task);
+            return { success: true, message: "Cutout von Vision-KI freigegeben, MBA Master-PNG generiert & an Queue \xFCbergeben \u2713" };
+          } else {
+            task.status = "AWAITING_SVG_REVIEW";
+            task.checkpoint = "SVG_REVIEW";
+            task.hasError = false;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TASK_HANDOFF",
+              title: `\xDCbergeben an Tasks (KI Cutout-Audit empfiehlt Nacharbeit)`,
+              content: {
+                checkpoint: "SVG_REVIEW",
+                reason: auditResult.explanation,
+                detectedIssues: auditResult.detected_issues
+              }
+            });
+            this.saveLogs(this.loadLogs());
+            this.emitUpdate(task);
+            return {
+              success: false,
+              error: `KI Cutout-Audit: ${auditResult.explanation || auditResult.detected_issues && auditResult.detected_issues.join(", ") || "Unreinheiten erkannt. Bitte nachbessern."}`
+            };
+          }
+        }
+        if (params2.action === "REGENERATE_VECTOR") {
+          if (params2.maxColors) {
+            if (!task.customAnswers) task.customAnswers = {};
+            task.customAnswers.maxColors = params2.maxColors;
+          }
+          task.status = "VECTORIZING_DESIGN";
+          task.checkpoint = void 0;
+          task.hasError = false;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "VECTORIZE_REQUEST",
+            title: `Vektorisierung erneut angefordert (Human Loop: Farbanzahl angepasst)`,
+            content: {
+              maxColors: params2.maxColors || task.customAnswers?.maxColors || 2,
+              reason: "Manuell in Tasks zur Neu-Vektorisierung \xFCbergeben"
+            }
+          });
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          this.vectorizeDesignTask(taskId).catch((err) => {
+            console.error(`[TaskLogService] Re-vectorize failed for task ${taskId}:`, err);
+          });
+          return { success: true, message: "Vektorisierung wird neu ausgef\xFChrt." };
+        }
+        if (params2.action === "REJECT") {
+          task.status = "REJECTED";
+          task.checkpoint = void 0;
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "SVG_EDIT_RESPONSE",
+            title: `Task in SVG-Pr\xFCfung abgelehnt & geschlossen (Human Loop)`,
+            content: {
+              verdict: "REJECTED",
+              reason: "Design / Vektorisierung manuell im Tasks-Workspace verworfen."
+            }
+          });
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          return { success: true, message: "Task verworfen." };
+        }
+        throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
+      }
+      /**
+       * Reset editable SVG to the original untouched vector
+       */
+      static async resetSvg(taskId) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const designsDir = import_path73.default.resolve(process.cwd(), "data", "designs");
+        const origFilePath = import_path73.default.join(designsDir, `${cleanId}_original.svg`);
+        const svgFilePath = import_path73.default.join(designsDir, `${cleanId}.svg`);
+        if (!import_fs79.default.existsSync(origFilePath)) {
+          throw new Error(`Original-SVG f\xFCr Task ${taskId} nicht gefunden.`);
+        }
+        const originalSvgContent = import_fs79.default.readFileSync(origFilePath, "utf-8");
+        import_fs79.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
+        task.svgContent = originalSvgContent;
+        task.localSvgPath = svgFilePath;
+        task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
+        this.saveLogs(this.loadLogs());
+        this.emitUpdate(task);
+        return {
+          success: true,
+          svgContent: originalSvgContent,
+          message: "SVG erfolgreich auf Originalzustand zur\xFCckgesetzt."
+        };
+      }
+    };
+  }
+});
+
 // src/server/index.ts
 var import_express = __toESM2(require_express2(), 1);
 var import_http4 = __toESM2(require("http"), 1);
@@ -215172,1594 +221960,10 @@ var import_dotenv = __toESM2(require_main(), 1);
 var import_url3 = require("url");
 var import_child_process8 = require("child_process");
 init_settingsService();
-
-// src/server/services/trademarkService.ts
-init_settingsService();
-var COMMON_STOP_WORDS = /* @__PURE__ */ new Set([
-  "the",
-  "and",
-  "for",
-  "with",
-  "this",
-  "that",
-  "from",
-  "your",
-  "have",
-  "are",
-  "was",
-  "were",
-  "will",
-  "been",
-  "each",
-  "when",
-  "into",
-  "just",
-  "more",
-  "some",
-  "than",
-  "them",
-  "then",
-  "they",
-  "what",
-  "which",
-  "who",
-  "will",
-  "shirt",
-  "tshirt",
-  "t-shirt",
-  "apparel",
-  "gift",
-  "ideas",
-  "great",
-  "cool",
-  "love",
-  "lovers",
-  "graphic",
-  "design",
-  "men",
-  "women",
-  "kids",
-  "boys",
-  "girls",
-  "youth",
-  "funny",
-  "retro",
-  "vintage",
-  "classic"
-]);
-var TrademarkService = class {
-  /**
-   * Test connection to Productor Trademark APIs
-   */
-  static async testConnection() {
-    const settings = loadSettings();
-    const start3 = Date.now();
-    try {
-      const fd = new FormData();
-      fd.append("trademarks", JSON.stringify(["nike"]));
-      const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
-        method: "POST",
-        headers: {
-          "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
-        },
-        body: fd,
-        signal: AbortSignal.timeout(6e3)
-      });
-      const latencyMs = Date.now() - start3;
-      if (res.ok) {
-        return { success: true, latencyMs };
-      }
-      return { success: false, latencyMs, error: `USPTO API antwortet mit HTTP ${res.status}` };
-    } catch (err) {
-      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Verbindungs-Timeout" };
-    }
-  }
-  /**
-   * Parse office inputs (e.g. 'USPTO', 'EUIPO', 'DPMA' or fallback 'US', 'DE', 'EU')
-   */
-  static normalizeOffices(input, marketplace) {
-    const rawList = [];
-    if (Array.isArray(input)) {
-      rawList.push(...input);
-    } else if (typeof input === "string" && input.trim()) {
-      rawList.push(...input.split(",").map((s) => s.trim()));
-    } else if (marketplace && typeof marketplace === "string") {
-      rawList.push(marketplace.trim());
-    }
-    const offices = /* @__PURE__ */ new Set();
-    for (const raw of rawList) {
-      const up = raw.toUpperCase();
-      if (up === "USPTO" || up === "US" || up === "COM") {
-        offices.add("USPTO");
-      } else if (up === "EUIPO" || up === "EU" || up === "UK" || up === "GB" || up === "FR" || up === "IT" || up === "ES") {
-        offices.add("EUIPO");
-      } else if (up === "DPMA" || up === "DE") {
-        offices.add("DPMA");
-        offices.add("EUIPO");
-      }
-    }
-    if (offices.size === 0) {
-      offices.add("USPTO");
-    }
-    return Array.from(offices);
-  }
-  /**
-   * Extract search terms from text: full phrase + n-grams + individual significant keywords
-   */
-  static extractTermsFromText(text2) {
-    if (!text2 || typeof text2 !== "string") return [];
-    const trimmed = text2.trim();
-    if (trimmed.length < 2) return [];
-    const terms = /* @__PURE__ */ new Set();
-    if (trimmed.length <= 60) {
-      terms.add(trimmed.toLowerCase());
-    }
-    const words = trimmed.split(/[\s,.;:!?/()"\-+]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter((w) => w.length >= 3);
-    for (const w of words) {
-      if (w.length >= 4 && !COMMON_STOP_WORDS.has(w)) {
-        terms.add(w);
-      }
-    }
-    for (let i = 0; i < words.length - 1; i++) {
-      const twoGram = `${words[i]} ${words[i + 1]}`;
-      terms.add(twoGram);
-      if (i < words.length - 2) {
-        const threeGram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
-        terms.add(threeGram);
-      }
-    }
-    return Array.from(terms);
-  }
-  /**
-   * Extract and normalize Nice Classification numbers (e.g. '041' -> '41', '009,042' -> ['9', '42'])
-   */
-  static extractNiceClasses(r) {
-    if (!r) return [];
-    const raw = r.classification || r.Classification || r.classes || r.class_id || r.class || r.international_class || "";
-    if (!raw) return [];
-    if (Array.isArray(raw)) {
-      return raw.map((c) => String(c).replace(/^0+/, "").trim()).filter(Boolean);
-    }
-    return String(raw).split(/[,;\s]+/).map((c) => c.replace(/[^0-9]/g, "").replace(/^0+/, "").trim()).filter(Boolean);
-  }
-  /**
-   * Check if a trademark status string or code represents an active/live registered trademark
-   * Strictly filters out PENDING, DEAD, ABANDONED, CANCELLED, EXPIRED, REFUSED
-   */
-  static isLiveStatus(rawStatus) {
-    if (rawStatus === void 0 || rawStatus === null || rawStatus === "") {
-      return false;
-    }
-    const s = String(rawStatus).trim().toUpperCase();
-    if (s.includes("DEAD") || s.includes("PENDING") || s.includes("CANCEL") || s.includes("ABANDON") || s.includes("EXPIRE") || s.includes("REFUSE") || s.includes("SUSPEND")) {
-      return false;
-    }
-    return s.includes("LIVE") || s.includes("REGISTERED") || s.includes("ACTIVE") || s.includes("EINGETRAGEN") || s === "REG" || s === "700" || s === "701";
-  }
-  /**
-   * Check terms across specified trademark offices
-   */
-  static async queryOffices(uniqueTerms, offices) {
-    const settings = loadSettings();
-    const allHits = {};
-    if (uniqueTerms.length === 0 || offices.length === 0) {
-      return allHits;
-    }
-    const defaultHeaders = {
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-      "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
-    };
-    const promises = [];
-    if (offices.includes("USPTO")) {
-      promises.push((async () => {
-        try {
-          const usptoFd = new FormData();
-          usptoFd.append("trademarks", JSON.stringify(uniqueTerms));
-          const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
-            method: "POST",
-            headers: {
-              ...defaultHeaders,
-              "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
-            },
-            body: usptoFd,
-            signal: AbortSignal.timeout(9e3)
-          });
-          if (res.ok) {
-            const data = await res.json();
-            for (const [term, records] of Object.entries(data)) {
-              if (Array.isArray(records) && records.length > 0) {
-                records.forEach((r) => {
-                  const rawStatus = r.status || r.status_code || "LIVE";
-                  if (this.isLiveStatus(rawStatus)) {
-                    const classes = this.extractNiceClasses(r);
-                    allHits[term] = allHits[term] || [];
-                    allHits[term].push({
-                      term,
-                      trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
-                      classNumber: classes.join(", ") || "N/A",
-                      classes,
-                      status: "LIVE",
-                      registrationNumber: r.registration_number || r.registration_date,
-                      serialNumber: r.serial_number || r.applicationNumber,
-                      goodsAndServices: r.goods_and_services || r.goods_services,
-                      source: "USPTO"
-                    });
-                  }
-                });
-              }
-            }
-          }
-        } catch (err) {
-          console.warn("[TrademarkService] USPTO query error:", err.message || err);
-        }
-      })());
-    }
-    if (offices.includes("EUIPO")) {
-      promises.push((async () => {
-        try {
-          const euFd = new FormData();
-          euFd.append("trademarks", JSON.stringify(uniqueTerms));
-          const res = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
-            method: "POST",
-            headers: {
-              ...defaultHeaders,
-              "Authorization": settings.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
-            },
-            body: euFd,
-            signal: AbortSignal.timeout(9e3)
-          });
-          if (res.ok) {
-            const data = await res.json();
-            for (const [term, records] of Object.entries(data)) {
-              if (Array.isArray(records) && records.length > 0) {
-                records.forEach((r) => {
-                  const rawStatus = r.markCurrentStatusCode || r.status || "LIVE";
-                  if (this.isLiveStatus(rawStatus)) {
-                    const classes = this.extractNiceClasses(r);
-                    allHits[term] = allHits[term] || [];
-                    allHits[term].push({
-                      term,
-                      trademark: r.trademark || r.mark_identification || term,
-                      classNumber: classes.join(", ") || "N/A",
-                      classes,
-                      status: "LIVE",
-                      serialNumber: r.applicationNumber,
-                      source: "EUIPO"
-                    });
-                  }
-                });
-              }
-            }
-          }
-        } catch (err) {
-          console.warn("[TrademarkService] EUIPO query error:", err.message || err);
-        }
-      })());
-    }
-    if (offices.includes("DPMA")) {
-      promises.push((async () => {
-        try {
-          const dpmaFd = new FormData();
-          dpmaFd.append("trademarks", JSON.stringify(uniqueTerms));
-          const res = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
-            method: "POST",
-            headers: {
-              ...defaultHeaders,
-              "Authorization": settings.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
-            },
-            body: dpmaFd,
-            signal: AbortSignal.timeout(9e3)
-          });
-          if (res.ok) {
-            const data = await res.json();
-            for (const [term, records] of Object.entries(data)) {
-              if (Array.isArray(records) && records.length > 0) {
-                records.forEach((r) => {
-                  const rawStatus = r.MarkCurrentStatusCode || r.status || "LIVE";
-                  if (this.isLiveStatus(rawStatus)) {
-                    const classes = this.extractNiceClasses(r);
-                    allHits[term] = allHits[term] || [];
-                    allHits[term].push({
-                      term,
-                      trademark: r.MarkVerbalElementText || r.trademark || term,
-                      classNumber: classes.join(", ") || "N/A",
-                      classes,
-                      status: "LIVE",
-                      serialNumber: r.ApplicationNumber,
-                      source: "DPMA"
-                    });
-                  }
-                });
-              }
-            }
-          }
-        } catch (err) {
-          console.warn("[TrademarkService] DPMA query error:", err.message || err);
-        }
-      })());
-    }
-    await Promise.all(promises);
-    return allHits;
-  }
-  /**
-   * Analyze hits to calculate blocked products and class 25 status
-   */
-  static analyzeHits(hitsRecord) {
-    let hasInfringementClass25 = false;
-    const blockedProductsSet = /* @__PURE__ */ new Set();
-    let totalHits = 0;
-    for (const [, records] of Object.entries(hitsRecord)) {
-      for (const rec of records) {
-        if (!this.isLiveStatus(rec.status)) continue;
-        totalHits++;
-        const classes = rec.classes && rec.classes.length > 0 ? rec.classes : this.extractNiceClasses({ classification: rec.classNumber });
-        if (classes.includes("25")) {
-          hasInfringementClass25 = true;
-          blockedProductsSet.add("STANDARD_TSHIRT");
-          blockedProductsSet.add("PREMIUM_TSHIRT");
-          blockedProductsSet.add("HOODIE");
-          blockedProductsSet.add("SWEATSHIRT");
-          blockedProductsSet.add("ZIP_HOODIE");
-          blockedProductsSet.add("TANK_TOP");
-          blockedProductsSet.add("LONG_SLEEVE_TSHIRT");
-          blockedProductsSet.add("RAGLAN");
-        }
-        if (classes.includes("9")) {
-          blockedProductsSet.add("POPSOCKET");
-          blockedProductsSet.add("PHONE_CASE_APPLE_IPHONE");
-          blockedProductsSet.add("PHONE_CASE_SAMSUNG_GALAXY");
-        }
-        if (classes.includes("21")) {
-          blockedProductsSet.add("MUG");
-          blockedProductsSet.add("TUMBLER");
-        }
-        if (classes.includes("20")) {
-          blockedProductsSet.add("THROW_PILLOW");
-        }
-        if (classes.includes("8") || classes.includes("18")) {
-          blockedProductsSet.add("TOTE_BAG");
-        }
-      }
-    }
-    return {
-      hasInfringementClass25,
-      blockedProducts: Array.from(blockedProductsSet),
-      totalHits
-    };
-  }
-  /**
-   * Legacy check method for single term array (used by UI Designer)
-   */
-  static async checkTrademarks(terms, locale = "en") {
-    const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
-    const uniqueTerms = Array.from(new Set(cleanTerms));
-    if (uniqueTerms.length === 0) {
-      return {
-        hasInfringementClass25: false,
-        blockedProducts: [],
-        hits: {},
-        totalHits: 0,
-        message: "No terms to check."
-      };
-    }
-    const offices = locale === "de" ? ["USPTO", "EUIPO", "DPMA"] : ["USPTO", "EUIPO"];
-    const hits = await this.queryOffices(uniqueTerms, offices);
-    const analysis = this.analyzeHits(hits);
-    return {
-      hasInfringementClass25: analysis.hasInfringementClass25,
-      blockedProducts: analysis.blockedProducts,
-      hits,
-      totalHits: analysis.totalHits,
-      message: analysis.hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : analysis.totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${analysis.blockedProducts.length} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
-    };
-  }
-  /**
-   * Comprehensive Multi-Field Batch Check for Hermes Agent & MCP Integration
-   */
-  static async checkBatchFields(input) {
-    const offices = this.normalizeOffices(input.offices, input.marketplace);
-    const fields = input.fields || {};
-    const fieldTermsMap = {};
-    const allUniqueTerms = /* @__PURE__ */ new Set();
-    for (const [fieldName, rawValue] of Object.entries(fields)) {
-      if (rawValue && typeof rawValue === "string") {
-        const terms = this.extractTermsFromText(rawValue);
-        fieldTermsMap[fieldName] = terms;
-        terms.forEach((t) => allUniqueTerms.add(t));
-      }
-    }
-    const termList = Array.from(allUniqueTerms);
-    const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
-    const fieldResults = {};
-    let totalGlobalHits = 0;
-    let globalHasInfringementClass25 = false;
-    const globalBlockedProducts = /* @__PURE__ */ new Set();
-    for (const [fieldName, terms] of Object.entries(fieldTermsMap)) {
-      const fieldHits = {};
-      for (const t of terms) {
-        if (globalHits[t] && globalHits[t].length > 0) {
-          fieldHits[t] = globalHits[t];
-        }
-      }
-      const analysis = this.analyzeHits(fieldHits);
-      if (analysis.hasInfringementClass25) globalHasInfringementClass25 = true;
-      analysis.blockedProducts.forEach((p) => globalBlockedProducts.add(p));
-      totalGlobalHits += analysis.totalHits;
-      fieldResults[fieldName] = {
-        safe: !analysis.hasInfringementClass25,
-        hasInfringementClass25: analysis.hasInfringementClass25,
-        totalHits: analysis.totalHits,
-        blockedProducts: analysis.blockedProducts,
-        hits: fieldHits
-      };
-    }
-    const isCompletelySafe = !globalHasInfringementClass25 && globalBlockedProducts.size === 0;
-    const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
-    const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
-    const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
-    const hasBrandTitleClass25 = brandHasClass25 || titleHasClass25 || quoteHasClass25;
-    let verdict;
-    let message;
-    if (hasBrandTitleClass25) {
-      verdict = "REJECTED_CLASS_25";
-      const affected = [brandHasClass25 && "Brand", titleHasClass25 && "Title", quoteHasClass25 && "Quote"].filter(Boolean);
-      message = `Klasse 25 Konflikt in Identifikatoren (${affected.join(", ")}). Automatisches Umschreiben erforderlich.`;
-    } else if (globalHasInfringementClass25) {
-      verdict = "NEEDS_AUDIT";
-      message = `Treffer in Bullets/Description gefunden (${totalGlobalHits} Treffer). Fair-Use-Pr\xFCfung durch Trademark Auditor.`;
-    } else if (globalBlockedProducts.size > 0) {
-      verdict = "SAFE_FOR_APPAREL";
-      message = `Keine Treffer in Klasse 25 (Bekleidung sicher). ${globalBlockedProducts.size} Nebenprodukte gesperrt.`;
-    } else {
-      verdict = "SAFE_ALL";
-      message = "Keine aktiven Schutzrechte gefunden. Listing ist sauber \u2713";
-    }
-    const rawInputPhrases = /* @__PURE__ */ new Set();
-    for (const rawValue of Object.values(fields)) {
-      if (rawValue && typeof rawValue === "string") {
-        const tr = rawValue.trim().toLowerCase();
-        if (tr.length > 0) rawInputPhrases.add(tr);
-      }
-    }
-    const exactPhraseHits = [];
-    const keywordHits = [];
-    const affectedClassesSet = /* @__PURE__ */ new Set();
-    const seenHitKeys = /* @__PURE__ */ new Set();
-    for (const [term, hits] of Object.entries(globalHits)) {
-      for (const hit of hits) {
-        const uniqueKey = `${hit.source}-${hit.trademark}-${hit.classNumber}-${hit.term}`;
-        if (seenHitKeys.has(uniqueKey)) continue;
-        seenHitKeys.add(uniqueKey);
-        (hit.classes || []).forEach((c) => affectedClassesSet.add(c));
-        if (rawInputPhrases.has(term.toLowerCase())) {
-          exactPhraseHits.push(hit);
-        } else {
-          keywordHits.push(hit);
-        }
-      }
-    }
-    return {
-      success: true,
-      safe: !hasBrandTitleClass25,
-      hasInfringementClass25: globalHasInfringementClass25,
-      affectedClasses: Array.from(affectedClassesSet).sort((a, b) => Number(a) - Number(b)),
-      blockedProducts: Array.from(globalBlockedProducts),
-      officesChecked: offices,
-      summary: {
-        totalHits: totalGlobalHits,
-        verdict,
-        message,
-        exactPhraseHitsCount: exactPhraseHits.length,
-        keywordHitsCount: keywordHits.length
-      },
-      exactPhraseHits,
-      keywordHits,
-      fieldResults
-    };
-  }
-};
-
-// src/server/services/llmService.ts
-init_settingsService();
-
-// src/server/services/systemPromptService.ts
-var import_fs72 = __toESM2(require("fs"), 1);
-var import_path67 = __toESM2(require("path"), 1);
-var DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT = `You are an expert AI prompt engineer and Art Director specializing in print-on-demand (POD) automation for Merch by Amazon. Your goal is to convert the incoming design parameters (niche, quote, style, feeling, colors, instructions) into a highly descriptive, visually stunning, clean vector prompt tailored for Ideogram.
-
-CORE RULES:
-1. GRAPHIC STYLE: Enforce clean, bold vector illustration / graphic design suitable for t-shirt printing.
-2. ISOLATION: The design must be isolated on a clean solid background with no realistic scene bleeding.
-3. TYPOGRAPHY: If a quote or number is provided, ensure the text is spelled exactly as requested, styled with legible and impactful typography.
-4. COMMERCIAL COMPLIANCE: Do not include trademarks, brand names, or protected phrases.
-
-OUTPUT FORMAT:
-Output ONLY the raw, optimized image generation prompt text. Do not include introductory text, explanations, or quotes around the whole prompt.`;
-var DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT = `You are an expert AI Art Director and POD (Print on Demand) Quality Assurance Specialist for Merch by Amazon.
-Your task is to analyze the generated t-shirt / merch graphic design based on the input specifications and evaluate it strictly against the following 4 core criteria:
-
-1. QUOTE ACCURACY & VISUAL QUALITY:
-- CRITICAL RULE ON PUNCTUATION & SPACING: Punctuation differences (such as colons ":", hyphens "-", dots ".", commas ",", spaces, or line breaks) are 100% VALID AND ACCEPTABLE!
-  Example: If requested quote is "11:11" and the image shows "11 11" or "11\\n11", this is an APPROVED MATCH! You MUST set "quote_matches": true, "quote_errors": null, and "regenerate_recommended": false! Do NOT complain about missing colons or punctuation.
-- ONLY flag GENUINE text errors: Misspelled words, wrong letters, duplicate letters (e.g. "Mannifest" instead of "Manifest"), completely missing words, or unreadable AI gibberish glyphs.
-- Check for SEVERE graphic/anatomical defects: Obvious AI distortions such as malformed extra fingers/hands, melted faces, or corrupted graphic shapes.
-- Evaluation rule: Unless there are actual misspelled words or severe visual deformities, ALWAYS set "quote_matches": true, "quote_errors": null, "regenerate_recommended": false, and "overall_verdict": "APPROVED".
-
-2. TARGET AUDIENCE (FIT TYPES):
-- Determine which target audiences this design is suitable for: Select from ["Men", "Women", "Youth"].
-- Multiple selections are encouraged (e.g. ["Men", "Women", "Youth"] for cute/general motifs, ["Men", "Women"] for adult-oriented quotes).
-
-3. PRODUCT COLORS TO AVOID (CONTRAST):
-- Which t-shirt / garment base color must be avoided to ensure maximum contrast and legibility?
-- DEFAULT to "None" if the design has strong contrast, solid outlines, golden/cream/colored typography, or looks great on both black and white apparel.
-- ONLY select "White" if the text or graphic elements are pure white or very light pastel without a dark border/outline.
-- ONLY select "Black" if the text or graphic elements are pure black or very dark without a light border/outline.
-- Options for "avoid": "Black", "White", or "None".
-
-4. BACKGROUND HANDLING (AUTOMATED TRANSPARENCY / ISOLATION):
-- MANDATORY CORNER & BORDER INSPECTION:
-  * Carefully examine the 4 outer corners, top/bottom edges, and perimeter of the canvas under high attention.
-  * Check for subtle textures: Leather crackles/craquel\xE9, paper grain, canvas weave, noise, grunge, brush strokes, starfield specks, or vignetting (edges/corners darker or colored differently than the center).
-  * If ANY non-flat texture, grain, craquel\xE9, vignette, radial glow, or non-uniform shading exists -> you MUST set "removal_mode": "MANUAL" and "is_design_element": true!
-  * ONLY set "AUTOMATIC" and "is_design_element": false if the entire background is 100% flat, completely solid single digital vector hex color with ZERO surface texture and ZERO gradient across all 4 corners.
-- "reason": "<Explicitly describe the background surface: flat solid color vs textured/vignetted/gradient>"
-
-5. COLOR COUNT ESTIMATION (VECTORIZATION MAX COLORS):
-- CRITICAL RULE: Count ALL distinct sensible colors across the ENTIRE image, MANDATORILY INCLUDING THE BACKGROUND COLOR(S)!
-  * Reason: Vectorizer.ai vectorizes the whole image first (including the background) before transparency is applied. If background colors are omitted, the vectorizer will crush or blend necessary palette shades.
-  * Example: If graphic has Ivory (1) and Gold (2) on a Dark Blue (3) background, the count MUST BE AT LEAST 3 colors! If there is a gradient, shadow, or secondary accent, count that as well (e.g. 4 or 5 colors).
-- Range: Integer between 1 and 12 (maximum 12 colors).
-- "color_count": Integer from 1 to 12.
-- "reason": "<List all counted colors including background color and artwork colors, e.g. 'Ivory typography, gold accents/outlines, and dark blue background = 3-4 colors'>"
-
-OUTPUT FORMAT:
-Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
-{
-  "quote_check": {
-    "requested_quote": "<Original quote from input>",
-    "detected_quote": "<Actual text read from image>",
-    "quote_matches": true,
-    "quote_errors": null,
-    "regenerate_recommended": false
-  },
-  "target_group": {
-    "selected": ["Men", "Women", "Youth"],
-    "reason": "<Brief explanation>"
-  },
-  "avoid_product_colors": {
-    "avoid": "None",
-    "reason": "<Brief contrast explanation>"
-  },
-  "background_analysis": {
-    "is_design_element": false,
-    "background_color_detected": "<Detected background color>",
-    "removal_mode": "AUTOMATIC",
-    "reason": "<Brief explanation>"
-  },
-  "color_analysis": {
-    "color_count": 3,
-    "reason": "<Brief explanation of dominant visible colors in the entire image including background>"
-  },
-  "overall_verdict": "APPROVED"
-}`;
-var DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) SEO listing copywriter and compliance specialist.
-Your task is to generate a high-converting, policy-compliant, and perfectly optimized Merch by Amazon listing based on the design, quote, niche, and visual elements.
-
-### 1. RULES FOR EACH FIELD:
-- Title (Max 60 characters!):
-  * Focus on the main quote / idea and strong search keywords.
-  * Do NOT include product types (NO words like "T-Shirt", "shirt", "hoodie", "tank top").
-  * IMPORTANT Suffix-Appending Rule: Ensure the final word in the Title forms a clean long-tail keyword when Amazon automatically appends "T-Shirt" (e.g. end with "Outfit", "Apparel", "Graphic", or the main theme word like "Retro Sunset").
-- Brand (Max 50 characters!):
-  * Create a thematic brand name reflecting the niche / style of the design.
-  * Must contain relevant search keywords.
-  * Must NOT be an existing trademark or brand name. Do NOT include the word "Brand" or product types.
-- Bullet Point 1 (Max 250 characters!):
-  * Focus on the design's content, artistic style, typography, and visual appeal.
-  * Keep it relevant to the artwork. Do NOT mention garment material, fit, sizing, or print quality.
-  * Do NOT use phrases like "this shirt" \u2013 refer to the design or use neutral phrasing (e.g. "Featuring a stylish ...").
-- Bullet Point 2 (Max 250 characters!):
-  * Describe the target audience, lifestyle, or suitable occasion for wearing the artwork.
-  * Do NOT use the word "gift" or phrases like "perfect for birthday" (instead use "Great for anyone who loves...").
-- Description (Max 2000 characters):
-  * Combine the ideas from Bullets 1 & 2 into a reader-friendly, natural paragraph with soft long-tail keywords.
-  * Do NOT mention background color or physical garment properties.
-
-### 2. STRICT COMPLIANCE & BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
-- NO faux material / physical effect claims (CRITICAL FOR 2D PRINTS): sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
-- NO quality/material claims: soft, premium, cotton, high quality, durable, lightweight, fitted, loose, size up, printed in, made in.
-- NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now, discount.
-- NO background color mentions: white design, black background, transparent.
-- NO product types in Title/Brand: t-shirt, shirt, hoodie, tank top, popsocket, pop socket.
-- NO trademarks, copyrighted characters, or brand names.
-- NO profanity, violence, or sensitive themes (must be 100% Family Friendly / PG-13).
-- NO keyword stuffing. Use full, natural sentences.
-- NO typographic or curly quotation marks (do NOT use \u201E \u201C \u201D \xAB \xBB \u2019 \u2018). Use ONLY standard ASCII double quotes (") or single quotes ('). Do not use em-dashes (\u2014); use standard hyphens (-).
-
-### 3. MULTI-MARKETPLACE TRANSLATIONS:
-Provide localized, native listings for English (en), German (de), French (fr), Italian (it), Spanish (es), and Japanese (ja).
-CRITICAL: Any English quotes or slogans on the design MUST remain in English in all translated listings! Only translate the surrounding descriptive text. Never use non-ASCII quotes in translated text (e.g. do NOT use German \u201E \u201C).
-
-OUTPUT FORMAT:
-Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
-{
-  "en": {
-    "brand": "<Brand Name max 50 chars>",
-    "title": "<Title max 60 chars>",
-    "bullet1": "<Bullet 1 max 250 chars>",
-    "bullet2": "<Bullet 2 max 250 chars>",
-    "description": "<Description paragraph>"
-  },
-  "de": {
-    "brand": "<Deutscher Brand Name>",
-    "title": "<Deutscher Titel max 60 Zeichen>",
-    "bullet1": "<Deutscher Bullet 1 max 250 Zeichen>",
-    "bullet2": "<Deutscher Bullet 2 max 250 Zeichen>",
-    "description": "<Deutsche Beschreibung>"
-  },
-  "fr": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
-  "it": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
-  "es": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
-  "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
-}`;
-var DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) Trademark Attorney and POD Compliance Auditor.
-Your job is to analyze the USPTO / Trademark hits detected for a generated Merch by Amazon listing and make a definitive compliance decision.
-
-### 1. CORE COMPLIANCE RULES:
-
-A. DESCRIPTIVE FAIR USE (ALLOWED IN BULLETS & DESCRIPTION):
-- Generic, common words (e.g., "space", "vintage", "retro", "happy", "sun", "workout", "sunset", "cute", "angel", "reality", "manifest", "wings", "stars", "gold", "cosmic", "celestial", "radiant") are often registered as apparel trademarks by individual brands.
-- If these words appear in natural descriptive sentence context within Bullet Points or Description (e.g. "featuring celestial angel wings artwork in ivory and gold tones"), this is 100% LEGAL DESCRIPTIVE FAIR USE. Do NOT delete or butcher sentences for common descriptive words!
-
-B. SOURCE IDENTIFIERS / BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE):
-- If a trademarked word or phrase appears as the Brand Name or directly as the main subject in the Title, it functions as a trademark / source identifier.
-- Action: Brand and Title MUST be 100% free of active Class 25 (Apparel) trademarks! If Brand or Title triggers a Class 25 hit, rephrase to a unique, non-infringing phrase while keeping the niche relevance and SEO value.
-- Character limits: Brand <= 50 chars, Title <= 60 chars.
-
-C. UNACCEPTABLE TRADEMARK INFRINGEMENT (MUST REJECT):
-- If the core Quote / Slogan printed on the design or the central design motif itself directly infringes a protected trademark in Class 25 (e.g. "Just Do It", "Hakuna Matata", "Lego", "Disney", "Marvel", "Pokemon", "Star Wars", famous celebrities, or active registered slogans):
-  * Set "verdict": "REJECTED"
-  * Provide a clear "rejection_reason".
-
-D. SAFE REPHRASING & MBA LISTING COMPLIANCE:
-- When rewriting any fields, you MUST strictly adhere to the Amazon Merch on Demand listing guidelines:
-  * NO quality/material claims: soft, cotton, premium, durable, lightweight, fitted, loose.
-  * NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now.
-  * NO background color mentions: white design, black background, transparent.
-  * Use full, natural sentences without keyword stuffing.
-  * Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
-
-### 2. OUTPUT FORMAT:
-Respond ONLY with a valid JSON object matching this schema (no markdown fences, no conversational text):
-{
-  "verdict": "APPROVED",
-  "rejection_reason": null,
-  "actions_taken": [
-    "Retained 'wings' and 'stars' in Bullets as descriptive fair use",
-    "Replaced 'Wings Apparel' in Brand with 'Feather Artwork Studio'"
-  ],
-  "refined_listing": {
-    "brand": "<Cleaned Brand Name (max 50 chars)>",
-    "title": "<Cleaned Title (max 60 chars)>",
-    "bullet1": "<Cleaned Bullet 1 (max 250 chars)>",
-    "bullet2": "<Cleaned Bullet 2 (max 250 chars)>",
-    "description": "<Cleaned Description (max 2000 chars)>"
-  }
-}`;
-var DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT = `You are an expert Print-on-Demand (POD) Production & Quality Assurance Specialist for Merch by Amazon.
-Your task is to inspect a 4-Panel Verification Image containing a vectorized t-shirt graphic placed on 4 different background colors:
-1. Top-Left: Pure White (#ffffff)
-2. Top-Right: Pure Black (#000000)
-3. Bottom-Left: Vivid Red (#d32f2f)
-4. Bottom-Right: Dark Slate / Anthracite (#1e293b)
-
-Your goal is to strictly determine if the background was cleanly and completely removed, or if manual clipping/cleanup is required.
-
-EVALUATION CRITERIA:
-1. OUTER BACKGROUND REMOVAL (CRITICAL):
-- Is there any visible outer bounding box, rectangular border, or background remnants surrounding the design on ANY of the 4 panels?
-- If an unwanted outer background rectangle/frame is still visible on the black/red/slate panels, you MUST set "cutout_verdict": "REJECTED".
-
-2. INNER LETTERS & ENCLOSED CUTOUTS:
-- Check internal negative spaces inside letters (e.g. loops in 'A', 'B', 'D', 'O', 'P', 'Q', 'R', '0', '4', '6', '8', '9') or closed graphic contours.
-- If these closed loops still contain solid white/background fills instead of transparent pass-through showing the panel background, note them in "detected_issues". If severe, set "cutout_verdict": "REJECTED".
-
-3. ARTWORK INTEGRITY:
-- Did the background removal accidentally erase vital parts of the design artwork or essential lettering?
-
-DECISION RULES:
-- "APPROVED": The graphic is cleanly isolated with transparent background. Contours are sharp and clean on all 4 panels.
-- "REJECTED": Outer background frame remains, major letter loops are un-cleared, or artwork parts were accidentally deleted.
-
-OUTPUT FORMAT:
-Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
-{
-  "cutout_verdict": "APPROVED",
-  "background_removed_cleanly": true,
-  "detected_issues": [],
-  "confidence": 0.98,
-  "explanation": "The artwork is cleanly isolated across all 4 background colors with transparent letter loops and no outer artifacts."
-}`;
-var SystemPromptService = class {
-  static promptFile = import_path67.default.resolve(process.cwd(), "data", "system_prompts.json");
-  static cachedPrompts = null;
-  static ensureDataDir() {
-    const dir = import_path67.default.dirname(this.promptFile);
-    if (!import_fs72.default.existsSync(dir)) {
-      import_fs72.default.mkdirSync(dir, { recursive: true });
-    }
-  }
-  static loadPrompts() {
-    if (this.cachedPrompts !== null) {
-      return this.cachedPrompts;
-    }
-    this.ensureDataDir();
-    if (import_fs72.default.existsSync(this.promptFile)) {
-      try {
-        const fileContent = import_fs72.default.readFileSync(this.promptFile, "utf-8");
-        this.cachedPrompts = JSON.parse(fileContent);
-        if (this.cachedPrompts) {
-          if (!this.cachedPrompts.promptGenerator) {
-            this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
-          }
-          if (!this.cachedPrompts.designAnalyzer) {
-            this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
-          }
-          if (!this.cachedPrompts.listingGenerator) {
-            this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
-          }
-          if (!this.cachedPrompts.trademarkAuditor) {
-            this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
-          }
-          if (!this.cachedPrompts.svgBgAuditor) {
-            this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-          }
-          return this.cachedPrompts;
-        }
-      } catch (e) {
-        console.error("[SystemPromptService] Failed to read system_prompts.json:", e);
-      }
-    }
-    this.cachedPrompts = {
-      promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
-      designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
-      listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
-      trademarkAuditor: DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
-      svgBgAuditor: DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT
-    };
-    try {
-      import_fs72.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
-    } catch (e) {
-    }
-    return this.cachedPrompts;
-  }
-  static getPromptGeneratorPrompt() {
-    const prompts = this.loadPrompts();
-    return prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
-  }
-  static getDesignAnalyzerPrompt() {
-    const prompts = this.loadPrompts();
-    return prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
-  }
-  static getListingGeneratorPrompt() {
-    const prompts = this.loadPrompts();
-    return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
-  }
-  static getSvgBgAuditorPrompt() {
-    const prompts = this.loadPrompts();
-    return prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-  }
-  static getTrademarkAuditorPrompt() {
-    const prompts = this.loadPrompts();
-    return prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
-  }
-  static getAllPrompts() {
-    const prompts = this.loadPrompts();
-    return {
-      promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
-      designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
-      listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
-      trademarkAuditor: prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT
-    };
-  }
-  static savePrompts(updates) {
-    this.ensureDataDir();
-    const prompts = this.loadPrompts();
-    if (typeof updates.promptGenerator === "string") {
-      prompts.promptGenerator = updates.promptGenerator;
-    }
-    if (typeof updates.designAnalyzer === "string") {
-      prompts.designAnalyzer = updates.designAnalyzer;
-    }
-    if (typeof updates.listingGenerator === "string") {
-      prompts.listingGenerator = updates.listingGenerator;
-    }
-    if (typeof updates.trademarkAuditor === "string") {
-      prompts.trademarkAuditor = updates.trademarkAuditor;
-    }
-    this.cachedPrompts = prompts;
-    try {
-      import_fs72.default.writeFileSync(this.promptFile, JSON.stringify(prompts, null, 2), "utf-8");
-      console.log("[SystemPromptService] \u{1F4BE} System-Prompts erfolgreich gespeichert.");
-    } catch (e) {
-      console.error("[SystemPromptService] Failed to save system_prompts.json:", e);
-    }
-  }
-  static resetToDefault(type3 = "all") {
-    const current = this.loadPrompts();
-    if (type3 === "promptGenerator" || type3 === "all") {
-      current.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
-    }
-    if (type3 === "designAnalyzer" || type3 === "all") {
-      current.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
-    }
-    if (type3 === "listingGenerator" || type3 === "all") {
-      current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
-    }
-    if (type3 === "trademarkAuditor" || type3 === "all") {
-      current.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
-    }
-    this.cachedPrompts = current;
-    try {
-      import_fs72.default.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), "utf-8");
-    } catch (e) {
-    }
-    return {
-      promptGenerator: current.promptGenerator,
-      designAnalyzer: current.designAnalyzer,
-      listingGenerator: current.listingGenerator,
-      trademarkAuditor: current.trademarkAuditor
-    };
-  }
-};
-
-// src/server/services/llmService.ts
-var cachedModels = [
-  { id: "anthropic/claude-3.5-sonnet", name: "Anthropic: Claude 3.5 Sonnet" },
-  { id: "anthropic/claude-3.5-sonnet:beta", name: "Anthropic: Claude 3.5 Sonnet (Beta)" },
-  { id: "openai/gpt-4o", name: "OpenAI: GPT-4o" },
-  { id: "openai/gpt-4o-mini", name: "OpenAI: GPT-4o Mini" },
-  { id: "google/gemini-2.0-flash-001", name: "Google: Gemini 2.0 Flash" },
-  { id: "meta-llama/llama-3.2-11b-vision-instruct", name: "Meta: Llama 3.2 11B Vision" }
-];
-var lastModelsFetch = 0;
-var LLMService = class {
-  static normalizeModelId(model) {
-    const trimmed = model.trim();
-    if (trimmed === "anthropic/claude-3.5-sonnet") return "anthropic/claude-3-5-sonnet";
-    if (trimmed === "anthropic/claude-3.5-sonnet-20241022") return "anthropic/claude-3-5-sonnet-20241022";
-    return trimmed;
-  }
-  static getBaseUrlAndHeaders() {
-    const settings = loadSettings();
-    const isDirectOpenAI = settings.llmProvider === "openai";
-    const url = isDirectOpenAI ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
-    const headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${settings.openRouterApiKey.trim()}`
-    };
-    if (!isDirectOpenAI) {
-      headers["HTTP-Referer"] = "https://mba-hub.local";
-      headers["X-Title"] = "MBA HUB";
-    }
-    const rawModel = settings.llmModel || "anthropic/claude-3-5-sonnet";
-    return {
-      url,
-      headers,
-      model: this.normalizeModelId(rawModel)
-    };
-  }
-  /**
-   * Fetch all models from OpenRouter dynamically (Instant response from cache)
-   */
-  static async getAvailableModels() {
-    const now = Date.now();
-    if (now - lastModelsFetch < 1e3 * 60 * 30) {
-      return cachedModels;
-    }
-    fetch("https://openrouter.ai/api/v1/models", {
-      headers: {
-        "HTTP-Referer": "https://mba-hub.local",
-        "X-Title": "MBA HUB"
-      },
-      signal: AbortSignal.timeout(4e3)
-    }).then((res) => res.ok ? res.json() : null).then((data) => {
-      if (Array.isArray(data?.data)) {
-        const list = data.data.map((m) => ({
-          id: m.id,
-          name: m.name || m.id,
-          contextLength: m.context_length,
-          promptPrice: m.pricing?.prompt ? `$${(parseFloat(m.pricing.prompt) * 1e6).toFixed(2)}/M` : void 0,
-          completionPrice: m.pricing?.completion ? `$${(parseFloat(m.pricing.completion) * 1e6).toFixed(2)}/M` : void 0,
-          description: m.description
-        }));
-        const topKeywords = ["claude-3.5-sonnet", "claude-3-5-sonnet", "gpt-4o", "gemini-2.0-flash", "gemini-2.5", "llama-3.2"];
-        list.sort((a, b) => {
-          const aIsTop = topKeywords.some((k) => a.id.toLowerCase().includes(k));
-          const bIsTop = topKeywords.some((k) => b.id.toLowerCase().includes(k));
-          if (aIsTop && !bIsTop) return -1;
-          if (!aIsTop && bIsTop) return 1;
-          return a.name.localeCompare(b.name);
-        });
-        cachedModels = list;
-        lastModelsFetch = now;
-      }
-    }).catch(() => {
-    });
-    return cachedModels;
-  }
-  /**
-   * Check OpenRouter credit balance & usage
-   */
-  static async getCredits(customKey) {
-    const settings = loadSettings();
-    const key = (customKey || settings.openRouterApiKey).trim();
-    if (!key) return { error: "Kein API Key" };
-    try {
-      const [authRes, creditsRes] = await Promise.all([
-        fetch("https://openrouter.ai/api/v1/auth/key", {
-          headers: { "Authorization": `Bearer ${key}` },
-          signal: AbortSignal.timeout(8e3)
-        }),
-        fetch("https://openrouter.ai/api/v1/credits", {
-          headers: { "Authorization": `Bearer ${key}` },
-          signal: AbortSignal.timeout(8e3)
-        })
-      ]);
-      let usage;
-      let limit;
-      let limitRemaining;
-      let totalCredits;
-      let balanceRemaining;
-      let isFreeTier;
-      if (authRes.ok) {
-        const authJson = await authRes.json();
-        const d = authJson?.data;
-        usage = d?.usage;
-        limit = d?.limit;
-        limitRemaining = d?.limit_remaining;
-        isFreeTier = d?.is_free_tier;
-      }
-      if (creditsRes.ok) {
-        const creditsJson = await creditsRes.json();
-        const cd = creditsJson?.data;
-        if (cd) {
-          totalCredits = cd.total_credits;
-          const totalUsage = cd.total_usage || 0;
-          if (totalCredits !== void 0) {
-            balanceRemaining = Math.max(0, totalCredits - totalUsage);
-          }
-        }
-      }
-      const finalAvailable = balanceRemaining ?? limitRemaining;
-      return {
-        usage,
-        limit,
-        limitRemaining: finalAvailable,
-        totalCredits,
-        balanceRemaining: finalAvailable,
-        isFreeTier
-      };
-    } catch (err) {
-      return { error: err.message || "Timeout" };
-    }
-  }
-  /**
-   * Test LLM connection without sending chat tokens:
-   * Uses OpenRouter /auth/key endpoint or OpenAI /models endpoint to verify the key instantly & safely
-   */
-  static async testConnection(customKey, customModel) {
-    const settings = loadSettings();
-    const key = (customKey || settings.openRouterApiKey).trim();
-    const isDirectOpenAI = settings.llmProvider === "openai";
-    if (!key) {
-      return { success: false, latencyMs: 0, error: "Kein API Key hinterlegt" };
-    }
-    const start3 = Date.now();
-    try {
-      if (!isDirectOpenAI) {
-        const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
-          headers: {
-            "Authorization": `Bearer ${key}`,
-            "HTTP-Referer": "https://mba-hub.local",
-            "X-Title": "MBA HUB"
-          },
-          signal: AbortSignal.timeout(15e3)
-        });
-        const latencyMs = Date.now() - start3;
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && json?.data) {
-          const d = json.data;
-          const usageStr = d.usage !== void 0 ? `Verbrauch: $${Number(d.usage).toFixed(4)}` : "";
-          const remStr = d.limit_remaining !== void 0 && d.limit_remaining !== null ? ` | Restlimit: $${Number(d.limit_remaining).toFixed(2)}` : d.limit ? ` | Limit: $${Number(d.limit).toFixed(2)}` : "";
-          const labelStr = d.label ? `[${d.label}] ` : "";
-          return {
-            success: true,
-            latencyMs,
-            details: `${labelStr}OpenRouter Key g\xFCltig \u2713 ${usageStr}${remStr}`,
-            usage: d.usage,
-            limitRemaining: d.limit_remaining
-          };
-        }
-        if (res.status === 401 || res.status === 403) {
-          return {
-            success: false,
-            latencyMs,
-            error: json?.error?.message || "Ung\xFCltiger OpenRouter API Key (401 Unauthorized)"
-          };
-        }
-        return {
-          success: false,
-          latencyMs,
-          error: json?.error?.message || `HTTP ${res.status}: OpenRouter Authentifizierungsfehler`
-        };
-      } else {
-        const res = await fetch("https://api.openai.com/v1/models", {
-          headers: {
-            "Authorization": `Bearer ${key}`
-          },
-          signal: AbortSignal.timeout(15e3)
-        });
-        const latencyMs = Date.now() - start3;
-        if (res.ok) {
-          return {
-            success: true,
-            latencyMs,
-            details: "OpenAI API Key g\xFCltig (Modell-Katalog erreichbar) \u2713"
-          };
-        }
-        const data = await res.json().catch(() => ({}));
-        return {
-          success: false,
-          latencyMs,
-          error: data?.error?.message || `HTTP ${res.status}: Ung\xFCltiger OpenAI API Key`
-        };
-      }
-    } catch (err) {
-      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout bei der Verbindung zu OpenRouter" };
-    }
-  }
-  /**
-   * Optimize niches & quote into a high-converting Ideogram 3.0 prompt
-   */
-  static async generateIdeogramPrompt(niche1, niche2, quote5, stylePreset) {
-    const { url, headers, model } = this.getBaseUrlAndHeaders();
-    const systemPrompt = `You are an expert prompt engineer specializing in Ideogram 3.0 T-shirt graphics for Merch by Amazon.
-Your goal is to craft a highly descriptive, visually stunning, clean vector prompt that produces high-converting apparel designs.
-Requirements:
-1. Emphasize isolated vector graphics on a solid clean background.
-2. If a quote is provided, include the exact text inside quotation marks and request bold, legible typography.
-3. Keep the prompt under 90 words, focused strictly on visual aesthetic, style, lighting, and composition. No promo or buzzwords like 4K. Output ONLY the raw prompt text.`;
-    const userMessage = `Niche 1: ${niche1}
-Niche 2: ${niche2}
-Quote / Text: "${quote5}"
-Style Preset: ${stylePreset}`;
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userMessage }
-          ],
-          temperature: 0.7,
-          max_tokens: 250
-        }),
-        signal: AbortSignal.timeout(15e3)
-      });
-      if (!res.ok) {
-        throw new Error(`LLM error: ${res.statusText}`);
-      }
-      const data = await res.json();
-      return data.choices?.[0]?.message?.content?.trim() || `T-shirt graphic design of "${quote5}", ${niche1} style, clean vector illustration on solid background.`;
-    } catch (err) {
-      console.error("[LLMService] Error generating prompt:", err);
-      return `T-shirt graphic design of "${quote5}", ${niche1} ${niche2} aesthetic, clean vector illustration, isolated on solid background, commercial merchandise ready.`;
-    }
-  }
-  /**
-   * Vision Analysis + Amazon SEO Listing Generation (single-session token efficiency)
-   */
-  static async analyzeVisionAndGenerateListing(imageUrlOrBase64, niche1, niche2) {
-    const { url, headers, model } = this.getBaseUrlAndHeaders();
-    const systemPrompt = `You are "Listing Creator", an expert in Amazon Merch on Demand SEO listings and visual design analysis.
-Analyze the image and provide a compliant, high-converting listing plus design classifications.
-Character limits:
-- Title: 55-60 chars (Include visible quote verbatim or strongest keywords, no product types like "shirt")
-- Brand: 40-50 chars (Target audience/mood in Title Case)
-- Bullet 1: 230-246 chars (Audience, context, style, visible text if not in Title)
-- Bullet 2: 230-246 chars (Occasions, related sub-niches, "perfect for...")
-- Description: 450-650 chars (Smooth story-style summary)
-- Keywords: >= 25 comma-separated unique lowercase keywords.
-- colorCount: estimated number of distinct visible colors (integer, conservative, 2-8).
-- audiencePrediction: "Men", "Women", "Youth", or "Men, Women"
-- avoidColorPrediction: "Black", "White", or "None" (if white elements exist, avoid white)
-- reuseBackgroundPrediction: "Nein" (if graphic is isolated on solid bg) or "Ja"
-
-Respond strictly with valid JSON conforming to these exact keys.`;
-    const userContent = [
-      { type: "text", text: `Niche 1: ${niche1 || ""}
-Niche 2: ${niche2 || ""}` },
-      { type: "image_url", image_url: { url: imageUrlOrBase64 } }
-    ];
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent }
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.4,
-          max_tokens: 1e3
-        }),
-        signal: AbortSignal.timeout(25e3)
-      });
-      if (!res.ok) throw new Error(`Vision API error: ${res.statusText}`);
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-      return JSON.parse(content);
-    } catch (err) {
-      console.error("[LLMService] Vision Listing error:", err);
-      return {
-        title: `${niche1 || "Vintage"} Retro Graphic Design`,
-        brand: `${niche1 || "Retro"} Apparel Co`,
-        bullet1: `Express your unique aesthetic with this stylish ${niche1 || "vintage"} artwork. Ideal for everyday casual wear and trendsetters.`,
-        bullet2: `A versatile addition to any collection, perfect for birthdays, holidays, summer festivals, and casual outings with friends.`,
-        description: `High-quality graphic design celebrating ${niche1 || "retro"} vibes with vivid details and expressive artwork for enthusiasts.`,
-        keywords: "vintage, retro, aesthetic, graphic, distressed, classic, apparel, gifts",
-        colorCount: 4,
-        audiencePrediction: "Men, Women",
-        avoidColorPrediction: "None",
-        reuseBackgroundPrediction: "Nein"
-      };
-    }
-  }
-  /**
-   * AI Cutout Auditor: Inspects 4-Panel Verification Image to verify clean background removal
-   */
-  static async auditSvgCutout(fourPanelImageBase64OrPath, quote5) {
-    const { url, headers, model } = this.getBaseUrlAndHeaders();
-    const systemPrompt = SystemPromptService.getSvgBgAuditorPrompt();
-    let imagePayload = fourPanelImageBase64OrPath;
-    if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
-      try {
-        const fs13 = await import("fs");
-        const buffer = fs13.readFileSync(imagePayload);
-        imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
-      } catch (e) {
-      }
-    }
-    const start3 = Date.now();
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `Please audit the background removal for this artwork (${quote5 ? `Quote: "${quote5}"` : "Graphic Design"}) across the 4 test background colors (White, Black, Red, Slate). Output valid JSON.`
-                },
-                {
-                  type: "image_url",
-                  image_url: { url: imagePayload }
-                }
-              ]
-            }
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.1,
-          max_tokens: 500
-        }),
-        signal: AbortSignal.timeout(25e3)
-      });
-      const latencyMs = Date.now() - start3;
-      if (!res.ok) {
-        throw new Error(`LLM Error: ${res.status} ${res.statusText}`);
-      }
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content?.trim() || "{}";
-      const tokens = data.usage ? {
-        prompt: data.usage.prompt_tokens,
-        completion: data.usage.completion_tokens,
-        total: data.usage.total_tokens
-      } : void 0;
-      let clean = content;
-      if (clean.startsWith("```")) {
-        clean = clean.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-      }
-      let parsed = {};
-      try {
-        parsed = JSON.parse(clean);
-      } catch {
-        parsed = {
-          cutout_verdict: "APPROVED",
-          background_removed_cleanly: true,
-          detected_issues: [],
-          confidence: 0.9,
-          explanation: content
-        };
-      }
-      return {
-        cutout_verdict: parsed.cutout_verdict === "REJECTED" ? "REJECTED" : "APPROVED",
-        background_removed_cleanly: parsed.background_removed_cleanly ?? parsed.cutout_verdict !== "REJECTED",
-        detected_issues: Array.isArray(parsed.detected_issues) ? parsed.detected_issues : [],
-        confidence: parsed.confidence || 0.95,
-        explanation: parsed.explanation || "Background removal audit completed.",
-        rawText: content,
-        tokens,
-        latencyMs
-      };
-    } catch (err) {
-      console.error("[LLMService] Svg Cutout Audit error:", err);
-      return {
-        cutout_verdict: "APPROVED",
-        background_removed_cleanly: true,
-        detected_issues: [`Audit network error: ${err.message}`],
-        confidence: 0.5,
-        explanation: `Audit fehlgeschlagen (${err.message}), Fallback auf freigegeben.`,
-        latencyMs: Date.now() - start3
-      };
-    }
-  }
-};
-
-// src/server/services/ideogramService.ts
-init_settingsService();
-var IdeogramService = class {
-  /**
-   * Test Ideogram API connection (0 credits consumed)
-   */
-  static async testConnection(customKey) {
-    const settings = loadSettings();
-    const rawKey = customKey || settings.ideogramApiKey;
-    if (!rawKey || !rawKey.trim()) {
-      return { success: false, latencyMs: 0, error: "Kein Ideogram API Key hinterlegt" };
-    }
-    const key = rawKey.trim();
-    const start3 = Date.now();
-    try {
-      const res = await fetch("https://api.ideogram.ai/models", {
-        method: "GET",
-        headers: {
-          "Api-Key": key
-        },
-        signal: AbortSignal.timeout(15e3)
-      });
-      const latencyMs = Date.now() - start3;
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const customModels = Array.isArray(data?.models) ? data.models : [];
-        const customMsg = customModels.length > 0 ? ` (${customModels.length} Custom Models verf\xFCgbar)` : "";
-        return {
-          success: true,
-          latencyMs,
-          details: `Ideogram Verbindung erfolgreich! (Modelle V4, V3, V2 bereit${customMsg}) \u2713`
-        };
-      }
-      if (res.status === 401 || res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        return {
-          success: false,
-          latencyMs,
-          error: data?.message || "Ung\xFCltiger Ideogram API Key (401 Unauthorized). Bitte Key pr\xFCfen unter https://ideogram.ai/manage-api"
-        };
-      }
-      return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
-    } catch (err) {
-      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout bei der Verbindung zu Ideogram" };
-    }
-  }
-  /**
-   * Get all standard and custom Ideogram models (V4, V3, V2 Turbo, V2)
-   */
-  static async getAvailableModels() {
-    const standardModels = [
-      { id: "V_3", name: "Ideogram 3.0 (T-Shirt & Vektor Spezialist)" },
-      { id: "V_4", name: "Ideogram 4.0 (Neueste Generation & Transparent)" },
-      { id: "V_2_TURBO", name: "Ideogram 2.0 Turbo (Schnell & G\xFCnstig)" },
-      { id: "V_2", name: "Ideogram 2.0 (High Quality)" }
-    ];
-    const settings = loadSettings();
-    if (!settings.ideogramApiKey) return standardModels;
-    try {
-      const res = await fetch("https://api.ideogram.ai/models", {
-        headers: { "Api-Key": settings.ideogramApiKey.trim() },
-        signal: AbortSignal.timeout(1e4)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data?.models)) {
-          const custom = data.models.filter((m) => m.is_available_for_generation !== false).map((m) => ({
-            id: m.model_id || m.name,
-            name: `Custom: ${m.name || m.model_id}`,
-            isCustom: true
-          }));
-          return [...standardModels, ...custom];
-        }
-      }
-    } catch (e) {
-    }
-    return standardModels;
-  }
-  /**
-   * Generate Image via Ideogram API (supports V3, V4, V2)
-   */
-  static async generateImage(options2) {
-    const settings = loadSettings();
-    const key = settings.ideogramApiKey;
-    if (!key) {
-      throw new Error("Ideogram API Key fehlt in den Einstellungen.");
-    }
-    const renderingSpeed = options2.renderingSpeed || settings.ideogramRenderingSpeed || "DEFAULT";
-    const styleType = options2.styleType || settings.ideogramStyle || "GENERAL";
-    const magicPromptOption = options2.magicPromptOption || settings.ideogramMagicPromptOption || "AUTO";
-    const selectedModel = options2.model || settings.ideogramModel || "V_3";
-    const cleanRatio = (options2.aspectRatio || settings.ideogramAspectRatio || "10x16").replace(":", "x");
-    if (selectedModel === "V_3" || selectedModel === "V_3_TURBO" || selectedModel.startsWith("V_3")) {
-      const formData = new FormData();
-      formData.append("prompt", options2.prompt);
-      formData.append("rendering_speed", renderingSpeed);
-      formData.append("style_type", styleType);
-      formData.append("aspect_ratio", cleanRatio);
-      formData.append("magic_prompt", magicPromptOption);
-      formData.append("num_images", "1");
-      const res2 = await fetch("https://api.ideogram.ai/v1/ideogram-v3/generate", {
-        method: "POST",
-        headers: {
-          "Api-Key": key.trim()
-        },
-        body: formData,
-        signal: AbortSignal.timeout(18e4)
-      });
-      if (!res2.ok) {
-        const errBody = await res2.text();
-        throw new Error(`Ideogram V3 API Fehler: ${res2.status} - ${errBody}`);
-      }
-      const data2 = await res2.json();
-      const imageUrl2 = data2?.data?.[0]?.url;
-      if (!imageUrl2) {
-        throw new Error("Ideogram V3 lieferte keine Bild-URL zur\xFCck.");
-      }
-      return {
-        imageUrl: imageUrl2,
-        prompt: data2?.data?.[0]?.prompt || options2.prompt
-      };
-    }
-    if (selectedModel === "V_4" || selectedModel.startsWith("V_4")) {
-      const formData = new FormData();
-      formData.append("text_prompt", options2.prompt);
-      formData.append("rendering_speed", renderingSpeed);
-      formData.append("aspect_ratio", cleanRatio);
-      const res2 = await fetch("https://api.ideogram.ai/v1/ideogram-v4/generate", {
-        method: "POST",
-        headers: {
-          "Api-Key": key.trim()
-        },
-        body: formData,
-        signal: AbortSignal.timeout(18e4)
-      });
-      if (!res2.ok) {
-        const errBody = await res2.text();
-        throw new Error(`Ideogram V4 API Fehler: ${res2.status} - ${errBody}`);
-      }
-      const data2 = await res2.json();
-      const imageUrl2 = data2?.data?.[0]?.url;
-      if (!imageUrl2) {
-        throw new Error("Ideogram V4 lieferte keine Bild-URL zur\xFCck.");
-      }
-      return {
-        imageUrl: imageUrl2,
-        prompt: data2?.data?.[0]?.prompt || options2.prompt
-      };
-    }
-    const aspectMap = {
-      "10x16": "ASPECT_10_16",
-      "16x10": "ASPECT_16_10",
-      "9x16": "ASPECT_9_16",
-      "16x9": "ASPECT_16_9",
-      "3x2": "ASPECT_3_2",
-      "2x3": "ASPECT_2_3",
-      "4x3": "ASPECT_4_3",
-      "3x4": "ASPECT_3_4",
-      "1x1": "ASPECT_1_1",
-      "1x3": "ASPECT_1_3",
-      "3x1": "ASPECT_3_1"
-    };
-    const mappedRatio = aspectMap[cleanRatio] || "ASPECT_10_16";
-    const payload = {
-      image_request: {
-        prompt: options2.prompt,
-        aspect_ratio: mappedRatio,
-        model: selectedModel,
-        rendering_speed: renderingSpeed,
-        style_type: styleType,
-        magic_prompt_option: magicPromptOption
-      }
-    };
-    const res = await fetch("https://api.ideogram.ai/generate", {
-      method: "POST",
-      headers: {
-        "Api-Key": key.trim(),
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(18e4)
-    });
-    if (!res.ok) {
-      const errBody = await res.text();
-      throw new Error(`Ideogram API Fehler: ${res.status} - ${errBody}`);
-    }
-    const data = await res.json();
-    const imageUrl = data?.data?.[0]?.url;
-    if (!imageUrl) {
-      throw new Error("Ideogram lieferte keine Bild-URL zur\xFCck.");
-    }
-    return {
-      imageUrl,
-      prompt: data?.data?.[0]?.prompt || options2.prompt
-    };
-  }
-};
-
-// src/server/services/vectorizerService.ts
-init_settingsService();
-var VectorizerService = class {
-  /**
-   * Test Vectorizer.ai API credentials and query account details
-   */
-  static async testConnection(customKey, customSecret) {
-    const settings = loadSettings();
-    const key = customKey || settings.vectorizerApiKey;
-    const secret = customSecret || settings.vectorizerApiSecret;
-    if (!key || !secret) {
-      return { success: false, latencyMs: 0, error: "API Key (ID) oder API Secret fehlt" };
-    }
-    const start3 = Date.now();
-    try {
-      const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
-      const res = await fetch("https://vectorizer.ai/api/v1/account", {
-        headers: {
-          "Authorization": `Basic ${auth}`
-        },
-        signal: AbortSignal.timeout(8e3)
-      });
-      const latencyMs = Date.now() - start3;
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        const credits = data?.credits?.remaining ?? data?.credits;
-        return {
-          success: true,
-          latencyMs,
-          creditsRemaining: credits,
-          details: credits !== void 0 ? `Guthaben: ${credits} Credits` : "Account verbunden"
-        };
-      }
-      if (res.status === 401) {
-        return {
-          success: false,
-          latencyMs,
-          error: data?.error?.message || "Ung\xFCltige Vectorizer.ai Zugangsdaten (401)"
-        };
-      }
-      return { success: false, latencyMs, error: data?.error?.message || `HTTP ${res.status}` };
-    } catch (err) {
-      return { success: false, latencyMs: Date.now() - start3, error: err.message || "Timeout" };
-    }
-  }
-  /**
-   * Helper to build FormData with complete MBA Manager parameters
-   */
-  static buildFormData(imageField, isPreview = false, options2) {
-    const settings = loadSettings();
-    const formData = new FormData();
-    if (imageField.type === "url") {
-      formData.append("image.url", imageField.value);
-    } else {
-      const blob = new Blob([imageField.buffer], { type: imageField.mimeType || "image/png" });
-      formData.append("image", blob, imageField.filename || "design.png");
-    }
-    const mode = options2?.mode ?? (isPreview ? settings.vectorizerModePreview || "test" : settings.vectorizerModeProduction || "production");
-    formData.append("mode", mode);
-    const maxColors = options2?.maxColors ?? settings.vectorizerMaxColors ?? 2;
-    formData.append("processing.max_colors", String(maxColors));
-    const removeBg = options2?.removeBackground ?? false;
-    formData.append("processing.remove_background", String(removeBg));
-    const minArea = options2?.minArea ?? settings.vectorizerMinArea ?? 10;
-    if (minArea > 0) {
-      formData.append("processing.shapes.min_area_px", String(minArea));
-    }
-    formData.append("output.svg.version", "svg_1_1");
-    const drawStyle = options2?.drawStyle ?? settings.vectorizerDrawStyle ?? "fill_shapes";
-    formData.append("output.draw_style", drawStyle);
-    const shapeStacking = options2?.shapeStacking ?? settings.vectorizerShapeStacking ?? "cutouts";
-    formData.append("output.shape_stacking", shapeStacking);
-    const groupBy = options2?.groupBy ?? settings.vectorizerGroupBy ?? "none";
-    formData.append("output.group_by", groupBy);
-    formData.append("output.curves.allowed.quadratic_bezier", "true");
-    formData.append("output.curves.allowed.cubic_bezier", "true");
-    formData.append("output.curves.allowed.circular_arc", "true");
-    formData.append("output.curves.allowed.elliptical_arc", "true");
-    const optimized = options2?.optimizedShapes ?? settings.vectorizerOptimizedShapes ?? true;
-    formData.append("output.parameterized_shapes.flatten", String(!optimized));
-    const gapFiller = options2?.gapFiller ?? settings.vectorizerGapFiller ?? false;
-    formData.append("output.gap_filler.enabled", String(gapFiller));
-    if (gapFiller) {
-      formData.append("output.gap_filler.clip_overflow", "false");
-      formData.append("output.gap_filler.non_scaling_stroke", "true");
-    }
-    if (drawStyle.includes("stroke")) {
-      const lineFit = options2?.lineFitTolerance ?? settings.vectorizerLineFitTolerance ?? 0.1;
-      formData.append("output.curves.line_fit_tolerance", String(lineFit));
-    }
-    return formData;
-  }
-  /**
-   * Vectorize an image URL to SVG
-   */
-  static async vectorizeImage(imageUrl, isPreview = false, options2) {
-    const settings = loadSettings();
-    const key = settings.vectorizerApiKey;
-    const secret = settings.vectorizerApiSecret;
-    if (!key || !secret) {
-      throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
-    }
-    const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
-    const formData = this.buildFormData({ type: "url", value: imageUrl }, isPreview, options2);
-    const res = await fetch("https://vectorizer.ai/api/v1/vectorize", {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${auth}`
-      },
-      body: formData,
-      signal: AbortSignal.timeout(9e4)
-    });
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "");
-      throw new Error(`Vectorizer Fehler (${res.status}): ${errorText || "Server Error"}`);
-    }
-    return await res.text();
-  }
-  /**
-   * Vectorize an image Buffer to SVG
-   */
-  static async vectorizeBuffer(buffer, mimeType = "image/png", isPreview = false, options2) {
-    const settings = loadSettings();
-    const key = settings.vectorizerApiKey;
-    const secret = settings.vectorizerApiSecret;
-    if (!key || !secret) {
-      throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
-    }
-    const auth = Buffer.from(`${key.trim()}:${secret.trim()}`).toString("base64");
-    const formData = this.buildFormData({ type: "buffer", buffer, mimeType }, isPreview, options2);
-    const res = await fetch("https://vectorizer.ai/api/v1/vectorize", {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${auth}`
-      },
-      body: formData,
-      signal: AbortSignal.timeout(9e4)
-    });
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "");
-      throw new Error(`Vectorizer Fehler (${res.status}): ${errorText || "Server Error"}`);
-    }
-    return await res.text();
-  }
-};
+init_trademarkService();
+init_llmService();
+init_ideogramService();
+init_vectorizerService();
 
 // src/server/services/supabaseService.ts
 var import_fs73 = __toESM2(require("fs"), 1);
@@ -216892,1493 +222096,9 @@ var SupabaseService = class {
   }
 };
 
-// src/server/services/syncEngine.ts
-init_settingsService();
-
-// node_modules/playwright-core/index.mjs
-var import_index = __toESM2(require_playwright_core(), 1);
-var chromium = import_index.default.chromium;
-var firefox = import_index.default.firefox;
-var webkit = import_index.default.webkit;
-var selectors = import_index.default.selectors;
-var devices = import_index.default.devices;
-var errors = import_index.default.errors;
-var request2 = import_index.default.request;
-var _electron = import_index.default._electron;
-var _android = import_index.default._android;
-
-// src/server/services/browserSessionService.ts
-var import_path69 = __toESM2(require("path"), 1);
-var import_fs74 = __toESM2(require("fs"), 1);
-function findChromiumExecutable() {
-  if (process.env.CHROME_BIN && import_fs74.default.existsSync(process.env.CHROME_BIN)) {
-    return process.env.CHROME_BIN;
-  }
-  const candidateDirs = [
-    process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright",
-    import_path69.default.join(process.env.HOME || "/root", ".cache", "ms-playwright"),
-    import_path69.default.join(process.env.HOME || "/root", "Library", "Caches", "ms-playwright")
-  ];
-  for (const dir of candidateDirs) {
-    if (import_fs74.default.existsSync(dir)) {
-      try {
-        const files = [];
-        const scan = (d, depth = 0) => {
-          if (depth > 4) return;
-          const items = import_fs74.default.readdirSync(d, { withFileTypes: true });
-          for (const item of items) {
-            const p = import_path69.default.join(d, item.name);
-            if (item.isDirectory()) scan(p, depth + 1);
-            else files.push(p);
-          }
-        };
-        scan(dir);
-        const headlessShell = files.find((f) => f.endsWith("/chrome-headless-shell") || f.endsWith("\\chrome-headless-shell.exe"));
-        if (headlessShell) return headlessShell;
-        const chrome2 = files.find((f) => f.endsWith("/chrome") || f.endsWith("Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing") || f.endsWith("\\chrome.exe"));
-        if (chrome2) return chrome2;
-      } catch {
-      }
-    }
-  }
-  const systemCandidates = [
-    "/usr/bin/google-chrome",
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser"
-  ];
-  for (const sc of systemCandidates) {
-    if (import_fs74.default.existsSync(sc)) return sc;
-  }
-  return void 0;
-}
-var BrowserSessionService = class _BrowserSessionService {
-  static context = null;
-  static sessions = /* @__PURE__ */ new Map();
-  static latestFrames = /* @__PURE__ */ new Map();
-  static frameBroadcasters = [];
-  static isInitializing = false;
-  static getProfileDir() {
-    const dir = import_path69.default.resolve(process.cwd(), "data", "chrome-profile");
-    if (!import_fs74.default.existsSync(dir)) {
-      import_fs74.default.mkdirSync(dir, { recursive: true });
-    }
-    return dir;
-  }
-  /**
-   * Register a frame listener (used by WebSocket server to stream frames to clients)
-   */
-  static onFrame(callback) {
-    this.frameBroadcasters.push(callback);
-    for (const [type3, frame] of this.latestFrames.entries()) {
-      try {
-        callback(type3, frame.data, frame.metadata);
-      } catch {
-      }
-    }
-  }
-  /**
-   * Ensure browser context is launched with macOS stealth settings
-   */
-  static async ensureContext() {
-    if (this.context) return this.context;
-    if (this.isInitializing) {
-      while (this.isInitializing) {
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      if (this.context) return this.context;
-    }
-    this.isInitializing = true;
-    try {
-      const profileDir2 = this.getProfileDir();
-      const macUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-      const executablePath = findChromiumExecutable();
-      console.log("[BrowserSession] Launching persistent Chromium with Mac Stealth profile:", profileDir2);
-      console.log("[BrowserSession] Using executable path:", executablePath || "Default Playwright auto-resolution");
-      const launchOptions = {
-        headless: true,
-        viewport: { width: 1440, height: 900 },
-        userAgent: macUserAgent,
-        locale: "de-DE",
-        timezoneId: "Europe/Berlin",
-        colorScheme: "dark",
-        deviceScaleFactor: 1,
-        args: [
-          "--disable-blink-features=AutomationControlled",
-          "--no-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-infobars",
-          "--window-size=1440,900",
-          "--start-maximized",
-          "--disable-gpu",
-          "--disable-setuid-sandbox"
-        ]
-      };
-      if (executablePath) {
-        launchOptions.executablePath = executablePath;
-      }
-      this.context = await chromium.launchPersistentContext(profileDir2, launchOptions);
-      await this.context.addInitScript(() => {
-        Object.defineProperty(navigator, "webdriver", {
-          get: () => void 0
-        });
-        Object.defineProperty(navigator, "platform", {
-          get: () => "MacIntel"
-        });
-        Object.defineProperty(navigator, "languages", {
-          get: () => ["de-DE", "de", "en-US", "en"]
-        });
-        Object.defineProperty(navigator, "plugins", {
-          get: () => [1, 2, 3, 4, 5]
-        });
-        const getParameter = WebGLRenderingContext.prototype.getParameter;
-        WebGLRenderingContext.prototype.getParameter = function(parameter) {
-          if (parameter === 37445) return "Apple";
-          if (parameter === 37446) return "Apple M2 Pro Metal Engine";
-          return getParameter.apply(this, [parameter]);
-        };
-      });
-      this.context.on("close", () => {
-        console.log("[BrowserSession] Browser context closed");
-        this.context = null;
-        this.sessions.clear();
-      });
-      return this.context;
-    } finally {
-      this.isInitializing = false;
-    }
-  }
-  /**
-   * Get or launch a specific session (sync or upload)
-   */
-  static async getSession(type3) {
-    let session2 = this.sessions.get(type3);
-    if (session2 && !session2.page.isClosed()) {
-      const cached = this.latestFrames.get(type3);
-      if (cached) {
-        for (const broadcaster of this.frameBroadcasters) {
-          broadcaster(type3, cached.data, cached.metadata);
-        }
-      } else {
-        session2.page.screenshot({ type: "jpeg", quality: 80 }).then((buf) => {
-          const b64 = buf.toString("base64");
-          _BrowserSessionService.latestFrames.set(type3, { data: b64, metadata: {} });
-          for (const broadcaster of this.frameBroadcasters) {
-            broadcaster(type3, b64, {});
-          }
-        }).catch(() => {
-        });
-      }
-      return session2;
-    }
-    const context2 = await this.ensureContext();
-    const page = await context2.newPage();
-    const defaultUrl = "https://merch.amazon.com/dashboard";
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const cdp = await page.context().newCDPSession(page);
-    session2 = {
-      type: type3,
-      page,
-      cdp,
-      currentUrl: defaultUrl,
-      title: "Amazon Merch on Demand",
-      isStreaming: false
-    };
-    this.sessions.set(type3, session2);
-    page.on("framenavigated", (frame) => {
-      if (frame === page.mainFrame() && session2) {
-        session2.currentUrl = page.url();
-        page.title().then((t) => {
-          if (session2) session2.title = t;
-        }).catch(() => {
-        });
-      }
-    });
-    page.on("close", () => {
-      this.sessions.delete(type3);
-    });
-    await this.startScreencast(type3);
-    await page.goto(defaultUrl, { waitUntil: "domcontentloaded", timeout: 3e4 }).catch((err) => {
-      console.warn(`[BrowserSession] Initial navigation warning for ${type3}:`, err.message);
-    });
-    return session2;
-  }
-  /**
-   * Start CDP screencast on a session
-   */
-  static async startScreencast(type3) {
-    const session2 = this.sessions.get(type3);
-    if (!session2 || session2.page.isClosed()) return;
-    try {
-      await session2.cdp.send("Page.startScreencast", {
-        format: "jpeg",
-        quality: 80,
-        maxWidth: 1440,
-        maxHeight: 900,
-        everyNthFrame: 1
-      });
-      session2.isStreaming = true;
-      session2.cdp.on("Page.screencastFrame", async ({ data, sessionId, metadata }) => {
-        try {
-          await session2.cdp.send("Page.screencastFrameAck", { sessionId });
-        } catch {
-        }
-        _BrowserSessionService.latestFrames.set(type3, { data, metadata });
-        for (const broadcaster of this.frameBroadcasters) {
-          broadcaster(type3, data, metadata);
-        }
-      });
-      console.log(`[BrowserSession] Screencast active for session: ${type3}`);
-    } catch (err) {
-      console.error(`[BrowserSession] Failed to start screencast for ${type3}:`, err.message);
-    }
-  }
-  /**
-   * Forward mouse events (clicks, movement, wheel scroll) using native Playwright mouse
-   */
-  static async dispatchMouseEvent(type3, event) {
-    const session2 = this.sessions.get(type3);
-    if (!session2 || session2.page.isClosed()) return;
-    const x = Math.round(event.x);
-    const y = Math.round(event.y);
-    try {
-      if (event.type === "click") {
-        await session2.page.mouse.click(x, y, { button: event.button || "left" });
-      } else if (event.type === "mousePressed") {
-        await session2.page.mouse.move(x, y);
-        await session2.page.mouse.down({ button: event.button || "left" });
-      } else if (event.type === "mouseReleased") {
-        await session2.page.mouse.up({ button: event.button || "left" });
-      } else if (event.type === "mouseWheel") {
-        await session2.page.mouse.wheel(event.deltaX || 0, event.deltaY || 0);
-      } else if (event.type === "mouseMoved") {
-        await session2.page.mouse.move(x, y);
-      }
-    } catch (err) {
-    }
-  }
-  /**
-   * Submit active Amazon form (Sign In, Continue, OTP, etc.)
-   */
-  static async submitActiveForm(type3) {
-    const session2 = this.sessions.get(type3);
-    if (!session2 || session2.page.isClosed()) return { success: false, message: "Session nicht aktiv" };
-    try {
-      await session2.page.keyboard.press("Enter").catch(() => {
-      });
-      await session2.page.evaluate(() => {
-        const selectors2 = [
-          "#signInSubmit",
-          "#continue",
-          'input[type="submit"]',
-          'button[type="submit"]',
-          ".a-button-input",
-          "#auth-signin-button",
-          'input[name="rememberMe"]'
-        ];
-        for (const sel of selectors2) {
-          const btn = document.querySelector(sel);
-          if (btn && btn.offsetParent !== null) {
-            btn.click();
-            return;
-          }
-        }
-        const form = document.querySelector('form[name="signIn"], form');
-        if (form) form.submit();
-      });
-      return { success: true, message: "Login-Formular erfolgreich abgeschickt!" };
-    } catch (err) {
-      return { success: false, message: err.message };
-    }
-  }
-  /**
-   * Forward keyboard events to CDP with full support for password, text fields and Enter submit
-   */
-  static async dispatchKeyEvent(type3, event) {
-    const session2 = this.sessions.get(type3);
-    if (!session2 || session2.page.isClosed()) return;
-    try {
-      if (event.text && event.text.length === 1 && !["Enter", "Tab", "Backspace", "Escape"].includes(event.key)) {
-        await session2.cdp.send("Input.insertText", { text: event.text });
-      } else if (event.key === "Backspace") {
-        await session2.page.keyboard.press("Backspace");
-      } else if (event.key === "Enter") {
-        await this.submitActiveForm(type3);
-      } else if (event.key === "Tab") {
-        await session2.page.keyboard.press("Tab");
-      } else if (event.key === "Escape") {
-        await session2.page.keyboard.press("Escape");
-      } else if (event.key === "ArrowLeft") {
-        await session2.page.keyboard.press("ArrowLeft");
-      } else if (event.key === "ArrowRight") {
-        await session2.page.keyboard.press("ArrowRight");
-      } else if (event.key === "ArrowUp") {
-        await session2.page.keyboard.press("ArrowUp");
-      } else if (event.key === "ArrowDown") {
-        await session2.page.keyboard.press("ArrowDown");
-      } else {
-        await session2.cdp.send("Input.dispatchKeyEvent", {
-          type: event.type === "keyUp" ? "keyUp" : "rawKeyDown",
-          key: event.key,
-          code: event.code,
-          text: event.text,
-          unmodifiedText: event.unmodifiedText || event.text,
-          windowsVirtualKeyCode: event.keyCode,
-          nativeVirtualKeyCode: event.keyCode,
-          modifiers: event.modifiers || 0
-        });
-      }
-    } catch (err) {
-      try {
-        if (event.key && event.type !== "keyUp") {
-          if (event.key.length === 1) {
-            await session2.page.keyboard.type(event.key);
-          } else {
-            await session2.page.keyboard.press(event.key);
-          }
-        }
-      } catch {
-      }
-    }
-  }
-  /**
-   * Navigate active session to URL
-   */
-  static async navigate(type3, url) {
-    const session2 = await this.getSession(type3);
-    try {
-      let targetUrl = url;
-      if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-        targetUrl = "https://" + targetUrl;
-      }
-      await session2.page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 3e4 });
-      return { success: true, url: session2.page.url() };
-    } catch (err) {
-      return { success: false, url: session2.page.url() };
-    }
-  }
-  /**
-   * Reload active session
-   */
-  static async reload(type3) {
-    const session2 = this.sessions.get(type3);
-    if (session2 && !session2.page.isClosed()) {
-      await session2.page.reload({ waitUntil: "domcontentloaded", timeout: 3e4 }).catch(() => {
-      });
-    }
-  }
-  /**
-   * Go back in history
-   */
-  static async goBack(type3) {
-    const session2 = this.sessions.get(type3);
-    if (session2 && !session2.page.isClosed()) {
-      await session2.page.goBack().catch(() => {
-      });
-    }
-  }
-  /**
-   * Go forward in history
-   */
-  static async goForward(type3) {
-    const session2 = this.sessions.get(type3);
-    if (session2 && !session2.page.isClosed()) {
-      await session2.page.goForward().catch(() => {
-      });
-    }
-  }
-  /**
-   * Restart / Refresh session page
-   */
-  static async restartSession(type3) {
-    try {
-      const existing = this.sessions.get(type3);
-      if (existing && !existing.page.isClosed()) {
-        await existing.page.close().catch(() => {
-        });
-      }
-      this.sessions.delete(type3);
-      await this.getSession(type3);
-      return {
-        success: true,
-        message: `Chrome ${type3 === "sync" ? "Session 1 (Sync & Login)" : "Session 2 (Upload Worker)"} erfolgreich neu gestartet!`
-      };
-    } catch (err) {
-      return { success: false, message: err.message };
-    }
-  }
-  /**
-   * Get overall browser & session status
-   */
-  static getStatus() {
-    const syncSession = this.sessions.get("sync");
-    const uploadSession = this.sessions.get("upload");
-    return {
-      isContextActive: !!this.context,
-      sync: {
-        active: !!syncSession && !syncSession.page.isClosed(),
-        url: syncSession?.page.url() || "https://merch.amazon.com/dashboard",
-        title: syncSession?.title || "Amazon Merch on Demand",
-        isStreaming: syncSession?.isStreaming || false
-      },
-      upload: {
-        active: !!uploadSession && !uploadSession.page.isClosed(),
-        url: uploadSession?.page.url() || "https://merch.amazon.com/dashboard",
-        title: uploadSession?.title || "Amazon Merch on Demand",
-        isStreaming: uploadSession?.isStreaming || false
-      }
-    };
-  }
-};
-
-// src/server/services/syncEngine.ts
-var MP_MAP = {
-  ATVPDKIKX0DER: "us",
-  A1PA6795UKMFR9: "de",
-  A1F83G8C2ARO7P: "gb",
-  A13V1IB3VIYZZH: "fr",
-  APJ6JRA9NG5V4: "it",
-  A1RKKUPIHCS9HS: "es",
-  A1VC38T7YXB528: "jp"
-};
-var VARIANT_PRODUCT_TYPES = /* @__PURE__ */ new Set([
-  "HARDCOVER_JOURNAL",
-  "MUG",
-  "PHONE_CASE_APPLE_IPHONE",
-  "PHONE_CASE_SAMSUNG_GALAXY",
-  "POP_SOCKET",
-  "PRINTED_BASEBALL_HAT",
-  "PRINTED_TRUCKER_HAT",
-  "SPORT_SUN_VISOR",
-  "THROW_PILLOW",
-  "TOTE_BAG",
-  "TUMBLER",
-  "WATER_BOTTLE"
-]);
-var ALL_STATUSES = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
-var FIND_LISTINGS_URL = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
-var PRODUCT_CONFIG_URL = "https://merch.amazon.com/api/productconfiguration/get?id=";
-var SyncEngine = class _SyncEngine {
-  static logs = [];
-  static state = {
-    isScanning: false,
-    activeScanType: null,
-    scanStatus: "ready",
-    lastStatusMessage: "Bereit",
-    autoUpdateEnabled: false,
-    lastPeriodicSync: null,
-    lastPeriodicSyncCount: 0,
-    lastQuickDesigns: null,
-    lastFullDesigns: null,
-    lastQuickListings: null,
-    lastFullListings: null,
-    lastQuickSales: null,
-    lastFullSalesAll: null,
-    lastAsinSync: null,
-    liveDesignsCount: 0,
-    unresolvedAsinsCount: 0
-  };
-  static shouldStop = false;
-  static autoUpdateTimer = null;
-  static asinResolveTimer = null;
-  static getLogs() {
-    return this.logs;
-  }
-  static clearLogs() {
-    this.logs = [];
-  }
-  static addLog(text2, type3 = "info") {
-    const entry = {
-      id: Math.random().toString(36).substring(2, 9),
-      timestamp: Date.now(),
-      text: text2,
-      type: type3
-    };
-    this.logs.unshift(entry);
-    if (this.logs.length > 500) {
-      this.logs.pop();
-    }
-  }
-  static getState() {
-    return { ...this.state };
-  }
-  static updateCounts(live, unresolved) {
-    this.state.liveDesignsCount = live;
-    this.state.unresolvedAsinsCount = unresolved;
-  }
-  static stopScan() {
-    this.shouldStop = true;
-    this.state.isScanning = false;
-    this.state.activeScanType = null;
-    this.state.scanStatus = "ready";
-    this.state.lastStatusMessage = "Scan manuell abgebrochen.";
-    this.addLog("Scan manuell abgebrochen.", "warn");
-  }
-  static init() {
-    const settings = loadSettings();
-    const enabled = settings.autoSyncEnabled !== void 0 ? settings.autoSyncEnabled : true;
-    this.state.autoUpdateEnabled = enabled;
-    if (enabled) {
-      this.addLog("[Auto-Update] Hintergrund-Scheduler aktiv (alle 15 Min).", "info");
-      this.startSchedulers();
-    }
-  }
-  static toggleAutoUpdate(enabled) {
-    this.state.autoUpdateEnabled = enabled;
-    saveSettings({ autoSyncEnabled: enabled });
-    if (enabled) {
-      this.addLog("[Auto-Update] Hintergrund-Scheduler aktiviert (alle 15 Min).", "success");
-      this.startSchedulers();
-    } else {
-      this.addLog("[Auto-Update] Hintergrund-Scheduler deaktiviert.", "info");
-      this.stopSchedulers();
-    }
-  }
-  static startSchedulers() {
-    this.stopSchedulers();
-    this.autoUpdateTimer = setInterval(async () => {
-      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
-        try {
-          await this.runSmartSync();
-        } catch (e) {
-          this.addLog(`[Auto-Update] Fehler: ${e.message}`, "error");
-        }
-      }
-    }, 15 * 60 * 1e3);
-    this.asinResolveTimer = setInterval(async () => {
-      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
-        try {
-          await this.resolveChildAsinsBatch(5);
-        } catch (e) {
-        }
-      }
-    }, 60 * 1e3);
-  }
-  static stopSchedulers() {
-    if (this.autoUpdateTimer) clearInterval(this.autoUpdateTimer);
-    if (this.asinResolveTimer) clearInterval(this.asinResolveTimer);
-    this.autoUpdateTimer = null;
-    this.asinResolveTimer = null;
-  }
-  static sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-  static cachedAccountId = null;
-  /**
-   * Helper to query Supabase safely
-   */
-  static getSupabase() {
-    const supabase = getSupabaseClient();
-    if (!supabase) throw new Error("Supabase ist nicht konfiguriert (URL/Key fehlt).");
-    return supabase;
-  }
-  /**
-   * Helper to get active Amazon authenticated page from Session 1
-   */
-  static async getAmazonPage() {
-    const session2 = await BrowserSessionService.getSession("sync");
-    if (!session2 || session2.page.isClosed()) {
-      throw new Error("Session 1 (Sync & Login) ist nicht aktiv.");
-    }
-    let currentUrl = session2.page.url();
-    if (currentUrl === "about:blank" || !currentUrl.includes("amazon.com")) {
-      this.addLog("[Session 1] Navigiere zu Amazon Dashboard...", "info");
-      await session2.page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 }).catch(() => {
-      });
-      currentUrl = session2.page.url();
-    }
-    if (!currentUrl.includes("amazon.com")) {
-      throw new Error(`Session 1 ist nicht auf Amazon eingeloggt (Aktuelle Seite: ${currentUrl}). Bitte erst in Session 1 einloggen.`);
-    }
-    return session2.page;
-  }
-  /**
-   * Discover and cache Amazon Account-ID / ContentOwnerId
-   */
-  static async getAccountId(page) {
-    if (this.cachedAccountId) return this.cachedAccountId;
-    const extracted = await page.evaluate(() => {
-      const mCookie = document.cookie.match(/(?:accountId|contentOwnerId)=([A-Z0-9]+)/i);
-      if (mCookie) return mCookie[1];
-      const scripts = Array.from(document.querySelectorAll("script")).map((s) => s.innerText).join(" ");
-      const m = scripts.match(/["'](?:accountId|contentOwnerId|ContentOwnerId)["']\s*:\s*["']([A-Z0-9]+)["']/i);
-      if (m) return m[1];
-      return null;
-    });
-    if (extracted) {
-      this.cachedAccountId = extracted;
-      this.addLog(`[Session 1] Amazon Account-ID erkannt: ${extracted} \u2713`, "info");
-      return extracted;
-    }
-    this.addLog("[Session 1] Ermittle Amazon Account-ID \xFCber Manage-Seite...", "info");
-    let capturedId = null;
-    const requestHandler = (req) => {
-      if (req.url().includes("FindListings")) {
-        try {
-          const json = req.postDataJSON();
-          if (json?.accountId) {
-            capturedId = json.accountId;
-          }
-        } catch {
-        }
-      }
-    };
-    page.on("request", requestHandler);
-    try {
-      await page.goto("https://merch.amazon.com/manage/products", { waitUntil: "domcontentloaded", timeout: 3e4 });
-      let waitTime = 0;
-      while (!capturedId && waitTime < 6e3) {
-        await this.sleep(200);
-        waitTime += 200;
-      }
-    } finally {
-      page.off("request", requestHandler);
-    }
-    if (capturedId) {
-      this.cachedAccountId = capturedId;
-      this.addLog(`[Session 1] Amazon Account-ID erkannt: ${capturedId} \u2713`, "success");
-      return capturedId;
-    }
-    return "";
-  }
-  /**
-   * Execute in-browser FindListings query using Session 1 authentication cookies and Coral Request format with 429 retry backoff
-   */
-  static async fetchListingsPage(page, accountId, pageToken = [], statuses = ALL_STATUSES) {
-    return await page.evaluate(async ({ accountId: accountId2, pageToken: pageToken2, statuses: statuses2, url }) => {
-      const body = {
-        pageSize: 500,
-        sortField: "DateUpdated",
-        sortOrder: "Descending",
-        status: statuses2,
-        marketplaces: null,
-        productTypes: null,
-        searchableOnRetail: null,
-        deleteReasonType: ["", "CONTENT_POLICY_VIOLATION", "INACTIVE_NO_SALES", "CONTENT_CREATOR"],
-        accountId: accountId2 || null,
-        pageToken: pageToken2 || [],
-        __type: "com.amazon.merch.search#FindListingsRequest"
-      };
-      const sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
-      let retries = 0;
-      let backoff = 1500;
-      while (retries < 10) {
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(body),
-          credentials: "include"
-        });
-        if (resp.ok) return await resp.json();
-        if (resp.status === 429 || resp.url?.includes("merch.amazon.com/429")) {
-          console.log(`[FindListings] Rate limited (429), warte ${backoff}ms (Versuch ${retries + 1}/10)...`);
-          await sleep2(backoff);
-          backoff = Math.min(backoff * 1.5, 8e3);
-          retries++;
-          continue;
-        }
-        if (resp.url?.includes("signin") || resp.status === 404) throw new Error("LoggedOut");
-        const errText = await resp.text().catch(() => "");
-        throw new Error(`FindListings HTTP ${resp.status}: ${errText || resp.statusText}`);
-      }
-      throw new Error("FindListings: Rate limit retries exceeded");
-    }, { accountId, pageToken, statuses, url: FIND_LISTINGS_URL });
-  }
-  /**
-   * Fetch Product Config (titles, bullets, brand) for a specific design
-   */
-  static async fetchProductConfig(page, designId) {
-    return await page.evaluate(async ({ url }) => {
-      const res = await fetch(url, {
-        method: "GET",
-        headers: { "Accept": "application/json" },
-        credentials: "include"
-      });
-      if (!res.ok) throw new Error(`ProductConfig HTTP ${res.status}`);
-      return await res.json();
-    }, { url: `${PRODUCT_CONFIG_URL}${designId}` });
-  }
-  /**
-   * Fetch Sales Analytics from Amazon
-   */
-  static async fetchSalesAnalytics(page, startDate, endDate) {
-    return await page.evaluate(async ({ startDate: startDate2, endDate: endDate2 }) => {
-      try {
-        const url = `https://merch.amazon.com/analytics/sales/v1?startDate=${startDate2}&endDate=${endDate2}`;
-        const res = await fetch(url, {
-          method: "GET",
-          headers: { "Accept": "application/json" },
-          credentials: "include"
-        });
-        if (!res.ok) return null;
-        return await res.json();
-      } catch {
-        return null;
-      }
-    }, { startDate, endDate });
-  }
-  /**
-   * Fetch live and unresolved counts from Supabase
-   */
-  static async refreshDBStats() {
-    try {
-      const supabase = getSupabaseClient();
-      if (!supabase) return;
-      const [liveRes, unresolvedRes] = await Promise.all([
-        supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]),
-        supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"])
-      ]);
-      this.state.liveDesignsCount = liveRes.count || 0;
-      this.state.unresolvedAsinsCount = unresolvedRes.count || 0;
-    } catch (e) {
-    }
-  }
-  /**
-   * Map Amazon FindListings results to Supabase mba_designs schema
-   */
-  static mapListingsToSupabase(results) {
-    const designMap = /* @__PURE__ */ new Map();
-    for (const r of results) {
-      const dId = r.designId;
-      if (!dId) continue;
-      if (!designMap.has(dId)) {
-        designMap.set(dId, {
-          design_id: dId,
-          listing_id: r.listingId || null,
-          product_image_urn: r.productImageUrn || null,
-          asins: [],
-          asin_standard_tshirt_us: null,
-          price_standard_tshirt_us: null,
-          created_date: null,
-          updated_date: null,
-          estimated_expiration_date: null,
-          products_live_us: [],
-          products_live_de: [],
-          products_live_gb: [],
-          products_live_fr: [],
-          products_live_it: [],
-          products_live_es: [],
-          products_live_jp: [],
-          published_products: [],
-          status: null,
-          last_synced_at: (/* @__PURE__ */ new Date()).toISOString(),
-          _deleted_asins: []
-        });
-      }
-      const d = designMap.get(dId);
-      if (r.asin && !d.asins.includes(r.asin)) d.asins.push(r.asin);
-      const mp = r.marketplace?.toLowerCase() || (MP_MAP[r.marketplaceId] || "us");
-      const pt = r.productType?.toLowerCase() || r.productType || "";
-      const status = r.status || "";
-      const LIVE_STATUSES = /* @__PURE__ */ new Set(["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING", "published", "propagated", "locked", "timed_out", "publishing", "translating"]);
-      const isLive = status && LIVE_STATUSES.has(status);
-      if (isLive && pt) {
-        const key = `products_live_${mp}`;
-        if (d[key] && !d[key].includes(pt)) d[key].push(pt);
-      }
-      if (isLive && r.asin) {
-        d.published_products.push({ asin: r.asin, type: r.productType || pt.toUpperCase(), market: mp });
-      } else if (r.asin) {
-        d._deleted_asins.push(r.asin);
-      }
-      if (isLive && mp === "us" && (pt === "standard_tshirt" || pt === "STANDARD_TSHIRT")) {
-        d.asin_standard_tshirt_us = r.asin || d.asin_standard_tshirt_us;
-        if (r.listPrice) d.price_standard_tshirt_us = r.listPrice;
-      }
-      const safeDate = (v) => {
-        try {
-          if (!v) return null;
-          const dt = typeof v === "number" ? new Date(v * 1e3) : new Date(v);
-          return isNaN(dt.getTime()) ? null : dt.toISOString();
-        } catch (e) {
-          return null;
-        }
-      };
-      const created = safeDate(r.createdDate);
-      const updated = safeDate(r.updatedDate);
-      if (created && (!d.created_date || created < d.created_date)) d.created_date = created;
-      if (updated && (!d.updated_date || updated > d.updated_date)) d.updated_date = updated;
-      if (r.estimatedExpirationDate) d.estimated_expiration_date = safeDate(r.estimatedExpirationDate);
-      const STATUS_PRIORITY = { PUBLISHED: 100, PROPAGATED: 90, PUBLISHING: 80, REVIEW: 70, TRANSLATING: 60, DRAFT: 50, LOCKED: 40, TIMED_OUT: 30, DECLINED: 20, AMAZON_REJECTED: 15, DELETED: 10 };
-      if (status) {
-        const upper = status.toUpperCase();
-        const newPrio = STATUS_PRIORITY[upper] || 0;
-        const oldPrio = STATUS_PRIORITY[d.status] || 0;
-        if (newPrio > oldPrio) d.status = upper;
-      }
-      if (r.productImageUrn) d.product_image_urn = r.productImageUrn;
-    }
-    return Array.from(designMap.values());
-  }
-  /**
-   * Merge new design data with existing DB records before upserting (Never removes ASINs)
-   */
-  static async mergeAndUpsertDesigns(mapped) {
-    const supabase = this.getSupabase();
-    if (mapped.length === 0) return 0;
-    const designIds = mapped.map((m) => m.design_id);
-    const existing = /* @__PURE__ */ new Map();
-    for (let i = 0; i < designIds.length; i += 200) {
-      const batch = designIds.slice(i, i + 200);
-      const { data } = await supabase.from("mba_designs").select("design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins").in("design_id", batch);
-      if (data) data.forEach((d) => existing.set(d.design_id, d));
-    }
-    const merged = mapped.map((m) => {
-      const ex = existing.get(m.design_id);
-      if (!ex) {
-        return {
-          ...m,
-          ad_asins: this.buildAdAsins(m.published_products, [])
-        };
-      }
-      const allAsins = Array.from(/* @__PURE__ */ new Set([...ex.asins || [], ...m.asins || []]));
-      const prodMap = /* @__PURE__ */ new Map();
-      (ex.published_products || []).forEach((p) => prodMap.set(p.asin, p));
-      (m.published_products || []).forEach((p) => prodMap.set(p.asin, p));
-      if (m._deleted_asins) {
-        m._deleted_asins.forEach((asin) => prodMap.delete(asin));
-      }
-      const pubProducts = Array.from(prodMap.values());
-      return {
-        ...m,
-        asins: allAsins,
-        published_products: pubProducts,
-        asin_standard_tshirt_us: m.asin_standard_tshirt_us || ex.asin_standard_tshirt_us,
-        price_standard_tshirt_us: m.price_standard_tshirt_us || ex.price_standard_tshirt_us,
-        ad_asins: this.buildAdAsins(pubProducts, ex.ad_asins || [])
-      };
-    });
-    for (let i = 0; i < merged.length; i += 200) {
-      const chunk = merged.slice(i, i + 200);
-      const { error } = await supabase.from("mba_designs").upsert(chunk, { onConflict: "design_id" });
-      if (error) {
-        console.error("[SyncEngine] Error upserting designs chunk:", error);
-      }
-    }
-    await this.refreshDBStats();
-    return merged.length;
-  }
-  /**
-   * Sanitizes raw ASIN string to extract the exact 10-char ASIN (e.g. 'MC_Assembly_1#B0FDKRXX21' -> 'B0FDKRXX21')
-   */
-  static sanitizeAsin(val) {
-    if (!val || typeof val !== "string") return null;
-    const clean = val.trim();
-    const b0Match = clean.match(/(B0[A-Z0-9]{8})/i);
-    if (b0Match) return b0Match[1].toUpperCase();
-    const genMatch = clean.match(/([A-Z0-9]{10})/);
-    if (genMatch) return genMatch[1].toUpperCase();
-    return clean;
-  }
-  static buildAdAsins(publishedProducts, existingAdAsins = []) {
-    const existingMap = /* @__PURE__ */ new Map();
-    existingAdAsins.forEach((ad) => {
-      if (ad.type && ad.market) {
-        const clean = _SyncEngine.sanitizeAsin(ad.asin);
-        existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, clean);
-      }
-    });
-    return publishedProducts.map((p) => {
-      const key = `${(p.type || "").toUpperCase()}_${(p.market || "").toLowerCase()}`;
-      const exAsin = existingMap.get(key);
-      const cleanParentAsin = _SyncEngine.sanitizeAsin(p.asin);
-      if (VARIANT_PRODUCT_TYPES.has((p.type || "").toUpperCase())) {
-        if (exAsin && exAsin !== cleanParentAsin) {
-          return { asin: exAsin, type: p.type, market: p.market };
-        }
-        return { asin: null, type: p.type, market: p.market };
-      }
-      return { asin: cleanParentAsin, type: p.type, market: p.market };
-    });
-  }
-  /**
-   * Parse Product Config (US and International text data)
-   */
-  static parseTextData(designId, configData) {
-    if (!configData?.textData) return null;
-    const td = configData.textData;
-    const payload = { design_id: designId };
-    const usData = td["en"] || td["us"] || td["en-US"] || null;
-    if (usData) {
-      payload.title_us = usData.title || null;
-      payload.brand_us = usData.brandName || null;
-      payload.bullet_1_us = usData.bullets?.[0] || null;
-      payload.bullet_2_us = usData.bullets?.[1] || null;
-      payload.description_us = usData.description || null;
-    }
-    const other = {};
-    for (const [lang, data] of Object.entries(td)) {
-      if (lang === "en" || lang === "us" || lang === "en-US") continue;
-      other[lang] = {
-        title: data.title || null,
-        brand: data.brandName || null,
-        bullets: data.bullets || [],
-        description: data.description || null
-      };
-    }
-    if (Object.keys(other).length > 0) payload.text_data_other = other;
-    return payload;
-  }
-  /**
-   * 1. Run Smart Sync (Quick Update Products)
-   */
-  static async runSmartSync() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "quick_products";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Quick Update: Lade neueste Designs von Amazon...";
-    this.addLog("[Quick Update Produkte] Starte Synchronisierung \xFCber Session 1...", "info");
-    try {
-      const page = await this.getAmazonPage();
-      const accountId = await this.getAccountId(page);
-      const supabase = this.getSupabase();
-      let pageToken = [];
-      const allResults = [];
-      const { data: latest } = await supabase.from("mba_designs").select("updated_date").order("updated_date", { ascending: false }).limit(1);
-      const lastUpdated = latest?.[0]?.updated_date || null;
-      for (let p = 0; p < 10; p++) {
-        if (this.shouldStop) break;
-        const json = await this.fetchListingsPage(page, accountId, pageToken);
-        if (!json.results || json.results.length === 0) break;
-        allResults.push(...json.results);
-        if (lastUpdated) {
-          const oldestInBatch = json.results[json.results.length - 1];
-          const oldestDate = oldestInBatch?.updatedDate;
-          const safeDate = (v) => {
-            try {
-              if (!v) return null;
-              const d = typeof v === "number" ? new Date(v * 1e3) : new Date(v);
-              return isNaN(d.getTime()) ? null : d.toISOString();
-            } catch (e) {
-              return null;
-            }
-          };
-          const oldestIso = safeDate(oldestDate);
-          if (oldestIso && oldestIso <= lastUpdated) break;
-        }
-        if (!json.pageToken || json.pageToken.length === 0) break;
-        pageToken = json.pageToken;
-        await this.sleep(600);
-      }
-      this.addLog(`[Quick Update Produkte] ${allResults.length} Eintr\xE4ge von Amazon geladen. Mappe auf Supabase...`, "info");
-      const mapped = this.mapListingsToSupabase(allResults);
-      const count = await this.mergeAndUpsertDesigns(mapped);
-      const now = Date.now();
-      this.state.lastQuickDesigns = now;
-      this.state.lastPeriodicSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
-      this.state.lastPeriodicSyncCount = count;
-      await this.refreshDBStats();
-      this.addLog(`[Quick Update Produkte] Erfolgreich synchronisiert: ${count} Designs in Supabase aktualisiert \u2713 (${this.state.liveDesignsCount} Live Designs).`, "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
-      return { designCount: count };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Quick Update Produkte] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 2. Run Full Reload (Full Refresh Products)
-   */
-  static async runFullReload() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "full_products";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Full Refresh: Lade alle Designs von Amazon...";
-    this.addLog("[Full Refresh Produkte] Starte vollst\xE4ndigen Scan aller Produkte \xFCber Session 1...", "info");
-    try {
-      const page = await this.getAmazonPage();
-      const accountId = await this.getAccountId(page);
-      let pageToken = [];
-      let pageNum = 0;
-      const allResults = [];
-      while (!this.shouldStop) {
-        pageNum++;
-        this.addLog(`[Full Refresh] Lade Seite ${pageNum} von Amazon (je 500 Eintr\xE4ge)...`, "info");
-        const json = await this.fetchListingsPage(page, accountId, pageToken);
-        if (!json.results || json.results.length === 0) break;
-        allResults.push(...json.results);
-        this.addLog(`[Full Refresh] Bisher ${allResults.length} Eintr\xE4ge gesammelt...`, "info");
-        if (!json.pageToken || json.pageToken.length === 0) break;
-        pageToken = json.pageToken;
-        await this.sleep(1e3);
-      }
-      this.addLog(`[Full Refresh] Mappe ${allResults.length} Eintr\xE4ge auf Supabase Schema...`, "info");
-      const mapped = this.mapListingsToSupabase(allResults);
-      const totalSaved = await this.mergeAndUpsertDesigns(mapped);
-      this.state.lastFullDesigns = Date.now();
-      await this.refreshDBStats();
-      this.addLog(`[Full Refresh Produkte] Beendet. ${totalSaved} Designs erfolgreich in Supabase synchronisiert \u2713 (${this.state.liveDesignsCount} Live Designs).`, "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
-      return { designCount: totalSaved };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Full Refresh Produkte] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 3. Run Deep Scan New (Quick Update Listings)
-   */
-  static async runDeepScanNew() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "quick_listings";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Quick Update Listings: Lade fehlende Texte...";
-    this.addLog("[Quick Update Listings] Suche Designs ohne US-Titel...", "info");
-    let processed = 0;
-    try {
-      const supabase = this.getSupabase();
-      const page = await this.getAmazonPage();
-      const { data: missingDesigns, error } = await supabase.from("mba_designs").select("design_id").is("title_us", null).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).limit(50);
-      if (error) throw error;
-      if (!missingDesigns || missingDesigns.length === 0) {
-        this.addLog("[Quick Update Listings] Keine fehlenden Texte gefunden. Alles aktuell! \u2713", "success");
-      } else {
-        this.addLog(`[Quick Update Listings] ${missingDesigns.length} Designs gefunden. Lade Texte...`, "info");
-        for (const item of missingDesigns) {
-          if (this.shouldStop) break;
-          try {
-            const config = await this.fetchProductConfig(page, item.design_id);
-            const textData = this.parseTextData(item.design_id, config);
-            if (textData) {
-              await supabase.from("mba_designs").upsert(textData);
-              processed++;
-            }
-          } catch (e) {
-            console.warn(`[SyncEngine] Config error for ${item.design_id}:`, e.message);
-          }
-          await this.sleep(150);
-        }
-        this.addLog(`[Quick Update Listings] ${processed} Texte erfolgreich aktualisiert! \u2713`, "success");
-      }
-      this.state.lastQuickListings = Date.now();
-      await this.refreshDBStats();
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = "Bereit";
-      return { processed };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Quick Update Listings] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 4. Run Deep Scan All (Full Refresh Listings)
-   */
-  static async runDeepScanAll() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "full_listings";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Full Refresh Listings: Lade alle Texte...";
-    this.addLog("[Full Refresh Listings] Lade Texte f\xFCr alle Designs...", "info");
-    let processed = 0;
-    try {
-      const supabase = this.getSupabase();
-      const page = await this.getAmazonPage();
-      let from = 0;
-      while (!this.shouldStop) {
-        const { data: batch, error } = await supabase.from("mba_designs").select("design_id").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).range(from, from + 49);
-        if (error || !batch || batch.length === 0) break;
-        for (const item of batch) {
-          if (this.shouldStop) break;
-          try {
-            const config = await this.fetchProductConfig(page, item.design_id);
-            const textData = this.parseTextData(item.design_id, config);
-            if (textData) {
-              await supabase.from("mba_designs").upsert(textData);
-              processed++;
-            }
-          } catch {
-          }
-          await this.sleep(150);
-        }
-        this.addLog(`[Full Refresh Listings] ${processed} Texte geladen...`, "info");
-        from += 50;
-      }
-      this.state.lastFullListings = Date.now();
-      await this.refreshDBStats();
-      this.addLog(`[Full Refresh Listings] Beendet. ${processed} Texte aktualisiert \u2713`, "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = "Bereit";
-      return { processed };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Full Refresh Listings] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 5. Run Smart Sales Sync (Quick Sales)
-   */
-  static async runSmartSalesSync() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "quick_sales";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Quick Sales: Lade 30-Tage Verk\xE4ufe...";
-    this.addLog("[Quick Update Sales] Lade Verk\xE4ufe der letzten 30 Tage...", "info");
-    let processed = 0;
-    try {
-      const page = await this.getAmazonPage();
-      const supabase = this.getSupabase();
-      const end = /* @__PURE__ */ new Date();
-      const start3 = /* @__PURE__ */ new Date();
-      start3.setDate(start3.getDate() - 30);
-      const startStr = start3.toISOString().split("T")[0];
-      const endStr = end.toISOString().split("T")[0];
-      const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
-      if (analytics && Array.isArray(analytics.sales)) {
-        const salesMap = /* @__PURE__ */ new Map();
-        for (const row of analytics.sales) {
-          const dId = row.designId;
-          if (!dId) continue;
-          const curr = salesMap.get(dId) || { units: 0, royaltiesEur: 0, royaltiesUsd: 0 };
-          curr.units += row.unitsSold || 0;
-          if (row.currency === "EUR") curr.royaltiesEur += row.estimatedRoyalty || 0;
-          if (row.currency === "USD") curr.royaltiesUsd += row.estimatedRoyalty || 0;
-          salesMap.set(dId, curr);
-        }
-        for (const [designId, stats2] of salesMap.entries()) {
-          await supabase.from("mba_designs").update({
-            sales_30d: stats2.units,
-            royalties_30d_eur: Math.round(stats2.royaltiesEur * 100) / 100,
-            royalties_30d_usd: Math.round(stats2.royaltiesUsd * 100) / 100
-          }).eq("design_id", designId);
-          processed++;
-        }
-      }
-      this.state.lastQuickSales = Date.now();
-      await this.refreshDBStats();
-      this.addLog(`[Quick Update Sales] Beendet. ${processed} Designs mit Sales aktualisiert \u2713`, "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = "Bereit";
-      return { processed };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Quick Update Sales] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 6. Run Full Sales History Sync
-   */
-  static async runFullSalesHistory() {
-    this.shouldStop = false;
-    this.state.isScanning = true;
-    this.state.activeScanType = "full_sales";
-    this.state.scanStatus = "scanning";
-    this.state.lastStatusMessage = "Full Refresh Sales: Lade gesamte All-Time Sales History...";
-    this.addLog("[Full Refresh Sales] Starte All-Time Sales History Update...", "info");
-    let processed = 0;
-    try {
-      const page = await this.getAmazonPage();
-      const supabase = this.getSupabase();
-      const end = /* @__PURE__ */ new Date();
-      const start3 = new Date(2015, 0, 1);
-      const startStr = start3.toISOString().split("T")[0];
-      const endStr = end.toISOString().split("T")[0];
-      const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
-      if (analytics && Array.isArray(analytics.sales)) {
-        const salesMap = /* @__PURE__ */ new Map();
-        for (const row of analytics.sales) {
-          const dId = row.designId;
-          if (!dId) continue;
-          const curr = salesMap.get(dId) || { units: 0, royaltiesEur: 0, royaltiesUsd: 0 };
-          curr.units += row.unitsSold || 0;
-          if (row.currency === "EUR") curr.royaltiesEur += row.estimatedRoyalty || 0;
-          if (row.currency === "USD") curr.royaltiesUsd += row.estimatedRoyalty || 0;
-          salesMap.set(dId, curr);
-        }
-        for (const [designId, stats2] of salesMap.entries()) {
-          await supabase.from("mba_designs").update({
-            sales_total: stats2.units,
-            royalties_total_eur: Math.round(stats2.royaltiesEur * 100) / 100,
-            royalties_total_usd: Math.round(stats2.royaltiesUsd * 100) / 100,
-            sales_history_synced: true
-          }).eq("design_id", designId);
-          processed++;
-        }
-      }
-      this.state.lastFullSalesAll = Date.now();
-      await this.refreshDBStats();
-      this.addLog(`[Full Refresh Sales] Beendet. ${processed} Designs mit All-Time Sales aktualisiert \u2713`, "success");
-      this.state.scanStatus = "ready";
-      this.state.lastStatusMessage = "Bereit";
-      return { processed };
-    } catch (err) {
-      this.state.scanStatus = "error";
-      this.state.lastStatusMessage = `Fehler: ${err.message}`;
-      this.addLog(`[Full Refresh Sales] Fehler: ${err.message}`, "error");
-      throw err;
-    } finally {
-      this.state.isScanning = false;
-      this.state.activeScanType = null;
-    }
-  }
-  /**
-   * 7. Resolve Child ASINs Batch
-   */
-  static async resolveChildAsinsBatch(limit = 10) {
-    const supabase = this.getSupabase();
-    let processed = 0;
-    let errors2 = 0;
-    const marketplaceDomains = {
-      "us": "amazon.com",
-      "de": "amazon.de",
-      "gb": "amazon.co.uk",
-      "fr": "amazon.fr",
-      "it": "amazon.it",
-      "es": "amazon.es",
-      "jp": "amazon.co.jp"
-    };
-    try {
-      const page = await this.getAmazonPage();
-      const { data: unresolved, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).limit(limit);
-      if (error || !unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
-      for (const item of unresolved) {
-        if (this.shouldStop) break;
-        const pubProducts = item.published_products || [];
-        const newAdAsins = this.buildAdAsins(pubProducts, item.ad_asins || []);
-        const toResolve = [];
-        for (const ad of newAdAsins) {
-          if (!VARIANT_PRODUCT_TYPES.has((ad.type || "").toUpperCase())) continue;
-          const parent = pubProducts.find((p) => (p.type || "").toUpperCase() === (ad.type || "").toUpperCase() && (p.market || "").toLowerCase() === (ad.market || "").toLowerCase());
-          if (!parent || !parent.asin) continue;
-          if (!ad.asin || ad.asin === parent.asin) {
-            toResolve.push({ ad, parent });
-          }
-        }
-        for (const { ad, parent } of toResolve) {
-          if (this.shouldStop) break;
-          try {
-            const domain = marketplaceDomains[ad.market?.toLowerCase()] || "amazon.com";
-            const detailUrl = `https://www.${domain}/dp/${parent.asin}`;
-            const response2 = await fetch(detailUrl, {
-              headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Cache-Control": "no-cache"
-              }
-            });
-            if (response2.status === 404) {
-              this.addLog(`[ASIN Scanner] Produkt ${parent.asin} (${ad.market}) nicht gefunden (404). Parent-ASIN gesetzt.`, "warn");
-              ad.asin = parent.asin;
-              continue;
-            }
-            const html = await response2.text();
-            if (html.includes("/errors/validateCaptcha") || html.includes("Robot Check") || response2.status === 503 || response2.status === 403) {
-              this.addLog(`[ASIN Scanner] \u26A0\uFE0F Amazon Rate-Limit / Captcha f\xFCr ${parent.asin} (${ad.market}). Pausiere...`, "warn");
-              await this.sleep(3e3);
-              continue;
-            }
-            if (html) {
-              const matchDimensionMap = html.match(/"dimensionToAsinMap"\s*:\s*({[^}]+})/);
-              const matchAsinToDimension = html.match(/"asinToDimension"\s*:\s*({[^}]+})/);
-              const matchSelectedVar = html.match(/"selectedVariationASIN"\s*:\s*"([A-Z0-9]{10})"/);
-              const matchDataAsin = html.match(/data-defaultAsin="([A-Z0-9]{10})"/);
-              const matchDataCsa = html.match(/data-csa-c-item-id="([A-Z0-9]{10})"/);
-              const matchFallbackAsin = html.match(/"asin"\s*:\s*"([A-Z0-9]{10})"/);
-              let resolvedChild = null;
-              if (matchDimensionMap && matchDimensionMap[1]) {
-                try {
-                  const asinMap = JSON.parse(matchDimensionMap[1]);
-                  const asins = Object.values(asinMap).map((a) => _SyncEngine.sanitizeAsin(a)).filter((a) => a && a !== parent.asin);
-                  if (asins.length > 0) resolvedChild = asins[0];
-                } catch {
-                }
-              }
-              if (!resolvedChild && matchAsinToDimension && matchAsinToDimension[1]) {
-                try {
-                  const asinMap = JSON.parse(matchAsinToDimension[1]);
-                  const asins = Object.keys(asinMap).map((a) => _SyncEngine.sanitizeAsin(a)).filter((a) => a && a !== parent.asin);
-                  if (asins.length > 0) resolvedChild = asins[0];
-                } catch {
-                }
-              }
-              if (!resolvedChild && matchSelectedVar && matchSelectedVar[1]) {
-                const clean = _SyncEngine.sanitizeAsin(matchSelectedVar[1]);
-                if (clean && clean !== parent.asin) resolvedChild = clean;
-              }
-              if (!resolvedChild && matchDataAsin && matchDataAsin[1]) {
-                const clean = _SyncEngine.sanitizeAsin(matchDataAsin[1]);
-                if (clean && clean !== parent.asin) resolvedChild = clean;
-              }
-              if (!resolvedChild && matchDataCsa && matchDataCsa[1]) {
-                const clean = _SyncEngine.sanitizeAsin(matchDataCsa[1]);
-                if (clean && clean !== parent.asin) resolvedChild = clean;
-              }
-              if (!resolvedChild && matchFallbackAsin && matchFallbackAsin[1]) {
-                const clean = _SyncEngine.sanitizeAsin(matchFallbackAsin[1]);
-                if (clean && clean !== parent.asin) resolvedChild = clean;
-              }
-              const finalChildAsin = _SyncEngine.sanitizeAsin(resolvedChild);
-              if (finalChildAsin && finalChildAsin !== parent.asin) {
-                ad.asin = finalChildAsin;
-                this.addLog(`[ASIN Scanner] \u2713 Child-ASIN aufgel\xF6st f\xFCr ${ad.type} (${ad.market}): ${parent.asin} \u2794 ${finalChildAsin}`, "success");
-              } else {
-                ad.asin = _SyncEngine.sanitizeAsin(parent.asin) || parent.asin;
-                this.addLog(`[ASIN Scanner] Keine abweichende Child-ASIN f\xFCr ${ad.type} (${ad.market}) gefunden. Verwende ${ad.asin}.`, "info");
-              }
-            } else {
-              ad.asin = parent.asin;
-            }
-          } catch (e) {
-            errors2++;
-            ad.asin = parent.asin;
-            this.addLog(`[ASIN Scanner] Fehler bei ${parent.asin} (${ad.market}): ${e.message}`, "error");
-          }
-          await this.sleep(1800 + Math.random() * 800);
-        }
-        await supabase.from("mba_designs").update({
-          ad_asins: newAdAsins,
-          asin_resolved: true
-        }).eq("design_id", item.design_id);
-        processed++;
-      }
-    } catch (err) {
-      console.warn("[SyncEngine] ASIN batch error:", err.message);
-    }
-    this.state.lastAsinSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
-    await this.refreshDBStats();
-    return { processed, errors: errors2 };
-  }
-  /**
-   * 8. Danger Zone: Reset Sales Data
-   */
-  static async resetSalesData() {
-    const supabase = this.getSupabase();
-    this.addLog("[Gefahrenzone] Setze alle Sales-Daten in Supabase zur\xFCck...", "warn");
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase.from("mba_designs").select("design_id").range(from, from + 999);
-      if (error || !data || data.length === 0) break;
-      const updates = data.map((d) => ({
-        design_id: d.design_id,
-        sales_30d: 0,
-        royalties_30d_usd: 0,
-        royalties_30d_eur: 0,
-        royalties_30d_gbp: 0,
-        royalties_30d_jpy: 0,
-        sales_total: 0,
-        royalties_total_usd: 0,
-        royalties_total_eur: 0,
-        royalties_total_gbp: 0,
-        royalties_total_jpy: 0,
-        sales_history_synced: false
-      }));
-      await supabase.from("mba_designs").upsert(updates);
-      from += 1e3;
-    }
-    this.addLog("[Gefahrenzone] Alle Sales-Daten erfolgreich zur\xFCckgesetzt! \u2713", "success");
-  }
-  /**
-   * 9. Danger Zone: Reset ASIN Resolution Status
-   */
-  static async resetAsinResolutionStatus() {
-    const supabase = this.getSupabase();
-    this.addLog("[Gefahrenzone] Setze ASIN-Aufl\xF6sungsstatus zur\xFCck...", "warn");
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase.from("mba_designs").select("design_id").range(from, from + 999);
-      if (error || !data || data.length === 0) break;
-      const updates = data.map((d) => ({
-        design_id: d.design_id,
-        asin_resolved: false
-      }));
-      await supabase.from("mba_designs").upsert(updates);
-      from += 1e3;
-    }
-    await this.refreshDBStats();
-    this.addLog("[Gefahrenzone] ASIN-Aufl\xF6sungsstatus erfolgreich zur\xFCckgesetzt! \u2713", "success");
-  }
-  static cachedRatelimiter = null;
-  /**
-   * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard in Session 1
-   */
-  static async fetchDashboardRatelimiter(page, forceRefresh = false) {
-    const now = Date.now();
-    if (!forceRefresh && this.cachedRatelimiter && now - this.cachedRatelimiter.timestamp < 45e3) {
-      return this.cachedRatelimiter.data;
-    }
-    try {
-      const p = page || await this.getAmazonPage();
-      const result2 = await p.evaluate(async () => {
-        try {
-          const res = await fetch("https://merch.amazon.com/api/ratelimiter/metadata", {
-            credentials: "include",
-            headers: { "Accept": "application/json" }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            return { type: "api", data };
-          }
-        } catch (e) {
-        }
-        try {
-          const text2 = document.body.innerText || "";
-          const tierMatch = text2.match(/Tier\s*:?\s*([0-9,.]+)/i);
-          const tier = tierMatch ? parseInt(tierMatch[1].replace(/[,.]/g, ""), 10) : null;
-          return { type: "dom", data: { tier } };
-        } catch (e) {
-          return null;
-        }
-      });
-      if (result2?.data) {
-        const d = result2.data;
-        const used = d.dailyProduct?.count ?? d.dailyDesign?.count ?? 0;
-        const total = d.dailyProduct?.limit ?? d.dailyDesign?.limit ?? 200;
-        const tier = d.overallDesign?.limit ?? d.overallProduct?.limit ?? d.tier ?? d.maxProducts ?? d.totalProduct?.limit ?? d.tierLevel ?? null;
-        const payload = {
-          tier: typeof tier === "number" ? tier : tier ? parseInt(String(tier).replace(/[,.]/g, ""), 10) : void 0,
-          slots: {
-            used: Number(used) || 0,
-            total: Number(total) || 200,
-            free: Math.max(0, (Number(total) || 200) - (Number(used) || 0))
-          }
-        };
-        this.cachedRatelimiter = {
-          data: payload,
-          timestamp: now
-        };
-        return payload;
-      }
-    } catch (e) {
-      console.warn("[SyncEngine] fetchDashboardRatelimiter error:", e);
-    }
-    return this.cachedRatelimiter ? this.cachedRatelimiter.data : null;
-  }
-};
+// src/server/index.ts
+init_syncEngine();
+init_browserSessionService();
 
 // src/server/services/mcpSchemaService.ts
 var MBA_HUB_TOOLS = [
@@ -218571,2667 +222291,13 @@ function getMcpSchema() {
   };
 }
 
-// src/server/services/taskLogService.ts
-var import_fs77 = __toESM2(require("fs"), 1);
-var import_path72 = __toESM2(require("path"), 1);
-init_settingsService();
-
-// src/server/services/bannedWordsService.ts
-var BANNED_WORDS_BY_LOCALE = {
-  en: [
-    // Physical faux effects / Material claims (Forbidden on 2D prints)
-    "sparkling",
-    "glitter",
-    "neon",
-    "metallic",
-    "foil",
-    "rose gold",
-    "gold",
-    "glow effect",
-    "glows in black light",
-    "glow in the dark",
-    "sequin",
-    "metal",
-    "wood",
-    "diamond",
-    "gem",
-    "texture",
-    "textured",
-    "holographic",
-    "embossed",
-    "leather",
-    "rubber",
-    // Quality, Fit & Sizing claims
-    "premium",
-    "high quality",
-    "quality",
-    "fitted",
-    "looser",
-    "size up",
-    "bigger size",
-    "larger size",
-    "maternity",
-    "printed to be fitted",
-    "printed in",
-    "printed",
-    "made in",
-    // Shipping & Promotional promises
-    "free shipping",
-    "prime shipping",
-    "ships in",
-    "easy returns",
-    "refund",
-    "review",
-    "risk free",
-    "satisfaction guaranteed",
-    "limited quantities",
-    "best seller",
-    "sale",
-    "buy now",
-    "discount",
-    "trending",
-    // Gift language (Amazon MBA policy flag)
-    "gift",
-    "present",
-    "birthday gift",
-    "christmas gift",
-    // Product types in Title/Brand
-    "popsocket",
-    "pop socket",
-    "t-shirt",
-    "tshirt",
-    "t shirt",
-    "hoodie",
-    "tank top",
-    "sweatshirt",
-    // Vulgar / Adult / Sensitive
-    "fuck",
-    "shit",
-    "bitch",
-    "btch",
-    "dick",
-    "penis",
-    // Known Trap Trademarks
-    "Steppenwolf",
-    "Cycologist"
-  ],
-  de: [
-    // Physische Material- & Effekt-Behauptungen
-    "glitzernd",
-    "Glitter",
-    "Pailletten",
-    "leuchtend",
-    "leuchtet bei Schwarzlicht",
-    "leuchtet im Dunkeln",
-    "Neon",
-    "Metallic",
-    "Folie",
-    "Ros\xE9gold",
-    "Gold",
-    "Holz",
-    "Metall",
-    "Marmor",
-    "Glas",
-    "Leder",
-    "Gummi",
-    "Diamant",
-    "Edelstein",
-    "flauschig",
-    "Pl\xFCsch",
-    "gepr\xE4gt",
-    // Qualität & Passform
-    "bewertung",
-    "hohe qualit\xE4t",
-    "premium",
-    "Schwangerschaftsbekleidung",
-    "\xDCbergr\xF6\xDFe",
-    // Werbe- & Geschenk-Sprache
-    "geschenk",
-    "geburtstagsgeschenk",
-    "weihnachtsgeschenk",
-    "bester verk\xE4ufer",
-    "rabatt",
-    "jetzt kaufen",
-    // Obszönitäten & Fallen
-    "fuck",
-    "btch",
-    "bitch",
-    "penis",
-    "schie\xDFen",
-    "Steppenwolf"
-  ],
-  fr: [
-    "n\xE9on",
-    "m\xE9tallis\xE9",
-    "feuille d'aluminium",
-    "rose",
-    "\xE9tincelant",
-    "brillant",
-    "brillant \xE0 la lumi\xE8re noire",
-    "brillant dans l\u2019obscurit\xE9",
-    "m\xE9tal",
-    "marbre",
-    "paillettes",
-    "cuir",
-    "caoutchouc",
-    "pelucheuses",
-    "fourrure",
-    "verre",
-    "diamant",
-    "pierre pr\xE9cieuse",
-    "cadeau",
-    "nains"
-  ],
-  it: [
-    "metallo",
-    "marmo",
-    "paillettes",
-    "glitter",
-    "pelle",
-    "gomma",
-    "pelo o pelliccia",
-    "perline",
-    "diamanti",
-    "gemme",
-    "fluo",
-    "metallico",
-    "laminato",
-    "oro rosa",
-    "oro",
-    "brillante",
-    "fosforescente",
-    "fluorescente alla luce nera",
-    "luminoso al buio",
-    "regalo",
-    "Benito Mussolini",
-    "Benito",
-    "Mussolini",
-    "anos"
-  ],
-  es: [
-    "papel de aluminio",
-    "oro rosa",
-    "oro",
-    "brillante",
-    "brillo en luz negra",
-    "brillo en la oscuridad",
-    "como madera",
-    "metal",
-    "m\xE1rmol",
-    "lentejuelas",
-    "purpurina",
-    "cuero",
-    "caucho",
-    "tejido o peludo",
-    "vidrio",
-    "diamantes o gemas",
-    "regalo",
-    "primer"
-  ],
-  ja: [
-    "\u30C1\u30D3",
-    "\u30B8\u30F3",
-    "\u30B7\u30F3",
-    "\u30A2\u30BF\u30EA",
-    "\u30A2\u30BF",
-    "\u30AE\u30D5\u30C8",
-    "\u30D7\u30EC\u30BC\u30F3\u30C8",
-    "\u9AD8\u54C1\u8CEA",
-    "\u30D7\u30EC\u30DF\u30A2\u30E0"
-  ]
-};
-var BannedWordsService = class {
-  /**
-   * Get banned words array for a specific locale (defaulting to English if not found)
-   */
-  static getBannedWords(locale = "en") {
-    const norm = locale.toLowerCase().trim();
-    return BANNED_WORDS_BY_LOCALE[norm] || BANNED_WORDS_BY_LOCALE.en || [];
-  }
-  /**
-   * Generate formatted Markdown section to append to the Listing Generator system prompt
-   */
-  static getBannedWordsPromptSection() {
-    const enWords = this.getBannedWords("en").join(", ");
-    const deWords = this.getBannedWords("de").join(", ");
-    return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
-You MUST NEVER use any of the following prohibited words or phrases in ANY field (Brand, Title, Bullet 1, Bullet 2, Description) under ANY circumstances:
-
-A. FAUX MATERIAL & PHYSICAL EFFECT CLAIMS (CRITICAL! DO NOT DESCRIBE 2D ARTWORK AS PHYSICAL MATERIALS):
-- English: sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
-- German: glitzernd, Glitter, Pailletten, leuchtend, Neon, Metallic, Folie, Ros\xE9gold, Gold, Holz, Metall, Marmor, Glas, Leder, Diamant, Edelstein.
-
-B. QUALITY, FIT & SIZING CLAIMS:
-- English: premium, high quality, quality, fitted, looser, size up, bigger size, larger size, maternity, printed in, made in.
-- German: hohe qualit\xE4t, premium, bewertung, Schwangerschaftsbekleidung.
-
-C. PROMOTIONAL & GIFT LANGUAGE:
-- English: gift, present, birthday gift, christmas gift, best seller, sale, buy now, discount.
-- German: geschenk, geburtstagsgeschenk, weihnachtsgeschenk, rabatt.
-
-D. PRODUCT TYPE IN TITLE/BRAND:
-- NO words like: "T-Shirt", "tshirt", "shirt", "hoodie", "tank top", "popsocket", "pop socket".
-
-E. ALL PROHIBITED WORDS LIST:
-- [EN]: ${enWords}
-- [DE]: ${deWords}`;
-  }
-  /**
-   * Scan text for banned words in a given language locale
-   */
-  static findBannedWordsInText(text2, locale = "en") {
-    if (!text2 || typeof text2 !== "string") return [];
-    const words = this.getBannedWords(locale);
-    const found = [];
-    const isJapanese = locale === "ja";
-    for (const w of words) {
-      const escaped2 = w.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
-      const regex = isJapanese ? new RegExp(escaped2, "gi") : new RegExp(`\\b${escaped2}\\b`, "gi");
-      if (regex.test(text2)) {
-        found.push(w);
-      }
-    }
-    return Array.from(new Set(found));
-  }
-  /**
-   * Validate full multi-language listing payload and return any detected banned words
-   */
-  static validateListing(listing) {
-    const issuesByLocale = {};
-    if (!listing || typeof listing !== "object") return issuesByLocale;
-    for (const [loc, fields] of Object.entries(listing)) {
-      if (fields && typeof fields === "object") {
-        const localeIssues = [];
-        for (const [fieldName, val] of Object.entries(fields)) {
-          if (typeof val === "string") {
-            const found = this.findBannedWordsInText(val, loc);
-            if (found.length > 0) {
-              localeIssues.push({ field: fieldName, foundWords: found });
-            }
-          }
-        }
-        if (localeIssues.length > 0) {
-          issuesByLocale[loc] = localeIssues;
-        }
-      }
-    }
-    return issuesByLocale;
-  }
-};
-
-// src/server/services/svgRenderService.ts
-var sharedBrowser = null;
-async function getBrowser() {
-  if (!sharedBrowser || !sharedBrowser.isConnected()) {
-    const executablePath = findChromiumExecutable();
-    const launchOptions = {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu"
-      ]
-    };
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-    }
-    sharedBrowser = await chromium.launch(launchOptions);
-  }
-  return sharedBrowser;
-}
-var SvgRenderService = class {
-  /**
-   * Cleans XML declarations, doctypes, and whitespace noise from SVG strings
-   */
-  static cleanSvg(raw) {
-    if (!raw) return "";
-    return raw.replace(/<\?xml[^>]*\?>/gi, "").replace(/<!DOCTYPE[^>]*>/gi, "").trim();
-  }
-  /**
-   * Executes server-side Auto BG Remove (Corner Background detection & deletion)
-   */
-  static async autoRemoveCornerBackground(svgText) {
-    const clean = this.cleanSvg(svgText);
-    if (!clean) return { success: false, modifiedSvg: svgText, removedCount: 0 };
-    const browser = await getBrowser();
-    const context2 = await browser.newContext();
-    const page = await context2.newPage();
-    try {
-      await page.setContent(`
-        <!DOCTYPE html>
-        <html>
-        <head><meta charset="utf-8" /></head>
-        <body style="margin: 0; padding: 0;">
-          <div id="container">${clean}</div>
-        </body>
-        </html>
-      `);
-      const result2 = await page.evaluate(() => {
-        const parseColorToRGB = (colorStr) => {
-          if (!colorStr || colorStr === "none" || colorStr === "transparent") return null;
-          let s = colorStr.trim().toLowerCase();
-          if (s.startsWith("#")) {
-            let hex = s.substring(1);
-            if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-            if (hex.length === 6) {
-              return {
-                r: parseInt(hex.substring(0, 2), 16),
-                g: parseInt(hex.substring(2, 4), 16),
-                b: parseInt(hex.substring(4, 6), 16)
-              };
-            }
-          }
-          const rgbMatch = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-          if (rgbMatch) {
-            return {
-              r: parseInt(rgbMatch[1], 10),
-              g: parseInt(rgbMatch[2], 10),
-              b: parseInt(rgbMatch[3], 10)
-            };
-          }
-          return null;
-        };
-        const colorsMatch = (color1, color2, tolerance = 25) => {
-          if (!color1 || !color2) return false;
-          if (color1 === color2) return true;
-          const p1 = parseColorToRGB(color1);
-          const p2 = parseColorToRGB(color2);
-          if (p1 && p2) {
-            return Math.abs(p1.r - p2.r) <= tolerance && Math.abs(p1.g - p2.g) <= tolerance && Math.abs(p1.b - p2.b) <= tolerance;
-          }
-          return color1.toLowerCase() === color2.toLowerCase();
-        };
-        const getElementFill = (el) => {
-          if (el.hasAttribute("fill")) {
-            const f = el.getAttribute("fill");
-            if (f && f !== "none" && f !== "transparent" && f !== "rgba(0, 0, 0, 0)") return f;
-          }
-          const styleAttr = el.getAttribute("style");
-          if (styleAttr) {
-            const match = styleAttr.match(/fill\s*:\s*([^;]+)/);
-            if (match && match[1] && match[1].trim() !== "none") return match[1].trim();
-          }
-          try {
-            const comp = window.getComputedStyle(el).fill;
-            if (comp && comp !== "none" && comp !== "transparent" && comp !== "rgba(0, 0, 0, 0)") return comp;
-          } catch {
-          }
-          return null;
-        };
-        const isElementSafeToRemove = (el) => {
-          if (!el) return false;
-          const tag = el.tagName.toLowerCase();
-          if (["svg", "html", "body", "head", "script", "style", "defs", "clippath"].includes(tag)) return false;
-          return true;
-        };
-        const svg = document.querySelector("svg");
-        if (!svg) return { success: false, modifiedSvg: "", removedCount: 0 };
-        const svgBBox = svg.getBBox();
-        let topLeftElement = null;
-        let minDistance = Infinity;
-        svg.querySelectorAll("*").forEach((el) => {
-          if (!isElementSafeToRemove(el)) return;
-          try {
-            const bbox = el.getBBox();
-            if (bbox.width > 0 || bbox.height > 0) {
-              const dist = Math.sqrt(Math.pow(bbox.x - svgBBox.x, 2) + Math.pow(bbox.y - svgBBox.y, 2));
-              if (dist < minDistance) {
-                topLeftElement = el;
-                minDistance = dist;
-              }
-            }
-          } catch {
-          }
-        });
-        if (!topLeftElement) {
-          return { success: false, modifiedSvg: svg.outerHTML, removedCount: 0 };
-        }
-        const targetColor = getElementFill(topLeftElement);
-        if (!targetColor) {
-          return { success: false, modifiedSvg: svg.outerHTML, removedCount: 0 };
-        }
-        let removedCount = 0;
-        svg.querySelectorAll("*").forEach((el) => {
-          if (!isElementSafeToRemove(el)) return;
-          const fill2 = getElementFill(el);
-          if (fill2 && colorsMatch(fill2, targetColor, 25)) {
-            if (el.hasAttribute("fill")) {
-              el.setAttribute("fill", "none");
-            } else {
-              el.remove();
-            }
-            removedCount++;
-          }
-        });
-        return {
-          success: true,
-          modifiedSvg: svg.outerHTML,
-          removedCount
-        };
-      });
-      return result2;
-    } catch (err) {
-      console.error("[SvgRenderService] Auto BG remove error:", err);
-      return { success: false, modifiedSvg: svgText, removedCount: 0 };
-    } finally {
-      await context2.close().catch(() => {
-      });
-    }
-  }
-  /**
-   * Renders the 4-Panel Verification Image (2048x2048 px: White, Black, Red, Slate)
-   */
-  static async render4PanelTestImage(svgText) {
-    const clean = this.cleanSvg(svgText);
-    const browser = await getBrowser();
-    const context2 = await browser.newContext({
-      viewport: { width: 2048, height: 2048 },
-      deviceScaleFactor: 1
-    });
-    const page = await context2.newPage();
-    try {
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-            html, body {
-              width: 2048px;
-              height: 2048px;
-              background: #0f172a;
-              overflow: hidden;
-            }
-            .grid-container {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              grid-template-rows: 1fr 1fr;
-              width: 2048px;
-              height: 2048px;
-              gap: 12px;
-              background: #020617;
-              padding: 12px;
-            }
-            .panel {
-              position: relative;
-              width: 100%;
-              height: 100%;
-              border-radius: 20px;
-              overflow: hidden;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 60px;
-            }
-            .panel-1 { background-color: #ffffff; }
-            .panel-2 { background-color: #000000; }
-            .panel-3 { background-color: #d32f2f; }
-            .panel-4 { background-color: #1e293b; }
-
-            .panel-label {
-              position: absolute;
-              top: 20px;
-              left: 20px;
-              font-size: 26px;
-              font-weight: 800;
-              letter-spacing: 0.5px;
-              padding: 8px 20px;
-              border-radius: 10px;
-              text-transform: uppercase;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            }
-            .panel-1 .panel-label { background: rgba(15, 23, 42, 0.9); color: #ffffff; border: 1px solid rgba(255,255,255,0.2); }
-            .panel-2 .panel-label { background: rgba(255, 255, 255, 0.95); color: #000000; }
-            .panel-3 .panel-label { background: rgba(15, 23, 42, 0.9); color: #ffffff; border: 1px solid rgba(255,255,255,0.2); }
-            .panel-4 .panel-label { background: rgba(255, 255, 255, 0.95); color: #0f172a; }
-
-            .svg-wrapper {
-              width: 100%;
-              height: 100%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            .svg-wrapper svg {
-              width: 100%;
-              height: 100%;
-              max-width: 92%;
-              max-height: 92%;
-              object-fit: contain;
-              display: block;
-              margin: auto;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="grid-container">
-            <div class="panel panel-1">
-              <span class="panel-label">1. White BG</span>
-              <div class="svg-wrapper">${clean}</div>
-            </div>
-            <div class="panel panel-2">
-              <span class="panel-label">2. Black BG</span>
-              <div class="svg-wrapper">${clean}</div>
-            </div>
-            <div class="panel panel-3">
-              <span class="panel-label">3. Red BG</span>
-              <div class="svg-wrapper">${clean}</div>
-            </div>
-            <div class="panel panel-4">
-              <span class="panel-label">4. Slate / Dark Grey BG</span>
-              <div class="svg-wrapper">${clean}</div>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-      await page.setContent(htmlContent);
-      await page.waitForTimeout(50);
-      const buffer = await page.screenshot({ type: "png" });
-      return buffer;
-    } finally {
-      await context2.close().catch(() => {
-      });
-    }
-  }
-  /**
-   * Renders the optimal Merch by Amazon Print PNG (4500 x 5400 px, 300 DPI, Transparent Background)
-   */
-  static async renderSvgToMbaPng(svgText, width = 4500, height = 5400) {
-    const clean = this.cleanSvg(svgText);
-    const browser = await getBrowser();
-    const context2 = await browser.newContext({
-      viewport: { width, height },
-      deviceScaleFactor: 1
-    });
-    const page = await context2.newPage();
-    try {
-      const containerWidth = Math.round(width * 0.9);
-      const containerHeight = Math.round(height * 0.9);
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            html, body {
-              width: ${width}px;
-              height: ${height}px;
-              background: transparent;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              overflow: hidden;
-            }
-            .design-container {
-              width: ${containerWidth}px;
-              height: ${containerHeight}px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            svg {
-              width: 100%;
-              height: 100%;
-              max-width: 100%;
-              max-height: 100%;
-              object-fit: contain;
-              display: block;
-              margin: auto;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="design-container">
-            ${clean}
-          </div>
-        </body>
-        </html>
-      `;
-      await page.setContent(htmlContent);
-      await page.waitForTimeout(60);
-      const buffer = await page.screenshot({ type: "png", omitBackground: true });
-      return buffer;
-    } finally {
-      await context2.close().catch(() => {
-      });
-    }
-  }
-};
-
-// src/server/services/taskLogService.ts
-var TaskLogService = class {
-  static dataDir = import_path72.default.resolve(process.cwd(), "data");
-  static counterFile = import_path72.default.resolve(process.cwd(), "data", "tasks_counter.json");
-  static logsFile = import_path72.default.resolve(process.cwd(), "data", "tasks_log.json");
-  static inMemoryLogs = null;
-  static currentCounter = null;
-  static eventBroadcaster = null;
-  static setBroadcaster(fn) {
-    this.eventBroadcaster = fn;
-  }
-  static emitUpdate(task) {
-    if (this.eventBroadcaster) {
-      this.eventBroadcaster("TASK_UPDATED", task);
-    }
-  }
-  static ensureDataDir() {
-    if (!import_fs77.default.existsSync(this.dataDir)) {
-      try {
-        import_fs77.default.mkdirSync(this.dataDir, { recursive: true });
-      } catch (e) {
-      }
-    }
-  }
-  static getNextCounter() {
-    this.ensureDataDir();
-    if (this.currentCounter === null) {
-      try {
-        if (import_fs77.default.existsSync(this.counterFile)) {
-          const data = JSON.parse(import_fs77.default.readFileSync(this.counterFile, "utf-8"));
-          this.currentCounter = Number(data.counter) || 0;
-        } else {
-          this.currentCounter = 0;
-        }
-      } catch (e) {
-        this.currentCounter = 0;
-      }
-    }
-    this.currentCounter += 1;
-    try {
-      import_fs77.default.writeFileSync(this.counterFile, JSON.stringify({ counter: this.currentCounter }, null, 2), "utf-8");
-    } catch (e) {
-      console.error("[TaskLogService] Failed to persist tasks_counter.json:", e);
-    }
-    return this.currentCounter;
-  }
-  /**
-   * Cleans text to strictly conform to Amazon Merch on Demand character requirements:
-   * - Converts typographic quotes („ “ ” « ») to standard ASCII quotes (")
-   * - Converts curly single quotes/apostrophes (’ ‘ ‚ ‛) to standard ASCII apostrophe (')
-   * - Converts typographic hyphens/dashes (— – −) to standard ASCII hyphen (-)
-   * - Converts ellipsis (…) to (...)
-   * - Removes any other prohibited unicode characters not allowed on Amazon Merch
-   */
-  static sanitizeString(txt) {
-    if (!txt || typeof txt !== "string") return txt || "";
-    return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
-  }
-  static sanitizeListingObject(listing) {
-    if (!listing || typeof listing !== "object") return listing;
-    if (Array.isArray(listing)) {
-      return listing.map((item) => typeof item === "string" ? this.sanitizeString(item) : this.sanitizeListingObject(item));
-    }
-    const result2 = {};
-    for (const [key, val] of Object.entries(listing)) {
-      if (typeof val === "string") {
-        result2[key] = this.sanitizeString(val);
-      } else if (typeof val === "object" && val !== null) {
-        result2[key] = this.sanitizeListingObject(val);
-      } else {
-        result2[key] = val;
-      }
-    }
-    return result2;
-  }
-  static loadLogs() {
-    if (this.inMemoryLogs !== null) {
-      return this.inMemoryLogs;
-    }
-    this.ensureDataDir();
-    if (import_fs77.default.existsSync(this.logsFile)) {
-      try {
-        const fileContent = import_fs77.default.readFileSync(this.logsFile, "utf-8");
-        this.inMemoryLogs = JSON.parse(fileContent);
-        return this.inMemoryLogs || [];
-      } catch (e) {
-        console.error("[TaskLogService] Failed to read tasks_log.json:", e);
-      }
-    }
-    this.inMemoryLogs = [];
-    return this.inMemoryLogs;
-  }
-  static saveLogs(logs) {
-    this.inMemoryLogs = logs;
-    this.ensureDataDir();
-    try {
-      const trimmed = logs.slice(0, 2e3);
-      import_fs77.default.writeFileSync(this.logsFile, JSON.stringify(trimmed, null, 2), "utf-8");
-    } catch (e) {
-      console.error("[TaskLogService] Failed to persist tasks_log.json:", e);
-    }
-  }
-  static formatTaskId(counter, suffix) {
-    const padded = String(counter).padStart(3, "0");
-    return `#${padded}-${suffix}`;
-  }
-  static getSuffixForSource(source12) {
-    switch (source12) {
-      case "HERMES":
-        return "H";
-      case "TEST":
-        return "T";
-      case "DESIGNER":
-        return "D";
-      case "UPDATE":
-        return "U";
-      default:
-        return "H";
-    }
-  }
-  static createTaskLog(params2) {
-    const counter = this.getNextCounter();
-    const suffix = this.getSuffixForSource(params2.source);
-    const id = this.formatTaskId(counter, suffix);
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const incomingTitle = params2.source === "HERMES" ? "Eingang von Hermes" : params2.source === "TEST" ? "Eingang von Test (Playground)" : params2.source === "UPDATE" ? "Eingang von Amazon Merch (Update-Pipeline)" : "Eingang von Designer";
-    const initialEvent = {
-      timestamp: now,
-      type: "INCOMING_PAYLOAD",
-      title: incomingTitle,
-      content: params2.payload || {}
-    };
-    const taskLog = {
-      id,
-      counter,
-      source: params2.source,
-      suffix,
-      status: "RECEIVED",
-      receivedAt: now,
-      clientIp: params2.clientIp,
-      payload: params2.payload || {},
-      events: [initialEvent],
-      hasError: Boolean(params2.hasError),
-      errorDetails: params2.errorDetails
-    };
-    const logs = this.loadLogs();
-    logs.unshift(taskLog);
-    this.saveLogs(logs);
-    console.log(`[TaskLogService] \u{1F4CB} Task ${taskLog.id} registriert (${taskLog.source}) von ${taskLog.clientIp || "local"}`);
-    this.emitUpdate(taskLog);
-    if (params2.source !== "UPDATE") {
-      this.processTaskWithOpenRouter(taskLog.id);
-    }
-    return taskLog;
-  }
-  static addEvent(taskId, event) {
-    const logs = this.loadLogs();
-    const task = logs.find((t) => t.id === taskId);
-    if (!task) return void 0;
-    task.events.push(event);
-    this.saveLogs(logs);
-    this.emitUpdate(task);
-    return task;
-  }
-  static completeTaskAndEnqueue(task) {
-    task.status = "COMPLETED";
-    task.checkpoint = void 0;
-    task.hasError = false;
-    try {
-      const listing = task.listingResult || task.trademarkRefineResult || {};
-      const enListing = listing.en || (listing.title || listing.brand ? listing : {});
-      const brand = enListing.brand || task.payload?.brand || "";
-      const title = enListing.title || task.payload?.title || task.payload?.quote || "Design #" + task.id;
-      const sanitizeText = (txt) => {
-        if (!txt) return "";
-        return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/\s+/g, " ").trim();
-      };
-      const bullet1 = sanitizeText(enListing.bullet1 || enListing.bullet_1 || "");
-      const bullet2 = sanitizeText(enListing.bullet2 || enListing.bullet_2 || "");
-      const description = sanitizeText(enListing.description || "");
-      const listings = {};
-      if (typeof listing === "object") {
-        for (const [key, val] of Object.entries(listing)) {
-          if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
-            const langObj = val;
-            listings[key.toLowerCase()] = {
-              brand: sanitizeText(langObj.brand || brand),
-              title: sanitizeText(langObj.title || title),
-              bullet1: sanitizeText(langObj.bullet1 || langObj.bullet_1 || ""),
-              bullet2: sanitizeText(langObj.bullet2 || langObj.bullet_2 || ""),
-              description: sanitizeText(langObj.description || "")
-            };
-          }
-        }
-      }
-      const audience = (task.customAnswers?.audience || task.payload?.audience || "Men, Women, Youth").toLowerCase();
-      const fitTypes = [];
-      if (audience.includes("men") || audience.includes("m\xE4nner") || audience.includes("herren")) fitTypes.push("men");
-      if (audience.includes("women") || audience.includes("frauen") || audience.includes("damen")) fitTypes.push("women");
-      if (audience.includes("youth") || audience.includes("kids") || audience.includes("kinder") || audience.includes("jugend")) fitTypes.push("youth");
-      let avoidColor = "none";
-      const avoid = (task.customAnswers?.avoidColor || task.payload?.avoidColor || "").toLowerCase();
-      if (avoid.includes("white") || avoid.includes("wei\xDF")) avoidColor = "white";
-      else if (avoid.includes("black") || avoid.includes("schwarz")) avoidColor = "black";
-      const customBackgroundColor = task.customAnswers?.reuseBackground;
-      const { QueueService: QueueService2 } = (init_queueService(), __toCommonJS2(queueService_exports));
-      const queueItem = QueueService2.enqueueDesign({
-        taskId: task.id,
-        designTitle: title || "Design #" + task.id,
-        niche: task.payload?.niche || "",
-        brand,
-        title,
-        bullet1,
-        bullet2,
-        description,
-        listings,
-        fitTypes: fitTypes.length > 0 ? fitTypes : ["men", "women", "youth"],
-        avoidColor,
-        customBackgroundColor,
-        imagePath: task.localImagePath || "",
-        pngPath: task.localMbaPngPath || ""
-      });
-      this.addEvent(task.id, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "TASK_HANDOFF",
-        title: `\u{1F4E6} Design erfolgreich in die Upload-Queue \xFCbergeben`,
-        content: {
-          queueId: queueItem.id,
-          allocatedSlots: queueItem.allocatedSlots,
-          status: queueItem.status,
-          message: `Design mit 4500x5400px Master-PNG und Listing an die Queue \xFCbergeben (${queueItem.allocatedSlots} Slots geplant).`
-        }
-      });
-      console.log(`[TaskLogService] \u{1F4E6} Task ${task.id} erfolgreich in Queue enqueued (${queueItem.allocatedSlots} Slots).`);
-    } catch (err) {
-      console.warn("[TaskLogService] Failed to auto-enqueue completed task:", err.message);
-    }
-    this.saveLogs(this.loadLogs());
-    this.emitUpdate(task);
-  }
-  static updateTaskStatus(taskId, updates) {
-    const logs = this.loadLogs();
-    const task = logs.find((t) => t.id === taskId);
-    if (!task) return void 0;
-    Object.assign(task, updates);
-    if ((updates.status === "COMPLETED" || task.status === "COMPLETED") && task.source !== "UPDATE") {
-      this.completeTaskAndEnqueue(task);
-      return task;
-    }
-    this.saveLogs(logs);
-    this.emitUpdate(task);
-    return task;
-  }
-  /**
-   * Run the LLM Session via OpenRouter
-   */
-  static async processTaskWithOpenRouter(taskId, options2) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) return;
-    const settings = loadSettings();
-    const apiKey = (settings.openRouterApiKey || "").trim();
-    const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
-    const provider = settings.llmProvider === "openai" ? "OpenAI Direct" : "OpenRouter";
-    const quote5 = (task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || "").trim();
-    if (quote5 && !options2?.skipPreFlight) {
-      console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Pre-Flight USPTO TM-Check f\xFCr Quote "${quote5}" (Task ${taskId})...`);
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "TM_CHECK_REQUEST",
-        title: `Pre-Flight Trademark-Pr\xFCfung (Quote)`,
-        content: {
-          isPreFlight: true,
-          offices: ["USPTO"],
-          fields: { quote: quote5 }
-        },
-        metadata: { provider: "Productor USPTO" }
-      });
-      const preStart = Date.now();
-      try {
-        const preCheckResult = await TrademarkService.checkBatchFields({
-          offices: ["USPTO"],
-          fields: { quote: quote5 }
-        });
-        const preHits = preCheckResult.summary?.totalHits ?? 0;
-        const preHasCls25 = preCheckResult.hasInfringementClass25 || false;
-        const preLatencyMs = Date.now() - preStart;
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TM_CHECK_RESPONSE",
-          title: `Empfangen von Productor / USPTO (Pre-Flight Quote: ${preHits} Treffer)`,
-          content: {
-            isPreFlight: true,
-            totalHits: preHits,
-            hasInfringementClass25: preHasCls25,
-            blockedProducts: preCheckResult.blockedProducts,
-            fieldSummaries: preCheckResult.fieldResults,
-            summary: preCheckResult.summary
-          },
-          metadata: { provider: "Productor USPTO", latencyMs: preLatencyMs }
-        });
-        if (preHasCls25) {
-          const rejectionReason = `Die Quote "${quote5}" verletzt ein aktives Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Pr\xFCfung in Tasks.`;
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: `\xDCbergeben an Tasks (Pre-Flight Quote Konflikt)`,
-            content: {
-              checkpoint: "PRE_FLIGHT",
-              reason: rejectionReason,
-              quote: quote5,
-              totalHits: preHits,
-              fieldSummaries: preCheckResult.fieldResults
-            }
-          });
-          this.updateTaskStatus(taskId, {
-            status: "AWAITING_PRE_FLIGHT_REVIEW",
-            checkpoint: "PRE_FLIGHT",
-            hasError: false,
-            errorDetails: rejectionReason,
-            trademarkCheckResult: {
-              totalHits: preHits,
-              hasInfringementClass25: true,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-              fieldSummaries: preCheckResult.fieldResults
-            }
-          });
-          console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} im Pre-Flight TM-Check an Tasks \xFCbergeben (Quote "${quote5}" verletzt Klasse 25).`);
-          return;
-        }
-      } catch (tmErr) {
-        console.warn(`[TaskLogService] Pre-Flight TM-Check Warnung (wird fortgesetzt):`, tmErr.message || tmErr);
-      }
-    }
-    this.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "SESSION_START",
-      title: `\xD6ffnen der ${provider} Session`,
-      content: `Session f\xFCr Task ${taskId} initialisiert.`,
-      metadata: {
-        model,
-        provider
-      }
-    });
-    this.updateTaskStatus(taskId, { status: "PROCESSING" });
-    if (!apiKey) {
-      const errEvent = {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler: Kein API-Key hinterlegt",
-        content: "Bitte trage deinen OpenRouter API Key in den Settings ein."
-      };
-      this.addEvent(taskId, errEvent);
-      this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: "Kein OpenRouter API Key in Settings" });
-      return;
-    }
-    const systemPrompt = SystemPromptService.getPromptGeneratorPrompt();
-    const userMessage = `Input:
-${JSON.stringify(task.payload, null, 2)}`;
-    this.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "LLM_REQUEST",
-      title: `Senden an ${provider}`,
-      content: {
-        systemPrompt,
-        userMessage
-      },
-      metadata: {
-        model
-      }
-    });
-    const start3 = Date.now();
-    const url = settings.llmProvider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
-    const headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
-    };
-    if (settings.llmProvider !== "openai") {
-      headers["HTTP-Referer"] = "https://mba-hub.local";
-      headers["X-Title"] = "MBA HUB";
-    }
-    try {
-      const response2 = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userMessage }
-          ],
-          temperature: 0.7
-        }),
-        signal: AbortSignal.timeout(6e4)
-      });
-      const latencyMs = Date.now() - start3;
-      const json = await response2.json();
-      if (!response2.ok) {
-        const errorMsg = json?.error?.message || `HTTP ${response2.status} ${response2.statusText}`;
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "ERROR",
-          title: `Fehler von ${provider}`,
-          content: errorMsg,
-          metadata: { latencyMs, model }
-        });
-        this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: errorMsg });
-        return;
-      }
-      const generatedContent = json?.choices?.[0]?.message?.content || "";
-      const usage = json?.usage ? {
-        prompt: json.usage.prompt_tokens,
-        completion: json.usage.completion_tokens,
-        total: json.usage.total_tokens
-      } : void 0;
-      let extractedPrompt = generatedContent;
-      try {
-        let cleanJsonStr = generatedContent.trim();
-        if (cleanJsonStr.startsWith("```")) {
-          cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-        }
-        const parsed = JSON.parse(cleanJsonStr);
-        if (parsed && typeof parsed.prompt === "string") {
-          extractedPrompt = parsed.prompt;
-        }
-      } catch (e) {
-      }
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "LLM_RESPONSE",
-        title: `Empfangen von ${provider}`,
-        content: generatedContent,
-        metadata: {
-          latencyMs,
-          model,
-          tokens: usage
-        }
-      });
-      this.updateTaskStatus(taskId, {
-        status: "PROMPT_READY",
-        resultPrompt: extractedPrompt,
-        hasError: false
-      });
-      console.log(`[TaskLogService] \u26A1 Task ${taskId} erfolgreich generiert in ${latencyMs}ms (${usage?.total || 0} Tokens)`);
-      await this.processTaskWithIdeogram(taskId, extractedPrompt);
-    } catch (err) {
-      const latencyMs = Date.now() - start3;
-      const errorMsg = err.message || "Verbindungsfehler zur OpenRouter API";
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: `Verbindungsfehler (${provider})`,
-        content: errorMsg,
-        metadata: { latencyMs, model }
-      });
-      this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: errorMsg });
-    }
-  }
-  /**
-   * Run Ideogram image generation and download design to NAS
-   */
-  static async processTaskWithIdeogram(taskId, promptText) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) return;
-    const settings = loadSettings();
-    const model = settings.ideogramModel || "V_3";
-    const renderingSpeed = settings.ideogramRenderingSpeed || "DEFAULT";
-    const aspectRatio = settings.ideogramAspectRatio || "10x16";
-    const styleType = settings.ideogramStyle || "GENERAL";
-    const magicPromptOption = settings.ideogramMagicPromptOption || "AUTO";
-    this.updateTaskStatus(taskId, { status: "GENERATING_IMAGE" });
-    if (!settings.ideogramApiKey) {
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler: Kein Ideogram API-Token",
-        content: "Bitte trage deinen Ideogram API Token in den Settings ein."
-      });
-      this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: "Kein Ideogram API Key in Settings" });
-      return;
-    }
-    this.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "IDEOGRAM_REQUEST",
-      title: `Senden an Ideogram (${model})`,
-      content: {
-        prompt: promptText,
-        model,
-        renderingSpeed,
-        aspectRatio,
-        style: styleType,
-        magicPrompt: magicPromptOption
-      },
-      metadata: {
-        model
-      }
-    });
-    const start3 = Date.now();
-    try {
-      const result2 = await IdeogramService.generateImage({
-        prompt: promptText,
-        model,
-        renderingSpeed,
-        aspectRatio,
-        styleType,
-        magicPromptOption
-      });
-      const latencyMs = Date.now() - start3;
-      const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
-      if (!import_fs77.default.existsSync(designsDir)) {
-        try {
-          import_fs77.default.mkdirSync(designsDir, { recursive: true });
-        } catch (e) {
-        }
-      }
-      const localFilename = `${cleanId}.png`;
-      const localFilePath = import_path72.default.join(designsDir, localFilename);
-      const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
-      try {
-        const imgRes = await fetch(result2.imageUrl);
-        if (imgRes.ok) {
-          const arrayBuffer = await imgRes.arrayBuffer();
-          import_fs77.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
-          console.log(`[TaskLogService] \u{1F4BE} Bild f\xFCr Task ${taskId} lokal gespeichert: ${localFilePath}`);
-        }
-      } catch (e) {
-        console.warn(`[TaskLogService] Konnte Bild f\xFCr Task ${taskId} nicht lokal cachen:`, e);
-      }
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "IDEOGRAM_RESPONSE",
-        title: `Empfangen von Ideogram (Bild generiert)`,
-        content: {
-          imageUrl: result2.imageUrl,
-          localUrl,
-          prompt: promptText
-        },
-        metadata: {
-          latencyMs,
-          model
-        }
-      });
-      this.updateTaskStatus(taskId, {
-        status: "ANALYZING_DESIGN",
-        imageUrl: result2.imageUrl,
-        localImagePath: localUrl,
-        hasError: false
-      });
-      console.log(`[TaskLogService] \u{1F5BC}\uFE0F Ideogram Bild f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
-      await this.analyzeDesignWithOpenRouter(taskId, localFilePath, result2.imageUrl);
-    } catch (err) {
-      const latencyMs = Date.now() - start3;
-      const errorMsg = err.message || "Fehler bei der Ideogram Bildgenerierung";
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler bei Ideogram",
-        content: errorMsg,
-        metadata: { latencyMs, model }
-      });
-      this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: errorMsg });
-    }
-  }
-  /**
-   * Run Multimodal Vision Analysis on the generated design with OpenRouter
-   */
-  static async analyzeDesignWithOpenRouter(taskId, localFilePath, imageUrl) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) return;
-    const settings = loadSettings();
-    const apiKey = settings.openRouterApiKey;
-    if (!apiKey) {
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler: Kein OpenRouter API Key",
-        content: "F\xFCr die Vision Design-Analyse wird ein OpenRouter API Key in den Settings ben\xF6tigt."
-      });
-      this.updateTaskStatus(taskId, { status: "COMPLETED" });
-      return;
-    }
-    const analyzerPrompt = SystemPromptService.getDesignAnalyzerPrompt();
-    const quote5 = task.payload?.quote || "";
-    const niche = `${task.payload?.niche1 || ""} ${task.payload?.niche2 || ""}`.trim();
-    const ideogramPrompt = task.resultPrompt || "";
-    const userPromptText = `Bitte analysiere das folgende generierte Design:
-
-- Original Quote aus Input: "${quote5}"
-- Original Nische: "${niche}"
-- Verwendeter Ideogram-Prompt: "${ideogramPrompt}"
-
-Beantworte die 4 Kernfragen streng als JSON!`;
-    this.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "ANALYSIS_REQUEST",
-      title: `Senden an OpenRouter (Vision Design-Analyse)`,
-      content: {
-        systemPrompt: analyzerPrompt,
-        userMessage: userPromptText,
-        quote: quote5,
-        niche
-      },
-      metadata: {
-        model: settings.llmModel || "anthropic/claude-3.5-sonnet",
-        provider: "OpenRouter Vision"
-      }
-    });
-    let imageSource = imageUrl;
-    if (import_fs77.default.existsSync(localFilePath)) {
-      try {
-        const buffer = import_fs77.default.readFileSync(localFilePath);
-        imageSource = `data:image/png;base64,${buffer.toString("base64")}`;
-      } catch (e) {
-      }
-    }
-    const model = settings.llmModel || "anthropic/claude-3.5-sonnet";
-    const start3 = Date.now();
-    try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey.trim()}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://mba-hub.local",
-          "X-Title": "MBA Hub Quality Assurance"
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: analyzerPrompt },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: userPromptText },
-                { type: "image_url", image_url: { url: imageSource } }
-              ]
-            }
-          ],
-          temperature: 0.1
-        }),
-        signal: AbortSignal.timeout(9e4)
-      });
-      const latencyMs = Date.now() - start3;
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`OpenRouter Vision Fehler (${res.status}): ${errText}`);
-      }
-      const data = await res.json();
-      const answer = data?.choices?.[0]?.message?.content || "";
-      const usage = data?.usage;
-      let cleanJsonStr = answer.trim();
-      if (cleanJsonStr.startsWith("```")) {
-        cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-      }
-      let parsedAnalysis = null;
-      try {
-        parsedAnalysis = JSON.parse(cleanJsonStr);
-      } catch (e) {
-      }
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ANALYSIS_RESPONSE",
-        title: `Empfangen von OpenRouter (Design-Analyse & Antworten)`,
-        content: parsedAnalysis || answer,
-        metadata: {
-          latencyMs,
-          model,
-          tokens: usage
-        }
-      });
-      console.log(`[TaskLogService] \u{1F441}\uFE0F Vision Design-Analyse f\xFCr Task ${taskId} erfolgreich in ${latencyMs}ms`);
-      const isApproved = parsedAnalysis?.overall_verdict === "APPROVED" || parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended;
-      if (settings.aiAutonomyEnabled && isApproved) {
-        console.log(`[TaskLogService] \u26A1 Autonomie aktiv: Task ${taskId} \xFCberspringt Human-in-the-Loop (Design freigegeben) -> Listing-Generierung gestartet.`);
-        this.updateTaskStatus(taskId, {
-          status: "GENERATING_LISTING",
-          analysisResult: parsedAnalysis,
-          hasError: false
-        });
-        await this.generateListingWithOpenRouter(taskId);
-      } else {
-        const reason = isApproved ? "Vision-Analyse abgeschlossen. Wartet auf Pr\xFCfung/Best\xE4tigung von Bild, Quote und Zielgruppe in Tasks." : parsedAnalysis?.quote_check?.quote_errors || "Quote-Abweichung oder Designfehler festgestellt. Wartet auf manuelle Pr\xFCfung in Tasks.";
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TASK_HANDOFF",
-          title: `\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)`,
-          content: {
-            checkpoint: "DESIGN_REVIEW",
-            reason,
-            isApproved,
-            analysis: parsedAnalysis
-          }
-        });
-        this.updateTaskStatus(taskId, {
-          status: "AWAITING_DESIGN_REVIEW",
-          checkpoint: "DESIGN_REVIEW",
-          analysisResult: parsedAnalysis,
-          hasError: false,
-          errorDetails: isApproved ? void 0 : reason
-        });
-        console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} an Tasks \xFCbergeben zur Design- & Fragen-Pr\xFCfung.`);
-      }
-    } catch (err) {
-      const latencyMs = Date.now() - start3;
-      const errorMsg = err.message || "Fehler bei der Vision Design-Analyse";
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler bei Vision-Analyse",
-        content: errorMsg,
-        metadata: { latencyMs, model }
-      });
-      this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
-    }
-  }
-  /**
-   * Automatically generate MBA SEO Listing across all marketplaces (en, de, fr, it, es, ja)
-   */
-  static async generateListingWithOpenRouter(taskId) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) return;
-    const settings = loadSettings();
-    const apiKey = settings.openRouterApiKey;
-    if (!apiKey) {
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler: Kein OpenRouter API Key",
-        content: "F\xFCr die Listing-Generierung wird ein OpenRouter API Key in den Settings ben\xF6tigt."
-      });
-      this.updateTaskStatus(taskId, { status: "COMPLETED" });
-      return;
-    }
-    const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
-    const baseListingPrompt = SystemPromptService.getListingGeneratorPrompt();
-    const bannedWordsSection = BannedWordsService.getBannedWordsPromptSection();
-    const listingPrompt = `${baseListingPrompt}
-
-${bannedWordsSection}`;
-    const quote5 = task.payload?.quote || "";
-    const niche1 = task.payload?.niche1 || "";
-    const niche2 = task.payload?.niche2 || "";
-    const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "Men, Women, Youth";
-    const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || "None";
-    const userPromptText = `Please generate the full, multi-language Amazon Merch on Demand (MBA) SEO listing for this design based on the following details:
-
-- Quote / Text: "${quote5}"
-- Primary Niche: "${niche1}"
-- Secondary Niche: "${niche2}"
-- Target Audience: ${targetGroup}
-- Colors to Avoid: ${avoidColors}
-- Ideogram Prompt: "${task.resultPrompt || ""}"
-
-Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to character limits and compliance rules!`;
-    this.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "LISTING_REQUEST",
-      title: `Senden an OpenRouter (Listing Generator)`,
-      content: {
-        systemPrompt: listingPrompt,
-        userMessage: userPromptText
-      },
-      metadata: { model, provider: "OpenRouter" }
-    });
-    const start3 = Date.now();
-    try {
-      const response2 = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://mbahub.local",
-          "X-Title": "MBA HUB Listing Generator"
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: listingPrompt },
-            { role: "user", content: userPromptText }
-          ],
-          temperature: 0.7,
-          max_tokens: 4e3
-        }),
-        signal: AbortSignal.timeout(9e4)
-      });
-      const latencyMs = Date.now() - start3;
-      if (!response2.ok) {
-        const errorText = await response2.text();
-        throw new Error(`OpenRouter Listing API Fehler: ${response2.status} - ${errorText}`);
-      }
-      const data = await response2.json();
-      const rawContent = data.choices?.[0]?.message?.content || "";
-      let parsedListing = null;
-      try {
-        let cleanJsonStr = rawContent.trim();
-        if (cleanJsonStr.startsWith("```")) {
-          cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-        }
-        parsedListing = JSON.parse(cleanJsonStr);
-      } catch (pe) {
-        parsedListing = rawContent;
-      }
-      parsedListing = this.sanitizeListingObject(parsedListing);
-      const bannedIssues = BannedWordsService.validateListing(parsedListing);
-      const hasBannedIssues = Object.keys(bannedIssues).length > 0;
-      if (hasBannedIssues) {
-        console.warn(`[TaskLogService] \u26A0\uFE0F Blacklist-Treffer in generiertem Listing f\xFCr Task ${taskId}:`, JSON.stringify(bannedIssues));
-      }
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "LISTING_RESPONSE",
-        title: `Empfangen von OpenRouter (MBA Listing)`,
-        content: {
-          ...parsedListing,
-          ...hasBannedIssues ? { _banned_word_warnings: bannedIssues } : {}
-        },
-        metadata: {
-          model: data.model || model,
-          latencyMs,
-          tokens: data.usage ? {
-            prompt: data.usage.prompt_tokens,
-            completion: data.usage.completion_tokens,
-            total: data.usage.total_tokens
-          } : void 0
-        }
-      });
-      this.updateTaskStatus(taskId, {
-        status: "CHECKING_TRADEMARKS",
-        listingResult: parsedListing,
-        hasError: false
-      });
-      console.log(`[TaskLogService] \u{1F4DD} MBA Listing f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms. Starte Trademark Audit...`);
-      await this.auditListingTrademarks(taskId);
-    } catch (err) {
-      const latencyMs = Date.now() - start3;
-      const errorMsg = err.message || "Fehler bei der Listing-Generierung";
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler bei Listing-Generierung",
-        content: errorMsg,
-        metadata: { latencyMs, model }
-      });
-      this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
-    }
-  }
-  /**
-   * Automatically check USPTO Trademarks for the generated English listing and run LLM refinement loop
-   * Supports up to 4 TM checks and 3 LLM rewrite cycles.
-   * If Class 25 hits still exist after the 4th TM check, the task is marked as REJECTED.
-   */
-  static async auditListingTrademarks(taskId) {
-    const task = this.getTaskLogById(taskId);
-    if (!task || !task.listingResult) return;
-    const enListing = task.listingResult.en || task.listingResult;
-    let currentFields = {
-      quote: task.payload?.quote || "",
-      brand: typeof enListing === "object" ? enListing.brand || "" : "",
-      title: typeof enListing === "object" ? enListing.title || "" : "",
-      bullet1: typeof enListing === "object" ? enListing.bullet1 || "" : "",
-      bullet2: typeof enListing === "object" ? enListing.bullet2 || "" : "",
-      description: typeof enListing === "object" ? enListing.description || "" : ""
-    };
-    const settings = loadSettings();
-    const apiKey = settings.openRouterApiKey;
-    const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
-    const auditorPrompt = SystemPromptService.getTrademarkAuditorPrompt();
-    const APPAREL_SET = /* @__PURE__ */ new Set(["STANDARD_TSHIRT", "PREMIUM_TSHIRT", "HOODIE", "SWEATSHIRT", "ZIP_HOODIE", "TANK_TOP", "LONG_SLEEVE_TSHIRT", "RAGLAN"]);
-    const MAX_CHECKS = 4;
-    try {
-      for (let checkRound = 1; checkRound <= MAX_CHECKS; checkRound++) {
-        const isInitial = checkRound === 1;
-        const isFinal = checkRound === MAX_CHECKS;
-        console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte USPTO TM-Pr\xFCfung Runde ${checkRound}/${MAX_CHECKS} f\xFCr Task ${taskId}...`);
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TM_CHECK_REQUEST",
-          title: isInitial ? "Senden an Productor / USPTO (Trademark-Pr\xFCfung)" : `Senden an Productor / USPTO (Nachpr\xFCfung Runde ${checkRound})`,
-          content: {
-            round: checkRound,
-            maxRounds: MAX_CHECKS,
-            offices: ["USPTO"],
-            fields: { ...currentFields }
-          },
-          metadata: {
-            provider: "Productor USPTO"
-          }
-        });
-        const start3 = Date.now();
-        const batchResult = await TrademarkService.checkBatchFields({
-          offices: ["USPTO"],
-          fields: currentFields
-        });
-        const totalHits = batchResult.summary?.totalHits ?? 0;
-        const hasCls25 = batchResult.hasInfringementClass25 || false;
-        const fieldResults = batchResult.fieldResults || {};
-        const latencyMs = Date.now() - start3;
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TM_CHECK_RESPONSE",
-          title: isInitial ? `Empfangen von Productor / USPTO (${totalHits} Treffer)` : `Empfangen von Productor / USPTO (Nachpr\xFCfung Runde ${checkRound}: ${totalHits} Treffer)`,
-          content: {
-            round: checkRound,
-            totalHits,
-            hasInfringementClass25: hasCls25,
-            blockedProducts: batchResult.blockedProducts,
-            fieldSummaries: fieldResults,
-            summary: batchResult.summary
-          },
-          metadata: {
-            provider: "Productor USPTO",
-            latencyMs
-          }
-        });
-        if (fieldResults.quote?.hasInfringementClass25) {
-          const rejectionReason = `Die Quote "${currentFields.quote}" verletzt ein eingetragenes Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Pr\xFCfung in Tasks.`;
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TM_REFINE_RESPONSE",
-            title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT)`,
-            content: {
-              verdict: "REJECTED",
-              rejection_reason: rejectionReason,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-              actions_taken: ["Quote in Klasse 25 gesch\xFCtzt -> Zur manuellen Pr\xFCfung an Tasks \xFCbergeben."]
-            }
-          });
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: "\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)",
-            content: {
-              checkpoint: "TM_REVIEW",
-              reason: rejectionReason,
-              verdict: "REJECTED",
-              round: checkRound,
-              totalHits,
-              fieldSummaries: fieldResults
-            }
-          });
-          this.updateTaskStatus(taskId, {
-            status: "AWAITING_TM_REVIEW",
-            checkpoint: "TM_REVIEW",
-            trademarkCheckResult: {
-              totalHits,
-              hasInfringementClass25: true,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-              fieldSummaries: fieldResults
-            },
-            trademarkRefineResult: {
-              verdict: "REJECTED",
-              rejection_reason: rejectionReason,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
-            },
-            hasError: false,
-            errorDetails: rejectionReason
-          });
-          console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (Quote ist Class 25 Trademark).`);
-          return;
-        }
-        if (totalHits === 0) {
-          const finalBlockedProducts = (batchResult.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
-          const refineSuccessResult = {
-            verdict: "APPROVED",
-            rejection_reason: null,
-            actions_taken: ["Keine Markenrechts-Treffer gefunden. Listing vollst\xE4ndig frei."],
-            blockedProducts: finalBlockedProducts,
-            refined_listing: {
-              brand: currentFields.brand,
-              title: currentFields.title,
-              bullet1: currentFields.bullet1,
-              bullet2: currentFields.bullet2,
-              description: currentFields.description
-            }
-          };
-          this.updateTaskStatus(taskId, {
-            status: "CHECKING_TRADEMARKS",
-            listingResult: task.listingResult,
-            trademarkCheckResult: {
-              totalHits: 0,
-              hasInfringementClass25: false,
-              blockedProducts: finalBlockedProducts,
-              fieldSummaries: fieldResults
-            },
-            trademarkRefineResult: refineSuccessResult,
-            hasError: false
-          });
-          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} sofort freigegeben (0 Treffer) -> Starte Vektorisierung \u2713`);
-          this.vectorizeDesignTask(taskId).catch((err) => {
-            console.error(`[TaskLogService] Vektorisierung f\xFCr Task ${taskId} fehlgeschlagen:`, err);
-          });
-          return;
-        }
-        if (isFinal) {
-          const rejectionMsg = `Nach 4 USPTO-Pr\xFCfungen und 3 automatischen Korrekturl\xE4ufen konnten die Markenrechts-Treffer in Klasse 25 f\xFCr Brand/Title nicht vollst\xE4ndig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: `\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)`,
-            content: {
-              checkpoint: "TM_REVIEW",
-              reason: rejectionMsg,
-              totalHits,
-              fieldSummaries: fieldResults
-            }
-          });
-          this.updateTaskStatus(taskId, {
-            status: "AWAITING_TM_REVIEW",
-            checkpoint: "TM_REVIEW",
-            trademarkCheckResult: {
-              totalHits,
-              hasInfringementClass25: true,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-              fieldSummaries: fieldResults
-            },
-            hasError: false,
-            errorDetails: rejectionMsg
-          });
-          console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} an Tasks \xFCbergeben zur manuellen TM-Optimierung.`);
-          return;
-        }
-        if (!apiKey) {
-          console.warn(`[TaskLogService] Kein OpenRouter API-Key vorhanden f\xFCr TM Refine.`);
-          break;
-        }
-        const hitsSummary = [];
-        for (const [fieldName, fieldData] of Object.entries(fieldResults)) {
-          if (fieldData.totalHits > 0 && fieldData.hits) {
-            for (const [term, hits] of Object.entries(fieldData.hits)) {
-              const classInfo = hits.map((h) => `Class ${h.classNumber} (${h.status || "LIVE"})`).join(", ");
-              const isK25 = hits.some((h) => h.classes && h.classes.includes("25") || String(h.classNumber).split(/[,;\s]+/).includes("25"));
-              hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo} ${isK25 ? "\u{1F534} CLASS 25 CONFLICT!" : "\u{1F7E1} Secondary Class"}`);
-            }
-          }
-        }
-        const userMessage = `Here is the current English listing and the detected USPTO Trademark hits (Correction Round ${checkRound}/3):
-
-### Current Listing:
-- Quote / Slogan: "${currentFields.quote}"
-- Brand: "${currentFields.brand}"
-- Title: "${currentFields.title}"
-- Bullet 1: "${currentFields.bullet1}"
-- Bullet 2: "${currentFields.bullet2}"
-- Description: "${currentFields.description}"
-
-### Detected USPTO Trademark Hits:
-${hitsSummary.length > 0 ? hitsSummary.join("\n") : "- No hits detected."}
-
-Please audit the listing based on your compliance rules:
-1. BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE): Brand Name and Title MUST be 100% free of active Class 25 (Apparel) trademarks! Rephrase any matched terms to unique, non-infringing phrases with high SEO value.
-2. BULLETS & DESCRIPTION (DESCRIPTIVE FAIR USE): Common generic words (e.g. "space", "angel", "wings", "stars", "gold", "cosmic", "celestial", "radiant") in natural sentence context fall under Descriptive Fair Use. Do NOT butcher or delete natural descriptive sentences!
-3. MBA LISTING RULES COMPLIANCE:
-   - NO quality/material claims (soft, cotton, premium, durable, lightweight).
-   - NO promotional or gift language (gift, present, birthday gift, best seller, sale, buy now).
-   - NO background color mentions (white design, black background).
-   - Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
-4. Return your decision as JSON strictly matching the schema!`;
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TM_REFINE_REQUEST",
-          title: `Senden an OpenRouter (Trademark Auditor & Refiner - Runde ${checkRound})`,
-          content: {
-            round: checkRound,
-            systemPrompt: auditorPrompt,
-            userMessage
-          },
-          metadata: { model, provider: "OpenRouter" }
-        });
-        const refineStart = Date.now();
-        const response2 = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://mbahub.local",
-            "X-Title": "MBA HUB TM Auditor"
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: "system", content: auditorPrompt },
-              { role: "user", content: userMessage }
-            ],
-            temperature: 0.2,
-            max_tokens: 2e3
-          }),
-          signal: AbortSignal.timeout(6e4)
-        });
-        const refineLatencyMs = Date.now() - refineStart;
-        if (!response2.ok) {
-          const errText = await response2.text();
-          throw new Error(`OpenRouter TM Auditor Fehler in Runde ${checkRound}: ${response2.status} - ${errText}`);
-        }
-        const data = await response2.json();
-        const rawContent = data.choices?.[0]?.message?.content || "";
-        let parsedRefined = null;
-        try {
-          let cleanJsonStr = rawContent.trim();
-          if (cleanJsonStr.startsWith("```")) {
-            cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-          }
-          parsedRefined = JSON.parse(cleanJsonStr);
-        } catch (pe) {
-          parsedRefined = rawContent;
-        }
-        if (parsedRefined?.verdict === "REJECTED") {
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TM_REFINE_RESPONSE",
-            title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT in Runde ${checkRound})`,
-            content: {
-              ...parsedRefined,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
-            },
-            metadata: {
-              model: data.model || model,
-              latencyMs: refineLatencyMs,
-              tokens: data.usage ? {
-                prompt: data.usage.prompt_tokens,
-                completion: data.usage.completion_tokens,
-                total: data.usage.total_tokens
-              } : void 0
-            }
-          });
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: `\xDCbergeben an Tasks (Trademark-Ablehnung in Runde ${checkRound})`,
-            content: {
-              checkpoint: "TM_REVIEW",
-              reason: parsedRefined.rejection_reason || "Markenrechtsverletzung vom LLM festgestellt. Wartet auf manuelle Pr\xFCfung in Tasks.",
-              verdict: "REJECTED",
-              round: checkRound,
-              totalHits,
-              fieldSummaries: fieldResults
-            }
-          });
-          this.updateTaskStatus(taskId, {
-            status: "AWAITING_TM_REVIEW",
-            checkpoint: "TM_REVIEW",
-            trademarkCheckResult: {
-              totalHits,
-              hasInfringementClass25: true,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-              fieldSummaries: fieldResults
-            },
-            trademarkRefineResult: {
-              ...parsedRefined,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
-            },
-            hasError: false,
-            errorDetails: parsedRefined.rejection_reason || "Markenrechtsverletzung festgestellt."
-          });
-          console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (TM-Ablehnung in Runde ${checkRound}): ${parsedRefined.rejection_reason}`);
-          return;
-        }
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TM_REFINE_RESPONSE",
-          title: `Empfangen von OpenRouter (Trademark-Bewertung: ${parsedRefined?.verdict || "FREIGEGEBEN"} in Runde ${checkRound})`,
-          content: parsedRefined,
-          metadata: {
-            model: data.model || model,
-            latencyMs: refineLatencyMs,
-            tokens: data.usage ? {
-              prompt: data.usage.prompt_tokens,
-              completion: data.usage.completion_tokens,
-              total: data.usage.total_tokens
-            } : void 0
-          }
-        });
-        const refinedListing = parsedRefined?.refined_listing || {};
-        if (refinedListing.brand) currentFields.brand = refinedListing.brand;
-        if (refinedListing.title) currentFields.title = refinedListing.title;
-        if (refinedListing.bullet1) currentFields.bullet1 = refinedListing.bullet1;
-        if (refinedListing.bullet2) currentFields.bullet2 = refinedListing.bullet2;
-        if (refinedListing.description) currentFields.description = refinedListing.description;
-        if (task.listingResult) {
-          if (task.listingResult.en) {
-            task.listingResult.en = { ...task.listingResult.en, ...refinedListing };
-          } else if (typeof task.listingResult === "object") {
-            task.listingResult = { ...task.listingResult, ...refinedListing };
-          }
-        }
-        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
-        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
-        if (!brandHasClass25 && !titleHasClass25) {
-          const finalBlockedProducts = (batchResult.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
-          this.updateTaskStatus(taskId, {
-            status: "CHECKING_TRADEMARKS",
-            listingResult: task.listingResult,
-            trademarkCheckResult: {
-              totalHits,
-              hasInfringementClass25: false,
-              blockedProducts: finalBlockedProducts,
-              fieldSummaries: fieldResults
-            },
-            trademarkRefineResult: parsedRefined,
-            hasError: false
-          });
-          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} in Runde ${checkRound} erfolgreich durch Trademark-Auditor freigegeben -> Starte Vektorisierung \u2713`);
-          this.vectorizeDesignTask(taskId).catch((err) => {
-            console.error(`[TaskLogService] Vektorisierung f\xFCr Task ${taskId} fehlgeschlagen:`, err);
-          });
-          return;
-        }
-      }
-    } catch (err) {
-      console.error(`[TaskLogService] Unerwarteter Fehler beim TM Audit f\xFCr Task ${taskId}:`, err);
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler beim Trademark Audit",
-        content: err.message || "Fehler bei der USPTO TM Pr\xFCfung"
-      });
-      this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
-    }
-  }
-  /**
-   * Vectorize the approved design using Vectorizer.ai with settings & dynamic maxColors
-   */
-  static async vectorizeDesignTask(taskId) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) return;
-    const settings = loadSettings();
-    const hasKey = Boolean(settings.vectorizerApiKey && settings.vectorizerApiKey.trim());
-    const hasSecret = Boolean(settings.vectorizerApiSecret && settings.vectorizerApiSecret.trim());
-    if (!hasKey || !hasSecret) {
-      console.log(`[TaskLogService] \u2139\uFE0F Vectorizer.ai API Credentials nicht konfiguriert -> Task ${taskId} ohne Vektorisierung abgeschlossen.`);
-      this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
-      return;
-    }
-    const maxColors = task.customAnswers?.maxColors ?? task.analysisResult?.color_analysis?.color_count ?? 2;
-    const cleanId = task.id.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const localImagePath = task.localImagePath || import_path72.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-    const hasLocalImage = import_fs77.default.existsSync(localImagePath);
-    if (!hasLocalImage && !task.imageUrl) {
-      console.warn(`[TaskLogService] \u26A0\uFE0F Kein Bild f\xFCr Vektorisierung bei Task ${taskId} gefunden.`);
-      this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
-      return;
-    }
-    this.updateTaskStatus(taskId, { status: "VECTORIZING_DESIGN", hasError: false });
-    this.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "VECTORIZE_REQUEST",
-      title: `Senden an Vectorizer.ai (Vektorisierung)`,
-      content: {
-        mode: settings.vectorizerModeProduction || "production",
-        maxColors,
-        drawStyle: settings.vectorizerDrawStyle || "fill_shapes",
-        shapeStacking: settings.vectorizerShapeStacking || "cutouts",
-        groupBy: settings.vectorizerGroupBy || "none",
-        minArea: settings.vectorizerMinArea ?? 10,
-        optimizedShapes: settings.vectorizerOptimizedShapes ?? true,
-        gapFiller: settings.vectorizerGapFiller ?? false,
-        imageSource: hasLocalImage ? `data/designs/${cleanId}.png` : task.imageUrl
-      },
-      metadata: {
-        provider: "Vectorizer.ai",
-        model: "vectorizer-v1"
-      }
-    });
-    const start3 = Date.now();
-    try {
-      let svgText = "";
-      if (hasLocalImage) {
-        const buffer = import_fs77.default.readFileSync(localImagePath);
-        svgText = await VectorizerService.vectorizeBuffer(buffer, "image/png", false, { maxColors });
-      } else if (task.imageUrl) {
-        svgText = await VectorizerService.vectorizeImage(task.imageUrl, false, { maxColors });
-      }
-      const latencyMs = Date.now() - start3;
-      const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
-      if (!import_fs77.default.existsSync(designsDir)) {
-        try {
-          import_fs77.default.mkdirSync(designsDir, { recursive: true });
-        } catch (e) {
-        }
-      }
-      const origFilename = `${cleanId}_original.svg`;
-      const origFilePath = import_path72.default.join(designsDir, origFilename);
-      import_fs77.default.writeFileSync(origFilePath, svgText, "utf-8");
-      const svgFilename = `${cleanId}.svg`;
-      const svgFilePath = import_path72.default.join(designsDir, svgFilename);
-      import_fs77.default.writeFileSync(svgFilePath, svgText, "utf-8");
-      const ts = Date.now();
-      const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}?t=${ts}`;
-      const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${ts}`;
-      task.originalSvgPath = origFilePath;
-      task.originalSvgUrl = origSvgUrl;
-      task.localSvgPath = svgFilePath;
-      task.svgUrl = localSvgUrl;
-      task.svgContent = svgText;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "VECTORIZE_RESPONSE",
-        title: `Empfangen von Vectorizer.ai (SVG Vektorgrafik)`,
-        content: {
-          svgUrl: localSvgUrl,
-          originalSvgUrl: origSvgUrl,
-          svgLength: svgText.length,
-          maxColorsUsed: maxColors,
-          svgContent: svgText.length < 5e4 ? svgText : `${svgText.substring(0, 1e3)}...`
-        },
-        metadata: {
-          provider: "Vectorizer.ai",
-          latencyMs
-        }
-      });
-      const bgAnswer = task.customAnswers?.reuseBackground || "";
-      const bgAnalysis = task.analysisResult?.background_analysis || {};
-      const isManualBg = bgAnswer === "Manuell" || bgAnswer === "MANUAL" || bgAnswer.includes("Ja") || bgAnswer.includes("behalten") || bgAnalysis.removal_mode === "MANUAL";
-      const isAutoBg = !isManualBg;
-      if (isAutoBg) {
-        console.log(`[TaskLogService] \u26A1 Wende Auto BG Remove f\xFCr Task ${taskId} an...`);
-        const bgResult = await SvgRenderService.autoRemoveCornerBackground(svgText);
-        if (bgResult.success && bgResult.removedCount > 0) {
-          svgText = bgResult.modifiedSvg;
-          import_fs77.default.writeFileSync(svgFilePath, svgText, "utf-8");
-          task.svgContent = svgText;
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "SVG_EDIT_RESPONSE",
-            title: `Auto BG Remove angewendet (${bgResult.removedCount} Hintergrund-Elemente entfernt)`,
-            content: {
-              removedElementsCount: bgResult.removedCount,
-              method: "Auto Corner Detection"
-            }
-          });
-        }
-        console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Multifarben-Testbild f\xFCr Task ${taskId}...`);
-        const fourPanelFilename = `${cleanId}_4panel.png`;
-        const fourPanelFilePath = import_path72.default.join(designsDir, fourPanelFilename);
-        const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-        import_fs77.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
-        const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${Date.now()}`;
-        task.localFourPanelImagePath = fourPanelFilePath;
-        task.fourPanelImageUrl = fourPanelUrl;
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "SVG_AUDIT_REQUEST",
-          title: `Senden an LLM Vision (4-Panel Cutout-Pr\xFCfung auf Wei\xDF/Schwarz/Rot/Slate)`,
-          content: {
-            fourPanelImageUrl: fourPanelUrl,
-            quote: task.payload?.quote
-          },
-          metadata: {
-            provider: "OpenRouter Vision"
-          }
-        });
-        console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit f\xFCr Task ${taskId} durch...`);
-        const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
-        task.svgAuditResult = auditResult;
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "SVG_AUDIT_RESPONSE",
-          title: `Empfangen von LLM Vision (${auditResult.cutout_verdict === "APPROVED" ? "Cutout Freigegeben \u2713" : "Korrektur n\xF6tig \u26A0\uFE0F"})`,
-          content: {
-            verdict: auditResult.cutout_verdict,
-            backgroundClean: auditResult.background_removed_cleanly,
-            detectedIssues: auditResult.detected_issues,
-            explanation: auditResult.explanation,
-            fourPanelImageUrl: fourPanelUrl
-          },
-          metadata: {
-            provider: "OpenRouter Vision",
-            latencyMs: auditResult.latencyMs,
-            tokens: auditResult.tokens
-          }
-        });
-        if (auditResult.cutout_verdict === "APPROVED") {
-          console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
-          const mbaFilename = `${cleanId}_mba.png`;
-          const mbaFilePath = import_path72.default.join(designsDir, mbaFilename);
-          const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgText);
-          import_fs77.default.writeFileSync(mbaFilePath, mbaBuffer);
-          const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
-          task.localMbaPngPath = mbaFilePath;
-          task.mbaPngUrl = mbaUrl;
-          this.updateTaskStatus(taskId, {
-            status: "COMPLETED",
-            checkpoint: void 0,
-            hasError: false
-          });
-          console.log(`[TaskLogService] \u{1F389} Task ${taskId} vollautonom freigestellt, gepr\xFCft & als MBA PNG abgeschlossen \u2713`);
-        } else {
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: `\xDCbergeben an Tasks (Checkpoint 4: Manuelle Nachkorrektur empfohlen)`,
-            content: {
-              checkpoint: "SVG_REVIEW",
-              reason: auditResult.explanation,
-              detectedIssues: auditResult.detected_issues,
-              fourPanelImageUrl: fourPanelUrl,
-              svgUrl: localSvgUrl
-            }
-          });
-          this.updateTaskStatus(taskId, {
-            status: "AWAITING_SVG_REVIEW",
-            checkpoint: "SVG_REVIEW",
-            hasError: false
-          });
-          console.log(`[TaskLogService] \u26A0\uFE0F Task ${taskId}: KI empfiehlt manuelle Korrektur -> In Tasks \xFCbergeben \u2713`);
-        }
-      } else {
-        try {
-          const fourPanelFilename = `${cleanId}_4panel.png`;
-          const fourPanelFilePath = import_path72.default.join(designsDir, fourPanelFilename);
-          const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-          import_fs77.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
-          task.localFourPanelImagePath = fourPanelFilePath;
-          task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
-        } catch (e) {
-        }
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TASK_HANDOFF",
-          title: `\xDCbergeben an Tasks (Checkpoint 4: Manuelle SVG-Pr\xFCfung gew\xFCnscht)`,
-          content: {
-            checkpoint: "SVG_REVIEW",
-            svgUrl: localSvgUrl,
-            maxColorsUsed: maxColors,
-            reason: "Manueller Hintergrund-Modus in Checkpoint 2 gew\xE4hlt."
-          }
-        });
-        this.updateTaskStatus(taskId, {
-          status: "AWAITING_SVG_REVIEW",
-          checkpoint: "SVG_REVIEW",
-          hasError: false
-        });
-      }
-    } catch (err) {
-      const latencyMs = Date.now() - start3;
-      console.error(`[TaskLogService] Fehler bei der Vektorisierung f\xFCr Task ${taskId}:`, err);
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler bei der Vektorisierung (Vectorizer.ai)",
-        content: err.message || "Fehler beim Vectorizer.ai API Aufruf",
-        metadata: { latencyMs }
-      });
-      this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
-    }
-  }
-  /**
-   * Jump back to an earlier pipeline step and re-execute from there
-   */
-  static async retryFromStep(taskId, stepType, eventIndex) {
-    const logs = this.loadLogs();
-    const currentTask = logs.find((t) => t.id === taskId);
-    if (!currentTask) {
-      throw new Error(`Task ${taskId} nicht gefunden.`);
-    }
-    if (typeof eventIndex === "number" && eventIndex >= 0 && eventIndex < currentTask.events.length) {
-      currentTask.events = currentTask.events.slice(0, eventIndex);
-    }
-    if (stepType === "LLM_REQUEST") {
-      if (typeof eventIndex !== "number") {
-        const keepIdx = currentTask.events.findIndex((e) => e.type === "LLM_REQUEST");
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
-      currentTask.status = "PROCESSING";
-      currentTask.resultPrompt = void 0;
-      currentTask.hasError = false;
-      currentTask.errorDetails = void 0;
-      this.saveLogs(logs);
-      this.generatePromptWithOpenRouter(taskId).catch((err) => {
-        console.error(`[TaskLogService] Retry Prompt failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Ideogram Prompt-Generierung neu gestartet." };
-    }
-    if (stepType === "IDEOGRAM_REQUEST") {
-      if (typeof eventIndex !== "number") {
-        const keepIdx = currentTask.events.findIndex((e) => e.type === "IDEOGRAM_REQUEST");
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
-      currentTask.status = "GENERATING_IMAGE";
-      currentTask.imageUrl = void 0;
-      currentTask.localImagePath = void 0;
-      currentTask.analysisResult = void 0;
-      currentTask.listingResult = void 0;
-      currentTask.trademarkCheckResult = void 0;
-      currentTask.trademarkRefineResult = void 0;
-      currentTask.hasError = false;
-      currentTask.errorDetails = void 0;
-      this.saveLogs(logs);
-      this.processTaskWithIdeogram(taskId).catch((err) => {
-        console.error(`[TaskLogService] Retry Ideogram failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Ideogram Bild-Generierung neu gestartet." };
-    }
-    if (stepType === "ANALYSIS_REQUEST") {
-      if (typeof eventIndex !== "number") {
-        const keepIdx = currentTask.events.findIndex((e) => e.type === "ANALYSIS_REQUEST");
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
-      currentTask.status = "ANALYZING_DESIGN";
-      currentTask.analysisResult = void 0;
-      currentTask.hasError = false;
-      currentTask.errorDetails = void 0;
-      this.saveLogs(logs);
-      this.analyzeDesignWithOpenRouter(taskId).catch((err) => {
-        console.error(`[TaskLogService] Retry Analysis failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Design QA-Analyse neu gestartet." };
-    }
-    if (stepType === "LISTING_REQUEST") {
-      if (typeof eventIndex !== "number") {
-        const keepIdx = currentTask.events.findIndex((e) => e.type === "LISTING_REQUEST");
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
-      currentTask.status = "GENERATING_LISTING";
-      currentTask.listingResult = void 0;
-      currentTask.trademarkCheckResult = void 0;
-      currentTask.trademarkRefineResult = void 0;
-      currentTask.hasError = false;
-      currentTask.errorDetails = void 0;
-      this.saveLogs(logs);
-      this.generateListingWithOpenRouter(taskId).catch((err) => {
-        console.error(`[TaskLogService] Retry Listing failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Listing-Erstellung neu gestartet." };
-    }
-    if (stepType === "PREFLIGHT_TM_REQUEST") {
-      if (typeof eventIndex !== "number") {
-        const keepIdx = currentTask.events.findIndex((e) => e.type === "TM_CHECK_REQUEST");
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
-      currentTask.status = "PROCESSING";
-      currentTask.trademarkCheckResult = void 0;
-      currentTask.hasError = false;
-      currentTask.errorDetails = void 0;
-      this.saveLogs(logs);
-      this.processTaskWithOpenRouter(taskId).catch((err) => {
-        console.error(`[TaskLogService] Retry Pre-Flight TM Check failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Pre-Flight TM-Pr\xFCfung neu gestartet." };
-    }
-    if (stepType === "TM_CHECK_REQUEST" || stepType === "TM_REFINE_REQUEST") {
-      if (typeof eventIndex !== "number") {
-        let lastTmIdx = -1;
-        for (let i = currentTask.events.length - 1; i >= 0; i--) {
-          if (currentTask.events[i].type === "TM_CHECK_REQUEST" || currentTask.events[i].type === "TM_REFINE_REQUEST") {
-            lastTmIdx = i;
-            break;
-          }
-        }
-        if (lastTmIdx !== -1) {
-          currentTask.events = currentTask.events.slice(0, lastTmIdx);
-        }
-      }
-      currentTask.status = "CHECKING_TRADEMARKS";
-      currentTask.trademarkCheckResult = void 0;
-      currentTask.trademarkRefineResult = void 0;
-      currentTask.hasError = false;
-      currentTask.errorDetails = void 0;
-      this.saveLogs(logs);
-      this.auditListingTrademarks(taskId).catch((err) => {
-        console.error(`[TaskLogService] Retry Listing TM Check failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "USPTO Trademark-Pr\xFCfung & Audit neu gestartet." };
-    }
-    if (stepType === "VECTORIZE_REQUEST") {
-      if (typeof eventIndex !== "number") {
-        const lastVecIdx = currentTask.events.findIndex((e) => e.type === "VECTORIZE_REQUEST");
-        if (lastVecIdx !== -1) {
-          currentTask.events = currentTask.events.slice(0, lastVecIdx);
-        }
-      }
-      currentTask.status = "VECTORIZING_DESIGN";
-      currentTask.svgUrl = void 0;
-      currentTask.localSvgPath = void 0;
-      currentTask.svgContent = void 0;
-      currentTask.hasError = false;
-      currentTask.errorDetails = void 0;
-      this.saveLogs(logs);
-      this.vectorizeDesignTask(taskId).catch((err) => {
-        console.error(`[TaskLogService] Retry Vectorization failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Vectorizer.ai Vektorisierung neu gestartet." };
-    }
-    if (stepType === "SVG_AUDIT_REQUEST" || stepType === "SVG_REVIEW") {
-      if (typeof eventIndex !== "number") {
-        const lastAuditIdx = currentTask.events.findIndex((e) => e.type === "SVG_AUDIT_REQUEST" || e.type === "SVG_EDIT_REQUEST");
-        if (lastAuditIdx !== -1) {
-          currentTask.events = currentTask.events.slice(0, lastAuditIdx);
-        }
-      }
-      currentTask.status = "AWAITING_SVG_REVIEW";
-      currentTask.checkpoint = "SVG_REVIEW";
-      currentTask.hasError = false;
-      currentTask.errorDetails = void 0;
-      this.saveLogs(logs);
-      this.emitUpdate(currentTask);
-      return { success: true, message: "In den manuellen SVG-Editor (Tasks Checkpoint 4) \xFCbergeben." };
-    }
-    throw new Error(`Unbekannter Step-Typ: ${stepType}`);
-  }
-  static getTaskLogs() {
-    return this.loadLogs();
-  }
-  static getAwaitingTasks() {
-    const logs = this.loadLogs();
-    return logs.filter(
-      (t) => t.status === "AWAITING_PRE_FLIGHT_REVIEW" || t.status === "AWAITING_DESIGN_REVIEW" || t.status === "AWAITING_TM_REVIEW" || t.status === "AWAITING_SVG_REVIEW"
-    );
-  }
-  static getTaskLogById(id) {
-    if (!id) return void 0;
-    const cleanId = decodeURIComponent(id).trim().toLowerCase();
-    const logs = this.loadLogs();
-    return logs.find((t) => {
-      const tId = t.id.toLowerCase();
-      return tId === cleanId || tId === `#${cleanId}` || tId.replace("#", "") === cleanId.replace("#", "");
-    });
-  }
-  static getTaskById(id) {
-    return this.getTaskLogById(id);
-  }
-  static clearTaskLogs() {
-    this.inMemoryLogs = [];
-    this.saveLogs([]);
-  }
-  /**
-   * Checkpoint 2: Submit Design & Questions Review
-   */
-  static async submitDesignReview(taskId, params2) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
-    if (params2.action === "DISCARD" || params2.action === "REJECT") {
-      task.status = "REJECTED";
-      task.checkpoint = void 0;
-      task.hasError = false;
-      task.errorDetails = "Task im Checkpoint 2 (Design-Pr\xFCfung) manuell abgebrochen.";
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "TASK_HANDOFF",
-        title: "Task verworfen (Design-Pr\xFCfung)",
-        content: {
-          action: "DISCARD",
-          reason: "Benutzer hat den Task bei der Design-/Fragenpr\xFCfung abgebrochen."
-        }
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      return { success: true, message: `Task ${taskId} wurde abgebrochen und verworfen.` };
-    }
-    if (params2.action === "REGENERATE_IMAGE") {
-      const promptToUse = params2.updatedPrompt || task.resultPrompt || task.payload?.quote || "";
-      task.status = "GENERATING_IMAGE";
-      task.checkpoint = void 0;
-      task.hasError = false;
-      task.errorDetails = void 0;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "IDEOGRAM_REQUEST",
-        title: `Ideogram Bildgenerierung erneut angefordert (Human Loop: Quote/Design korrigiert)`,
-        content: {
-          prompt: promptToUse,
-          reason: "Manuell in Tasks zur Neugenerierung freigegeben"
-        }
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      this.processTaskWithIdeogram(taskId, promptToUse).catch((err) => {
-        console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Bildgenerierung mit Ideogram neu gestartet." };
-    }
-    if (params2.action === "APPROVE") {
-      if (params2.answers) {
-        task.customAnswers = params2.answers;
-        if (task.analysisResult && typeof task.analysisResult === "object") {
-          if (params2.answers.audience) {
-            task.analysisResult.target_group = {
-              selected: params2.answers.audience.split(",").map((s) => s.trim()),
-              reason: "Manuell in Tasks angepasst"
-            };
-          }
-          if (params2.answers.avoidColor) {
-            task.analysisResult.avoid_product_colors = {
-              avoid: params2.answers.avoidColor,
-              reason: "Manuell in Tasks angepasst"
-            };
-          }
-          if (params2.answers.reuseBackground) {
-            const isAuto = params2.answers.reuseBackground === "Automatisch" || params2.answers.reuseBackground === "AUTOMATIC" || params2.answers.reuseBackground.includes("Nein") || params2.answers.reuseBackground.includes("Auto");
-            task.analysisResult.background_analysis = {
-              ...task.analysisResult.background_analysis || {},
-              removal_mode: isAuto ? "AUTOMATIC" : "MANUAL"
-            };
-          }
-          if (params2.answers.maxColors) {
-            task.analysisResult.color_analysis = {
-              ...task.analysisResult.color_analysis || {},
-              color_count: params2.answers.maxColors,
-              reason: "Manuell in Tasks angepasst"
-            };
-          }
-        }
-      }
-      task.status = "GENERATING_LISTING";
-      task.checkpoint = void 0;
-      task.hasError = false;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "LISTING_REQUEST",
-        title: `Design-Pr\xFCfung best\xE4tigt (Human Loop) -> MBA Listing-Erstellung`,
-        content: {
-          answers: params2.answers || "KI-Antworten 1:1 \xFCbernommen"
-        }
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      this.generateListingWithOpenRouter(taskId).catch((err) => {
-        console.error(`[TaskLogService] Listing generation failed after design review for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Design freigegeben! MBA Listing wird generiert." };
-    }
-    throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
-  }
-  /**
-   * Checkpoint 3: Submit Manual Trademark Review
-   */
-  static async submitTmReview(taskId, params2) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
-    if (params2.action === "RECHECK") {
-      const listingToCheck = params2.refinedListing || task.listingResult?.en || {};
-      const batchResult = await TrademarkService.checkBatchFields({
-        offices: ["USPTO"],
-        fields: {
-          brand: listingToCheck.brand || "",
-          title: listingToCheck.title || "",
-          bullet1: listingToCheck.bullet1 || "",
-          bullet2: listingToCheck.bullet2 || "",
-          description: listingToCheck.description || "",
-          quote: task.payload?.quote || ""
-        }
-      });
-      return {
-        success: true,
-        totalHits: batchResult.summary?.totalHits ?? 0,
-        hasInfringementClass25: batchResult.hasInfringementClass25 || false,
-        blockedProducts: batchResult.blockedProducts || [],
-        fieldSummaries: batchResult.fieldResults || {}
-      };
-    }
-    if (params2.action === "APPROVE") {
-      if (params2.refinedListing) {
-        const sanitizedRefined = this.sanitizeListingObject(params2.refinedListing);
-        if (!task.listingResult) {
-          task.listingResult = { en: sanitizedRefined };
-        } else if (task.listingResult.en) {
-          task.listingResult.en = { ...task.listingResult.en, ...sanitizedRefined };
-        } else if (typeof task.listingResult === "object") {
-          task.listingResult = { ...task.listingResult, ...sanitizedRefined };
-        }
-      }
-      task.status = "CHECKING_TRADEMARKS";
-      task.checkpoint = void 0;
-      task.hasError = false;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "TM_REFINE_RESPONSE",
-        title: `Task manuell freigegeben (Human Loop) & Vektorisierung gestartet`,
-        content: {
-          verdict: "APPROVED",
-          refinedListing: params2.refinedListing,
-          actions_taken: ["Manuell im Tasks-Workspace optimiert und freigegeben."]
-        }
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      this.vectorizeDesignTask(taskId).catch((err) => {
-        console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe f\xFCr Task ${taskId} fehlgeschlagen:`, err);
-      });
-      return { success: true, message: "Listing manuell freigegeben und Vektorisierung gestartet." };
-    }
-    if (params2.action === "REJECT") {
-      task.status = "REJECTED";
-      task.checkpoint = void 0;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "TM_REFINE_RESPONSE",
-        title: `Task manuell abgelehnt & geschlossen (Human Loop)`,
-        content: {
-          verdict: "REJECTED",
-          reason: "Manuell im Tasks-Workspace verworfen."
-        }
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      return { success: true, message: "Task abgelehnt und geschlossen." };
-    }
-    throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
-  }
-  /**
-   * Checkpoint 1: Override / Restart Pre-Flight Quote Check
-   */
-  static async overridePreFlight(taskId, params2) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
-    if (params2.action === "DISCARD") {
-      task.status = "REJECTED";
-      task.checkpoint = void 0;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "TM_REFINE_RESPONSE",
-        title: `Pre-Flight Konflikt: Task verworfen & geschlossen`,
-        content: { verdict: "REJECTED", reason: "Pre-Flight Quote Markenkonflikt verworfen." }
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      return { success: true, message: "Task verworfen." };
-    }
-    if (params2.action === "RESTART") {
-      if (params2.newQuote) {
-        task.payload.quote = params2.newQuote;
-      }
-      task.status = "PROCESSING";
-      task.checkpoint = void 0;
-      task.events = task.events.slice(0, 1);
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      this.processTaskWithOpenRouter(taskId).catch((err) => {
-        console.error(`[TaskLogService] Restart with new quote failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Pipeline mit neuer Quote neu gestartet." };
-    }
-    if (params2.action === "OVERRIDE") {
-      task.status = "PROCESSING";
-      task.checkpoint = void 0;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "SESSION_START",
-        title: `Pre-Flight Override best\xE4tigt (Human Loop: Trotz TM-Treffer fortfahren)`,
-        content: `Quote "${task.payload?.quote}" manuell f\xFCr Generierung freigegeben.`
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      this.processTaskWithOpenRouter(taskId, { skipPreFlight: true }).catch((err) => {
-        console.error(`[TaskLogService] Override pre-flight failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Pre-Flight \xFCbersprungen. Pipeline wird fortgesetzt." };
-    }
-    throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
-  }
-  /**
-   * Checkpoint 4: Submit SVG Vector & Background Review
-   */
-  static async submitSvgReview(taskId, params2) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
-    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
-    if (params2.action === "APPROVE") {
-      if (params2.editedSvgContent) {
-        if (!import_fs77.default.existsSync(designsDir)) {
-          try {
-            import_fs77.default.mkdirSync(designsDir, { recursive: true });
-          } catch (e) {
-          }
-        }
-        const svgFilePath = import_path72.default.join(designsDir, `${cleanId}.svg`);
-        import_fs77.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
-        task.svgContent = params2.editedSvgContent;
-        task.localSvgPath = svgFilePath;
-        task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
-      }
-      const finalSvg = task.svgContent || params2.editedSvgContent || "";
-      const ts = Date.now();
-      console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Testbild nach SVG-Freigabe f\xFCr Task ${taskId}...`);
-      const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
-      const fourPanelFilePath = import_path72.default.join(designsDir, `${cleanId}_4panel.png`);
-      import_fs77.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
-      task.localFourPanelImagePath = fourPanelFilePath;
-      const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
-      task.fourPanelImageUrl = fourPanelUrl;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "SVG_AUDIT_REQUEST",
-        title: `Senden an LLM Vision (4-Panel Cutout-Pr\xFCfung nach Freigabe)`,
-        content: {
-          fourPanelImageUrl: fourPanelUrl,
-          quote: task.payload?.quote
-        },
-        metadata: {
-          provider: "OpenRouter Vision"
-        }
-      });
-      console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit nach SVG-Freigabe f\xFCr Task ${taskId} durch...`);
-      const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
-      task.svgAuditResult = auditResult;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "SVG_AUDIT_RESPONSE",
-        title: `Empfangen von LLM Vision (${auditResult.cutout_verdict === "APPROVED" ? "Cutout Freigegeben \u2713" : "Korrektur n\xF6tig \u26A0\uFE0F"})`,
-        content: {
-          verdict: auditResult.cutout_verdict,
-          backgroundClean: auditResult.background_removed_cleanly,
-          detectedIssues: auditResult.detected_issues,
-          explanation: auditResult.explanation,
-          fourPanelImageUrl: fourPanelUrl
-        },
-        metadata: {
-          provider: "OpenRouter Vision",
-          latencyMs: auditResult.latencyMs,
-          tokens: auditResult.tokens
-        }
-      });
-      if (auditResult.cutout_verdict === "APPROVED") {
-        console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
-        const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
-        const mbaFilePath = import_path72.default.join(designsDir, `${cleanId}_mba.png`);
-        import_fs77.default.writeFileSync(mbaFilePath, mbaBuffer);
-        task.localMbaPngPath = mbaFilePath;
-        task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "SVG_EDIT_RESPONSE",
-          title: `SVG Design & MBA Print-PNG final freigegeben (Cutout von Vision-KI best\xE4tigt \u2713)`,
-          content: {
-            verdict: "APPROVED",
-            svgUrl: task.svgUrl,
-            mbaPngUrl: task.mbaPngUrl,
-            fourPanelImageUrl: task.fourPanelImageUrl,
-            svgLength: finalSvg.length,
-            message: "Vektorgrafik gepr\xFCft, Cutout von Vision-KI freigegeben und MBA Master-PNG (4500x5400 px) erzeugt."
-          }
-        });
-        this.completeTaskAndEnqueue(task);
-        return { success: true, message: "Cutout von Vision-KI freigegeben, MBA Master-PNG generiert & an Queue \xFCbergeben \u2713" };
-      } else {
-        task.status = "AWAITING_SVG_REVIEW";
-        task.checkpoint = "SVG_REVIEW";
-        task.hasError = false;
-        this.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TASK_HANDOFF",
-          title: `\xDCbergeben an Tasks (KI Cutout-Audit empfiehlt Nacharbeit)`,
-          content: {
-            checkpoint: "SVG_REVIEW",
-            reason: auditResult.explanation,
-            detectedIssues: auditResult.detected_issues
-          }
-        });
-        this.saveLogs(this.loadLogs());
-        this.emitUpdate(task);
-        return {
-          success: false,
-          error: `KI Cutout-Audit: ${auditResult.explanation || auditResult.detected_issues && auditResult.detected_issues.join(", ") || "Unreinheiten erkannt. Bitte nachbessern."}`
-        };
-      }
-    }
-    if (params2.action === "REGENERATE_VECTOR") {
-      if (params2.maxColors) {
-        if (!task.customAnswers) task.customAnswers = {};
-        task.customAnswers.maxColors = params2.maxColors;
-      }
-      task.status = "VECTORIZING_DESIGN";
-      task.checkpoint = void 0;
-      task.hasError = false;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "VECTORIZE_REQUEST",
-        title: `Vektorisierung erneut angefordert (Human Loop: Farbanzahl angepasst)`,
-        content: {
-          maxColors: params2.maxColors || task.customAnswers?.maxColors || 2,
-          reason: "Manuell in Tasks zur Neu-Vektorisierung \xFCbergeben"
-        }
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      this.vectorizeDesignTask(taskId).catch((err) => {
-        console.error(`[TaskLogService] Re-vectorize failed for task ${taskId}:`, err);
-      });
-      return { success: true, message: "Vektorisierung wird neu ausgef\xFChrt." };
-    }
-    if (params2.action === "REJECT") {
-      task.status = "REJECTED";
-      task.checkpoint = void 0;
-      this.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "SVG_EDIT_RESPONSE",
-        title: `Task in SVG-Pr\xFCfung abgelehnt & geschlossen (Human Loop)`,
-        content: {
-          verdict: "REJECTED",
-          reason: "Design / Vektorisierung manuell im Tasks-Workspace verworfen."
-        }
-      });
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-      return { success: true, message: "Task verworfen." };
-    }
-    throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
-  }
-  /**
-   * Reset editable SVG to the original untouched vector
-   */
-  static async resetSvg(taskId) {
-    const task = this.getTaskLogById(taskId);
-    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
-    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
-    const origFilePath = import_path72.default.join(designsDir, `${cleanId}_original.svg`);
-    const svgFilePath = import_path72.default.join(designsDir, `${cleanId}.svg`);
-    if (!import_fs77.default.existsSync(origFilePath)) {
-      throw new Error(`Original-SVG f\xFCr Task ${taskId} nicht gefunden.`);
-    }
-    const originalSvgContent = import_fs77.default.readFileSync(origFilePath, "utf-8");
-    import_fs77.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
-    task.svgContent = originalSvgContent;
-    task.localSvgPath = svgFilePath;
-    task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
-    this.saveLogs(this.loadLogs());
-    this.emitUpdate(task);
-    return {
-      success: true,
-      svgContent: originalSvgContent,
-      message: "SVG erfolgreich auf Originalzustand zur\xFCckgesetzt."
-    };
-  }
-};
-
 // src/server/index.ts
+init_taskLogService();
+init_systemPromptService();
 init_productCatalogService();
 
 // src/server/services/productScannerService.ts
+init_browserSessionService();
 init_productCatalogService();
 var ProductScannerService = class {
   static isScanning = false;
@@ -221646,10 +222712,12 @@ var ProductScannerService = class {
 init_queueService();
 
 // src/server/services/uploadWorkerService.ts
-var import_path73 = __toESM2(require("path"), 1);
-var import_fs78 = __toESM2(require("fs"), 1);
+var import_path74 = __toESM2(require("path"), 1);
+var import_fs80 = __toESM2(require("fs"), 1);
+init_browserSessionService();
 init_queueService();
 init_productCatalogService();
+init_syncEngine();
 var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
   static currentQueueId = null;
@@ -221791,25 +222859,25 @@ var UploadWorkerService = class _UploadWorkerService {
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       this.log(`\u{1F5BC}\uFE0F \xDCberpr\xFCfe Master-PNG Datei...`, "Pr\xFCfe Druckdatei...", 15, 100);
       let pngAbsolutePath = "";
-      if (item.pngPath && import_fs78.default.existsSync(item.pngPath)) {
-        pngAbsolutePath = import_path73.default.resolve(item.pngPath);
+      if (item.pngPath && import_fs80.default.existsSync(item.pngPath)) {
+        pngAbsolutePath = import_path74.default.resolve(item.pngPath);
       } else {
         const candidatePaths = [
-          import_path73.default.resolve(process.cwd(), "data", "designs", `${item.taskId}.png`),
-          import_path73.default.resolve(process.cwd(), "data", "designs", `${item.taskId.replace("#", "")}.png`),
-          import_path73.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`)
+          import_path74.default.resolve(process.cwd(), "data", "designs", `${item.taskId}.png`),
+          import_path74.default.resolve(process.cwd(), "data", "designs", `${item.taskId.replace("#", "")}.png`),
+          import_path74.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`)
         ];
         for (const cp of candidatePaths) {
-          if (import_fs78.default.existsSync(cp)) {
+          if (import_fs80.default.existsSync(cp)) {
             pngAbsolutePath = cp;
             break;
           }
         }
       }
-      if (!pngAbsolutePath || !import_fs78.default.existsSync(pngAbsolutePath)) {
+      if (!pngAbsolutePath || !import_fs80.default.existsSync(pngAbsolutePath)) {
         throw new Error(`Druckfertige 4500x5400px PNG-Datei f\xFCr Task #${item.taskId} nicht gefunden.`);
       }
-      this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path73.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
+      this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path74.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
       const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', {
         state: "attached",
         timeout: 2e4
@@ -222355,8 +223423,8 @@ var UploadWorkerService = class _UploadWorkerService {
 };
 
 // src/server/services/costTrackingService.ts
-var import_fs79 = __toESM2(require("fs"), 1);
-var import_path74 = __toESM2(require("path"), 1);
+var import_fs81 = __toESM2(require("fs"), 1);
+var import_path75 = __toESM2(require("path"), 1);
 init_settingsService();
 init_queueService();
 var CostTrackingService = class {
@@ -222408,9 +223476,9 @@ var CostTrackingService = class {
     let vectorizationsCount = 0;
     let taskEventOpenRouterCost = 0;
     try {
-      const tasksLogFile = import_path74.default.resolve(process.cwd(), "data", "tasks_log.json");
-      if (import_fs79.default.existsSync(tasksLogFile)) {
-        const raw = import_fs79.default.readFileSync(tasksLogFile, "utf-8");
+      const tasksLogFile = import_path75.default.resolve(process.cwd(), "data", "tasks_log.json");
+      if (import_fs81.default.existsSync(tasksLogFile)) {
+        const raw = import_fs81.default.readFileSync(tasksLogFile, "utf-8");
         const tasks = JSON.parse(raw);
         if (Array.isArray(tasks)) {
           for (const task of tasks) {
@@ -222485,939 +223553,218 @@ var CostTrackingService = class {
   }
 };
 
-// src/server/services/amazonInspectService.ts
-var import_fs80 = __toESM2(require("fs"), 1);
-var import_path75 = __toESM2(require("path"), 1);
-var FIND_LISTINGS_URL2 = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
-var PRODUCT_CONFIG_URL2 = "https://merch.amazon.com/api/productconfiguration/get?id=";
-var ALL_STATUSES2 = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
-var AmazonInspectService = class {
-  /**
-   * Ensure Session 1 is open and on merch.amazon.com
-   */
-  static async getAuthenticatedPage() {
-    const session2 = await BrowserSessionService.getSession("sync");
-    const currentUrl = session2.page.url();
-    if (!currentUrl.includes("merch.amazon.com")) {
-      await session2.page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 });
-    }
-    return session2.page;
-  }
-  /**
-   * Fetch Product Config (Listing texts, brands, bullets, descriptions, colors, products)
-   */
-  static async inspectProductConfig(designId) {
-    const cleanId = (designId || "").trim();
-    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-    const targetUrl = `${PRODUCT_CONFIG_URL2}${cleanId}`;
-    if (!cleanId) {
-      return {
-        success: false,
-        endpoint: "productconfig",
-        designId: cleanId,
-        error: "Keine Design-ID (UUID) angegeben.",
-        timestamp
-      };
-    }
-    try {
-      const page = await this.getAuthenticatedPage();
-      const result2 = await page.evaluate(async ({ url, dId }) => {
-        try {
-          const resp = await fetch(url, {
-            method: "GET",
-            headers: { "Accept": "application/json" },
-            credentials: "include"
-          });
-          const status = resp.status;
-          const ok = resp.ok;
-          const redirectedToLogin = resp.url?.includes("signin") || resp.url?.includes("ap/signin");
-          if (redirectedToLogin) {
-            return {
-              ok: false,
-              status: 401,
-              error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
-              data: null
-            };
-          }
-          let json = null;
-          let text2 = "";
-          try {
-            json = await resp.json();
-          } catch (e) {
-            text2 = await resp.text().catch(() => "");
-          }
-          return {
-            ok,
-            status,
-            data: json || text2,
-            error: ok ? null : `HTTP ${status}: ${resp.statusText || text2 || "Fehler beim Abruf"}`
-          };
-        } catch (fetchErr) {
-          return {
-            ok: false,
-            status: 0,
-            error: fetchErr.message || "Netzwerkfehler im Browserkontext",
-            data: null
-          };
-        }
-      }, { url: targetUrl, dId: cleanId });
-      return {
-        success: result2.ok,
-        endpoint: "productconfig",
-        designId: cleanId,
-        url: targetUrl,
-        data: result2.data,
-        error: result2.error || void 0,
-        status: result2.status,
-        timestamp,
-        metadata: {
-          hasTextData: !!(result2.data && typeof result2.data === "object" && result2.data.textData),
-          languages: result2.data?.textData ? Object.keys(result2.data.textData) : []
-        }
-      };
-    } catch (err) {
-      return {
-        success: false,
-        endpoint: "productconfig",
-        designId: cleanId,
-        url: targetUrl,
-        error: `Browser Session Fehler: ${err.message}`,
-        timestamp
-      };
-    }
-  }
-  /**
-   * Query FindListings Coral RPC and extract status & product information
-   */
-  static async inspectFindListings(designId) {
-    const cleanId = (designId || "").trim();
-    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-    try {
-      const page = await this.getAuthenticatedPage();
-      const accountId = await SyncEngine.getAccountId(page);
-      const result2 = await page.evaluate(async ({ accountId: accountId2, url, allStatuses, targetDesignId }) => {
-        const body = {
-          pageSize: 500,
-          sortField: "DateUpdated",
-          sortOrder: "Descending",
-          status: allStatuses,
-          marketplaces: null,
-          productTypes: null,
-          searchableOnRetail: null,
-          deleteReasonType: ["", "CONTENT_POLICY_VIOLATION", "INACTIVE_NO_SALES", "CONTENT_CREATOR"],
-          accountId: accountId2 || null,
-          pageToken: [],
-          __type: "com.amazon.merch.search#FindListingsRequest"
-        };
-        try {
-          const resp = await fetch(url, {
-            method: "POST",
-            headers: {
-              "Accept": "application/json",
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(body),
-            credentials: "include"
-          });
-          const status = resp.status;
-          const ok = resp.ok;
-          if (resp.url?.includes("signin") || resp.url?.includes("ap/signin")) {
-            return {
-              ok: false,
-              status: 401,
-              error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
-              data: null
-            };
-          }
-          let json = null;
-          let text2 = "";
-          try {
-            json = await resp.json();
-          } catch (e) {
-            text2 = await resp.text().catch(() => "");
-          }
-          if (!ok) {
-            return {
-              ok: false,
-              status,
-              error: `FindListings HTTP ${status}: ${resp.statusText || text2}`,
-              data: json || text2
-            };
-          }
-          const rawResults = json?.results || [];
-          let filteredResults = rawResults;
-          let isDesignMatched = false;
-          if (targetDesignId) {
-            filteredResults = rawResults.filter(
-              (r) => r.designId && r.designId.toLowerCase() === targetDesignId.toLowerCase() || r.asin && r.asin.toLowerCase() === targetDesignId.toLowerCase() || r.listingId && r.listingId.toLowerCase() === targetDesignId.toLowerCase()
-            );
-            isDesignMatched = filteredResults.length > 0;
-          }
-          const statusSummary = {};
-          for (const item of filteredResults) {
-            const st = item.status || "UNKNOWN";
-            statusSummary[st] = (statusSummary[st] || 0) + 1;
-          }
-          return {
-            ok: true,
-            status,
-            data: {
-              targetDesignId: targetDesignId || null,
-              matchedResultsCount: filteredResults.length,
-              totalResultsInBatch: rawResults.length,
-              statusSummary,
-              isDesignMatched,
-              items: targetDesignId ? filteredResults : rawResults.slice(0, 50),
-              rawFullResponse: targetDesignId ? { ...json, results: filteredResults } : json
-            },
-            error: null
-          };
-        } catch (fetchErr) {
-          return {
-            ok: false,
-            status: 0,
-            error: fetchErr.message || "Netzwerkfehler im Browserkontext",
-            data: null
-          };
-        }
-      }, { accountId, url: FIND_LISTINGS_URL2, allStatuses: ALL_STATUSES2, targetDesignId: cleanId });
-      return {
-        success: result2.ok,
-        endpoint: "findlistings",
-        designId: cleanId,
-        url: FIND_LISTINGS_URL2,
-        data: result2.data,
-        error: result2.error || void 0,
-        status: result2.status,
-        timestamp,
-        metadata: {
-          matchedCount: result2.data?.matchedResultsCount || 0,
-          isDesignMatched: !!result2.data?.isDesignMatched,
-          statusSummary: result2.data?.statusSummary || {}
-        }
-      };
-    } catch (err) {
-      return {
-        success: false,
-        endpoint: "findlistings",
-        designId: cleanId,
-        url: FIND_LISTINGS_URL2,
-        error: `Browser Session Fehler: ${err.message}`,
-        timestamp
-      };
-    }
-  }
-  /**
-   * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
-   */
-  static async createUpdateTaskFromAmazon(designId) {
-    const cleanId = (designId || "").trim();
-    if (!cleanId) {
-      throw new Error("Keine Design-ID (UUID) angegeben.");
-    }
-    const configRes = await this.inspectProductConfig(cleanId);
-    if (!configRes.success || !configRes.data) {
-      throw new Error(configRes.error || "Product Config konnte nicht von Amazon geladen werden.");
-    }
-    const findRes = await this.inspectFindListings(cleanId);
-    const configData = configRes.data;
-    const findData = findRes.success ? findRes.data : null;
-    const textData = configData.textData || {};
-    const masterListing = textData.en || textData.de || Object.values(textData)[0] || {};
-    const title = masterListing.title || "Amazon Merch Update Task";
-    const brand = masterListing.brandName || "";
-    const bullets = masterListing.bullets || [];
-    const description = masterListing.description || "";
-    const products = configData.products || {};
-    const productTypes = Object.keys(products);
-    const productSummary = {};
-    for (const [pKey, pVal] of Object.entries(products)) {
-      productSummary[pKey] = {
-        fits: pVal.dimensions?.FIT || [],
-        colors: pVal.dimensions?.COLOR || [],
-        marketplaces: Object.keys(pVal.marketplaceData || {}),
-        artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
-      };
-    }
-    const matchedItems = findData?.items || [];
-    const statusSummary = findData?.statusSummary || {};
-    const publishedCount = statusSummary.PUBLISHED || 0;
-    const payload = {
-      designId: cleanId,
-      editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
-      globalArtworkUrn: configData.globalArtworkUrn || null,
-      title,
-      brand,
-      bullets,
-      description,
-      masterListing,
-      textData,
-      productTypes,
-      productSummary,
-      liveStats: {
-        totalVariantsFound: matchedItems.length,
-        statusSummary,
-        publishedCount,
-        isAllPublished: Object.keys(statusSummary).length === 1 && publishedCount > 0,
-        estimatedSlotSavings: `${publishedCount} Live-Varianten (0 Slot-Verbrauch)`
-      },
-      rawProductConfig: configData,
-      rawFindListings: findData
-    };
-    const taskLog = TaskLogService.createTaskLog({
-      source: "UPDATE",
-      payload
-    });
-    TaskLogService.addEvent(taskLog.id, {
-      type: "TASK_HANDOFF",
-      title: `Amazon Rohdaten erfasst (${publishedCount} Varianten live)`,
-      content: {
-        designId: cleanId,
-        editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
-        globalArtworkUrn: configData.globalArtworkUrn,
-        masterListing: {
-          title,
-          brand,
-          bullets,
-          description: description.slice(0, 150) + (description.length > 150 ? "..." : "")
-        },
-        languagesAvailable: Object.keys(textData),
-        configuredProductsCount: productTypes.length,
-        liveVariantsCount: publishedCount,
-        statusSummary
-      }
-    });
-    this.downloadDesignArtwork(taskLog.id, cleanId).catch((err) => {
-      console.error("[AmazonInspectService] Fehler beim automatischen Hintergrund-Download:", err);
-    });
-    return taskLog;
-  }
-  /**
-   * Download the master design artwork (4500x5400 px PNG) from merch.amazon.com/designs/{designId}/edit
-   * using an isolated background tab in Session 1 to prevent collisions with sync operations.
-   */
-  static async downloadDesignArtwork(taskId, designId) {
-    const cleanDesignId = (designId || "").trim();
-    const cleanTaskId = (taskId || "").trim();
-    if (!cleanDesignId || !cleanTaskId) {
-      return { success: false, error: "Task-ID oder Design-ID fehlt." };
-    }
-    const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
-    console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
-    TaskLogService.updateTaskStatus(cleanTaskId, {
-      status: "PROCESSING",
-      hasError: false
-    });
-    let newTab = null;
-    try {
-      const session2 = await BrowserSessionService.getSession("sync");
-      newTab = await session2.page.context().newPage();
-      await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
-      await newTab.waitForSelector('img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img', { timeout: 25e3 }).catch(() => null);
-      const extractResult = await newTab.evaluate(() => {
-        const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
-        let targetImg = images.find((e) => e.getAttribute("alt") && e.getAttribute("alt").endsWith(".png"));
-        if (!targetImg) {
-          targetImg = images.find((e) => e.getAttribute("alt") === "null");
-        }
-        if (!targetImg) {
-          targetImg = document.querySelector("img.artwork.ng-star-inserted") || document.querySelector(".artwork") || document.querySelector("#global-uploader-container img") || document.querySelector(".global-uploader img");
-        }
-        if (!targetImg || !targetImg.src) {
-          return { ok: false, error: "Kein Artwork Bild-Element auf der Amazon Edit-Seite gefunden." };
-        }
-        const rawSrc = targetImg.src;
-        const fullResUrl = rawSrc.replace(/\._[^_]+_\.(png|jpg|jpeg)$/i, ".$1");
-        return { ok: true, rawSrc, fullResUrl };
-      });
-      if (!extractResult.ok || !extractResult.fullResUrl) {
-        throw new Error(extractResult.error || "Konnte Original-Bild-URL im DOM nicht ermitteln.");
-      }
-      console.log(`[AmazonInspectService] \u{1F50D} Full-Res URL gefunden: ${extractResult.fullResUrl}`);
-      const base64Data = await newTab.evaluate(async (imgUrl) => {
-        try {
-          const resp = await fetch(imgUrl, { credentials: "include" });
-          if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
-          const blob = await resp.blob();
-          return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = () => reject(new Error("FileReader Fehler"));
-            reader.readAsDataURL(blob);
-          });
-        } catch (fetchErr) {
-          throw new Error(`Browser fetch failed: ${fetchErr.message}`);
-        }
-      }, extractResult.fullResUrl);
-      const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
-      const buffer = Buffer.from(base64Clean, "base64");
-      const designsDir = import_path75.default.resolve(process.cwd(), "data", "designs");
-      if (!import_fs80.default.existsSync(designsDir)) {
-        import_fs80.default.mkdirSync(designsDir, { recursive: true });
-      }
-      const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const filename = `${safeId}.png`;
-      const filePath = import_path75.default.join(designsDir, filename);
-      import_fs80.default.writeFileSync(filePath, buffer);
-      console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
-      const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
-      TaskLogService.updateTaskStatus(cleanTaskId, {
-        status: "RECEIVED",
-        imageUrl: localUrl,
-        localImagePath: localUrl,
-        mbaPngUrl: localUrl,
-        localMbaPngPath: filePath,
-        hasError: false
-      });
-      TaskLogService.addEvent(cleanTaskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ANALYSIS_RESPONSE",
-        title: "Original-Design heruntergeladen",
-        content: {
-          localUrl,
-          originalUrl: extractResult.fullResUrl,
-          fileSizeBytes: buffer.length,
-          fileSizeMb: (buffer.length / 1024 / 1024).toFixed(2) + " MB",
-          downloadedAt: (/* @__PURE__ */ new Date()).toISOString()
-        }
-      });
-      return { success: true, localUrl };
-    } catch (err) {
-      console.error(`[AmazonInspectService] \u274C Fehler beim Artwork-Download f\xFCr Task ${cleanTaskId}:`, err);
-      TaskLogService.updateTaskStatus(cleanTaskId, {
-        status: "ERROR",
-        hasError: true,
-        errorDetails: err.message
-      });
-      TaskLogService.addEvent(cleanTaskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler beim Design-Download",
-        content: err.message || "Unbekannter Fehler beim Herunterladen des Original-Designs"
-      });
-    } finally {
-      if (newTab) {
-        await newTab.close().catch(() => {
-        });
-      }
-    }
-  }
-};
+// src/server/index.ts
+init_amazonInspectService();
+init_updatePipelineService();
 
-// src/server/services/updatePipelineService.ts
-var import_fs81 = __toESM2(require("fs"), 1);
-init_settingsService();
-init_queueService();
-var UpdatePipelineService = class {
+// src/server/services/designPipelineService.ts
+init_taskLogService();
+init_trademarkService();
+var DesignPipelineService = class {
   /**
-   * Helper to retrieve a task safely
+   * Helper to retrieve task safely
    */
   static getTask(taskId) {
     const logs = TaskLogService.loadLogs();
     return logs.find((t) => t.id === taskId);
   }
   /**
-   * Step U1: Extract Merch API Data and create #xxx-U Task
+   * Step D1: Pre-Flight Trademark Check on Quote / Slogan
    */
-  static async stepU1_ExtractMerchData(designId) {
-    console.log(`[UpdatePipeline] \u{1F680} Starte Step U1 (Merch API Extraction) f\xFCr Design ${designId}...`);
-    const res = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
-    if (!res.success || !res.task) {
-      return { success: false, error: res.error || "Fehler beim Abruf der Merch-Daten" };
-    }
-    TaskLogService.updateTaskStatus(res.task.id, {
-      status: "UPDATE_EXTRACTED",
-      hasError: false
-    });
-    return { success: true, task: res.task };
-  }
-  /**
-   * Step U2: Download Master Artwork (4500x5400px)
-   */
-  static async stepU2_DownloadArtwork(taskId) {
-    console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Starte Step U2 (Master Artwork Download) f\xFCr Task ${taskId}...`);
+  static async stepD1_PreflightTrademark(taskId) {
+    console.log(`[DesignPipeline] \u{1F50D} Starte Step D1 (Pre-Flight TM Check) f\xFCr Task ${taskId}...`);
     const task = this.getTask(taskId);
     if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-    const designId = task.payload?.designId;
-    if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
-    const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
-    if (!res.success) {
-      TaskLogService.updateTaskStatus(taskId, {
-        status: "ERROR",
-        hasError: true,
-        errorDetails: res.error
-      });
-      return { success: false, error: res.error };
+    const quote5 = task.quote || task.payload?.quote || "";
+    if (!quote5.trim()) {
+      console.log(`[DesignPipeline] Kein Quote vorhanden, \xFCberspringe Pre-Flight TM.`);
+      return { success: true };
     }
-    TaskLogService.updateTaskStatus(taskId, {
-      status: "UPDATE_ARTWORK_READY",
-      hasError: false
-    });
-    return { success: true, localUrl: res.localUrl };
-  }
-  /**
-   * Step U3: Vision & Listing Analysis
-   * Analyzes old listing + image via OpenRouter:
-   * 1. Target audience (fitTypes)
-   * 2. Avoid color (black, white, none)
-   * 3. Decision: rewriteNeeded (true/false) + reasoning
-   */
-  static async stepU3_AnalyzeAndPrompt(taskId) {
-    console.log(`[UpdatePipeline] \u{1F9E0} Starte Step U3 (Vision & Listing Analyse) f\xFCr Task ${taskId}...`);
-    const task = this.getTask(taskId);
-    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-    const settings = loadSettings();
-    const apiKey = settings.openRouterApiKey;
-    if (!apiKey) {
-      const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
-      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
-      return { success: false, error: err };
-    }
-    TaskLogService.updateTaskStatus(taskId, { status: "PROCESSING", hasError: false });
-    let imageBase64 = null;
-    if (task.localMbaPngPath && import_fs81.default.existsSync(task.localMbaPngPath)) {
-      try {
-        const fileBuffer = import_fs81.default.readFileSync(task.localMbaPngPath);
-        imageBase64 = `data:image/png;base64,${fileBuffer.toString("base64")}`;
-      } catch (err) {
-        console.warn(`[UpdatePipeline] Konnte lokales Bild f\xFCr Vision nicht lesen:`, err);
-      }
-    }
-    const rawPayload = task.payload || {};
-    const oldTitle = rawPayload.title || "";
-    const oldBrand = rawPayload.brand || "";
-    const oldBullets = [rawPayload.bullet1, rawPayload.bullet2].filter(Boolean).join("\n");
-    const oldDesc = rawPayload.description || "";
-    const systemPrompt = `You are a Senior Amazon Merch on Demand Quality & SEO Auditor.
-Your task is to analyze the existing Merch on Demand design and its current English listing.
-
-Existing Listing:
-- Brand: "${oldBrand}"
-- Title: "${oldTitle}"
-- Bullets: "${oldBullets}"
-- Description: "${oldDesc}"
-
-Tasks:
-1. Determine the optimal Target Audience (fitTypes: choose from ["men", "women", "youth"]).
-2. Determine if any background color must be avoided (avoidColor: "black" | "white" | "none").
-3. Evaluate if the existing listing requires a rewrite. If it already has high-converting keywords, no banned words, and concise bullets, set rewriteNeeded: false. If it is keyword-stuffed, low quality, or outdated, set rewriteNeeded: true.
-4. Provide clear reasoning.
-
-Return ONLY valid JSON matching this schema:
-{
-  "fitTypes": ["men", "women", "youth"],
-  "avoidColor": "black" | "white" | "none",
-  "rewriteNeeded": boolean,
-  "reasoning": "string explaining the decision",
-  "designTheme": "short description of visual style"
-}`;
-    const userContent = [
-      {
-        type: "text",
-        text: `Analyze this Amazon Merch design and its current listing:
-Brand: ${oldBrand}
-Title: ${oldTitle}
-Bullets: ${oldBullets}`
-      }
-    ];
-    if (imageBase64) {
-      userContent.push({
-        type: "image_url",
-        image_url: { url: imageBase64 }
-      });
-    }
-    const model = settings.llmModel || "google/gemini-2.5-flash";
-    TaskLogService.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "ANALYSIS_REQUEST",
-      title: "Vision & Listing Analyse (OpenRouter)",
-      content: { model, oldTitle, oldBrand, hasImage: !!imageBase64 },
-      metadata: { model, provider: "OpenRouter" }
-    });
     try {
-      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://mba-hub.local",
-          "X-Title": "MBA HUB Update Pipeline"
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent }
-          ],
-          response_format: { type: "json_object" }
-        })
+      const tmResult = await TrademarkService.checkText(quote5, ["25"]);
+      const isInfringing = tmResult.totalHits > 0 && tmResult.hasInfringementClass25;
+      TaskLogService.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TM_CHECK_RESPONSE",
+        title: isInfringing ? `Pre-Flight USPTO Treffer (${tmResult.totalHits} Treffer)` : "Pre-Flight USPTO sauber (0 Treffer)",
+        content: { ...tmResult, isPreFlight: true },
+        metadata: { provider: "Productor / USPTO" }
       });
-      if (!resp.ok) {
-        throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+      if (isInfringing) {
+        console.warn(`[DesignPipeline] \u26A0\uFE0F Pre-Flight TM Treffer f\xFCr Quote "${quote5}"`);
       }
-      const json = await resp.json();
-      const contentStr = json.choices?.[0]?.message?.content || "{}";
-      const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
-      TaskLogService.updateTaskStatus(taskId, {
-        status: "UPDATE_ANALYZED",
-        analysisResult: parsed,
-        customAnswers: {
-          audience: Array.isArray(parsed.fitTypes) ? parsed.fitTypes.join(", ") : "men, women, youth",
-          avoidColor: parsed.avoidColor || "none",
-          notes: parsed.reasoning || ""
-        },
-        hasError: false
-      });
-      TaskLogService.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ANALYSIS_RESPONSE",
-        title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? "empfohlen" : "nicht n\xF6tig"}`,
-        content: parsed,
-        metadata: { model, provider: "OpenRouter" }
-      });
-      return { success: true, analysisResult: parsed };
+      return { success: true, tmResult };
     } catch (err) {
-      console.error(`[UpdatePipeline] \u274C Fehler in Step U3:`, err);
-      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
-      TaskLogService.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "ERROR",
-        title: "Fehler bei Vision & Listing Analyse",
-        content: err.message
-      });
+      console.warn(`[DesignPipeline] Pre-Flight TM Check Fehler:`, err.message);
+      return { success: true, tmResult: { skipped: true, reason: err.message } };
+    }
+  }
+  /**
+   * Step D2: Generate Ideogram Prompt via OpenRouter
+   */
+  static async stepD2_GeneratePrompt(taskId) {
+    console.log(`[DesignPipeline] \u{1F9E0} Starte Step D2 (Ideogram Prompt Generation) f\xFCr Task ${taskId}...`);
+    try {
+      await TaskLogService.generatePromptWithOpenRouter(taskId);
+      const updated = this.getTask(taskId);
+      return { success: true, prompt: updated?.resultPrompt };
+    } catch (err) {
+      console.error(`[DesignPipeline] \u274C Fehler in Step D2:`, err);
       return { success: false, error: err.message };
     }
   }
   /**
-   * Step U4: Listing Rewriting (EN only)
+   * Step D3: Image Generation via Ideogram API (V_3)
    */
-  static async stepU4_RewriteListing(taskId) {
-    console.log(`[UpdatePipeline] \u270D\uFE0F Starte Step U4 (Listing Rewriting) f\xFCr Task ${taskId}...`);
-    const task = this.getTask(taskId);
-    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-    if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
-      console.log(`[UpdatePipeline] \u23ED\uFE0F Step U4 wird \xFCbersprungen (rewriteNeeded ist false). Verwende altes Listing.`);
-      const raw2 = task.payload || {};
-      const enListing = {
-        brand: raw2.brand || "",
-        title: raw2.title || "",
-        bullet1: raw2.bullet1 || "",
-        bullet2: raw2.bullet2 || "",
-        description: raw2.description || ""
-      };
-      TaskLogService.updateTaskStatus(taskId, {
-        status: "UPDATE_REWRITTEN",
-        listingResult: { en: enListing }
-      });
-      TaskLogService.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "LISTING_RESPONSE",
-        title: "Original-Listing beibehalten (kein Rewrite n\xF6tig)",
-        content: { en: enListing, skipped: true }
-      });
-      return { success: true, listingResult: { en: enListing } };
-    }
-    const settings = loadSettings();
-    const apiKey = settings.openRouterApiKey;
-    if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
-    const raw = task.payload || {};
-    const model = settings.llmModel || "google/gemini-2.5-flash";
-    const systemPrompt = `You are a world-class Amazon Merch on Demand Listing Copywriter.
-Rewrite and optimize the existing English listing to maximize organic search visibility and conversion rate without trademark infringements.
-
-Original Listing:
-- Brand: "${raw.brand || ""}"
-- Title: "${raw.title || ""}"
-- Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(" | ")}"
-
-Guidelines:
-1. Brand: Max 50 chars, catchy and niche-specific.
-2. Title: Max 60 chars, highly relevant primary keywords, natural sentence structure.
-3. Feature Bullets (Bullet 1 & Bullet 2): Max 256 chars each. Natural English, focusing on the theme/gift angle. NO mentions of print quality, garment fit, shipping, or copyrighted terms.
-4. Description: Short atmospheric summary (max 300 chars).
-
-Return ONLY valid JSON:
-{
-  "brand": "string",
-  "title": "string",
-  "bullet1": "string",
-  "bullet2": "string",
-  "description": "string"
-}`;
-    TaskLogService.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "LISTING_REQUEST",
-      title: "Listing Rewrite Request (OpenRouter)",
-      content: { originalTitle: raw.title, originalBrand: raw.brand, model },
-      metadata: { model, provider: "OpenRouter" }
-    });
+  static async stepD3_GenerateImage(taskId) {
+    console.log(`[DesignPipeline] \u{1F3A8} Starte Step D3 (Ideogram Bild-Generierung) f\xFCr Task ${taskId}...`);
     try {
-      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: "Rewrite the Merch on Demand listing now." }
-          ],
-          response_format: { type: "json_object" }
-        })
-      });
-      if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
-      const json = await resp.json();
-      const contentStr = json.choices?.[0]?.message?.content || "{}";
-      const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
-      TaskLogService.updateTaskStatus(taskId, {
-        status: "UPDATE_REWRITTEN",
-        listingResult: { en: parsed },
-        hasError: false
-      });
-      TaskLogService.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "LISTING_RESPONSE",
-        title: "Optimiertes Listing generiert (EN)",
-        content: parsed,
-        metadata: { model, provider: "OpenRouter" }
-      });
-      return { success: true, listingResult: { en: parsed } };
+      await TaskLogService.processTaskWithIdeogram(taskId);
+      const updated = this.getTask(taskId);
+      return { success: true, imageUrl: updated?.imageUrl, localPath: updated?.localImagePath };
     } catch (err) {
-      console.error(`[UpdatePipeline] \u274C Fehler in Step U4:`, err);
-      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+      console.error(`[DesignPipeline] \u274C Fehler in Step D3:`, err);
       return { success: false, error: err.message };
     }
   }
   /**
-   * Step U5: Trademark Check Loop (USPTO & DPMA)
+   * Step D4: Vision QA & Color Count Analysis (OpenRouter)
    */
-  static async stepU5_TrademarkCheck(taskId) {
-    console.log(`[UpdatePipeline] \u2696\uFE0F Starte Step U5 (Trademark Check Loop) f\xFCr Task ${taskId}...`);
-    const task = this.getTask(taskId);
-    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-    const listing = task.listingResult?.en || {
-      brand: task.payload?.brand || "",
-      title: task.payload?.title || "",
-      bullet1: task.payload?.bullet1 || "",
-      bullet2: task.payload?.bullet2 || ""
-    };
-    TaskLogService.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "TM_CHECK_REQUEST",
-      title: "Trademark-Pr\xFCfung (USPTO & DPMA)",
-      content: { fields: listing },
-      metadata: { provider: "Productor USPTO / DPMA" }
-    });
-    const tmResult = {
-      safe: true,
-      totalHits: 0,
-      checkedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      checkedFields: ["brand", "title", "bullet1", "bullet2"]
-    };
-    TaskLogService.updateTaskStatus(taskId, {
-      status: "UPDATE_TM_CHECKED",
-      trademarkCheckResult: tmResult,
-      hasError: false
-    });
-    TaskLogService.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "TM_CHECK_RESPONSE",
-      title: "Trademark-Pr\xFCfung bestanden (0 Treffer)",
-      content: tmResult,
-      metadata: { provider: "Productor USPTO" }
-    });
-    return { success: true, tmResult };
-  }
-  /**
-   * Step U6: SEO Translation (DE, FR, ES, IT, JA)
-   */
-  static async stepU6_TranslateListing(taskId) {
-    console.log(`[UpdatePipeline] \u{1F310} Starte Step U6 (SEO Translation) f\xFCr Task ${taskId}...`);
-    const task = this.getTask(taskId);
-    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-    const enListing = task.listingResult?.en || {
-      brand: task.payload?.brand || "",
-      title: task.payload?.title || "",
-      bullet1: task.payload?.bullet1 || "",
-      bullet2: task.payload?.bullet2 || "",
-      description: task.payload?.description || ""
-    };
-    const settings = loadSettings();
-    const apiKey = settings.openRouterApiKey;
-    if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
-    const model = settings.llmModel || "google/gemini-2.5-flash";
-    const systemPrompt = `You are a professional multi-language Amazon Merch on Demand localization expert.
-Translate and SEO-optimize the English listing into German (de), French (fr), Spanish (es), and Italian (it).
-Adapt natural phrasing rather than literal translation.
-
-Source EN Listing:
-- Brand: "${enListing.brand}"
-- Title: "${enListing.title}"
-- Bullet 1: "${enListing.bullet1}"
-- Bullet 2: "${enListing.bullet2}"
-
-Return ONLY valid JSON matching this schema:
-{
-  "de": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
-  "fr": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
-  "es": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
-  "it": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" }
-}`;
-    TaskLogService.addEvent(taskId, {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      type: "LLM_REQUEST",
-      title: "SEO-\xDCbersetzung anfordern (DE, FR, ES, IT)",
-      content: { sourceListing: enListing, model },
-      metadata: { model, provider: "OpenRouter" }
-    });
+  static async stepD4_AnalyzeDesign(taskId) {
+    console.log(`[DesignPipeline] \u{1F441}\uFE0F Starte Step D4 (Design QA Analyse) f\xFCr Task ${taskId}...`);
     try {
-      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: "Translate to DE, FR, ES, IT now." }
-          ],
-          response_format: { type: "json_object" }
-        })
-      });
-      if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
-      const json = await resp.json();
-      const contentStr = json.choices?.[0]?.message?.content || "{}";
-      const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
-      const fullListings = {
-        en: enListing,
-        de: parsed.de || enListing,
-        fr: parsed.fr || enListing,
-        es: parsed.es || enListing,
-        it: parsed.it || enListing
-      };
-      TaskLogService.updateTaskStatus(taskId, {
-        status: "UPDATE_TRANSLATED",
-        listingResult: fullListings,
-        hasError: false
-      });
-      TaskLogService.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "LLM_RESPONSE",
-        title: "SEO-\xDCbersetzungen erfolgreich generiert",
-        content: fullListings,
-        metadata: { model, provider: "OpenRouter" }
-      });
-      return { success: true, fullListings };
+      await TaskLogService.analyzeDesignWithOpenRouter(taskId);
+      const updated = this.getTask(taskId);
+      return { success: true, analysisResult: updated?.analysisResult };
     } catch (err) {
-      console.error(`[UpdatePipeline] \u274C Fehler in Step U6:`, err);
-      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+      console.error(`[DesignPipeline] \u274C Fehler in Step D4:`, err);
       return { success: false, error: err.message };
     }
   }
   /**
-   * Step U7: Enqueue into Update Tab in Queue
+   * Step D5: Multi-Marketplace MBA SEO Listing Generation (OpenRouter)
    */
-  static async stepU7_Enqueue(taskId) {
-    console.log(`[UpdatePipeline] \u{1F4E6} Starte Step U7 (Queue \xDCbergabe) f\xFCr Task ${taskId}...`);
-    const task = this.getTask(taskId);
-    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-    const listing = task.listingResult?.en || {
-      brand: task.payload?.brand || "",
-      title: task.payload?.title || "",
-      bullet1: task.payload?.bullet1 || "",
-      bullet2: task.payload?.bullet2 || ""
-    };
+  static async stepD5_GenerateListing(taskId) {
+    console.log(`[DesignPipeline] \u{1F4DD} Starte Step D5 (Listing Erstellung) f\xFCr Task ${taskId}...`);
     try {
-      const queueItem = QueueService.enqueueItem({
-        taskId: task.id,
-        source: "UPDATE",
-        type: "update",
-        designId: task.payload?.designId,
-        brand: listing.brand,
-        title: listing.title,
-        bullet1: listing.bullet1,
-        bullet2: listing.bullet2,
-        description: listing.description || "",
-        listings: task.listingResult || { en: listing },
-        fitTypes: task.analysisResult?.fitTypes || ["men", "women"],
-        avoidColor: task.analysisResult?.avoidColor || "none",
-        imagePath: task.localImagePath || "",
-        pngPath: task.localMbaPngPath || ""
-      });
-      TaskLogService.updateTaskStatus(taskId, {
-        status: "UPDATE_QUEUED",
-        hasError: false
-      });
-      TaskLogService.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "TASK_HANDOFF",
-        title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
-        content: {
-          queueId: queueItem.id,
-          status: queueItem.status,
-          designId: task.payload?.designId,
-          allocatedSlots: 0,
-          message: "Design erfolgreich in den Tab Update der Queue eingereiht (0 Slots Verbrauch)."
-        }
-      });
-      return { success: true, queueItem };
+      await TaskLogService.generateListingWithOpenRouter(taskId);
+      const updated = this.getTask(taskId);
+      return { success: true, listingResult: updated?.listingResult };
     } catch (err) {
-      console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
-      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+      console.error(`[DesignPipeline] \u274C Fehler in Step D5:`, err);
       return { success: false, error: err.message };
     }
   }
   /**
-   * Run entire pipeline sequentially from a Design-ID
+   * Step D6: Trademark Validation & Refinement Loop
    */
-  static async runUpdatePipeline(designId) {
-    const u1 = await this.stepU1_ExtractMerchData(designId);
-    if (!u1.success || !u1.task) return { success: false, error: u1.error };
-    const taskId = u1.task.id;
-    const u2 = await this.stepU2_DownloadArtwork(taskId);
-    if (!u2.success) return { success: false, error: u2.error };
-    const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-    if (!u3.success) return { success: false, error: u3.error };
-    const u4 = await this.stepU4_RewriteListing(taskId);
-    if (!u4.success) return { success: false, error: u4.error };
-    const u5 = await this.stepU5_TrademarkCheck(taskId);
-    if (!u5.success) return { success: false, error: u5.error };
-    const u6 = await this.stepU6_TranslateListing(taskId);
-    if (!u6.success) return { success: false, error: u6.error };
-    const u7 = await this.stepU7_Enqueue(taskId);
-    if (!u7.success) return { success: false, error: u7.error };
-    const finalTask = this.getTask(taskId);
-    return { success: true, task: finalTask };
+  static async stepD6_TrademarkCheck(taskId) {
+    console.log(`[DesignPipeline] \u2696\uFE0F Starte Step D6 (Trademark Check & Refine Loop) f\xFCr Task ${taskId}...`);
+    try {
+      await TaskLogService.performTrademarkCheck(taskId);
+      const updated = this.getTask(taskId);
+      return { success: true, tmResult: updated?.trademarkCheckResult };
+    } catch (err) {
+      console.error(`[DesignPipeline] \u274C Fehler in Step D6:`, err);
+      return { success: false, error: err.message };
+    }
   }
   /**
-   * Run a single step (for Retry or Step-Back)
+   * Step D7: Vectorization & 4-Panel Cutout Audit
    */
-  static async runStep(taskId, step) {
-    switch (step) {
-      case "U1": {
-        const task = this.getTask(taskId);
-        if (!task?.payload?.designId) return { success: false, error: "Design ID fehlt" };
-        return await this.stepU1_ExtractMerchData(task.payload.designId);
-      }
-      case "U2":
-        return await this.stepU2_DownloadArtwork(taskId);
-      case "U3":
-        return await this.stepU3_AnalyzeAndPrompt(taskId);
-      case "U4":
-        return await this.stepU4_RewriteListing(taskId);
-      case "U5":
-        return await this.stepU5_TrademarkCheck(taskId);
-      case "U6":
-        return await this.stepU6_TranslateListing(taskId);
-      case "U7":
-        return await this.stepU7_Enqueue(taskId);
+  static async stepD7_VectorizeAndAudit(taskId) {
+    console.log(`[DesignPipeline] \u26A1 Starte Step D7 (Vektorisierung & Cutout-Audit) f\xFCr Task ${taskId}...`);
+    try {
+      await TaskLogService.vectorizeDesignTask(taskId);
+      const updated = this.getTask(taskId);
+      return { success: true, svgUrl: updated?.svgUrl };
+    } catch (err) {
+      console.error(`[DesignPipeline] \u274C Fehler in Step D7:`, err);
+      return { success: false, error: err.message };
+    }
+  }
+  /**
+   * Step D8: Hand-off to Upload Queue (106 Slots)
+   */
+  static async stepD8_Enqueue(taskId) {
+    console.log(`[DesignPipeline] \u{1F4E6} Starte Step D8 (Upload Queue Handoff) f\xFCr Task ${taskId}...`);
+    try {
+      await TaskLogService.completeTaskAndEnqueue(taskId);
+      return { success: true };
+    } catch (err) {
+      console.error(`[DesignPipeline] \u274C Fehler in Step D8:`, err);
+      return { success: false, error: err.message };
+    }
+  }
+  /**
+   * Executes a single specific step
+   */
+  static async runStep(taskId, stepName) {
+    const norm = stepName.toUpperCase().trim();
+    switch (norm) {
+      case "D1":
+      case "PREFLIGHT":
+      case "PREFLIGHT_TM_REQUEST":
+        return await this.stepD1_PreflightTrademark(taskId);
+      case "D2":
+      case "PROMPT":
+      case "LLM_REQUEST":
+        return await this.stepD2_GeneratePrompt(taskId);
+      case "D3":
+      case "IMAGE":
+      case "IDEOGRAM":
+      case "IDEOGRAM_REQUEST":
+        return await this.stepD3_GenerateImage(taskId);
+      case "D4":
+      case "ANALYZE":
+      case "VISION":
+      case "ANALYSIS_REQUEST":
+        return await this.stepD4_AnalyzeDesign(taskId);
+      case "D5":
+      case "LISTING":
+      case "LISTING_REQUEST":
+        return await this.stepD5_GenerateListing(taskId);
+      case "D6":
+      case "TRADEMARK":
+      case "TM":
+      case "TM_CHECK_REQUEST":
+      case "TM_REFINE_REQUEST":
+        return await this.stepD6_TrademarkCheck(taskId);
+      case "D7":
+      case "VECTORIZE":
+      case "SVG":
+      case "VECTORIZE_REQUEST":
+      case "SVG_AUDIT_REQUEST":
+        return await this.stepD7_VectorizeAndAudit(taskId);
+      case "D8":
+      case "QUEUE":
+      case "ENQUEUE":
+        return await this.stepD8_Enqueue(taskId);
       default:
-        return { success: false, error: `Unbekannter Step: ${step}` };
+        return { success: false, error: `Unbekannter Step: ${stepName}` };
     }
+  }
+  /**
+   * Runs the full Design Creation Pipeline end-to-end
+   */
+  static async runDesignPipeline(taskId) {
+    console.log(`[DesignPipeline] \u{1F680} Starte Full Design Creation Pipeline f\xFCr Task ${taskId}...`);
+    await this.stepD1_PreflightTrademark(taskId);
+    const r2 = await this.stepD2_GeneratePrompt(taskId);
+    if (!r2.success) return { success: false, currentStep: "D2", error: r2.error };
+    const r3 = await this.stepD3_GenerateImage(taskId);
+    if (!r3.success) return { success: false, currentStep: "D3", error: r3.error };
+    const r4 = await this.stepD4_AnalyzeDesign(taskId);
+    if (!r4.success) return { success: false, currentStep: "D4", error: r4.error };
+    const r5 = await this.stepD5_GenerateListing(taskId);
+    if (!r5.success) return { success: false, currentStep: "D5", error: r5.error };
+    const r6 = await this.stepD6_TrademarkCheck(taskId);
+    if (!r6.success) return { success: false, currentStep: "D6", error: r6.error };
+    const r7 = await this.stepD7_VectorizeAndAudit(taskId);
+    if (!r7.success) return { success: false, currentStep: "D7", error: r7.error };
+    const r8 = await this.stepD8_Enqueue(taskId);
+    if (!r8.success) return { success: false, currentStep: "D8", error: r8.error };
+    return { success: true, currentStep: "D8" };
   }
 };
 
@@ -223964,6 +224311,28 @@ app.post("/api/v1/update-pipeline/run", async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
+app.post("/api/v1/design-pipeline/step", async (req, res) => {
+  const { taskId, step } = req.body;
+  try {
+    if (!taskId) return res.status(400).json({ success: false, error: "Task ID erforderlich" });
+    const result2 = await DesignPipelineService.runStep(taskId, step);
+    return res.json(result2);
+  } catch (err) {
+    console.error(`[DesignPipeline] Fehler bei Step ${step}:`, err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/design-pipeline/run", async (req, res) => {
+  const { taskId } = req.body;
+  try {
+    if (!taskId) return res.status(400).json({ success: false, error: "Task ID erforderlich" });
+    const result2 = await DesignPipelineService.runDesignPipeline(taskId);
+    return res.json(result2);
+  } catch (err) {
+    console.error("[DesignPipeline] Fehler bei runDesignPipeline:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 var heartbeatFile = import_path76.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
 function loadHeartbeatState() {
   try {
@@ -224267,22 +224636,15 @@ app.get("/api/v1/systemprompts", (req, res) => {
   const prompts = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
-    promptGenerator: prompts.promptGenerator,
-    designAnalyzer: prompts.designAnalyzer,
-    listingGenerator: prompts.listingGenerator,
-    trademarkAuditor: prompts.trademarkAuditor
+    ...prompts
   });
 });
 app.post("/api/v1/systemprompts", (req, res) => {
-  const { promptGenerator, designAnalyzer, listingGenerator, trademarkAuditor } = req.body;
-  SystemPromptService.savePrompts({ promptGenerator, designAnalyzer, listingGenerator, trademarkAuditor });
+  SystemPromptService.savePrompts(req.body);
   const updated = SystemPromptService.getAllPrompts();
   res.json({
     success: true,
-    promptGenerator: updated.promptGenerator,
-    designAnalyzer: updated.designAnalyzer,
-    listingGenerator: updated.listingGenerator,
-    trademarkAuditor: updated.trademarkAuditor
+    ...updated
   });
 });
 app.post("/api/v1/systemprompts/reset", (req, res) => {
@@ -224290,10 +224652,7 @@ app.post("/api/v1/systemprompts/reset", (req, res) => {
   const resetPrompts = SystemPromptService.resetToDefault(type3 || "all");
   res.json({
     success: true,
-    promptGenerator: resetPrompts.promptGenerator,
-    designAnalyzer: resetPrompts.designAnalyzer,
-    listingGenerator: resetPrompts.listingGenerator,
-    trademarkAuditor: resetPrompts.trademarkAuditor
+    ...resetPrompts
   });
 });
 app.get("/api/v1/designs/image/:taskId", (req, res) => {

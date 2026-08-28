@@ -1874,6 +1874,15 @@ Please audit the listing based on your compliance rules:
       return { success: true, message: 'In den manuellen SVG-Editor (Tasks Checkpoint 4) übergeben.' };
     }
 
+    if (typeof stepType === 'string' && stepType.startsWith('UPDATE_')) {
+      const stepKey = stepType.replace('UPDATE_', '').split('_')[0];
+      const { UpdatePipelineService } = require('./updatePipelineService');
+      UpdatePipelineService.runStep(taskId, stepKey).catch((err: any) => {
+        console.error(`[TaskLogService] Retry Update Step ${stepKey} failed:`, err);
+      });
+      return { success: true, message: `Update Step ${stepKey} neu gestartet.` };
+    }
+
     throw new Error(`Unbekannter Step-Typ: ${stepType}`);
   }
 

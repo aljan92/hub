@@ -5,6 +5,7 @@ import { TaskLogService } from './taskLogService';
 import { AmazonInspectService } from './amazonInspectService';
 import { loadSettings } from './settingsService';
 import { QueueService } from './queueService';
+import { SystemPromptService } from './systemPromptService';
 
 export class UpdatePipelineService {
   /**
@@ -101,29 +102,8 @@ export class UpdatePipelineService {
     const oldBullets = [rawPayload.bullet1, rawPayload.bullet2].filter(Boolean).join('\n');
     const oldDesc = rawPayload.description || '';
 
-    const systemPrompt = `You are a Senior Amazon Merch on Demand Quality & SEO Auditor.
-Your task is to analyze the existing Merch on Demand design and its current English listing.
-
-Existing Listing:
-- Brand: "${oldBrand}"
-- Title: "${oldTitle}"
-- Bullets: "${oldBullets}"
-- Description: "${oldDesc}"
-
-Tasks:
-1. Determine the optimal Target Audience (fitTypes: choose from ["men", "women", "youth"]).
-2. Determine if any background color must be avoided (avoidColor: "black" | "white" | "none").
-3. Evaluate if the existing listing requires a rewrite. If it already has high-converting keywords, no banned words, and concise bullets, set rewriteNeeded: false. If it is keyword-stuffed, low quality, or outdated, set rewriteNeeded: true.
-4. Provide clear reasoning.
-
-Return ONLY valid JSON matching this schema:
-{
-  "fitTypes": ["men", "women", "youth"],
-  "avoidColor": "black" | "white" | "none",
-  "rewriteNeeded": boolean,
-  "reasoning": "string explaining the decision",
-  "designTheme": "short description of visual style"
-}`;
+    const baseSystemPrompt = SystemPromptService.getUpdateVisionPrompt();
+    const systemPrompt = `${baseSystemPrompt}\n\nExisting Listing Details:\n- Brand: "${oldBrand}"\n- Title: "${oldTitle}"\n- Bullets: "${oldBullets}"\n- Description: "${oldDesc}"`;
 
     const userContent: any[] = [
       {
@@ -251,28 +231,8 @@ Return ONLY valid JSON matching this schema:
     const raw = task.payload || {};
     const model = settings.llmModel || 'google/gemini-2.5-flash';
 
-    const systemPrompt = `You are a world-class Amazon Merch on Demand Listing Copywriter.
-Rewrite and optimize the existing English listing to maximize organic search visibility and conversion rate without trademark infringements.
-
-Original Listing:
-- Brand: "${raw.brand || ''}"
-- Title: "${raw.title || ''}"
-- Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(' | ')}"
-
-Guidelines:
-1. Brand: Max 50 chars, catchy and niche-specific.
-2. Title: Max 60 chars, highly relevant primary keywords, natural sentence structure.
-3. Feature Bullets (Bullet 1 & Bullet 2): Max 256 chars each. Natural English, focusing on the theme/gift angle. NO mentions of print quality, garment fit, shipping, or copyrighted terms.
-4. Description: Short atmospheric summary (max 300 chars).
-
-Return ONLY valid JSON:
-{
-  "brand": "string",
-  "title": "string",
-  "bullet1": "string",
-  "bullet2": "string",
-  "description": "string"
-}`;
+    const baseSystemPrompt = SystemPromptService.getUpdateRewritePrompt();
+    const systemPrompt = `${baseSystemPrompt}\n\nOriginal Listing Details:\n- Brand: "${raw.brand || ''}"\n- Title: "${raw.title || ''}"\n- Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(' | ')}"`;
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
@@ -396,23 +356,8 @@ Return ONLY valid JSON:
 
     const model = settings.llmModel || 'google/gemini-2.5-flash';
 
-    const systemPrompt = `You are a professional multi-language Amazon Merch on Demand localization expert.
-Translate and SEO-optimize the English listing into German (de), French (fr), Spanish (es), and Italian (it).
-Adapt natural phrasing rather than literal translation.
-
-Source EN Listing:
-- Brand: "${enListing.brand}"
-- Title: "${enListing.title}"
-- Bullet 1: "${enListing.bullet1}"
-- Bullet 2: "${enListing.bullet2}"
-
-Return ONLY valid JSON matching this schema:
-{
-  "de": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
-  "fr": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
-  "es": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
-  "it": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" }
-}`;
+    const baseSystemPrompt = SystemPromptService.getUpdateTranslationPrompt();
+    const systemPrompt = `${baseSystemPrompt}\n\nSource EN Listing:\n- Brand: "${enListing.brand}"\n- Title: "${enListing.title}"\n- Bullet 1: "${enListing.bullet1}"\n- Bullet 2: "${enListing.bullet2}"`;
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
