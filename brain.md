@@ -180,7 +180,7 @@ graph TD
   * Live-Abfrage im Browser-Kontext von **Session 1** anhand der Merch-Design-ID (UUID z. B. `495f452e-8245-42be-96e3-a1d3dcc752d9`).
   * Getrennte Abfrage & JSON-Ausgabe für `productconfiguration/get` (Listing-Texte, Brand, Bullets, Farben) und `FindListings` Coral RPC (Live-Status pro Variante, ASINs, Marktplätze).
   * 1-Click Copy to Clipboard für sofortige Datenanalyse.
-  * **Vollständige API-Dokumentation & TypeScript Schemata:** Siehe [AMAZON_PRODUCT_CONFIG_API.md](file:///Users/alexanderjanssen/Desktop/MBA%20HUB/AMAZON_PRODUCT_CONFIG_API.md).
+  * **Vollständige API-Dokumentation & TypeScript Schemata (lokal):** Siehe [AMAZON_PRODUCT_CONFIG_API.md](file:///Users/alexanderjanssen/Desktop/MBA%20HUB/AMAZON_PRODUCT_CONFIG_API.md) und [AMAZON_FIND_LISTINGS_API.md](file:///Users/alexanderjanssen/Desktop/MBA%20HUB/AMAZON_FIND_LISTINGS_API.md).
 * **Queue-Umbau mit 5-Tab Lifecycle:**
   * **Tab 1: Warteschlange:** Aktive, unpausierte Upload-Kandidaten (`!isPaused`).
   * **Tab 2: Pausiert (`Paused`):** Alle pausierten Designs (`isPaused: true`). Reaktivierung (`▶`) hängt das Design automatisch ganz unten ans Ende der Warteschlange an.
