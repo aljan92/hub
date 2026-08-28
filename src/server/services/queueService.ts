@@ -42,6 +42,9 @@ export interface QueueItem {
   sortOrder: number;
   uploadedAt?: string;
   lastUploadAttempt?: string;
+  source?: string;
+  type?: 'new' | 'update';
+  designId?: string;
 }
 
 export interface QueueState {
@@ -418,7 +421,10 @@ export class QueueService {
       activeProductsMap,
       droppedSlotsMap: {},
       tmBlockedProductIds: item.tmBlockedProductIds || [],
-      sortOrder: this.items.length
+      sortOrder: this.items.length,
+      source: (item as any).source || 'NEW',
+      type: (item as any).type || 'new',
+      designId: (item as any).designId
     };
 
     this.items.push(newItem);
@@ -426,6 +432,32 @@ export class QueueService {
     this.rebalanceQueue();
 
     return newItem;
+  }
+
+  public static enqueueItem(item: {
+    taskId: string;
+    designTitle?: string;
+    niche?: string;
+    brand?: string;
+    title?: string;
+    bullet1?: string;
+    bullet2?: string;
+    description?: string;
+    listings?: Record<string, ListingLanguageContent>;
+    fitTypes?: string[];
+    avoidColor?: 'white' | 'black' | 'none';
+    customBackgroundColor?: string;
+    imagePath: string;
+    pngPath: string;
+    tmBlockedProductIds?: string[];
+    source?: string;
+    type?: 'new' | 'update';
+    designId?: string;
+  }): QueueItem {
+    return this.enqueueDesign({
+      ...item,
+      designTitle: item.designTitle || item.title || 'Design #' + item.taskId
+    });
   }
 
   /**

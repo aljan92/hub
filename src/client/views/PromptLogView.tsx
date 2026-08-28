@@ -39,8 +39,94 @@ import {
 import { 
   DesignTaskLog, 
   SessionEvent, 
-  RetryStepType 
+  RetryStepType,
+  EventCategory 
 } from '../../types/tasks';
+
+// ---------------------------------------------------------------------------
+// Helper: Event Category & Color System
+// ---------------------------------------------------------------------------
+export const getEventCategory = (event: SessionEvent): EventCategory => {
+  const t = event.type;
+  if (t === 'ERROR') return 'ERROR';
+  if (t === 'INCOMING_PAYLOAD' || t === 'TASK_HANDOFF') return 'SYSTEM';
+  if (t.startsWith('TM_')) return 'TRADEMARK';
+  if (t.startsWith('IDEOGRAM_')) return 'IDEOGRAM';
+  if (t.startsWith('VECTORIZE_') || t.startsWith('SVG_')) return 'VECTORIZE';
+  return 'OPENROUTER';
+};
+
+export const getCategoryStyles = (category: EventCategory) => {
+  switch (category) {
+    case 'SYSTEM':
+      return {
+        dotBg: 'bg-teal-400',
+        dotBorder: 'border-teal-950',
+        dotRing: 'ring-2 ring-teal-500/30',
+        cardBg: 'bg-slate-950',
+        cardBorder: 'border-teal-500/30',
+        badgeBg: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
+        headerText: 'text-teal-300',
+        actionBtn: 'hover:bg-teal-500/20 text-teal-300 border-teal-500/40'
+      };
+    case 'OPENROUTER':
+      return {
+        dotBg: 'bg-sky-400',
+        dotBorder: 'border-sky-950',
+        dotRing: 'ring-2 ring-sky-500/30',
+        cardBg: 'bg-slate-950',
+        cardBorder: 'border-sky-500/30',
+        badgeBg: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
+        headerText: 'text-sky-300',
+        actionBtn: 'hover:bg-sky-500/20 text-sky-300 border-sky-500/40'
+      };
+    case 'TRADEMARK':
+      return {
+        dotBg: 'bg-amber-400',
+        dotBorder: 'border-amber-950',
+        dotRing: 'ring-2 ring-amber-500/30',
+        cardBg: 'bg-slate-950',
+        cardBorder: 'border-amber-500/30',
+        badgeBg: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+        headerText: 'text-amber-300',
+        actionBtn: 'hover:bg-amber-500/20 text-amber-300 border-amber-500/40'
+      };
+    case 'IDEOGRAM':
+      return {
+        dotBg: 'bg-purple-400',
+        dotBorder: 'border-purple-950',
+        dotRing: 'ring-2 ring-purple-500/30',
+        cardBg: 'bg-slate-950',
+        cardBorder: 'border-purple-500/30',
+        badgeBg: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+        headerText: 'text-purple-300',
+        actionBtn: 'hover:bg-purple-500/20 text-purple-300 border-purple-500/40'
+      };
+    case 'VECTORIZE':
+      return {
+        dotBg: 'bg-pink-400',
+        dotBorder: 'border-pink-950',
+        dotRing: 'ring-2 ring-pink-500/30',
+        cardBg: 'bg-slate-950',
+        cardBorder: 'border-pink-500/30',
+        badgeBg: 'bg-pink-500/10 text-pink-300 border-pink-500/30',
+        headerText: 'text-pink-300',
+        actionBtn: 'hover:bg-pink-500/20 text-pink-300 border-pink-500/40'
+      };
+    case 'ERROR':
+    default:
+      return {
+        dotBg: 'bg-rose-500',
+        dotBorder: 'border-rose-950',
+        dotRing: 'ring-2 ring-rose-500/30',
+        cardBg: 'bg-slate-950',
+        cardBorder: 'border-rose-500/30',
+        badgeBg: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
+        headerText: 'text-rose-300',
+        actionBtn: 'hover:bg-rose-500/20 text-rose-300 border-rose-500/40'
+      };
+  }
+};
 
 // ---------------------------------------------------------------------------
 // Helper: Copy Button
@@ -135,6 +221,7 @@ const getCacheBustedUrl = (url?: string, timestamp?: string) => {
 interface EventHeaderProps {
   event: SessionEvent;
   taskId: string;
+  category: EventCategory;
   onRetry?: (stepType: RetryStepType) => void;
   retryStepType?: RetryStepType;
   isRetrying?: boolean;
@@ -143,11 +230,13 @@ interface EventHeaderProps {
 const EventHeader: React.FC<EventHeaderProps> = ({
   event,
   taskId,
+  category,
   onRetry,
   retryStepType,
   isRetrying
 }) => {
   const timeStr = event.timestamp ? new Date(event.timestamp).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+  const styles = getCategoryStyles(category);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -155,12 +244,17 @@ const EventHeader: React.FC<EventHeaderProps> = ({
         <span className="font-mono text-[11px] font-semibold text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
           {timeStr}
         </span>
-        <span className="font-semibold text-slate-200">
+        <span className={`font-semibold ${styles.headerText}`}>
           {event.title}
         </span>
       </div>
 
       <div className="flex items-center space-x-2 text-[11px] text-slate-400 font-mono">
+        {event.metadata?.provider && (
+          <span className={`px-2 py-0.5 rounded border font-semibold ${styles.badgeBg}`}>
+            {event.metadata.provider}
+          </span>
+        )}
         {event.metadata?.model && (
           <span className="bg-slate-800 px-2 py-0.5 rounded text-slate-300 border border-slate-700">
             {event.metadata.model}
@@ -181,7 +275,7 @@ const EventHeader: React.FC<EventHeaderProps> = ({
             onClick={() => onRetry(retryStepType)}
             disabled={isRetrying}
             type="button"
-            className="flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20 transition-colors disabled:opacity-50"
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors disabled:opacity-50 ${styles.actionBtn}`}
             title="Ab diesem Schritt neu ausführen"
           >
             <RotateCcw className={`w-3 h-3 ${isRetrying ? 'animate-spin' : ''}`} />
@@ -1088,6 +1182,8 @@ export const PromptLogView: React.FC = () => {
               <div className="space-y-4 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
                 {(selectedTask.events || []).map((event, idx) => {
                   const isPreFlight = event.content?.isPreFlight || (event.type === 'TM_CHECK_REQUEST' && idx <= 3);
+                  const category = getEventCategory(event);
+                  const styles = getCategoryStyles(category);
                   const retryType: RetryStepType | undefined = 
                     event.type === 'LLM_REQUEST' ? 'LLM_REQUEST' :
                     event.type === 'IDEOGRAM_REQUEST' ? 'IDEOGRAM_REQUEST' :
@@ -1102,26 +1198,13 @@ export const PromptLogView: React.FC = () => {
                   return (
                     <div key={idx} className="relative pl-7 space-y-2">
                       {/* Timeline Bullet */}
-                      <div className={`absolute left-1.5 top-1.5 w-3 h-3 rounded-full border-2 -translate-x-1/2 transition-colors ${
-                        event.type === 'ERROR'
-                          ? 'bg-rose-500 border-rose-950'
-                          : event.type.startsWith('VECTORIZE_')
-                          ? 'bg-cyan-400 border-cyan-950 ring-2 ring-cyan-500/20'
-                          : event.type.startsWith('TM_')
-                          ? 'bg-amber-400 border-amber-950'
-                          : event.type.startsWith('LISTING_')
-                          ? 'bg-emerald-400 border-emerald-950'
-                          : event.type.startsWith('ANALYSIS_')
-                          ? 'bg-blue-400 border-blue-950'
-                          : event.type.startsWith('IDEOGRAM_')
-                          ? 'bg-purple-400 border-purple-950'
-                          : 'bg-slate-500 border-slate-900'
-                      }`} />
+                      <div className={`absolute left-1.5 top-1.5 w-3 h-3 rounded-full border-2 -translate-x-1/2 transition-colors ${styles.dotBg} ${styles.dotBorder} ${styles.dotRing}`} />
 
                       {/* Header */}
                       <EventHeader
                         event={event}
                         taskId={selectedTask.id}
+                        category={category}
                         onRetry={retryType ? (st) => handleRetryStep(selectedTask.id, st, idx) : undefined}
                         retryStepType={retryType}
                         isRetrying={retryingStep === `${selectedTask.id}-${retryType}-${idx}`}
@@ -1129,9 +1212,9 @@ export const PromptLogView: React.FC = () => {
 
                       {/* Event Body */}
                       {event.type === 'INCOMING_PAYLOAD' && (
-                        <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 space-y-1.5">
+                        <div className="bg-slate-950 rounded-xl p-3 border border-teal-500/30 space-y-1.5 shadow-sm">
                           <div className="flex items-center justify-between text-[11px] text-slate-400">
-                            <span>Empfangenes Payload:</span>
+                            <span className="font-semibold text-teal-300">Empfangenes Payload:</span>
                             <CopyButton text={JSON.stringify(event.content, null, 2)} label="JSON" />
                           </div>
                           <pre className="font-mono text-xs text-slate-300 overflow-x-auto max-h-40 custom-scrollbar">
@@ -1295,20 +1378,20 @@ export const PromptLogView: React.FC = () => {
 
                               <div className="flex flex-col md:flex-row items-center gap-4 bg-slate-900/80 p-3.5 rounded-xl border border-slate-800">
                                 {imgUrl ? (
-                                  <div className="relative group">
+                                  <div className="relative group w-44 h-44 shrink-0 rounded-xl border border-slate-700 bg-slate-950 shadow-md flex items-center justify-center p-1">
                                     <img
                                       src={imgUrl}
                                       alt="Original Master Design"
-                                      className="w-48 h-48 object-contain rounded-xl border border-slate-700 bg-slate-950 shadow-md p-1"
+                                      className="w-full h-full object-contain rounded-lg"
                                       referrerPolicy="no-referrer"
                                       loading="lazy"
                                     />
-                                    <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/80 text-amber-300 border border-amber-500/30 backdrop-blur-sm">
+                                    <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/80 text-amber-300 border border-amber-500/30 backdrop-blur-sm shadow-sm pointer-events-none">
                                       4500 × 5400 px
                                     </span>
                                   </div>
                                 ) : (
-                                  <div className="w-48 h-48 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950 text-slate-500 text-xs">
+                                  <div className="w-44 h-44 shrink-0 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950 text-slate-500 text-xs">
                                     <ImageIcon className="w-8 h-8 mb-1 opacity-50" />
                                     <span>Wird geladen...</span>
                                   </div>
@@ -1535,13 +1618,13 @@ export const PromptLogView: React.FC = () => {
                       })()}
 
                       {event.type === 'VECTORIZE_REQUEST' && (
-                        <div className="bg-slate-950 rounded-xl p-3.5 border border-cyan-500/20 space-y-2.5">
+                        <div className="bg-slate-950 rounded-xl p-3.5 border border-pink-500/30 space-y-2.5">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
-                              <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="font-semibold text-pink-300 flex items-center gap-1.5">
+                              <Zap className="w-3.5 h-3.5 text-pink-400" />
                               Vektorisierungs-Anfrage (Vectorizer.ai)
                             </span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-pink-500/10 text-pink-300 border border-pink-500/30">
                               Max. {event.content?.maxColors || 2} Farben (aus QA-Phase)
                             </span>
                           </div>
@@ -1549,7 +1632,7 @@ export const PromptLogView: React.FC = () => {
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                             <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
                               <span className="text-[10px] text-slate-500 block">Farben (QA-Phase)</span>
-                              <span className="font-semibold text-cyan-300">{event.content?.maxColors} Farben</span>
+                              <span className="font-semibold text-pink-300">{event.content?.maxColors} Farben</span>
                             </div>
                             <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
                               <span className="text-[10px] text-slate-500 block">Modus</span>
@@ -1570,10 +1653,10 @@ export const PromptLogView: React.FC = () => {
                       )}
 
                       {event.type === 'VECTORIZE_RESPONSE' && (
-                        <div className="bg-slate-950 rounded-xl p-3.5 border border-cyan-500/40 space-y-3">
+                        <div className="bg-slate-950 rounded-xl p-3.5 border border-pink-500/30 space-y-3">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
-                              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="font-semibold text-pink-300 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-pink-400" />
                               Vektorisierung erfolgreich (SVG generiert)
                             </span>
                             <div className="flex items-center space-x-2">
@@ -1586,7 +1669,7 @@ export const PromptLogView: React.FC = () => {
                                   download={`design-${selectedTask.id}.svg`}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition-colors shadow-sm"
+                                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-pink-600 hover:bg-pink-500 text-white transition-colors shadow-sm"
                                 >
                                   <Download className="w-3 h-3" />
                                   <span>SVG Download</span>
@@ -1636,10 +1719,10 @@ export const PromptLogView: React.FC = () => {
                       )}
 
                       {event.type === 'SVG_AUDIT_REQUEST' && (
-                        <div className="bg-slate-950 rounded-xl p-3.5 border border-purple-500/40 space-y-3">
+                        <div className="bg-slate-950 rounded-xl p-3.5 border border-pink-500/30 space-y-3">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-purple-300 flex items-center gap-1.5">
-                              <Eye className="w-3.5 h-3.5 text-purple-400" />
+                            <span className="font-semibold text-pink-300 flex items-center gap-1.5">
+                              <Eye className="w-3.5 h-3.5 text-pink-400" />
                               Senden an LLM Vision (4-Panel Multifarben Cutout-Prüfung)
                             </span>
                             <span className="text-[10px] text-slate-400 font-mono">

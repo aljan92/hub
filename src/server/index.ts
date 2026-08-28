@@ -25,6 +25,7 @@ import { QueueService } from './services/queueService';
 import { UploadWorkerService } from './services/uploadWorkerService';
 import { CostTrackingService } from './services/costTrackingService';
 import { AmazonInspectService } from './services/amazonInspectService';
+import { UpdatePipelineService } from './services/updatePipelineService';
 
 dotenv.config();
 
@@ -632,6 +633,37 @@ app.post('/api/v1/debug/amazon-download-artwork', async (req, res) => {
       success: false,
       error: err.message || 'Fehler beim Downloaden des Designs aus Amazon Merch'
     });
+  }
+});
+
+// Update Pipeline Single Step Execution (U1 to U7)
+app.post('/api/v1/update-pipeline/step', async (req, res) => {
+  const { taskId, step, designId } = req.body;
+  try {
+    if (step === 'U1') {
+      if (!designId) return res.status(400).json({ success: false, error: 'Design ID erforderlich für U1' });
+      const result = await UpdatePipelineService.stepU1_ExtractMerchData(designId);
+      return res.json(result);
+    }
+    if (!taskId) return res.status(400).json({ success: false, error: 'Task ID erforderlich' });
+    const result = await UpdatePipelineService.runStep(taskId, step);
+    return res.json(result);
+  } catch (err: any) {
+    console.error(`[UpdatePipeline] Fehler bei Step ${step}:`, err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update Pipeline Full Sequential Run
+app.post('/api/v1/update-pipeline/run', async (req, res) => {
+  const { designId } = req.body;
+  try {
+    if (!designId) return res.status(400).json({ success: false, error: 'Design ID erforderlich' });
+    const result = await UpdatePipelineService.runUpdatePipeline(designId);
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[UpdatePipeline] Fehler bei runUpdatePipeline:', err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

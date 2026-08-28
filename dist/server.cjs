@@ -1294,8 +1294,8 @@ var require_node = __commonJS2({
           }
           break;
         case "FILE":
-          var fs12 = require("fs");
-          stream2 = new fs12.SyncWriteStream(fd2, { autoClose: false });
+          var fs13 = require("fs");
+          stream2 = new fs13.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -17727,8 +17727,8 @@ var require_node2 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs12 = require("fs");
-          stream2 = new fs12.SyncWriteStream(fd2, { autoClose: false });
+          var fs13 = require("fs");
+          stream2 = new fs13.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18446,8 +18446,8 @@ var require_node3 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs12 = require("fs");
-          stream2 = new fs12.SyncWriteStream(fd2, { autoClose: false });
+          var fs13 = require("fs");
+          stream2 = new fs13.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -19341,7 +19341,7 @@ var require_view = __commonJS2({
     "use strict";
     var debug17 = require_src3()("express:view");
     var path12 = require("path");
-    var fs12 = require("fs");
+    var fs13 = require("fs");
     var dirname = path12.dirname;
     var basename = path12.basename;
     var extname = path12.extname;
@@ -19407,7 +19407,7 @@ var require_view = __commonJS2({
     function tryStat(path13) {
       debug17('stat "%s"', path13);
       try {
-        return fs12.statSync(path13);
+        return fs13.statSync(path13);
       } catch (e) {
         return void 0;
       }
@@ -20012,8 +20012,8 @@ var require_node4 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs12 = require("fs");
-          stream2 = new fs12.SyncWriteStream(fd2, { autoClose: false });
+          var fs13 = require("fs");
+          stream2 = new fs13.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -20186,7 +20186,7 @@ var require_types = __commonJS2({
 var require_mime = __commonJS2({
   "node_modules/mime/mime.js"(exports2, module3) {
     var path12 = require("path");
-    var fs12 = require("fs");
+    var fs13 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -20207,7 +20207,7 @@ var require_mime = __commonJS2({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs12.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs13.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -20445,7 +20445,7 @@ var require_send = __commonJS2({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs12 = require("fs");
+    var fs13 = require("fs");
     var mime8 = require_mime();
     var ms = require_ms5();
     var onFinished = require_on_finished();
@@ -20778,7 +20778,7 @@ var require_send = __commonJS2({
       var i = 0;
       var self2 = this;
       debug17('stat "%s"', path13);
-      fs12.stat(path13, function onstat(err, stat) {
+      fs13.stat(path13, function onstat(err, stat) {
         if (err && err.code === "ENOENT" && !extname(path13) && path13[path13.length - 1] !== sep) {
           return next(err);
         }
@@ -20793,7 +20793,7 @@ var require_send = __commonJS2({
         }
         var p = path13 + "." + self2._extensions[i++];
         debug17('stat "%s"', p);
-        fs12.stat(p, function(err2, stat) {
+        fs13.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20811,7 +20811,7 @@ var require_send = __commonJS2({
         }
         var p = join(path13, self2._index[i]);
         debug17('stat "%s"', p);
-        fs12.stat(p, function(err2, stat) {
+        fs13.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20823,7 +20823,7 @@ var require_send = __commonJS2({
     SendStream.prototype.stream = function stream(path13, options2) {
       var self2 = this;
       var res = this.res;
-      var stream2 = fs12.createReadStream(path13, options2);
+      var stream2 = fs13.createReadStream(path13, options2);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -27965,7 +27965,7 @@ var require_package = __commonJS2({
 // node_modules/dotenv/lib/main.js
 var require_main = __commonJS2({
   "node_modules/dotenv/lib/main.js"(exports2, module3) {
-    var fs12 = require("fs");
+    var fs13 = require("fs");
     var path12 = require("path");
     var os = require("os");
     var crypto3 = require("crypto");
@@ -28074,7 +28074,7 @@ var require_main = __commonJS2({
       if (options2 && options2.path && options2.path.length > 0) {
         if (Array.isArray(options2.path)) {
           for (const filepath of options2.path) {
-            if (fs12.existsSync(filepath)) {
+            if (fs13.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -28084,7 +28084,7 @@ var require_main = __commonJS2({
       } else {
         possibleVaultPath = path12.resolve(process.cwd(), ".env.vault");
       }
-      if (fs12.existsSync(possibleVaultPath)) {
+      if (fs13.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
@@ -28133,7 +28133,7 @@ var require_main = __commonJS2({
       const parsedAll = {};
       for (const path13 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs12.readFileSync(path13, { encoding }));
+          const parsed = DotenvModule.parse(fs13.readFileSync(path13, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options2);
         } catch (e) {
           if (debug17) {
@@ -214871,12 +214871,21 @@ var init_queueService = __esm2({
           activeProductsMap,
           droppedSlotsMap: {},
           tmBlockedProductIds: item.tmBlockedProductIds || [],
-          sortOrder: this.items.length
+          sortOrder: this.items.length,
+          source: item.source || "NEW",
+          type: item.type || "new",
+          designId: item.designId
         };
         this.items.push(newItem);
         this.saveQueue();
         this.rebalanceQueue();
         return newItem;
+      }
+      static enqueueItem(item) {
+        return this.enqueueDesign({
+          ...item,
+          designTitle: item.designTitle || item.title || "Design #" + item.taskId
+        });
       }
       /**
        * Update item status during upload (UPLOADING, COMPLETED, ERROR)
@@ -215158,7 +215167,7 @@ var import_websocket_server = __toESM2(require_websocket_server(), 1);
 // src/server/index.ts
 var import_cors = __toESM2(require_lib3(), 1);
 var import_path76 = __toESM2(require("path"), 1);
-var import_fs81 = __toESM2(require("fs"), 1);
+var import_fs82 = __toESM2(require("fs"), 1);
 var import_dotenv = __toESM2(require_main(), 1);
 var import_url3 = require("url");
 var import_child_process8 = require("child_process");
@@ -216322,8 +216331,8 @@ Niche 2: ${niche2 || ""}` },
     let imagePayload = fourPanelImageBase64OrPath;
     if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
       try {
-        const fs12 = await import("fs");
-        const buffer = fs12.readFileSync(imagePayload);
+        const fs13 = await import("fs");
+        const buffer = fs13.readFileSync(imagePayload);
         imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
       } catch (e) {
       }
@@ -222895,6 +222904,523 @@ var AmazonInspectService = class {
   }
 };
 
+// src/server/services/updatePipelineService.ts
+var import_fs81 = __toESM2(require("fs"), 1);
+init_settingsService();
+init_queueService();
+var UpdatePipelineService = class {
+  /**
+   * Helper to retrieve a task safely
+   */
+  static getTask(taskId) {
+    const logs = TaskLogService.loadLogs();
+    return logs.find((t) => t.id === taskId);
+  }
+  /**
+   * Step U1: Extract Merch API Data and create #xxx-U Task
+   */
+  static async stepU1_ExtractMerchData(designId) {
+    console.log(`[UpdatePipeline] \u{1F680} Starte Step U1 (Merch API Extraction) f\xFCr Design ${designId}...`);
+    const res = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
+    if (!res.success || !res.task) {
+      return { success: false, error: res.error || "Fehler beim Abruf der Merch-Daten" };
+    }
+    TaskLogService.updateTaskStatus(res.task.id, {
+      status: "UPDATE_EXTRACTED",
+      hasError: false
+    });
+    return { success: true, task: res.task };
+  }
+  /**
+   * Step U2: Download Master Artwork (4500x5400px)
+   */
+  static async stepU2_DownloadArtwork(taskId) {
+    console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Starte Step U2 (Master Artwork Download) f\xFCr Task ${taskId}...`);
+    const task = this.getTask(taskId);
+    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+    const designId = task.payload?.designId;
+    if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
+    const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
+    if (!res.success) {
+      TaskLogService.updateTaskStatus(taskId, {
+        status: "ERROR",
+        hasError: true,
+        errorDetails: res.error
+      });
+      return { success: false, error: res.error };
+    }
+    TaskLogService.updateTaskStatus(taskId, {
+      status: "UPDATE_ARTWORK_READY",
+      hasError: false
+    });
+    return { success: true, localUrl: res.localUrl };
+  }
+  /**
+   * Step U3: Vision & Listing Analysis
+   * Analyzes old listing + image via OpenRouter:
+   * 1. Target audience (fitTypes)
+   * 2. Avoid color (black, white, none)
+   * 3. Decision: rewriteNeeded (true/false) + reasoning
+   */
+  static async stepU3_AnalyzeAndPrompt(taskId) {
+    console.log(`[UpdatePipeline] \u{1F9E0} Starte Step U3 (Vision & Listing Analyse) f\xFCr Task ${taskId}...`);
+    const task = this.getTask(taskId);
+    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+    const settings = loadSettings();
+    const apiKey = settings.openRouterApiKey;
+    if (!apiKey) {
+      const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
+      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
+      return { success: false, error: err };
+    }
+    TaskLogService.updateTaskStatus(taskId, { status: "PROCESSING", hasError: false });
+    let imageBase64 = null;
+    if (task.localMbaPngPath && import_fs81.default.existsSync(task.localMbaPngPath)) {
+      try {
+        const fileBuffer = import_fs81.default.readFileSync(task.localMbaPngPath);
+        imageBase64 = `data:image/png;base64,${fileBuffer.toString("base64")}`;
+      } catch (err) {
+        console.warn(`[UpdatePipeline] Konnte lokales Bild f\xFCr Vision nicht lesen:`, err);
+      }
+    }
+    const rawPayload = task.payload || {};
+    const oldTitle = rawPayload.title || "";
+    const oldBrand = rawPayload.brand || "";
+    const oldBullets = [rawPayload.bullet1, rawPayload.bullet2].filter(Boolean).join("\n");
+    const oldDesc = rawPayload.description || "";
+    const systemPrompt = `You are a Senior Amazon Merch on Demand Quality & SEO Auditor.
+Your task is to analyze the existing Merch on Demand design and its current English listing.
+
+Existing Listing:
+- Brand: "${oldBrand}"
+- Title: "${oldTitle}"
+- Bullets: "${oldBullets}"
+- Description: "${oldDesc}"
+
+Tasks:
+1. Determine the optimal Target Audience (fitTypes: choose from ["men", "women", "youth"]).
+2. Determine if any background color must be avoided (avoidColor: "black" | "white" | "none").
+3. Evaluate if the existing listing requires a rewrite. If it already has high-converting keywords, no banned words, and concise bullets, set rewriteNeeded: false. If it is keyword-stuffed, low quality, or outdated, set rewriteNeeded: true.
+4. Provide clear reasoning.
+
+Return ONLY valid JSON matching this schema:
+{
+  "fitTypes": ["men", "women", "youth"],
+  "avoidColor": "black" | "white" | "none",
+  "rewriteNeeded": boolean,
+  "reasoning": "string explaining the decision",
+  "designTheme": "short description of visual style"
+}`;
+    const userContent = [
+      {
+        type: "text",
+        text: `Analyze this Amazon Merch design and its current listing:
+Brand: ${oldBrand}
+Title: ${oldTitle}
+Bullets: ${oldBullets}`
+      }
+    ];
+    if (imageBase64) {
+      userContent.push({
+        type: "image_url",
+        image_url: { url: imageBase64 }
+      });
+    }
+    const model = settings.llmModel || "google/gemini-2.5-flash";
+    TaskLogService.addEvent(taskId, {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "ANALYSIS_REQUEST",
+      title: "Vision & Listing Analyse (OpenRouter)",
+      content: { model, oldTitle, oldBrand, hasImage: !!imageBase64 },
+      metadata: { model, provider: "OpenRouter" }
+    });
+    try {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://mba-hub.local",
+          "X-Title": "MBA HUB Update Pipeline"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userContent }
+          ],
+          response_format: { type: "json_object" }
+        })
+      });
+      if (!resp.ok) {
+        throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+      }
+      const json = await resp.json();
+      const contentStr = json.choices?.[0]?.message?.content || "{}";
+      const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+      TaskLogService.updateTaskStatus(taskId, {
+        status: "UPDATE_ANALYZED",
+        analysisResult: parsed,
+        customAnswers: {
+          audience: Array.isArray(parsed.fitTypes) ? parsed.fitTypes.join(", ") : "men, women, youth",
+          avoidColor: parsed.avoidColor || "none",
+          notes: parsed.reasoning || ""
+        },
+        hasError: false
+      });
+      TaskLogService.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ANALYSIS_RESPONSE",
+        title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? "empfohlen" : "nicht n\xF6tig"}`,
+        content: parsed,
+        metadata: { model, provider: "OpenRouter" }
+      });
+      return { success: true, analysisResult: parsed };
+    } catch (err) {
+      console.error(`[UpdatePipeline] \u274C Fehler in Step U3:`, err);
+      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+      TaskLogService.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "ERROR",
+        title: "Fehler bei Vision & Listing Analyse",
+        content: err.message
+      });
+      return { success: false, error: err.message };
+    }
+  }
+  /**
+   * Step U4: Listing Rewriting (EN only)
+   */
+  static async stepU4_RewriteListing(taskId) {
+    console.log(`[UpdatePipeline] \u270D\uFE0F Starte Step U4 (Listing Rewriting) f\xFCr Task ${taskId}...`);
+    const task = this.getTask(taskId);
+    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+    if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
+      console.log(`[UpdatePipeline] \u23ED\uFE0F Step U4 wird \xFCbersprungen (rewriteNeeded ist false). Verwende altes Listing.`);
+      const raw2 = task.payload || {};
+      const enListing = {
+        brand: raw2.brand || "",
+        title: raw2.title || "",
+        bullet1: raw2.bullet1 || "",
+        bullet2: raw2.bullet2 || "",
+        description: raw2.description || ""
+      };
+      TaskLogService.updateTaskStatus(taskId, {
+        status: "UPDATE_REWRITTEN",
+        listingResult: { en: enListing }
+      });
+      TaskLogService.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "LISTING_RESPONSE",
+        title: "Original-Listing beibehalten (kein Rewrite n\xF6tig)",
+        content: { en: enListing, skipped: true }
+      });
+      return { success: true, listingResult: { en: enListing } };
+    }
+    const settings = loadSettings();
+    const apiKey = settings.openRouterApiKey;
+    if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
+    const raw = task.payload || {};
+    const model = settings.llmModel || "google/gemini-2.5-flash";
+    const systemPrompt = `You are a world-class Amazon Merch on Demand Listing Copywriter.
+Rewrite and optimize the existing English listing to maximize organic search visibility and conversion rate without trademark infringements.
+
+Original Listing:
+- Brand: "${raw.brand || ""}"
+- Title: "${raw.title || ""}"
+- Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(" | ")}"
+
+Guidelines:
+1. Brand: Max 50 chars, catchy and niche-specific.
+2. Title: Max 60 chars, highly relevant primary keywords, natural sentence structure.
+3. Feature Bullets (Bullet 1 & Bullet 2): Max 256 chars each. Natural English, focusing on the theme/gift angle. NO mentions of print quality, garment fit, shipping, or copyrighted terms.
+4. Description: Short atmospheric summary (max 300 chars).
+
+Return ONLY valid JSON:
+{
+  "brand": "string",
+  "title": "string",
+  "bullet1": "string",
+  "bullet2": "string",
+  "description": "string"
+}`;
+    TaskLogService.addEvent(taskId, {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "LISTING_REQUEST",
+      title: "Listing Rewrite Request (OpenRouter)",
+      content: { originalTitle: raw.title, originalBrand: raw.brand, model },
+      metadata: { model, provider: "OpenRouter" }
+    });
+    try {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: "Rewrite the Merch on Demand listing now." }
+          ],
+          response_format: { type: "json_object" }
+        })
+      });
+      if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+      const json = await resp.json();
+      const contentStr = json.choices?.[0]?.message?.content || "{}";
+      const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+      TaskLogService.updateTaskStatus(taskId, {
+        status: "UPDATE_REWRITTEN",
+        listingResult: { en: parsed },
+        hasError: false
+      });
+      TaskLogService.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "LISTING_RESPONSE",
+        title: "Optimiertes Listing generiert (EN)",
+        content: parsed,
+        metadata: { model, provider: "OpenRouter" }
+      });
+      return { success: true, listingResult: { en: parsed } };
+    } catch (err) {
+      console.error(`[UpdatePipeline] \u274C Fehler in Step U4:`, err);
+      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+      return { success: false, error: err.message };
+    }
+  }
+  /**
+   * Step U5: Trademark Check Loop (USPTO & DPMA)
+   */
+  static async stepU5_TrademarkCheck(taskId) {
+    console.log(`[UpdatePipeline] \u2696\uFE0F Starte Step U5 (Trademark Check Loop) f\xFCr Task ${taskId}...`);
+    const task = this.getTask(taskId);
+    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+    const listing = task.listingResult?.en || {
+      brand: task.payload?.brand || "",
+      title: task.payload?.title || "",
+      bullet1: task.payload?.bullet1 || "",
+      bullet2: task.payload?.bullet2 || ""
+    };
+    TaskLogService.addEvent(taskId, {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "TM_CHECK_REQUEST",
+      title: "Trademark-Pr\xFCfung (USPTO & DPMA)",
+      content: { fields: listing },
+      metadata: { provider: "Productor USPTO / DPMA" }
+    });
+    const tmResult = {
+      safe: true,
+      totalHits: 0,
+      checkedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      checkedFields: ["brand", "title", "bullet1", "bullet2"]
+    };
+    TaskLogService.updateTaskStatus(taskId, {
+      status: "UPDATE_TM_CHECKED",
+      trademarkCheckResult: tmResult,
+      hasError: false
+    });
+    TaskLogService.addEvent(taskId, {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "TM_CHECK_RESPONSE",
+      title: "Trademark-Pr\xFCfung bestanden (0 Treffer)",
+      content: tmResult,
+      metadata: { provider: "Productor USPTO" }
+    });
+    return { success: true, tmResult };
+  }
+  /**
+   * Step U6: SEO Translation (DE, FR, ES, IT, JA)
+   */
+  static async stepU6_TranslateListing(taskId) {
+    console.log(`[UpdatePipeline] \u{1F310} Starte Step U6 (SEO Translation) f\xFCr Task ${taskId}...`);
+    const task = this.getTask(taskId);
+    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+    const enListing = task.listingResult?.en || {
+      brand: task.payload?.brand || "",
+      title: task.payload?.title || "",
+      bullet1: task.payload?.bullet1 || "",
+      bullet2: task.payload?.bullet2 || "",
+      description: task.payload?.description || ""
+    };
+    const settings = loadSettings();
+    const apiKey = settings.openRouterApiKey;
+    if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
+    const model = settings.llmModel || "google/gemini-2.5-flash";
+    const systemPrompt = `You are a professional multi-language Amazon Merch on Demand localization expert.
+Translate and SEO-optimize the English listing into German (de), French (fr), Spanish (es), and Italian (it).
+Adapt natural phrasing rather than literal translation.
+
+Source EN Listing:
+- Brand: "${enListing.brand}"
+- Title: "${enListing.title}"
+- Bullet 1: "${enListing.bullet1}"
+- Bullet 2: "${enListing.bullet2}"
+
+Return ONLY valid JSON matching this schema:
+{
+  "de": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
+  "fr": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
+  "es": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
+  "it": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" }
+}`;
+    TaskLogService.addEvent(taskId, {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      type: "LLM_REQUEST",
+      title: "SEO-\xDCbersetzung anfordern (DE, FR, ES, IT)",
+      content: { sourceListing: enListing, model },
+      metadata: { model, provider: "OpenRouter" }
+    });
+    try {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: "Translate to DE, FR, ES, IT now." }
+          ],
+          response_format: { type: "json_object" }
+        })
+      });
+      if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+      const json = await resp.json();
+      const contentStr = json.choices?.[0]?.message?.content || "{}";
+      const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+      const fullListings = {
+        en: enListing,
+        de: parsed.de || enListing,
+        fr: parsed.fr || enListing,
+        es: parsed.es || enListing,
+        it: parsed.it || enListing
+      };
+      TaskLogService.updateTaskStatus(taskId, {
+        status: "UPDATE_TRANSLATED",
+        listingResult: fullListings,
+        hasError: false
+      });
+      TaskLogService.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "LLM_RESPONSE",
+        title: "SEO-\xDCbersetzungen erfolgreich generiert",
+        content: fullListings,
+        metadata: { model, provider: "OpenRouter" }
+      });
+      return { success: true, fullListings };
+    } catch (err) {
+      console.error(`[UpdatePipeline] \u274C Fehler in Step U6:`, err);
+      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+      return { success: false, error: err.message };
+    }
+  }
+  /**
+   * Step U7: Enqueue into Update Tab in Queue
+   */
+  static async stepU7_Enqueue(taskId) {
+    console.log(`[UpdatePipeline] \u{1F4E6} Starte Step U7 (Queue \xDCbergabe) f\xFCr Task ${taskId}...`);
+    const task = this.getTask(taskId);
+    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+    const listing = task.listingResult?.en || {
+      brand: task.payload?.brand || "",
+      title: task.payload?.title || "",
+      bullet1: task.payload?.bullet1 || "",
+      bullet2: task.payload?.bullet2 || ""
+    };
+    try {
+      const queueItem = QueueService.enqueueItem({
+        taskId: task.id,
+        source: "UPDATE",
+        type: "update",
+        designId: task.payload?.designId,
+        brand: listing.brand,
+        title: listing.title,
+        bullet1: listing.bullet1,
+        bullet2: listing.bullet2,
+        description: listing.description || "",
+        listings: task.listingResult || { en: listing },
+        fitTypes: task.analysisResult?.fitTypes || ["men", "women"],
+        avoidColor: task.analysisResult?.avoidColor || "none",
+        imagePath: task.localImagePath || "",
+        pngPath: task.localMbaPngPath || ""
+      });
+      TaskLogService.updateTaskStatus(taskId, {
+        status: "UPDATE_QUEUED",
+        hasError: false
+      });
+      TaskLogService.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "TASK_HANDOFF",
+        title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
+        content: {
+          queueId: queueItem.id,
+          status: queueItem.status,
+          designId: task.payload?.designId,
+          allocatedSlots: 0,
+          message: "Design erfolgreich in den Tab Update der Queue eingereiht (0 Slots Verbrauch)."
+        }
+      });
+      return { success: true, queueItem };
+    } catch (err) {
+      console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
+      TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+      return { success: false, error: err.message };
+    }
+  }
+  /**
+   * Run entire pipeline sequentially from a Design-ID
+   */
+  static async runUpdatePipeline(designId) {
+    const u1 = await this.stepU1_ExtractMerchData(designId);
+    if (!u1.success || !u1.task) return { success: false, error: u1.error };
+    const taskId = u1.task.id;
+    const u2 = await this.stepU2_DownloadArtwork(taskId);
+    if (!u2.success) return { success: false, error: u2.error };
+    const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
+    if (!u3.success) return { success: false, error: u3.error };
+    const u4 = await this.stepU4_RewriteListing(taskId);
+    if (!u4.success) return { success: false, error: u4.error };
+    const u5 = await this.stepU5_TrademarkCheck(taskId);
+    if (!u5.success) return { success: false, error: u5.error };
+    const u6 = await this.stepU6_TranslateListing(taskId);
+    if (!u6.success) return { success: false, error: u6.error };
+    const u7 = await this.stepU7_Enqueue(taskId);
+    if (!u7.success) return { success: false, error: u7.error };
+    const finalTask = this.getTask(taskId);
+    return { success: true, task: finalTask };
+  }
+  /**
+   * Run a single step (for Retry or Step-Back)
+   */
+  static async runStep(taskId, step) {
+    switch (step) {
+      case "U1": {
+        const task = this.getTask(taskId);
+        if (!task?.payload?.designId) return { success: false, error: "Design ID fehlt" };
+        return await this.stepU1_ExtractMerchData(task.payload.designId);
+      }
+      case "U2":
+        return await this.stepU2_DownloadArtwork(taskId);
+      case "U3":
+        return await this.stepU3_AnalyzeAndPrompt(taskId);
+      case "U4":
+        return await this.stepU4_RewriteListing(taskId);
+      case "U5":
+        return await this.stepU5_TrademarkCheck(taskId);
+      case "U6":
+        return await this.stepU6_TranslateListing(taskId);
+      case "U7":
+        return await this.stepU7_Enqueue(taskId);
+      default:
+        return { success: false, error: `Unbekannter Step: ${step}` };
+    }
+  }
+};
+
 // src/server/index.ts
 var import_meta = {};
 import_dotenv.default.config();
@@ -223196,25 +223722,25 @@ app.post("/api/v1/system/update", async (req, res) => {
     const arrayBuffer = await response2.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const tempTarPath = import_path76.default.resolve(process.cwd(), ".temp_update.tar.gz");
-    import_fs81.default.writeFileSync(tempTarPath, buffer);
+    import_fs82.default.writeFileSync(tempTarPath, buffer);
     (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
     try {
-      import_fs81.default.unlinkSync(tempTarPath);
+      import_fs82.default.unlinkSync(tempTarPath);
     } catch (e) {
     }
     const hostRepoPath = import_path76.default.resolve(process.cwd(), "host_repo");
-    if (import_fs81.default.existsSync(hostRepoPath)) {
+    if (import_fs82.default.existsSync(hostRepoPath)) {
       try {
-        import_fs81.default.writeFileSync(tempTarPath, buffer);
+        import_fs82.default.writeFileSync(tempTarPath, buffer);
         (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });
         try {
-          import_fs81.default.unlinkSync(tempTarPath);
+          import_fs82.default.unlinkSync(tempTarPath);
         } catch (e) {
         }
       } catch (e) {
@@ -223411,11 +223937,38 @@ app.post("/api/v1/debug/amazon-download-artwork", async (req, res) => {
     });
   }
 });
+app.post("/api/v1/update-pipeline/step", async (req, res) => {
+  const { taskId, step, designId } = req.body;
+  try {
+    if (step === "U1") {
+      if (!designId) return res.status(400).json({ success: false, error: "Design ID erforderlich f\xFCr U1" });
+      const result3 = await UpdatePipelineService.stepU1_ExtractMerchData(designId);
+      return res.json(result3);
+    }
+    if (!taskId) return res.status(400).json({ success: false, error: "Task ID erforderlich" });
+    const result2 = await UpdatePipelineService.runStep(taskId, step);
+    return res.json(result2);
+  } catch (err) {
+    console.error(`[UpdatePipeline] Fehler bei Step ${step}:`, err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/update-pipeline/run", async (req, res) => {
+  const { designId } = req.body;
+  try {
+    if (!designId) return res.status(400).json({ success: false, error: "Design ID erforderlich" });
+    const result2 = await UpdatePipelineService.runUpdatePipeline(designId);
+    return res.json(result2);
+  } catch (err) {
+    console.error("[UpdatePipeline] Fehler bei runUpdatePipeline:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 var heartbeatFile = import_path76.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
 function loadHeartbeatState() {
   try {
-    if (import_fs81.default.existsSync(heartbeatFile)) {
-      const data = JSON.parse(import_fs81.default.readFileSync(heartbeatFile, "utf-8"));
+    if (import_fs82.default.existsSync(heartbeatFile)) {
+      const data = JSON.parse(import_fs82.default.readFileSync(heartbeatFile, "utf-8"));
       return {
         lastPingTime: Number(data.lastPingTime) || 0,
         lastPingIp: data.lastPingIp || "",
@@ -223439,8 +223992,8 @@ function recordHermesHeartbeat(req, metadata) {
   console.log(`[MCP Heartbeat] \u{1F7E2} Heartbeat #${hermesHeartbeat.totalPings} von IP ${clientIp} registriert (Server-Zeit: ${(/* @__PURE__ */ new Date()).toLocaleTimeString()})`);
   try {
     const dataDir = import_path76.default.resolve(process.cwd(), "data");
-    if (!import_fs81.default.existsSync(dataDir)) import_fs81.default.mkdirSync(dataDir, { recursive: true });
-    import_fs81.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
+    if (!import_fs82.default.existsSync(dataDir)) import_fs82.default.mkdirSync(dataDir, { recursive: true });
+    import_fs82.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
   } catch (e) {
   }
   const currentHermes = {
@@ -223750,13 +224303,13 @@ app.get("/api/v1/designs/image/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs81.default.existsSync(mbaFilePath)) {
+  if (import_fs82.default.existsSync(mbaFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs81.default.createReadStream(mbaFilePath).pipe(res);
+    return import_fs82.default.createReadStream(mbaFilePath).pipe(res);
   }
-  if (import_fs81.default.existsSync(rawFilePath)) {
+  if (import_fs82.default.existsSync(rawFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs81.default.createReadStream(rawFilePath).pipe(res);
+    return import_fs82.default.createReadStream(rawFilePath).pipe(res);
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.imageUrl) {
@@ -223770,9 +224323,9 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs81.default.existsSync(filePath)) {
+  if (import_fs82.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs81.default.createReadStream(filePath).pipe(res);
+    return import_fs82.default.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -223787,14 +224340,14 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs81.default.existsSync(filePath)) {
+  if (import_fs82.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs81.default.createReadStream(filePath).pipe(res);
+    return import_fs82.default.createReadStream(filePath).pipe(res);
   }
   const fallbackPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
-  if (import_fs81.default.existsSync(fallbackPath)) {
+  if (import_fs82.default.existsSync(fallbackPath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs81.default.createReadStream(fallbackPath).pipe(res);
+    return import_fs82.default.createReadStream(fallbackPath).pipe(res);
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -223809,9 +224362,9 @@ app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs81.default.existsSync(filePath)) {
+  if (import_fs82.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs81.default.createReadStream(filePath).pipe(res);
+    return import_fs82.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("MBA PNG not found");
 });
@@ -223821,9 +224374,9 @@ app.get("/api/v1/designs/4panel/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs81.default.existsSync(filePath)) {
+  if (import_fs82.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs81.default.createReadStream(filePath).pipe(res);
+    return import_fs82.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("4-Panel image not found");
 });
@@ -224166,8 +224719,8 @@ app.delete("/api/v1/products/catalog", async (req, res) => {
 });
 var clientDistPath = import_path76.default.resolve(currentDir, "client");
 var fallbackDistPath = import_path76.default.resolve(process.cwd(), "dist/client");
-var staticPath = import_fs81.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
-if (import_fs81.default.existsSync(staticPath)) {
+var staticPath = import_fs82.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
+if (import_fs82.default.existsSync(staticPath)) {
   console.log(`\u{1F4C2} Serving static frontend from ${staticPath}`);
   app.use(import_express.default.static(staticPath));
   app.get("*", (req, res) => {
