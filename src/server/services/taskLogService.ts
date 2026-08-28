@@ -322,7 +322,7 @@ export class TaskLogService {
 
     Object.assign(task, updates);
 
-    if (updates.status === 'COMPLETED' || task.status === 'COMPLETED') {
+    if ((updates.status === 'COMPLETED' || task.status === 'COMPLETED') && task.source !== 'UPDATE') {
       this.completeTaskAndEnqueue(task);
       return task;
     }

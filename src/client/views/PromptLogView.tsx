@@ -1258,9 +1258,9 @@ export const PromptLogView: React.FC = () => {
                       )}
 
                       {event.type === 'ANALYSIS_RESPONSE' && (() => {
-                        const isArtworkDownload = event.title === 'Original-Design heruntergeladen' || !!event.content?.originalUrl;
+                        const isArtworkDownload = event.title === 'Original-Design heruntergeladen' || !!event.content?.originalUrl || !!event.content?.localUrl;
                         if (isArtworkDownload) {
-                          const imgUrl = event.content?.localUrl || selectedTask.localImagePath || selectedTask.imageUrl || event.content?.originalUrl || `/api/v1/designs/image/${encodeURIComponent(selectedTask.id)}`;
+                          const imgUrl = selectedTask.localImagePath || selectedTask.imageUrl || event.content?.localUrl || `/api/v1/designs/image/${encodeURIComponent(selectedTask.id)}`;
                           return (
                             <div className="bg-slate-950 rounded-xl p-4 border border-amber-500/40 space-y-3 shadow-lg">
                               <div className="flex items-center justify-between">
@@ -1300,11 +1300,7 @@ export const PromptLogView: React.FC = () => {
                                       src={imgUrl}
                                       alt="Original Master Design"
                                       className="w-48 h-48 object-contain rounded-xl border border-slate-700 bg-slate-950 shadow-md p-1"
-                                      onError={(e) => {
-                                        if (event.content?.originalUrl && e.currentTarget.src !== event.content.originalUrl) {
-                                          e.currentTarget.src = event.content.originalUrl;
-                                        }
-                                      }}
+                                      referrerPolicy="no-referrer"
                                       loading="lazy"
                                     />
                                     <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/80 text-amber-300 border border-amber-500/30 backdrop-blur-sm">

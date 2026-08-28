@@ -219438,7 +219438,7 @@ var TaskLogService = class {
     const task = logs.find((t) => t.id === taskId);
     if (!task) return void 0;
     Object.assign(task, updates);
-    if (updates.status === "COMPLETED" || task.status === "COMPLETED") {
+    if ((updates.status === "COMPLETED" || task.status === "COMPLETED") && task.source !== "UPDATE") {
       this.completeTaskAndEnqueue(task);
       return task;
     }
@@ -222853,7 +222853,7 @@ var AmazonInspectService = class {
       console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
       const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
       TaskLogService.updateTaskStatus(cleanTaskId, {
-        status: "COMPLETED",
+        status: "RECEIVED",
         imageUrl: localUrl,
         localImagePath: localUrl,
         mbaPngUrl: localUrl,

@@ -460,9 +460,9 @@ export class AmazonInspectService {
 
       const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
 
-      // Update TaskLog with COMPLETED status and paths
+      // Update TaskLog with paths and status
       TaskLogService.updateTaskStatus(cleanTaskId, {
-        status: 'COMPLETED',
+        status: 'RECEIVED',
         imageUrl: localUrl,
         localImagePath: localUrl,
         mbaPngUrl: localUrl,
