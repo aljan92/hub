@@ -18,6 +18,7 @@ out/
 *.md
 !brain.md
 !HERMES_API.md
+!AMAZON_PRODUCT_CONFIG_API.md
 docs/
 
 # Runtime data and persistence
