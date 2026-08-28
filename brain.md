@@ -192,8 +192,13 @@ graph TD
   * **1-Click Rohdaten-Task-Erstellung (`POST /api/v1/debug/amazon-create-update-task`):**
     * Inspector-Button `3. ➕ Create Task (#xxx-U)`.
     * Kombiniert `productconfiguration/get` und `FindListings` automatisch zu einem aggregierten Rohdaten-Payload.
-    * Speichert Master-Listing (Titel, Brand, Bullets, Description), alle Sprachvarianten, URN, 0-Slot-Ersparniskalkulation und Produkt-Fits/Farben.
     * Dediziertes Highlight-Banner im Prompt Log mit direktem Link zu `merch.amazon.com/designs/{id}/edit`.
+  * **Master-Artwork Download Engine (`POST /api/v1/debug/amazon-download-artwork`):**
+    * Öffnet einen isolierten Tab (`session.context.newPage()`) in **Session 1** (verhindert Kollisionen mit laufenden Katalog-Syncs im Hauptfenster).
+    * Extrahiert die unkomprimierte Original-PNG-Grafik (4500 × 5400 px) durch Bereinigung der Amazon-Downscaling-Modifikatoren aus dem DOM (`img[alt$=".png"]`).
+    * Speichert die Datei lokal unter `data/designs/{cleanTaskId}.png` ab und registriert sie im Task (`localImagePath`, `mbaPngUrl`).
+    * Triggert automatisch bei Task-Erstellung und kann manuell via `[ 🔄 Original-Design erneut laden ]` wiederholt/überschrieben werden.
+    * Prominente Darstellung im Prompt Log (Banner-Preview & Timeline-Event `Original-Design heruntergeladen`).
 
 ---
 

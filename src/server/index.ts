@@ -610,6 +610,31 @@ app.post('/api/v1/debug/amazon-create-update-task', async (req, res) => {
   }
 });
 
+// Amazon Merch Download Artwork Endpoint (isolated tab in Session 1)
+app.post('/api/v1/debug/amazon-download-artwork', async (req, res) => {
+  const { taskId, designId } = req.body;
+  try {
+    if (!taskId || !designId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Task-ID und Design-ID sind erforderlich.'
+      });
+    }
+
+    const result = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
+    if (!result.success) {
+      return res.status(500).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[AmazonInspectService] Fehler bei downloadDesignArtwork:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Fehler beim Downloaden des Designs aus Amazon Merch'
+    });
+  }
+});
+
 // Hermes Heartbeat State with Persistent Disk Storage
 const heartbeatFile = path.resolve(process.cwd(), 'data', 'hermes_heartbeat.json');
 

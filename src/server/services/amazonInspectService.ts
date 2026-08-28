@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { BrowserSessionService } from './browserSessionService';
 import { SyncEngine } from './syncEngine';
 import { TaskLogService } from './taskLogService';
@@ -355,6 +357,139 @@ export class AmazonInspectService {
       }
     });
 
+    // 5. Asynchronously trigger original design download via isolated tab in Session 1
+    this.downloadDesignArtwork(taskLog.id, cleanId).catch(err => {
+      console.error('[AmazonInspectService] Fehler beim automatischen Hintergrund-Download:', err);
+    });
+
     return taskLog;
+  }
+
+  /**
+   * Download the master design artwork (4500x5400 px PNG) from merch.amazon.com/designs/{designId}/edit
+   * using an isolated background tab in Session 1 to prevent collisions with sync operations.
+   */
+  public static async downloadDesignArtwork(taskId: string, designId: string): Promise<{ success: boolean; localUrl?: string; error?: string }> {
+    const cleanDesignId = (designId || '').trim();
+    const cleanTaskId = (taskId || '').trim();
+    if (!cleanDesignId || !cleanTaskId) {
+      return { success: false, error: 'Task-ID oder Design-ID fehlt.' };
+    }
+
+    const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
+    console.log(`[AmazonInspectService] 🖼️ Starte Artwork-Download für Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
+
+    let newTab: any = null;
+    try {
+      const session = await BrowserSessionService.getSession('sync');
+      newTab = await session.context.newPage();
+
+      // Navigate to edit page
+      await newTab.goto(editUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+
+      // Wait for the artwork image to render in DOM
+      await newTab.waitForSelector('img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img', { timeout: 25000 }).catch(() => null);
+
+      // Extract high-res image URL from DOM
+      const extractResult = await newTab.evaluate(() => {
+        const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
+        let targetImg = images.find(e => e.getAttribute('alt') && e.getAttribute('alt')!.endsWith('.png'));
+        if (!targetImg) {
+          targetImg = images.find(e => e.getAttribute('alt') === 'null');
+        }
+        if (!targetImg) {
+          targetImg = (document.querySelector('img.artwork.ng-star-inserted') ||
+                       document.querySelector('.artwork') ||
+                       document.querySelector('#global-uploader-container img') ||
+                       document.querySelector('.global-uploader img')) as HTMLImageElement;
+        }
+
+        if (!targetImg || !(targetImg as HTMLImageElement).src) {
+          return { ok: false, error: 'Kein Artwork Bild-Element auf der Amazon Edit-Seite gefunden.' };
+        }
+
+        const rawSrc = (targetImg as HTMLImageElement).src;
+        // Strip downscaling modifiers (e.g. ._SR640,768_.png or ._AC_UX500_.jpg) to get full original resolution
+        const fullResUrl = rawSrc.replace(/\._[^_]+_\.(png|jpg|jpeg)$/i, '.$1');
+        return { ok: true, rawSrc, fullResUrl };
+      });
+
+      if (!extractResult.ok || !extractResult.fullResUrl) {
+        throw new Error(extractResult.error || 'Konnte Original-Bild-URL im DOM nicht ermitteln.');
+      }
+
+      console.log(`[AmazonInspectService] 🔍 Full-Res URL gefunden: ${extractResult.fullResUrl}`);
+
+      // Fetch image data inside authenticated browser context as Base64 Data URL
+      const base64Data = await newTab.evaluate(async (imgUrl: string) => {
+        try {
+          const resp = await fetch(imgUrl, { credentials: 'include' });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+          const blob = await resp.blob();
+          return new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('FileReader Fehler'));
+            reader.readAsDataURL(blob);
+          });
+        } catch (fetchErr: any) {
+          throw new Error(`Browser fetch failed: ${fetchErr.message}`);
+        }
+      }, extractResult.fullResUrl);
+
+      // Write to disk
+      const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Clean, 'base64');
+
+      const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+      if (!fs.existsSync(designsDir)) {
+        fs.mkdirSync(designsDir, { recursive: true });
+      }
+
+      const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${safeId}.png`;
+      const filePath = path.join(designsDir, filename);
+      fs.writeFileSync(filePath, buffer);
+      console.log(`[AmazonInspectService] 💾 Original-Design für ${cleanTaskId} erfolgreich gespeichert: ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+
+      const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
+
+      // Update TaskLog
+      TaskLogService.updateTaskStatus(cleanTaskId, {
+        imageUrl: localUrl,
+        localImagePath: localUrl,
+        mbaPngUrl: localUrl,
+        localMbaPngPath: filePath,
+        hasError: false
+      });
+
+      TaskLogService.addEvent(cleanTaskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ANALYSIS_RESPONSE',
+        title: 'Original-Design heruntergeladen',
+        content: {
+          localUrl,
+          originalUrl: extractResult.fullResUrl,
+          fileSizeBytes: buffer.length,
+          fileSizeMb: (buffer.length / 1024 / 1024).toFixed(2) + ' MB',
+          downloadedAt: new Date().toISOString()
+        }
+      });
+
+      return { success: true, localUrl };
+    } catch (err: any) {
+      console.error(`[AmazonInspectService] ❌ Fehler beim Artwork-Download für Task ${cleanTaskId}:`, err);
+      TaskLogService.addEvent(cleanTaskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: 'Fehler beim Design-Download',
+        content: err.message || 'Unbekannter Fehler beim Herunterladen des Original-Designs'
+      });
+      return { success: false, error: err.message };
+    } finally {
+      if (newTab) {
+        await newTab.close().catch(() => {});
+      }
+    }
   }
 }

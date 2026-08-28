@@ -295,6 +295,30 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
+  const [downloadingArtworkTaskId, setDownloadingArtworkTaskId] = useState<string | null>(null);
+
+  const handleDownloadArtwork = async (taskId: string, designId: string) => {
+    if (!taskId || !designId) return;
+    setDownloadingArtworkTaskId(taskId);
+    try {
+      const res = await fetch('/api/v1/debug/amazon-download-artwork', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, designId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchTasks();
+      } else {
+        alert(data.error || 'Fehler beim Herunterladen des Original-Designs');
+      }
+    } catch (err: any) {
+      alert(`Netzwerkfehler: ${err.message}`);
+    } finally {
+      setDownloadingArtworkTaskId(null);
+    }
+  };
+
   const selectedTask = tasks.find(t => t.id === selectedTaskId) || tasks[0] || null;
 
   const fetchTasks = async () => {
@@ -934,25 +958,38 @@ export const PromptLogView: React.FC = () => {
                         Design-ID: <span className="text-amber-400 font-bold">{selectedTask.payload.designId}</span>
                       </span>
                     </div>
-                    {selectedTask.payload.editUrl && (
-                      <a
-                        href={selectedTask.payload.editUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 transition-colors"
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => handleDownloadArtwork(selectedTask.id, selectedTask.payload.designId)}
+                        disabled={downloadingArtworkTaskId === selectedTask.id}
+                        className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 disabled:opacity-50 transition-colors shadow-sm"
                       >
-                        <span>Auf Amazon öffnen</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
+                        <RefreshCw className={`w-3.5 h-3.5 ${downloadingArtworkTaskId === selectedTask.id ? 'animate-spin' : ''}`} />
+                        <span>{downloadingArtworkTaskId === selectedTask.id ? 'Lädt Design...' : 'Original-Design erneut laden'}</span>
+                      </button>
+
+                      {selectedTask.payload.editUrl && (
+                        <a
+                          href={selectedTask.payload.editUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-700 transition-colors"
+                        >
+                          <span>Amazon Edit</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Summary Details */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                    <div className="space-y-1.5 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                  {/* Summary Details Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 text-xs">
+                    {/* Left: Master Listing Info */}
+                    <div className="lg:col-span-5 space-y-1.5 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
                       <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Original Master-Listing (EN)</div>
-                      <div className="font-bold text-white text-sm">{selectedTask.payload.title || selectedTask.payload.masterListing?.title || 'Kein Titel'}</div>
-                      <div className="text-slate-400 text-xs font-medium">Brand: <span className="text-slate-200">{selectedTask.payload.brand || selectedTask.payload.masterListing?.brandName || '-'}</span></div>
+                      <div className="font-bold text-white text-sm line-clamp-2">{selectedTask.payload.title || selectedTask.payload.masterListing?.title || 'Kein Titel'}</div>
+                      <div className="text-slate-400 text-xs font-medium">Brand: <span className="text-slate-200 font-semibold">{selectedTask.payload.brand || selectedTask.payload.masterListing?.brandName || '-'}</span></div>
                       {selectedTask.payload.bullets && selectedTask.payload.bullets.length > 0 && (
                         <ul className="list-disc list-inside space-y-0.5 text-slate-300 text-[11px] pt-1">
                           {selectedTask.payload.bullets.map((b: string, i: number) => (
@@ -962,7 +999,8 @@ export const PromptLogView: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="space-y-2 bg-slate-950/60 p-3 rounded-lg border border-slate-800 flex flex-col justify-between">
+                    {/* Middle: Live Stats & Products */}
+                    <div className="lg:col-span-4 space-y-2 bg-slate-950/60 p-3 rounded-lg border border-slate-800 flex flex-col justify-between">
                       <div>
                         <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">Live Status & Slot-Kalkulation</div>
                         <div className="flex items-center space-x-2">
@@ -970,7 +1008,7 @@ export const PromptLogView: React.FC = () => {
                             {selectedTask.payload.liveStats?.publishedCount || 0} Varianten PUBLISHED
                           </span>
                           <span className="text-[11px] text-emerald-300 font-mono font-bold">
-                            ➔ 0 Slots Verbrauch
+                            ➔ 0 Slots
                           </span>
                         </div>
                         {selectedTask.payload.globalArtworkUrn && (
@@ -981,9 +1019,45 @@ export const PromptLogView: React.FC = () => {
                       </div>
 
                       <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-                        <span>Konfigurierte Produkte: <strong className="text-slate-200">{selectedTask.payload.productTypes?.length || 0} Typen</strong></span>
+                        <span>Produkte: <strong className="text-slate-200">{selectedTask.payload.productTypes?.length || 0} Typen</strong></span>
                         <span>Sprachen: <strong className="text-slate-200">{Object.keys(selectedTask.payload.textData || {}).join(', ').toUpperCase() || 'EN'}</strong></span>
                       </div>
+                    </div>
+
+                    {/* Right: Downloaded Artwork Preview */}
+                    <div className="lg:col-span-3 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 flex flex-col items-center justify-center text-center space-y-1.5">
+                      <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider self-start">Master-Artwork</div>
+                      {selectedTask.localImagePath || selectedTask.imageUrl ? (
+                        <div className="relative group w-full flex flex-col items-center">
+                          <img
+                            src={selectedTask.localImagePath || selectedTask.imageUrl}
+                            alt="Original Design"
+                            className="w-24 h-24 object-contain rounded-lg border border-slate-700 bg-slate-950 shadow p-0.5"
+                          />
+                          <div className="flex items-center space-x-1 mt-1.5">
+                            <a
+                              href={selectedTask.localImagePath || selectedTask.imageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors"
+                            >
+                              Vollbild ↗
+                            </a>
+                            <a
+                              href={selectedTask.localImagePath || selectedTask.imageUrl}
+                              download={`${selectedTask.id}-original.png`}
+                              className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
+                            >
+                              PNG ⬇
+                            </a>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-full h-24 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-800 bg-slate-900/50 text-slate-500 text-[10px] space-y-1">
+                          <ImageIcon className="w-5 h-5 opacity-40 animate-pulse" />
+                          <span>{downloadingArtworkTaskId === selectedTask.id ? 'Lade herunter...' : 'Nicht geladen'}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1163,6 +1237,93 @@ export const PromptLogView: React.FC = () => {
                       )}
 
                       {event.type === 'ANALYSIS_RESPONSE' && (() => {
+                        const isArtworkDownload = event.title === 'Original-Design heruntergeladen' || !!event.content?.originalUrl;
+                        if (isArtworkDownload) {
+                          const imgUrl = event.content?.localUrl || selectedTask.localImagePath || selectedTask.imageUrl;
+                          return (
+                            <div className="bg-slate-950 rounded-xl p-4 border border-amber-500/40 space-y-3 shadow-lg">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                                  <ImageIcon className="w-4 h-4 text-amber-400" />
+                                  Original-Design heruntergeladen (Master-Auflösung)
+                                </span>
+                                <div className="flex items-center space-x-1.5">
+                                  {imgUrl && (
+                                    <>
+                                      <a
+                                        href={imgUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-900 text-slate-300 border border-slate-800 hover:bg-slate-800 transition-colors"
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                        <span>Vollbild</span>
+                                      </a>
+                                      <a
+                                        href={imgUrl}
+                                        download={`${selectedTask.id}-original.png`}
+                                        className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span>PNG herunterladen</span>
+                                      </a>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex flex-col md:flex-row items-center gap-4 bg-slate-900/80 p-3.5 rounded-xl border border-slate-800">
+                                {imgUrl ? (
+                                  <div className="relative group">
+                                    <img
+                                      src={imgUrl}
+                                      alt="Original Master Design"
+                                      className="w-48 h-48 object-contain rounded-xl border border-slate-700 bg-slate-950 shadow-md p-1"
+                                      loading="lazy"
+                                    />
+                                    <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/80 text-amber-300 border border-amber-500/30 backdrop-blur-sm">
+                                      4500 × 5400 px
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="w-48 h-48 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950 text-slate-500 text-xs">
+                                    <ImageIcon className="w-8 h-8 mb-1 opacity-50" />
+                                    <span>Wird geladen...</span>
+                                  </div>
+                                )}
+
+                                <div className="flex-1 space-y-2 text-xs">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                      Direkter DOM-Abzug (Session 1)
+                                    </span>
+                                    {event.content?.fileSizeMb && (
+                                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300">
+                                        {event.content.fileSizeMb}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 font-mono space-y-1">
+                                    {event.content?.originalUrl && (
+                                      <div className="truncate">
+                                        Amazon CDN: <span className="text-slate-300 select-all">{event.content.originalUrl}</span>
+                                      </div>
+                                    )}
+                                    {event.content?.downloadedAt && (
+                                      <div>
+                                        Heruntergeladen um: <span className="text-slate-300">{new Date(event.content.downloadedAt).toLocaleString()}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <p className="text-slate-400 text-[11px] leading-relaxed pt-1">
+                                    Die unkomprimierte Master-Grafik steht nun lokal für den Update-Prozess und automatische Resizes (z. B. PopSockets, Mugs, Hoodies) bereit.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
                         const analysis = typeof event.content === 'object' && event.content !== null ? event.content : null;
 
                         return (
