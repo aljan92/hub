@@ -219277,9 +219277,6 @@ var init_amazonInspectService = __esm2({
             statusSummary
           }
         });
-        this.downloadDesignArtwork(taskLog.id, cleanId).catch((err) => {
-          console.error("[AmazonInspectService] Fehler beim automatischen Hintergrund-Download:", err);
-        });
         return taskLog;
       }
       /**
@@ -219291,6 +219288,24 @@ var init_amazonInspectService = __esm2({
         const cleanTaskId = (taskId || "").trim();
         if (!cleanDesignId || !cleanTaskId) {
           return { success: false, error: "Task-ID oder Design-ID fehlt." };
+        }
+        const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
+        if (!import_fs77.default.existsSync(designsDir)) {
+          import_fs77.default.mkdirSync(designsDir, { recursive: true });
+        }
+        const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const filename = `${safeId}.png`;
+        const filePath = import_path72.default.join(designsDir, filename);
+        if (import_fs77.default.existsSync(filePath)) {
+          try {
+            const stats2 = import_fs77.default.statSync(filePath);
+            if (stats2.size > 5e3) {
+              console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Design bereits lokal vorhanden: ${filePath} (${(stats2.size / 1024 / 1024).toFixed(2)} MB)`);
+              const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
+              return { success: true, localUrl };
+            }
+          } catch (e) {
+          }
         }
         const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
         console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
@@ -219341,22 +219356,22 @@ var init_amazonInspectService = __esm2({
           }, extractResult.fullResUrl);
           const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
           const buffer = Buffer.from(base64Clean, "base64");
-          const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs77.default.existsSync(designsDir)) {
-            import_fs77.default.mkdirSync(designsDir, { recursive: true });
+          const designsDir2 = import_path72.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs77.default.existsSync(designsDir2)) {
+            import_fs77.default.mkdirSync(designsDir2, { recursive: true });
           }
-          const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-          const filename = `${safeId}.png`;
-          const filePath = import_path72.default.join(designsDir, filename);
-          import_fs77.default.writeFileSync(filePath, buffer);
-          console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+          const safeId2 = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const filename2 = `${safeId2}.png`;
+          const filePath2 = import_path72.default.join(designsDir2, filename2);
+          import_fs77.default.writeFileSync(filePath2, buffer);
+          console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
           TaskLogService.updateTaskStatus(cleanTaskId, {
             status: "RECEIVED",
             imageUrl: localUrl,
             localImagePath: localUrl,
             mbaPngUrl: localUrl,
-            localMbaPngPath: filePath,
+            localMbaPngPath: filePath2,
             hasError: false
           });
           TaskLogService.addEvent(cleanTaskId, {

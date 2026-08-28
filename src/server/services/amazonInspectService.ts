@@ -357,11 +357,6 @@ export class AmazonInspectService {
       }
     });
 
-    // 5. Asynchronously trigger original design download via isolated tab in Session 1
-    this.downloadDesignArtwork(taskLog.id, cleanId).catch(err => {
-      console.error('[AmazonInspectService] Fehler beim automatischen Hintergrund-Download:', err);
-    });
-
     return taskLog;
   }
 
@@ -374,6 +369,27 @@ export class AmazonInspectService {
     const cleanTaskId = (taskId || '').trim();
     if (!cleanDesignId || !cleanTaskId) {
       return { success: false, error: 'Task-ID oder Design-ID fehlt.' };
+    }
+
+    const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+    if (!fs.existsSync(designsDir)) {
+      fs.mkdirSync(designsDir, { recursive: true });
+    }
+
+    const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${safeId}.png`;
+    const filePath = path.join(designsDir, filename);
+
+    // Fast-path: if already downloaded, return cached localUrl
+    if (fs.existsSync(filePath)) {
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.size > 5000) {
+          console.log(`[AmazonInspectService] 🖼️ Design bereits lokal vorhanden: ${filePath} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+          const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
+          return { success: true, localUrl };
+        }
+      } catch (e) {}
     }
 
     const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
