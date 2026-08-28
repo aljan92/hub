@@ -43,6 +43,7 @@ export interface AppSettings {
   queueAutoBalance: boolean;       // e.g. true
   queueUploadMode: 'draft' | 'live'; // e.g. 'draft' or 'live'
   queueDraftProductsPerDesign: number; // e.g. 106
+  queueUpdateTargetCount: number;      // e.g. 10
   costPerImage: number;            // e.g. 0.08 ($ / image)
   costPerVectorization: number;    // e.g. 0.05 ($ / vectorization)
   costStatsResetTimestamp?: string;// e.g. ISO string for stats reset

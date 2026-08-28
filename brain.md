@@ -175,6 +175,20 @@ graph TD
   * **Exklusiv LIVE-Treffer:** Strikte Filterung von DEAD/PENDING/CANCELLED Rechten.
   * **Detaillierte Analyse:** Liefert `exactPhraseHits`, `keywordHits`, `affectedClasses` (z.B. `["25", "9"]`), `hasInfringementClass25`, `safe`, `blockedProducts` und lesbares `verdict` zurück.
 
+### ✅ Phase 6.2: Listing Update Pipeline & Amazon Merch API Inspector (`amazonInspectService.ts`, `QueueView.tsx`, `PromptLogView.tsx`)
+* **Amazon Merch API Inspector (`/api/v1/debug/amazon-inspect`):**
+  * Live-Abfrage im Browser-Kontext von **Session 1** anhand der Merch-Design-ID (UUID z. B. `495f452e-8245-42be-96e3-a1d3dcc752d9`).
+  * Getrennte Abfrage & JSON-Ausgabe für `productconfiguration/get` (Listing-Texte, Brand, Bullets, Farben) und `FindListings` Coral RPC (Live-Status pro Variante, ASINs, Marktplätze).
+  * 1-Click Copy to Clipboard für sofortige Datenanalyse.
+* **Queue-Umbau mit 5-Tab Lifecycle:**
+  * **Tab 1: Warteschlange:** Aktive, unpausierte Upload-Kandidaten (`!isPaused`).
+  * **Tab 2: Pausiert (`Paused`):** Alle pausierten Designs (`isPaused: true`). Reaktivierung (`▶`) hängt das Design automatisch ganz unten ans Ende der Warteschlange an.
+  * **Tab 3: Update:** Dedizierter Bereich für Listing-Updates mit Vorhalte-Mengen-Stepper (1 bis 50 Designs, persistent in `settings.json`) und Slot-Ersparnis-Visualisierung (bereits veröffentlichte Produkte = 0 Slot-Verbrauch).
+  * **Tab 4: Hochgeladen (`COMPLETED`)**
+  * **Tab 5: Fehler (`ERROR`)**
+* **Prompt Log & Task Typen:**
+  * Neuer Task-Typ `UPDATE` (`#xxx-U`) mit dediziertem Filter in der Audit-Leiste.
+
 ---
 
 ## 4. 🗺️ Nächste Roadmap-Phasen

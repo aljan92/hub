@@ -23,10 +23,12 @@ import {
   Square, 
   X, 
   Users, 
-  Palette,
   RotateCcw,
   ListOrdered,
-  Package
+  Package,
+  Plus,
+  Minus,
+  Info
 } from 'lucide-react';
 import { BrowserScreencast } from '../components/BrowserScreencast';
 
@@ -110,8 +112,10 @@ export const QueueView: React.FC = () => {
     maxDroppableCapacity: 0
   });
 
-  const [activeTab, setActiveTab] = useState<'queue' | 'completed' | 'errors'>('queue');
+  const [activeTab, setActiveTab] = useState<'queue' | 'paused' | 'update' | 'completed' | 'errors'>('queue');
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<QueueItem | null>(null);
+  const [updateTargetCount, setUpdateTargetCount] = useState<number>(10);
+  const [savingTargetCount, setSavingTargetCount] = useState<boolean>(false);
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
@@ -190,6 +194,30 @@ export const QueueView: React.FC = () => {
     }, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (queueState.updateTargetCount !== undefined) {
+      setUpdateTargetCount(queueState.updateTargetCount);
+    }
+  }, [queueState.updateTargetCount]);
+
+  const handleSetUpdateTargetCount = async (count: number) => {
+    const clamped = Math.max(1, Math.min(50, count));
+    setUpdateTargetCount(clamped);
+    setSavingTargetCount(true);
+    try {
+      await fetch('/api/v1/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queueUpdateTargetCount: clamped })
+      });
+      fetchQueue();
+    } catch (e) {
+      console.warn('Failed to update target count:', e);
+    } finally {
+      setSavingTargetCount(false);
+    }
+  };
 
   const handleToggleLock = async (itemId: string) => {
     try {
@@ -369,9 +397,13 @@ export const QueueView: React.FC = () => {
     }
   };
 
-  const waitingOrUploadingDesigns = queueState.items.filter(i => (i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS');
+  const activeQueueDesigns = queueState.items.filter(i => (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
+  const pausedDesigns = queueState.items.filter(i => (!!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
+  const updateDesigns = queueState.items.filter(i => (i as any).type === 'UPDATE');
   const completedDesigns = queueState.items.filter(i => i.status === 'COMPLETED');
   const errorDesigns = queueState.items.filter(i => i.status === 'ERROR');
+
+  const waitingOrUploadingDesigns = activeQueueDesigns;
 
   const slotUtilizationPct = queueState.freeDailySlots > 0 
     ? Math.min(100, Math.round((queueState.scheduledSlotsToday / queueState.freeDailySlots) * 100))
@@ -449,7 +481,8 @@ export const QueueView: React.FC = () => {
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex items-center space-x-2 border-b border-slate-800 pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-2">
+        {/* 1. Warteschlange */}
         <button
           onClick={() => setActiveTab('queue')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -461,10 +494,47 @@ export const QueueView: React.FC = () => {
           <ListOrdered className="w-4 h-4" />
           <span>Warteschlange</span>
           <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700">
-            {waitingOrUploadingDesigns.length}
+            {activeQueueDesigns.length}
           </span>
         </button>
 
+        {/* 2. Pausiert */}
+        <button
+          onClick={() => setActiveTab('paused')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'paused'
+              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+          }`}
+        >
+          <Pause className="w-4 h-4 text-amber-400" />
+          <span>Pausiert</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono border ${
+            pausedDesigns.length > 0
+              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+              : 'bg-slate-800 text-slate-400 border-slate-700'
+          }`}>
+            {pausedDesigns.length}
+          </span>
+        </button>
+
+        {/* 3. Update */}
+        <button
+          onClick={() => setActiveTab('update')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'update'
+              ? 'bg-teal-500/15 text-teal-300 border border-teal-500/30 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+          }`}
+        >
+          <RotateCcw className="w-4 h-4 text-teal-400" />
+          <span>Update</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-teal-950/60 text-teal-300 border border-teal-800/60">
+            {updateDesigns.length}
+          </span>
+        </button>
+
+        {/* 4. Hochgeladen */}
         <button
           onClick={() => setActiveTab('completed')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -480,6 +550,7 @@ export const QueueView: React.FC = () => {
           </span>
         </button>
 
+        {/* 5. Fehler */}
         <button
           onClick={() => setActiveTab('errors')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -1223,7 +1294,222 @@ export const QueueView: React.FC = () => {
         </div>
       )}
 
-      {/* ================= TAB 2: HOCHGELADEN ================= */}
+      {/* ================= TAB 2: PAUSIERT ================= */}
+      {activeTab === 'paused' && (
+        <div className="space-y-4 animate-fadeIn">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Pause className="w-4 h-4 text-amber-400" />
+              <span className="text-xs text-slate-300 font-semibold">
+                {pausedDesigns.length} Designs aktuell pausiert (von Upload &amp; Slot-Berechnung ausgeschlossen)
+              </span>
+            </div>
+          </div>
+
+          {pausedDesigns.length === 0 ? (
+            <div className="bg-surface/50 border border-slate-800/80 rounded-2xl p-12 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-amber-950/20 border border-amber-500/20 flex items-center justify-center mx-auto mb-3 text-amber-400">
+                <Pause className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-slate-200">Keine pausierten Designs</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                Klicke bei einem Design in der Warteschlange auf den Pause-Button <code>⏸️</code>, um es vorübergehend hierher zu verschieben.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pausedDesigns.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-surface/90 border border-amber-500/60 shadow-amber-500/10 ring-1 ring-amber-500/30 rounded-2xl p-4 shadow-sm backdrop-blur-md transition-all space-y-3"
+                >
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center space-x-3 sm:space-x-4">
+                      {/* Image Thumbnail with 1s Hover Zoom Trigger */}
+                      <div 
+                        onMouseEnter={(e) => handleMouseEnterThumbnail(item, e)}
+                        onMouseLeave={handleMouseLeaveThumbnail}
+                        className="w-14 h-14 rounded-xl border border-amber-500/30 overflow-hidden shrink-0 relative group cursor-zoom-in transition-transform hover:scale-105"
+                        style={{
+                          backgroundImage: `
+                            linear-gradient(45deg, #1e293b 25%, transparent 25%),
+                            linear-gradient(-45deg, #1e293b 25%, transparent 25%),
+                            linear-gradient(45deg, transparent 75%, #1e293b 75%),
+                            linear-gradient(-45deg, transparent 75%, #1e293b 75%)
+                          `,
+                          backgroundSize: '10px 10px',
+                          backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+                          backgroundColor: '#090d16'
+                        }}
+                      >
+                        {item.imagePath ? (
+                          <img 
+                            src={item.imagePath.startsWith('/') ? item.imagePath : `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`} 
+                            alt={item.designTitle}
+                            className="w-full h-full object-contain p-0.5"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-600">
+                            <Layers className="w-6 h-6" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold flex items-center space-x-1">
+                            <Pause className="w-3 h-3" />
+                            <span>Pausiert</span>
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                            Task #{item.taskId}
+                          </span>
+                          {item.niche && (
+                            <span className="text-[10px] text-slate-400 font-semibold">
+                              {item.niche}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-100 mt-1">
+                          {item.title || item.designTitle}
+                        </h3>
+                        <p className="text-xs text-slate-400 font-mono mt-0.5">
+                          {item.brand} • {item.totalBaseSlots || 106} Basis-Slots
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => handleTogglePause(item.id)}
+                        className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 flex items-center space-x-1.5 transition-all shadow-md shadow-amber-500/20 active:scale-95"
+                        title="Design reaktivieren (wird ganz unten an das Ende der Warteschlange angehängt)"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Reaktivieren</span>
+                      </button>
+
+                      <button
+                        onClick={() => setDeleteConfirmItem(item)}
+                        className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-800 flex items-center space-x-1.5 transition-colors"
+                        title="Design komplett löschen"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>Löschen</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================= TAB 3: UPDATE ================= */}
+      {activeTab === 'update' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Update Feature Header & Controls */}
+          <div className="glass-panel p-5 rounded-2xl border border-teal-500/20 bg-slate-950/40 space-y-4 shadow-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400">
+                  <RotateCcw className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                    Listing Update Pipeline
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/20">Phase 1 Bereit</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Aktualisiert bestehende MBA-Designs aus Supabase (Listing-Rewrite, TM-Scan, Fit-Types &amp; Farbausschlüsse).
+                  </p>
+                </div>
+              </div>
+
+              {/* Target Count Stepper */}
+              <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 p-2 rounded-xl">
+                <span className="text-xs font-semibold text-slate-300">Vorzuhaltende Designs:</span>
+                <div className="flex items-center space-x-1.5">
+                  <button
+                    onClick={() => handleSetUpdateTargetCount(updateTargetCount - 1)}
+                    disabled={updateTargetCount <= 1 || savingTargetCount}
+                    className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="font-mono font-bold text-sm text-teal-400 w-8 text-center">
+                    {updateTargetCount}
+                  </span>
+                  <button
+                    onClick={() => handleSetUpdateTargetCount(updateTargetCount + 1)}
+                    disabled={updateTargetCount >= 50 || savingTargetCount}
+                    className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 3 Core Highlights */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1">
+                <span className="font-bold text-teal-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+                  0-Slot Ersparnis
+                </span>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Produkte, die auf Amazon bereits <code>PUBLISHED</code> sind, verbrauchen beim Update 0 tägliche Upload-Slots.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1">
+                <span className="font-bold text-cyan-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                  Auto-Backfill
+                </span>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Die Haupt-Warteschlange zieht sich automatisch Update-Designs heran, um verbleibende freie Tages-Slots zu füllen.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1">
+                <span className="font-bold text-purple-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+                  Co-Pilot &amp; TM-Prüfung
+                </span>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Alle Updates durchlaufen vor Einreihung LLM-Listing-Optimierung, Banned Words Filter und Trademark-Checks.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Update Items Pool */}
+          {updateDesigns.length === 0 ? (
+            <div className="bg-surface/50 border border-slate-800/80 rounded-2xl p-12 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-teal-950/30 border border-teal-500/20 flex items-center justify-center mx-auto mb-3 text-teal-400">
+                <RotateCcw className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-slate-200">Update-Pool aktuell leer</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                Sobald in Phase 2 die automatische Abfrage aus Supabase aktiv ist, werden hier bis zu {updateTargetCount} Designs vorbereitet vorgehalten.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {updateDesigns.map((item) => (
+                <div key={item.id} className="bg-surface/90 border border-teal-500/40 rounded-2xl p-4">
+                  <h4 className="text-sm font-bold text-slate-200">{item.title}</h4>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================= TAB 4: HOCHGELADEN ================= */}
       {activeTab === 'completed' && (
         <div className="space-y-4 animate-fadeIn">
           <div className="flex items-center justify-between">

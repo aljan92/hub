@@ -214797,7 +214797,8 @@ var init_queueService = __esm2({
           maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),
           uploadMode: settings.queueUploadMode || "draft",
           draftProductsPerDesign,
-          maxCatalogSlots
+          maxCatalogSlots,
+          updateTargetCount: settings.queueUpdateTargetCount ?? 10
         };
       }
       /**
@@ -214922,13 +214923,22 @@ var init_queueService = __esm2({
         return item;
       }
       /**
-       * Toggle Pause on a queue item (excludes from balancing & upload)
+       * Toggle Pause on a queue item (excludes from balancing & upload).
+       * When re-activating, moves the item to the very bottom of the queue.
        */
       static togglePause(queueId) {
         this.ensureLoaded();
         const item = this.items.find((i) => i.id === queueId);
         if (!item) return null;
-        item.isPaused = !item.isPaused;
+        const wasPaused = !!item.isPaused;
+        item.isPaused = !wasPaused;
+        if (wasPaused) {
+          this.items = this.items.filter((i) => i.id !== queueId);
+          this.items.push(item);
+          this.items.forEach((it, idx) => {
+            it.sortOrder = idx;
+          });
+        }
         this.saveQueue();
         this.rebalanceQueue();
         return item;
@@ -222462,6 +222472,228 @@ var CostTrackingService = class {
   }
 };
 
+// src/server/services/amazonInspectService.ts
+var FIND_LISTINGS_URL2 = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
+var PRODUCT_CONFIG_URL2 = "https://merch.amazon.com/api/productconfiguration/get?id=";
+var ALL_STATUSES2 = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
+var AmazonInspectService = class {
+  /**
+   * Ensure Session 1 is open and on merch.amazon.com
+   */
+  static async getAuthenticatedPage() {
+    const session2 = await BrowserSessionService.getSession("sync");
+    const currentUrl = session2.page.url();
+    if (!currentUrl.includes("merch.amazon.com")) {
+      await session2.page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 });
+    }
+    return session2.page;
+  }
+  /**
+   * Fetch Product Config (Listing texts, brands, bullets, descriptions, colors, products)
+   */
+  static async inspectProductConfig(designId) {
+    const cleanId = (designId || "").trim();
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+    const targetUrl = `${PRODUCT_CONFIG_URL2}${cleanId}`;
+    if (!cleanId) {
+      return {
+        success: false,
+        endpoint: "productconfig",
+        designId: cleanId,
+        error: "Keine Design-ID (UUID) angegeben.",
+        timestamp
+      };
+    }
+    try {
+      const page = await this.getAuthenticatedPage();
+      const result2 = await page.evaluate(async ({ url, dId }) => {
+        try {
+          const resp = await fetch(url, {
+            method: "GET",
+            headers: { "Accept": "application/json" },
+            credentials: "include"
+          });
+          const status = resp.status;
+          const ok = resp.ok;
+          const redirectedToLogin = resp.url?.includes("signin") || resp.url?.includes("ap/signin");
+          if (redirectedToLogin) {
+            return {
+              ok: false,
+              status: 401,
+              error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
+              data: null
+            };
+          }
+          let json = null;
+          let text2 = "";
+          try {
+            json = await resp.json();
+          } catch (e) {
+            text2 = await resp.text().catch(() => "");
+          }
+          return {
+            ok,
+            status,
+            data: json || text2,
+            error: ok ? null : `HTTP ${status}: ${resp.statusText || text2 || "Fehler beim Abruf"}`
+          };
+        } catch (fetchErr) {
+          return {
+            ok: false,
+            status: 0,
+            error: fetchErr.message || "Netzwerkfehler im Browserkontext",
+            data: null
+          };
+        }
+      }, { url: targetUrl, dId: cleanId });
+      return {
+        success: result2.ok,
+        endpoint: "productconfig",
+        designId: cleanId,
+        url: targetUrl,
+        data: result2.data,
+        error: result2.error || void 0,
+        status: result2.status,
+        timestamp,
+        metadata: {
+          hasTextData: !!(result2.data && typeof result2.data === "object" && result2.data.textData),
+          languages: result2.data?.textData ? Object.keys(result2.data.textData) : []
+        }
+      };
+    } catch (err) {
+      return {
+        success: false,
+        endpoint: "productconfig",
+        designId: cleanId,
+        url: targetUrl,
+        error: `Browser Session Fehler: ${err.message}`,
+        timestamp
+      };
+    }
+  }
+  /**
+   * Query FindListings Coral RPC and extract status & product information
+   */
+  static async inspectFindListings(designId) {
+    const cleanId = (designId || "").trim();
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+    try {
+      const page = await this.getAuthenticatedPage();
+      const accountId = await SyncEngine.getAccountId(page);
+      const result2 = await page.evaluate(async ({ accountId: accountId2, url, allStatuses, targetDesignId }) => {
+        const body = {
+          pageSize: 500,
+          sortField: "DateUpdated",
+          sortOrder: "Descending",
+          status: allStatuses,
+          marketplaces: null,
+          productTypes: null,
+          searchableOnRetail: null,
+          deleteReasonType: ["", "CONTENT_POLICY_VIOLATION", "INACTIVE_NO_SALES", "CONTENT_CREATOR"],
+          accountId: accountId2 || null,
+          pageToken: [],
+          __type: "com.amazon.merch.search#FindListingsRequest"
+        };
+        try {
+          const resp = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Accept": "application/json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body),
+            credentials: "include"
+          });
+          const status = resp.status;
+          const ok = resp.ok;
+          if (resp.url?.includes("signin") || resp.url?.includes("ap/signin")) {
+            return {
+              ok: false,
+              status: 401,
+              error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
+              data: null
+            };
+          }
+          let json = null;
+          let text2 = "";
+          try {
+            json = await resp.json();
+          } catch (e) {
+            text2 = await resp.text().catch(() => "");
+          }
+          if (!ok) {
+            return {
+              ok: false,
+              status,
+              error: `FindListings HTTP ${status}: ${resp.statusText || text2}`,
+              data: json || text2
+            };
+          }
+          const rawResults = json?.results || [];
+          let filteredResults = rawResults;
+          let isDesignMatched = false;
+          if (targetDesignId) {
+            filteredResults = rawResults.filter(
+              (r) => r.designId && r.designId.toLowerCase() === targetDesignId.toLowerCase() || r.asin && r.asin.toLowerCase() === targetDesignId.toLowerCase() || r.listingId && r.listingId.toLowerCase() === targetDesignId.toLowerCase()
+            );
+            isDesignMatched = filteredResults.length > 0;
+          }
+          const statusSummary = {};
+          for (const item of filteredResults) {
+            const st = item.status || "UNKNOWN";
+            statusSummary[st] = (statusSummary[st] || 0) + 1;
+          }
+          return {
+            ok: true,
+            status,
+            data: {
+              targetDesignId: targetDesignId || null,
+              matchedResultsCount: filteredResults.length,
+              totalResultsInBatch: rawResults.length,
+              statusSummary,
+              isDesignMatched,
+              items: targetDesignId ? filteredResults : rawResults.slice(0, 50),
+              rawFullResponse: targetDesignId ? { ...json, results: filteredResults } : json
+            },
+            error: null
+          };
+        } catch (fetchErr) {
+          return {
+            ok: false,
+            status: 0,
+            error: fetchErr.message || "Netzwerkfehler im Browserkontext",
+            data: null
+          };
+        }
+      }, { accountId, url: FIND_LISTINGS_URL2, allStatuses: ALL_STATUSES2, targetDesignId: cleanId });
+      return {
+        success: result2.ok,
+        endpoint: "findlistings",
+        designId: cleanId,
+        url: FIND_LISTINGS_URL2,
+        data: result2.data,
+        error: result2.error || void 0,
+        status: result2.status,
+        timestamp,
+        metadata: {
+          matchedCount: result2.data?.matchedResultsCount || 0,
+          isDesignMatched: !!result2.data?.isDesignMatched,
+          statusSummary: result2.data?.statusSummary || {}
+        }
+      };
+    } catch (err) {
+      return {
+        success: false,
+        endpoint: "findlistings",
+        designId: cleanId,
+        url: FIND_LISTINGS_URL2,
+        error: `Browser Session Fehler: ${err.message}`,
+        timestamp
+      };
+    }
+  }
+};
+
 // src/server/index.ts
 var import_meta = {};
 import_dotenv.default.config();
@@ -222909,6 +223141,28 @@ app.post("/api/v1/connectors/test", async (req, res) => {
     res.status(400).json({ success: false, error: "Unknown connector" });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/debug/amazon-inspect", async (req, res) => {
+  const { designId, endpoint } = req.body;
+  try {
+    if (endpoint === "productconfig") {
+      const result2 = await AmazonInspectService.inspectProductConfig(designId);
+      return res.json(result2);
+    }
+    if (endpoint === "findlistings") {
+      const result2 = await AmazonInspectService.inspectFindListings(designId);
+      return res.json(result2);
+    }
+    return res.status(400).json({
+      success: false,
+      error: 'Ung\xFCltiger Endpunkt. Erlaubt: "productconfig" oder "findlistings".'
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Interner Serverfehler beim Amazon API Inspector"
+    });
   }
 });
 var heartbeatFile = import_path75.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");

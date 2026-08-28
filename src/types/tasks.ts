@@ -1,5 +1,5 @@
-export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER';
-export type TaskSuffix = 'H' | 'T' | 'D';
+export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER' | 'UPDATE';
+export type TaskSuffix = 'H' | 'T' | 'D' | 'U';
 
 export type TaskStatus = 
   | 'RECEIVED'

@@ -59,6 +59,7 @@ export interface QueueState {
   uploadMode: 'draft' | 'live';
   draftProductsPerDesign: number;
   maxCatalogSlots: number;
+  updateTargetCount?: number;
 }
 
 // Strict drop sequence for non-US marketplaces within a droppable product
@@ -310,7 +311,8 @@ export class QueueService {
       maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),
       uploadMode: settings.queueUploadMode || 'draft',
       draftProductsPerDesign,
-      maxCatalogSlots
+      maxCatalogSlots,
+      updateTargetCount: settings.queueUpdateTargetCount ?? 10
     };
   }
 
@@ -477,14 +479,26 @@ export class QueueService {
   }
 
   /**
-   * Toggle Pause on a queue item (excludes from balancing & upload)
+   * Toggle Pause on a queue item (excludes from balancing & upload).
+   * When re-activating, moves the item to the very bottom of the queue.
    */
   public static togglePause(queueId: string): QueueItem | null {
     this.ensureLoaded();
     const item = this.items.find(i => i.id === queueId);
     if (!item) return null;
 
-    item.isPaused = !item.isPaused;
+    const wasPaused = !!item.isPaused;
+    item.isPaused = !wasPaused;
+
+    if (wasPaused) {
+      // Re-activating: move item to the very bottom of the queue
+      this.items = this.items.filter(i => i.id !== queueId);
+      this.items.push(item);
+      this.items.forEach((it, idx) => {
+        it.sortOrder = idx;
+      });
+    }
+
     this.saveQueue();
     this.rebalanceQueue();
     return item;

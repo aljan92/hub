@@ -30,7 +30,10 @@ import {
   ShieldCheck,
   ShieldAlert,
   AlertTriangle,
-  UploadCloud
+  UploadCloud,
+  FileJson,
+  Database,
+  SearchCode
 } from 'lucide-react';
 
 import { 
@@ -196,7 +199,7 @@ const EventHeader: React.FC<EventHeaderProps> = ({
 export const PromptLogView: React.FC = () => {
   const [tasks, setTasks] = useState<DesignTaskLog[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [filterSource, setFilterSource] = useState<'ALL' | 'HERMES' | 'TEST' | 'DESIGNER'>('ALL');
+  const [filterSource, setFilterSource] = useState<'ALL' | 'HERMES' | 'TEST' | 'DESIGNER' | 'UPDATE'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [retryingStep, setRetryingStep] = useState<string | null>(null);
@@ -209,6 +212,58 @@ export const PromptLogView: React.FC = () => {
   const [testSuccessMessage, setTestSuccessMessage] = useState<string | null>(null);
   const [pushingToQueueTaskId, setPushingToQueueTaskId] = useState<string | null>(null);
   const [pushSuccessTaskId, setPushSuccessTaskId] = useState<string | null>(null);
+
+  // Amazon Merch API Inspector State
+  const [inspectDesignId, setInspectDesignId] = useState('495f452e-8245-42be-96e3-a1d3dcc752d9');
+  const [inspectLoadingConfig, setInspectLoadingConfig] = useState(false);
+  const [inspectLoadingListings, setInspectLoadingListings] = useState(false);
+  const [inspectConfigResult, setInspectConfigResult] = useState<any>(null);
+  const [inspectListingsResult, setInspectListingsResult] = useState<any>(null);
+  const [inspectError, setInspectError] = useState<string | null>(null);
+
+  const handleInspectProductConfig = async () => {
+    if (!inspectDesignId.trim()) return;
+    setInspectLoadingConfig(true);
+    setInspectError(null);
+    try {
+      const res = await fetch('/api/v1/debug/amazon-inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ designId: inspectDesignId.trim(), endpoint: 'productconfig' })
+      });
+      const data = await res.json();
+      setInspectConfigResult(data);
+      if (!data.success && data.error) {
+        setInspectError(`ProductConfig Fehler: ${data.error}`);
+      }
+    } catch (err: any) {
+      setInspectError(`Netzwerkfehler: ${err.message}`);
+    } finally {
+      setInspectLoadingConfig(false);
+    }
+  };
+
+  const handleInspectFindListings = async () => {
+    if (!inspectDesignId.trim()) return;
+    setInspectLoadingListings(true);
+    setInspectError(null);
+    try {
+      const res = await fetch('/api/v1/debug/amazon-inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ designId: inspectDesignId.trim(), endpoint: 'findlistings' })
+      });
+      const data = await res.json();
+      setInspectListingsResult(data);
+      if (!data.success && data.error) {
+        setInspectError(`FindListings Fehler: ${data.error}`);
+      }
+    } catch (err: any) {
+      setInspectError(`Netzwerkfehler: ${err.message}`);
+    } finally {
+      setInspectLoadingListings(false);
+    }
+  };
 
   const selectedTask = tasks.find(t => t.id === selectedTaskId) || tasks[0] || null;
 
@@ -345,6 +400,7 @@ export const PromptLogView: React.FC = () => {
       case 'HERMES': return <Bot className="w-3.5 h-3.5 text-cyan-400" />;
       case 'TEST': return <TestTube className="w-3.5 h-3.5 text-amber-400" />;
       case 'DESIGNER': return <Sparkles className="w-3.5 h-3.5 text-purple-400" />;
+      case 'UPDATE': return <RotateCcw className="w-3.5 h-3.5 text-teal-400" />;
       default: return <Terminal className="w-3.5 h-3.5 text-slate-400" />;
     }
   };
@@ -354,6 +410,7 @@ export const PromptLogView: React.FC = () => {
       case 'HERMES': return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
       case 'TEST': return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
       case 'DESIGNER': return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+      case 'UPDATE': return 'bg-teal-500/10 text-teal-400 border-teal-500/20';
       default: return 'bg-slate-800 text-slate-400 border-slate-700';
     }
   };
@@ -461,6 +518,171 @@ export const PromptLogView: React.FC = () => {
         </form>
       </div>
 
+      {/* Amazon Merch API Inspector Test Area */}
+      <div className="glass-panel p-4 rounded-2xl border border-teal-500/20 bg-slate-950/40 space-y-4 shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+          <div className="flex items-center space-x-2">
+            <div className="p-1 rounded-lg bg-teal-500/10 text-teal-400 border border-teal-500/20">
+              <SearchCode className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">Amazon Merch API Inspector</h3>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/20">Session 1 Live</span>
+              </div>
+              <p className="text-[10px] text-slate-400">Teste Live-Endpunkte mit einer echten Merch by Amazon Design-ID (UUID)</p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {(inspectConfigResult || inspectListingsResult) && (
+              <button
+                onClick={() => {
+                  setInspectConfigResult(null);
+                  setInspectListingsResult(null);
+                  setInspectError(null);
+                }}
+                className="px-2 py-1 rounded-lg text-[10px] font-semibold text-slate-400 hover:text-slate-200 bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors"
+              >
+                Ergebnisse zurücksetzen
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Input Bar & Actions */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+          <div className="lg:col-span-6 space-y-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+              <span>Design ID (UUID)</span>
+              <span className="text-[9px] font-normal text-slate-500 font-mono">Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={inspectDesignId}
+                onChange={e => setInspectDesignId(e.target.value)}
+                placeholder="z.B. 495f452e-8245-42be-96e3-a1d3dcc752d9"
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-teal-300 placeholder-slate-600 focus:outline-none focus:border-teal-500/60 shadow-inner"
+              />
+            </div>
+          </div>
+
+          <div className="lg:col-span-3">
+            <button
+              onClick={handleInspectProductConfig}
+              disabled={inspectLoadingConfig || !inspectDesignId.trim()}
+              className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-all shadow-md active:scale-95"
+            >
+              <FileJson className={`w-3.5 h-3.5 ${inspectLoadingConfig ? 'animate-spin' : ''}`} />
+              <span>{inspectLoadingConfig ? 'Lade Config...' : '1. Product Config'}</span>
+            </button>
+          </div>
+
+          <div className="lg:col-span-3">
+            <button
+              onClick={handleInspectFindListings}
+              disabled={inspectLoadingListings || !inspectDesignId.trim()}
+              className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-cyan-700 hover:bg-cyan-600 text-white disabled:opacity-50 transition-all shadow-md active:scale-95"
+            >
+              <Database className={`w-3.5 h-3.5 ${inspectLoadingListings ? 'animate-spin' : ''}`} />
+              <span>{inspectLoadingListings ? 'Suche Listings...' : '2. FindListings'}</span>
+            </button>
+          </div>
+        </div>
+
+        {inspectError && (
+          <div className="flex items-center space-x-2 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span className="font-mono text-[11px]">{inspectError}</span>
+          </div>
+        )}
+
+        {/* Results Dual Grid */}
+        {(inspectConfigResult || inspectListingsResult) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+            {/* Panel 1: Product Config */}
+            <div className="glass-panel p-3.5 rounded-xl border border-slate-800/90 bg-slate-950 space-y-2">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                <div className="flex items-center space-x-1.5">
+                  <FileJson className="w-3.5 h-3.5 text-teal-400" />
+                  <span className="text-xs font-bold text-slate-200">Product Config</span>
+                  {inspectConfigResult?.status && (
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${inspectConfigResult.success ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                      HTTP {inspectConfigResult.status}
+                    </span>
+                  )}
+                </div>
+                {inspectConfigResult?.data && (
+                  <CopyButton text={JSON.stringify(inspectConfigResult.data, null, 2)} label="JSON kopieren" />
+                )}
+              </div>
+
+              {inspectConfigResult ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <span className="text-slate-500">Sprachen im TextData:</span>
+                    {inspectConfigResult.metadata?.languages?.length > 0 ? (
+                      inspectConfigResult.metadata.languages.map((l: string) => (
+                        <span key={l} className="px-1.5 py-0.2 rounded bg-slate-800 text-teal-300 font-mono font-semibold">{l}</span>
+                      ))
+                    ) : (
+                      <span className="text-slate-500 italic">Keine</span>
+                    )}
+                  </div>
+                  <pre className="p-2.5 bg-slate-900/90 rounded-lg text-teal-200 font-mono text-[10px] border border-slate-800 overflow-x-auto max-h-72 custom-scrollbar whitespace-pre-wrap">
+                    {JSON.stringify(inspectConfigResult.data, null, 2)}
+                  </pre>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic py-6 text-center">Noch nicht abgefragt. Klicke auf "1. Product Config".</p>
+              )}
+            </div>
+
+            {/* Panel 2: FindListings */}
+            <div className="glass-panel p-3.5 rounded-xl border border-slate-800/90 bg-slate-950 space-y-2">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                <div className="flex items-center space-x-1.5">
+                  <Database className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="text-xs font-bold text-slate-200">FindListings RPC</span>
+                  {inspectListingsResult?.status && (
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${inspectListingsResult.success ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                      HTTP {inspectListingsResult.status}
+                    </span>
+                  )}
+                </div>
+                {inspectListingsResult?.data && (
+                  <CopyButton text={JSON.stringify(inspectListingsResult.data, null, 2)} label="JSON kopieren" />
+                )}
+              </div>
+
+              {inspectListingsResult ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <span className="text-slate-500">Treffer für Design:</span>
+                    <span className="px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 font-mono font-bold">
+                      {inspectListingsResult.metadata?.matchedCount ?? 0} Varianten
+                    </span>
+                    {inspectListingsResult.metadata?.statusSummary && (
+                      Object.entries(inspectListingsResult.metadata.statusSummary).map(([st, cnt]) => (
+                        <span key={st} className="px-1.5 py-0.2 rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800/50 font-mono text-[9px]">
+                          {st}: {String(cnt)}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  <pre className="p-2.5 bg-slate-900/90 rounded-lg text-cyan-200 font-mono text-[10px] border border-slate-800 overflow-x-auto max-h-72 custom-scrollbar whitespace-pre-wrap">
+                    {JSON.stringify(inspectListingsResult.data, null, 2)}
+                  </pre>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic py-6 text-center">Noch nicht abgefragt. Klicke auf "2. FindListings".</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Filter Toolbar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-1 p-1 bg-slate-900/90 rounded-xl border border-slate-800 text-xs font-semibold">
@@ -490,6 +712,13 @@ export const PromptLogView: React.FC = () => {
           >
             <Sparkles className="w-3 h-3" />
             <span>Designer ({tasks.filter(t => t.source === 'DESIGNER').length})</span>
+          </button>
+          <button
+            onClick={() => setFilterSource('UPDATE')}
+            className={`flex items-center space-x-1 px-3 py-1 rounded-lg transition-all ${filterSource === 'UPDATE' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Updates ({tasks.filter(t => t.source === 'UPDATE').length})</span>
           </button>
         </div>
 

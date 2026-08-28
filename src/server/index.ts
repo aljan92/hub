@@ -24,6 +24,7 @@ import { ProductScannerService } from './services/productScannerService';
 import { QueueService } from './services/queueService';
 import { UploadWorkerService } from './services/uploadWorkerService';
 import { CostTrackingService } from './services/costTrackingService';
+import { AmazonInspectService } from './services/amazonInspectService';
 
 dotenv.config();
 
@@ -556,6 +557,30 @@ app.post('/api/v1/connectors/test', async (req, res) => {
     res.status(400).json({ success: false, error: 'Unknown connector' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Amazon Merch API Inspector Endpoint (Debug & Inspection in Session 1)
+app.post('/api/v1/debug/amazon-inspect', async (req, res) => {
+  const { designId, endpoint } = req.body;
+  try {
+    if (endpoint === 'productconfig') {
+      const result = await AmazonInspectService.inspectProductConfig(designId);
+      return res.json(result);
+    }
+    if (endpoint === 'findlistings') {
+      const result = await AmazonInspectService.inspectFindListings(designId);
+      return res.json(result);
+    }
+    return res.status(400).json({
+      success: false,
+      error: 'Ungültiger Endpunkt. Erlaubt: "productconfig" oder "findlistings".'
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Interner Serverfehler beim Amazon API Inspector'
+    });
   }
 });
 
