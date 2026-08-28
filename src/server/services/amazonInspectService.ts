@@ -1,5 +1,6 @@
 import { BrowserSessionService } from './browserSessionService';
 import { SyncEngine } from './syncEngine';
+import { TaskLogService } from './taskLogService';
 
 const FIND_LISTINGS_URL = 'https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings';
 const PRODUCT_CONFIG_URL = 'https://merch.amazon.com/api/productconfiguration/get?id=';
@@ -257,5 +258,103 @@ export class AmazonInspectService {
         timestamp
       };
     }
+  }
+
+  /**
+   * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
+   */
+  public static async createUpdateTaskFromAmazon(designId: string): Promise<any> {
+    const cleanId = (designId || '').trim();
+    if (!cleanId) {
+      throw new Error('Keine Design-ID (UUID) angegeben.');
+    }
+
+    // 1. Fetch Product Config
+    const configRes = await this.inspectProductConfig(cleanId);
+    if (!configRes.success || !configRes.data) {
+      throw new Error(configRes.error || 'Product Config konnte nicht von Amazon geladen werden.');
+    }
+
+    // 2. Fetch FindListings (Coral RPC)
+    const findRes = await this.inspectFindListings(cleanId);
+
+    const configData = configRes.data;
+    const findData = findRes.success ? findRes.data : null;
+
+    const textData = configData.textData || {};
+    const masterListing = textData.en || textData.de || Object.values(textData)[0] || {};
+    const title = masterListing.title || 'Amazon Merch Update Task';
+    const brand = masterListing.brandName || '';
+    const bullets = masterListing.bullets || [];
+    const description = masterListing.description || '';
+
+    // Collect products summary
+    const products = configData.products || {};
+    const productTypes = Object.keys(products);
+    const productSummary: Record<string, any> = {};
+    for (const [pKey, pVal] of Object.entries<any>(products)) {
+      productSummary[pKey] = {
+        fits: pVal.dimensions?.FIT || [],
+        colors: pVal.dimensions?.COLOR || [],
+        marketplaces: Object.keys(pVal.marketplaceData || {}),
+        artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
+      };
+    }
+
+    const matchedItems = findData?.items || [];
+    const statusSummary = findData?.statusSummary || {};
+    const publishedCount = statusSummary.PUBLISHED || 0;
+
+    const payload = {
+      designId: cleanId,
+      editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
+      globalArtworkUrn: configData.globalArtworkUrn || null,
+      title,
+      brand,
+      bullets,
+      description,
+      masterListing,
+      textData,
+      productTypes,
+      productSummary,
+      liveStats: {
+        totalVariantsFound: matchedItems.length,
+        statusSummary,
+        publishedCount,
+        isAllPublished: Object.keys(statusSummary).length === 1 && publishedCount > 0,
+        estimatedSlotSavings: `${publishedCount} Live-Varianten (0 Slot-Verbrauch)`
+      },
+      rawProductConfig: configData,
+      rawFindListings: findData
+    };
+
+    // 3. Create TaskLog with source = 'UPDATE'
+    const taskLog = TaskLogService.createTaskLog({
+      source: 'UPDATE',
+      payload
+    });
+
+    // 4. Add structured event detailing the fetched data
+    TaskLogService.addEvent(taskLog.id, {
+      type: 'TASK_HANDOFF',
+      title: `Amazon Rohdaten erfasst (${publishedCount} Varianten live)`,
+      content: {
+        designId: cleanId,
+        editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
+        globalArtworkUrn: configData.globalArtworkUrn,
+        masterListing: {
+          title,
+          brand,
+          bullets,
+          description: description.slice(0, 150) + (description.length > 150 ? '...' : '')
+        },
+        languagesAvailable: Object.keys(textData),
+        configuredProductsCount: productTypes.length,
+        liveVariantsCount: publishedCount,
+        statusSummary
+      }
+    });
+
+    return taskLog;
   }
 }

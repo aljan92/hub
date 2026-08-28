@@ -584,6 +584,32 @@ app.post('/api/v1/debug/amazon-inspect', async (req, res) => {
   }
 });
 
+// Amazon Merch Create Update Task Endpoint (#xxx-U from Session 1)
+app.post('/api/v1/debug/amazon-create-update-task', async (req, res) => {
+  const { designId } = req.body;
+  try {
+    if (!designId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Keine Design-ID (UUID) angegeben.'
+      });
+    }
+
+    const taskLog = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
+    return res.json({
+      success: true,
+      task: taskLog,
+      message: `Update-Task ${taskLog.id} erfolgreich erstellt!`
+    });
+  } catch (err: any) {
+    console.error('[AmazonInspectService] Fehler bei createUpdateTaskFromAmazon:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Fehler beim Erstellen des Update-Tasks aus Amazon-Daten'
+    });
+  }
+});
+
 // Hermes Heartbeat State with Persistent Disk Storage
 const heartbeatFile = path.resolve(process.cwd(), 'data', 'hermes_heartbeat.json');
 

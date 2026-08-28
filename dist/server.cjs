@@ -219307,6 +219307,8 @@ var TaskLogService = class {
         return "T";
       case "DESIGNER":
         return "D";
+      case "UPDATE":
+        return "U";
       default:
         return "H";
     }
@@ -219316,7 +219318,7 @@ var TaskLogService = class {
     const suffix = this.getSuffixForSource(params2.source);
     const id = this.formatTaskId(counter, suffix);
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const incomingTitle = params2.source === "HERMES" ? "Eingang von Hermes" : params2.source === "TEST" ? "Eingang von Test (Playground)" : "Eingang von Designer";
+    const incomingTitle = params2.source === "HERMES" ? "Eingang von Hermes" : params2.source === "TEST" ? "Eingang von Test (Playground)" : params2.source === "UPDATE" ? "Eingang von Amazon Merch (Update-Pipeline)" : "Eingang von Designer";
     const initialEvent = {
       timestamp: now,
       type: "INCOMING_PAYLOAD",
@@ -222692,6 +222694,88 @@ var AmazonInspectService = class {
       };
     }
   }
+  /**
+   * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
+   */
+  static async createUpdateTaskFromAmazon(designId) {
+    const cleanId = (designId || "").trim();
+    if (!cleanId) {
+      throw new Error("Keine Design-ID (UUID) angegeben.");
+    }
+    const configRes = await this.inspectProductConfig(cleanId);
+    if (!configRes.success || !configRes.data) {
+      throw new Error(configRes.error || "Product Config konnte nicht von Amazon geladen werden.");
+    }
+    const findRes = await this.inspectFindListings(cleanId);
+    const configData = configRes.data;
+    const findData = findRes.success ? findRes.data : null;
+    const textData = configData.textData || {};
+    const masterListing = textData.en || textData.de || Object.values(textData)[0] || {};
+    const title = masterListing.title || "Amazon Merch Update Task";
+    const brand = masterListing.brandName || "";
+    const bullets = masterListing.bullets || [];
+    const description = masterListing.description || "";
+    const products = configData.products || {};
+    const productTypes = Object.keys(products);
+    const productSummary = {};
+    for (const [pKey, pVal] of Object.entries(products)) {
+      productSummary[pKey] = {
+        fits: pVal.dimensions?.FIT || [],
+        colors: pVal.dimensions?.COLOR || [],
+        marketplaces: Object.keys(pVal.marketplaceData || {}),
+        artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
+      };
+    }
+    const matchedItems = findData?.items || [];
+    const statusSummary = findData?.statusSummary || {};
+    const publishedCount = statusSummary.PUBLISHED || 0;
+    const payload = {
+      designId: cleanId,
+      editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
+      globalArtworkUrn: configData.globalArtworkUrn || null,
+      title,
+      brand,
+      bullets,
+      description,
+      masterListing,
+      textData,
+      productTypes,
+      productSummary,
+      liveStats: {
+        totalVariantsFound: matchedItems.length,
+        statusSummary,
+        publishedCount,
+        isAllPublished: Object.keys(statusSummary).length === 1 && publishedCount > 0,
+        estimatedSlotSavings: `${publishedCount} Live-Varianten (0 Slot-Verbrauch)`
+      },
+      rawProductConfig: configData,
+      rawFindListings: findData
+    };
+    const taskLog = TaskLogService.createTaskLog({
+      source: "UPDATE",
+      payload
+    });
+    TaskLogService.addEvent(taskLog.id, {
+      type: "TASK_HANDOFF",
+      title: `Amazon Rohdaten erfasst (${publishedCount} Varianten live)`,
+      content: {
+        designId: cleanId,
+        editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
+        globalArtworkUrn: configData.globalArtworkUrn,
+        masterListing: {
+          title,
+          brand,
+          bullets,
+          description: description.slice(0, 150) + (description.length > 150 ? "..." : "")
+        },
+        languagesAvailable: Object.keys(textData),
+        configuredProductsCount: productTypes.length,
+        liveVariantsCount: publishedCount,
+        statusSummary
+      }
+    });
+    return taskLog;
+  }
 };
 
 // src/server/index.ts
@@ -223162,6 +223246,29 @@ app.post("/api/v1/debug/amazon-inspect", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: err.message || "Interner Serverfehler beim Amazon API Inspector"
+    });
+  }
+});
+app.post("/api/v1/debug/amazon-create-update-task", async (req, res) => {
+  const { designId } = req.body;
+  try {
+    if (!designId) {
+      return res.status(400).json({
+        success: false,
+        error: "Keine Design-ID (UUID) angegeben."
+      });
+    }
+    const taskLog = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
+    return res.json({
+      success: true,
+      task: taskLog,
+      message: `Update-Task ${taskLog.id} erfolgreich erstellt!`
+    });
+  } catch (err) {
+    console.error("[AmazonInspectService] Fehler bei createUpdateTaskFromAmazon:", err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Fehler beim Erstellen des Update-Tasks aus Amazon-Daten"
     });
   }
 });

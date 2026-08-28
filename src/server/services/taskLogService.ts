@@ -151,6 +151,7 @@ export class TaskLogService {
       case 'HERMES': return 'H';
       case 'TEST': return 'T';
       case 'DESIGNER': return 'D';
+      case 'UPDATE': return 'U';
       default: return 'H';
     }
   }
@@ -169,7 +170,9 @@ export class TaskLogService {
 
     const incomingTitle = params.source === 'HERMES' 
       ? 'Eingang von Hermes' 
-      : (params.source === 'TEST' ? 'Eingang von Test (Playground)' : 'Eingang von Designer');
+      : (params.source === 'TEST' 
+          ? 'Eingang von Test (Playground)' 
+          : (params.source === 'UPDATE' ? 'Eingang von Amazon Merch (Update-Pipeline)' : 'Eingang von Designer'));
 
     const initialEvent: SessionEvent = {
       timestamp: now,

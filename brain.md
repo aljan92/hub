@@ -188,7 +188,12 @@ graph TD
   * **Tab 4: Hochgeladen (`COMPLETED`)**
   * **Tab 5: Fehler (`ERROR`)**
 * **Prompt Log & Task Typen:**
-  * Neuer Task-Typ `UPDATE` (`#xxx-U`) mit dediziertem Filter in der Audit-Leiste.
+  * Neuer Task-Typ `UPDATE` (`#xxx-U`) mit Suffix `U` (`TaskLogService.getSuffixForSource`).
+  * **1-Click Rohdaten-Task-Erstellung (`POST /api/v1/debug/amazon-create-update-task`):**
+    * Inspector-Button `3. ➕ Create Task (#xxx-U)`.
+    * Kombiniert `productconfiguration/get` und `FindListings` automatisch zu einem aggregierten Rohdaten-Payload.
+    * Speichert Master-Listing (Titel, Brand, Bullets, Description), alle Sprachvarianten, URN, 0-Slot-Ersparniskalkulation und Produkt-Fits/Farben.
+    * Dediziertes Highlight-Banner im Prompt Log mit direktem Link zu `merch.amazon.com/designs/{id}/edit`.
 
 ---
 

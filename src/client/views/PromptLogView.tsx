@@ -220,6 +220,8 @@ export const PromptLogView: React.FC = () => {
   const [inspectConfigResult, setInspectConfigResult] = useState<any>(null);
   const [inspectListingsResult, setInspectListingsResult] = useState<any>(null);
   const [inspectError, setInspectError] = useState<string | null>(null);
+  const [creatingUpdateTask, setCreatingUpdateTask] = useState(false);
+  const [updateTaskSuccessMessage, setUpdateTaskSuccessMessage] = useState<string | null>(null);
 
   const handleInspectProductConfig = async () => {
     if (!inspectDesignId.trim()) return;
@@ -262,6 +264,34 @@ export const PromptLogView: React.FC = () => {
       setInspectError(`Netzwerkfehler: ${err.message}`);
     } finally {
       setInspectLoadingListings(false);
+    }
+  };
+
+  const handleCreateUpdateTask = async () => {
+    if (!inspectDesignId.trim()) return;
+    setCreatingUpdateTask(true);
+    setInspectError(null);
+    setUpdateTaskSuccessMessage(null);
+    try {
+      const res = await fetch('/api/v1/debug/amazon-create-update-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ designId: inspectDesignId.trim() })
+      });
+      const data = await res.json();
+      if (data.success && data.task) {
+        setUpdateTaskSuccessMessage(`✅ Update-Task ${data.task.id} erfolgreich erstellt!`);
+        await fetchTasks();
+        setActiveSourceFilter('UPDATE');
+        setSelectedTaskId(data.task.id);
+        setTimeout(() => setUpdateTaskSuccessMessage(null), 8000);
+      } else {
+        setInspectError(data.error || 'Fehler beim Erstellen des Update-Tasks');
+      }
+    } catch (err: any) {
+      setInspectError(`Netzwerkfehler: ${err.message}`);
+    } finally {
+      setCreatingUpdateTask(false);
     }
   };
 
@@ -552,10 +582,10 @@ export const PromptLogView: React.FC = () => {
 
         {/* Input Bar & Actions */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
-          <div className="lg:col-span-6 space-y-1">
+          <div className="lg:col-span-4 space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
               <span>Design ID (UUID)</span>
-              <span className="text-[9px] font-normal text-slate-500 font-mono">Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</span>
+              <span className="text-[9px] font-normal text-slate-500 font-mono">Format: xxxxxxxx-...</span>
             </label>
             <div className="relative">
               <input
@@ -568,28 +598,49 @@ export const PromptLogView: React.FC = () => {
             </div>
           </div>
 
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2">
             <button
               onClick={handleInspectProductConfig}
               disabled={inspectLoadingConfig || !inspectDesignId.trim()}
               className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-all shadow-md active:scale-95"
             >
               <FileJson className={`w-3.5 h-3.5 ${inspectLoadingConfig ? 'animate-spin' : ''}`} />
-              <span>{inspectLoadingConfig ? 'Lade Config...' : '1. Product Config'}</span>
+              <span>{inspectLoadingConfig ? 'Lade...' : '1. Config'}</span>
             </button>
           </div>
 
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2">
             <button
               onClick={handleInspectFindListings}
               disabled={inspectLoadingListings || !inspectDesignId.trim()}
               className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-cyan-700 hover:bg-cyan-600 text-white disabled:opacity-50 transition-all shadow-md active:scale-95"
             >
               <Database className={`w-3.5 h-3.5 ${inspectLoadingListings ? 'animate-spin' : ''}`} />
-              <span>{inspectLoadingListings ? 'Suche Listings...' : '2. FindListings'}</span>
+              <span>{inspectLoadingListings ? 'Suche...' : '2. Listings'}</span>
+            </button>
+          </div>
+
+          <div className="lg:col-span-4">
+            <button
+              onClick={handleCreateUpdateTask}
+              disabled={creatingUpdateTask || !inspectDesignId.trim()}
+              className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white disabled:opacity-50 transition-all shadow-lg active:scale-95 border border-amber-400/30"
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${creatingUpdateTask ? 'animate-spin' : ''}`} />
+              <span>{creatingUpdateTask ? 'Erstelle Task...' : '3. ➕ Create Task (#xxx-U)'}</span>
             </button>
           </div>
         </div>
+
+        {updateTaskSuccessMessage && (
+          <div className="flex items-center justify-between p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+            <div className="flex items-center space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="font-semibold">{updateTaskSuccessMessage}</span>
+            </div>
+            <span className="text-[10px] text-amber-400/80 font-mono">Im Prompt Log unter "Updates" geöffnet</span>
+          </div>
+        )}
 
         {inspectError && (
           <div className="flex items-center space-x-2 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
@@ -870,6 +921,73 @@ export const PromptLogView: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Dedicated Update Task Overview Banner */}
+              {selectedTask.source === 'UPDATE' && selectedTask.payload?.designId && (
+                <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-3 shadow-inner">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/20 pb-2">
+                    <div className="flex items-center space-x-2">
+                      <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        Amazon Update Rohdaten
+                      </span>
+                      <span className="font-mono text-xs text-slate-300">
+                        Design-ID: <span className="text-amber-400 font-bold">{selectedTask.payload.designId}</span>
+                      </span>
+                    </div>
+                    {selectedTask.payload.editUrl && (
+                      <a
+                        href={selectedTask.payload.editUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 transition-colors"
+                      >
+                        <span>Auf Amazon öffnen</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+
+                  {/* Summary Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="space-y-1.5 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                      <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Original Master-Listing (EN)</div>
+                      <div className="font-bold text-white text-sm">{selectedTask.payload.title || selectedTask.payload.masterListing?.title || 'Kein Titel'}</div>
+                      <div className="text-slate-400 text-xs font-medium">Brand: <span className="text-slate-200">{selectedTask.payload.brand || selectedTask.payload.masterListing?.brandName || '-'}</span></div>
+                      {selectedTask.payload.bullets && selectedTask.payload.bullets.length > 0 && (
+                        <ul className="list-disc list-inside space-y-0.5 text-slate-300 text-[11px] pt-1">
+                          {selectedTask.payload.bullets.map((b: string, i: number) => (
+                            <li key={i} className="line-clamp-2">{b}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div className="space-y-2 bg-slate-950/60 p-3 rounded-lg border border-slate-800 flex flex-col justify-between">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">Live Status & Slot-Kalkulation</div>
+                        <div className="flex items-center space-x-2">
+                          <span className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 font-bold text-xs border border-emerald-500/30">
+                            {selectedTask.payload.liveStats?.publishedCount || 0} Varianten PUBLISHED
+                          </span>
+                          <span className="text-[11px] text-emerald-300 font-mono font-bold">
+                            ➔ 0 Slots Verbrauch
+                          </span>
+                        </div>
+                        {selectedTask.payload.globalArtworkUrn && (
+                          <div className="mt-2 text-[10px] text-slate-400 font-mono truncate">
+                            URN: <span className="text-cyan-400">{selectedTask.payload.globalArtworkUrn}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                        <span>Konfigurierte Produkte: <strong className="text-slate-200">{selectedTask.payload.productTypes?.length || 0} Typen</strong></span>
+                        <span>Sprachen: <strong className="text-slate-200">{Object.keys(selectedTask.payload.textData || {}).join(', ').toUpperCase() || 'EN'}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Timeline */}
               <div className="space-y-4 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
