@@ -33,7 +33,8 @@ import {
   UploadCloud,
   FileJson,
   Database,
-  SearchCode
+  SearchCode,
+  PlusCircle
 } from 'lucide-react';
 
 import { 
@@ -390,6 +391,59 @@ export const PromptLogView: React.FC = () => {
   };
 
   const [downloadingArtworkTaskId, setDownloadingArtworkTaskId] = useState<string | null>(null);
+  const [runningUpdatePipelineTaskId, setRunningUpdatePipelineTaskId] = useState<string | null>(null);
+
+  const handleRunFullUpdatePipeline = async (designId: string) => {
+    if (!designId.trim()) return;
+    setCreatingUpdateTask(true);
+    setInspectError(null);
+    setUpdateTaskSuccessMessage(null);
+    try {
+      const res = await fetch('/api/v1/update-pipeline/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ designId: designId.trim() })
+      });
+      const data = await res.json();
+      if (data.success && data.task) {
+        setUpdateTaskSuccessMessage(`🚀 Update Pipeline für Task ${data.task.id} erfolgreich gestartet & abgearbeitet!`);
+        await fetchTasks();
+        setFilterSource('UPDATE');
+        setSelectedTaskId(data.task.id);
+        setTimeout(() => setUpdateTaskSuccessMessage(null), 8000);
+      } else {
+        setInspectError(data.error || 'Fehler beim Ausführen der Update-Pipeline');
+        await fetchTasks();
+      }
+    } catch (err: any) {
+      setInspectError(`Netzwerkfehler: ${err.message}`);
+    } finally {
+      setCreatingUpdateTask(false);
+    }
+  };
+
+  const handleResumeUpdatePipeline = async (taskId: string) => {
+    if (!taskId) return;
+    setRunningUpdatePipelineTaskId(taskId);
+    try {
+      const res = await fetch('/api/v1/update-pipeline/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, step: 'RESUME' })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchTasks();
+      } else {
+        alert(data.error || 'Fehler bei der Fortsetzung der Update-Pipeline');
+        await fetchTasks();
+      }
+    } catch (err: any) {
+      alert(`Netzwerkfehler: ${err.message}`);
+    } finally {
+      setRunningUpdatePipelineTaskId(null);
+    }
+  };
 
   const handleDownloadArtwork = async (taskId: string, designId: string) => {
     if (!taskId || !designId) return;
@@ -738,14 +792,27 @@ export const PromptLogView: React.FC = () => {
             </button>
           </div>
 
-          <div className="lg:col-span-4">
+          <div className="lg:col-span-2">
             <button
               onClick={handleCreateUpdateTask}
               disabled={creatingUpdateTask || !inspectDesignId.trim()}
+              className="w-full flex items-center justify-center space-x-1 px-2.5 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/40 disabled:opacity-50 transition-all shadow-sm active:scale-95"
+              title="Erstellt den Task und lädt das Original-Design (U1-U2)"
+            >
+              <PlusCircle className={`w-3.5 h-3.5 ${creatingUpdateTask ? 'animate-spin' : ''}`} />
+              <span>3. ➕ Nur Task</span>
+            </button>
+          </div>
+
+          <div className="lg:col-span-2">
+            <button
+              onClick={() => handleRunFullUpdatePipeline(inspectDesignId.trim())}
+              disabled={creatingUpdateTask || !inspectDesignId.trim()}
               className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white disabled:opacity-50 transition-all shadow-lg active:scale-95 border border-amber-400/30"
+              title="Führt den gesamten Update-Workflow von U1 bis U7 durch und reiht in die Queue ein"
             >
               <Sparkles className={`w-3.5 h-3.5 ${creatingUpdateTask ? 'animate-spin' : ''}`} />
-              <span>{creatingUpdateTask ? 'Erstelle Task...' : '3. ➕ Create Task (#xxx-U)'}</span>
+              <span>4. 🚀 Full Pipeline</span>
             </button>
           </div>
         </div>
@@ -1074,14 +1141,24 @@ export const PromptLogView: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="flex items-center space-x-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => handleResumeUpdatePipeline(selectedTask.id)}
+                        disabled={runningUpdatePipelineTaskId === selectedTask.id}
+                        className="flex items-center space-x-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white border border-amber-400/40 disabled:opacity-50 transition-all shadow-md active:scale-95"
+                        title="Führt die restlichen Schritte (U3 Vision, U4 Rewrite, U5 Trademark, U6 Übersetzung, U7 Queue) aus"
+                      >
+                        <Sparkles className={`w-3.5 h-3.5 ${runningUpdatePipelineTaskId === selectedTask.id ? 'animate-spin' : ''}`} />
+                        <span>{runningUpdatePipelineTaskId === selectedTask.id ? 'Pipeline läuft...' : '🚀 Pipeline fortsetzen (U3–U7)'}</span>
+                      </button>
+
                       <button
                         onClick={() => handleDownloadArtwork(selectedTask.id, selectedTask.payload.designId)}
                         disabled={downloadingArtworkTaskId === selectedTask.id}
                         className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 disabled:opacity-50 transition-colors shadow-sm"
                       >
                         <RefreshCw className={`w-3.5 h-3.5 ${downloadingArtworkTaskId === selectedTask.id ? 'animate-spin' : ''}`} />
-                        <span>{downloadingArtworkTaskId === selectedTask.id ? 'Lädt Design...' : 'Original-Design erneut laden'}</span>
+                        <span>{downloadingArtworkTaskId === selectedTask.id ? 'Lädt Design...' : 'Artwork erneut laden'}</span>
                       </button>
 
                       {selectedTask.payload.editUrl && (

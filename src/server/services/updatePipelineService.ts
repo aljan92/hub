@@ -21,17 +21,21 @@ export class UpdatePipelineService {
    */
   static async stepU1_ExtractMerchData(designId: string): Promise<{ success: boolean; task?: DesignTaskLog; error?: string }> {
     console.log(`[UpdatePipeline] 🚀 Starte Step U1 (Merch API Extraction) für Design ${designId}...`);
-    const res = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
-    if (!res.success || !res.task) {
-      return { success: false, error: res.error || 'Fehler beim Abruf der Merch-Daten' };
+    try {
+      const task = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
+      if (!task || !task.id) {
+        return { success: false, error: 'Task konnte nicht erstellt werden' };
+      }
+
+      TaskLogService.updateTaskStatus(task.id, {
+        status: 'UPDATE_EXTRACTED',
+        hasError: false
+      });
+
+      return { success: true, task };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Fehler beim Abruf der Merch-Daten' };
     }
-
-    TaskLogService.updateTaskStatus(res.task.id, {
-      status: 'UPDATE_EXTRACTED',
-      hasError: false
-    });
-
-    return { success: true, task: res.task };
   }
 
   /**
@@ -44,6 +48,12 @@ export class UpdatePipelineService {
 
     const designId = task.payload?.designId;
     if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
+
+    // If artwork is already downloaded and present on disk, reuse it
+    if (task.localMbaPngPath && fs.existsSync(task.localMbaPngPath)) {
+      console.log(`[UpdatePipeline] 🖼️ Artwork bereits lokal vorhanden: ${task.localMbaPngPath}`);
+      return { success: true, localUrl: task.imageUrl || `/api/v1/designs/image/${encodeURIComponent(taskId)}` };
+    }
 
     const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
     if (!res.success) {
@@ -516,10 +526,48 @@ export class UpdatePipelineService {
   }
 
   /**
+   * Resume pipeline from current state (e.g. U3 -> U7)
+   */
+  static async resumePipeline(taskId: string): Promise<{ success: boolean; task?: DesignTaskLog; error?: string }> {
+    console.log(`[UpdatePipeline] ▶️ Setze Pipeline ab aktuellem Stand für Task ${taskId} fort...`);
+    const task = this.getTask(taskId);
+    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+
+    // If artwork not downloaded yet, do U2
+    if (!task.localMbaPngPath || !fs.existsSync(task.localMbaPngPath)) {
+      const u2 = await this.stepU2_DownloadArtwork(taskId);
+      if (!u2.success) return { success: false, error: u2.error };
+    }
+
+    // Step U3: Vision & Listing Analysis
+    const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
+    if (!u3.success) return { success: false, error: u3.error };
+
+    // Step U4: Listing Rewrite (EN)
+    const u4 = await this.stepU4_RewriteListing(taskId);
+    if (!u4.success) return { success: false, error: u4.error };
+
+    // Step U5: Trademark Check
+    const u5 = await this.stepU5_TrademarkCheck(taskId);
+    if (!u5.success) return { success: false, error: u5.error };
+
+    // Step U6: Translation
+    const u6 = await this.stepU6_TranslateListing(taskId);
+    if (!u6.success) return { success: false, error: u6.error };
+
+    // Step U7: Enqueue
+    const u7 = await this.stepU7_Enqueue(taskId);
+    if (!u7.success) return { success: false, error: u7.error };
+
+    const finalTask = this.getTask(taskId);
+    return { success: true, task: finalTask };
+  }
+
+  /**
    * Run a single step (for Retry or Step-Back)
    */
   static async runStep(taskId: string, step: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    switch (step) {
+    switch (step.toUpperCase()) {
       case 'U1': {
         const task = this.getTask(taskId);
         if (!task?.payload?.designId) return { success: false, error: 'Design ID fehlt' };
@@ -531,6 +579,9 @@ export class UpdatePipelineService {
       case 'U5': return await this.stepU5_TrademarkCheck(taskId);
       case 'U6': return await this.stepU6_TranslateListing(taskId);
       case 'U7': return await this.stepU7_Enqueue(taskId);
+      case 'RESUME':
+      case 'CONTINUE':
+        return await this.resumePipeline(taskId);
       default: return { success: false, error: `Unbekannter Step: ${step}` };
     }
   }
