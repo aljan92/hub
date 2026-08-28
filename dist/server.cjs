@@ -222795,6 +222795,10 @@ var AmazonInspectService = class {
     }
     const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
     console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
+    TaskLogService.updateTaskStatus(cleanTaskId, {
+      status: "PROCESSING",
+      hasError: false
+    });
     let newTab = null;
     try {
       const session2 = await BrowserSessionService.getSession("sync");
@@ -222849,6 +222853,7 @@ var AmazonInspectService = class {
       console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
       const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
       TaskLogService.updateTaskStatus(cleanTaskId, {
+        status: "COMPLETED",
         imageUrl: localUrl,
         localImagePath: localUrl,
         mbaPngUrl: localUrl,
@@ -222870,13 +222875,17 @@ var AmazonInspectService = class {
       return { success: true, localUrl };
     } catch (err) {
       console.error(`[AmazonInspectService] \u274C Fehler beim Artwork-Download f\xFCr Task ${cleanTaskId}:`, err);
+      TaskLogService.updateTaskStatus(cleanTaskId, {
+        status: "ERROR",
+        hasError: true,
+        errorDetails: err.message
+      });
       TaskLogService.addEvent(cleanTaskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "ERROR",
         title: "Fehler beim Design-Download",
         content: err.message || "Unbekannter Fehler beim Herunterladen des Original-Designs"
       });
-      return { success: false, error: err.message };
     } finally {
       if (newTab) {
         await newTab.close().catch(() => {

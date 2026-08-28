@@ -379,6 +379,12 @@ export class AmazonInspectService {
     const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
     console.log(`[AmazonInspectService] 🖼️ Starte Artwork-Download für Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
 
+    // Set task to PROCESSING state so UI immediately shows downloading badge
+    TaskLogService.updateTaskStatus(cleanTaskId, {
+      status: 'PROCESSING',
+      hasError: false
+    });
+
     let newTab: any = null;
     try {
       const session = await BrowserSessionService.getSession('sync');
@@ -454,8 +460,9 @@ export class AmazonInspectService {
 
       const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
 
-      // Update TaskLog
+      // Update TaskLog with COMPLETED status and paths
       TaskLogService.updateTaskStatus(cleanTaskId, {
+        status: 'COMPLETED',
         imageUrl: localUrl,
         localImagePath: localUrl,
         mbaPngUrl: localUrl,
@@ -479,13 +486,17 @@ export class AmazonInspectService {
       return { success: true, localUrl };
     } catch (err: any) {
       console.error(`[AmazonInspectService] ❌ Fehler beim Artwork-Download für Task ${cleanTaskId}:`, err);
+      TaskLogService.updateTaskStatus(cleanTaskId, {
+        status: 'ERROR',
+        hasError: true,
+        errorDetails: err.message
+      });
       TaskLogService.addEvent(cleanTaskId, {
         timestamp: new Date().toISOString(),
         type: 'ERROR',
         title: 'Fehler beim Design-Download',
         content: err.message || 'Unbekannter Fehler beim Herunterladen des Original-Designs'
       });
-      return { success: false, error: err.message };
     } finally {
       if (newTab) {
         await newTab.close().catch(() => {});

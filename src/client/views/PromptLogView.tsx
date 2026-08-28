@@ -825,8 +825,9 @@ export const PromptLogView: React.FC = () => {
           ) : (
             filteredTasks.map(task => {
               const isSelected = selectedTask?.id === task.id;
-              const displayQuote = task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || 'Kein Quote';
-              const displayNiche = [task.payload?.niche1, task.payload?.niche2].filter(Boolean).join(' • ');
+              const displayQuote = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || (task.source === 'UPDATE' ? 'Amazon Update Task' : 'Kein Quote');
+              const displayNiche = [task.payload?.niche1, task.payload?.niche2].filter(Boolean).join(' • ') || (task.source === 'UPDATE' ? `ID: ${task.payload?.designId?.slice(0, 8)}...` : '');
+              const isUpdateDownloading = task.source === 'UPDATE' && (task.status === 'PROCESSING' || downloadingArtworkTaskId === task.id || (!task.imageUrl && !task.hasError && (task.events?.length || 0) <= 2));
 
               return (
                 <div
@@ -867,44 +868,64 @@ export const PromptLogView: React.FC = () => {
 
                   {/* Status row */}
                   <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-[10px]">
-                    {task.status === 'PROCESSING' && (
-                      <span className="text-amber-400 font-semibold animate-pulse">OpenRouter Prompt...</span>
-                    )}
-                    {task.status === 'GENERATING_IMAGE' && (
-                      <span className="text-purple-400 font-semibold animate-pulse">Ideogram Bild...</span>
-                    )}
-                    {task.status === 'ANALYZING_DESIGN' && (
-                      <span className="text-cyan-400 font-semibold animate-pulse">Vision-Analyse...</span>
-                    )}
-                    {task.status === 'GENERATING_LISTING' && (
-                      <span className="text-emerald-400 font-semibold animate-pulse">MBA Listing...</span>
-                    )}
-                    {task.status === 'CHECKING_TRADEMARKS' && (
-                      <span className="text-amber-400 font-semibold animate-pulse">USPTO TM Check...</span>
-                    )}
-                    {task.status === 'AWAITING_PRE_FLIGHT_REVIEW' && (
-                      <span className="text-amber-400 font-semibold">Wartet: Quote TM</span>
-                    )}
-                    {task.status === 'AWAITING_DESIGN_REVIEW' && (
-                      <span className="text-cyan-300 font-semibold">Wartet: Design</span>
-                    )}
-                    {task.status === 'AWAITING_TM_REVIEW' && (
-                      <span className="text-purple-300 font-semibold">Wartet: TM Review</span>
-                    )}
-                    {task.status === 'VECTORIZING_DESIGN' && (
-                      <span className="text-emerald-400 font-semibold animate-pulse">Vektorisierung...</span>
-                    )}
-                    {task.status === 'AWAITING_SVG_REVIEW' && (
-                      <span className="text-emerald-300 font-semibold">Wartet: SVG Prüfung</span>
-                    )}
-                    {task.status === 'COMPLETED' && (
-                      <span className="text-emerald-400 font-semibold">Abgeschlossen</span>
-                    )}
-                    {task.status === 'REJECTED' && (
-                      <span className="text-rose-400 font-semibold">Abgelehnt</span>
-                    )}
-                    {task.hasError && (
-                      <span className="text-rose-400 font-semibold">Fehler</span>
+                    {task.source === 'UPDATE' ? (
+                      isUpdateDownloading ? (
+                        <span className="text-amber-400 font-semibold animate-pulse flex items-center gap-1">
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          Downloading Design...
+                        </span>
+                      ) : task.hasError ? (
+                        <span className="text-rose-400 font-semibold">Download Fehler</span>
+                      ) : (task.imageUrl || task.localImagePath) ? (
+                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          Design bereit
+                        </span>
+                      ) : (
+                        <span className="text-teal-400 font-semibold">Rohdaten erfasst</span>
+                      )
+                    ) : (
+                      <>
+                        {task.status === 'PROCESSING' && (
+                          <span className="text-amber-400 font-semibold animate-pulse">OpenRouter Prompt...</span>
+                        )}
+                        {task.status === 'GENERATING_IMAGE' && (
+                          <span className="text-purple-400 font-semibold animate-pulse">Ideogram Bild...</span>
+                        )}
+                        {task.status === 'ANALYZING_DESIGN' && (
+                          <span className="text-cyan-400 font-semibold animate-pulse">Vision-Analyse...</span>
+                        )}
+                        {task.status === 'GENERATING_LISTING' && (
+                          <span className="text-emerald-400 font-semibold animate-pulse">MBA Listing...</span>
+                        )}
+                        {task.status === 'CHECKING_TRADEMARKS' && (
+                          <span className="text-amber-400 font-semibold animate-pulse">USPTO TM Check...</span>
+                        )}
+                        {task.status === 'AWAITING_PRE_FLIGHT_REVIEW' && (
+                          <span className="text-amber-400 font-semibold">Wartet: Quote TM</span>
+                        )}
+                        {task.status === 'AWAITING_DESIGN_REVIEW' && (
+                          <span className="text-cyan-300 font-semibold">Wartet: Design</span>
+                        )}
+                        {task.status === 'AWAITING_TM_REVIEW' && (
+                          <span className="text-purple-300 font-semibold">Wartet: TM Review</span>
+                        )}
+                        {task.status === 'VECTORIZING_DESIGN' && (
+                          <span className="text-emerald-400 font-semibold animate-pulse">Vektorisierung...</span>
+                        )}
+                        {task.status === 'AWAITING_SVG_REVIEW' && (
+                          <span className="text-emerald-300 font-semibold">Wartet: SVG Prüfung</span>
+                        )}
+                        {task.status === 'COMPLETED' && (
+                          <span className="text-emerald-400 font-semibold">Abgeschlossen</span>
+                        )}
+                        {task.status === 'REJECTED' && (
+                          <span className="text-rose-400 font-semibold">Abgelehnt</span>
+                        )}
+                        {task.hasError && (
+                          <span className="text-rose-400 font-semibold">Fehler</span>
+                        )}
+                      </>
                     )}
 
                     <span className="text-slate-500 font-mono">
@@ -1239,7 +1260,7 @@ export const PromptLogView: React.FC = () => {
                       {event.type === 'ANALYSIS_RESPONSE' && (() => {
                         const isArtworkDownload = event.title === 'Original-Design heruntergeladen' || !!event.content?.originalUrl;
                         if (isArtworkDownload) {
-                          const imgUrl = event.content?.localUrl || selectedTask.localImagePath || selectedTask.imageUrl;
+                          const imgUrl = event.content?.localUrl || selectedTask.localImagePath || selectedTask.imageUrl || event.content?.originalUrl || `/api/v1/designs/image/${encodeURIComponent(selectedTask.id)}`;
                           return (
                             <div className="bg-slate-950 rounded-xl p-4 border border-amber-500/40 space-y-3 shadow-lg">
                               <div className="flex items-center justify-between">
@@ -1279,6 +1300,11 @@ export const PromptLogView: React.FC = () => {
                                       src={imgUrl}
                                       alt="Original Master Design"
                                       className="w-48 h-48 object-contain rounded-xl border border-slate-700 bg-slate-950 shadow-md p-1"
+                                      onError={(e) => {
+                                        if (event.content?.originalUrl && e.currentTarget.src !== event.content.originalUrl) {
+                                          e.currentTarget.src = event.content.originalUrl;
+                                        }
+                                      }}
                                       loading="lazy"
                                     />
                                     <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/80 text-amber-300 border border-amber-500/30 backdrop-blur-sm">
