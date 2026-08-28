@@ -382,7 +382,7 @@ export class AmazonInspectService {
     let newTab: any = null;
     try {
       const session = await BrowserSessionService.getSession('sync');
-      newTab = await session.context.newPage();
+      newTab = await session.page.context().newPage();
 
       // Navigate to edit page
       await newTab.goto(editUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });

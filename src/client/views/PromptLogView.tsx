@@ -282,7 +282,7 @@ export const PromptLogView: React.FC = () => {
       if (data.success && data.task) {
         setUpdateTaskSuccessMessage(`✅ Update-Task ${data.task.id} erfolgreich erstellt!`);
         await fetchTasks();
-        setActiveSourceFilter('UPDATE');
+        setFilterSource('UPDATE');
         setSelectedTaskId(data.task.id);
         setTimeout(() => setUpdateTaskSuccessMessage(null), 8000);
       } else {

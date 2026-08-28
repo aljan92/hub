@@ -222798,7 +222798,7 @@ var AmazonInspectService = class {
     let newTab = null;
     try {
       const session2 = await BrowserSessionService.getSession("sync");
-      newTab = await session2.context.newPage();
+      newTab = await session2.page.context().newPage();
       await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
       await newTab.waitForSelector('img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img', { timeout: 25e3 }).catch(() => null);
       const extractResult = await newTab.evaluate(() => {
