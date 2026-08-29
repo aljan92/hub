@@ -44,6 +44,8 @@ export interface AppSettings {
   queueUploadMode: 'draft' | 'live'; // e.g. 'draft' or 'live'
   queueDraftProductsPerDesign: number; // e.g. 106
   queueUpdateTargetCount: number;      // e.g. 10
+  queueUpdateAutoBackfillEnabled: boolean; // e.g. false (defaults to OFF)
+  queueUpdateMaxActiveProducts: number;    // e.g. 100 (skip designs with >= 100 live products)
   costPerImage: number;            // e.g. 0.08 ($ / image)
   costPerVectorization: number;    // e.g. 0.05 ($ / vectorization)
   costStatsResetTimestamp?: string;// e.g. ISO string for stats reset
@@ -93,6 +95,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   queueAutoBalance: true,
   queueUploadMode: 'draft',
   queueDraftProductsPerDesign: 106,
+  queueUpdateTargetCount: 10,
+  queueUpdateAutoBackfillEnabled: false,
+  queueUpdateMaxActiveProducts: 100,
   costPerImage: 0.08,
   costPerVectorization: 0.05,
 };

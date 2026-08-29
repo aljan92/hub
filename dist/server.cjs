@@ -49905,6 +49905,9 @@ var init_settingsService = __esm2({
       queueAutoBalance: true,
       queueUploadMode: "draft",
       queueDraftProductsPerDesign: 106,
+      queueUpdateTargetCount: 10,
+      queueUpdateAutoBackfillEnabled: false,
+      queueUpdateMaxActiveProducts: 100,
       costPerImage: 0.08,
       costPerVectorization: 0.05
     };
@@ -218616,7 +218619,9 @@ var init_queueService = __esm2({
           uploadMode: settings.queueUploadMode || "draft",
           draftProductsPerDesign,
           maxCatalogSlots,
-          updateTargetCount: settings.queueUpdateTargetCount ?? 10
+          updateTargetCount: settings.queueUpdateTargetCount ?? 10,
+          updateAutoBackfillEnabled: settings.queueUpdateAutoBackfillEnabled ?? false,
+          updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100
         };
       }
       /**
@@ -222073,6 +222078,177 @@ Please audit the listing based on your compliance rules:
   }
 });
 
+// src/server/services/updateBackfillService.ts
+var updateBackfillService_exports = {};
+__export2(updateBackfillService_exports, {
+  UpdateBackfillService: () => UpdateBackfillService
+});
+var UpdateBackfillService;
+var init_updateBackfillService = __esm2({
+  "src/server/services/updateBackfillService.ts"() {
+    "use strict";
+    init_dist4();
+    init_settingsService();
+    init_queueService();
+    init_taskLogService();
+    init_updatePipelineService();
+    UpdateBackfillService = class {
+      static inFlightDesigns = /* @__PURE__ */ new Set();
+      static isRunningLoop = false;
+      static intervalId = null;
+      /**
+       * Collect all design IDs that must NOT be pulled again
+       * (Already in Queue, active in Tasks, or currently in flight)
+       */
+      static getExcludedDesignIds() {
+        const excluded = /* @__PURE__ */ new Set();
+        for (const id of this.inFlightDesigns) {
+          if (id) excluded.add(id.trim());
+        }
+        const queueItems = QueueService.loadQueue();
+        for (const item of queueItems) {
+          if (item.designId) excluded.add(item.designId.trim());
+          if (item.taskId) {
+            const cleanTask = item.taskId.replace(/^#/, "").replace(/-U$/, "").trim();
+            excluded.add(cleanTask);
+          }
+        }
+        const tasks = TaskLogService.loadLogs();
+        for (const task of tasks) {
+          if (task.status === "REJECTED") continue;
+          if (task.payload?.designId) excluded.add(task.payload.designId.trim());
+          if (task.id) {
+            const cleanTask = task.id.replace(/^#/, "").replace(/-U$/, "").trim();
+            excluded.add(cleanTask);
+          }
+        }
+        return excluded;
+      }
+      /**
+       * Query Supabase `mba_designs` table for the oldest updated design
+       * that matches the active product count threshold and is not already in the Hub.
+       */
+      static async fetchNextCandidateFromSupabase() {
+        const settings = loadSettings();
+        if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+          console.warn("[UpdateBackfillService] \u26A0\uFE0F Supabase URL oder Service Role Key fehlt in den Einstellungen.");
+          return null;
+        }
+        const supabase = createClient(settings.supabaseUrl, settings.supabaseServiceRoleKey, {
+          auth: { persistSession: false, autoRefreshToken: false }
+        });
+        const excludedIds = this.getExcludedDesignIds();
+        const maxActiveProducts = settings.queueUpdateMaxActiveProducts ?? 100;
+        console.log(`[UpdateBackfillService] \u{1F50D} Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
+        const { data: candidates, error } = await supabase.from("mba_designs").select("design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status").order("updated_date", { ascending: true, nullsFirst: true }).limit(60);
+        if (error) {
+          console.error("[UpdateBackfillService] \u274C Supabase Abfrage-Fehler:", error.message);
+          return null;
+        }
+        if (!candidates || candidates.length === 0) {
+          console.log("[UpdateBackfillService] \u2139\uFE0F Keine Designs in mba_designs gefunden.");
+          return null;
+        }
+        for (const cand of candidates) {
+          const dId = cand.design_id ? String(cand.design_id).trim() : "";
+          if (!dId) continue;
+          if (excludedIds.has(dId)) {
+            continue;
+          }
+          let activeCount = 0;
+          if (Array.isArray(cand.published_products)) {
+            activeCount = cand.published_products.length;
+          } else if (Array.isArray(cand.asins)) {
+            activeCount = cand.asins.length;
+          }
+          if (activeCount >= maxActiveProducts) {
+            console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: Bereits ${activeCount} aktive Produkte (Limit: < ${maxActiveProducts}).`);
+            continue;
+          }
+          console.log(`[UpdateBackfillService] \u{1F3AF} Kandidat gefunden: Design ${dId} (${activeCount} aktive Produkte, zuletzt geupdatet: ${cand.updated_date || "nie"}).`);
+          return {
+            designId: dId,
+            activeProductsCount: activeCount,
+            updatedDate: cand.updated_date
+          };
+        }
+        console.log("[UpdateBackfillService] \u2139\uFE0F Alle abgefragten Designs \xFCberschritten das Produktlimit oder sind bereits in Bearbeitung.");
+        return null;
+      }
+      /**
+       * Run one backfill cycle (pulls 1 design and runs U1–U7 or pauses at Tasks review)
+       */
+      static async runBackfillCycle(forceSingle = false) {
+        const settings = loadSettings();
+        if (!forceSingle && !settings.queueUpdateAutoBackfillEnabled) {
+          return { success: false, message: "Automatik ist ausgeschaltet." };
+        }
+        const queueItems = QueueService.loadQueue();
+        const isUpdateItem = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE";
+        const currentUpdateCount = queueItems.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR").length;
+        const targetCount = settings.queueUpdateTargetCount ?? 10;
+        if (!forceSingle && currentUpdateCount >= targetCount) {
+          return { success: false, message: `Update-Pool ist bereits voll (${currentUpdateCount}/${targetCount} Designs).` };
+        }
+        const candidate = await this.fetchNextCandidateFromSupabase();
+        if (!candidate) {
+          return { success: false, message: "Kein passendes Design in Supabase gefunden." };
+        }
+        const designId = candidate.designId;
+        this.inFlightDesigns.add(designId);
+        try {
+          console.log(`[UpdateBackfillService] \u{1F680} Starte automatischen Update-Workflow f\xFCr Design ${designId}...`);
+          const result2 = await UpdatePipelineService.runUpdatePipeline(designId);
+          if (result2.success) {
+            return {
+              success: true,
+              designId,
+              message: result2.pausedAtCheckpoint ? `Design ${designId} erfolgreich gezogen und an Tasks \xFCbergeben.` : `Design ${designId} erfolgreich verarbeitet und in Update-Queue eingereiht.`
+            };
+          } else {
+            return { success: false, designId, message: result2.error || "Fehler beim Ausf\xFChren des Workflows" };
+          }
+        } catch (err) {
+          console.error(`[UpdateBackfillService] \u274C Fehler beim Verarbeiten von Design ${designId}:`, err);
+          return { success: false, designId, message: err.message };
+        } finally {
+          this.inFlightDesigns.delete(designId);
+        }
+      }
+      /**
+       * Start background polling scheduler
+       */
+      static startScheduler() {
+        if (this.intervalId) return;
+        console.log("[UpdateBackfillService] \u23F1\uFE0F Update-Backfill Scheduler gestartet (Pr\xFCfintervall: 30s).");
+        this.intervalId = setInterval(async () => {
+          try {
+            const settings = loadSettings();
+            if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
+              this.isRunningLoop = true;
+              await this.runBackfillCycle(false);
+              this.isRunningLoop = false;
+            }
+          } catch (err) {
+            this.isRunningLoop = false;
+            console.error("[UpdateBackfillService] Scheduler-Fehler:", err);
+          }
+        }, 3e4);
+      }
+      /**
+       * Stop background polling scheduler
+       */
+      static stopScheduler() {
+        if (this.intervalId) {
+          clearInterval(this.intervalId);
+          this.intervalId = null;
+          console.log("[UpdateBackfillService] \u{1F6D1} Update-Backfill Scheduler gestoppt.");
+        }
+      }
+    };
+  }
+});
+
 // src/server/index.ts
 var import_express = __toESM2(require_express2(), 1);
 var import_http4 = __toESM2(require("http"), 1);
@@ -225037,7 +225213,19 @@ app.post("/api/v1/queue/reorder", (req, res) => {
 });
 app.patch("/api/v1/queue/settings", (req, res) => {
   try {
-    const { uploadScheduleTime, maxDropPerDesign, autoBalance, uploadMode, draftProductsPerDesign } = req.body;
+    const {
+      uploadScheduleTime,
+      maxDropPerDesign,
+      autoBalance,
+      uploadMode,
+      draftProductsPerDesign,
+      queueUpdateTargetCount,
+      updateTargetCount,
+      queueUpdateAutoBackfillEnabled,
+      updateAutoBackfillEnabled,
+      queueUpdateMaxActiveProducts,
+      updateMaxActiveProducts
+    } = req.body;
     const current = loadSettings();
     const updated = {
       ...current,
@@ -225045,11 +225233,24 @@ app.patch("/api/v1/queue/settings", (req, res) => {
       queueMaxDropPerDesign: maxDropPerDesign !== void 0 ? Number(maxDropPerDesign) : current.queueMaxDropPerDesign,
       queueAutoBalance: autoBalance !== void 0 ? Boolean(autoBalance) : current.queueAutoBalance,
       queueUploadMode: uploadMode !== void 0 ? uploadMode : current.queueUploadMode,
-      queueDraftProductsPerDesign: draftProductsPerDesign !== void 0 ? Number(draftProductsPerDesign) : current.queueDraftProductsPerDesign
+      queueDraftProductsPerDesign: draftProductsPerDesign !== void 0 ? Number(draftProductsPerDesign) : current.queueDraftProductsPerDesign,
+      queueUpdateTargetCount: (queueUpdateTargetCount !== void 0 ? queueUpdateTargetCount : updateTargetCount) !== void 0 ? Number(queueUpdateTargetCount !== void 0 ? queueUpdateTargetCount : updateTargetCount) : current.queueUpdateTargetCount,
+      queueUpdateAutoBackfillEnabled: (queueUpdateAutoBackfillEnabled !== void 0 ? queueUpdateAutoBackfillEnabled : updateAutoBackfillEnabled) !== void 0 ? Boolean(queueUpdateAutoBackfillEnabled !== void 0 ? queueUpdateAutoBackfillEnabled : updateAutoBackfillEnabled) : current.queueUpdateAutoBackfillEnabled,
+      queueUpdateMaxActiveProducts: (queueUpdateMaxActiveProducts !== void 0 ? queueUpdateMaxActiveProducts : updateMaxActiveProducts) !== void 0 ? Number(queueUpdateMaxActiveProducts !== void 0 ? queueUpdateMaxActiveProducts : updateMaxActiveProducts) : current.queueUpdateMaxActiveProducts
     };
     saveSettings(updated);
     const state = QueueService.rebalanceQueue();
     res.json({ success: true, state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/queue/update-backfill/run-once", async (req, res) => {
+  try {
+    const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
+    const result2 = await UpdateBackfillService2.runBackfillCycle(true);
+    const state = QueueService.getState();
+    res.json({ ...result2, state });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -225241,6 +225442,12 @@ server2.listen(Number(PORT), HOST, () => {
     ProductScannerService.init();
   } catch (err) {
     console.warn("[MBA Hub] ProductScannerService.init warning:", err.message);
+  }
+  try {
+    const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
+    UpdateBackfillService2.startScheduler();
+  } catch (err) {
+    console.warn("[MBA Hub] UpdateBackfillService.startScheduler warning:", err.message);
   }
   setTimeout(async () => {
     try {

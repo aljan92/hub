@@ -1375,10 +1375,23 @@ app.post('/api/v1/queue/reorder', (req, res) => {
   }
 });
 
-// Update Queue Settings (Schedule Time, Max Drop, Auto Balance, Upload Mode, Draft Products)
+// Update Queue Settings (Schedule Time, Max Drop, Auto Balance, Upload Mode, Draft Products, Update Target, Auto Backfill, Max Active Products)
 app.patch('/api/v1/queue/settings', (req, res) => {
   try {
-    const { uploadScheduleTime, maxDropPerDesign, autoBalance, uploadMode, draftProductsPerDesign } = req.body;
+    const { 
+      uploadScheduleTime, 
+      maxDropPerDesign, 
+      autoBalance, 
+      uploadMode, 
+      draftProductsPerDesign,
+      queueUpdateTargetCount,
+      updateTargetCount,
+      queueUpdateAutoBackfillEnabled,
+      updateAutoBackfillEnabled,
+      queueUpdateMaxActiveProducts,
+      updateMaxActiveProducts
+    } = req.body;
+    
     const current = loadSettings();
     const updated = {
       ...current,
@@ -1386,11 +1399,32 @@ app.patch('/api/v1/queue/settings', (req, res) => {
       queueMaxDropPerDesign: maxDropPerDesign !== undefined ? Number(maxDropPerDesign) : current.queueMaxDropPerDesign,
       queueAutoBalance: autoBalance !== undefined ? Boolean(autoBalance) : current.queueAutoBalance,
       queueUploadMode: uploadMode !== undefined ? uploadMode : current.queueUploadMode,
-      queueDraftProductsPerDesign: draftProductsPerDesign !== undefined ? Number(draftProductsPerDesign) : current.queueDraftProductsPerDesign
+      queueDraftProductsPerDesign: draftProductsPerDesign !== undefined ? Number(draftProductsPerDesign) : current.queueDraftProductsPerDesign,
+      queueUpdateTargetCount: (queueUpdateTargetCount !== undefined ? queueUpdateTargetCount : updateTargetCount) !== undefined 
+        ? Number(queueUpdateTargetCount !== undefined ? queueUpdateTargetCount : updateTargetCount) 
+        : current.queueUpdateTargetCount,
+      queueUpdateAutoBackfillEnabled: (queueUpdateAutoBackfillEnabled !== undefined ? queueUpdateAutoBackfillEnabled : updateAutoBackfillEnabled) !== undefined 
+        ? Boolean(queueUpdateAutoBackfillEnabled !== undefined ? queueUpdateAutoBackfillEnabled : updateAutoBackfillEnabled) 
+        : current.queueUpdateAutoBackfillEnabled,
+      queueUpdateMaxActiveProducts: (queueUpdateMaxActiveProducts !== undefined ? queueUpdateMaxActiveProducts : updateMaxActiveProducts) !== undefined 
+        ? Number(queueUpdateMaxActiveProducts !== undefined ? queueUpdateMaxActiveProducts : updateMaxActiveProducts) 
+        : current.queueUpdateMaxActiveProducts
     };
     saveSettings(updated);
     const state = QueueService.rebalanceQueue();
     res.json({ success: true, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Trigger 1x manual pull of candidate design from Supabase
+app.post('/api/v1/queue/update-backfill/run-once', async (req, res) => {
+  try {
+    const { UpdateBackfillService } = require('./services/updateBackfillService');
+    const result = await UpdateBackfillService.runBackfillCycle(true);
+    const state = QueueService.getState();
+    res.json({ ...result, state });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1632,6 +1666,14 @@ server.listen(Number(PORT), HOST, () => {
     ProductScannerService.init();
   } catch (err: any) {
     console.warn('[MBA Hub] ProductScannerService.init warning:', err.message);
+  }
+
+  // Initialize UpdateBackfillService background scheduler
+  try {
+    const { UpdateBackfillService } = require('./services/updateBackfillService');
+    UpdateBackfillService.startScheduler();
+  } catch (err: any) {
+    console.warn('[MBA Hub] UpdateBackfillService.startScheduler warning:', err.message);
   }
 
   // Pre-warm browser sessions in background so they are immediately ready

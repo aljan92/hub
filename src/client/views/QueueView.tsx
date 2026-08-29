@@ -28,7 +28,10 @@ import {
   Package,
   Plus,
   Minus,
-  Info
+  Info,
+  Database,
+  Power,
+  Loader2
 } from 'lucide-react';
 import { BrowserScreencast } from '../components/BrowserScreencast';
 
@@ -83,6 +86,9 @@ interface QueueState {
   uploadMode?: 'draft' | 'live';
   draftProductsPerDesign?: number;
   maxCatalogSlots?: number;
+  updateTargetCount?: number;
+  updateAutoBackfillEnabled?: boolean;
+  updateMaxActiveProducts?: number;
 }
 
 interface UploadProgressState {
@@ -115,7 +121,11 @@ export const QueueView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'queue' | 'paused' | 'update' | 'completed' | 'errors'>('queue');
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<QueueItem | null>(null);
   const [updateTargetCount, setUpdateTargetCount] = useState<number>(10);
+  const [updateAutoBackfill, setUpdateAutoBackfill] = useState<boolean>(false);
+  const [updateMaxActiveProducts, setUpdateMaxActiveProducts] = useState<number>(100);
   const [savingTargetCount, setSavingTargetCount] = useState<boolean>(false);
+  const [isTriggeringBackfill, setIsTriggeringBackfill] = useState<boolean>(false);
+  const [backfillToast, setBackfillToast] = useState<{ message: string; success: boolean } | null>(null);
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
@@ -199,15 +209,21 @@ export const QueueView: React.FC = () => {
     if (queueState.updateTargetCount !== undefined) {
       setUpdateTargetCount(queueState.updateTargetCount);
     }
-  }, [queueState.updateTargetCount]);
+    if (queueState.updateAutoBackfillEnabled !== undefined) {
+      setUpdateAutoBackfill(queueState.updateAutoBackfillEnabled);
+    }
+    if (queueState.updateMaxActiveProducts !== undefined) {
+      setUpdateMaxActiveProducts(queueState.updateMaxActiveProducts);
+    }
+  }, [queueState.updateTargetCount, queueState.updateAutoBackfillEnabled, queueState.updateMaxActiveProducts]);
 
   const handleSetUpdateTargetCount = async (count: number) => {
     const clamped = Math.max(1, Math.min(50, count));
     setUpdateTargetCount(clamped);
     setSavingTargetCount(true);
     try {
-      await fetch('/api/v1/settings', {
-        method: 'POST',
+      await fetch('/api/v1/queue/settings', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ queueUpdateTargetCount: clamped })
       });
@@ -216,6 +232,58 @@ export const QueueView: React.FC = () => {
       console.warn('Failed to update target count:', e);
     } finally {
       setSavingTargetCount(false);
+    }
+  };
+
+  const handleToggleAutoBackfill = async (enabled: boolean) => {
+    setUpdateAutoBackfill(enabled);
+    try {
+      await fetch('/api/v1/queue/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queueUpdateAutoBackfillEnabled: enabled })
+      });
+      fetchQueue();
+    } catch (e) {
+      console.warn('Failed to toggle auto backfill:', e);
+    }
+  };
+
+  const handleSetMaxActiveProducts = async (count: number) => {
+    const clamped = Math.max(1, Math.min(500, count));
+    setUpdateMaxActiveProducts(clamped);
+    try {
+      await fetch('/api/v1/queue/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queueUpdateMaxActiveProducts: clamped })
+      });
+      fetchQueue();
+    } catch (e) {
+      console.warn('Failed to set max active products:', e);
+    }
+  };
+
+  const handleTriggerSingleBackfill = async () => {
+    setIsTriggeringBackfill(true);
+    setBackfillToast(null);
+    try {
+      const res = await fetch('/api/v1/queue/update-backfill/run-once', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBackfillToast({ message: data.message || '1 Design erfolgreich gezogen!', success: true });
+      } else {
+        setBackfillToast({ message: data.message || data.error || 'Kein passendes Design gefunden', success: false });
+      }
+      fetchQueue();
+    } catch (e: any) {
+      setBackfillToast({ message: `Fehler: ${e.message}`, success: false });
+    } finally {
+      setIsTriggeringBackfill(false);
+      setTimeout(() => setBackfillToast(null), 6000);
     }
   };
 
@@ -1413,42 +1481,132 @@ export const QueueView: React.FC = () => {
       {activeTab === 'update' && (
         <div className="space-y-4 animate-fadeIn">
           {/* Clean Update Header & Controls */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface/80 border border-slate-800/80 p-4 rounded-2xl shadow-sm">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400">
-                <RotateCcw className="w-5 h-5" />
+          <div className="space-y-3 bg-surface/80 border border-slate-800/80 p-4 rounded-2xl shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100">
+                    Update Queue
+                  </h3>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-100">
-                  Update Queue
-                </h3>
+
+              {/* Controls Bar */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* 1. Automatik Toggle */}
+                <div className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl">
+                  <span className="text-xs font-semibold text-slate-300">Automatik:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAutoBackfill(!updateAutoBackfill)}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center space-x-1.5 ${
+                      updateAutoBackfill 
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-950/40' 
+                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    <Power className="w-3 h-3" />
+                    <span>{updateAutoBackfill ? 'AKTIV' : 'AUS'}</span>
+                  </button>
+                </div>
+
+                {/* 2. Vorhalten Stepper */}
+                <div className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl">
+                  <span className="text-xs font-semibold text-slate-300">Vorhalten:</span>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSetUpdateTargetCount(updateTargetCount - 1)}
+                      disabled={updateTargetCount <= 1 || savingTargetCount}
+                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="font-mono font-bold text-xs text-teal-400 w-7 text-center">
+                      {updateTargetCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleSetUpdateTargetCount(updateTargetCount + 1)}
+                      disabled={updateTargetCount >= 50 || savingTargetCount}
+                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <span className="text-[11px] text-slate-500">Designs</span>
+                </div>
+
+                {/* 3. Max Live Products Filter */}
+                <div className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl" title="Überspringt Designs aus Supabase mit dieser oder höherer Anzahl an Live-Produkten">
+                  <span className="text-xs font-semibold text-slate-300">Max. Live-Produkte:</span>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSetMaxActiveProducts(updateMaxActiveProducts - 10)}
+                      disabled={updateMaxActiveProducts <= 10}
+                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="font-mono font-bold text-xs text-teal-400 w-11 text-center">
+                      &lt; {updateMaxActiveProducts}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleSetMaxActiveProducts(updateMaxActiveProducts + 10)}
+                      disabled={updateMaxActiveProducts >= 500}
+                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. Trigger 1x Backfill Button */}
+                <button
+                  type="button"
+                  onClick={handleTriggerSingleBackfill}
+                  disabled={isTriggeringBackfill}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white flex items-center space-x-1.5 transition-all disabled:opacity-50 shadow-sm shadow-teal-950/40"
+                  title="Zieht das älteste passende Design aus Supabase"
+                >
+                  {isTriggeringBackfill ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isTriggeringBackfill ? 'Zieht Design...' : '1x Design ziehen'}</span>
+                </button>
               </div>
             </div>
 
-            {/* Target Count Stepper */}
-            <div className="flex items-center space-x-2.5 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl">
-              <span className="text-xs font-semibold text-slate-300">Vorhalten:</span>
-              <div className="flex items-center space-x-1">
+            {/* Backfill Feedback Toast */}
+            {backfillToast && (
+              <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between transition-all ${
+                backfillToast.success 
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+              }`}>
+                <div className="flex items-center space-x-2">
+                  {backfillToast.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  )}
+                  <span>{backfillToast.message}</span>
+                </div>
                 <button
-                  onClick={() => handleSetUpdateTargetCount(updateTargetCount - 1)}
-                  disabled={updateTargetCount <= 1 || savingTargetCount}
-                  className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                  onClick={() => setBackfillToast(null)}
+                  className="text-slate-400 hover:text-slate-200 p-1"
                 >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <span className="font-mono font-bold text-xs text-teal-400 w-7 text-center">
-                  {updateTargetCount}
-                </span>
-                <button
-                  onClick={() => handleSetUpdateTargetCount(updateTargetCount + 1)}
-                  disabled={updateTargetCount >= 50 || savingTargetCount}
-                  className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <span className="text-[11px] text-slate-500">Designs</span>
-            </div>
+            )}
           </div>
 
           {/* Update Items Pool */}

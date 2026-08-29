@@ -63,6 +63,8 @@ export interface QueueState {
   draftProductsPerDesign: number;
   maxCatalogSlots: number;
   updateTargetCount?: number;
+  updateAutoBackfillEnabled?: boolean;
+  updateMaxActiveProducts?: number;
 }
 
 // Strict drop sequence for non-US marketplaces within a droppable product
@@ -315,7 +317,9 @@ export class QueueService {
       uploadMode: settings.queueUploadMode || 'draft',
       draftProductsPerDesign,
       maxCatalogSlots,
-      updateTargetCount: settings.queueUpdateTargetCount ?? 10
+      updateTargetCount: settings.queueUpdateTargetCount ?? 10,
+      updateAutoBackfillEnabled: settings.queueUpdateAutoBackfillEnabled ?? false,
+      updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100
     };
   }
 
