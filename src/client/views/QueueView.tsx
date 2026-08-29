@@ -1411,81 +1411,43 @@ export const QueueView: React.FC = () => {
 
       {/* ================= TAB 3: UPDATE ================= */}
       {activeTab === 'update' && (
-        <div className="space-y-6 animate-fadeIn">
-          {/* Update Feature Header & Controls */}
-          <div className="glass-panel p-5 rounded-2xl border border-teal-500/20 bg-slate-950/40 space-y-4 shadow-lg">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
-              <div className="flex items-center space-x-3">
-                <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400">
-                  <RotateCcw className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                    Listing Update Pipeline
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/20">Phase 1 Bereit</span>
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Aktualisiert bestehende MBA-Designs aus Supabase (Listing-Rewrite, TM-Scan, Fit-Types &amp; Farbausschlüsse).
-                  </p>
-                </div>
+        <div className="space-y-4 animate-fadeIn">
+          {/* Clean Update Header & Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface/80 border border-slate-800/80 p-4 rounded-2xl shadow-sm">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400">
+                <RotateCcw className="w-5 h-5" />
               </div>
-
-              {/* Target Count Stepper */}
-              <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 p-2 rounded-xl">
-                <span className="text-xs font-semibold text-slate-300">Vorzuhaltende Designs:</span>
-                <div className="flex items-center space-x-1.5">
-                  <button
-                    onClick={() => handleSetUpdateTargetCount(updateTargetCount - 1)}
-                    disabled={updateTargetCount <= 1 || savingTargetCount}
-                    className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="font-mono font-bold text-sm text-teal-400 w-8 text-center">
-                    {updateTargetCount}
-                  </span>
-                  <button
-                    onClick={() => handleSetUpdateTargetCount(updateTargetCount + 1)}
-                    disabled={updateTargetCount >= 50 || savingTargetCount}
-                    className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100">
+                  Update Queue
+                </h3>
               </div>
             </div>
 
-            {/* 3 Core Highlights */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1">
-                <span className="font-bold text-teal-300 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-                  0-Slot Ersparnis
+            {/* Target Count Stepper */}
+            <div className="flex items-center space-x-2.5 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl">
+              <span className="text-xs font-semibold text-slate-300">Vorhalten:</span>
+              <div className="flex items-center space-x-1">
+                <button
+                  onClick={() => handleSetUpdateTargetCount(updateTargetCount - 1)}
+                  disabled={updateTargetCount <= 1 || savingTargetCount}
+                  className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="font-mono font-bold text-xs text-teal-400 w-7 text-center">
+                  {updateTargetCount}
                 </span>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Produkte, die auf Amazon bereits <code>PUBLISHED</code> sind, verbrauchen beim Update 0 tägliche Upload-Slots.
-                </p>
+                <button
+                  onClick={() => handleSetUpdateTargetCount(updateTargetCount + 1)}
+                  disabled={updateTargetCount >= 50 || savingTargetCount}
+                  className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
               </div>
-
-              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1">
-                <span className="font-bold text-cyan-300 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                  Auto-Backfill
-                </span>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Die Haupt-Warteschlange zieht sich automatisch Update-Designs heran, um verbleibende freie Tages-Slots zu füllen.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1">
-                <span className="font-bold text-purple-300 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-                  Co-Pilot &amp; TM-Prüfung
-                </span>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Alle Updates durchlaufen vor Einreihung LLM-Listing-Optimierung, Banned Words Filter und Trademark-Checks.
-                </p>
-              </div>
+              <span className="text-[11px] text-slate-500">Designs</span>
             </div>
           </div>
 
