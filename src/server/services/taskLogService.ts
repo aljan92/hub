@@ -2039,6 +2039,31 @@ Please audit the listing based on your compliance rules:
         }
       }
 
+      if (task.source === 'UPDATE') {
+        task.status = 'UPDATE_REWRITING';
+        task.checkpoint = undefined;
+        task.hasError = false;
+
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'LISTING_REQUEST',
+          title: `Design- & Fragen-Prüfung bestätigt -> Listing-Optimierung (U4–U7)`,
+          content: {
+            answers: params.answers || 'KI-Antworten übernommen'
+          }
+        });
+
+        this.saveLogs(this.loadLogs());
+        this.emitUpdate(task);
+
+        const { UpdatePipelineService } = require('./updatePipelineService');
+        UpdatePipelineService.runFromStep(taskId, 'U4').catch((err: any) => {
+          console.error(`[TaskLogService] Update-Pipeline Weiterführung fehlgeschlagen für Task ${taskId}:`, err);
+        });
+
+        return { success: true, message: 'Update-Prüfung freigegeben! Workflow läuft weiter (U4–U7).' };
+      }
+
       task.status = 'GENERATING_LISTING';
       task.checkpoint = undefined;
       task.hasError = false;

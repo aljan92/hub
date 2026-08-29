@@ -397,9 +397,12 @@ export const QueueView: React.FC = () => {
     }
   };
 
-  const activeQueueDesigns = queueState.items.filter(i => (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
-  const pausedDesigns = queueState.items.filter(i => (!!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
-  const updateDesigns = queueState.items.filter(i => (i as any).type === 'UPDATE');
+  const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && i.id.startsWith('update_')));
+  const isNewItem = (i: any) => !isUpdateItem(i);
+
+  const activeQueueDesigns = queueState.items.filter(i => isNewItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
+  const pausedDesigns = queueState.items.filter(i => isNewItem(i) && (!!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
+  const updateDesigns = queueState.items.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR');
   const completedDesigns = queueState.items.filter(i => i.status === 'COMPLETED');
   const errorDesigns = queueState.items.filter(i => i.status === 'ERROR');
 
@@ -1494,16 +1497,126 @@ export const QueueView: React.FC = () => {
               </div>
               <h3 className="text-base font-bold text-slate-200">Update-Pool aktuell leer</h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
-                Sobald in Phase 2 die automatische Abfrage aus Supabase aktiv ist, werden hier bis zu {updateTargetCount} Designs vorbereitet vorgehalten.
+                Sobald Designs über den Update-Workflow (U1–U7) verarbeitet werden, erscheinen sie hier im Update-Pool bereit zur Amazon-Veröffentlichung.
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {updateDesigns.map((item) => (
-                <div key={item.id} className="bg-surface/90 border border-teal-500/40 rounded-2xl p-4">
-                  <h4 className="text-sm font-bold text-slate-200">{item.title}</h4>
-                </div>
-              ))}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+                <span>Vorbereitete Update-Designs</span>
+                <span className="font-mono text-teal-400 font-bold">{updateDesigns.length} im Pool</span>
+              </div>
+
+              <div className="space-y-3">
+                {updateDesigns.map((item) => {
+                  const isExpanded = expandedItemId === item.id;
+                  const thumbUrl = item.imagePath || `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`;
+
+                  return (
+                    <div 
+                      key={item.id} 
+                      className="bg-surface/90 border border-teal-500/50 shadow-teal-500/10 ring-1 ring-teal-500/30 rounded-2xl p-4 shadow-sm backdrop-blur-md transition-all overflow-hidden relative hover:border-teal-400"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center space-x-3 sm:space-x-4">
+                          {/* Thumbnail with Hover Zoom */}
+                          <div 
+                            onMouseEnter={(e) => handleMouseEnterThumbnail(item, e)}
+                            onMouseLeave={handleMouseLeaveThumbnail}
+                            className="w-14 h-14 rounded-xl border border-teal-500/30 bg-slate-950 overflow-hidden shrink-0 relative group cursor-zoom-in transition-transform hover:scale-105 p-0.5 flex items-center justify-center"
+                          >
+                            <img
+                              src={thumbUrl}
+                              alt={item.title}
+                              className="w-full h-full object-contain rounded-lg"
+                              loading="lazy"
+                            />
+                          </div>
+
+                          {/* Info Column */}
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                              <h4 className="text-sm font-bold text-slate-100 line-clamp-1">
+                                {item.title || item.designTitle}
+                              </h4>
+                              
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                                0 Slots (Update)
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                Update Bereit
+                              </span>
+                              {item.fitTypes && item.fitTypes.length > 0 && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-mono text-purple-300 bg-purple-500/10 border border-purple-500/20">
+                                  {item.fitTypes.join(', ')}
+                                </span>
+                              )}
+                              {item.avoidColor && item.avoidColor !== 'none' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-mono text-cyan-300 bg-cyan-500/10 border border-cyan-500/20">
+                                  Kein {item.avoidColor}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                              <div>
+                                Brand: <span className="text-slate-300 font-semibold">{item.brand || 'MBA Hub'}</span>
+                              </div>
+                              {item.designId && (
+                                <div className="font-mono text-[11px] text-slate-500">
+                                  Amazon ID: <span className="text-slate-400">{item.designId}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center space-x-2 shrink-0 self-end md:self-center">
+                          {/* Toggle Expand Listing Details */}
+                          <button
+                            onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
+                            className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700/80 flex items-center space-x-1.5 transition-all shadow-sm"
+                            title="Listing & Details ansehen"
+                          >
+                            <span>Details</span>
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+                          </button>
+
+                          {/* Delete Item */}
+                          <button
+                            onClick={() => setDeleteConfirmItem(item)}
+                            className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all"
+                            title="Aus Update-Pool entfernen"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expandable Details Accordion */}
+                      {isExpanded && (
+                        <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-3 animate-fadeIn text-xs">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Bullet 1:</span>
+                              <p className="text-slate-300 font-mono text-[11px] leading-relaxed bg-slate-900/60 p-2 rounded-lg border border-slate-800/60">
+                                {item.bullet1 || '-'}
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Bullet 2:</span>
+                              <p className="text-slate-300 font-mono text-[11px] leading-relaxed bg-slate-900/60 p-2 rounded-lg border border-slate-800/60">
+                                {item.bullet2 || '-'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

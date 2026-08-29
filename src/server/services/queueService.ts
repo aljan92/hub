@@ -356,6 +356,8 @@ export class QueueService {
 
     // Check if task is already in queue
     const existing = this.items.find(i => i.taskId === item.taskId);
+    const isUpdate = (item as any).source === 'UPDATE' || (item as any).type === 'update';
+
     if (existing) {
       existing.status = 'WAITING';
       existing.errorMessage = undefined;
@@ -370,6 +372,13 @@ export class QueueService {
       if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
       if (item.pngPath) existing.pngPath = item.pngPath;
       if (item.imagePath) existing.imagePath = item.imagePath;
+      if ((item as any).source) existing.source = (item as any).source;
+      if ((item as any).type) existing.type = (item as any).type;
+      if ((item as any).designId) existing.designId = (item as any).designId;
+      if (isUpdate) {
+        existing.allocatedSlots = 0;
+        existing.totalBaseSlots = 0;
+      }
       this.saveQueue();
       this.rebalanceQueue();
       return existing;
@@ -416,14 +425,14 @@ export class QueueService {
       addedAt: new Date().toISOString(),
       status: 'WAITING',
       isLocked: false,
-      allocatedSlots: totalBaseSlots,
-      totalBaseSlots,
+      allocatedSlots: isUpdate ? 0 : totalBaseSlots,
+      totalBaseSlots: isUpdate ? 0 : totalBaseSlots,
       activeProductsMap,
       droppedSlotsMap: {},
       tmBlockedProductIds: item.tmBlockedProductIds || [],
       sortOrder: this.items.length,
-      source: (item as any).source || 'NEW',
-      type: (item as any).type || 'new',
+      source: (item as any).source || (isUpdate ? 'UPDATE' : 'NEW'),
+      type: (item as any).type || (isUpdate ? 'update' : 'new'),
       designId: (item as any).designId
     };
 
@@ -631,7 +640,15 @@ export class QueueService {
       pItem.droppedSlotsMap = {};
     }
 
-    const waitingItems = this.items.filter(i => i.status === 'WAITING' && !i.isPaused);
+    // Set 0 slots for update items (they update published products with 0 slot consumption)
+    const updateWaitingItems = this.items.filter(i => i.status === 'WAITING' && ((i as any).type === 'update' || (i as any).source === 'UPDATE'));
+    for (const uItem of updateWaitingItems) {
+      uItem.allocatedSlots = 0;
+      uItem.totalBaseSlots = 0;
+      uItem.droppedSlotsMap = {};
+    }
+
+    const waitingItems = this.items.filter(i => i.status === 'WAITING' && !i.isPaused && (i as any).type !== 'update' && (i as any).source !== 'UPDATE');
 
     // 2. Reset each waiting item to its full TM-compliant base allocation
     const catalog = ProductCatalogService.getCatalog();

@@ -218629,6 +218629,7 @@ var init_queueService = __esm2({
           return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
         };
         const existing = this.items.find((i) => i.taskId === item.taskId);
+        const isUpdate = item.source === "UPDATE" || item.type === "update";
         if (existing) {
           existing.status = "WAITING";
           existing.errorMessage = void 0;
@@ -218643,6 +218644,13 @@ var init_queueService = __esm2({
           if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
           if (item.pngPath) existing.pngPath = item.pngPath;
           if (item.imagePath) existing.imagePath = item.imagePath;
+          if (item.source) existing.source = item.source;
+          if (item.type) existing.type = item.type;
+          if (item.designId) existing.designId = item.designId;
+          if (isUpdate) {
+            existing.allocatedSlots = 0;
+            existing.totalBaseSlots = 0;
+          }
           this.saveQueue();
           this.rebalanceQueue();
           return existing;
@@ -218684,14 +218692,14 @@ var init_queueService = __esm2({
           addedAt: (/* @__PURE__ */ new Date()).toISOString(),
           status: "WAITING",
           isLocked: false,
-          allocatedSlots: totalBaseSlots,
-          totalBaseSlots,
+          allocatedSlots: isUpdate ? 0 : totalBaseSlots,
+          totalBaseSlots: isUpdate ? 0 : totalBaseSlots,
           activeProductsMap,
           droppedSlotsMap: {},
           tmBlockedProductIds: item.tmBlockedProductIds || [],
           sortOrder: this.items.length,
-          source: item.source || "NEW",
-          type: item.type || "new",
+          source: item.source || (isUpdate ? "UPDATE" : "NEW"),
+          type: item.type || (isUpdate ? "update" : "new"),
           designId: item.designId
         };
         this.items.push(newItem);
@@ -218851,7 +218859,13 @@ var init_queueService = __esm2({
           pItem.allocatedSlots = 0;
           pItem.droppedSlotsMap = {};
         }
-        const waitingItems = this.items.filter((i) => i.status === "WAITING" && !i.isPaused);
+        const updateWaitingItems = this.items.filter((i) => i.status === "WAITING" && (i.type === "update" || i.source === "UPDATE"));
+        for (const uItem of updateWaitingItems) {
+          uItem.allocatedSlots = 0;
+          uItem.totalBaseSlots = 0;
+          uItem.droppedSlotsMap = {};
+        }
+        const waitingItems = this.items.filter((i) => i.status === "WAITING" && !i.isPaused && i.type !== "update" && i.source !== "UPDATE");
         const catalog = ProductCatalogService.getCatalog();
         for (const item of waitingItems) {
           const tmBlocked = new Set((item.tmBlockedProductIds || []).map((id) => id.toUpperCase()));
@@ -219859,7 +219873,32 @@ Source EN Listing:
         }
       }
       /**
+       * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval)
+       */
+      static async runFromStep(taskId, startStep = "U4") {
+        console.log(`[UpdatePipeline] \u{1F680} F\xFChre Pipeline ab Step ${startStep} f\xFCr Task ${taskId} aus...`);
+        if (startStep === "U4") {
+          const u4 = await this.stepU4_RewriteListing(taskId);
+          if (!u4.success) return { success: false, error: u4.error };
+        }
+        if (startStep === "U4" || startStep === "U5") {
+          const u5 = await this.stepU5_TrademarkCheck(taskId);
+          if (!u5.success) return { success: false, error: u5.error };
+        }
+        if (startStep === "U4" || startStep === "U5" || startStep === "U6") {
+          const u6 = await this.stepU6_TranslateListing(taskId);
+          if (!u6.success) return { success: false, error: u6.error };
+        }
+        if (startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U7") {
+          const u7 = await this.stepU7_Enqueue(taskId);
+          if (!u7.success) return { success: false, error: u7.error };
+        }
+        const finalTask = this.getTask(taskId);
+        return { success: true, task: finalTask };
+      }
+      /**
        * Run entire pipeline sequentially from a Design-ID
+       * (Pauses after U3 at Checkpoint 2 if aiAutonomyEnabled is false)
        */
       static async runUpdatePipeline(designId) {
         const u1 = await this.stepU1_ExtractMerchData(designId);
@@ -219869,16 +219908,29 @@ Source EN Listing:
         if (!u2.success) return { success: false, error: u2.error };
         const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
         if (!u3.success) return { success: false, error: u3.error };
-        const u4 = await this.stepU4_RewriteListing(taskId);
-        if (!u4.success) return { success: false, error: u4.error };
-        const u5 = await this.stepU5_TrademarkCheck(taskId);
-        if (!u5.success) return { success: false, error: u5.error };
-        const u6 = await this.stepU6_TranslateListing(taskId);
-        if (!u6.success) return { success: false, error: u6.error };
-        const u7 = await this.stepU7_Enqueue(taskId);
-        if (!u7.success) return { success: false, error: u7.error };
-        const finalTask = this.getTask(taskId);
-        return { success: true, task: finalTask };
+        const settings = loadSettings();
+        if (!settings.aiAutonomyEnabled) {
+          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Pr\xFCfung) in Tasks.`);
+          TaskLogService.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)",
+            content: {
+              checkpoint: "DESIGN_REVIEW",
+              reason: "Vision-Analyse abgeschlossen. Wartet auf manuelle Pr\xFCfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.",
+              isApproved: true,
+              analysis: u3.analysisResult
+            }
+          });
+          TaskLogService.updateTaskStatus(taskId, {
+            status: "AWAITING_DESIGN_REVIEW",
+            checkpoint: "DESIGN_REVIEW",
+            analysisResult: u3.analysisResult,
+            hasError: false
+          });
+          return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: "DESIGN_REVIEW" };
+        }
+        return await this.runFromStep(taskId, "U4");
       }
       /**
        * Resume pipeline from current state (e.g. U3 -> U7)
@@ -219891,18 +219943,11 @@ Source EN Listing:
           const u2 = await this.stepU2_DownloadArtwork(taskId);
           if (!u2.success) return { success: false, error: u2.error };
         }
-        const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-        if (!u3.success) return { success: false, error: u3.error };
-        const u4 = await this.stepU4_RewriteListing(taskId);
-        if (!u4.success) return { success: false, error: u4.error };
-        const u5 = await this.stepU5_TrademarkCheck(taskId);
-        if (!u5.success) return { success: false, error: u5.error };
-        const u6 = await this.stepU6_TranslateListing(taskId);
-        if (!u6.success) return { success: false, error: u6.error };
-        const u7 = await this.stepU7_Enqueue(taskId);
-        if (!u7.success) return { success: false, error: u7.error };
-        const finalTask = this.getTask(taskId);
-        return { success: true, task: finalTask };
+        if (!task.analysisResult) {
+          const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
+          if (!u3.success) return { success: false, error: u3.error };
+        }
+        return await this.runFromStep(taskId, "U4");
       }
       /**
        * Run a single step (for Retry or Step-Back)
@@ -221681,6 +221726,26 @@ Please audit the listing based on your compliance rules:
                 };
               }
             }
+          }
+          if (task.source === "UPDATE") {
+            task.status = "UPDATE_REWRITING";
+            task.checkpoint = void 0;
+            task.hasError = false;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "LISTING_REQUEST",
+              title: `Design- & Fragen-Pr\xFCfung best\xE4tigt -> Listing-Optimierung (U4\u2013U7)`,
+              content: {
+                answers: params2.answers || "KI-Antworten \xFCbernommen"
+              }
+            });
+            this.saveLogs(this.loadLogs());
+            this.emitUpdate(task);
+            const { UpdatePipelineService: UpdatePipelineService2 } = (init_updatePipelineService(), __toCommonJS2(updatePipelineService_exports));
+            UpdatePipelineService2.runFromStep(taskId, "U4").catch((err) => {
+              console.error(`[TaskLogService] Update-Pipeline Weiterf\xFChrung fehlgeschlagen f\xFCr Task ${taskId}:`, err);
+            });
+            return { success: true, message: "Update-Pr\xFCfung freigegeben! Workflow l\xE4uft weiter (U4\u2013U7)." };
           }
           task.status = "GENERATING_LISTING";
           task.checkpoint = void 0;

@@ -309,6 +309,12 @@ export const TasksView: React.FC = () => {
         } else if (typeof activeTask.customAnswers.audience === 'string') {
           audiences = activeTask.customAnswers.audience.split(',').map((s: string) => s.trim()).filter(Boolean);
         }
+      } else if (pred?.fitTypes) {
+        if (Array.isArray(pred.fitTypes)) {
+          audiences = pred.fitTypes.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase());
+        } else if (typeof pred.fitTypes === 'string') {
+          audiences = pred.fitTypes.split(',').map((s: string) => s.trim()).map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase());
+        }
       } else if (pred?.target_group?.selected) {
         if (Array.isArray(pred.target_group.selected)) {
           audiences = pred.target_group.selected.map((s: string) => s.trim()).filter(Boolean);
@@ -319,7 +325,7 @@ export const TasksView: React.FC = () => {
       setSelectedAudiences(audiences.length > 0 ? audiences : ['Men', 'Women', 'Youth']);
 
       // 3. Avoid Color (Black, White, None)
-      const rawAvoid = (activeTask.customAnswers?.avoidColor || pred?.avoid_product_colors?.avoid || 'None').trim();
+      const rawAvoid = (activeTask.customAnswers?.avoidColor || pred?.avoidColor || pred?.avoid_product_colors?.avoid || 'None').trim();
       let normAvoid = 'None';
       if (rawAvoid.toLowerCase().includes('black') || rawAvoid.toLowerCase().includes('schwarz')) {
         normAvoid = 'Black';
@@ -824,198 +830,331 @@ export const TasksView: React.FC = () => {
                 {/* ========================================================================= */}
                 {activeTask.status === 'AWAITING_DESIGN_REVIEW' && (
                   <div className="space-y-5">
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-                      {/* Left: Image Preview & Prompt (5 cols) */}
-                      <div className="md:col-span-5 space-y-2.5">
-                        <div className="relative group rounded-xl overflow-hidden border border-slate-800 bg-slate-950 aspect-[10/16] max-h-[340px] flex items-center justify-center">
-                          {activeTask.imageUrl ? (
-                            <>
-                              <img
-                                src={activeTask.imageUrl}
-                                alt={activeTask.payload?.quote}
-                                className="w-full h-full object-contain cursor-pointer"
-                                onClick={() => setShowImageZoom(true)}
-                              />
-                              <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
+                    {activeTask.source === 'UPDATE' ? (
+                      /* UPDATE WORKFLOW: VISION AUDIT, FIT-TYPES & AVOID-COLOR */
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+                        {/* Left: Master Artwork Preview & Original Listing (5 cols) */}
+                        <div className="md:col-span-5 space-y-2.5">
+                          <div className="relative group rounded-xl overflow-hidden border border-teal-500/40 bg-slate-950 aspect-square max-h-[320px] flex items-center justify-center p-2">
+                            {activeTask.localImagePath || activeTask.imageUrl ? (
+                              <>
+                                <img
+                                  src={activeTask.localImagePath || activeTask.imageUrl || `/api/v1/designs/image/${encodeURIComponent(activeTask.id)}`}
+                                  alt={activeTask.payload?.title || 'Master Design'}
+                                  className="w-full h-full object-contain cursor-pointer"
                                   onClick={() => setShowImageZoom(true)}
-                                  className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
-                                  title="Vergrößern"
-                                >
-                                  <Maximize2 className="w-3.5 h-3.5" />
-                                </button>
-                                <a
-                                  href={activeTask.imageUrl}
-                                  download={`design-${activeTask.id}.png`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
-                                  title="Download"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                </a>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="text-xs text-slate-500">Kein Bild vorhanden</div>
-                          )}
-                        </div>
-
-                        {/* Editable Prompt */}
-                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
-                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Prompt:</span>
-                          <textarea
-                            value={editablePrompt}
-                            onChange={(e) => setEditablePrompt(e.target.value)}
-                            rows={3}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-cyan-500"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Right: Questions Matrix (7 cols) */}
-                      <div className="md:col-span-7 space-y-3">
-                        <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center">
-                          <Sliders className="w-3.5 h-3.5 mr-1.5 text-cyan-400" />
-                          Vision-KI Analyse
-                        </h4>
-
-                        {/* Question 1: Quote */}
-                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">1. Quote-Prüfung</span>
-                            {activeTask.analysisResult?.quote_check?.quote_matches ? (
-                              <span className="text-[10px] font-semibold text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                                <CheckCircle2 className="w-3 h-3 mr-1" /> Exakt
-                              </span>
+                                />
+                                <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => setShowImageZoom(true)}
+                                    className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                    title="Vergrößern"
+                                  >
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <a
+                                    href={activeTask.localImagePath || activeTask.imageUrl || `/api/v1/designs/image/${encodeURIComponent(activeTask.id)}`}
+                                    download={`${activeTask.id}-master.png`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                    title="Download"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </a>
+                                </div>
+                              </>
                             ) : (
-                              <span className="text-[10px] font-semibold text-amber-400 flex items-center bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                <AlertTriangle className="w-3 h-3 mr-1" /> Abweichung
-                              </span>
+                              <div className="text-xs text-slate-500">Master-Grafik wird geladen...</div>
                             )}
                           </div>
-                          <div className="text-[11px] font-mono text-slate-300 bg-slate-950 p-2 rounded border border-slate-800/80">
-                            <div>Soll: <span className="text-slate-200">"{activeTask.payload?.quote}"</span></div>
-                            <div>Erkannt: <span className="text-cyan-300">"{activeTask.analysisResult?.quote_check?.detected_quote || activeTask.analysisResult?.quote_check?.detected_quote_text || '-'}"</span></div>
+
+                          {/* Original Amazon Listing Card */}
+                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5 text-xs">
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Bestehendes Amazon-Listing:</span>
+                            <div className="font-semibold text-slate-200">{activeTask.payload?.title || '-'}</div>
+                            <div className="text-[11px] text-slate-400">Brand: {activeTask.payload?.brand || '-'}</div>
                           </div>
                         </div>
 
-                        {/* Question 2: Target Group */}
-                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">2. Zielgruppe (Mehrfachauswahl)</span>
-                            <span className="text-[10px] text-cyan-400 font-mono">
-                              KI: {Array.isArray(activeTask.analysisResult?.target_group?.selected) ? activeTask.analysisResult.target_group.selected.join(', ') : (activeTask.analysisResult?.target_group?.selected || 'Men, Women, Youth')}
-                            </span>
+                        {/* Right: Update Questions Matrix (7 cols) */}
+                        <div className="md:col-span-7 space-y-3">
+                          <h4 className="text-xs font-semibold text-teal-300 uppercase tracking-wider flex items-center">
+                            <Sliders className="w-3.5 h-3.5 mr-1.5 text-teal-400" />
+                            Update-Audit &amp; Fragen
+                          </h4>
+
+                          {/* Question 1: Rewrite Needed & Reasoning */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">1. Listing-Rewrite Befund</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                activeTask.analysisResult?.rewriteNeeded 
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
+                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              }`}>
+                                {activeTask.analysisResult?.rewriteNeeded ? 'JA (Optimieren)' : 'NEIN (Beibehalten)'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
+                              {activeTask.analysisResult?.reasoning || 'Keine Begründung angegeben.'}
+                            </p>
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            {['Men', 'Women', 'Youth'].map((val) => {
-                              const isSelected = selectedAudiences.includes(val);
-                              return (
-                                <button
-                                  key={val}
-                                  type="button"
-                                  onClick={() => toggleAudience(val)}
-                                  className={`px-3.5 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
-                                    isSelected 
-                                      ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
-                                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
-                                  }`}
-                                >
-                                  <span>{val}</span>
-                                </button>
-                              );
-                            })}
+
+                          {/* Question 2: Target Group */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">2. Zielgruppe (Fit Types)</span>
+                              <span className="text-[10px] text-teal-400 font-mono">
+                                KI: {Array.isArray(activeTask.analysisResult?.fitTypes) ? activeTask.analysisResult.fitTypes.join(', ') : (activeTask.analysisResult?.fitTypes || 'Standard')}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {['Men', 'Women', 'Youth'].map((val) => {
+                                const isSelected = selectedAudiences.includes(val);
+                                return (
+                                  <button
+                                    key={val}
+                                    type="button"
+                                    onClick={() => toggleAudience(val)}
+                                    className={`px-3.5 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
+                                      isSelected 
+                                        ? 'bg-teal-600 text-white border-teal-500 font-semibold shadow'
+                                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                    }`}
+                                  >
+                                    <span>{val}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Question 3: Avoid Color */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">3. Zu vermeidende Produktfarbe</span>
+                              <span className="text-[10px] text-teal-400 font-mono">
+                                KI: {activeTask.analysisResult?.avoidColor || 'None'}
+                              </span>
+                            </div>
+                            <div className="flex gap-2">
+                              {['Black', 'White', 'None'].map((val) => {
+                                const isSelected = selectedAvoidColor === val;
+                                return (
+                                  <button
+                                    key={val}
+                                    type="button"
+                                    onClick={() => setSelectedAvoidColor(val)}
+                                    className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
+                                      isSelected 
+                                        ? 'bg-teal-600 text-white border-teal-500 font-semibold shadow'
+                                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                    }`}
+                                  >
+                                    {val}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* DESIGN CREATION WORKFLOW: IDEOGRAM PREVIEW, QUOTE CHECK, FIT-TYPES, AVOID-COLOR, BG & MAX-COLORS */
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+                        {/* Left: Image Preview & Prompt (5 cols) */}
+                        <div className="md:col-span-5 space-y-2.5">
+                          <div className="relative group rounded-xl overflow-hidden border border-slate-800 bg-slate-950 aspect-[10/16] max-h-[340px] flex items-center justify-center">
+                            {activeTask.imageUrl ? (
+                              <>
+                                <img
+                                  src={activeTask.imageUrl}
+                                  alt={activeTask.payload?.quote}
+                                  className="w-full h-full object-contain cursor-pointer"
+                                  onClick={() => setShowImageZoom(true)}
+                                />
+                                <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => setShowImageZoom(true)}
+                                    className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                    title="Vergrößern"
+                                  >
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <a
+                                    href={activeTask.imageUrl}
+                                    download={`design-${activeTask.id}.png`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                    title="Download"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </a>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-xs text-slate-500">Kein Bild vorhanden</div>
+                            )}
+                          </div>
+
+                          {/* Editable Prompt */}
+                          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Prompt:</span>
+                            <textarea
+                              value={editablePrompt}
+                              onChange={(e) => setEditablePrompt(e.target.value)}
+                              rows={3}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-cyan-500"
+                            />
                           </div>
                         </div>
 
-                        {/* Question 3: Avoid Color */}
-                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">3. Zu vermeidende Produktfarbe</span>
-                            <span className="text-[10px] text-cyan-400 font-mono">
-                              KI: {activeTask.analysisResult?.avoid_product_colors?.avoid || 'None'}
-                            </span>
+                        {/* Right: Questions Matrix (7 cols) */}
+                        <div className="md:col-span-7 space-y-3">
+                          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center">
+                            <Sliders className="w-3.5 h-3.5 mr-1.5 text-cyan-400" />
+                            Vision-KI Analyse
+                          </h4>
+
+                          {/* Question 1: Quote */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">1. Quote-Prüfung</span>
+                              {activeTask.analysisResult?.quote_check?.quote_matches ? (
+                                <span className="text-[10px] font-semibold text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                  <CheckCircle2 className="w-3 h-3 mr-1" /> Exakt
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-amber-400 flex items-center bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                  <AlertTriangle className="w-3 h-3 mr-1" /> Abweichung
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-300 bg-slate-950 p-2 rounded border border-slate-800/80">
+                              <div>Soll: <span className="text-slate-200">"{activeTask.payload?.quote}"</span></div>
+                              <div>Erkannt: <span className="text-cyan-300">"{activeTask.analysisResult?.quote_check?.detected_quote || activeTask.analysisResult?.quote_check?.detected_quote_text || '-'}"</span></div>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            {['Black', 'White', 'None'].map((val) => {
-                              const isSelected = selectedAvoidColor === val;
-                              return (
+
+                          {/* Question 2: Target Group */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">2. Zielgruppe (Mehrfachauswahl)</span>
+                              <span className="text-[10px] text-cyan-400 font-mono">
+                                KI: {Array.isArray(activeTask.analysisResult?.target_group?.selected) ? activeTask.analysisResult.target_group.selected.join(', ') : (activeTask.analysisResult?.target_group?.selected || 'Men, Women, Youth')}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {['Men', 'Women', 'Youth'].map((val) => {
+                                const isSelected = selectedAudiences.includes(val);
+                                return (
+                                  <button
+                                    key={val}
+                                    type="button"
+                                    onClick={() => toggleAudience(val)}
+                                    className={`px-3.5 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
+                                      isSelected 
+                                        ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
+                                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                    }`}
+                                  >
+                                    <span>{val}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Question 3: Avoid Color */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">3. Zu vermeidende Produktfarbe</span>
+                              <span className="text-[10px] text-cyan-400 font-mono">
+                                KI: {activeTask.analysisResult?.avoid_product_colors?.avoid || 'None'}
+                              </span>
+                            </div>
+                            <div className="flex gap-2">
+                              {['Black', 'White', 'None'].map((val) => {
+                                const isSelected = selectedAvoidColor === val;
+                                return (
+                                  <button
+                                    key={val}
+                                    type="button"
+                                    onClick={() => setSelectedAvoidColor(val)}
+                                    className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
+                                      isSelected 
+                                        ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
+                                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                    }`}
+                                  >
+                                    {val}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Question 4: Background */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">4. Hintergrund entfernen</span>
+                              <span className="text-[10px] text-cyan-400 font-mono">
+                                KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' || activeTask.analysisResult?.background_analysis?.is_design_element === true ? 'Manuell' : 'Automatisch'}
+                              </span>
+                            </div>
+                            <div className="flex gap-2">
+                              {['Automatisch', 'Manuell'].map((val) => (
                                 <button
                                   key={val}
                                   type="button"
-                                  onClick={() => setSelectedAvoidColor(val)}
+                                  onClick={() => setSelectedBgMode(val)}
                                   className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
-                                    isSelected 
+                                    selectedBgMode === val || 
+                                    (val === 'Automatisch' && (selectedBgMode === 'Nein (Auto Freistellen)' || selectedBgMode === 'AUTOMATIC')) ||
+                                    (val === 'Manuell' && (selectedBgMode === 'Ja (Hintergrund behalten)' || selectedBgMode === 'MANUAL'))
                                       ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
-                                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                                   }`}
                                 >
                                   {val}
                                 </button>
-                              );
-                            })}
+                              ))}
+                            </div>
                           </div>
-                        </div>
 
-                        {/* Question 4: Background */}
-                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">4. Hintergrund entfernen</span>
-                            <span className="text-[10px] text-cyan-400 font-mono">
-                              KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' || activeTask.analysisResult?.background_analysis?.is_design_element === true ? 'Manuell' : 'Automatisch'}
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
-                            {['Automatisch', 'Manuell'].map((val) => (
-                              <button
-                                key={val}
-                                type="button"
-                                onClick={() => setSelectedBgMode(val)}
-                                className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
-                                  selectedBgMode === val || 
-                                  (val === 'Automatisch' && (selectedBgMode === 'Nein (Auto Freistellen)' || selectedBgMode === 'AUTOMATIC')) ||
-                                  (val === 'Manuell' && (selectedBgMode === 'Ja (Hintergrund behalten)' || selectedBgMode === 'MANUAL'))
-                                    ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
-                                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                                }`}
-                              >
-                                {val}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Question 5: Max Colors for Vectorization */}
-                        <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-2">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-200">5. Maximale Anzahl an Farben (Vektorisierung)</span>
-                            <span className="text-[10px] text-cyan-400 font-mono">
-                              KI: {activeTask.analysisResult?.color_analysis?.color_count ? `${activeTask.analysisResult.color_analysis.color_count} Farben` : '2 Farben'}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5 items-center">
-                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
-                              <button
-                                key={num}
-                                type="button"
-                                onClick={() => setSelectedMaxColors(num)}
-                                className={`w-8 h-7 text-xs rounded-lg font-mono border transition-all ${
-                                  selectedMaxColors === num
-                                    ? 'bg-cyan-600 text-white border-cyan-500 font-bold shadow'
-                                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                                }`}
-                              >
-                                {num}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="text-[10px] text-slate-500">
-                            Wird als <code className="text-slate-400 font-mono">processing.max_colors</code> an Vectorizer.ai übergeben (max. 12).
+                          {/* Question 5: Max Colors for Vectorization */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">5. Maximale Anzahl an Farben (Vektorisierung)</span>
+                              <span className="text-[10px] text-cyan-400 font-mono">
+                                KI: {activeTask.analysisResult?.color_analysis?.color_count ? `${activeTask.analysisResult.color_analysis.color_count} Farben` : '2 Farben'}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 items-center">
+                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                                <button
+                                  key={num}
+                                  type="button"
+                                  onClick={() => setSelectedMaxColors(num)}
+                                  className={`w-8 h-7 text-xs rounded-lg font-mono border transition-all ${
+                                    selectedMaxColors === num
+                                      ? 'bg-cyan-600 text-white border-cyan-500 font-bold shadow'
+                                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                                  }`}
+                                >
+                                  {num}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              Wird als <code className="text-slate-400 font-mono">processing.max_colors</code> an Vectorizer.ai übergeben (max. 12).
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Checkpoint 2 Action Buttons */}
                     <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-800">
@@ -1028,14 +1167,16 @@ export const TasksView: React.FC = () => {
                           <Trash2 className="w-3.5 h-3.5" />
                           <span>Task abbrechen</span>
                         </button>
-                        <button
-                          onClick={() => handleDesignReview('REGENERATE_IMAGE')}
-                          disabled={isSubmitting}
-                          className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Bild neu generieren</span>
-                        </button>
+                        {activeTask.source !== 'UPDATE' && (
+                          <button
+                            onClick={() => handleDesignReview('REGENERATE_IMAGE')}
+                            disabled={isSubmitting}
+                            className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Bild neu generieren</span>
+                          </button>
+                        )}
                       </div>
 
                       <div className="flex items-center space-x-2">
@@ -1045,7 +1186,7 @@ export const TasksView: React.FC = () => {
                           className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-2 transition-all disabled:opacity-50 shadow-md shadow-emerald-950/40"
                         >
                           <Sparkles className="w-4 h-4" />
-                          <span>Listing generieren</span>
+                          <span>{activeTask.source === 'UPDATE' ? 'Bestätigen & Weiter (U4–U7)' : 'Listing generieren'}</span>
                         </button>
                       </div>
                     </div>

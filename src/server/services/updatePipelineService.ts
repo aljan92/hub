@@ -489,40 +489,81 @@ export class UpdatePipelineService {
   }
 
   /**
-   * Run entire pipeline sequentially from a Design-ID
+   * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval)
    */
-  static async runUpdatePipeline(designId: string): Promise<{ success: boolean; task?: DesignTaskLog; error?: string }> {
-    // U1
+  static async runFromStep(taskId: string, startStep: 'U4' | 'U5' | 'U6' | 'U7' = 'U4'): Promise<{ success: boolean; task?: DesignTaskLog; error?: string }> {
+    console.log(`[UpdatePipeline] 🚀 Führe Pipeline ab Step ${startStep} für Task ${taskId} aus...`);
+
+    if (startStep === 'U4') {
+      const u4 = await this.stepU4_RewriteListing(taskId);
+      if (!u4.success) return { success: false, error: u4.error };
+    }
+
+    if (startStep === 'U4' || startStep === 'U5') {
+      const u5 = await this.stepU5_TrademarkCheck(taskId);
+      if (!u5.success) return { success: false, error: u5.error };
+    }
+
+    if (startStep === 'U4' || startStep === 'U5' || startStep === 'U6') {
+      const u6 = await this.stepU6_TranslateListing(taskId);
+      if (!u6.success) return { success: false, error: u6.error };
+    }
+
+    if (startStep === 'U4' || startStep === 'U5' || startStep === 'U6' || startStep === 'U7') {
+      const u7 = await this.stepU7_Enqueue(taskId);
+      if (!u7.success) return { success: false, error: u7.error };
+    }
+
+    const finalTask = this.getTask(taskId);
+    return { success: true, task: finalTask };
+  }
+
+  /**
+   * Run entire pipeline sequentially from a Design-ID
+   * (Pauses after U3 at Checkpoint 2 if aiAutonomyEnabled is false)
+   */
+  static async runUpdatePipeline(designId: string): Promise<{ success: boolean; task?: DesignTaskLog; pausedAtCheckpoint?: string; error?: string }> {
+    // U1: Extract raw data & create task log
     const u1 = await this.stepU1_ExtractMerchData(designId);
     if (!u1.success || !u1.task) return { success: false, error: u1.error };
     const taskId = u1.task.id;
 
-    // U2
+    // U2: Download Master-Artwork PNG
     const u2 = await this.stepU2_DownloadArtwork(taskId);
     if (!u2.success) return { success: false, error: u2.error };
 
-    // U3
+    // U3: Vision & Listing Analysis
     const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
     if (!u3.success) return { success: false, error: u3.error };
 
-    // U4 (will check rewriteNeeded internally)
-    const u4 = await this.stepU4_RewriteListing(taskId);
-    if (!u4.success) return { success: false, error: u4.error };
+    // Check Global AI Autonomy Switch
+    const settings = loadSettings();
+    if (!settings.aiAutonomyEnabled) {
+      console.log(`[UpdatePipeline] 🛑 Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Prüfung) in Tasks.`);
+      TaskLogService.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TASK_HANDOFF',
+        title: 'Übergeben an Tasks (Design- & Fragen-Prüfung)',
+        content: {
+          checkpoint: 'DESIGN_REVIEW',
+          reason: 'Vision-Analyse abgeschlossen. Wartet auf manuelle Prüfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.',
+          isApproved: true,
+          analysis: u3.analysisResult
+        }
+      });
 
-    // U5
-    const u5 = await this.stepU5_TrademarkCheck(taskId);
-    if (!u5.success) return { success: false, error: u5.error };
+      TaskLogService.updateTaskStatus(taskId, {
+        status: 'AWAITING_DESIGN_REVIEW',
+        checkpoint: 'DESIGN_REVIEW',
+        analysisResult: u3.analysisResult,
+        hasError: false
+      });
 
-    // U6
-    const u6 = await this.stepU6_TranslateListing(taskId);
-    if (!u6.success) return { success: false, error: u6.error };
+      return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: 'DESIGN_REVIEW' };
+    }
 
-    // U7
-    const u7 = await this.stepU7_Enqueue(taskId);
-    if (!u7.success) return { success: false, error: u7.error };
-
-    const finalTask = this.getTask(taskId);
-    return { success: true, task: finalTask };
+    // If autonomy is enabled, proceed automatically through U4 -> U7
+    return await this.runFromStep(taskId, 'U4');
   }
 
   /**
@@ -539,28 +580,13 @@ export class UpdatePipelineService {
       if (!u2.success) return { success: false, error: u2.error };
     }
 
-    // Step U3: Vision & Listing Analysis
-    const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-    if (!u3.success) return { success: false, error: u3.error };
+    // Step U3: Vision & Listing Analysis if not already done
+    if (!task.analysisResult) {
+      const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
+      if (!u3.success) return { success: false, error: u3.error };
+    }
 
-    // Step U4: Listing Rewrite (EN)
-    const u4 = await this.stepU4_RewriteListing(taskId);
-    if (!u4.success) return { success: false, error: u4.error };
-
-    // Step U5: Trademark Check
-    const u5 = await this.stepU5_TrademarkCheck(taskId);
-    if (!u5.success) return { success: false, error: u5.error };
-
-    // Step U6: Translation
-    const u6 = await this.stepU6_TranslateListing(taskId);
-    if (!u6.success) return { success: false, error: u6.error };
-
-    // Step U7: Enqueue
-    const u7 = await this.stepU7_Enqueue(taskId);
-    if (!u7.success) return { success: false, error: u7.error };
-
-    const finalTask = this.getTask(taskId);
-    return { success: true, task: finalTask };
+    return await this.runFromStep(taskId, 'U4');
   }
 
   /**
