@@ -127,12 +127,18 @@ export class UpdateBackfillService {
     }
 
     const queueItems = QueueService.loadQueue();
-    const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE');
-    const currentUpdateCount = queueItems.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR').length;
+    const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')));
+    const activeQueueUpdateCount = queueItems.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR').length;
+
+    const activeTasks = TaskLogService.loadLogs();
+    const activeTasksUpdateCount = activeTasks.filter(t => t.source === 'UPDATE' && t.status !== 'COMPLETED' && t.status !== 'REJECTED').length;
+
+    const inFlightCount = this.inFlightDesigns.size;
+    const totalActiveUpdateCount = activeQueueUpdateCount + activeTasksUpdateCount + inFlightCount;
     const targetCount = settings.queueUpdateTargetCount ?? 10;
 
-    if (!forceSingle && currentUpdateCount >= targetCount) {
-      return { success: false, message: `Update-Pool ist bereits voll (${currentUpdateCount}/${targetCount} Designs).` };
+    if (!forceSingle && totalActiveUpdateCount >= targetCount) {
+      return { success: false, message: `Update-Pool ist bereits voll (${totalActiveUpdateCount}/${targetCount} aktive Designs in Queue & Tasks).` };
     }
 
     const candidate = await this.fetchNextCandidateFromSupabase();

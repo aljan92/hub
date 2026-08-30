@@ -104,23 +104,33 @@ export class UploadWorkerService {
     const state = QueueService.getState();
     let targetItem: QueueItem | undefined;
 
+    const isUpdate = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || Boolean(i.designId) || (i.taskId && String(i.taskId).endsWith('-U')));
+
     if (queueItemId) {
       targetItem = state.items.find(i => i.id === queueItemId);
     } else {
-      // Pick first non-paused waiting item
-      targetItem = state.items.find(i => i.status === 'WAITING' && !i.isPaused && (mode === 'draft' || (i.allocatedSlots && i.allocatedSlots > 0)));
+      // Pick first non-paused waiting item:
+      // Priority 1: New creation designs with allocatedSlots > 0 or in draft mode
+      // Priority 2: Update designs (0 slots)
+      const newWaiting = state.items.filter(i => i.status === 'WAITING' && !i.isPaused && !isUpdate(i) && (mode === 'draft' || (i.allocatedSlots && i.allocatedSlots > 0)));
+      const updateWaiting = state.items.filter(i => i.status === 'WAITING' && !i.isPaused && isUpdate(i));
+      
+      targetItem = newWaiting.length > 0 ? newWaiting[0] : updateWaiting[0];
     }
 
     if (!targetItem) {
       return { success: false, message: 'Kein bereitstehendes Design in der Queue gefunden.' };
     }
 
+    const isUpdateItem = isUpdate(targetItem);
+    const effectiveMode: 'draft' | 'publish' = isUpdateItem ? 'publish' : mode; // Update designs are ALWAYS live!
+
     this.isUploading = true;
     this.abortRequested = false;
     this.currentQueueId = targetItem.id;
     this.currentTaskId = targetItem.taskId;
     this.currentDesignTitle = targetItem.title || targetItem.designTitle;
-    this.currentMode = mode;
+    this.currentMode = effectiveMode;
     this.stepIndex = 0;
     this.totalSteps = 100;
     this.logs = [];
@@ -129,11 +139,11 @@ export class UploadWorkerService {
     QueueService.updateItemStatus(targetItem.id, 'UPLOADING');
 
     // Run upload execution asynchronously
-    this.executeUploadPipeline(targetItem, mode).catch(err => {
+    this.executeUploadPipeline(targetItem, effectiveMode).catch(err => {
       console.error('[UploadWorker] Critical pipeline error:', err);
     });
 
-    return { success: true, message: `Upload für Task #${targetItem.taskId} gestartet (${mode.toUpperCase()} Modus).` };
+    return { success: true, message: `Upload für Task #${targetItem.taskId} gestartet (${effectiveMode.toUpperCase()} Modus${isUpdateItem ? ' • Update' : ''}).` };
   }
 
   /**
@@ -177,10 +187,15 @@ export class UploadWorkerService {
    * Main Upload Execution Pipeline
    */
   private static async executeUploadPipeline(item: QueueItem, mode: 'draft' | 'publish') {
-    const uploadUrl = 'https://merch.amazon.com/designs/new';
+    const isUpdate = (item as any).type === 'UPDATE' || (item as any).type === 'update' || (item as any).source === 'UPDATE' || Boolean(item.designId) || item.taskId.endsWith('-U');
+    const effectiveMode: 'draft' | 'publish' = isUpdate ? 'publish' : mode; // Update designs are ALWAYS live!
+    const cleanDesignId = item.designId || item.taskId.replace(/^#/, '').replace(/-U$/, '');
+    const uploadUrl = isUpdate 
+      ? `https://merch.amazon.com/designs/${cleanDesignId}/edit` 
+      : 'https://merch.amazon.com/designs/new';
 
     try {
-      this.log(`🚀 Starte Upload für Task #${item.taskId} ("${item.title || item.designTitle}")`, 'Initialisiere Session 2...', 5, 100);
+      this.log(`🚀 Starte Upload für Task #${item.taskId} ("${item.title || item.designTitle}")${isUpdate ? ' [UPDATE-MODUS]' : ''}`, 'Initialisiere Session 2...', 5, 100);
 
       // 1. Ensure Session 2 (Upload) is active
       const session = await BrowserSessionService.getSession('upload');
@@ -188,8 +203,8 @@ export class UploadWorkerService {
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
 
-      // 2. Navigate to https://merch.amazon.com/designs/new
-      this.log(`🌐 Öffne ${uploadUrl}`, 'Öffne Merch Create Seite...', 10, 100);
+      // 2. Navigate to Create or Edit Page
+      this.log(`🌐 Öffne ${uploadUrl}`, isUpdate ? 'Öffne Merch Edit Seite...' : 'Öffne Merch Create Seite...', 10, 100);
       await page.goto(uploadUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForTimeout(1500);
 
@@ -198,16 +213,14 @@ export class UploadWorkerService {
       if (currentUrl.includes('/signin') || currentUrl.includes('/ap/signin')) {
         this.log(`⚠️ Amazon Login erforderlich. Bitte im Screencast (Session 2) einloggen!`, 'Warte auf Login...');
         // Wait up to 3 minutes for user to sign in
-        await page.waitForURL('**/designs/new**', { timeout: 180000 });
+        await page.waitForURL('**/designs/**', { timeout: 180000 });
         this.log(`✅ Login erkannt! Fahre mit Upload fort...`, 'Login erfolgreich');
       }
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
 
-      // 3. Prepare PNG File
-      this.log(`🖼️ Überprüfe Master-PNG Datei...`, 'Prüfe Druckdatei...', 15, 100);
+      // 3. Prepare PNG File (if applicable)
       let pngAbsolutePath = '';
-
       if (item.pngPath && fs.existsSync(item.pngPath)) {
         pngAbsolutePath = path.resolve(item.pngPath);
       } else {
@@ -215,7 +228,10 @@ export class UploadWorkerService {
         const candidatePaths = [
           path.resolve(process.cwd(), 'data', 'designs', `${item.taskId}.png`),
           path.resolve(process.cwd(), 'data', 'designs', `${item.taskId.replace('#', '')}.png`),
-          path.resolve(process.cwd(), 'data', 'designs', `${item.taskId}_mba_print.png`)
+          path.resolve(process.cwd(), 'data', 'designs', `${item.taskId}_mba_print.png`),
+          path.resolve(process.cwd(), 'data', 'designs', `${item.taskId}_master.png`),
+          path.resolve(process.cwd(), 'data', 'designs', `${cleanDesignId}.png`),
+          path.resolve(process.cwd(), 'data', 'designs', `${cleanDesignId}_master.png`)
         ];
         for (const cp of candidatePaths) {
           if (fs.existsSync(cp)) {
@@ -225,22 +241,41 @@ export class UploadWorkerService {
         }
       }
 
-      if (!pngAbsolutePath || !fs.existsSync(pngAbsolutePath)) {
-        throw new Error(`Druckfertige 4500x5400px PNG-Datei für Task #${item.taskId} nicht gefunden.`);
-      }
+      // 4. Handle Artwork
+      if (isUpdate) {
+        // In Edit Mode, existing artwork is usually already attached on Amazon
+        const hasExistingArtwork = await page.evaluate(() => {
+          const img = document.querySelector('#STANDARD_TSHIRT-card .asset img, .asset img, #global-uploader-container img.artwork') as HTMLImageElement;
+          return Boolean(img && ((img.naturalWidth && img.naturalWidth > 0) || (img.src && img.src.length > 0)));
+        });
 
-      // 4. Inject PNG File into Dropzone (File Input is hidden in DOM with hidden="" attribute)
-      this.log(`📤 Lade Master-PNG hoch (${path.basename(pngAbsolutePath)})...`, 'Lade PNG hoch...', 20, 100);
-      const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', { 
-        state: 'attached', 
-        timeout: 20000 
-      });
-      if (!fileInput) {
-        throw new Error('Upload-Feld (input[type="file"]) nicht im DOM gefunden.');
+        if (hasExistingArtwork) {
+          this.log(`🖼️ Bestehendes Artwork auf Amazon Create-Seite vorhanden ✓`, 'Artwork vorhanden', 25, 100);
+        } else if (pngAbsolutePath && fs.existsSync(pngAbsolutePath)) {
+          this.log(`📤 Lade Master-PNG für Update hoch (${path.basename(pngAbsolutePath)})...`, 'Lade PNG hoch...', 20, 100);
+          const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', { 
+            state: 'attached', 
+            timeout: 20000 
+          });
+          if (fileInput) {
+            await fileInput.setInputFiles(pngAbsolutePath);
+          }
+        }
+      } else {
+        if (!pngAbsolutePath || !fs.existsSync(pngAbsolutePath)) {
+          throw new Error(`Druckfertige 4500x5400px PNG-Datei für Task #${item.taskId} nicht gefunden.`);
+        }
+        this.log(`📤 Lade Master-PNG hoch (${path.basename(pngAbsolutePath)})...`, 'Lade PNG hoch...', 20, 100);
+        const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', { 
+          state: 'attached', 
+          timeout: 20000 
+        });
+        if (!fileInput) {
+          throw new Error('Upload-Feld (input[type="file"]) nicht im DOM gefunden.');
+        }
+        await fileInput.setInputFiles(pngAbsolutePath);
+        this.log(`⏳ PNG zugewiesen. Warte auf vollständiges Amazon-Asset-Rendering...`, 'Warte auf Rendering...', 25, 100);
       }
-
-      await fileInput.setInputFiles(pngAbsolutePath);
-      this.log(`⏳ PNG zugewiesen. Warte auf vollständiges Amazon-Asset-Rendering...`, 'Warte auf Rendering...', 25, 100);
 
       // Wait for artwork to render on product card (#STANDARD_TSHIRT-card .asset img or .asset img)
       try {

@@ -465,11 +465,15 @@ export const QueueView: React.FC = () => {
     }
   };
 
-  const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && i.id.startsWith('update_')));
+  const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')) || (i.taskId && String(i.taskId).endsWith('-U')));
   const isNewItem = (i: any) => !isUpdateItem(i);
 
-  const activeQueueDesigns = queueState.items.filter(i => isNewItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
-  const pausedDesigns = queueState.items.filter(i => isNewItem(i) && (!!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
+  // Tab 1 (Warteschlange): New creation designs (Prio 1) + non-paused Update designs (0 Slots)
+  const activeNewDesigns = queueState.items.filter(i => isNewItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
+  const activeUpdateDesigns = queueState.items.filter(i => isUpdateItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING'));
+  const activeQueueDesigns = [...activeNewDesigns, ...activeUpdateDesigns];
+
+  const pausedDesigns = queueState.items.filter(i => (!!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
   const updateDesigns = queueState.items.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR');
   const completedDesigns = queueState.items.filter(i => i.status === 'COMPLETED');
   const errorDesigns = queueState.items.filter(i => i.status === 'ERROR');
@@ -1012,8 +1016,9 @@ export const QueueView: React.FC = () => {
                 {waitingOrUploadingDesigns.map((item, index) => {
                   const isUploading = item.status === 'UPLOADING';
                   const isPaused = item.isPaused ?? false;
+                  const isUpdate = isUpdateItem(item);
                   const isDraftMode = (queueState.uploadMode || globalMode) === 'draft';
-                  const canUploadToday = !isPaused && (isDraftMode || (item.allocatedSlots && item.allocatedSlots > 0));
+                  const canUploadToday = !isPaused && (isUpdate || isDraftMode || (item.allocatedSlots && item.allocatedSlots > 0));
                   const isExpanded = expandedItemId === item.id;
                   const isDragging = draggedIndex === index;
                   const isDragOver = dragOverIndex === index;
@@ -1021,6 +1026,7 @@ export const QueueView: React.FC = () => {
 
                   // Border & Glow styling:
                   // Lila = Uploading (gerade im Upload)
+                  // Türkis/Teal = Update-Design (0 Slots, Live-Modus)
                   // Grün = Heute eingeplant / zum Upload bereit (canUploadToday)
                   // Gelb = Wartend, aber heute nicht mehr dran (Slot-Limit im Live Mode erreicht)
                   // Orange = Pausiert (isPaused)
@@ -1029,6 +1035,8 @@ export const QueueView: React.FC = () => {
                     borderClass = 'border-purple-500/80 shadow-purple-500/20 ring-1 ring-purple-500/50';
                   } else if (isPaused) {
                     borderClass = 'border-amber-500/80 shadow-amber-500/15 ring-1 ring-amber-500/40 hover:border-amber-500/90 opacity-80';
+                  } else if (isUpdate) {
+                    borderClass = 'border-teal-500/70 shadow-teal-500/10 ring-1 ring-teal-500/30 hover:border-teal-400';
                   } else if (!canUploadToday) {
                     borderClass = 'border-amber-300/80 shadow-amber-300/10 ring-1 ring-amber-300/30 hover:border-amber-300';
                   }
@@ -1115,8 +1123,12 @@ export const QueueView: React.FC = () => {
                               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
                                 #{index + 1}
                               </span>
-                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary-500/15 text-primary-300 border border-primary-500/30 shrink-0 font-bold">
-                                Task {item.taskId.startsWith('#') ? item.taskId : `#${item.taskId}`}
+                              <span className={`text-[10px] font-mono px-2 py-0.5 rounded border shrink-0 font-bold ${
+                                isUpdate 
+                                  ? 'bg-teal-500/15 text-teal-300 border-teal-500/30' 
+                                  : 'bg-primary-500/15 text-primary-300 border-primary-500/30'
+                              }`}>
+                                {isUpdate ? 'Update' : 'Task'} {item.taskId.startsWith('#') ? item.taskId : `#${item.taskId}`}
                               </span>
                               <h3 className="text-sm font-bold text-slate-100 leading-snug" title={item.title || item.designTitle}>
                                 {item.title || item.designTitle}
@@ -1134,19 +1146,23 @@ export const QueueView: React.FC = () => {
                                 ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 animate-pulse'
                                 : isPaused
                                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                  : canUploadToday
-                                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                                    : 'bg-amber-300/15 text-amber-300 border-amber-300/30'
+                                  : isUpdate
+                                    ? 'bg-teal-500/15 text-teal-300 border-teal-500/30'
+                                    : canUploadToday
+                                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                      : 'bg-amber-300/15 text-amber-300 border-amber-300/30'
                             }`}>
                               {isUploading 
                                 ? '🟣 Lädt hoch...' 
                                 : isPaused
                                   ? '⏸️ Pausiert'
-                                  : canUploadToday
-                                    ? `🟢 ${item.allocatedSlots} Slots`
-                                    : '🟡 Wartet auf freie Slots'}
+                                  : isUpdate
+                                    ? '🔄 Update (0 Slots • Live)'
+                                    : canUploadToday
+                                      ? `🟢 ${item.allocatedSlots} Slots`
+                                      : '🟡 Wartet auf freie Slots'}
                             </span>
-                            {droppedCount > 0 && !isUploading && canUploadToday && (
+                            {droppedCount > 0 && !isUploading && canUploadToday && !isUpdate && (
                               <span className="text-[10px] text-amber-400/90 font-mono mt-0.5">
                                 ({droppedCount} Slots gekürzt)
                               </span>

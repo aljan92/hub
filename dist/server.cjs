@@ -222184,11 +222184,15 @@ var init_updateBackfillService = __esm2({
           return { success: false, message: "Automatik ist ausgeschaltet." };
         }
         const queueItems = QueueService.loadQueue();
-        const isUpdateItem = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE";
-        const currentUpdateCount = queueItems.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR").length;
+        const isUpdateItem = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_");
+        const activeQueueUpdateCount = queueItems.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR").length;
+        const activeTasks = TaskLogService.loadLogs();
+        const activeTasksUpdateCount = activeTasks.filter((t) => t.source === "UPDATE" && t.status !== "COMPLETED" && t.status !== "REJECTED").length;
+        const inFlightCount = this.inFlightDesigns.size;
+        const totalActiveUpdateCount = activeQueueUpdateCount + activeTasksUpdateCount + inFlightCount;
         const targetCount = settings.queueUpdateTargetCount ?? 10;
-        if (!forceSingle && currentUpdateCount >= targetCount) {
-          return { success: false, message: `Update-Pool ist bereits voll (${currentUpdateCount}/${targetCount} Designs).` };
+        if (!forceSingle && totalActiveUpdateCount >= targetCount) {
+          return { success: false, message: `Update-Pool ist bereits voll (${totalActiveUpdateCount}/${targetCount} aktive Designs in Queue & Tasks).` };
         }
         const candidate = await this.fetchNextCandidateFromSupabase();
         if (!candidate) {
@@ -223104,28 +223108,33 @@ var UploadWorkerService = class _UploadWorkerService {
     }
     const state = QueueService.getState();
     let targetItem;
+    const isUpdate = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE" || Boolean(i.designId) || i.taskId && String(i.taskId).endsWith("-U");
     if (queueItemId) {
       targetItem = state.items.find((i) => i.id === queueItemId);
     } else {
-      targetItem = state.items.find((i) => i.status === "WAITING" && !i.isPaused && (mode === "draft" || i.allocatedSlots && i.allocatedSlots > 0));
+      const newWaiting = state.items.filter((i) => i.status === "WAITING" && !i.isPaused && !isUpdate(i) && (mode === "draft" || i.allocatedSlots && i.allocatedSlots > 0));
+      const updateWaiting = state.items.filter((i) => i.status === "WAITING" && !i.isPaused && isUpdate(i));
+      targetItem = newWaiting.length > 0 ? newWaiting[0] : updateWaiting[0];
     }
     if (!targetItem) {
       return { success: false, message: "Kein bereitstehendes Design in der Queue gefunden." };
     }
+    const isUpdateItem = isUpdate(targetItem);
+    const effectiveMode = isUpdateItem ? "publish" : mode;
     this.isUploading = true;
     this.abortRequested = false;
     this.currentQueueId = targetItem.id;
     this.currentTaskId = targetItem.taskId;
     this.currentDesignTitle = targetItem.title || targetItem.designTitle;
-    this.currentMode = mode;
+    this.currentMode = effectiveMode;
     this.stepIndex = 0;
     this.totalSteps = 100;
     this.logs = [];
     QueueService.updateItemStatus(targetItem.id, "UPLOADING");
-    this.executeUploadPipeline(targetItem, mode).catch((err) => {
+    this.executeUploadPipeline(targetItem, effectiveMode).catch((err) => {
       console.error("[UploadWorker] Critical pipeline error:", err);
     });
-    return { success: true, message: `Upload f\xFCr Task #${targetItem.taskId} gestartet (${mode.toUpperCase()} Modus).` };
+    return { success: true, message: `Upload f\xFCr Task #${targetItem.taskId} gestartet (${effectiveMode.toUpperCase()} Modus${isUpdateItem ? " \u2022 Update" : ""}).` };
   }
   /**
    * Cleans text to strictly conform to Amazon Merch on Demand character requirements:
@@ -223152,23 +223161,25 @@ var UploadWorkerService = class _UploadWorkerService {
    * Main Upload Execution Pipeline
    */
   static async executeUploadPipeline(item, mode) {
-    const uploadUrl = "https://merch.amazon.com/designs/new";
+    const isUpdate = item.type === "UPDATE" || item.type === "update" || item.source === "UPDATE" || Boolean(item.designId) || item.taskId.endsWith("-U");
+    const effectiveMode = isUpdate ? "publish" : mode;
+    const cleanDesignId = item.designId || item.taskId.replace(/^#/, "").replace(/-U$/, "");
+    const uploadUrl = isUpdate ? `https://merch.amazon.com/designs/${cleanDesignId}/edit` : "https://merch.amazon.com/designs/new";
     try {
-      this.log(`\u{1F680} Starte Upload f\xFCr Task #${item.taskId} ("${item.title || item.designTitle}")`, "Initialisiere Session 2...", 5, 100);
+      this.log(`\u{1F680} Starte Upload f\xFCr Task #${item.taskId} ("${item.title || item.designTitle}")${isUpdate ? " [UPDATE-MODUS]" : ""}`, "Initialisiere Session 2...", 5, 100);
       const session2 = await BrowserSessionService.getSession("upload");
       const page = session2.page;
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
-      this.log(`\u{1F310} \xD6ffne ${uploadUrl}`, "\xD6ffne Merch Create Seite...", 10, 100);
+      this.log(`\u{1F310} \xD6ffne ${uploadUrl}`, isUpdate ? "\xD6ffne Merch Edit Seite..." : "\xD6ffne Merch Create Seite...", 10, 100);
       await page.goto(uploadUrl, { waitUntil: "domcontentloaded", timeout: 6e4 });
       await page.waitForTimeout(1500);
       const currentUrl = page.url();
       if (currentUrl.includes("/signin") || currentUrl.includes("/ap/signin")) {
         this.log(`\u26A0\uFE0F Amazon Login erforderlich. Bitte im Screencast (Session 2) einloggen!`, "Warte auf Login...");
-        await page.waitForURL("**/designs/new**", { timeout: 18e4 });
+        await page.waitForURL("**/designs/**", { timeout: 18e4 });
         this.log(`\u2705 Login erkannt! Fahre mit Upload fort...`, "Login erfolgreich");
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
-      this.log(`\u{1F5BC}\uFE0F \xDCberpr\xFCfe Master-PNG Datei...`, "Pr\xFCfe Druckdatei...", 15, 100);
       let pngAbsolutePath = "";
       if (item.pngPath && import_fs80.default.existsSync(item.pngPath)) {
         pngAbsolutePath = import_path74.default.resolve(item.pngPath);
@@ -223176,7 +223187,10 @@ var UploadWorkerService = class _UploadWorkerService {
         const candidatePaths = [
           import_path74.default.resolve(process.cwd(), "data", "designs", `${item.taskId}.png`),
           import_path74.default.resolve(process.cwd(), "data", "designs", `${item.taskId.replace("#", "")}.png`),
-          import_path74.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`)
+          import_path74.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`),
+          import_path74.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_master.png`),
+          import_path74.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}.png`),
+          import_path74.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}_master.png`)
         ];
         for (const cp of candidatePaths) {
           if (import_fs80.default.existsSync(cp)) {
@@ -223185,19 +223199,38 @@ var UploadWorkerService = class _UploadWorkerService {
           }
         }
       }
-      if (!pngAbsolutePath || !import_fs80.default.existsSync(pngAbsolutePath)) {
-        throw new Error(`Druckfertige 4500x5400px PNG-Datei f\xFCr Task #${item.taskId} nicht gefunden.`);
+      if (isUpdate) {
+        const hasExistingArtwork = await page.evaluate(() => {
+          const img = document.querySelector("#STANDARD_TSHIRT-card .asset img, .asset img, #global-uploader-container img.artwork");
+          return Boolean(img && (img.naturalWidth && img.naturalWidth > 0 || img.src && img.src.length > 0));
+        });
+        if (hasExistingArtwork) {
+          this.log(`\u{1F5BC}\uFE0F Bestehendes Artwork auf Amazon Create-Seite vorhanden \u2713`, "Artwork vorhanden", 25, 100);
+        } else if (pngAbsolutePath && import_fs80.default.existsSync(pngAbsolutePath)) {
+          this.log(`\u{1F4E4} Lade Master-PNG f\xFCr Update hoch (${import_path74.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
+          const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', {
+            state: "attached",
+            timeout: 2e4
+          });
+          if (fileInput) {
+            await fileInput.setInputFiles(pngAbsolutePath);
+          }
+        }
+      } else {
+        if (!pngAbsolutePath || !import_fs80.default.existsSync(pngAbsolutePath)) {
+          throw new Error(`Druckfertige 4500x5400px PNG-Datei f\xFCr Task #${item.taskId} nicht gefunden.`);
+        }
+        this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path74.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
+        const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', {
+          state: "attached",
+          timeout: 2e4
+        });
+        if (!fileInput) {
+          throw new Error('Upload-Feld (input[type="file"]) nicht im DOM gefunden.');
+        }
+        await fileInput.setInputFiles(pngAbsolutePath);
+        this.log(`\u23F3 PNG zugewiesen. Warte auf vollst\xE4ndiges Amazon-Asset-Rendering...`, "Warte auf Rendering...", 25, 100);
       }
-      this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path74.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
-      const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', {
-        state: "attached",
-        timeout: 2e4
-      });
-      if (!fileInput) {
-        throw new Error('Upload-Feld (input[type="file"]) nicht im DOM gefunden.');
-      }
-      await fileInput.setInputFiles(pngAbsolutePath);
-      this.log(`\u23F3 PNG zugewiesen. Warte auf vollst\xE4ndiges Amazon-Asset-Rendering...`, "Warte auf Rendering...", 25, 100);
       try {
         await page.waitForFunction(() => {
           const img = document.querySelector("#STANDARD_TSHIRT-card .asset img, .asset img, #global-uploader-container img.artwork");
