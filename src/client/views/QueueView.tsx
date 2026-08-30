@@ -989,11 +989,11 @@ export const QueueView: React.FC = () => {
                 <span className="text-[11px] text-slate-500">Slots / Design</span>
               </div>
 
-              {/* Draft Mode Specific Stepper: Produkte pro Design */}
-              {(queueState.uploadMode || globalMode) === 'draft' && (
+              {/* Draft / Hybrid Mode Stepper: Produkte pro Design */}
+              {((queueState.uploadMode || globalMode) === 'draft' || (queueState.uploadMode || globalMode) === 'hybrid') && (
                 <div className="flex items-center space-x-2 border-l border-slate-800 pl-4">
                   <Package className="w-4 h-4 text-accent-cyan shrink-0" />
-                  <span className="font-semibold text-slate-300">Produkte pro Design:</span>
+                  <span className="font-semibold text-slate-300">Produkte pro Design (Draft):</span>
                   
                   {(() => {
                     const maxSlots = queueState.maxCatalogSlots || 106;
@@ -1090,7 +1090,7 @@ export const QueueView: React.FC = () => {
                   const isExpanded = expandedItemId === item.id;
                   const isDragging = draggedIndex === index;
                   const isDragOver = dragOverIndex === index;
-                  const droppedCount = Object.values(item.droppedSlotsMap || {}).reduce((sum, list) => sum + list.length, 0);
+                  const droppedCount = Object.values(item.droppedSlotsMap || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
 
                   // Border & Glow styling:
                   // Lila = Uploading oder Update-Design (Update-Kennzeichnung)
@@ -1289,7 +1289,11 @@ export const QueueView: React.FC = () => {
                               <Users className="w-3.5 h-3.5 text-primary-400" />
                               <span className="font-semibold">Fit-Types:</span>
                               <span className="font-mono text-slate-200">
-                                {(item.fitTypes && item.fitTypes.length > 0) ? item.fitTypes.join(', ').toUpperCase() : 'MEN, WOMEN, YOUTH'}
+                                {Array.isArray(item.fitTypes) && item.fitTypes.length > 0 
+                                  ? item.fitTypes.join(', ').toUpperCase() 
+                                  : typeof item.fitTypes === 'string' 
+                                    ? String(item.fitTypes).toUpperCase() 
+                                    : 'MEN, WOMEN, YOUTH'}
                               </span>
                             </div>
 
@@ -1306,25 +1310,53 @@ export const QueueView: React.FC = () => {
                                     : 'Standard (Alle Swatches / Hex #000000)'}
                               </span>
                             </div>
+
+                            {item.designId && (
+                              <>
+                                <span className="text-slate-700">•</span>
+                                <div className="flex items-center space-x-1.5 text-purple-300 font-mono text-[11px]">
+                                  <span>Amazon ID: {item.designId}</span>
+                                  {item.publishedProductsCount !== undefined && (
+                                    <span>({item.publishedProductsCount} bereits live)</span>
+                                  )}
+                                </div>
+                              </>
+                            )}
                           </div>
 
                           {/* SEO Listing Section with Multi-Language Switcher */}
                           {(() => {
                             const activeLang = itemLanguageMap[item.id] || 'en';
-                            const listingsObj = item.listings || {};
-                            const availableLangs = Object.keys(listingsObj).length > 0 ? Object.keys(listingsObj) : ['en'];
+                            const rawListings: any = item.listings || {};
+                            
+                            // Normalize listings object: if rawListings is a flat listing { brand, title, bullet1... } without lang keys
+                            const isFlatListing = rawListings.title || rawListings.brand || rawListings.bullet1;
+                            const listingsObj: Record<string, any> = isFlatListing 
+                              ? { en: rawListings } 
+                              : (typeof rawListings === 'object' && rawListings !== null ? rawListings : {});
+
+                            const validLangKeys = Object.keys(listingsObj).filter(k => 
+                              typeof listingsObj[k] === 'object' && listingsObj[k] !== null && !Array.isArray(listingsObj[k])
+                            );
+
+                            const availableLangs = validLangKeys.length > 0 ? validLangKeys : ['en'];
                             if (!availableLangs.includes('en')) availableLangs.unshift('en');
 
                             const standardLangs = ['en', 'de', 'fr', 'es', 'it', 'jp'];
                             const allLangs = Array.from(new Set([...standardLangs.filter(l => listingsObj[l] || l === 'en'), ...availableLangs]));
 
-                            const currentListing = listingsObj[activeLang] || listingsObj.en || {
-                              brand: item.brand,
-                              title: item.title,
-                              bullet1: item.bullet1,
-                              bullet2: item.bullet2,
-                              description: item.description
+                            const fallbackListing = {
+                              brand: item.brand || 'MBA Hub',
+                              title: item.title || item.designTitle || '',
+                              bullet1: item.bullet1 || '',
+                              bullet2: item.bullet2 || '',
+                              description: item.description || ''
                             };
+
+                            const targetListingObj = listingsObj[activeLang] || listingsObj.en || fallbackListing;
+                            const currentListing = typeof targetListingObj === 'object' && targetListingObj !== null 
+                              ? targetListingObj 
+                              : fallbackListing;
 
                             const langFlags: Record<string, { label: string; flag: string }> = {
                               en: { label: 'Englisch', flag: '🇺🇸 / 🇬🇧' },
@@ -1397,7 +1429,7 @@ export const QueueView: React.FC = () => {
                           })()}
 
                           {/* TM Blocked Items Notice */}
-                          {item.tmBlockedProductIds && item.tmBlockedProductIds.length > 0 && (
+                          {Array.isArray(item.tmBlockedProductIds) && item.tmBlockedProductIds.length > 0 && (
                             <div className="flex items-center space-x-2 text-xs text-rose-300 bg-rose-950/30 border border-rose-500/30 p-2.5 rounded-xl">
                               <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
                               <span>Durch Trademark (TM) gesperrte Produkt-Klassen: <strong>{item.tmBlockedProductIds.join(', ')}</strong></span>
@@ -1412,14 +1444,15 @@ export const QueueView: React.FC = () => {
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                               {Object.entries(item.activeProductsMap || {}).map(([prodId, mps]) => {
-                                const droppedMps = item.droppedSlotsMap?.[prodId] || [];
+                                const safeMps = Array.isArray(mps) ? mps : [];
+                                const droppedMps = Array.isArray(item.droppedSlotsMap?.[prodId]) ? item.droppedSlotsMap[prodId] : [];
                                 return (
                                   <div key={prodId} className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-xs">
                                     <div className="font-bold text-slate-200 truncate">{prodId}</div>
                                     <div className="flex items-center flex-wrap gap-1 mt-1 font-mono text-[10px]">
-                                      {mps.map(mp => (
+                                      {safeMps.map(mp => (
                                         <span key={mp} className={`px-1.5 py-0.2 rounded ${
-                                          mp.toUpperCase() === 'US' 
+                                          String(mp).toUpperCase() === 'US' 
                                             ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
                                             : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
                                         }`}>

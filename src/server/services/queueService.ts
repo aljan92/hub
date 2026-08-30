@@ -229,6 +229,26 @@ export class QueueService {
             hasChanges = true;
           }
 
+          // Check if update item
+          const isUpdate = (item.type === 'update' || item.type === 'UPDATE' || item.source === 'UPDATE' || (item.id && String(item.id).startsWith('update_')) || (item.taskId && String(item.taskId).endsWith('-U')));
+          if (isUpdate) {
+            if (item.publishedProductsCount === undefined) {
+              const pCount = task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount;
+              if (pCount !== undefined) {
+                item.publishedProductsCount = pCount;
+                hasChanges = true;
+              }
+            }
+            if (!item.liveStats && task.payload?.liveStats) {
+              item.liveStats = task.payload.liveStats;
+              hasChanges = true;
+            }
+            if (!item.designId && task.payload?.designId) {
+              item.designId = task.payload.designId;
+              hasChanges = true;
+            }
+          }
+
           if (!item.customBackgroundColor && task.customAnswers?.reuseBackground) {
             item.customBackgroundColor = task.customAnswers.reuseBackground;
             hasChanges = true;
@@ -738,8 +758,24 @@ export class QueueService {
       uItem.activeProductsMap = activeMap;
       uItem.droppedSlotsMap = {};
 
-      const alreadyPublished = uItem.publishedProductsCount ?? uItem.liveStats?.publishedCount ?? 0;
-      const netSlots = Math.max(0, baseCatalogSlots - alreadyPublished);
+      let alreadyPublished = uItem.publishedProductsCount ?? uItem.liveStats?.publishedCount;
+      if (alreadyPublished === undefined) {
+        const cleanId = uItem.taskId ? uItem.taskId.replace(/^#/, '') : '';
+        const t = TaskLogService.getTask(uItem.taskId) || TaskLogService.getTask(cleanId) || TaskLogService.getTask(`#${cleanId}`);
+        const pCount = t?.payload?.liveStats?.publishedCount ?? t?.payload?.liveVariantsCount ?? t?.payload?.publishedCount;
+        if (pCount !== undefined) {
+          alreadyPublished = pCount;
+          uItem.publishedProductsCount = pCount;
+          if (t?.payload?.liveStats) uItem.liveStats = t.payload.liveStats;
+          if (t?.payload?.designId && !uItem.designId) uItem.designId = t.payload.designId;
+        } else {
+          // If already live on Amazon and backfilled before 109 products, default to previous full catalog (106)
+          alreadyPublished = 106;
+          uItem.publishedProductsCount = 106;
+        }
+      }
+
+      const netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
       uItem.totalBaseSlots = netSlots;
       uItem.allocatedSlots = netSlots;
     }

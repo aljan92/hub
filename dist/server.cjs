@@ -218536,6 +218536,24 @@ var init_queueService = __esm2({
                 else item.avoidColor = "none";
                 hasChanges = true;
               }
+              const isUpdate = item.type === "update" || item.type === "UPDATE" || item.source === "UPDATE" || item.id && String(item.id).startsWith("update_") || item.taskId && String(item.taskId).endsWith("-U");
+              if (isUpdate) {
+                if (item.publishedProductsCount === void 0) {
+                  const pCount = task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount;
+                  if (pCount !== void 0) {
+                    item.publishedProductsCount = pCount;
+                    hasChanges = true;
+                  }
+                }
+                if (!item.liveStats && task.payload?.liveStats) {
+                  item.liveStats = task.payload.liveStats;
+                  hasChanges = true;
+                }
+                if (!item.designId && task.payload?.designId) {
+                  item.designId = task.payload.designId;
+                  hasChanges = true;
+                }
+              }
               if (!item.customBackgroundColor && task.customAnswers?.reuseBackground) {
                 item.customBackgroundColor = task.customAnswers.reuseBackground;
                 hasChanges = true;
@@ -218930,8 +218948,22 @@ var init_queueService = __esm2({
           }
           uItem.activeProductsMap = activeMap;
           uItem.droppedSlotsMap = {};
-          const alreadyPublished = uItem.publishedProductsCount ?? uItem.liveStats?.publishedCount ?? 0;
-          const netSlots = Math.max(0, baseCatalogSlots - alreadyPublished);
+          let alreadyPublished = uItem.publishedProductsCount ?? uItem.liveStats?.publishedCount;
+          if (alreadyPublished === void 0) {
+            const cleanId = uItem.taskId ? uItem.taskId.replace(/^#/, "") : "";
+            const t = TaskLogService.getTask(uItem.taskId) || TaskLogService.getTask(cleanId) || TaskLogService.getTask(`#${cleanId}`);
+            const pCount = t?.payload?.liveStats?.publishedCount ?? t?.payload?.liveVariantsCount ?? t?.payload?.publishedCount;
+            if (pCount !== void 0) {
+              alreadyPublished = pCount;
+              uItem.publishedProductsCount = pCount;
+              if (t?.payload?.liveStats) uItem.liveStats = t.payload.liveStats;
+              if (t?.payload?.designId && !uItem.designId) uItem.designId = t.payload.designId;
+            } else {
+              alreadyPublished = 106;
+              uItem.publishedProductsCount = 106;
+            }
+          }
+          const netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
           uItem.totalBaseSlots = netSlots;
           uItem.allocatedSlots = netSlots;
         }
@@ -219377,11 +219409,11 @@ var init_amazonInspectService = __esm2({
           rawProductConfig: configData,
           rawFindListings: findData
         };
-        const taskLog = TaskLogService.createTaskLog({
+        const taskLog = TaskLogService2.createTaskLog({
           source: "UPDATE",
           payload
         });
-        TaskLogService.addEvent(taskLog.id, {
+        TaskLogService2.addEvent(taskLog.id, {
           type: "TASK_HANDOFF",
           title: `Amazon Rohdaten erfasst (${publishedCount} Varianten live)`,
           content: {
@@ -219432,7 +219464,7 @@ var init_amazonInspectService = __esm2({
         }
         const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
         console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
-        TaskLogService.updateTaskStatus(cleanTaskId, {
+        TaskLogService2.updateTaskStatus(cleanTaskId, {
           status: "PROCESSING",
           hasError: false
         });
@@ -219489,7 +219521,7 @@ var init_amazonInspectService = __esm2({
           import_fs77.default.writeFileSync(filePath2, buffer);
           console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
-          TaskLogService.updateTaskStatus(cleanTaskId, {
+          TaskLogService2.updateTaskStatus(cleanTaskId, {
             status: "RECEIVED",
             imageUrl: localUrl,
             localImagePath: localUrl,
@@ -219497,7 +219529,7 @@ var init_amazonInspectService = __esm2({
             localMbaPngPath: filePath2,
             hasError: false
           });
-          TaskLogService.addEvent(cleanTaskId, {
+          TaskLogService2.addEvent(cleanTaskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ANALYSIS_RESPONSE",
             title: "Original-Design heruntergeladen",
@@ -219512,12 +219544,12 @@ var init_amazonInspectService = __esm2({
           return { success: true, localUrl };
         } catch (err) {
           console.error(`[AmazonInspectService] \u274C Fehler beim Artwork-Download f\xFCr Task ${cleanTaskId}:`, err);
-          TaskLogService.updateTaskStatus(cleanTaskId, {
+          TaskLogService2.updateTaskStatus(cleanTaskId, {
             status: "ERROR",
             hasError: true,
             errorDetails: err.message
           });
-          TaskLogService.addEvent(cleanTaskId, {
+          TaskLogService2.addEvent(cleanTaskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ERROR",
             title: "Fehler beim Design-Download",
@@ -219554,7 +219586,7 @@ var init_updatePipelineService = __esm2({
        * Helper to retrieve a task safely
        */
       static getTask(taskId) {
-        const logs = TaskLogService.loadLogs();
+        const logs = TaskLogService2.loadLogs();
         return logs.find((t) => t.id === taskId);
       }
       /**
@@ -219567,7 +219599,7 @@ var init_updatePipelineService = __esm2({
           if (!task || !task.id) {
             return { success: false, error: "Task konnte nicht erstellt werden" };
           }
-          TaskLogService.updateTaskStatus(task.id, {
+          TaskLogService2.updateTaskStatus(task.id, {
             status: "UPDATE_EXTRACTED",
             hasError: false
           });
@@ -219591,14 +219623,14 @@ var init_updatePipelineService = __esm2({
         }
         const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
         if (!res.success) {
-          TaskLogService.updateTaskStatus(taskId, {
+          TaskLogService2.updateTaskStatus(taskId, {
             status: "ERROR",
             hasError: true,
             errorDetails: res.error
           });
           return { success: false, error: res.error };
         }
-        TaskLogService.updateTaskStatus(taskId, {
+        TaskLogService2.updateTaskStatus(taskId, {
           status: "UPDATE_ARTWORK_READY",
           hasError: false
         });
@@ -219619,10 +219651,10 @@ var init_updatePipelineService = __esm2({
         const apiKey = settings.openRouterApiKey;
         if (!apiKey) {
           const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
-          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
-        TaskLogService.updateTaskStatus(taskId, { status: "PROCESSING", hasError: false });
+        TaskLogService2.updateTaskStatus(taskId, { status: "PROCESSING", hasError: false });
         let imageBase64 = null;
         if (task.localMbaPngPath && import_fs78.default.existsSync(task.localMbaPngPath)) {
           try {
@@ -219661,7 +219693,7 @@ Bullets: ${oldBullets}`
           });
         }
         const model = settings.llmModel || "google/gemini-2.5-flash";
-        TaskLogService.addEvent(taskId, {
+        TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "ANALYSIS_REQUEST",
           title: "Vision & Listing Analyse (OpenRouter)",
@@ -219692,7 +219724,7 @@ Bullets: ${oldBullets}`
           const json = await resp.json();
           const contentStr = json.choices?.[0]?.message?.content || "{}";
           const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
-          TaskLogService.updateTaskStatus(taskId, {
+          TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_ANALYZED",
             analysisResult: parsed,
             customAnswers: {
@@ -219702,7 +219734,7 @@ Bullets: ${oldBullets}`
             },
             hasError: false
           });
-          TaskLogService.addEvent(taskId, {
+          TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ANALYSIS_RESPONSE",
             title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? "empfohlen" : "nicht n\xF6tig"}`,
@@ -219712,8 +219744,8 @@ Bullets: ${oldBullets}`
           return { success: true, analysisResult: parsed };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U3:`, err);
-          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
-          TaskLogService.addEvent(taskId, {
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ERROR",
             title: "Fehler bei Vision & Listing Analyse",
@@ -219739,11 +219771,11 @@ Bullets: ${oldBullets}`
             bullet2: raw2.bullet2 || "",
             description: raw2.description || ""
           };
-          TaskLogService.updateTaskStatus(taskId, {
+          TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_REWRITTEN",
             listingResult: { en: enListing }
           });
-          TaskLogService.addEvent(taskId, {
+          TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "LISTING_RESPONSE",
             title: "Original-Listing beibehalten (kein Rewrite n\xF6tig)",
@@ -219763,7 +219795,7 @@ Original Listing Details:
 - Brand: "${raw.brand || ""}"
 - Title: "${raw.title || ""}"
 - Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(" | ")}"`;
-        TaskLogService.addEvent(taskId, {
+        TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "LISTING_REQUEST",
           title: "Listing Rewrite Request (OpenRouter)",
@@ -219790,12 +219822,12 @@ Original Listing Details:
           const json = await resp.json();
           const contentStr = json.choices?.[0]?.message?.content || "{}";
           const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
-          TaskLogService.updateTaskStatus(taskId, {
+          TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_REWRITTEN",
             listingResult: { en: parsed },
             hasError: false
           });
-          TaskLogService.addEvent(taskId, {
+          TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "LISTING_RESPONSE",
             title: "Optimiertes Listing generiert (EN)",
@@ -219805,7 +219837,7 @@ Original Listing Details:
           return { success: true, listingResult: { en: parsed } };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U4:`, err);
-          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
           return { success: false, error: err.message };
         }
       }
@@ -219822,7 +219854,7 @@ Original Listing Details:
           bullet1: task.payload?.bullet1 || "",
           bullet2: task.payload?.bullet2 || ""
         };
-        TaskLogService.addEvent(taskId, {
+        TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_CHECK_REQUEST",
           title: "Trademark-Pr\xFCfung (USPTO & DPMA)",
@@ -219835,12 +219867,12 @@ Original Listing Details:
           checkedAt: (/* @__PURE__ */ new Date()).toISOString(),
           checkedFields: ["brand", "title", "bullet1", "bullet2"]
         };
-        TaskLogService.updateTaskStatus(taskId, {
+        TaskLogService2.updateTaskStatus(taskId, {
           status: "UPDATE_TM_CHECKED",
           trademarkCheckResult: tmResult,
           hasError: false
         });
-        TaskLogService.addEvent(taskId, {
+        TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_CHECK_RESPONSE",
           title: "Trademark-Pr\xFCfung bestanden (0 Treffer)",
@@ -219875,7 +219907,7 @@ Source EN Listing:
 - Title: "${enListing.title}"
 - Bullet 1: "${enListing.bullet1}"
 - Bullet 2: "${enListing.bullet2}"`;
-        TaskLogService.addEvent(taskId, {
+        TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "LLM_REQUEST",
           title: "SEO-\xDCbersetzung anfordern (DE, FR, ES, IT)",
@@ -219909,12 +219941,12 @@ Source EN Listing:
             es: parsed.es || enListing,
             it: parsed.it || enListing
           };
-          TaskLogService.updateTaskStatus(taskId, {
+          TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_TRANSLATED",
             listingResult: fullListings,
             hasError: false
           });
-          TaskLogService.addEvent(taskId, {
+          TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "LLM_RESPONSE",
             title: "SEO-\xDCbersetzungen erfolgreich generiert",
@@ -219924,7 +219956,7 @@ Source EN Listing:
           return { success: true, fullListings };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U6:`, err);
-          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
           return { success: false, error: err.message };
         }
       }
@@ -219952,7 +219984,7 @@ Source EN Listing:
             bullet1: listing.bullet1,
             bullet2: listing.bullet2,
             description: listing.description || "",
-            listings: task.listingResult || { en: listing },
+            listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
             fitTypes: task.analysisResult?.fitTypes || ["men", "women"],
             avoidColor: task.analysisResult?.avoidColor || "none",
             imagePath: task.localImagePath || "",
@@ -219960,11 +219992,11 @@ Source EN Listing:
             publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
             liveStats: task.payload?.liveStats || null
           });
-          TaskLogService.updateTaskStatus(taskId, {
+          TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_QUEUED",
             hasError: false
           });
-          TaskLogService.addEvent(taskId, {
+          TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
             title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
@@ -219979,7 +220011,7 @@ Source EN Listing:
           return { success: true, queueItem };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
-          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
           return { success: false, error: err.message };
         }
       }
@@ -220022,7 +220054,7 @@ Source EN Listing:
         const settings = loadSettings();
         if (!settings.aiAutonomyEnabled) {
           console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Pr\xFCfung) in Tasks.`);
-          TaskLogService.addEvent(taskId, {
+          TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
             title: "\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)",
@@ -220033,7 +220065,7 @@ Source EN Listing:
               analysis: u3.analysisResult
             }
           });
-          TaskLogService.updateTaskStatus(taskId, {
+          TaskLogService2.updateTaskStatus(taskId, {
             status: "AWAITING_DESIGN_REVIEW",
             checkpoint: "DESIGN_REVIEW",
             analysisResult: u3.analysisResult,
@@ -220094,7 +220126,7 @@ Source EN Listing:
 });
 
 // src/server/services/taskLogService.ts
-var import_fs79, import_path73, TaskLogService;
+var import_fs79, import_path73, TaskLogService2;
 var init_taskLogService = __esm2({
   "src/server/services/taskLogService.ts"() {
     "use strict";
@@ -220109,7 +220141,7 @@ var init_taskLogService = __esm2({
     init_svgRenderService();
     init_llmService();
     init_tasks();
-    TaskLogService = class {
+    TaskLogService2 = class {
       static dataDir = import_path73.default.resolve(process.cwd(), "data");
       static counterFile = import_path73.default.resolve(process.cwd(), "data", "tasks_counter.json");
       static logsFile = import_path73.default.resolve(process.cwd(), "data", "tasks_log.json");
@@ -222223,7 +222255,7 @@ var init_updateBackfillService = __esm2({
             excluded.add(cleanTask);
           }
         }
-        const tasks = TaskLogService.loadLogs();
+        const tasks = TaskLogService2.loadLogs();
         for (const task of tasks) {
           if (task.status === "REJECTED") continue;
           if (task.payload?.designId) excluded.add(task.payload.designId.trim());
@@ -222299,7 +222331,7 @@ var init_updateBackfillService = __esm2({
         const queueItems = QueueService.loadQueue();
         const isUpdateItem = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_");
         const activeQueueUpdateCount = queueItems.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR").length;
-        const activeTasks = TaskLogService.loadLogs();
+        const activeTasks = TaskLogService2.loadLogs();
         const activeTasksUpdateCount = activeTasks.filter((t) => t.source === "UPDATE" && t.status !== "COMPLETED" && t.status !== "REJECTED").length;
         const inFlightCount = this.inFlightDesigns.size;
         const totalActiveUpdateCount = activeQueueUpdateCount + activeTasksUpdateCount + inFlightCount;
@@ -224038,7 +224070,7 @@ var DesignPipelineService = class {
    * Helper to retrieve task safely
    */
   static getTask(taskId) {
-    const logs = TaskLogService.loadLogs();
+    const logs = TaskLogService2.loadLogs();
     return logs.find((t) => t.id === taskId);
   }
   /**
@@ -224056,7 +224088,7 @@ var DesignPipelineService = class {
     try {
       const tmResult = await TrademarkService.checkText(quote5, ["25"]);
       const isInfringing = tmResult.totalHits > 0 && tmResult.hasInfringementClass25;
-      TaskLogService.addEvent(taskId, {
+      TaskLogService2.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "TM_CHECK_RESPONSE",
         title: isInfringing ? `Pre-Flight USPTO Treffer (${tmResult.totalHits} Treffer)` : "Pre-Flight USPTO sauber (0 Treffer)",
@@ -224078,7 +224110,7 @@ var DesignPipelineService = class {
   static async stepD2_GeneratePrompt(taskId) {
     console.log(`[DesignPipeline] \u{1F9E0} Starte Step D2 (Ideogram Prompt Generation) f\xFCr Task ${taskId}...`);
     try {
-      await TaskLogService.generatePromptWithOpenRouter(taskId);
+      await TaskLogService2.generatePromptWithOpenRouter(taskId);
       const updated = this.getTask(taskId);
       return { success: true, prompt: updated?.resultPrompt };
     } catch (err) {
@@ -224092,7 +224124,7 @@ var DesignPipelineService = class {
   static async stepD3_GenerateImage(taskId) {
     console.log(`[DesignPipeline] \u{1F3A8} Starte Step D3 (Ideogram Bild-Generierung) f\xFCr Task ${taskId}...`);
     try {
-      await TaskLogService.processTaskWithIdeogram(taskId);
+      await TaskLogService2.processTaskWithIdeogram(taskId);
       const updated = this.getTask(taskId);
       return { success: true, imageUrl: updated?.imageUrl, localPath: updated?.localImagePath };
     } catch (err) {
@@ -224106,7 +224138,7 @@ var DesignPipelineService = class {
   static async stepD4_AnalyzeDesign(taskId) {
     console.log(`[DesignPipeline] \u{1F441}\uFE0F Starte Step D4 (Design QA Analyse) f\xFCr Task ${taskId}...`);
     try {
-      await TaskLogService.analyzeDesignWithOpenRouter(taskId);
+      await TaskLogService2.analyzeDesignWithOpenRouter(taskId);
       const updated = this.getTask(taskId);
       return { success: true, analysisResult: updated?.analysisResult };
     } catch (err) {
@@ -224120,7 +224152,7 @@ var DesignPipelineService = class {
   static async stepD5_GenerateListing(taskId) {
     console.log(`[DesignPipeline] \u{1F4DD} Starte Step D5 (Listing Erstellung) f\xFCr Task ${taskId}...`);
     try {
-      await TaskLogService.generateListingWithOpenRouter(taskId);
+      await TaskLogService2.generateListingWithOpenRouter(taskId);
       const updated = this.getTask(taskId);
       return { success: true, listingResult: updated?.listingResult };
     } catch (err) {
@@ -224134,7 +224166,7 @@ var DesignPipelineService = class {
   static async stepD6_TrademarkCheck(taskId) {
     console.log(`[DesignPipeline] \u2696\uFE0F Starte Step D6 (Trademark Check & Refine Loop) f\xFCr Task ${taskId}...`);
     try {
-      await TaskLogService.performTrademarkCheck(taskId);
+      await TaskLogService2.performTrademarkCheck(taskId);
       const updated = this.getTask(taskId);
       return { success: true, tmResult: updated?.trademarkCheckResult };
     } catch (err) {
@@ -224148,7 +224180,7 @@ var DesignPipelineService = class {
   static async stepD7_VectorizeAndAudit(taskId) {
     console.log(`[DesignPipeline] \u26A1 Starte Step D7 (Vektorisierung & Cutout-Audit) f\xFCr Task ${taskId}...`);
     try {
-      await TaskLogService.vectorizeDesignTask(taskId);
+      await TaskLogService2.vectorizeDesignTask(taskId);
       const updated = this.getTask(taskId);
       return { success: true, svgUrl: updated?.svgUrl };
     } catch (err) {
@@ -224162,7 +224194,7 @@ var DesignPipelineService = class {
   static async stepD8_Enqueue(taskId) {
     console.log(`[DesignPipeline] \u{1F4E6} Starte Step D8 (Upload Queue Handoff) f\xFCr Task ${taskId}...`);
     try {
-      await TaskLogService.completeTaskAndEnqueue(taskId);
+      await TaskLogService2.completeTaskAndEnqueue(taskId);
       return { success: true };
     } catch (err) {
       console.error(`[DesignPipeline] \u274C Fehler in Step D8:`, err);
@@ -224258,7 +224290,7 @@ function broadcast(type3, payload) {
     }
   });
 }
-TaskLogService.setBroadcaster(broadcast);
+TaskLogService2.setBroadcaster(broadcast);
 UploadWorkerService.onStatusUpdate((status) => {
   broadcast("UPLOAD_STATUS_UPDATE", status);
 });
@@ -224299,7 +224331,7 @@ wss.on("connection", (ws4) => {
     payload: {
       status: "online",
       slots: dailySlotStats,
-      tasks: TaskLogService.getAwaitingTasks().length,
+      tasks: TaskLogService2.getAwaitingTasks().length,
       queue: uploadQueue.length,
       browserStatus: BrowserSessionService.getStatus()
     }
@@ -224365,7 +224397,7 @@ async function refreshStatsInBackground() {
     }
     const liveSlots = ratelimiter?.slots || dailySlotStats;
     cachedStats = {
-      tasksCount: TaskLogService.getAwaitingTasks().length,
+      tasksCount: TaskLogService2.getAwaitingTasks().length,
       queueCount: QueueService.getActiveQueueCount(),
       slots: liveSlots,
       tier: lastKnownTier,
@@ -224383,7 +224415,7 @@ async function refreshStatsInBackground() {
 refreshStatsInBackground();
 setInterval(refreshStatsInBackground, 15e3);
 app.get("/api/v1/stats", async (req, res) => {
-  cachedStats.tasksCount = TaskLogService.getAwaitingTasks().length;
+  cachedStats.tasksCount = TaskLogService2.getAwaitingTasks().length;
   cachedStats.queueCount = QueueService.getActiveQueueCount();
   const costStats = await CostTrackingService.getCostStats().catch(() => null);
   res.json({
@@ -224948,7 +224980,7 @@ app.post("/api/v1/designer/generate", async (req, res) => {
   try {
     const { prompt, aspectRatio, niche1, niche2, quote: quote5 } = req.body;
     const clientIp = req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "local";
-    const taskLog = TaskLogService.createTaskLog({
+    const taskLog = TaskLogService2.createTaskLog({
       source: "DESIGNER",
       payload: {
         prompt,
@@ -224966,15 +224998,15 @@ app.post("/api/v1/designer/generate", async (req, res) => {
   }
 });
 app.get("/api/v1/tasks", (req, res) => {
-  const awaiting = TaskLogService.getAwaitingTasks();
+  const awaiting = TaskLogService2.getAwaitingTasks();
   res.json({ success: true, tasks: awaiting });
 });
 app.post("/api/v1/tasks/:taskId/submit-design-review", async (req, res) => {
   const { taskId } = req.params;
   const { action, answers, updatedPrompt } = req.body;
   try {
-    const result2 = await TaskLogService.submitDesignReview(taskId, { action, answers, updatedPrompt });
-    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    const result2 = await TaskLogService2.submitDesignReview(taskId, { action, answers, updatedPrompt });
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -224984,8 +225016,8 @@ app.post("/api/v1/tasks/:taskId/submit-tm-review", async (req, res) => {
   const { taskId } = req.params;
   const { action, refinedListing } = req.body;
   try {
-    const result2 = await TaskLogService.submitTmReview(taskId, { action, refinedListing });
-    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    const result2 = await TaskLogService2.submitTmReview(taskId, { action, refinedListing });
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -224995,8 +225027,8 @@ app.post("/api/v1/tasks/:taskId/override-preflight", async (req, res) => {
   const { taskId } = req.params;
   const { action, newQuote } = req.body;
   try {
-    const result2 = await TaskLogService.overridePreFlight(taskId, { action, newQuote });
-    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    const result2 = await TaskLogService2.overridePreFlight(taskId, { action, newQuote });
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -225006,8 +225038,8 @@ app.post("/api/v1/tasks/:taskId/submit-svg-review", async (req, res) => {
   const { taskId } = req.params;
   const { action, editedSvgContent, maxColors } = req.body;
   try {
-    const result2 = await TaskLogService.submitSvgReview(taskId, { action, editedSvgContent, maxColors });
-    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    const result2 = await TaskLogService2.submitSvgReview(taskId, { action, editedSvgContent, maxColors });
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -225016,8 +225048,8 @@ app.post("/api/v1/tasks/:taskId/submit-svg-review", async (req, res) => {
 app.post("/api/v1/tasks/:taskId/reset-svg", async (req, res) => {
   const { taskId } = req.params;
   try {
-    const result2 = await TaskLogService.resetSvg(taskId);
-    broadcast("TASK_UPDATED", TaskLogService.getTaskLogById(taskId));
+    const result2 = await TaskLogService2.resetSvg(taskId);
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -225059,7 +225091,7 @@ app.post(["/api/v1/design", "/design", "/api/v1/hermes/design", "/api/v1/mcp/des
     if (up === "TEST" || up === "T") source12 = "TEST";
     else if (up === "DESIGNER" || up === "D") source12 = "DESIGNER";
     const clientIp = req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "remote";
-    const taskLog = TaskLogService.createTaskLog({
+    const taskLog = TaskLogService2.createTaskLog({
       source: source12,
       payload,
       clientIp
@@ -225087,17 +225119,17 @@ app.post(["/api/v1/design", "/design", "/api/v1/hermes/design", "/api/v1/mcp/des
 app.get("/api/v1/tasks/log", (req, res) => {
   res.json({
     success: true,
-    tasks: TaskLogService.getTaskLogs()
+    tasks: TaskLogService2.getTaskLogs()
   });
 });
 app.delete("/api/v1/tasks/log", (req, res) => {
-  TaskLogService.clearTaskLogs();
+  TaskLogService2.clearTaskLogs();
   broadcast("TASK_LOGS_CLEARED", {});
   res.json({ success: true, message: "All task logs cleared" });
 });
 app.delete("/api/v1/tasks/:taskId", (req, res) => {
   const { taskId } = req.params;
-  const deleted = TaskLogService.deleteTaskLog(taskId);
+  const deleted = TaskLogService2.deleteTaskLog(taskId);
   if (deleted) {
     return res.json({ success: true, message: `Task ${taskId} gel\xF6scht.` });
   }
@@ -225107,7 +225139,7 @@ app.post("/api/v1/tasks/:taskId/retry", async (req, res) => {
   const { taskId } = req.params;
   const { stepType, eventIndex } = req.body;
   try {
-    const result2 = await TaskLogService.retryFromStep(taskId, stepType, eventIndex);
+    const result2 = await TaskLogService2.retryFromStep(taskId, stepType, eventIndex);
     res.json({ success: true, ...result2 });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -225151,7 +225183,7 @@ app.get("/api/v1/designs/image/:taskId", (req, res) => {
     res.setHeader("Content-Type", "image/png");
     return import_fs82.default.createReadStream(rawFilePath).pipe(res);
   }
-  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
   }
@@ -225167,7 +225199,7 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
     res.setHeader("Content-Type", "image/svg+xml");
     return import_fs82.default.createReadStream(filePath).pipe(res);
   }
-  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader("Content-Type", "image/svg+xml");
     return res.send(task.svgContent);
@@ -225189,7 +225221,7 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
     res.setHeader("Content-Type", "image/svg+xml");
     return import_fs82.default.createReadStream(fallbackPath).pipe(res);
   }
-  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader("Content-Type", "image/svg+xml");
     return res.send(task.svgContent);
@@ -225224,7 +225256,7 @@ app.post("/api/v1/hermes/task", async (req, res) => {
   const payload = req.body || {};
   const clientIp = req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "remote";
   recordHermesHeartbeat(req, { niche1: payload.niche1, niche2: payload.niche2, quote: payload.quote });
-  const taskLog = TaskLogService.createTaskLog({
+  const taskLog = TaskLogService2.createTaskLog({
     source: "HERMES",
     payload,
     clientIp
@@ -225263,7 +225295,7 @@ app.all(["/api/v1/mcp/ping", "/api/v1/mcp/heartbeat"], (req, res) => {
     authConfigured: Boolean(settings.mcpApiKey),
     serverTime: (/* @__PURE__ */ new Date()).toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
-    activeTasksCount: TaskLogService.getAwaitingTasks().length,
+    activeTasksCount: TaskLogService2.getAwaitingTasks().length,
     uploadQueueCount: QueueService.getActiveQueueCount(),
     heartbeat: {
       lastPingTime: hermesHeartbeat.lastPingTime,
@@ -225485,14 +225517,14 @@ app.post(["/api/v1/tasks/:id/enqueue", "/api/v1/tasks/enqueue"], (req, res) => {
       return res.status(400).json({ success: false, error: "Keine Task-ID \xFCbergeben" });
     }
     const taskId = decodeURIComponent(String(rawId));
-    const task = TaskLogService.getTaskById(taskId);
+    const task = TaskLogService2.getTaskById(taskId);
     if (!task) {
       return res.status(404).json({ success: false, error: `Task #${taskId} nicht gefunden` });
     }
     if (!task.localMbaPngPath && !task.mbaPngUrl) {
       return res.status(400).json({ success: false, error: `Task #${taskId} besitzt noch kein fertig generiertes Master-PNG.` });
     }
-    TaskLogService.completeTaskAndEnqueue(task);
+    TaskLogService2.completeTaskAndEnqueue(task);
     const queueState = QueueService.getState();
     res.json({ success: true, message: `Task #${taskId} erfolgreich in die Upload-Queue \xFCbertragen!`, task, queueState });
   } catch (err) {

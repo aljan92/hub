@@ -455,7 +455,7 @@ export class UpdatePipelineService {
         bullet1: listing.bullet1,
         bullet2: listing.bullet2,
         description: listing.description || '',
-        listings: task.listingResult || { en: listing },
+        listings: task.listingResult ? (task.listingResult.en ? task.listingResult : { en: task.listingResult }) : { en: listing },
         fitTypes: task.analysisResult?.fitTypes || ['men', 'women'],
         avoidColor: task.analysisResult?.avoidColor || 'none',
         imagePath: task.localImagePath || '',
