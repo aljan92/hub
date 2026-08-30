@@ -219224,13 +219224,27 @@ var init_amazonInspectService = __esm2({
         if (!cleanId) {
           throw new Error("Keine Design-ID (UUID) angegeben.");
         }
+        const findRes = await this.inspectFindListings(cleanId);
+        if (!findRes.success) {
+          throw new Error(findRes.error || "FindListings konnte nicht von Amazon abgefragt werden.");
+        }
+        const findData = findRes.data;
+        const statusSummary = findData?.statusSummary || {};
+        const processingStatuses = ["PUBLISHING", "PROCESSING", "TRANSLATING", "REVIEW", "UNDER_REVIEW", "LOCKED", "PENDING"];
+        const activeProcessing = processingStatuses.filter((s) => (statusSummary[s] || 0) > 0);
+        if (activeProcessing.length > 0) {
+          const details = activeProcessing.map((s) => `${s}: ${statusSummary[s]}`).join(", ");
+          throw new Error(`Design ${cleanId} ist aktuell auf Amazon gesperrt/in Bearbeitung (${details}).`);
+        }
+        const publishedCount = (statusSummary.PUBLISHED || 0) + (statusSummary.PROPAGATED || 0);
+        if (publishedCount === 0) {
+          throw new Error(`Design ${cleanId} hat keine aktiven LIVE/PUBLISHED Produkte auf Amazon.`);
+        }
         const configRes = await this.inspectProductConfig(cleanId);
         if (!configRes.success || !configRes.data) {
           throw new Error(configRes.error || "Product Config konnte nicht von Amazon geladen werden.");
         }
-        const findRes = await this.inspectFindListings(cleanId);
         const configData = configRes.data;
-        const findData = findRes.success ? findRes.data : null;
         const textData = configData.textData || {};
         const masterListing = textData.en || textData.de || Object.values(textData)[0] || {};
         const title = masterListing.title || "Amazon Merch Update Task";
@@ -219249,8 +219263,6 @@ var init_amazonInspectService = __esm2({
           };
         }
         const matchedItems = findData?.items || [];
-        const statusSummary = findData?.statusSummary || {};
-        const publishedCount = statusSummary.PUBLISHED || 0;
         const payload = {
           designId: cleanId,
           editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
