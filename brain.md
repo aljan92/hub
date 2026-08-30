@@ -243,12 +243,8 @@ MBA HUB/
 │   ├── server.cjs                 # Standalone Node.js Backend Bundle (Playwright included)
 │   └── browsers.json              # Playwright Browser Manifest
 ├── data/                          # Persistentes Docker-Volume
-│   ├── settings.json              # API-Keys, persistent autoSyncEnabled & Einstellungen
-│   ├── product_catalog.json       # Dynamische Merch by Amazon Produktdatenbank & Slots
-│   ├── upload_queue.json          # Intelligente Upload-Queue mit Slot-Balancing
-│   ├── system_prompts.json        # Anpassbare System Prompts für LLM-Pipelines
 │   ├── product_catalog.json       # 33 MBA-Produkte mit Nizza-Klassen (25, 18, 20, 21, 9, 16) & Drop-Prioritäten
-│   ├── system_prompts.json        # 6 zentrale System-Prompts für alle Workflows
+│   ├── system_prompts.json        # 8 zentrale System-Prompts für alle Workflows
 │   ├── banned_words.json          # Mehrsprachige Sperrwort-Listen
 │   ├── settings.json              # API-Keys, Modelle & Kosten-Konfiguration
 │   ├── queue.json                 # Upload-Warteschlange (Live, Paused, Update)

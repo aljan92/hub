@@ -52,14 +52,16 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     stepCode: 'D2',
     category: 'DESIGN',
     title: 'Ideogram Prompt Engineer',
-    shortDesc: 'Generiert hochoptimierte, saubere Vektorpuffer-Prompts für Ideogram V_3 aus Hermes-Rohdaten.',
+    shortDesc: 'Generiert hochoptimierte, saubere Vektorpuffer-Prompts für Ideogram V3 / V4 aus Hermes-Rohdaten.',
     colorClass: 'text-sky-300',
     badgeBg: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
     borderClass: 'border-sky-500/40',
     icon: Sparkles,
     variables: [
-      { name: '{niche}', desc: 'Zielnische des Motivs' },
-      { name: '{quote}', desc: 'Geforderter Text/Slogan' },
+      { name: '{niche1}', desc: 'Primäre Zielnische des Motivs' },
+      { name: '{niche2}', desc: 'Optionale Cross-Nische' },
+      { name: '{subniche}', desc: 'Spezifische Subnische / Typ' },
+      { name: '{quote}', desc: 'Geforderter Text / Slogan' },
       { name: '{style}', desc: 'Grafikstil (z. B. Retro, Minimal)' },
       { name: '{feeling}', desc: 'Emotionale Stimmung' },
       { name: '{colors}', desc: 'Farbpalette' }
@@ -69,14 +71,17 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     key: 'designAnalyzer',
     stepCode: 'D4',
     category: 'DESIGN',
-    title: 'Vision QA & Farbanalyse',
-    shortDesc: 'Prüft das generierte Bild auf Rechtschreibung, Quote-Matching, Zielgruppen-Fit, Avoid-Colors und Farbanzahl.',
-    colorClass: 'text-sky-300',
-    badgeBg: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
-    borderClass: 'border-sky-500/40',
+    title: 'Vision QA & Nischen-Analyse (Question Phase)',
+    shortDesc: 'Prüft das generierte Bild auf Rechtschreibung, Quote-Matching, Nischen-Hierarchie, Fit-Types, Avoid-Colors und Farbanzahl.',
+    colorClass: 'text-cyan-300',
+    badgeBg: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
+    borderClass: 'border-cyan-500/40',
     icon: Eye,
     variables: [
-      { name: '{requested_quote}', desc: 'Ursprüngliches Quote' },
+      { name: '{niche1}', desc: 'Hauptnische (z. B. Horse)' },
+      { name: '{niche2}', desc: 'Cross-Nische (z. B. Coffee)' },
+      { name: '{subniche}', desc: 'Subnische (z. B. Shetland Pony)' },
+      { name: '{requested_quote}', desc: 'Ursprüngliches Zitat' },
       { name: '{fitTypes}', desc: 'Men, Women, Youth' },
       { name: '{avoid}', desc: 'None, Black, White' },
       { name: '{color_count}', desc: 'Ermittelte Farbanzahl (1-12)' }
@@ -86,33 +91,38 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     key: 'listingGenerator',
     stepCode: 'D5',
     category: 'DESIGN',
-    title: 'MBA SEO Listing Generator',
-    shortDesc: 'Erstellt konvertierende, richtlinienkonforme SEO-Listings für alle 6 Amazon Merch Marktplätze (EN, DE, FR, IT, ES, JA).',
-    colorClass: 'text-sky-300',
-    badgeBg: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
-    borderClass: 'border-sky-500/40',
+    title: 'Master English Listing Generator',
+    shortDesc: 'Erstellt konvertierende 100% englische Master-Listings mit striktem Subnischen-Titel-Suffix, Brand-Keywords und ohne Geschenkwörter.',
+    colorClass: 'text-indigo-300',
+    badgeBg: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',
+    borderClass: 'border-indigo-500/40',
     icon: FileText,
     variables: [
-      { name: '{brand}', desc: 'Nischenbezogener Brand-Name' },
-      { name: '{title}', desc: 'SEO-Titel (max. 60 Zeichen)' },
-      { name: '{bullet1}', desc: 'Design & Kunststil (max. 250 Zeichen)' },
-      { name: '{bullet2}', desc: 'Zielgruppe & Anlass (max. 250 Zeichen)' }
+      { name: '{niche1}', desc: 'Hauptthema (z. B. Horse)' },
+      { name: '{niche2}', desc: 'Cross-Thema (z. B. Coffee)' },
+      { name: '{subniche}', desc: 'Subnische für Titel-Ende (z. B. Shetland Pony)' },
+      { name: '{keywords}', desc: 'SEO-Suchbegriffe von Hermes / Question Phase' },
+      { name: '{quote}', desc: 'Zitat auf der Grafik' },
+      { name: '{audience}', desc: 'Zielgruppe (Men, Women, Youth)' },
+      { name: '{brand}', desc: 'Brand Name (40-50 Zeichen, hohe Keyword-Dichte)' },
+      { name: '{title}', desc: 'Titel (50-60 Zeichen, endet auf Subnische/Nische)' }
     ]
   },
   {
     key: 'trademarkAuditor',
-    stepCode: 'D6',
+    stepCode: 'D6 / U5',
     category: 'DESIGN',
-    title: 'Trademark Auditor & Refiner',
-    shortDesc: 'Analysiert USPTO / DPMA Treffer, trennt beschreibende Fair-Use-Begriffe und formuliert Brand/Titel bei Bedarf automatisch um.',
+    title: 'Trademark Auditor & Refiner (Beide Pipelines)',
+    shortDesc: 'Nizza-Klassen TM-Prüfung (USPTO, EUIPO, DPMA). Kl. 25 Hard-Reject auf Quote/Nische; Nebenklassen (9, 18, 20, 21, 16) sperren gezielt Produkte.',
     colorClass: 'text-amber-300',
     badgeBg: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
     borderClass: 'border-amber-500/40',
     icon: ShieldCheck,
     variables: [
-      { name: '{hits}', desc: 'Gefundene TM-Treffer in Klasse 25' },
-      { name: '{verdict}', desc: 'APPROVED oder REJECTED' },
-      { name: '{refined_listing}', desc: 'Bereinigte Listing-Felder' }
+      { name: '{hits}', desc: 'Gefundene TM-Treffer mit Nizza-Klassen' },
+      { name: '{verdict}', desc: 'APPROVED oder REJECTED (bei Kl. 25 Treffer)' },
+      { name: '{blocked_classes}', desc: 'Gesperrte Nizza-Klassen (z. B. [9])' },
+      { name: '{refined_listing}', desc: 'Keyword-bereinigtes Listing' }
     ]
   },
   {
@@ -120,7 +130,7 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     stepCode: 'D7',
     category: 'DESIGN',
     title: 'SVG Cutout 4-Panel Auditor',
-    shortDesc: 'Inspiziert das 4-Panel Test-Gitter (Weiß, Schwarz, Rot, Slate) per Vision auf Kastenrahmen und geschlossene Buchstaben-Inseln.',
+    shortDesc: 'Inspiziert das 4-Panel Test-Gitter (Weiß, Schwarz, Rot, Anthrazit) per Vision auf Kastenrahmen und geschlossene Buchstaben-Inseln.',
     colorClass: 'text-pink-300',
     badgeBg: 'bg-pink-500/10 text-pink-300 border-pink-500/30',
     borderClass: 'border-pink-500/40',
@@ -138,16 +148,18 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     key: 'updateVisionAnalyzer',
     stepCode: 'U3',
     category: 'UPDATE',
-    title: 'Update Vision & Quality Auditor',
-    shortDesc: 'Analysiert das bestehende Merch-Design + altes Listing und entscheidet, ob ein Rewrite nötig ist (rewriteNeeded: true/false).',
-    colorClass: 'text-sky-300',
-    badgeBg: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
-    borderClass: 'border-sky-500/40',
+    title: 'Update Vision & Nischen-Auditor',
+    shortDesc: 'Analysiert das bestehende Merch-Design + altes Listing, extrahiert die Nischen-Hierarchie und entscheidet über Rewrite (true/false).',
+    colorClass: 'text-teal-300',
+    badgeBg: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
+    borderClass: 'border-teal-500/40',
     icon: Eye,
     variables: [
-      { name: '{oldBrand}', desc: 'Aktueller Brand-Name' },
-      { name: '{oldTitle}', desc: 'Aktueller Titel' },
+      { name: '{oldBrand}', desc: 'Aktueller Brand-Name auf Amazon' },
+      { name: '{oldTitle}', desc: 'Aktueller Titel auf Amazon' },
       { name: '{oldBullets}', desc: 'Aktuelle Bullets 1 & 2' },
+      { name: '{niche1}', desc: 'Erkannte Hauptnische' },
+      { name: '{subniche}', desc: 'Erkannte Subnische' },
       { name: '{rewriteNeeded}', desc: 'Entscheidung: true oder false' }
     ]
   },
@@ -155,34 +167,37 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     key: 'updateListingRewriter',
     stepCode: 'U4',
     category: 'UPDATE',
-    title: 'Update Listing Rewriter (EN)',
-    shortDesc: 'Optimiert veraltete oder Keyword-stuffed englische Listings zu hochwertigen, konvertierenden MBA-Texten.',
-    colorClass: 'text-sky-300',
-    badgeBg: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
-    borderClass: 'border-sky-500/40',
+    title: 'Update Listing Rewriter (Master EN)',
+    shortDesc: 'Optimiert veraltete englische Listings basierend auf Nischen-Hierarchie & Keywords zu hochkonvertierenden MBA-Texten mit Subnischen-Suffix.',
+    colorClass: 'text-teal-300',
+    badgeBg: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
+    borderClass: 'border-teal-500/40',
     icon: FileText,
     variables: [
-      { name: '{brand}', desc: 'Optimierter Brand Name (max 50)' },
-      { name: '{title}', desc: 'Optimierter Titel (max 60)' },
-      { name: '{bullet1}', desc: 'Bullet 1 (max 256)' },
-      { name: '{bullet2}', desc: 'Bullet 2 (max 256)' }
+      { name: '{niche1}', desc: 'Hauptnische' },
+      { name: '{subniche}', desc: 'Subnische für Titel-Endung' },
+      { name: '{brand}', desc: 'Brand Name (40-50 Zeichen)' },
+      { name: '{title}', desc: 'Titel (50-60 Zeichen, endet auf Subnische/Nische)' },
+      { name: '{bullet1}', desc: 'Bullet 1 (Zielgruppe & Passion, max 256)' },
+      { name: '{bullet2}', desc: 'Bullet 2 (Anlässe & Trageorte, max 256)' }
     ]
   },
   {
     key: 'updateLocalizationTranslator',
-    stepCode: 'U6',
+    stepCode: 'U6 / D6',
     category: 'UPDATE',
-    title: 'Update Localization & SEO Translator',
-    shortDesc: 'Lokalisiert das optimierte englische Listing nativ nach Deutsch, Französisch, Spanisch und Italienisch.',
-    colorClass: 'text-sky-300',
-    badgeBg: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
-    borderClass: 'border-sky-500/40',
+    title: 'SEO Translation & Localization (Beide Pipelines)',
+    shortDesc: 'Lokalisiert das freigegebene englische Master-Listing nach DE, FR, ES, IT, JA. Titel enden im Nominativ auf der Nische/Subnische.',
+    colorClass: 'text-purple-300',
+    badgeBg: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+    borderClass: 'border-purple-500/40',
     icon: Layers,
     variables: [
-      { name: '{de}', desc: 'Deutsche Lokalisierung' },
+      { name: '{de}', desc: 'Deutsche Lokalisierung (Nominativ-Endung)' },
       { name: '{fr}', desc: 'Französische Lokalisierung' },
       { name: '{es}', desc: 'Spanische Lokalisierung' },
-      { name: '{it}', desc: 'Italienische Lokalisierung' }
+      { name: '{it}', desc: 'Italienische Lokalisierung' },
+      { name: '{ja}', desc: 'Japanische Lokalisierung' }
     ]
   }
 ];
@@ -587,6 +602,65 @@ export const SystemPromptsView: React.FC = () => {
               </div>
               <div className="text-[11px] text-slate-400">
                 Änderungen werden beim Wechseln oder per <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300 border border-slate-700">Cmd+S</kbd> gespeichert.
+              </div>
+            </div>
+          </div>
+
+          {/* Quick MBA SEO & Compliance Architecture Card */}
+          <div className="bg-slate-950/80 rounded-2xl border border-slate-800 p-5 shadow-lg space-y-3.5">
+            <div className="flex items-center space-x-2 text-xs font-bold text-slate-200 uppercase tracking-wider">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>MBA SEO &amp; Trademark Master-Regelwerk (Beide Pipelines)</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs text-slate-300">
+              {/* Box 1: Title & Brand */}
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="font-bold text-cyan-300 flex items-center justify-between">
+                  <span>1. Title &amp; Brand Formel</span>
+                  <span className="text-[10px] font-mono text-cyan-400">50-60 / 40-50 Chars</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  <strong className="text-slate-200">Titel:</strong> [Nische/Stil] + [Quote/Keywords] + <strong className="text-cyan-300">[Subnische oder Nische am ENDE]</strong>. Keine Satzzeichen am Ende (Amazon hängt "T-Shirt" automatisch an). Keine Produkttypen.<br />
+                  <strong className="text-slate-200">Brand:</strong> Maximale Keyword-Dichte mit Suchbegriffen wie <code className="text-cyan-300">Apparel</code>, <code className="text-cyan-300">Accessories</code>. Keine Fluff-Wörter (<code className="text-rose-400">Studio</code>, <code className="text-rose-400">Co</code>).
+                </p>
+              </div>
+
+              {/* Box 2: Bullets & Description */}
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="font-bold text-emerald-300 flex items-center justify-between">
+                  <span>2. Bullets &amp; Description</span>
+                  <span className="text-[10px] font-mono text-emerald-400">230-256 / 300-600 Chars</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  <strong className="text-slate-200">Bullet 1:</strong> Zielgruppe, Passion, Lifestyle &amp; Motivbezug. Volles Zitat am Start falls im Titel gekürzt.<br />
+                  <strong className="text-slate-200">Bullet 2:</strong> Anlässe, Aktivitäten &amp; Trageorte. <strong className="text-rose-400">0% Geschenkwörter</strong> (NO gift, present, birthday).<br />
+                  <strong className="text-slate-200">Description:</strong> Atmosphärische Kurzzusammenfassung.
+                </p>
+              </div>
+
+              {/* Box 3: Nizza Classes */}
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="font-bold text-amber-300 flex items-center justify-between">
+                  <span>3. Nizza-Klassen Trademark Loop</span>
+                  <span className="text-[10px] font-mono text-amber-400">Kl. 25 vs 9/18/20/21/16</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  <strong className="text-rose-400">Klasse 25 Hard Reject:</strong> Zitat oder Nischen in Kl. 25 eingetragen ➔ Design wird sofort verworfen.<br />
+                  <strong className="text-amber-300">Nebenklassen Produkt-Sperre:</strong> Treffer in Kl. 9 (PopSockets/Cases), Kl. 18 (Bags), Kl. 20 (Pillows), Kl. 21 (Mugs), Kl. 16 (Journals) sperren nur das betroffene Produkt. Bekleidung bleibt aktiv!
+                </p>
+              </div>
+
+              {/* Box 4: Localization & Sanitizer */}
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="font-bold text-purple-300 flex items-center justify-between">
+                  <span>4. Lokalisierung &amp; Hard Sanitizer</span>
+                  <span className="text-[10px] font-mono text-purple-400">DE, FR, ES, IT, JA</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  <strong className="text-slate-200">Übersetzung:</strong> Erst nach TM-Approval. Titel enden im Nominativ auf Nische/Subnische. Englische Grafik-Zitate bleiben englisch.<br />
+                  <strong className="text-purple-300">Sanitizer Gatekeeper:</strong> Wandelt typografische Anführungszeichen (<code className="text-slate-400">“ ” ’</code>) zu ASCII, kappt trailing Satzzeichen und tilgt MBA-Sperrwörter.
+                </p>
               </div>
             </div>
           </div>
