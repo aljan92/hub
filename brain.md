@@ -6,8 +6,14 @@
 > **Repository:** `https://github.com/aljan92/hub.git` (Branch: `main`)  
 > **Deployment & Update:** Live-Betrieb auf dem NAS. Updates werden nach jedem Schritt automatisch per `git push origin main` auf GitHub veröffentlicht. 1-Click Update im Web-Dashboard (automatischer Tarball-Download & 10s Server-Neustart).  
 > **Workflow-Regel:** Nach jedem Feature/Fix führt der AI-Agent **automatisch** `npm run build` und `git push origin main` aus!  
+> **Projekt-Gedächtnis:** Diese `brain.md` dient als zentraler Master-Notizzettel und wird bei jedem Schritt fortlaufend > **Status:** Phase 1 bis Phase 7 vollständig implementiert, verifiziert & im Produktivbetrieb 🚀  
+> **Projekt:** MBA Hub (Merch By Amazon Automation & Hub Platform)  
+> **Ziel-Umgebung:** TerraMaster NAS (TOS 6.0) unter Docker / Port `3000`  
+> **Repository:** `https://github.com/aljan92/hub.git` (Branch: `main`)  
+> **Deployment & Update:** Live-Betrieb auf dem NAS. Updates werden nach jedem Schritt automatisch per `git push origin main` auf GitHub veröffentlicht. 1-Click Update im Web-Dashboard (automatischer Tarball-Download & 10s Server-Neustart).  
+> **Workflow-Regel:** Nach jedem Feature/Fix führt der AI-Agent **automatisch** `npm run build` und `git push origin main` aus!  
 > **Projekt-Gedächtnis:** Diese `brain.md` dient als zentraler Master-Notizzettel und wird bei jedem Schritt fortlaufend gepflegt.  
-> **Letzte Aktualisierung:** 26. August 2026  
+> **Letzte Aktualisierung:** 30. August 2026  
 
 ---
 
@@ -48,20 +54,23 @@ graph TD
         
         ImgOpt --> Queue[📦 Intelligent Upload Queue & Slot Optimizer]
         TMFix --> Queue
+
+        SupabaseBackfill[🔄 Auto-Backfill Engine: Supabase Candidate Selector] --> UpdatePipe[⚡ Update Pipeline U1-U7]
+        UpdatePipe --> Queue
     end
     
     subgraph "Native Playwright CDP & Dual-Session Layer"
         HubWS[📡 WebSocket Stream /ws] <--> HubAPI
         CDP[🎮 CDP Controller & Mac Stealth Layer] <--> HubWS
         
-        Session1[🔒 Session 1: Sync, Scrape, Login & Metadata] <--> CDP
+        Session1[🔒 Session 1: Sync, Scrape, Login, Metadata & API Inspect] <--> CDP
         Session2[🚀 Session 2: Dedicated Upload Worker] <--> CDP
         
         Profile[(💾 Persistent Profile: ./data/chrome-profile)] --- Session1
         Profile --- Session2
         
         Session1 -->|15min Sync & Scrape| Supabase[(🗄️ Supabase Cloud DB)]
-        Session2 -->|Automated Uploads & Drafts| AmazonMerch[🛒 Amazon Merch on Demand]
+        Session2 -->|Automated Uploads, Drafts & Updates| AmazonMerch[🛒 Amazon Merch on Demand]
     end
 ```
 
@@ -78,6 +87,7 @@ graph TD
   * **Durchschnittskosten:** $\text{Cost per Design} = \frac{\text{Total Costs}}{\text{Warteschlange} + \text{Hochgeladen}}$.
   * **Settings Card 8:** Konfiguration von `costPerImage` (z.B. `$0.08`), `costPerVectorization` (z.B. `$0.05`) und 1-Click Reset-Funktion (`POST /api/v1/stats/costs/reset`).
 * **Settings:** Persistente Speicherung aller API-Keys und Parameter in `./data/settings.json`.
+* **Globaler Schutzschild (`ErrorBoundary.tsx`):** Fängt alle UI- und Render-Fehler sauber ab und verhindert White/Black Screens bei defekten Daten.
 
 ---
 
@@ -90,7 +100,7 @@ graph TD
 * **Mac Stealth Dual-Session Engine (`browserSessionService.ts`):**
   * 100% VNC-frei via WebSocket (`/ws`) und Canvas Stream auf Port 3000.
   * Mac-Fingerprint (macOS Intel, Apple M2 Metal WebGL, kein `navigator.webdriver`).
-  * **Session 1 (Sync & Metadata):** Login, 2FA, 15min Produktsync, Ratelimiter-Abfragen.
+  * **Session 1 (Sync & Metadata):** Login, 2FA, 15min Produktsync, Ratelimiter-Abfragen, Merch-API Inspector.
   * **Session 2 (Upload Worker):** Teilt sich Session-Cookies/Tokens und ist exklusiv für Playwright-Uploads zuständig.
 
 ---
@@ -122,97 +132,88 @@ graph TD
 ---
 
 ### ✅ Phase 5: Intelligente Upload Queue, Balancing & Status-Visualisierung
-* **4-Status Lifecycle & 3 Tabs (`QueueView.tsx`, `queueService.ts`):**
-  * **Tab 1: Warteschlange:** Aktive Warteliste mit Drag & Drop Priorisierung. *(Sidebar-Badge reflektiert exklusiv die Anzahl aktiver Warteschlangen-Elemente `WAITING` / `UPLOADING`)*.
-  * **Tab 2: Hochgeladen (`COMPLETED`):** Historie mit Re-Enqueue Option.
-  * **Tab 3: Fehler (`ERROR`):** Fehlgeschlagene Uploads mit 1-Click *„Wieder einreihen“* (`POST /api/v1/queue/item/:id/retry`) und Lösch-Modal.
+* **5-Tab Lifecycle (`QueueView.tsx`, `queueService.ts`):**
+  * **Tab 1: Warteschlange:** Aktive Upload-Kandidaten mit Drag & Drop Priorisierung.
+  * **Tab 2: Pausiert (`Paused`):** Alle pausierten Designs (`isPaused: true`). Reaktivierung (`▶`) hängt das Design ans Ende der Warteschlange an.
+  * **Tab 3: Update:** Dedizierter Bereich für Listing-Updates mit Vorhalte-Mengen-Stepper (1 bis 50 Designs), IST/SOLL Live-Badge und Sofort-Trigger.
+  * **Tab 4: Hochgeladen (`COMPLETED`):** Historie mit Re-Enqueue Option.
+  * **Tab 5: Fehler (`ERROR`):** Fehlgeschlagene Uploads mit 1-Click *„Wieder einreihen“* (`POST /api/v1/queue/item/:id/retry`) und Lösch-Modal.
 * **Transparente Master-PNG Thumbnails & 1s Hover Zoom Popover:**
   * Backend `/api/v1/designs/image/:taskId` priorisiert automatisch die finale, hintergrundfreie **4500x5400px Master-PNG** (`_mba.png`).
   * Alle Thumbnails sind auf einem edlen dunklen **Schachbrett-/Transparenzgitter** (`object-contain`) eingebettet.
   * **1-Sekunden Hover Zoom:** Beim Verweilen mit der Maus über einem Thumbnail poppt nach exakt 1 Sekunde eine hochauflösende Großansicht mit Gitterhintergrund, Task-ID, Master-PNG Badge und Listing-Details auf.
-* **Draft Mode vs. Live Mode:**
+* **Upload-Modi (Draft, Live, Draft-Hybrid):**
   * **Live Mode:** Mathematisches Slot-Balancing gegen verbleibende freie Tages-Slots. US-Marktplätze (.com) bleiben 100% geschützt; Non-US Slots werden nach Priorität gekürzt ($\mathbf{JP} \rightarrow \mathbf{ES} \rightarrow \mathbf{IT} \rightarrow \mathbf{FR} \rightarrow \mathbf{DE} \rightarrow \mathbf{GB}$). Hero-Designs (`🔒`) behalten 100% aller Slots.
-  * **Draft Mode:** Draft-Uploads belasten kein tägliches Kontingent. Neuer Stepper **„Produkte pro Design“** (Bereich: $\text{Max} - \text{Toleranz}$ bis $\text{Max}$, z. B. 89 bis 106) für persistente Produktanzahl pro Design.
-* **Einzeldesign-Pause Button (`⏸️ / ▶`):**
-  * Ganz links zwischen Drag-Handle und Thumbnail.
-  * Pausierte Designs (`isPaused`) erhalten einen orangenen Rahmen und werden von Balancing und Upload ausgeschlossen (`0 Slots`).
+  * **Draft Mode:** Draft-Uploads belasten kein tägliches Kontingent. Stepper **„Produkte pro Design“** für persistente Produktanzahl pro Design.
+  * **Draft-Hybrid Mode:** Neue Designs werden als Draft hochgeladen (0 Slots), während Update-Designs live aktualisiert werden (verbrauchen nur die Netto-Slots für neu hinzugekommene Produkte/Marktplätze). Lila Badge und Rahmen zur klaren optischen Trennung.
+* **Einzeldesign-Pause Button (`⏸️ / ▶`):** Pausierte Designs (`isPaused`) erhalten einen orangenen Rahmen und werden von Balancing und Upload ausgeschlossen (`0 Slots`).
 * **Farbige Status-Rahmen (Glow & Border):**
   * 🟢 **Grün (`border-emerald-500`):** Heute eingeplant / zum Upload bereit.
   * 🟡 **Gelb (`border-amber-300`):** Wartend, aber heute wegen Slot-Limit nicht dran (Folgetage).
   * 🟠 **Orange (`border-amber-500`):** Pausiert (`isPaused`).
-  * 🟣 **Lila (`border-purple-500`):** Aktiver Upload (`UPLOADING`).
+  * 🟣 **Lila (`border-purple-500`):** Aktiver Upload (`UPLOADING`) oder Update-Design im Hybrid-Modus.
   * 🟢 **Mint-Grün / Slate (`border-teal-500`):** Hochgeladen (`COMPLETED`).
   * 🔴 **Rot (`border-rose-500`):** Fehler (`ERROR`).
-* **Kompaktes Single-Row Control Panel & 3 Metrik-Karten:**
-  * Kachel 1 (Amazon Tages-Uploads): `used / total` verbraucht, freie Slots.
-  * Kachel 2 (Geplante Slots): Live Mode `scheduled / free` Slots belegt; Draft Mode `X Produkte geplant` (ohne Limit).
-  * Kachel 3 (Warteschlange): Anzahl Designs + Kürzungs-Puffer / Draft-Einstellung.
-  * Single-Row Leiste mit `Upload Startzeit`, `Max. Kürzungs-Toleranz`, `Produkte pro Design` und quadratischem `🔄` Rebalance-Icon Button.
 
 ---
 
 ### ✅ Phase 6: Playwright Upload Worker (`uploadWorkerService.ts`)
 * **Session-Trennung:** Session 1 liest Ratelimiter/Metadaten; Session 2 führt den Upload aus.
 * **Automatisierter Upload-Ablauf:**
-  1. Start auf `https://merch.amazon.com/designs/new` in Session 2.
+  1. Start auf `https://merch.amazon.com/designs/new` (oder `/designs/{id}/edit` für Updates) in Session 2.
   2. Master-PNG Upload & Asset-Render-Verifikation.
   3. Intelligenter Marktplatz-Abgleich im *Select Products* Modal gegen `activeProductsMap`.
   4. Sequenzielle Produktkonfiguration: Fit-Types (`Men, Women, Youth, Girls, Adult Unisex`), produktspezifische Farbausschlüsse (Soccer/Basketball Jerseys, Raglan, Trucker Hats, Visors) und Sketch Hex-Color-Picker mit Preset-Swatch-Triggering und nativer Input-Setter Simulation.
   5. Auto-Translate auf `NO` und sequenzielles Eintragen aller Sprach-Listings (EN, DE, FR, IT, ES, JA).
   6. Save Draft / Live Publish mit Formular-Validierungsprüfung.
-  7. Nach erfolgreichem Draft-Save Rücknavigation auf `https://merch.amazon.com/dashboard` und automatischer Slot-Refresh über Session 1.
+  7. Nach erfolgreichem Upload Rücknavigation auf `https://merch.amazon.com/dashboard` und automatischer Slot-Refresh über Session 1.
 
 ---
 
 ### ✅ Phase 6.1: Hermes Agent & MCP Integration (`mcpSchemaService.ts`, `trademarkService.ts`)
 * **Auth & Security:** Header `x-mba-api-key: <key>` oder `Authorization: Bearer <key>`.
-* **1. Design Ingestion (`POST /api/v1/design`, `/design`, `/api/v1/hermes/design`):**
-  * Akzeptiert Nischen- & Design-Attribute (`niche1`, `niche2`, `quote`, `style`, `feelings`, `backgroundcolor`, `fontcolor`, `custominstruction`) oder Voll-Prompts.
-  * Startet Pre-Flight TM-Check, LLM Prompt-Generierung, Ideogram 3.0 Generation und leitet Task (`#001-H`) durch den Co-Pilot.
-* **2. Live Trademark-Check (`POST /api/v1/mcp/trademark/check`, `/api/v1/trademark/check`, `/api/v1/trademark`):**
-  * Unterstützt direkte Übergabe von `quote`, `phrase`, `text`, `terms: string[]` oder verschachtelten `fields`.
-  * Multi-Office Abfrage: USPTO, EUIPO, DPMA.
-  * **Exklusiv LIVE-Treffer:** Strikte Filterung von DEAD/PENDING/CANCELLED Rechten.
-  * **Detaillierte Analyse:** Liefert `exactPhraseHits`, `keywordHits`, `affectedClasses` (z.B. `["25", "9"]`), `hasInfringementClass25`, `safe`, `blockedProducts` und lesbares `verdict` zurück.
+* **1. Design Ingestion (`POST /api/v1/design`, `/design`, `/api/v1/hermes/design`):** Akzeptiert Nischen- & Design-Attribute oder Voll-Prompts. Startet Pre-Flight TM-Check, LLM Prompt-Generierung, Ideogram 3.0 Generation und leitet Task (`#001-H`) durch den Co-Pilot.
+* **2. Live Trademark-Check (`POST /api/v1/mcp/trademark/check`, `/api/v1/trademark/check`, `/api/v1/trademark`):** Multi-Office Abfrage (USPTO, EUIPO, DPMA), strikte Filterung auf LIVE-Treffer, Nizza-Klasse 25 und lesbares `verdict`.
 
-### ✅ Phase 6.2: Listing Update Pipeline & Amazon Merch API Inspector (`amazonInspectService.ts`, `QueueView.tsx`, `PromptLogView.tsx`)
-* **Amazon Merch API Inspector (`/api/v1/debug/amazon-inspect`):**
-  * Live-Abfrage im Browser-Kontext von **Session 1** anhand der Merch-Design-ID (UUID z. B. `495f452e-8245-42be-96e3-a1d3dcc752d9`).
-  * Getrennte Abfrage & JSON-Ausgabe für `productconfiguration/get` (Listing-Texte, Brand, Bullets, Farben) und `FindListings` Coral RPC (Live-Status pro Variante, ASINs, Marktplätze).
-  * 1-Click Copy to Clipboard für sofortige Datenanalyse.
-  * **Vollständige API-Dokumentation & TypeScript Schemata (lokal):** Siehe [AMAZON_PRODUCT_CONFIG_API.md](file:///Users/alexanderjanssen/Desktop/MBA%20HUB/AMAZON_PRODUCT_CONFIG_API.md) und [AMAZON_FIND_LISTINGS_API.md](file:///Users/alexanderjanssen/Desktop/MBA%20HUB/AMAZON_FIND_LISTINGS_API.md).
-* **Queue-Umbau mit 5-Tab Lifecycle:**
-  * **Tab 1: Warteschlange:** Aktive, unpausierte Upload-Kandidaten (`!isPaused`).
-  * **Tab 2: Pausiert (`Paused`):** Alle pausierten Designs (`isPaused: true`). Reaktivierung (`▶`) hängt das Design automatisch ganz unten ans Ende der Warteschlange an.
-  * **Tab 3: Update:** Dedizierter Bereich für Listing-Updates mit Vorhalte-Mengen-Stepper (1 bis 50 Designs, persistent in `settings.json`) und Slot-Ersparnis-Visualisierung (bereits veröffentlichte Produkte = 0 Slot-Verbrauch).
-  * **Tab 4: Hochgeladen (`COMPLETED`)**
-  * **Tab 5: Fehler (`ERROR`)**
-* **Prompt Log & Task Typen:**
-  * Neuer Task-Typ `UPDATE` (`#xxx-U`) mit Suffix `U` (`TaskLogService.getSuffixForSource`).
-  * **1-Click Rohdaten-Task-Erstellung (`POST /api/v1/debug/amazon-create-update-task`):**
-    * Inspector-Button `3. ➕ Create Task (#xxx-U)`.
-    * Kombiniert `productconfiguration/get` und `FindListings` automatisch zu einem aggregierten Rohdaten-Payload.
-    * Dediziertes Highlight-Banner im Prompt Log mit direktem Link zu `merch.amazon.com/designs/{id}/edit`.
-  * **Master-Artwork Download Engine (`POST /api/v1/debug/amazon-download-artwork`):**
-    * Öffnet einen isolierten Tab (`session.context.newPage()`) in **Session 1** (verhindert Kollisionen mit laufenden Katalog-Syncs im Hauptfenster).
-    * Extrahiert die unkomprimierte Original-PNG-Grafik (4500 × 5400 px) durch Bereinigung der Amazon-Downscaling-Modifikatoren aus dem DOM (`img[alt$=".png"]`).
-    * Speichert die Datei lokal unter `data/designs/{cleanTaskId}.png` ab und registriert sie im Task (`localImagePath`, `mbaPngUrl`).
-    * Triggert automatisch bei Task-Erstellung und kann manuell via `[ 🔄 Original-Design erneut laden ]` wiederholt/überschrieben werden.
-    * Prominente Darstellung im Prompt Log (Banner-Preview & Timeline-Event `Original-Design heruntergeladen`).
+---
+
+### ✅ Phase 7: Automatischer Update-Design Backfill & Pipeline (`updateBackfillService.ts`, `updatePipelineService.ts`)
+* **Autoritativer Merch-API-Abruf:** 
+  * Nutzt direkt `api/productconfiguration/get?id=${cleanId}` zur vollständigen Extraktion von Produkten, Swatches und Multi-Language-Listings.
+  * Nicht limitiert auf die ersten 500 Einträge wie Coral RPC `FindListings`.
+* **Kandidatenauswahl aus Supabase:** 
+  * Filtert `mba_designs` nach `status='PUBLISHED'` und `not('published_products', 'is', null)`.
+  * Überspringt leere/gelöschte Designs automatisch.
+* **Vollautomatischer 7-Stufen Update-Workflow (U1–U7):**
+  1. **U1:** Merch-API Datenabruf & Erstellung von Task `#xxx-U`.
+  2. **U2:** Master-Artwork Download (4500x5400px Original-PNG).
+  3. **U3:** Vision & Listing-Analyse (LLM prüft Farbvermeidung, Fit-Types und Listing-Qualität).
+  4. **U4:** LLM Listing Rewrite (SEO & Banned Words bereinigt, falls U3 `rewriteNeeded: true`).
+  5. **U5:** Live Trademark Scan (USPTO, EUIPO, DPMA).
+  6. **U6:** Slot & Product Reconciliation (Erkennt bereits live geschaltete Produkte vs. neu hinzukommende Marktplatz-Slots).
+  7. **U7:** Enqueue in den Update-Pool (Tab 3).
+* **Exakte Slot-Berechnung pro Marktplatz:**
+  * Jedes Produkt pro Marktplatz = 1 Slot (z.B. Comfort Colors auf 6 Marktplätzen = `+6 Slots`).
+  * Detail-Matrix visualisiert `✓ Live (0 Slots)` vs. `✨ Neu ergänzen (+X Slots)`.
+* **Live IST vs. SOLL Pool-Status & Deduplizierung:**
+  * Live-Badge im UI zeigt `Pool-Bestand: IST: X / SOLL: Y`.
+  * Eindeutige ID-Menge (`Set<string>`) verhindert Zwischensprünge während der Bearbeitung.
+  * Hintergrund-Scheduler (10s Intervall) füllt den Pool bei `IST < SOLL` automatisch auf.
 
 ---
 
 ## 4. 🗺️ Nächste Roadmap-Phasen
 
-### 🔜 Phase 6.5: Canvas Mug Brush & Multi-Produkt-Resize Engine
-* **Maßgeschneiderte Asset-Generierung vor Upload-Injektion:**
-  * PopSockets (`1200 × 1200 px`).
-  * Phone Cases (`1800 × 3200 px`).
-  * Throw Pillows & Tote Bags (`2925 × 2925 px`).
-  * Black Ceramic Mug (`brush_tip.png` Canvas-Layering für nahtlosen Druck).
-  * Automatischer Austausch der optimierten Grafiken im Playwright Worker vor der Produkt-Konfiguration.
+### 🔜 Phase 7.5: System-Prompts & Vision-Optimierung (Alex Todo.md #6 & #7)
+* Verfeinerung der System-Prompts für Vision-Analyse, Listing-Rewrite und TM-Scans.
+* Feinjustierung der Kriterien für `rewriteNeeded` und Farbausschlüsse.
 
-### 🔜 Phase 7: Automatisches Backfill aus bestehender MBA-Datenbank
+### 🔜 Phase 8: Canvas Mug Brush & Multi-Produkt-Resize Engine
+* PopSockets (`1200 × 1200 px`), Phone Cases (`1800 × 3200 px`), Throw Pillows & Tote Bags (`2925 × 2925 px`), Black Ceramic Mug (`brush_tip.png` Layering).
+
+---
+
+## 5. 🛠️ Build-, Git- & Deployment-Workflowsaus bestehender MBA-Datenbank
 * Zieht bei verbleibenden freien Slots am Tagesende bestehende Live-Designs aus der Supabase-Datenbank und publiziert ungenutzte Produkte/Marktplätze bis zu 100% Auslastung.
 
 ---
@@ -256,6 +257,7 @@ MBA HUB/
 │   │   ├── components/
 │   │   │   ├── BrowserScreencast.tsx # Interaktives HTML5 Canvas Screencast UI
 │   │   │   ├── ConnectorTopology.tsx # Interaktives 3-Spalten Architektur-Schema
+│   │   │   ├── ErrorBoundary.tsx     # Globaler Schutzschild gegen UI/Render-Crashes
 │   │   │   ├── Header.tsx            # Header mit Tier-Badge & 1-Click Update
 │   │   │   ├── Sidebar.tsx           # Feste Navigation
 │   │   │   ├── SvgEditor.tsx         # Interaktiver SVG Vektor-Editor & Hintergrundentfernung
@@ -278,6 +280,9 @@ MBA HUB/
 │       │   ├── productCatalogService.ts # Dynamic Product Catalog Storage & Slot Engine
 │       │   ├── productScannerService.ts # Session 1 CDP DOM Scanner & 12-18h Jitter Scheduler
 │       │   ├── queueService.ts          # Upload Queue Management, Pause & Mathematical Slot Balancing
+│       │   ├── updateBackfillService.ts # Automatischer Supabase Update-Kandidaten-Selector & Pool-Scheduler
+│       │   ├── updatePipelineService.ts # 7-Stufen Update-Workflow (U1 bis U7)
+│       │   ├── amazonInspectService.ts  # Autoritativer Merch-API Inspector & Artwork Downloader
 │       │   ├── supabaseService.ts       # Supabase REST & Query Client
 │       │   ├── syncEngine.ts            # MBA Database Sync, Ratelimiter & Keep-Alive
 │       │   ├── ideogramService.ts       # Ideogram 3.0 API Adapter
