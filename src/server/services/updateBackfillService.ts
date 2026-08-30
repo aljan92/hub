@@ -6,12 +6,13 @@ import { UpdatePipelineService } from './updatePipelineService';
 
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
+  private static failedDesignIds = new Set<string>();
   private static isRunningLoop = false;
   private static intervalId: NodeJS.Timeout | null = null;
 
   /**
    * Collect all design IDs that must NOT be pulled again
-   * (Already in Queue, active in Tasks, or currently in flight)
+   * (Already in Queue, active in Tasks, currently in flight, or failed Amazon lookup)
    */
   public static getExcludedDesignIds(): Set<string> {
     const excluded = new Set<string>();
@@ -21,7 +22,12 @@ export class UpdateBackfillService {
       if (id) excluded.add(id.trim());
     }
 
-    // 2. All items in the Queue (Tab Queue & Tab Update)
+    // 2. Failed designs (e.g. deleted on Amazon or HTTP 400/404)
+    for (const id of this.failedDesignIds) {
+      if (id) excluded.add(id.trim());
+    }
+
+    // 3. All items in the Queue (Tab Queue & Tab Update)
     const queueItems = QueueService.loadQueue();
     for (const item of queueItems) {
       if (item.designId) excluded.add(item.designId.trim());
@@ -31,7 +37,7 @@ export class UpdateBackfillService {
       }
     }
 
-    // 3. All non-rejected tasks in TaskLogService
+    // 4. All non-rejected tasks in TaskLogService
     const tasks = TaskLogService.loadLogs();
     for (const task of tasks) {
       if (task.status === 'REJECTED') continue;
@@ -83,10 +89,10 @@ export class UpdateBackfillService {
     }
 
     for (const cand of candidates) {
-      const dId = cand.design_id ? String(cand.design_id).trim() : '';
+      const dId = cand.design_id ? String(cand.design_id).replace(/^#/, '').replace(/-U$/, '').trim() : '';
       if (!dId) continue;
 
-      // Filter 1: Check duplicate / active in Hub
+      // Filter 1: Check duplicate / active in Hub / failed lookup
       if (excludedIds.has(dId)) {
         continue;
       }
@@ -141,35 +147,45 @@ export class UpdateBackfillService {
       return { success: false, message: `Update-Pool ist bereits voll (${totalActiveUpdateCount}/${targetCount} aktive Designs in Queue & Tasks).` };
     }
 
-    const candidate = await this.fetchNextCandidateFromSupabase();
-    if (!candidate) {
-      return { success: false, message: 'Kein passendes Design in Supabase gefunden.' };
-    }
+    let lastError = 'Kein passendes Design in Supabase gefunden.';
+    const maxAttempts = 15;
 
-    const designId = candidate.designId;
-    this.inFlightDesigns.add(designId);
-
-    try {
-      console.log(`[UpdateBackfillService] 🚀 Starte automatischen Update-Workflow für Design ${designId}...`);
-      const result = await UpdatePipelineService.runUpdatePipeline(designId);
-
-      if (result.success) {
-        return {
-          success: true,
-          designId,
-          message: result.pausedAtCheckpoint 
-            ? `Design ${designId} erfolgreich gezogen und an Tasks übergeben.` 
-            : `Design ${designId} erfolgreich verarbeitet und in Update-Queue eingereiht.`
-        };
-      } else {
-        return { success: false, designId, message: result.error || 'Fehler beim Ausführen des Workflows' };
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const candidate = await this.fetchNextCandidateFromSupabase();
+      if (!candidate) {
+        return { success: false, message: lastError };
       }
-    } catch (err: any) {
-      console.error(`[UpdateBackfillService] ❌ Fehler beim Verarbeiten von Design ${designId}:`, err);
-      return { success: false, designId, message: err.message };
-    } finally {
-      this.inFlightDesigns.delete(designId);
+
+      const designId = candidate.designId;
+      this.inFlightDesigns.add(designId);
+
+      try {
+        console.log(`[UpdateBackfillService] 🚀 (Versuch ${attempt}/${maxAttempts}) Starte Update-Workflow für Design ${designId}...`);
+        const result = await UpdatePipelineService.runUpdatePipeline(designId);
+
+        if (result.success) {
+          return {
+            success: true,
+            designId,
+            message: result.pausedAtCheckpoint 
+              ? `Design ${designId} erfolgreich gezogen und an Tasks übergeben.` 
+              : `Design ${designId} erfolgreich verarbeitet und in Update-Queue eingereiht.`
+          };
+        } else {
+          lastError = result.error || 'Fehler beim Abruf der Merch-Daten';
+          console.warn(`[UpdateBackfillService] ⚠️ Design ${designId} auf Amazon nicht abrufbar (${lastError}). Überspringe und teste nächsten Kandidaten...`);
+          this.failedDesignIds.add(designId);
+        }
+      } catch (err: any) {
+        lastError = err.message || 'Unbekannter Fehler';
+        console.error(`[UpdateBackfillService] ❌ Fehler beim Verarbeiten von Design ${designId}:`, err);
+        this.failedDesignIds.add(designId);
+      } finally {
+        this.inFlightDesigns.delete(designId);
+      }
     }
+
+    return { success: false, message: `Nach ${maxAttempts} Versuchen kein valides Design auf Amazon gefunden (${lastError}).` };
   }
 
   /**

@@ -37,7 +37,7 @@ export class AmazonInspectService {
    * Fetch Product Config (Listing texts, brands, bullets, descriptions, colors, products)
    */
   public static async inspectProductConfig(designId: string): Promise<AmazonInspectResult> {
-    const cleanId = (designId || '').trim();
+    const cleanId = (designId || '').replace(/^#/, '').replace(/-U$/, '').trim();
     const timestamp = new Date().toISOString();
     const targetUrl = `${PRODUCT_CONFIG_URL}${cleanId}`;
 
@@ -266,7 +266,7 @@ export class AmazonInspectService {
    * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
    */
   public static async createUpdateTaskFromAmazon(designId: string): Promise<any> {
-    const cleanId = (designId || '').trim();
+    const cleanId = (designId || '').replace(/^#/, '').replace(/-U$/, '').trim();
     if (!cleanId) {
       throw new Error('Keine Design-ID (UUID) angegeben.');
     }

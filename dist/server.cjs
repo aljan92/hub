@@ -219016,7 +219016,7 @@ var init_amazonInspectService = __esm2({
        * Fetch Product Config (Listing texts, brands, bullets, descriptions, colors, products)
        */
       static async inspectProductConfig(designId) {
-        const cleanId = (designId || "").trim();
+        const cleanId = (designId || "").replace(/^#/, "").replace(/-U$/, "").trim();
         const timestamp = (/* @__PURE__ */ new Date()).toISOString();
         const targetUrl = `${PRODUCT_CONFIG_URL2}${cleanId}`;
         if (!cleanId) {
@@ -219220,7 +219220,7 @@ var init_amazonInspectService = __esm2({
        * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
        */
       static async createUpdateTaskFromAmazon(designId) {
-        const cleanId = (designId || "").trim();
+        const cleanId = (designId || "").replace(/^#/, "").replace(/-U$/, "").trim();
         if (!cleanId) {
           throw new Error("Keine Design-ID (UUID) angegeben.");
         }
@@ -222094,15 +222094,19 @@ var init_updateBackfillService = __esm2({
     init_updatePipelineService();
     UpdateBackfillService = class {
       static inFlightDesigns = /* @__PURE__ */ new Set();
+      static failedDesignIds = /* @__PURE__ */ new Set();
       static isRunningLoop = false;
       static intervalId = null;
       /**
        * Collect all design IDs that must NOT be pulled again
-       * (Already in Queue, active in Tasks, or currently in flight)
+       * (Already in Queue, active in Tasks, currently in flight, or failed Amazon lookup)
        */
       static getExcludedDesignIds() {
         const excluded = /* @__PURE__ */ new Set();
         for (const id of this.inFlightDesigns) {
+          if (id) excluded.add(id.trim());
+        }
+        for (const id of this.failedDesignIds) {
           if (id) excluded.add(id.trim());
         }
         const queueItems = QueueService.loadQueue();
@@ -222150,7 +222154,7 @@ var init_updateBackfillService = __esm2({
           return null;
         }
         for (const cand of candidates) {
-          const dId = cand.design_id ? String(cand.design_id).trim() : "";
+          const dId = cand.design_id ? String(cand.design_id).replace(/^#/, "").replace(/-U$/, "").trim() : "";
           if (!dId) continue;
           if (excludedIds.has(dId)) {
             continue;
@@ -222194,30 +222198,38 @@ var init_updateBackfillService = __esm2({
         if (!forceSingle && totalActiveUpdateCount >= targetCount) {
           return { success: false, message: `Update-Pool ist bereits voll (${totalActiveUpdateCount}/${targetCount} aktive Designs in Queue & Tasks).` };
         }
-        const candidate = await this.fetchNextCandidateFromSupabase();
-        if (!candidate) {
-          return { success: false, message: "Kein passendes Design in Supabase gefunden." };
-        }
-        const designId = candidate.designId;
-        this.inFlightDesigns.add(designId);
-        try {
-          console.log(`[UpdateBackfillService] \u{1F680} Starte automatischen Update-Workflow f\xFCr Design ${designId}...`);
-          const result2 = await UpdatePipelineService.runUpdatePipeline(designId);
-          if (result2.success) {
-            return {
-              success: true,
-              designId,
-              message: result2.pausedAtCheckpoint ? `Design ${designId} erfolgreich gezogen und an Tasks \xFCbergeben.` : `Design ${designId} erfolgreich verarbeitet und in Update-Queue eingereiht.`
-            };
-          } else {
-            return { success: false, designId, message: result2.error || "Fehler beim Ausf\xFChren des Workflows" };
+        let lastError = "Kein passendes Design in Supabase gefunden.";
+        const maxAttempts = 15;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          const candidate = await this.fetchNextCandidateFromSupabase();
+          if (!candidate) {
+            return { success: false, message: lastError };
           }
-        } catch (err) {
-          console.error(`[UpdateBackfillService] \u274C Fehler beim Verarbeiten von Design ${designId}:`, err);
-          return { success: false, designId, message: err.message };
-        } finally {
-          this.inFlightDesigns.delete(designId);
+          const designId = candidate.designId;
+          this.inFlightDesigns.add(designId);
+          try {
+            console.log(`[UpdateBackfillService] \u{1F680} (Versuch ${attempt}/${maxAttempts}) Starte Update-Workflow f\xFCr Design ${designId}...`);
+            const result2 = await UpdatePipelineService.runUpdatePipeline(designId);
+            if (result2.success) {
+              return {
+                success: true,
+                designId,
+                message: result2.pausedAtCheckpoint ? `Design ${designId} erfolgreich gezogen und an Tasks \xFCbergeben.` : `Design ${designId} erfolgreich verarbeitet und in Update-Queue eingereiht.`
+              };
+            } else {
+              lastError = result2.error || "Fehler beim Abruf der Merch-Daten";
+              console.warn(`[UpdateBackfillService] \u26A0\uFE0F Design ${designId} auf Amazon nicht abrufbar (${lastError}). \xDCberspringe und teste n\xE4chsten Kandidaten...`);
+              this.failedDesignIds.add(designId);
+            }
+          } catch (err) {
+            lastError = err.message || "Unbekannter Fehler";
+            console.error(`[UpdateBackfillService] \u274C Fehler beim Verarbeiten von Design ${designId}:`, err);
+            this.failedDesignIds.add(designId);
+          } finally {
+            this.inFlightDesigns.delete(designId);
+          }
         }
+        return { success: false, message: `Nach ${maxAttempts} Versuchen kein valides Design auf Amazon gefunden (${lastError}).` };
       }
       /**
        * Start background polling scheduler
