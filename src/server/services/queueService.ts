@@ -802,6 +802,8 @@ export class QueueService {
           uItem.publishedProductsCount = pCount;
           if (t?.payload?.liveStats) uItem.liveStats = t.payload.liveStats;
           if (t?.payload?.designId && !uItem.designId) uItem.designId = t.payload.designId;
+          if (t?.payload?.productSummary) uItem.liveProductSummary = t.payload.productSummary;
+          if (t?.payload?.productTypes) uItem.liveProductTypes = t.payload.productTypes;
         } else {
           // If already live on Amazon and backfilled before 109 products, default to previous full catalog (106)
           alreadyPublished = 106;
@@ -809,7 +811,25 @@ export class QueueService {
         }
       }
 
-      const netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
+      const liveSummary = uItem.liveProductSummary || {};
+      const liveTypes = new Set((uItem.liveProductTypes || []).map(t => String(t).toUpperCase()));
+      const hasLiveDetail = Object.keys(liveSummary).length > 0 || liveTypes.size > 0;
+
+      let netSlots = 0;
+      if (hasLiveDetail) {
+        for (const prod of catalog.products) {
+          if (tmBlocked.has(prod.id.toUpperCase())) continue;
+          const prodId = prod.id;
+          const isLive = Boolean(liveSummary[prodId]) || liveTypes.has(prodId.toUpperCase());
+          if (!isLive) {
+            const mps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US'];
+            netSlots += mps.length;
+          }
+        }
+      } else {
+        netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
+      }
+
       uItem.totalBaseSlots = netSlots;
       uItem.allocatedSlots = netSlots;
     }

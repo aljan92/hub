@@ -1543,7 +1543,7 @@ export const QueueView: React.FC = () => {
                                             </span>
                                           ) : !isAlreadyLive ? (
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-purple-500/20 text-purple-200 border border-purple-500/40">
-                                              ✨ Neu ergänzen (+1)
+                                              ✨ Neu ergänzen (+{mps.length} {mps.length === 1 ? 'Slot' : 'Slots'})
                                             </span>
                                           ) : (
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
@@ -2207,7 +2207,7 @@ export const QueueView: React.FC = () => {
                                           </span>
                                         ) : !isAlreadyLive ? (
                                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-purple-500/20 text-purple-200 border border-purple-500/40">
-                                            ✨ Neu ergänzen (+1)
+                                            ✨ Neu ergänzen (+{mps.length} {mps.length === 1 ? 'Slot' : 'Slots'})
                                           </span>
                                         ) : (
                                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
