@@ -218831,11 +218831,15 @@ var init_queueService = __esm2({
         return item;
       }
       /**
-       * Delete an item from the queue
+       * Delete an item from the queue by ID or TaskID
        */
       static deleteItem(queueId) {
         this.ensureLoaded();
-        const index = this.items.findIndex((i) => i.id === queueId);
+        const cleanId = (queueId || "").trim();
+        const noHash = cleanId.replace(/^#/, "");
+        const index = this.items.findIndex(
+          (i) => i.id === cleanId || i.taskId === cleanId || i.taskId === noHash || i.taskId && `#${i.taskId.replace(/^#/, "")}` === cleanId
+        );
         if (index === -1) return false;
         this.items.splice(index, 1);
         this.items.forEach((item, idx) => {
@@ -218844,6 +218848,12 @@ var init_queueService = __esm2({
         this.saveQueue();
         this.rebalanceQueue();
         return true;
+      }
+      /**
+       * Alias for deleteItem
+       */
+      static removeItem(queueId) {
+        return this.deleteItem(queueId);
       }
       /**
        * Move an item to a specific position (drag & drop reordering)

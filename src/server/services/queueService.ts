@@ -613,11 +613,18 @@ export class QueueService {
   }
 
   /**
-   * Delete an item from the queue
+   * Delete an item from the queue by ID or TaskID
    */
   public static deleteItem(queueId: string): boolean {
     this.ensureLoaded();
-    const index = this.items.findIndex(i => i.id === queueId);
+    const cleanId = (queueId || '').trim();
+    const noHash = cleanId.replace(/^#/, '');
+    const index = this.items.findIndex(i => 
+      i.id === cleanId || 
+      i.taskId === cleanId || 
+      i.taskId === noHash || 
+      (i.taskId && `#${i.taskId.replace(/^#/, '')}` === cleanId)
+    );
     if (index === -1) return false;
 
     this.items.splice(index, 1);
@@ -629,6 +636,13 @@ export class QueueService {
     this.saveQueue();
     this.rebalanceQueue();
     return true;
+  }
+
+  /**
+   * Alias for deleteItem
+   */
+  public static removeItem(queueId: string): boolean {
+    return this.deleteItem(queueId);
   }
 
   /**
