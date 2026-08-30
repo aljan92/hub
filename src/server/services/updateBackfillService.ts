@@ -71,10 +71,11 @@ export class UpdateBackfillService {
 
     console.log(`[UpdateBackfillService] 🔍 Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
 
-    // Fetch batch of oldest designs (sorted by updated_date ascending)
+    // Fetch batch of oldest published designs (sorted by updated_date ascending)
     const { data: candidates, error } = await supabase
       .from('mba_designs')
       .select('design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status')
+      .eq('status', 'PUBLISHED')
       .order('updated_date', { ascending: true, nullsFirst: true })
       .limit(60);
 
@@ -84,13 +85,18 @@ export class UpdateBackfillService {
     }
 
     if (!candidates || candidates.length === 0) {
-      console.log('[UpdateBackfillService] ℹ️ Keine Designs in mba_designs gefunden.');
+      console.log('[UpdateBackfillService] ℹ️ Keine Designs mit status="PUBLISHED" in mba_designs gefunden.');
       return null;
     }
 
     for (const cand of candidates) {
       const dId = cand.design_id ? String(cand.design_id).replace(/^#/, '').replace(/-U$/, '').trim() : '';
       if (!dId) continue;
+
+      // Filter 0: Ensure status is strictly PUBLISHED
+      if (cand.status && cand.status !== 'PUBLISHED') {
+        continue;
+      }
 
       // Filter 1: Check duplicate / active in Hub / failed lookup
       if (excludedIds.has(dId)) {

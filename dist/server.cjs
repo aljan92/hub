@@ -222144,18 +222144,21 @@ var init_updateBackfillService = __esm2({
         const excludedIds = this.getExcludedDesignIds();
         const maxActiveProducts = settings.queueUpdateMaxActiveProducts ?? 100;
         console.log(`[UpdateBackfillService] \u{1F50D} Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
-        const { data: candidates, error } = await supabase.from("mba_designs").select("design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status").order("updated_date", { ascending: true, nullsFirst: true }).limit(60);
+        const { data: candidates, error } = await supabase.from("mba_designs").select("design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status").eq("status", "PUBLISHED").order("updated_date", { ascending: true, nullsFirst: true }).limit(60);
         if (error) {
           console.error("[UpdateBackfillService] \u274C Supabase Abfrage-Fehler:", error.message);
           return null;
         }
         if (!candidates || candidates.length === 0) {
-          console.log("[UpdateBackfillService] \u2139\uFE0F Keine Designs in mba_designs gefunden.");
+          console.log('[UpdateBackfillService] \u2139\uFE0F Keine Designs mit status="PUBLISHED" in mba_designs gefunden.');
           return null;
         }
         for (const cand of candidates) {
           const dId = cand.design_id ? String(cand.design_id).replace(/^#/, "").replace(/-U$/, "").trim() : "";
           if (!dId) continue;
+          if (cand.status && cand.status !== "PUBLISHED") {
+            continue;
+          }
           if (excludedIds.has(dId)) {
             continue;
           }
