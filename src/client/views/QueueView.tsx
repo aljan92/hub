@@ -115,6 +115,17 @@ interface UploadProgressState {
   error?: string;
 }
 
+const renderSafeText = (val: any): string => {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (Array.isArray(val)) return val.map(renderSafeText).filter(Boolean).join('\n');
+  if (typeof val === 'object') {
+    return val.value || val.text || val.label || JSON.stringify(val);
+  }
+  return String(val);
+};
+
 export const QueueView: React.FC = () => {
   const [queueState, setQueueState] = useState<QueueState>({
     items: [],
@@ -1298,8 +1309,8 @@ export const QueueView: React.FC = () => {
                               <span className="font-semibold">Fit-Types:</span>
                               <span className="font-mono text-slate-200">
                                 {Array.isArray(item.fitTypes) && item.fitTypes.length > 0 
-                                  ? item.fitTypes.join(', ').toUpperCase() 
-                                  : typeof item.fitTypes === 'string' 
+                                  ? item.fitTypes.map(f => typeof f === 'object' && f ? String((f as any).id || (f as any).label || (f as any).name || '') : String(f)).filter(Boolean).join(', ').toUpperCase() 
+                                  : typeof item.fitTypes === 'string' && item.fitTypes
                                     ? String(item.fitTypes).toUpperCase() 
                                     : 'MEN, WOMEN, YOUTH'}
                               </span>
@@ -1311,9 +1322,9 @@ export const QueueView: React.FC = () => {
                               <Palette className="w-3.5 h-3.5 text-amber-400" />
                               <span className="font-semibold">Farbregel:</span>
                               <span className="font-mono text-slate-200">
-                                {item.avoidColor === 'white' 
+                                {String(item.avoidColor) === 'white' 
                                   ? 'Weiß vermieden (Raglan white_* ausgeschlossen)' 
-                                  : item.avoidColor === 'black'
+                                  : String(item.avoidColor) === 'black'
                                     ? 'Schwarz vermieden (Hex-Picker #FFFFFF)'
                                     : 'Standard (Alle Swatches / Hex #000000)'}
                               </span>
@@ -1335,10 +1346,12 @@ export const QueueView: React.FC = () => {
                           {/* SEO Listing Section with Multi-Language Switcher */}
                           {(() => {
                             const activeLang = itemLanguageMap[item.id] || 'en';
-                            const rawListings: any = item.listings || {};
+                            let rawListings: any = item.listings || {};
+                            if (typeof rawListings === 'string') {
+                              try { rawListings = JSON.parse(rawListings); } catch { rawListings = {}; }
+                            }
                             
-                            // Normalize listings object: if rawListings is a flat listing { brand, title, bullet1... } without lang keys
-                            const isFlatListing = rawListings.title || rawListings.brand || rawListings.bullet1;
+                            const isFlatListing = rawListings && (rawListings.title || rawListings.brand || rawListings.bullet1);
                             const listingsObj: Record<string, any> = isFlatListing 
                               ? { en: rawListings } 
                               : (typeof rawListings === 'object' && rawListings !== null ? rawListings : {});
@@ -1411,24 +1424,24 @@ export const QueueView: React.FC = () => {
                                 <div className="space-y-2 text-xs font-mono bg-slate-900/90 p-3 rounded-lg border border-slate-800 text-slate-300">
                                   <div>
                                     <span className="text-slate-500">Brand: </span>
-                                    <span className="text-slate-200 font-semibold">{currentListing.brand || '—'}</span>
+                                    <span className="text-slate-200 font-semibold">{renderSafeText(currentListing.brand) || '—'}</span>
                                   </div>
                                   <div>
                                     <span className="text-slate-500">Titel: </span>
-                                    <span className="text-slate-100 font-bold">{currentListing.title || '—'}</span>
+                                    <span className="text-slate-100 font-bold">{renderSafeText(currentListing.title) || '—'}</span>
                                   </div>
                                   <div>
                                     <span className="text-slate-500">Bullet 1: </span>
-                                    <span className="text-slate-300">{currentListing.bullet1 || '—'}</span>
+                                    <span className="text-slate-300">{renderSafeText(currentListing.bullet1) || '—'}</span>
                                   </div>
                                   <div>
                                     <span className="text-slate-500">Bullet 2: </span>
-                                    <span className="text-slate-300">{currentListing.bullet2 || '—'}</span>
+                                    <span className="text-slate-300">{renderSafeText(currentListing.bullet2) || '—'}</span>
                                   </div>
                                   {currentListing.description && (
                                     <div>
                                       <span className="text-slate-500">Beschreibung: </span>
-                                      <span className="text-slate-400">{currentListing.description}</span>
+                                      <span className="text-slate-400">{renderSafeText(currentListing.description)}</span>
                                     </div>
                                   )}
                                 </div>
@@ -1440,7 +1453,7 @@ export const QueueView: React.FC = () => {
                           {Array.isArray(item.tmBlockedProductIds) && item.tmBlockedProductIds.length > 0 && (
                             <div className="flex items-center space-x-2 text-xs text-rose-300 bg-rose-950/30 border border-rose-500/30 p-2.5 rounded-xl">
                               <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
-                              <span>Durch Trademark (TM) gesperrte Produkt-Klassen: <strong>{item.tmBlockedProductIds.join(', ')}</strong></span>
+                              <span>Durch Trademark (TM) gesperrte Produkt-Klassen: <strong>{item.tmBlockedProductIds.map(t => typeof t === 'object' && t ? String((t as any).id || (t as any).name || '') : String(t)).filter(Boolean).join(', ')}</strong></span>
                             </div>
                           )}
 
@@ -1473,39 +1486,46 @@ export const QueueView: React.FC = () => {
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                               {(() => {
-                                const catalogProds = queueState.catalogProducts || [];
-                                const prodKeys = catalogProds.length > 0
-                                  ? catalogProds.map(p => p.id)
-                                  : Array.from(new Set([
-                                      ...Object.keys(item.activeProductsMap || {}),
-                                      ...Object.keys(item.droppedSlotsMap || {}),
-                                      ...Object.keys(item.liveProductSummary || {})
-                                    ]));
+                                const catalogProds = Array.isArray(queueState?.catalogProducts) ? queueState.catalogProducts : [];
+                                const catalogKeys = catalogProds.map(p => typeof p === 'object' && p?.id ? String(p.id) : '').filter(Boolean);
 
-                                const catalogMap = new Map(catalogProds.map(p => [p.id, p]));
+                                const activeMapKeys = item.activeProductsMap && typeof item.activeProductsMap === 'object' ? Object.keys(item.activeProductsMap) : [];
+                                const droppedMapKeys = item.droppedSlotsMap && typeof item.droppedSlotsMap === 'object' ? Object.keys(item.droppedSlotsMap) : [];
+                                const liveSummaryKeys = item.liveProductSummary && typeof item.liveProductSummary === 'object' ? Object.keys(item.liveProductSummary) : [];
+
+                                const prodKeys = (catalogKeys.length > 0
+                                  ? catalogKeys
+                                  : Array.from(new Set([...activeMapKeys, ...droppedMapKeys, ...liveSummaryKeys]))
+                                ).filter((k): k is string => typeof k === 'string' && k.trim().length > 0);
+
+                                const catalogMap = new Map(catalogProds.filter(p => p && p.id).map(p => [String(p.id), p]));
+                                const rawTm = Array.isArray(item.tmBlockedProductIds) ? item.tmBlockedProductIds : [];
+                                const cleanTmIds = rawTm.map(t => typeof t === 'object' && t !== null ? String((t as any).id || (t as any).name || '') : String(t)).filter(Boolean);
 
                                 return prodKeys.map(prodId => {
-                                  const prodDef = catalogMap.get(prodId);
-                                  const displayName = prodDef?.displayName || prodId;
-                                  const isTmBlocked = Array.isArray(item.tmBlockedProductIds) && item.tmBlockedProductIds.map(t => String(t).toUpperCase()).includes(prodId.toUpperCase());
+                                  const cleanProdId = String(prodId || '').trim();
+                                  const prodDef = catalogMap.get(cleanProdId);
+                                  const displayName = prodDef?.displayName || cleanProdId;
+                                  const isTmBlocked = cleanTmIds.some(t => t.toUpperCase() === cleanProdId.toUpperCase());
 
                                   if (isUpdate) {
                                     // Update design logic: check if already live on Amazon
                                     const isAlreadyLive = isTmBlocked 
                                       ? false 
-                                      : (item.liveProductSummary 
-                                          ? Boolean(item.liveProductSummary[prodId]) 
-                                          : item.liveProductTypes 
-                                            ? item.liveProductTypes.includes(prodId) 
-                                            : (item.allocatedSlots === 0 || !prodKeys.slice(-Math.max(1, item.allocatedSlots || 0)).includes(prodId)));
+                                      : (item.liveProductSummary && typeof item.liveProductSummary === 'object'
+                                          ? Boolean(item.liveProductSummary[cleanProdId]) 
+                                          : Array.isArray(item.liveProductTypes) 
+                                            ? item.liveProductTypes.map(String).includes(cleanProdId) 
+                                            : (item.allocatedSlots === 0 || !prodKeys.slice(-Math.max(1, item.allocatedSlots || 0)).includes(cleanProdId)));
 
-                                    const mps = isAlreadyLive 
-                                      ? (item.liveProductSummary?.[prodId]?.marketplaces || item.activeProductsMap?.[prodId] || ['US'])
-                                      : (item.activeProductsMap?.[prodId] || prodDef?.availableMarketplaces || ['US']);
+                                    const rawMps = isAlreadyLive 
+                                      ? (item.liveProductSummary?.[cleanProdId]?.marketplaces || item.activeProductsMap?.[cleanProdId] || ['US'])
+                                      : (item.activeProductsMap?.[cleanProdId] || prodDef?.availableMarketplaces || ['US']);
+                                    const mps = Array.isArray(rawMps) ? rawMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).filter(Boolean) : ['US'];
 
                                     return (
                                       <div 
-                                        key={prodId} 
+                                        key={cleanProdId} 
                                         className={`p-2.5 rounded-xl border text-xs transition-all ${
                                           isTmBlocked
                                             ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
@@ -1531,11 +1551,11 @@ export const QueueView: React.FC = () => {
                                           )}
                                         </div>
                                         <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
-                                          {Array.isArray(mps) && mps.map(mp => (
-                                            <span key={mp} className={`px-1.5 py-0.2 rounded ${
+                                          {mps.map((mp, mIdx) => (
+                                            <span key={`${mp}_${mIdx}`} className={`px-1.5 py-0.2 rounded ${
                                               !isAlreadyLive
                                                 ? 'bg-purple-900/60 text-purple-200 border border-purple-700'
-                                                : String(mp).toUpperCase() === 'US'
+                                                : mp.toUpperCase() === 'US'
                                                   ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
                                                   : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
                                             }`}>
@@ -1548,13 +1568,15 @@ export const QueueView: React.FC = () => {
                                   }
 
                                   // New design logic:
-                                  const safeMps = Array.isArray(item.activeProductsMap?.[prodId]) ? item.activeProductsMap[prodId] : [];
-                                  const droppedMps = Array.isArray(item.droppedSlotsMap?.[prodId]) ? item.droppedSlotsMap[prodId] : [];
+                                  const rawSafeMps = item.activeProductsMap?.[cleanProdId];
+                                  const safeMps = Array.isArray(rawSafeMps) ? rawSafeMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).filter(Boolean) : [];
+                                  const rawDroppedMps = item.droppedSlotsMap?.[cleanProdId];
+                                  const droppedMps = Array.isArray(rawDroppedMps) ? rawDroppedMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).filter(Boolean) : [];
                                   const isCompletelyDropped = safeMps.length === 0 && droppedMps.length > 0;
 
                                   return (
                                     <div 
-                                      key={prodId} 
+                                      key={cleanProdId} 
                                       className={`p-2.5 rounded-xl border text-xs transition-all ${
                                         isTmBlocked
                                           ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
@@ -1584,17 +1606,17 @@ export const QueueView: React.FC = () => {
                                         )}
                                       </div>
                                       <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
-                                        {safeMps.map(mp => (
-                                          <span key={mp} className={`px-1.5 py-0.2 rounded ${
-                                            String(mp).toUpperCase() === 'US' 
+                                        {safeMps.map((mp, mIdx) => (
+                                          <span key={`${mp}_${mIdx}`} className={`px-1.5 py-0.2 rounded ${
+                                            mp.toUpperCase() === 'US' 
                                               ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
                                               : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
                                           }`}>
                                             {mp}
                                           </span>
                                         ))}
-                                        {droppedMps.map(mp => (
-                                          <span key={mp} className="px-1.5 py-0.2 rounded bg-rose-950/40 text-rose-400/80 border border-rose-900/60 line-through">
+                                        {droppedMps.map((mp, mIdx) => (
+                                          <span key={`${mp}_${mIdx}`} className="px-1.5 py-0.2 rounded bg-rose-950/40 text-rose-400/80 border border-rose-900/60 line-through">
                                             {mp}
                                           </span>
                                         ))}
@@ -1975,8 +1997,8 @@ export const QueueView: React.FC = () => {
                               <span className="font-semibold">Fit-Types:</span>
                               <span className="font-mono text-slate-200">
                                 {Array.isArray(item.fitTypes) && item.fitTypes.length > 0 
-                                  ? item.fitTypes.join(', ').toUpperCase() 
-                                  : typeof item.fitTypes === 'string' 
+                                  ? item.fitTypes.map(f => typeof f === 'object' && f ? String((f as any).id || (f as any).label || (f as any).name || '') : String(f)).filter(Boolean).join(', ').toUpperCase() 
+                                  : typeof item.fitTypes === 'string' && item.fitTypes
                                     ? String(item.fitTypes).toUpperCase() 
                                     : 'MEN, WOMEN, YOUTH'}
                               </span>
@@ -1988,9 +2010,9 @@ export const QueueView: React.FC = () => {
                               <Palette className="w-3.5 h-3.5 text-amber-400" />
                               <span className="font-semibold">Farbregel:</span>
                               <span className="font-mono text-slate-200">
-                                {item.avoidColor === 'white' 
+                                {String(item.avoidColor) === 'white' 
                                   ? 'Weiß vermieden (Raglan white_* ausgeschlossen)' 
-                                  : item.avoidColor === 'black'
+                                  : String(item.avoidColor) === 'black'
                                     ? 'Schwarz vermieden (Hex-Picker #FFFFFF)'
                                     : 'Standard (Alle Swatches / Hex #000000)'}
                               </span>
@@ -2012,9 +2034,12 @@ export const QueueView: React.FC = () => {
                           {/* SEO Listing Section with Multi-Language Switcher */}
                           {(() => {
                             const activeLang = itemLanguageMap[item.id] || 'en';
-                            const rawListings: any = item.listings || {};
+                            let rawListings: any = item.listings || {};
+                            if (typeof rawListings === 'string') {
+                              try { rawListings = JSON.parse(rawListings); } catch { rawListings = {}; }
+                            }
                             
-                            const isFlatListing = rawListings.title || rawListings.brand || rawListings.bullet1;
+                            const isFlatListing = rawListings && (rawListings.title || rawListings.brand || rawListings.bullet1);
                             const listingsObj: Record<string, any> = isFlatListing 
                               ? { en: rawListings } 
                               : (typeof rawListings === 'object' && rawListings !== null ? rawListings : {});
@@ -2087,24 +2112,24 @@ export const QueueView: React.FC = () => {
                                 <div className="space-y-2 text-xs font-mono bg-slate-900/90 p-3 rounded-lg border border-slate-800 text-slate-300">
                                   <div>
                                     <span className="text-slate-500">Brand: </span>
-                                    <span className="text-slate-200 font-semibold">{currentListing.brand || '—'}</span>
+                                    <span className="text-slate-200 font-semibold">{renderSafeText(currentListing.brand) || '—'}</span>
                                   </div>
                                   <div>
                                     <span className="text-slate-500">Titel: </span>
-                                    <span className="text-slate-100 font-bold">{currentListing.title || '—'}</span>
+                                    <span className="text-slate-100 font-bold">{renderSafeText(currentListing.title) || '—'}</span>
                                   </div>
                                   <div>
                                     <span className="text-slate-500">Bullet 1: </span>
-                                    <span className="text-slate-300">{currentListing.bullet1 || '—'}</span>
+                                    <span className="text-slate-300">{renderSafeText(currentListing.bullet1) || '—'}</span>
                                   </div>
                                   <div>
                                     <span className="text-slate-500">Bullet 2: </span>
-                                    <span className="text-slate-300">{currentListing.bullet2 || '—'}</span>
+                                    <span className="text-slate-300">{renderSafeText(currentListing.bullet2) || '—'}</span>
                                   </div>
                                   {currentListing.description && (
                                     <div>
                                       <span className="text-slate-500">Beschreibung: </span>
-                                      <span className="text-slate-400">{currentListing.description}</span>
+                                      <span className="text-slate-400">{renderSafeText(currentListing.description)}</span>
                                     </div>
                                   )}
                                 </div>
@@ -2127,37 +2152,44 @@ export const QueueView: React.FC = () => {
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                               {(() => {
-                                const catalogProds = queueState.catalogProducts || [];
-                                const prodKeys = catalogProds.length > 0
-                                  ? catalogProds.map(p => p.id)
-                                  : Array.from(new Set([
-                                      ...Object.keys(item.activeProductsMap || {}),
-                                      ...Object.keys(item.droppedSlotsMap || {}),
-                                      ...Object.keys(item.liveProductSummary || {})
-                                    ]));
+                                const catalogProds = Array.isArray(queueState?.catalogProducts) ? queueState.catalogProducts : [];
+                                const catalogKeys = catalogProds.map(p => typeof p === 'object' && p?.id ? String(p.id) : '').filter(Boolean);
 
-                                const catalogMap = new Map(catalogProds.map(p => [p.id, p]));
+                                const activeMapKeys = item.activeProductsMap && typeof item.activeProductsMap === 'object' ? Object.keys(item.activeProductsMap) : [];
+                                const droppedMapKeys = item.droppedSlotsMap && typeof item.droppedSlotsMap === 'object' ? Object.keys(item.droppedSlotsMap) : [];
+                                const liveSummaryKeys = item.liveProductSummary && typeof item.liveProductSummary === 'object' ? Object.keys(item.liveProductSummary) : [];
+
+                                const prodKeys = (catalogKeys.length > 0
+                                  ? catalogKeys
+                                  : Array.from(new Set([...activeMapKeys, ...droppedMapKeys, ...liveSummaryKeys]))
+                                ).filter((k): k is string => typeof k === 'string' && k.trim().length > 0);
+
+                                const catalogMap = new Map(catalogProds.filter(p => p && p.id).map(p => [String(p.id), p]));
+                                const rawTm = Array.isArray(item.tmBlockedProductIds) ? item.tmBlockedProductIds : [];
+                                const cleanTmIds = rawTm.map(t => typeof t === 'object' && t !== null ? String((t as any).id || (t as any).name || '') : String(t)).filter(Boolean);
 
                                 return prodKeys.map(prodId => {
-                                  const prodDef = catalogMap.get(prodId);
-                                  const displayName = prodDef?.displayName || prodId;
-                                  const isTmBlocked = Array.isArray(item.tmBlockedProductIds) && item.tmBlockedProductIds.map(t => String(t).toUpperCase()).includes(prodId.toUpperCase());
+                                  const cleanProdId = String(prodId || '').trim();
+                                  const prodDef = catalogMap.get(cleanProdId);
+                                  const displayName = prodDef?.displayName || cleanProdId;
+                                  const isTmBlocked = cleanTmIds.some(t => t.toUpperCase() === cleanProdId.toUpperCase());
 
                                   const isAlreadyLive = isTmBlocked 
                                     ? false 
-                                    : (item.liveProductSummary 
-                                        ? Boolean(item.liveProductSummary[prodId]) 
-                                        : item.liveProductTypes 
-                                          ? item.liveProductTypes.includes(prodId) 
-                                          : (item.allocatedSlots === 0 || !prodKeys.slice(-Math.max(1, item.allocatedSlots || 0)).includes(prodId)));
+                                    : (item.liveProductSummary && typeof item.liveProductSummary === 'object'
+                                        ? Boolean(item.liveProductSummary[cleanProdId]) 
+                                        : Array.isArray(item.liveProductTypes) 
+                                          ? item.liveProductTypes.map(String).includes(cleanProdId) 
+                                          : (item.allocatedSlots === 0 || !prodKeys.slice(-Math.max(1, item.allocatedSlots || 0)).includes(cleanProdId)));
 
-                                  const mps = isAlreadyLive 
-                                    ? (item.liveProductSummary?.[prodId]?.marketplaces || item.activeProductsMap?.[prodId] || ['US'])
-                                    : (item.activeProductsMap?.[prodId] || prodDef?.availableMarketplaces || ['US']);
+                                  const rawMps = isAlreadyLive 
+                                    ? (item.liveProductSummary?.[cleanProdId]?.marketplaces || item.activeProductsMap?.[cleanProdId] || ['US'])
+                                    : (item.activeProductsMap?.[cleanProdId] || prodDef?.availableMarketplaces || ['US']);
+                                  const mps = Array.isArray(rawMps) ? rawMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).filter(Boolean) : ['US'];
 
                                   return (
                                     <div 
-                                      key={prodId} 
+                                      key={cleanProdId} 
                                       className={`p-2.5 rounded-xl border text-xs transition-all ${
                                         isTmBlocked
                                           ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
@@ -2183,11 +2215,11 @@ export const QueueView: React.FC = () => {
                                         )}
                                       </div>
                                       <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
-                                        {Array.isArray(mps) && mps.map(mp => (
-                                          <span key={mp} className={`px-1.5 py-0.2 rounded ${
+                                        {mps.map((mp, mIdx) => (
+                                          <span key={`${mp}_${mIdx}`} className={`px-1.5 py-0.2 rounded ${
                                             !isAlreadyLive
                                               ? 'bg-purple-900/60 text-purple-200 border border-purple-700'
-                                              : String(mp).toUpperCase() === 'US'
+                                              : mp.toUpperCase() === 'US'
                                                 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
                                                 : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
                                           }`}>

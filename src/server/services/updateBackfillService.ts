@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { loadSettings, saveSettings } from './settingsService';
 import { QueueService } from './queueService';
@@ -6,9 +8,36 @@ import { UpdatePipelineService } from './updatePipelineService';
 
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
-  private static failedDesignIds = new Set<string>();
+  private static failedFilePath = path.resolve(process.cwd(), 'data', 'failed_update_designs.json');
+  private static failedDesignIds: Set<string> = UpdateBackfillService.loadFailedDesigns();
   private static isRunningLoop = false;
   private static intervalId: NodeJS.Timeout | null = null;
+
+  private static loadFailedDesigns(): Set<string> {
+    try {
+      const filePath = path.resolve(process.cwd(), 'data', 'failed_update_designs.json');
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          return new Set(list.map(String));
+        }
+      }
+    } catch (e) {
+      console.warn('[UpdateBackfillService] Failed to load failed_update_designs.json:', e);
+    }
+    return new Set<string>();
+  }
+
+  private static saveFailedDesign(id: string) {
+    if (!id) return;
+    this.failedDesignIds.add(id.trim());
+    try {
+      fs.writeFileSync(this.failedFilePath, JSON.stringify(Array.from(this.failedDesignIds), null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('[UpdateBackfillService] Failed to save failed_update_designs.json:', e);
+    }
+  }
 
   /**
    * Collect all design IDs that must NOT be pulled again
@@ -77,7 +106,7 @@ export class UpdateBackfillService {
       .select('design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status')
       .eq('status', 'PUBLISHED')
       .order('updated_date', { ascending: true, nullsFirst: true })
-      .limit(60);
+      .limit(250);
 
     if (error) {
       console.error('[UpdateBackfillService] ❌ Supabase Abfrage-Fehler:', error.message);
@@ -154,7 +183,7 @@ export class UpdateBackfillService {
     }
 
     let lastError = 'Kein passendes Design in Supabase gefunden.';
-    const maxAttempts = 15;
+    const maxAttempts = 50;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const candidate = await this.fetchNextCandidateFromSupabase();
@@ -180,12 +209,12 @@ export class UpdateBackfillService {
         } else {
           lastError = result.error || 'Fehler beim Abruf der Merch-Daten';
           console.warn(`[UpdateBackfillService] ⚠️ Design ${designId} auf Amazon nicht abrufbar (${lastError}). Überspringe und teste nächsten Kandidaten...`);
-          this.failedDesignIds.add(designId);
+          this.saveFailedDesign(designId);
         }
       } catch (err: any) {
         lastError = err.message || 'Unbekannter Fehler';
         console.error(`[UpdateBackfillService] ❌ Fehler beim Verarbeiten von Design ${designId}:`, err);
-        this.failedDesignIds.add(designId);
+        this.saveFailedDesign(designId);
       } finally {
         this.inFlightDesigns.delete(designId);
       }
