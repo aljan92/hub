@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { loadSettings, saveSettings } from './settingsService';
 import { QueueService } from './queueService';
@@ -8,42 +6,14 @@ import { UpdatePipelineService } from './updatePipelineService';
 
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
-  private static failedFilePath = path.resolve(process.cwd(), 'data', 'failed_update_designs.json');
-  private static failedDesignIds: Set<string> = UpdateBackfillService.loadFailedDesigns();
   private static isRunningLoop = false;
   private static intervalId: NodeJS.Timeout | null = null;
 
-  private static loadFailedDesigns(): Set<string> {
-    try {
-      const filePath = path.resolve(process.cwd(), 'data', 'failed_update_designs.json');
-      if (fs.existsSync(filePath)) {
-        const raw = fs.readFileSync(filePath, 'utf-8');
-        const list = JSON.parse(raw);
-        if (Array.isArray(list)) {
-          return new Set(list.map(String));
-        }
-      }
-    } catch (e) {
-      console.warn('[UpdateBackfillService] Failed to load failed_update_designs.json:', e);
-    }
-    return new Set<string>();
-  }
-
-  private static saveFailedDesign(id: string) {
-    if (!id) return;
-    this.failedDesignIds.add(id.trim());
-    try {
-      fs.writeFileSync(this.failedFilePath, JSON.stringify(Array.from(this.failedDesignIds), null, 2), 'utf-8');
-    } catch (e) {
-      console.warn('[UpdateBackfillService] Failed to save failed_update_designs.json:', e);
-    }
-  }
-
   /**
    * Collect all design IDs that must NOT be pulled again
-   * (Already in Queue, active in Tasks, currently in flight, or failed Amazon lookup)
+   * (Already in Queue, active in Tasks, or currently in flight)
    */
-  public static getExcludedDesignIds(): Set<string> {
+  public static getExcludedDesignIds(extraExcludedIds?: Set<string>): Set<string> {
     const excluded = new Set<string>();
 
     // 1. In-flight locks
@@ -51,9 +21,11 @@ export class UpdateBackfillService {
       if (id) excluded.add(id.trim());
     }
 
-    // 2. Failed designs (e.g. deleted on Amazon or HTTP 400/404)
-    for (const id of this.failedDesignIds) {
-      if (id) excluded.add(id.trim());
+    // 2. Extra excluded IDs for the current cycle (in-memory only)
+    if (extraExcludedIds) {
+      for (const id of extraExcludedIds) {
+        if (id) excluded.add(id.trim());
+      }
     }
 
     // 3. All items in the Queue (Tab Queue & Tab Update)
@@ -83,8 +55,9 @@ export class UpdateBackfillService {
   /**
    * Query Supabase `mba_designs` table for the oldest updated design
    * that matches the active product count threshold and is not already in the Hub.
+   * Strictly checks that the "published_products" cell is NOT empty.
    */
-  public static async fetchNextCandidateFromSupabase(): Promise<{ designId: string; title?: string; activeProductsCount: number; updatedDate?: string } | null> {
+  public static async fetchNextCandidateFromSupabase(extraExcludedIds?: Set<string>): Promise<{ designId: string; title?: string; activeProductsCount: number; updatedDate?: string } | null> {
     const settings = loadSettings();
     if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
       console.warn('[UpdateBackfillService] ⚠️ Supabase URL oder Service Role Key fehlt in den Einstellungen.');
@@ -95,18 +68,19 @@ export class UpdateBackfillService {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    const excludedIds = this.getExcludedDesignIds();
+    const excludedIds = this.getExcludedDesignIds(extraExcludedIds);
     const maxActiveProducts = settings.queueUpdateMaxActiveProducts ?? 100;
 
     console.log(`[UpdateBackfillService] 🔍 Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
 
-    // Fetch batch of oldest published designs (sorted by updated_date ascending)
+    // Fetch batch of oldest published designs with non-null published_products
     const { data: candidates, error } = await supabase
       .from('mba_designs')
       .select('design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status')
       .eq('status', 'PUBLISHED')
+      .not('published_products', 'is', null)
       .order('updated_date', { ascending: true, nullsFirst: true })
-      .limit(250);
+      .limit(300);
 
     if (error) {
       console.error('[UpdateBackfillService] ❌ Supabase Abfrage-Fehler:', error.message);
@@ -114,7 +88,7 @@ export class UpdateBackfillService {
     }
 
     if (!candidates || candidates.length === 0) {
-      console.log('[UpdateBackfillService] ℹ️ Keine Designs mit status="PUBLISHED" in mba_designs gefunden.');
+      console.log('[UpdateBackfillService] ℹ️ Keine Designs mit status="PUBLISHED" und gefüllter published_products Spalte in mba_designs gefunden.');
       return null;
     }
 
@@ -127,17 +101,24 @@ export class UpdateBackfillService {
         continue;
       }
 
-      // Filter 1: Check duplicate / active in Hub / failed lookup
+      // Filter 1: Check duplicate / active in Hub / in-flight
       if (excludedIds.has(dId)) {
         continue;
       }
 
-      // Filter 2: Active products count threshold (< maxActiveProducts)
+      // Filter 2: Verify "published_products" cell is NOT empty
       let activeCount = 0;
       if (Array.isArray(cand.published_products)) {
         activeCount = cand.published_products.length;
+      } else if (cand.published_products && typeof cand.published_products === 'object') {
+        activeCount = Object.keys(cand.published_products).length;
       } else if (Array.isArray(cand.asins)) {
         activeCount = cand.asins.length;
+      }
+
+      // If published_products cell is empty (0 products), skip immediately
+      if (activeCount === 0) {
+        continue;
       }
 
       if (activeCount >= maxActiveProducts) {
@@ -145,7 +126,7 @@ export class UpdateBackfillService {
         continue;
       }
 
-      console.log(`[UpdateBackfillService] 🎯 Kandidat gefunden: Design ${dId} (${activeCount} aktive Produkte, zuletzt geupdatet: ${cand.updated_date || 'nie'}).`);
+      console.log(`[UpdateBackfillService] 🎯 Valider Kandidat gefunden: Design ${dId} (${activeCount} aktive Produkte in published_products, zuletzt geupdatet: ${cand.updated_date || 'nie'}).`);
       return {
         designId: dId,
         activeProductsCount: activeCount,
@@ -182,11 +163,12 @@ export class UpdateBackfillService {
       return { success: false, message: `Update-Pool ist bereits voll (${totalActiveUpdateCount}/${targetCount} aktive Designs in Queue & Tasks).` };
     }
 
-    let lastError = 'Kein passendes Design in Supabase gefunden.';
-    const maxAttempts = 50;
+    let lastError = 'Kein passendes Design mit aktiven Produkten in Supabase gefunden.';
+    const maxAttempts = 30;
+    const cycleFailedIds = new Set<string>();
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const candidate = await this.fetchNextCandidateFromSupabase();
+      const candidate = await this.fetchNextCandidateFromSupabase(cycleFailedIds);
       if (!candidate) {
         return { success: false, message: lastError };
       }
@@ -209,12 +191,12 @@ export class UpdateBackfillService {
         } else {
           lastError = result.error || 'Fehler beim Abruf der Merch-Daten';
           console.warn(`[UpdateBackfillService] ⚠️ Design ${designId} auf Amazon nicht abrufbar (${lastError}). Überspringe und teste nächsten Kandidaten...`);
-          this.saveFailedDesign(designId);
+          cycleFailedIds.add(designId);
         }
       } catch (err: any) {
         lastError = err.message || 'Unbekannter Fehler';
         console.error(`[UpdateBackfillService] ❌ Fehler beim Verarbeiten von Design ${designId}:`, err);
-        this.saveFailedDesign(designId);
+        cycleFailedIds.add(designId);
       } finally {
         this.inFlightDesigns.delete(designId);
       }
