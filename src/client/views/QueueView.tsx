@@ -83,12 +83,14 @@ interface QueueState {
   maxDropPerDesign: number;
   autoBalance: boolean;
   maxDroppableCapacity: number;
-  uploadMode?: 'draft' | 'live';
+  uploadMode?: 'draft' | 'live' | 'hybrid';
   draftProductsPerDesign?: number;
   maxCatalogSlots?: number;
   updateTargetCount?: number;
   updateAutoBackfillEnabled?: boolean;
   updateMaxActiveProducts?: number;
+  scheduledLiveSlotsToday?: number;
+  scheduledDraftProductsToday?: number;
 }
 
 interface UploadProgressState {
@@ -131,7 +133,7 @@ export const QueueView: React.FC = () => {
   const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [globalMode, setGlobalMode] = useState<'live' | 'draft'>('draft');
+  const [globalMode, setGlobalMode] = useState<'live' | 'draft' | 'hybrid'>('draft');
   const [isScreencastOpen, setIsScreencastOpen] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
 
@@ -465,13 +467,29 @@ export const QueueView: React.FC = () => {
     }
   };
 
+  const currentMode = queueState?.uploadMode || globalMode || 'draft';
+  const isDraftMode = currentMode === 'draft';
+  const isLiveMode = currentMode === 'live';
+  const isHybridMode = currentMode === 'hybrid';
+
   const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')) || (i.taskId && String(i.taskId).endsWith('-U')));
   const isNewItem = (i: any) => !isUpdateItem(i);
 
-  // Tab 1 (Warteschlange): New creation designs (Prio 1) + non-paused Update designs (0 Slots)
   const activeNewDesigns = queueState.items.filter(i => isNewItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
   const activeUpdateDesigns = queueState.items.filter(i => isUpdateItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING'));
-  const activeQueueDesigns = [...activeNewDesigns, ...activeUpdateDesigns];
+
+  // Tab 1 (Warteschlange) Ordering:
+  // - Hybrid Mode: Prio 1 Updates (Live) -> Prio 2 New Designs (Draft)
+  // - Live Mode: Prio 1 New Designs (Live) -> Prio 2 Updates (Live with remaining slots)
+  // - Draft Mode: Only New Designs (Draft, no updates in Tab 1)
+  let activeQueueDesigns: any[] = [];
+  if (isHybridMode) {
+    activeQueueDesigns = [...activeUpdateDesigns, ...activeNewDesigns];
+  } else if (isLiveMode) {
+    activeQueueDesigns = [...activeNewDesigns, ...activeUpdateDesigns];
+  } else {
+    activeQueueDesigns = activeNewDesigns;
+  }
 
   const pausedDesigns = queueState.items.filter(i => (!!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
   const updateDesigns = queueState.items.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR');
@@ -481,7 +499,7 @@ export const QueueView: React.FC = () => {
   const waitingOrUploadingDesigns = activeQueueDesigns;
 
   const slotUtilizationPct = queueState.freeDailySlots > 0 
-    ? Math.min(100, Math.round((queueState.scheduledSlotsToday / queueState.freeDailySlots) * 100))
+    ? Math.min(100, Math.round(((queueState.scheduledLiveSlotsToday ?? queueState.scheduledSlotsToday) / queueState.freeDailySlots) * 100))
     : 0;
 
   const isUploadActive = uploadProgress?.isUploading ?? false;
@@ -515,21 +533,52 @@ export const QueueView: React.FC = () => {
           </button>
 
           {/* Mode Selector */}
-          <div className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2">
-            <span className="text-xs font-semibold text-slate-300">Modus:</span>
+          <div className="flex items-center space-x-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1">
+            <span className="text-[11px] font-semibold text-slate-400 px-2">Modus:</span>
+            
             <button
               onClick={() => {
-                const nextMode = (queueState?.uploadMode || globalMode) === 'draft' ? 'live' : 'draft';
-                setGlobalMode(nextMode);
-                handleUpdateSettings({ uploadMode: nextMode });
+                setGlobalMode('live');
+                handleUpdateSettings({ uploadMode: 'live' });
               }}
-              className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
-                (queueState?.uploadMode || globalMode) === 'live' 
-                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                  : 'bg-primary-500/20 text-primary-300 border-primary-500/40'
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                currentMode === 'live'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm shadow-rose-500/20'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
+              title="Live-Modus: Neue Designs live hochladen, Rest-Slots mit Updates auffüllen"
             >
-              {(queueState?.uploadMode || globalMode) === 'live' ? '🔴 Live Publish' : '🟡 Draft (Entwurf)'}
+              🔴 Live
+            </button>
+
+            <button
+              onClick={() => {
+                setGlobalMode('draft');
+                handleUpdateSettings({ uploadMode: 'draft' });
+              }}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                currentMode === 'draft'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Draft-Modus: Sämtliche neuen Designs als Draft hochladen (keine Updates)"
+            >
+              🟡 Draft
+            </button>
+
+            <button
+              onClick={() => {
+                setGlobalMode('hybrid');
+                handleUpdateSettings({ uploadMode: 'hybrid' });
+              }}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                currentMode === 'hybrid'
+                  ? 'bg-primary-500/20 text-primary-300 border border-primary-500/40 shadow-sm shadow-primary-500/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Hybrid-Modus: Prio 1 Updates Live (Slot-Verbrauch), Prio 2 Neue Designs als Draft"
+            >
+              🟣 Draft-Hybrid
             </button>
           </div>
 
@@ -780,7 +829,22 @@ export const QueueView: React.FC = () => {
                 <UploadCloud className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="flex items-baseline space-x-2">
-                {(queueState.uploadMode || globalMode) === 'live' ? (
+                {isHybridMode ? (
+                  <div className="space-y-0.5">
+                    <div className="flex items-baseline space-x-2">
+                      <span className="text-xl font-bold text-rose-400 font-mono">
+                        {queueState.scheduledLiveSlotsToday || 0} von {queueState.freeDailySlots || 0}
+                      </span>
+                      <span className="text-xs text-slate-400">Live-Slots (Updates)</span>
+                    </div>
+                    <div className="flex items-baseline space-x-2">
+                      <span className="text-xs font-bold text-accent-cyan font-mono">
+                        + {queueState.scheduledDraftProductsToday || 0} Produkte
+                      </span>
+                      <span className="text-[11px] text-slate-400">als Draft geplant</span>
+                    </div>
+                  </div>
+                ) : isLiveMode ? (
                   <>
                     <span className="text-2xl font-bold text-slate-100 font-mono">
                       {queueState.scheduledSlotsToday || 0} von {queueState.freeDailySlots || 0}
@@ -799,21 +863,23 @@ export const QueueView: React.FC = () => {
               <div className="w-full bg-slate-900 rounded-full h-1.5 mt-3 overflow-hidden border border-slate-800">
                 <div 
                   className={`h-full transition-all duration-500 ${
-                    (queueState.uploadMode || globalMode) === 'live'
-                      ? (queueState.scheduledSlotsToday || 0) > (queueState.freeDailySlots || 0)
+                    isLiveMode || isHybridMode
+                      ? ((queueState.scheduledLiveSlotsToday ?? queueState.scheduledSlotsToday) || 0) > (queueState.freeDailySlots || 0)
                         ? 'bg-rose-500'
-                        : 'bg-emerald-500'
+                        : isHybridMode ? 'bg-gradient-to-r from-purple-500 to-rose-400' : 'bg-emerald-500'
                       : 'bg-gradient-to-r from-accent-cyan to-primary-500'
                   }`}
                   style={{ 
-                    width: (queueState.uploadMode || globalMode) === 'live'
-                      ? `${Math.min(100, Math.max(0, ((queueState.scheduledSlotsToday || 0) / (queueState.freeDailySlots || 1)) * 100))}%`
+                    width: isLiveMode || isHybridMode
+                      ? `${Math.min(100, Math.max(0, (((queueState.scheduledLiveSlotsToday ?? queueState.scheduledSlotsToday) || 0) / (queueState.freeDailySlots || 1)) * 100))}%`
                       : '100%' 
                   }}
                 />
               </div>
               <div className="text-[11px] text-slate-400 mt-2">
-                {(queueState.uploadMode || globalMode) === 'live' ? (
+                {isHybridMode ? (
+                  <span>Updates werden Live veröffentlicht, neue Designs als Draft</span>
+                ) : isLiveMode ? (
                   <span>
                     {queueState.scheduledItemsCount || 0} von {waitingOrUploadingDesigns.length} Designs heute einplanbar
                     {(queueState.overflowItemsCount || 0) > 0 ? ` (${queueState.overflowItemsCount} warten auf freie Slots)` : ''}
@@ -835,7 +901,9 @@ export const QueueView: React.FC = () => {
                 <span className="text-xs text-slate-400">Designs</span>
               </div>
               <div className="text-[11px] text-slate-400 mt-3 pt-1 border-t border-slate-800/60">
-                {(queueState.uploadMode || globalMode) === 'live' ? (
+                {isHybridMode ? (
+                  <span>Hybrid: {activeUpdateDesigns.length} Updates (Live) + {activeNewDesigns.length} Neu (Draft)</span>
+                ) : isLiveMode ? (
                   <span>Kürzungs-Puffer: Max. {queueState.maxDropPerDesign || 10} Slots / Design</span>
                 ) : (
                   <span>Eingestellt: {queueState.draftProductsPerDesign || queueState.maxCatalogSlots || 106} Produkte / Design</span>

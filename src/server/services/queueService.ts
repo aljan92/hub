@@ -45,6 +45,8 @@ export interface QueueItem {
   source?: string;
   type?: 'new' | 'update';
   designId?: string;
+  publishedProductsCount?: number;            // Number of products already live on Amazon (for update items)
+  liveStats?: any;                            // Live stats payload from Amazon
 }
 
 export interface QueueState {
@@ -53,13 +55,15 @@ export interface QueueState {
   usedSlotsToday: number;
   totalDailySlots: number;
   scheduledSlotsToday: number;
+  scheduledLiveSlotsToday?: number;           // Live slots planned against Amazon daily limit
+  scheduledDraftProductsToday?: number;        // Products planned for draft upload
   scheduledItemsCount: number;
   overflowItemsCount: number;
   uploadScheduleTime: string; // e.g. "04:00" or "off"
   maxDropPerDesign: number;
   autoBalance: boolean;
   maxDroppableCapacity: number;
-  uploadMode: 'draft' | 'live';
+  uploadMode: 'draft' | 'live' | 'hybrid';
   draftProductsPerDesign: number;
   maxCatalogSlots: number;
   updateTargetCount?: number;
@@ -269,7 +273,10 @@ export class QueueService {
   public static getState(): QueueState {
     this.ensureLoaded();
     const settings = loadSettings();
-    const isDraftMode = (settings.queueUploadMode || 'draft') === 'draft';
+    const mode = settings.queueUploadMode || 'draft';
+    const isDraftMode = mode === 'draft';
+    const isLiveMode = mode === 'live';
+    const isHybridMode = mode === 'hybrid';
     const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
     const maxDrop = settings.queueMaxDropPerDesign ?? 10;
     const defaultDraftProducts = Math.max(1, maxCatalogSlots);
@@ -278,26 +285,61 @@ export class QueueService {
       Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? defaultDraftProducts)
     );
 
+    const isUpdateItem = (i: any) => (i.type === 'update' || i.type === 'UPDATE' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')) || (i.taskId && String(i.taskId).endsWith('-U')));
+
     // Total scheduled slots & counts
     const activeItems = this.items.filter(i => i.status === 'UPLOADING' || i.status === 'WAITING');
     let scheduledSlotsToday = 0;
+    let scheduledLiveSlotsToday = 0;
+    let scheduledDraftProductsToday = 0;
     let scheduledItemsCount = 0;
     let overflowItemsCount = 0;
 
     for (const item of activeItems) {
+      if (item.isPaused) continue;
+
+      const isUpdate = isUpdateItem(item);
+
       if (item.status === 'UPLOADING') {
-        scheduledSlotsToday += item.allocatedSlots || item.totalBaseSlots || 0;
+        const slots = item.allocatedSlots ?? item.totalBaseSlots ?? 0;
+        scheduledSlotsToday += slots;
         scheduledItemsCount++;
-      } else if (item.status === 'WAITING') {
-        if (item.isPaused) {
-          // Paused items are completely excluded from balancing and scheduled counts
-          continue;
-        }
-        if (isDraftMode || (item.allocatedSlots && item.allocatedSlots > 0)) {
-          scheduledSlotsToday += item.allocatedSlots || 0;
-          scheduledItemsCount++;
+        if (isUpdate || isLiveMode) {
+          scheduledLiveSlotsToday += slots;
         } else {
-          overflowItemsCount++;
+          scheduledDraftProductsToday += slots;
+        }
+      } else if (item.status === 'WAITING') {
+        if (isDraftMode) {
+          if (!isUpdate) {
+            const slots = item.allocatedSlots || draftProductsPerDesign;
+            scheduledDraftProductsToday += slots;
+            scheduledSlotsToday += slots;
+            scheduledItemsCount++;
+          }
+        } else if (isLiveMode) {
+          if (item.allocatedSlots !== undefined && item.allocatedSlots > 0) {
+            scheduledLiveSlotsToday += item.allocatedSlots;
+            scheduledSlotsToday += item.allocatedSlots;
+            scheduledItemsCount++;
+          } else if (isUpdate && item.totalBaseSlots === 0) {
+            // 0-slot update design scheduled today
+            scheduledItemsCount++;
+          } else {
+            overflowItemsCount++;
+          }
+        } else if (isHybridMode) {
+          // Hybrid: Updates are Live, New items are Draft
+          if (isUpdate) {
+            scheduledLiveSlotsToday += item.allocatedSlots || 0;
+            scheduledSlotsToday += item.allocatedSlots || 0;
+            scheduledItemsCount++;
+          } else {
+            const draftSlots = item.allocatedSlots || draftProductsPerDesign;
+            scheduledDraftProductsToday += draftSlots;
+            scheduledSlotsToday += draftSlots;
+            scheduledItemsCount++;
+          }
         }
       }
     }
@@ -308,13 +350,15 @@ export class QueueService {
       usedSlotsToday: this.dailySlotsInfo.used,
       totalDailySlots: this.dailySlotsInfo.total,
       scheduledSlotsToday,
+      scheduledLiveSlotsToday,
+      scheduledDraftProductsToday,
       scheduledItemsCount,
       overflowItemsCount,
       uploadScheduleTime: settings.queueUploadScheduleTime || 'off',
       maxDropPerDesign: maxDrop,
       autoBalance: settings.queueAutoBalance ?? true,
       maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),
-      uploadMode: settings.queueUploadMode || 'draft',
+      uploadMode: mode,
       draftProductsPerDesign,
       maxCatalogSlots,
       updateTargetCount: settings.queueUpdateTargetCount ?? 10,
@@ -342,6 +386,11 @@ export class QueueService {
     imagePath: string;
     pngPath: string;
     tmBlockedProductIds?: string[];
+    source?: string;
+    type?: 'new' | 'update';
+    designId?: string;
+    publishedProductsCount?: number;
+    liveStats?: any;
   }): QueueItem {
     this.ensureLoaded();
 
@@ -360,7 +409,7 @@ export class QueueService {
 
     // Check if task is already in queue
     const existing = this.items.find(i => i.taskId === item.taskId);
-    const isUpdate = (item as any).source === 'UPDATE' || (item as any).type === 'update';
+    const isUpdate = (item as any).source === 'UPDATE' || (item as any).type === 'update' || (item.taskId && item.taskId.endsWith('-U'));
 
     if (existing) {
       existing.status = 'WAITING';
@@ -376,13 +425,12 @@ export class QueueService {
       if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
       if (item.pngPath) existing.pngPath = item.pngPath;
       if (item.imagePath) existing.imagePath = item.imagePath;
-      if ((item as any).source) existing.source = (item as any).source;
-      if ((item as any).type) existing.type = (item as any).type;
-      if ((item as any).designId) existing.designId = (item as any).designId;
-      if (isUpdate) {
-        existing.allocatedSlots = 0;
-        existing.totalBaseSlots = 0;
-      }
+      if (item.source) existing.source = item.source;
+      if (item.type) existing.type = item.type;
+      if (item.designId) existing.designId = item.designId;
+      if (item.publishedProductsCount !== undefined) existing.publishedProductsCount = item.publishedProductsCount;
+      if (item.liveStats !== undefined) existing.liveStats = item.liveStats;
+
       this.saveQueue();
       this.rebalanceQueue();
       return existing;
@@ -401,6 +449,9 @@ export class QueueService {
       activeProductsMap[prod.id] = mps;
       totalBaseSlots += mps.length;
     }
+
+    const alreadyPublished = item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 0;
+    const netSlots = isUpdate ? Math.max(0, totalBaseSlots - alreadyPublished) : totalBaseSlots;
 
     const newItem: QueueItem = {
       id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -429,15 +480,17 @@ export class QueueService {
       addedAt: new Date().toISOString(),
       status: 'WAITING',
       isLocked: false,
-      allocatedSlots: isUpdate ? 0 : totalBaseSlots,
-      totalBaseSlots: isUpdate ? 0 : totalBaseSlots,
+      allocatedSlots: netSlots,
+      totalBaseSlots: netSlots,
       activeProductsMap,
       droppedSlotsMap: {},
       tmBlockedProductIds: item.tmBlockedProductIds || [],
       sortOrder: this.items.length,
-      source: (item as any).source || (isUpdate ? 'UPDATE' : 'NEW'),
-      type: (item as any).type || (isUpdate ? 'update' : 'new'),
-      designId: (item as any).designId
+      source: item.source || (isUpdate ? 'UPDATE' : 'NEW'),
+      type: item.type || (isUpdate ? 'update' : 'new'),
+      designId: item.designId,
+      publishedProductsCount: item.publishedProductsCount,
+      liveStats: item.liveStats
     };
 
     this.items.push(newItem);
@@ -466,6 +519,8 @@ export class QueueService {
     source?: string;
     type?: 'new' | 'update';
     designId?: string;
+    publishedProductsCount?: number;
+    liveStats?: any;
   }): QueueItem {
     return this.enqueueDesign({
       ...item,
@@ -524,71 +579,56 @@ export class QueueService {
   }
 
   /**
-   * Toggle Pause on a queue item (excludes from balancing & upload).
-   * When re-activating, moves the item to the very bottom of the queue.
+   * Toggle Pause state on a queue item
    */
   public static togglePause(queueId: string): QueueItem | null {
     this.ensureLoaded();
     const item = this.items.find(i => i.id === queueId);
     if (!item) return null;
 
-    const wasPaused = !!item.isPaused;
-    item.isPaused = !wasPaused;
-
-    if (wasPaused) {
-      // Re-activating: move item to the very bottom of the queue
-      this.items = this.items.filter(i => i.id !== queueId);
-      this.items.push(item);
-      this.items.forEach((it, idx) => {
-        it.sortOrder = idx;
-      });
-    }
-
+    item.isPaused = !item.isPaused;
     this.saveQueue();
     this.rebalanceQueue();
     return item;
   }
 
   /**
-   * Remove item from queue
+   * Delete an item from the queue
    */
-  public static removeItem(queueId: string): boolean {
+  public static deleteItem(queueId: string): boolean {
     this.ensureLoaded();
-    const prevLen = this.items.length;
-    this.items = this.items.filter(i => i.id !== queueId);
-    if (this.items.length !== prevLen) {
-      this.saveQueue();
-      this.rebalanceQueue();
-      return true;
-    }
-    return false;
+    const index = this.items.findIndex(i => i.id === queueId);
+    if (index === -1) return false;
+
+    this.items.splice(index, 1);
+    // Re-index sortOrder
+    this.items.forEach((item, idx) => {
+      item.sortOrder = idx;
+    });
+
+    this.saveQueue();
+    this.rebalanceQueue();
+    return true;
   }
 
   /**
-   * Reorder items in the queue and trigger dynamic rebalance
+   * Move an item to a specific position (drag & drop reordering)
    */
-  public static reorderItems(orderedIds: string[]): QueueState {
+  public static reorderItems(queueId: string, newIndex: number): QueueState {
     this.ensureLoaded();
-    const idMap = new Map(this.items.map(i => [i.id, i]));
-    const reordered: QueueItem[] = [];
-
-    for (let index = 0; index < orderedIds.length; index++) {
-      const id = orderedIds[index];
-      if (idMap.has(id)) {
-        const item = idMap.get(id)!;
-        item.sortOrder = index;
-        reordered.push(item);
-        idMap.delete(id);
-      }
+    const currentIndex = this.items.findIndex(i => i.id === queueId);
+    if (currentIndex === -1 || newIndex < 0 || newIndex >= this.items.length) {
+      return this.getState();
     }
 
-    // Append any items that weren't in orderedIds
-    for (const remaining of idMap.values()) {
-      remaining.sortOrder = reordered.length;
-      reordered.push(remaining);
-    }
+    const [movedItem] = this.items.splice(currentIndex, 1);
+    this.items.splice(newIndex, 0, movedItem);
 
-    this.items = reordered;
+    // Update sortOrder
+    this.items.forEach((item, idx) => {
+      item.sortOrder = idx;
+    });
+
     this.saveQueue();
     return this.rebalanceQueue();
   }
@@ -608,20 +648,27 @@ export class QueueService {
   }
 
   /**
-   * Core Mathematical Slot Balancing & Capacity Optimization Algorithm
+   * Core Smart Balancing Algorithm
+   * Dynamically adjusts active product count & marketplace slots against daily limit.
    */
   public static rebalanceQueue(freeSlotsOverride?: number): QueueState {
     this.ensureLoaded();
     const settings = loadSettings();
-    const isDraftMode = (settings.queueUploadMode || 'draft') === 'draft';
+    const mode = settings.queueUploadMode || 'draft';
+    const isDraftMode = mode === 'draft';
+    const isLiveMode = mode === 'live';
+    const isHybridMode = mode === 'hybrid';
     const freeDailySlots = freeSlotsOverride !== undefined ? freeSlotsOverride : this.dailySlotsInfo.free;
     const maxDrop = settings.queueMaxDropPerDesign ?? 10;
     const droppableProducts = ProductCatalogService.getDroppableProductsOrdered();
     const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
+    const catalog = ProductCatalogService.getCatalog();
 
     if (this.items.length === 0) {
       return this.getState();
     }
+
+    const isUpdateItem = (i: any) => (i.type === 'update' || i.type === 'UPDATE' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')) || (i.taskId && String(i.taskId).endsWith('-U')));
 
     // 1. Lock slots for currently UPLOADING items
     const uploadingItems = this.items.filter(i => i.status === 'UPLOADING');
@@ -631,32 +678,33 @@ export class QueueService {
       for (const prodId in upItem.activeProductsMap) {
         total += (upItem.activeProductsMap[prodId] || []).length;
       }
-      upItem.allocatedSlots = total;
-      uploadingSlotsReserved += total;
+      if (isUpdateItem(upItem)) {
+        const alreadyPublished = upItem.publishedProductsCount ?? upItem.liveStats?.publishedCount ?? 0;
+        const netSlots = Math.max(0, total - alreadyPublished);
+        upItem.allocatedSlots = netSlots;
+        uploadingSlotsReserved += netSlots;
+      } else {
+        upItem.allocatedSlots = total;
+        uploadingSlotsReserved += total;
+      }
     }
 
     const availableSlotsForWaiting = Math.max(0, freeDailySlots - uploadingSlotsReserved);
     
-    // Set 0 slots for paused waiting items so they do not participate in balancing
+    // 2. Set 0 slots for paused waiting items so they do not participate in balancing
     const pausedWaitingItems = this.items.filter(i => i.status === 'WAITING' && i.isPaused);
     for (const pItem of pausedWaitingItems) {
       pItem.allocatedSlots = 0;
       pItem.droppedSlotsMap = {};
     }
 
-    // Set 0 slots for update items (they update published products with 0 slot consumption)
-    const updateWaitingItems = this.items.filter(i => i.status === 'WAITING' && ((i as any).type === 'update' || (i as any).source === 'UPDATE'));
-    for (const uItem of updateWaitingItems) {
-      uItem.allocatedSlots = 0;
-      uItem.totalBaseSlots = 0;
-      uItem.droppedSlotsMap = {};
-    }
+    // 3. Separate non-paused waiting items into new designs and update designs
+    const nonPausedWaiting = this.items.filter(i => i.status === 'WAITING' && !i.isPaused);
+    const waitingNewItems = nonPausedWaiting.filter(i => !isUpdateItem(i));
+    const waitingUpdateItems = nonPausedWaiting.filter(i => isUpdateItem(i));
 
-    const waitingItems = this.items.filter(i => i.status === 'WAITING' && !i.isPaused && (i as any).type !== 'update' && (i as any).source !== 'UPDATE');
-
-    // 2. Reset each waiting item to its full TM-compliant base allocation
-    const catalog = ProductCatalogService.getCatalog();
-    for (const item of waitingItems) {
+    // 4. Reset & populate each waiting NEW item from latest catalog
+    for (const item of waitingNewItems) {
       const tmBlocked = new Set((item.tmBlockedProductIds || []).map(id => id.toUpperCase()));
       const activeMap: Record<string, string[]> = {};
       let baseSlots = 0;
@@ -674,18 +722,43 @@ export class QueueService {
       item.allocatedSlots = baseSlots;
     }
 
-    // 3. Branching: Draft Mode vs. Live Mode
+    // 5. Reset & populate each waiting UPDATE item from latest catalog & compute net slots
+    for (const uItem of waitingUpdateItems) {
+      const tmBlocked = new Set((uItem.tmBlockedProductIds || []).map(id => id.toUpperCase()));
+      const activeMap: Record<string, string[]> = {};
+      let baseCatalogSlots = 0;
+
+      for (const prod of catalog.products) {
+        if (tmBlocked.has(prod.id.toUpperCase())) continue;
+        const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ['US'];
+        activeMap[prod.id] = mps;
+        baseCatalogSlots += mps.length;
+      }
+
+      uItem.activeProductsMap = activeMap;
+      uItem.droppedSlotsMap = {};
+
+      const alreadyPublished = uItem.publishedProductsCount ?? uItem.liveStats?.publishedCount ?? 0;
+      const netSlots = Math.max(0, baseCatalogSlots - alreadyPublished);
+      uItem.totalBaseSlots = netSlots;
+      uItem.allocatedSlots = netSlots;
+    }
+
+    // 6. Branching based on Mode (Draft, Live, Draft-Hybrid)
     if (isDraftMode) {
-      // DRAFT MODE: Draft uploads do NOT consume daily Amazon publishing slots.
-      // Every waiting item is trimmed to have exactly `draftProductsPerDesign` products.
+      // DRAFT MODE: All waiting new designs uploaded as DRAFT (0 Amazon slots consumed).
+      // Update designs are NOT uploaded in pure Draft mode (allocatedSlots = 0).
+      for (const uItem of waitingUpdateItems) {
+        uItem.allocatedSlots = 0;
+      }
+
       const targetDraftProducts = Math.max(
         Math.max(1, maxCatalogSlots - maxDrop),
         Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? maxCatalogSlots)
       );
 
-      for (const item of waitingItems) {
+      for (const item of waitingNewItems) {
         if (item.isLocked) {
-          // Locked hero designs keep 100% of base slots
           item.allocatedSlots = item.totalBaseSlots;
           continue;
         }
@@ -702,29 +775,31 @@ export class QueueService {
         }
         item.allocatedSlots = total;
       }
-    } else {
-      // LIVE MODE: Publish uploads consume daily free slots quota.
-      // Capacity & Smart Selection: Determine how many waiting designs can fit today
-      let accumulatedMinSlots = 0;
-      const scheduledWaitingItems: QueueItem[] = [];
-      const overflowWaitingItems: QueueItem[] = [];
+    } else if (isLiveMode) {
+      // LIVE MODE: 
+      // Prio 1: New Designs Live (consume daily slots)
+      // Prio 2: Fill remaining slots with Update Designs (consuming their netSlots)
 
-      for (const item of waitingItems) {
+      let accumulatedMinSlots = 0;
+      const scheduledNewItems: QueueItem[] = [];
+      const overflowNewItems: QueueItem[] = [];
+
+      for (const item of waitingNewItems) {
         const minRequired = item.isLocked ? item.totalBaseSlots : Math.max(1, item.totalBaseSlots - maxDrop);
-        if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting || scheduledWaitingItems.length === 0) {
+        if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting || scheduledNewItems.length === 0) {
           accumulatedMinSlots += minRequired;
-          scheduledWaitingItems.push(item);
+          scheduledNewItems.push(item);
         } else {
-          overflowWaitingItems.push(item);
+          overflowNewItems.push(item);
         }
       }
 
-      // Dynamic Slot Balancing across scheduled waiting designs
-      const totalRequestedSlots = scheduledWaitingItems.reduce((sum, item) => sum + item.totalBaseSlots, 0);
+      // Dynamic Slot Balancing across scheduled waiting new designs
+      const totalRequestedSlots = scheduledNewItems.reduce((sum, item) => sum + item.totalBaseSlots, 0);
 
-      if (totalRequestedSlots > availableSlotsForWaiting && scheduledWaitingItems.length > 0) {
+      if (totalRequestedSlots > availableSlotsForWaiting && scheduledNewItems.length > 0) {
         let slotsToDropTotal = totalRequestedSlots - availableSlotsForWaiting;
-        const unlockedScheduled = scheduledWaitingItems.filter(i => !i.isLocked);
+        const unlockedScheduled = scheduledNewItems.filter(i => !i.isLocked);
 
         const dropsPerItem: Record<string, number> = {};
         unlockedScheduled.forEach(i => { dropsPerItem[i.id] = 0; });
@@ -747,17 +822,68 @@ export class QueueService {
         }
       }
 
-      // Update allocatedSlots for all items
-      for (const item of scheduledWaitingItems) {
+      let usedSlotsByNew = 0;
+      for (const item of scheduledNewItems) {
         let total = 0;
         for (const prodId in item.activeProductsMap) {
           total += (item.activeProductsMap[prodId] || []).length;
         }
         item.allocatedSlots = total;
+        usedSlotsByNew += total;
       }
 
-      for (const item of overflowWaitingItems) {
+      for (const item of overflowNewItems) {
         item.allocatedSlots = 0;
+      }
+
+      // Prio 2: Allocate remaining slots to Update Items
+      let remainingSlotsForUpdates = Math.max(0, availableSlotsForWaiting - usedSlotsByNew);
+      for (const uItem of waitingUpdateItems) {
+        if (uItem.totalBaseSlots <= remainingSlotsForUpdates || uItem.totalBaseSlots === 0) {
+          uItem.allocatedSlots = uItem.totalBaseSlots;
+          remainingSlotsForUpdates -= uItem.totalBaseSlots;
+        } else {
+          uItem.allocatedSlots = 0;
+        }
+      }
+    } else if (isHybridMode) {
+      // DRAFT-HYBRID MODE:
+      // Prio 1 (Live): Update Designs uploaded LIVE (utilizing daily slots)
+      // Prio 2 (Draft): New Designs uploaded as DRAFT (0 Amazon slots consumed)
+
+      let remainingLiveSlots = availableSlotsForWaiting;
+      for (const uItem of waitingUpdateItems) {
+        if (uItem.totalBaseSlots <= remainingLiveSlots || uItem.totalBaseSlots === 0) {
+          uItem.allocatedSlots = uItem.totalBaseSlots;
+          remainingLiveSlots -= uItem.totalBaseSlots;
+        } else {
+          uItem.allocatedSlots = 0;
+        }
+      }
+
+      // New designs in Hybrid mode are trimmed to target draft products
+      const targetDraftProducts = Math.max(
+        Math.max(1, maxCatalogSlots - maxDrop),
+        Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? maxCatalogSlots)
+      );
+
+      for (const item of waitingNewItems) {
+        if (item.isLocked) {
+          item.allocatedSlots = item.totalBaseSlots;
+          continue;
+        }
+
+        const dropsNeeded = Math.max(0, item.totalBaseSlots - targetDraftProducts);
+        for (let d = 0; d < dropsNeeded; d++) {
+          const dropped = this.dropOneSlotFromItem(item, droppableProducts);
+          if (!dropped) break;
+        }
+
+        let total = 0;
+        for (const prodId in item.activeProductsMap) {
+          total += (item.activeProductsMap[prodId] || []).length;
+        }
+        item.allocatedSlots = total;
       }
     }
 

@@ -218576,7 +218576,10 @@ var init_queueService = __esm2({
       static getState() {
         this.ensureLoaded();
         const settings = loadSettings();
-        const isDraftMode = (settings.queueUploadMode || "draft") === "draft";
+        const mode = settings.queueUploadMode || "draft";
+        const isDraftMode = mode === "draft";
+        const isLiveMode = mode === "live";
+        const isHybridMode = mode === "hybrid";
         const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
         const maxDrop = settings.queueMaxDropPerDesign ?? 10;
         const defaultDraftProducts = Math.max(1, maxCatalogSlots);
@@ -218584,23 +218587,54 @@ var init_queueService = __esm2({
           Math.max(1, maxCatalogSlots - maxDrop),
           Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? defaultDraftProducts)
         );
+        const isUpdateItem = (i) => i.type === "update" || i.type === "UPDATE" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_") || i.taskId && String(i.taskId).endsWith("-U");
         const activeItems = this.items.filter((i) => i.status === "UPLOADING" || i.status === "WAITING");
         let scheduledSlotsToday = 0;
+        let scheduledLiveSlotsToday = 0;
+        let scheduledDraftProductsToday = 0;
         let scheduledItemsCount = 0;
         let overflowItemsCount = 0;
         for (const item of activeItems) {
+          if (item.isPaused) continue;
+          const isUpdate = isUpdateItem(item);
           if (item.status === "UPLOADING") {
-            scheduledSlotsToday += item.allocatedSlots || item.totalBaseSlots || 0;
+            const slots = item.allocatedSlots ?? item.totalBaseSlots ?? 0;
+            scheduledSlotsToday += slots;
             scheduledItemsCount++;
-          } else if (item.status === "WAITING") {
-            if (item.isPaused) {
-              continue;
-            }
-            if (isDraftMode || item.allocatedSlots && item.allocatedSlots > 0) {
-              scheduledSlotsToday += item.allocatedSlots || 0;
-              scheduledItemsCount++;
+            if (isUpdate || isLiveMode) {
+              scheduledLiveSlotsToday += slots;
             } else {
-              overflowItemsCount++;
+              scheduledDraftProductsToday += slots;
+            }
+          } else if (item.status === "WAITING") {
+            if (isDraftMode) {
+              if (!isUpdate) {
+                const slots = item.allocatedSlots || draftProductsPerDesign;
+                scheduledDraftProductsToday += slots;
+                scheduledSlotsToday += slots;
+                scheduledItemsCount++;
+              }
+            } else if (isLiveMode) {
+              if (item.allocatedSlots !== void 0 && item.allocatedSlots > 0) {
+                scheduledLiveSlotsToday += item.allocatedSlots;
+                scheduledSlotsToday += item.allocatedSlots;
+                scheduledItemsCount++;
+              } else if (isUpdate && item.totalBaseSlots === 0) {
+                scheduledItemsCount++;
+              } else {
+                overflowItemsCount++;
+              }
+            } else if (isHybridMode) {
+              if (isUpdate) {
+                scheduledLiveSlotsToday += item.allocatedSlots || 0;
+                scheduledSlotsToday += item.allocatedSlots || 0;
+                scheduledItemsCount++;
+              } else {
+                const draftSlots = item.allocatedSlots || draftProductsPerDesign;
+                scheduledDraftProductsToday += draftSlots;
+                scheduledSlotsToday += draftSlots;
+                scheduledItemsCount++;
+              }
             }
           }
         }
@@ -218610,13 +218644,15 @@ var init_queueService = __esm2({
           usedSlotsToday: this.dailySlotsInfo.used,
           totalDailySlots: this.dailySlotsInfo.total,
           scheduledSlotsToday,
+          scheduledLiveSlotsToday,
+          scheduledDraftProductsToday,
           scheduledItemsCount,
           overflowItemsCount,
           uploadScheduleTime: settings.queueUploadScheduleTime || "off",
           maxDropPerDesign: maxDrop,
           autoBalance: settings.queueAutoBalance ?? true,
           maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),
-          uploadMode: settings.queueUploadMode || "draft",
+          uploadMode: mode,
           draftProductsPerDesign,
           maxCatalogSlots,
           updateTargetCount: settings.queueUpdateTargetCount ?? 10,
@@ -218634,7 +218670,7 @@ var init_queueService = __esm2({
           return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
         };
         const existing = this.items.find((i) => i.taskId === item.taskId);
-        const isUpdate = item.source === "UPDATE" || item.type === "update";
+        const isUpdate = item.source === "UPDATE" || item.type === "update" || item.taskId && item.taskId.endsWith("-U");
         if (existing) {
           existing.status = "WAITING";
           existing.errorMessage = void 0;
@@ -218652,10 +218688,8 @@ var init_queueService = __esm2({
           if (item.source) existing.source = item.source;
           if (item.type) existing.type = item.type;
           if (item.designId) existing.designId = item.designId;
-          if (isUpdate) {
-            existing.allocatedSlots = 0;
-            existing.totalBaseSlots = 0;
-          }
+          if (item.publishedProductsCount !== void 0) existing.publishedProductsCount = item.publishedProductsCount;
+          if (item.liveStats !== void 0) existing.liveStats = item.liveStats;
           this.saveQueue();
           this.rebalanceQueue();
           return existing;
@@ -218670,6 +218704,8 @@ var init_queueService = __esm2({
           activeProductsMap[prod.id] = mps;
           totalBaseSlots += mps.length;
         }
+        const alreadyPublished = item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 0;
+        const netSlots = isUpdate ? Math.max(0, totalBaseSlots - alreadyPublished) : totalBaseSlots;
         const newItem = {
           id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           taskId: item.taskId,
@@ -218697,15 +218733,17 @@ var init_queueService = __esm2({
           addedAt: (/* @__PURE__ */ new Date()).toISOString(),
           status: "WAITING",
           isLocked: false,
-          allocatedSlots: isUpdate ? 0 : totalBaseSlots,
-          totalBaseSlots: isUpdate ? 0 : totalBaseSlots,
+          allocatedSlots: netSlots,
+          totalBaseSlots: netSlots,
           activeProductsMap,
           droppedSlotsMap: {},
           tmBlockedProductIds: item.tmBlockedProductIds || [],
           sortOrder: this.items.length,
           source: item.source || (isUpdate ? "UPDATE" : "NEW"),
           type: item.type || (isUpdate ? "update" : "new"),
-          designId: item.designId
+          designId: item.designId,
+          publishedProductsCount: item.publishedProductsCount,
+          liveStats: item.liveStats
         };
         this.items.push(newItem);
         this.saveQueue();
@@ -218763,61 +218801,46 @@ var init_queueService = __esm2({
         return item;
       }
       /**
-       * Toggle Pause on a queue item (excludes from balancing & upload).
-       * When re-activating, moves the item to the very bottom of the queue.
+       * Toggle Pause state on a queue item
        */
       static togglePause(queueId) {
         this.ensureLoaded();
         const item = this.items.find((i) => i.id === queueId);
         if (!item) return null;
-        const wasPaused = !!item.isPaused;
-        item.isPaused = !wasPaused;
-        if (wasPaused) {
-          this.items = this.items.filter((i) => i.id !== queueId);
-          this.items.push(item);
-          this.items.forEach((it, idx) => {
-            it.sortOrder = idx;
-          });
-        }
+        item.isPaused = !item.isPaused;
         this.saveQueue();
         this.rebalanceQueue();
         return item;
       }
       /**
-       * Remove item from queue
+       * Delete an item from the queue
        */
-      static removeItem(queueId) {
+      static deleteItem(queueId) {
         this.ensureLoaded();
-        const prevLen = this.items.length;
-        this.items = this.items.filter((i) => i.id !== queueId);
-        if (this.items.length !== prevLen) {
-          this.saveQueue();
-          this.rebalanceQueue();
-          return true;
-        }
-        return false;
+        const index = this.items.findIndex((i) => i.id === queueId);
+        if (index === -1) return false;
+        this.items.splice(index, 1);
+        this.items.forEach((item, idx) => {
+          item.sortOrder = idx;
+        });
+        this.saveQueue();
+        this.rebalanceQueue();
+        return true;
       }
       /**
-       * Reorder items in the queue and trigger dynamic rebalance
+       * Move an item to a specific position (drag & drop reordering)
        */
-      static reorderItems(orderedIds) {
+      static reorderItems(queueId, newIndex) {
         this.ensureLoaded();
-        const idMap = new Map(this.items.map((i) => [i.id, i]));
-        const reordered = [];
-        for (let index = 0; index < orderedIds.length; index++) {
-          const id = orderedIds[index];
-          if (idMap.has(id)) {
-            const item = idMap.get(id);
-            item.sortOrder = index;
-            reordered.push(item);
-            idMap.delete(id);
-          }
+        const currentIndex = this.items.findIndex((i) => i.id === queueId);
+        if (currentIndex === -1 || newIndex < 0 || newIndex >= this.items.length) {
+          return this.getState();
         }
-        for (const remaining of idMap.values()) {
-          remaining.sortOrder = reordered.length;
-          reordered.push(remaining);
-        }
-        this.items = reordered;
+        const [movedItem] = this.items.splice(currentIndex, 1);
+        this.items.splice(newIndex, 0, movedItem);
+        this.items.forEach((item, idx) => {
+          item.sortOrder = idx;
+        });
         this.saveQueue();
         return this.rebalanceQueue();
       }
@@ -218835,19 +218858,25 @@ var init_queueService = __esm2({
         this.rebalanceQueue();
       }
       /**
-       * Core Mathematical Slot Balancing & Capacity Optimization Algorithm
+       * Core Smart Balancing Algorithm
+       * Dynamically adjusts active product count & marketplace slots against daily limit.
        */
       static rebalanceQueue(freeSlotsOverride) {
         this.ensureLoaded();
         const settings = loadSettings();
-        const isDraftMode = (settings.queueUploadMode || "draft") === "draft";
+        const mode = settings.queueUploadMode || "draft";
+        const isDraftMode = mode === "draft";
+        const isLiveMode = mode === "live";
+        const isHybridMode = mode === "hybrid";
         const freeDailySlots = freeSlotsOverride !== void 0 ? freeSlotsOverride : this.dailySlotsInfo.free;
         const maxDrop = settings.queueMaxDropPerDesign ?? 10;
         const droppableProducts = ProductCatalogService.getDroppableProductsOrdered();
         const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
+        const catalog = ProductCatalogService.getCatalog();
         if (this.items.length === 0) {
           return this.getState();
         }
+        const isUpdateItem = (i) => i.type === "update" || i.type === "UPDATE" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_") || i.taskId && String(i.taskId).endsWith("-U");
         const uploadingItems = this.items.filter((i) => i.status === "UPLOADING");
         let uploadingSlotsReserved = 0;
         for (const upItem of uploadingItems) {
@@ -218855,8 +218884,15 @@ var init_queueService = __esm2({
           for (const prodId in upItem.activeProductsMap) {
             total += (upItem.activeProductsMap[prodId] || []).length;
           }
-          upItem.allocatedSlots = total;
-          uploadingSlotsReserved += total;
+          if (isUpdateItem(upItem)) {
+            const alreadyPublished = upItem.publishedProductsCount ?? upItem.liveStats?.publishedCount ?? 0;
+            const netSlots = Math.max(0, total - alreadyPublished);
+            upItem.allocatedSlots = netSlots;
+            uploadingSlotsReserved += netSlots;
+          } else {
+            upItem.allocatedSlots = total;
+            uploadingSlotsReserved += total;
+          }
         }
         const availableSlotsForWaiting = Math.max(0, freeDailySlots - uploadingSlotsReserved);
         const pausedWaitingItems = this.items.filter((i) => i.status === "WAITING" && i.isPaused);
@@ -218864,15 +218900,10 @@ var init_queueService = __esm2({
           pItem.allocatedSlots = 0;
           pItem.droppedSlotsMap = {};
         }
-        const updateWaitingItems = this.items.filter((i) => i.status === "WAITING" && (i.type === "update" || i.source === "UPDATE"));
-        for (const uItem of updateWaitingItems) {
-          uItem.allocatedSlots = 0;
-          uItem.totalBaseSlots = 0;
-          uItem.droppedSlotsMap = {};
-        }
-        const waitingItems = this.items.filter((i) => i.status === "WAITING" && !i.isPaused && i.type !== "update" && i.source !== "UPDATE");
-        const catalog = ProductCatalogService.getCatalog();
-        for (const item of waitingItems) {
+        const nonPausedWaiting = this.items.filter((i) => i.status === "WAITING" && !i.isPaused);
+        const waitingNewItems = nonPausedWaiting.filter((i) => !isUpdateItem(i));
+        const waitingUpdateItems = nonPausedWaiting.filter((i) => isUpdateItem(i));
+        for (const item of waitingNewItems) {
           const tmBlocked = new Set((item.tmBlockedProductIds || []).map((id) => id.toUpperCase()));
           const activeMap = {};
           let baseSlots = 0;
@@ -218887,12 +218918,32 @@ var init_queueService = __esm2({
           item.totalBaseSlots = baseSlots;
           item.allocatedSlots = baseSlots;
         }
+        for (const uItem of waitingUpdateItems) {
+          const tmBlocked = new Set((uItem.tmBlockedProductIds || []).map((id) => id.toUpperCase()));
+          const activeMap = {};
+          let baseCatalogSlots = 0;
+          for (const prod of catalog.products) {
+            if (tmBlocked.has(prod.id.toUpperCase())) continue;
+            const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ["US"];
+            activeMap[prod.id] = mps;
+            baseCatalogSlots += mps.length;
+          }
+          uItem.activeProductsMap = activeMap;
+          uItem.droppedSlotsMap = {};
+          const alreadyPublished = uItem.publishedProductsCount ?? uItem.liveStats?.publishedCount ?? 0;
+          const netSlots = Math.max(0, baseCatalogSlots - alreadyPublished);
+          uItem.totalBaseSlots = netSlots;
+          uItem.allocatedSlots = netSlots;
+        }
         if (isDraftMode) {
+          for (const uItem of waitingUpdateItems) {
+            uItem.allocatedSlots = 0;
+          }
           const targetDraftProducts = Math.max(
             Math.max(1, maxCatalogSlots - maxDrop),
             Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? maxCatalogSlots)
           );
-          for (const item of waitingItems) {
+          for (const item of waitingNewItems) {
             if (item.isLocked) {
               item.allocatedSlots = item.totalBaseSlots;
               continue;
@@ -218908,23 +218959,23 @@ var init_queueService = __esm2({
             }
             item.allocatedSlots = total;
           }
-        } else {
+        } else if (isLiveMode) {
           let accumulatedMinSlots = 0;
-          const scheduledWaitingItems = [];
-          const overflowWaitingItems = [];
-          for (const item of waitingItems) {
+          const scheduledNewItems = [];
+          const overflowNewItems = [];
+          for (const item of waitingNewItems) {
             const minRequired = item.isLocked ? item.totalBaseSlots : Math.max(1, item.totalBaseSlots - maxDrop);
-            if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting || scheduledWaitingItems.length === 0) {
+            if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting || scheduledNewItems.length === 0) {
               accumulatedMinSlots += minRequired;
-              scheduledWaitingItems.push(item);
+              scheduledNewItems.push(item);
             } else {
-              overflowWaitingItems.push(item);
+              overflowNewItems.push(item);
             }
           }
-          const totalRequestedSlots = scheduledWaitingItems.reduce((sum, item) => sum + item.totalBaseSlots, 0);
-          if (totalRequestedSlots > availableSlotsForWaiting && scheduledWaitingItems.length > 0) {
+          const totalRequestedSlots = scheduledNewItems.reduce((sum, item) => sum + item.totalBaseSlots, 0);
+          if (totalRequestedSlots > availableSlotsForWaiting && scheduledNewItems.length > 0) {
             let slotsToDropTotal = totalRequestedSlots - availableSlotsForWaiting;
-            const unlockedScheduled = scheduledWaitingItems.filter((i) => !i.isLocked);
+            const unlockedScheduled = scheduledNewItems.filter((i) => !i.isLocked);
             const dropsPerItem = {};
             unlockedScheduled.forEach((i) => {
               dropsPerItem[i.id] = 0;
@@ -218946,15 +218997,56 @@ var init_queueService = __esm2({
               }
             }
           }
-          for (const item of scheduledWaitingItems) {
+          let usedSlotsByNew = 0;
+          for (const item of scheduledNewItems) {
             let total = 0;
             for (const prodId in item.activeProductsMap) {
               total += (item.activeProductsMap[prodId] || []).length;
             }
             item.allocatedSlots = total;
+            usedSlotsByNew += total;
           }
-          for (const item of overflowWaitingItems) {
+          for (const item of overflowNewItems) {
             item.allocatedSlots = 0;
+          }
+          let remainingSlotsForUpdates = Math.max(0, availableSlotsForWaiting - usedSlotsByNew);
+          for (const uItem of waitingUpdateItems) {
+            if (uItem.totalBaseSlots <= remainingSlotsForUpdates || uItem.totalBaseSlots === 0) {
+              uItem.allocatedSlots = uItem.totalBaseSlots;
+              remainingSlotsForUpdates -= uItem.totalBaseSlots;
+            } else {
+              uItem.allocatedSlots = 0;
+            }
+          }
+        } else if (isHybridMode) {
+          let remainingLiveSlots = availableSlotsForWaiting;
+          for (const uItem of waitingUpdateItems) {
+            if (uItem.totalBaseSlots <= remainingLiveSlots || uItem.totalBaseSlots === 0) {
+              uItem.allocatedSlots = uItem.totalBaseSlots;
+              remainingLiveSlots -= uItem.totalBaseSlots;
+            } else {
+              uItem.allocatedSlots = 0;
+            }
+          }
+          const targetDraftProducts = Math.max(
+            Math.max(1, maxCatalogSlots - maxDrop),
+            Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? maxCatalogSlots)
+          );
+          for (const item of waitingNewItems) {
+            if (item.isLocked) {
+              item.allocatedSlots = item.totalBaseSlots;
+              continue;
+            }
+            const dropsNeeded = Math.max(0, item.totalBaseSlots - targetDraftProducts);
+            for (let d = 0; d < dropsNeeded; d++) {
+              const dropped = this.dropOneSlotFromItem(item, droppableProducts);
+              if (!dropped) break;
+            }
+            let total = 0;
+            for (const prodId in item.activeProductsMap) {
+              total += (item.activeProductsMap[prodId] || []).length;
+            }
+            item.allocatedSlots = total;
           }
         }
         this.saveQueue();
@@ -219864,7 +219956,9 @@ Source EN Listing:
             fitTypes: task.analysisResult?.fitTypes || ["men", "women"],
             avoidColor: task.analysisResult?.avoidColor || "none",
             imagePath: task.localImagePath || "",
-            pngPath: task.localMbaPngPath || ""
+            pngPath: task.localMbaPngPath || "",
+            publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
+            liveStats: task.payload?.liveStats || null
           });
           TaskLogService.updateTaskStatus(taskId, {
             status: "UPDATE_QUEUED",
@@ -223134,20 +223228,28 @@ var UploadWorkerService = class _UploadWorkerService {
       return { success: false, message: "Es l\xE4uft bereits ein Upload-Vorgang." };
     }
     const state = QueueService.getState();
+    const queueMode = state.uploadMode || "draft";
     let targetItem;
     const isUpdate = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE" || Boolean(i.designId) || i.taskId && String(i.taskId).endsWith("-U");
     if (queueItemId) {
       targetItem = state.items.find((i) => i.id === queueItemId);
     } else {
-      const newWaiting = state.items.filter((i) => i.status === "WAITING" && !i.isPaused && !isUpdate(i) && (mode === "draft" || i.allocatedSlots && i.allocatedSlots > 0));
+      const newWaiting = state.items.filter((i) => i.status === "WAITING" && !i.isPaused && !isUpdate(i));
       const updateWaiting = state.items.filter((i) => i.status === "WAITING" && !i.isPaused && isUpdate(i));
-      targetItem = newWaiting.length > 0 ? newWaiting[0] : updateWaiting[0];
+      if (queueMode === "hybrid") {
+        targetItem = updateWaiting.length > 0 ? updateWaiting[0] : newWaiting[0];
+      } else if (queueMode === "live") {
+        const newWithSlots = newWaiting.filter((i) => i.allocatedSlots && i.allocatedSlots > 0);
+        targetItem = newWithSlots.length > 0 ? newWithSlots[0] : updateWaiting[0];
+      } else {
+        targetItem = newWaiting.length > 0 ? newWaiting[0] : void 0;
+      }
     }
     if (!targetItem) {
       return { success: false, message: "Kein bereitstehendes Design in der Queue gefunden." };
     }
     const isUpdateItem = isUpdate(targetItem);
-    const effectiveMode = isUpdateItem ? "publish" : mode;
+    const effectiveMode = isUpdateItem ? "publish" : queueMode === "live" || mode === "publish" ? "publish" : "draft";
     this.isUploading = true;
     this.abortRequested = false;
     this.currentQueueId = targetItem.id;

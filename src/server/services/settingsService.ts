@@ -41,7 +41,7 @@ export interface AppSettings {
   queueUploadScheduleTime: string; // e.g. "04:00" or "off"
   queueMaxDropPerDesign: number;   // e.g. 10
   queueAutoBalance: boolean;       // e.g. true
-  queueUploadMode: 'draft' | 'live'; // e.g. 'draft' or 'live'
+  queueUploadMode: 'draft' | 'live' | 'hybrid'; // e.g. 'draft', 'live', or 'hybrid'
   queueDraftProductsPerDesign: number; // e.g. 106
   queueUpdateTargetCount: number;      // e.g. 10
   queueUpdateAutoBackfillEnabled: boolean; // e.g. false (defaults to OFF)

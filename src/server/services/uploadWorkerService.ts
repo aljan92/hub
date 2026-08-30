@@ -102,6 +102,7 @@ export class UploadWorkerService {
     }
 
     const state = QueueService.getState();
+    const queueMode = state.uploadMode || 'draft';
     let targetItem: QueueItem | undefined;
 
     const isUpdate = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || Boolean(i.designId) || (i.taskId && String(i.taskId).endsWith('-U')));
@@ -109,13 +110,20 @@ export class UploadWorkerService {
     if (queueItemId) {
       targetItem = state.items.find(i => i.id === queueItemId);
     } else {
-      // Pick first non-paused waiting item:
-      // Priority 1: New creation designs with allocatedSlots > 0 or in draft mode
-      // Priority 2: Update designs (0 slots)
-      const newWaiting = state.items.filter(i => i.status === 'WAITING' && !i.isPaused && !isUpdate(i) && (mode === 'draft' || (i.allocatedSlots && i.allocatedSlots > 0)));
+      const newWaiting = state.items.filter(i => i.status === 'WAITING' && !i.isPaused && !isUpdate(i));
       const updateWaiting = state.items.filter(i => i.status === 'WAITING' && !i.isPaused && isUpdate(i));
-      
-      targetItem = newWaiting.length > 0 ? newWaiting[0] : updateWaiting[0];
+
+      if (queueMode === 'hybrid') {
+        // Hybrid: Prio 1 Updates (Live), Prio 2 New Designs (Draft)
+        targetItem = updateWaiting.length > 0 ? updateWaiting[0] : newWaiting[0];
+      } else if (queueMode === 'live') {
+        // Live: Prio 1 New Designs (Live with slots), Prio 2 Updates
+        const newWithSlots = newWaiting.filter(i => (i.allocatedSlots && i.allocatedSlots > 0));
+        targetItem = newWithSlots.length > 0 ? newWithSlots[0] : updateWaiting[0];
+      } else {
+        // Draft: Only New Designs as Draft
+        targetItem = newWaiting.length > 0 ? newWaiting[0] : undefined;
+      }
     }
 
     if (!targetItem) {
@@ -123,7 +131,8 @@ export class UploadWorkerService {
     }
 
     const isUpdateItem = isUpdate(targetItem);
-    const effectiveMode: 'draft' | 'publish' = isUpdateItem ? 'publish' : mode; // Update designs are ALWAYS live!
+    // Update designs are ALWAYS Live (publish). New designs follow queueMode or passed mode.
+    const effectiveMode: 'draft' | 'publish' = isUpdateItem ? 'publish' : (queueMode === 'live' || mode === 'publish' ? 'publish' : 'draft');
 
     this.isUploading = true;
     this.abortRequested = false;

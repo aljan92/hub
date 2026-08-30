@@ -459,7 +459,9 @@ export class UpdatePipelineService {
         fitTypes: task.analysisResult?.fitTypes || ['men', 'women'],
         avoidColor: task.analysisResult?.avoidColor || 'none',
         imagePath: task.localImagePath || '',
-        pngPath: task.localMbaPngPath || ''
+        pngPath: task.localMbaPngPath || '',
+        publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
+        liveStats: task.payload?.liveStats || null
       });
 
       TaskLogService.updateTaskStatus(taskId, {
