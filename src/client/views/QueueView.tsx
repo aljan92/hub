@@ -97,6 +97,7 @@ interface QueueState {
   updateTargetCount?: number;
   updateAutoBackfillEnabled?: boolean;
   updateMaxActiveProducts?: number;
+  updateCurrentCount?: number;
   scheduledLiveSlotsToday?: number;
   scheduledDraftProductsToday?: number;
   catalogProducts?: any[];
@@ -1813,6 +1814,41 @@ export const QueueView: React.FC = () => {
                   </div>
                   <span className="text-[11px] text-slate-500">Designs</span>
                 </div>
+
+                {/* 2b. IST vs. SOLL Pool-Status Badge */}
+                {(() => {
+                  const recognizedCount = queueState.updateCurrentCount ?? updateDesigns.length;
+                  const isFull = recognizedCount >= updateTargetCount;
+                  return (
+                    <div 
+                      className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl border text-xs font-mono transition-all ${
+                        isFull 
+                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 shadow-sm shadow-emerald-950/20' 
+                          : updateAutoBackfill 
+                            ? 'bg-amber-950/40 border-amber-500/40 text-amber-300 shadow-sm shadow-amber-950/20'
+                            : 'bg-slate-900/90 border-slate-800 text-slate-400'
+                      }`}
+                      title={`Automatik erkennt aktuell ${recognizedCount} aktive Update-Designs im Hub (Soll: ${updateTargetCount})`}
+                    >
+                      <span className="font-sans font-semibold text-[11px] text-slate-400">Pool-Bestand:</span>
+                      <div className="flex items-center space-x-1.5 font-bold">
+                        <span className={isFull ? 'text-emerald-400' : 'text-amber-400'}>
+                          IST: {recognizedCount}
+                        </span>
+                        <span className="text-slate-600">/</span>
+                        <span className="text-teal-400">
+                          SOLL: {updateTargetCount}
+                        </span>
+                      </div>
+                      {!isFull && updateAutoBackfill && (
+                        <span className="flex h-2 w-2 relative ml-0.5" title="Automatik zieht neues Design...">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* 3. Max Live Products Filter */}
                 <div className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl" title="Überspringt Designs aus Supabase mit dieser oder höherer Anzahl an Live-Produkten">

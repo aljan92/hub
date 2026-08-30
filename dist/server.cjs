@@ -218396,23 +218396,1282 @@ var init_productCatalogService = __esm2({
   }
 });
 
+// src/server/services/amazonInspectService.ts
+var import_fs76, import_path71, FIND_LISTINGS_URL2, PRODUCT_CONFIG_URL2, ALL_STATUSES2, AmazonInspectService;
+var init_amazonInspectService = __esm2({
+  "src/server/services/amazonInspectService.ts"() {
+    "use strict";
+    import_fs76 = __toESM2(require("fs"), 1);
+    import_path71 = __toESM2(require("path"), 1);
+    init_browserSessionService();
+    init_syncEngine();
+    init_taskLogService();
+    FIND_LISTINGS_URL2 = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
+    PRODUCT_CONFIG_URL2 = "https://merch.amazon.com/api/productconfiguration/get?id=";
+    ALL_STATUSES2 = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
+    AmazonInspectService = class {
+      /**
+       * Ensure Session 1 is open and on merch.amazon.com
+       */
+      static async getAuthenticatedPage() {
+        const session2 = await BrowserSessionService.getSession("sync");
+        const currentUrl = session2.page.url();
+        if (!currentUrl.includes("merch.amazon.com")) {
+          await session2.page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 });
+        }
+        return session2.page;
+      }
+      /**
+       * Fetch Product Config (Listing texts, brands, bullets, descriptions, colors, products)
+       */
+      static async inspectProductConfig(designId) {
+        const cleanId = (designId || "").replace(/^#/, "").replace(/-U$/, "").trim();
+        const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+        const targetUrl = `${PRODUCT_CONFIG_URL2}${cleanId}`;
+        if (!cleanId) {
+          return {
+            success: false,
+            endpoint: "productconfig",
+            designId: cleanId,
+            error: "Keine Design-ID (UUID) angegeben.",
+            timestamp
+          };
+        }
+        try {
+          const page = await this.getAuthenticatedPage();
+          const result2 = await page.evaluate(async ({ url, dId }) => {
+            try {
+              const resp = await fetch(url, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                credentials: "include"
+              });
+              const status = resp.status;
+              const ok = resp.ok;
+              const redirectedToLogin = resp.url?.includes("signin") || resp.url?.includes("ap/signin");
+              if (redirectedToLogin) {
+                return {
+                  ok: false,
+                  status: 401,
+                  error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
+                  data: null
+                };
+              }
+              let json = null;
+              let text2 = "";
+              try {
+                json = await resp.json();
+              } catch (e) {
+                text2 = await resp.text().catch(() => "");
+              }
+              return {
+                ok,
+                status,
+                data: json || text2,
+                error: ok ? null : `HTTP ${status}: ${resp.statusText || text2 || "Fehler beim Abruf"}`
+              };
+            } catch (fetchErr) {
+              return {
+                ok: false,
+                status: 0,
+                error: fetchErr.message || "Netzwerkfehler im Browserkontext",
+                data: null
+              };
+            }
+          }, { url: targetUrl, dId: cleanId });
+          return {
+            success: result2.ok,
+            endpoint: "productconfig",
+            designId: cleanId,
+            url: targetUrl,
+            data: result2.data,
+            error: result2.error || void 0,
+            status: result2.status,
+            timestamp,
+            metadata: {
+              hasTextData: !!(result2.data && typeof result2.data === "object" && result2.data.textData),
+              languages: result2.data?.textData ? Object.keys(result2.data.textData) : []
+            }
+          };
+        } catch (err) {
+          return {
+            success: false,
+            endpoint: "productconfig",
+            designId: cleanId,
+            url: targetUrl,
+            error: `Browser Session Fehler: ${err.message}`,
+            timestamp
+          };
+        }
+      }
+      /**
+       * Query FindListings Coral RPC and extract status & product information
+       */
+      static async inspectFindListings(designId) {
+        const cleanId = (designId || "").trim();
+        const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+        try {
+          const page = await this.getAuthenticatedPage();
+          const accountId = await SyncEngine.getAccountId(page);
+          const result2 = await page.evaluate(async ({ accountId: accountId2, url, allStatuses, targetDesignId }) => {
+            const body = {
+              pageSize: 500,
+              sortField: "DateUpdated",
+              sortOrder: "Descending",
+              status: allStatuses,
+              marketplaces: null,
+              productTypes: null,
+              searchableOnRetail: null,
+              deleteReasonType: ["", "CONTENT_POLICY_VIOLATION", "INACTIVE_NO_SALES", "CONTENT_CREATOR"],
+              accountId: accountId2 || null,
+              pageToken: [],
+              __type: "com.amazon.merch.search#FindListingsRequest"
+            };
+            try {
+              const resp = await fetch(url, {
+                method: "POST",
+                headers: {
+                  "Accept": "application/json",
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify(body),
+                credentials: "include"
+              });
+              const status = resp.status;
+              const ok = resp.ok;
+              if (resp.url?.includes("signin") || resp.url?.includes("ap/signin")) {
+                return {
+                  ok: false,
+                  status: 401,
+                  error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
+                  data: null
+                };
+              }
+              let json = null;
+              let text2 = "";
+              try {
+                json = await resp.json();
+              } catch (e) {
+                text2 = await resp.text().catch(() => "");
+              }
+              if (!ok) {
+                return {
+                  ok: false,
+                  status,
+                  error: `FindListings HTTP ${status}: ${resp.statusText || text2}`,
+                  data: json || text2
+                };
+              }
+              const rawResults = json?.results || [];
+              let filteredResults = rawResults;
+              let isDesignMatched = false;
+              if (targetDesignId) {
+                filteredResults = rawResults.filter(
+                  (r) => r.designId && r.designId.toLowerCase() === targetDesignId.toLowerCase() || r.asin && r.asin.toLowerCase() === targetDesignId.toLowerCase() || r.listingId && r.listingId.toLowerCase() === targetDesignId.toLowerCase()
+                );
+                isDesignMatched = filteredResults.length > 0;
+              }
+              const statusSummary = {};
+              for (const item of filteredResults) {
+                const st = item.status || "UNKNOWN";
+                statusSummary[st] = (statusSummary[st] || 0) + 1;
+              }
+              return {
+                ok: true,
+                status,
+                data: {
+                  targetDesignId: targetDesignId || null,
+                  matchedResultsCount: filteredResults.length,
+                  totalResultsInBatch: rawResults.length,
+                  statusSummary,
+                  isDesignMatched,
+                  items: targetDesignId ? filteredResults : rawResults.slice(0, 50),
+                  rawFullResponse: targetDesignId ? { ...json, results: filteredResults } : json
+                },
+                error: null
+              };
+            } catch (fetchErr) {
+              return {
+                ok: false,
+                status: 0,
+                error: fetchErr.message || "Netzwerkfehler im Browserkontext",
+                data: null
+              };
+            }
+          }, { accountId, url: FIND_LISTINGS_URL2, allStatuses: ALL_STATUSES2, targetDesignId: cleanId });
+          return {
+            success: result2.ok,
+            endpoint: "findlistings",
+            designId: cleanId,
+            url: FIND_LISTINGS_URL2,
+            data: result2.data,
+            error: result2.error || void 0,
+            status: result2.status,
+            timestamp,
+            metadata: {
+              matchedCount: result2.data?.matchedResultsCount || 0,
+              isDesignMatched: !!result2.data?.isDesignMatched,
+              statusSummary: result2.data?.statusSummary || {}
+            }
+          };
+        } catch (err) {
+          return {
+            success: false,
+            endpoint: "findlistings",
+            designId: cleanId,
+            url: FIND_LISTINGS_URL2,
+            error: `Browser Session Fehler: ${err.message}`,
+            timestamp
+          };
+        }
+      }
+      /**
+       * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
+       */
+      static async createUpdateTaskFromAmazon(designId) {
+        const cleanId = (designId || "").replace(/^#/, "").replace(/-U$/, "").trim();
+        if (!cleanId) {
+          throw new Error("Keine Design-ID (UUID) angegeben.");
+        }
+        const configRes = await this.inspectProductConfig(cleanId);
+        if (!configRes.success || !configRes.data) {
+          throw new Error(configRes.error || `Product Config f\xFCr Design ${cleanId} konnte nicht von Amazon geladen werden.`);
+        }
+        const configData = configRes.data;
+        const textData = configData.textData || {};
+        const masterListing = textData.en || textData.de || Object.values(textData)[0] || {};
+        const title = masterListing.title || "Amazon Merch Update Task";
+        const brand = masterListing.brandName || "";
+        const bullets = masterListing.bullets || [];
+        const description = masterListing.description || "";
+        const products = configData.products || {};
+        const productTypes = Object.keys(products);
+        let totalConfiguredSlots = 0;
+        const productSummary = {};
+        for (const [pKey, pVal] of Object.entries(products)) {
+          const marketplaces = Object.keys(pVal.marketplaceData || {});
+          totalConfiguredSlots += Math.max(1, marketplaces.length);
+          productSummary[pKey] = {
+            fits: pVal.dimensions?.FIT || [],
+            colors: pVal.dimensions?.COLOR || [],
+            marketplaces,
+            artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
+          };
+        }
+        if (productTypes.length === 0 && totalConfiguredSlots === 0) {
+          throw new Error(`Design ${cleanId} hat keine konfigurierten Produkte auf Amazon.`);
+        }
+        let statusSummary = {};
+        let publishedCount = totalConfiguredSlots;
+        let matchedItems = [];
+        let findData = null;
+        try {
+          const findRes = await this.inspectFindListings(cleanId);
+          if (findRes.success && findRes.data) {
+            findData = findRes.data;
+            statusSummary = findData.statusSummary || {};
+            matchedItems = findData.items || [];
+            const processingStatuses = ["PUBLISHING", "PROCESSING", "TRANSLATING", "REVIEW", "UNDER_REVIEW", "LOCKED", "PENDING"];
+            const activeProcessing = processingStatuses.filter((s) => (statusSummary[s] || 0) > 0);
+            if (activeProcessing.length > 0) {
+              const details = activeProcessing.map((s) => `${s}: ${statusSummary[s]}`).join(", ");
+              throw new Error(`Design ${cleanId} ist aktuell auf Amazon gesperrt/in Bearbeitung (${details}).`);
+            }
+            if (findData.isDesignMatched) {
+              const directPublished = (statusSummary.PUBLISHED || 0) + (statusSummary.PROPAGATED || 0);
+              if (directPublished > 0) {
+                publishedCount = directPublished;
+              }
+            }
+          }
+        } catch (fErr) {
+          if (fErr.message?.includes("gesperrt/in Bearbeitung")) {
+            throw fErr;
+          }
+          console.warn(`[AmazonInspectService] \u2139\uFE0F FindListings Vorab-Check f\xFCr Design ${cleanId}: ${fErr.message}`);
+        }
+        const payload = {
+          designId: cleanId,
+          editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
+          globalArtworkUrn: configData.globalArtworkUrn || null,
+          title,
+          brand,
+          bullets,
+          description,
+          masterListing,
+          textData,
+          productTypes,
+          productSummary,
+          liveStats: {
+            totalVariantsFound: matchedItems.length > 0 ? matchedItems.length : totalConfiguredSlots,
+            statusSummary: Object.keys(statusSummary).length > 0 ? statusSummary : { PUBLISHED: totalConfiguredSlots },
+            publishedCount,
+            isAllPublished: true,
+            estimatedSlotSavings: `${publishedCount} Live-Varianten (0 Slot-Verbrauch)`
+          },
+          rawProductConfig: configData,
+          rawFindListings: findData
+        };
+        const taskLog = TaskLogService2.createTaskLog({
+          source: "UPDATE",
+          payload
+        });
+        TaskLogService2.addEvent(taskLog.id, {
+          type: "TASK_HANDOFF",
+          title: `Amazon Rohdaten erfasst (${publishedCount} Varianten live)`,
+          content: {
+            designId: cleanId,
+            editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
+            globalArtworkUrn: configData.globalArtworkUrn,
+            masterListing: {
+              title,
+              brand,
+              bullets,
+              description: description.slice(0, 150) + (description.length > 150 ? "..." : "")
+            },
+            languagesAvailable: Object.keys(textData),
+            configuredProductsCount: productTypes.length,
+            liveVariantsCount: publishedCount,
+            statusSummary
+          }
+        });
+        return taskLog;
+      }
+      /**
+       * Download the master design artwork (4500x5400 px PNG) from merch.amazon.com/designs/{designId}/edit
+       * using an isolated background tab in Session 1 to prevent collisions with sync operations.
+       */
+      static async downloadDesignArtwork(taskId, designId) {
+        const cleanDesignId = (designId || "").trim();
+        const cleanTaskId = (taskId || "").trim();
+        if (!cleanDesignId || !cleanTaskId) {
+          return { success: false, error: "Task-ID oder Design-ID fehlt." };
+        }
+        const designsDir = import_path71.default.resolve(process.cwd(), "data", "designs");
+        if (!import_fs76.default.existsSync(designsDir)) {
+          import_fs76.default.mkdirSync(designsDir, { recursive: true });
+        }
+        const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const filename = `${safeId}.png`;
+        const filePath = import_path71.default.join(designsDir, filename);
+        if (import_fs76.default.existsSync(filePath)) {
+          try {
+            const stats2 = import_fs76.default.statSync(filePath);
+            if (stats2.size > 5e3) {
+              console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Design bereits lokal vorhanden: ${filePath} (${(stats2.size / 1024 / 1024).toFixed(2)} MB)`);
+              const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
+              return { success: true, localUrl };
+            }
+          } catch (e) {
+          }
+        }
+        const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
+        console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
+        TaskLogService2.updateTaskStatus(cleanTaskId, {
+          status: "PROCESSING",
+          hasError: false
+        });
+        let newTab = null;
+        try {
+          const session2 = await BrowserSessionService.getSession("sync");
+          newTab = await session2.page.context().newPage();
+          await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
+          await newTab.waitForSelector('img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img', { timeout: 25e3 }).catch(() => null);
+          const extractResult = await newTab.evaluate(() => {
+            const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
+            let targetImg = images.find((e) => e.getAttribute("alt") && e.getAttribute("alt").endsWith(".png"));
+            if (!targetImg) {
+              targetImg = images.find((e) => e.getAttribute("alt") === "null");
+            }
+            if (!targetImg) {
+              targetImg = document.querySelector("img.artwork.ng-star-inserted") || document.querySelector(".artwork") || document.querySelector("#global-uploader-container img") || document.querySelector(".global-uploader img");
+            }
+            if (!targetImg || !targetImg.src) {
+              return { ok: false, error: "Kein Artwork Bild-Element auf der Amazon Edit-Seite gefunden." };
+            }
+            const rawSrc = targetImg.src;
+            const fullResUrl = rawSrc.replace(/\._[^_]+_\.(png|jpg|jpeg)$/i, ".$1");
+            return { ok: true, rawSrc, fullResUrl };
+          });
+          if (!extractResult.ok || !extractResult.fullResUrl) {
+            throw new Error(extractResult.error || "Konnte Original-Bild-URL im DOM nicht ermitteln.");
+          }
+          console.log(`[AmazonInspectService] \u{1F50D} Full-Res URL gefunden: ${extractResult.fullResUrl}`);
+          const base64Data = await newTab.evaluate(async (imgUrl) => {
+            try {
+              const resp = await fetch(imgUrl, { credentials: "include" });
+              if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+              const blob = await resp.blob();
+              return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error("FileReader Fehler"));
+                reader.readAsDataURL(blob);
+              });
+            } catch (fetchErr) {
+              throw new Error(`Browser fetch failed: ${fetchErr.message}`);
+            }
+          }, extractResult.fullResUrl);
+          const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
+          const buffer = Buffer.from(base64Clean, "base64");
+          const designsDir2 = import_path71.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs76.default.existsSync(designsDir2)) {
+            import_fs76.default.mkdirSync(designsDir2, { recursive: true });
+          }
+          const safeId2 = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const filename2 = `${safeId2}.png`;
+          const filePath2 = import_path71.default.join(designsDir2, filename2);
+          import_fs76.default.writeFileSync(filePath2, buffer);
+          console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+          const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
+          TaskLogService2.updateTaskStatus(cleanTaskId, {
+            status: "RECEIVED",
+            imageUrl: localUrl,
+            localImagePath: localUrl,
+            mbaPngUrl: localUrl,
+            localMbaPngPath: filePath2,
+            hasError: false
+          });
+          TaskLogService2.addEvent(cleanTaskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ANALYSIS_RESPONSE",
+            title: "Original-Design heruntergeladen",
+            content: {
+              localUrl,
+              originalUrl: extractResult.fullResUrl,
+              fileSizeBytes: buffer.length,
+              fileSizeMb: (buffer.length / 1024 / 1024).toFixed(2) + " MB",
+              downloadedAt: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          });
+          return { success: true, localUrl };
+        } catch (err) {
+          console.error(`[AmazonInspectService] \u274C Fehler beim Artwork-Download f\xFCr Task ${cleanTaskId}:`, err);
+          TaskLogService2.updateTaskStatus(cleanTaskId, {
+            status: "ERROR",
+            hasError: true,
+            errorDetails: err.message
+          });
+          TaskLogService2.addEvent(cleanTaskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler beim Design-Download",
+            content: err.message || "Unbekannter Fehler beim Herunterladen des Original-Designs"
+          });
+        } finally {
+          if (newTab) {
+            await newTab.close().catch(() => {
+            });
+          }
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/updatePipelineService.ts
+var updatePipelineService_exports = {};
+__export2(updatePipelineService_exports, {
+  UpdatePipelineService: () => UpdatePipelineService
+});
+var import_fs77, UpdatePipelineService;
+var init_updatePipelineService = __esm2({
+  "src/server/services/updatePipelineService.ts"() {
+    "use strict";
+    import_fs77 = __toESM2(require("fs"), 1);
+    init_taskLogService();
+    init_amazonInspectService();
+    init_settingsService();
+    init_queueService();
+    init_systemPromptService();
+    UpdatePipelineService = class {
+      /**
+       * Helper to retrieve a task safely
+       */
+      static getTask(taskId) {
+        const logs = TaskLogService2.loadLogs();
+        return logs.find((t) => t.id === taskId);
+      }
+      /**
+       * Step U1: Extract Merch API Data and create #xxx-U Task
+       */
+      static async stepU1_ExtractMerchData(designId) {
+        console.log(`[UpdatePipeline] \u{1F680} Starte Step U1 (Merch API Extraction) f\xFCr Design ${designId}...`);
+        try {
+          const task = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
+          if (!task || !task.id) {
+            return { success: false, error: "Task konnte nicht erstellt werden" };
+          }
+          TaskLogService2.updateTaskStatus(task.id, {
+            status: "UPDATE_EXTRACTED",
+            hasError: false
+          });
+          return { success: true, task };
+        } catch (err) {
+          return { success: false, error: err.message || "Fehler beim Abruf der Merch-Daten" };
+        }
+      }
+      /**
+       * Step U2: Download Master Artwork (4500x5400px)
+       */
+      static async stepU2_DownloadArtwork(taskId) {
+        console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Starte Step U2 (Master Artwork Download) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const designId = task.payload?.designId;
+        if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
+        if (task.localMbaPngPath && import_fs77.default.existsSync(task.localMbaPngPath)) {
+          console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Artwork bereits lokal vorhanden: ${task.localMbaPngPath}`);
+          return { success: true, localUrl: task.imageUrl || `/api/v1/designs/image/${encodeURIComponent(taskId)}` };
+        }
+        const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
+        if (!res.success) {
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "ERROR",
+            hasError: true,
+            errorDetails: res.error
+          });
+          return { success: false, error: res.error };
+        }
+        TaskLogService2.updateTaskStatus(taskId, {
+          status: "UPDATE_ARTWORK_READY",
+          hasError: false
+        });
+        return { success: true, localUrl: res.localUrl };
+      }
+      /**
+       * Step U3: Vision & Listing Analysis
+       * Analyzes old listing + image via OpenRouter:
+       * 1. Target audience (fitTypes)
+       * 2. Avoid color (black, white, none)
+       * 3. Decision: rewriteNeeded (true/false) + reasoning
+       */
+      static async stepU3_AnalyzeAndPrompt(taskId) {
+        console.log(`[UpdatePipeline] \u{1F9E0} Starte Step U3 (Vision & Listing Analyse) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        if (!apiKey) {
+          const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
+          return { success: false, error: err };
+        }
+        TaskLogService2.updateTaskStatus(taskId, { status: "PROCESSING", hasError: false });
+        let imageBase64 = null;
+        if (task.localMbaPngPath && import_fs77.default.existsSync(task.localMbaPngPath)) {
+          try {
+            const fileBuffer = import_fs77.default.readFileSync(task.localMbaPngPath);
+            imageBase64 = `data:image/png;base64,${fileBuffer.toString("base64")}`;
+          } catch (err) {
+            console.warn(`[UpdatePipeline] Konnte lokales Bild f\xFCr Vision nicht lesen:`, err);
+          }
+        }
+        const rawPayload = task.payload || {};
+        const oldTitle = rawPayload.title || "";
+        const oldBrand = rawPayload.brand || "";
+        const oldBullets = [rawPayload.bullet1, rawPayload.bullet2].filter(Boolean).join("\n");
+        const oldDesc = rawPayload.description || "";
+        const baseSystemPrompt = SystemPromptService.getUpdateVisionPrompt();
+        const systemPrompt = `${baseSystemPrompt}
+
+Existing Listing Details:
+- Brand: "${oldBrand}"
+- Title: "${oldTitle}"
+- Bullets: "${oldBullets}"
+- Description: "${oldDesc}"`;
+        const userContent = [
+          {
+            type: "text",
+            text: `Analyze this Amazon Merch design and its current listing:
+Brand: ${oldBrand}
+Title: ${oldTitle}
+Bullets: ${oldBullets}`
+          }
+        ];
+        if (imageBase64) {
+          userContent.push({
+            type: "image_url",
+            image_url: { url: imageBase64 }
+          });
+        }
+        const model = settings.llmModel || "google/gemini-2.5-flash";
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "ANALYSIS_REQUEST",
+          title: "Vision & Listing Analyse (OpenRouter)",
+          content: { model, oldTitle, oldBrand, hasImage: !!imageBase64 },
+          metadata: { model, provider: "OpenRouter" }
+        });
+        try {
+          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "https://mba-hub.local",
+              "X-Title": "MBA HUB Update Pipeline"
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userContent }
+              ],
+              response_format: { type: "json_object" }
+            })
+          });
+          if (!resp.ok) {
+            throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+          }
+          const json = await resp.json();
+          const contentStr = json.choices?.[0]?.message?.content || "{}";
+          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_ANALYZED",
+            analysisResult: parsed,
+            customAnswers: {
+              audience: Array.isArray(parsed.fitTypes) ? parsed.fitTypes.join(", ") : "men, women, youth",
+              avoidColor: parsed.avoidColor || "none",
+              notes: parsed.reasoning || ""
+            },
+            hasError: false
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ANALYSIS_RESPONSE",
+            title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? "empfohlen" : "nicht n\xF6tig"}`,
+            content: parsed,
+            metadata: { model, provider: "OpenRouter" }
+          });
+          return { success: true, analysisResult: parsed };
+        } catch (err) {
+          console.error(`[UpdatePipeline] \u274C Fehler in Step U3:`, err);
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: "Fehler bei Vision & Listing Analyse",
+            content: err.message
+          });
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step U4: Listing Rewriting (EN only)
+       */
+      static async stepU4_RewriteListing(taskId) {
+        console.log(`[UpdatePipeline] \u270D\uFE0F Starte Step U4 (Listing Rewriting) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
+          console.log(`[UpdatePipeline] \u23ED\uFE0F Step U4 wird \xFCbersprungen (rewriteNeeded ist false). Verwende altes Listing.`);
+          const raw2 = task.payload || {};
+          const enListing = {
+            brand: raw2.brand || "",
+            title: raw2.title || "",
+            bullet1: raw2.bullet1 || "",
+            bullet2: raw2.bullet2 || "",
+            description: raw2.description || ""
+          };
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_REWRITTEN",
+            listingResult: { en: enListing }
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "LISTING_RESPONSE",
+            title: "Original-Listing beibehalten (kein Rewrite n\xF6tig)",
+            content: { en: enListing, skipped: true }
+          });
+          return { success: true, listingResult: { en: enListing } };
+        }
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
+        const raw = task.payload || {};
+        const model = settings.llmModel || "google/gemini-2.5-flash";
+        const baseSystemPrompt = SystemPromptService.getUpdateRewritePrompt();
+        const systemPrompt = `${baseSystemPrompt}
+
+Original Listing Details:
+- Brand: "${raw.brand || ""}"
+- Title: "${raw.title || ""}"
+- Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(" | ")}"`;
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "LISTING_REQUEST",
+          title: "Listing Rewrite Request (OpenRouter)",
+          content: { originalTitle: raw.title, originalBrand: raw.brand, model },
+          metadata: { model, provider: "OpenRouter" }
+        });
+        try {
+          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: "Rewrite the Merch on Demand listing now." }
+              ],
+              response_format: { type: "json_object" }
+            })
+          });
+          if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+          const json = await resp.json();
+          const contentStr = json.choices?.[0]?.message?.content || "{}";
+          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_REWRITTEN",
+            listingResult: { en: parsed },
+            hasError: false
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "LISTING_RESPONSE",
+            title: "Optimiertes Listing generiert (EN)",
+            content: parsed,
+            metadata: { model, provider: "OpenRouter" }
+          });
+          return { success: true, listingResult: { en: parsed } };
+        } catch (err) {
+          console.error(`[UpdatePipeline] \u274C Fehler in Step U4:`, err);
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step U5: Trademark Check Loop (USPTO & DPMA)
+       */
+      static async stepU5_TrademarkCheck(taskId) {
+        console.log(`[UpdatePipeline] \u2696\uFE0F Starte Step U5 (Trademark Check Loop) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const listing = task.listingResult?.en || {
+          brand: task.payload?.brand || "",
+          title: task.payload?.title || "",
+          bullet1: task.payload?.bullet1 || "",
+          bullet2: task.payload?.bullet2 || ""
+        };
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "TM_CHECK_REQUEST",
+          title: "Trademark-Pr\xFCfung (USPTO & DPMA)",
+          content: { fields: listing },
+          metadata: { provider: "Productor USPTO / DPMA" }
+        });
+        const tmResult = {
+          safe: true,
+          totalHits: 0,
+          checkedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          checkedFields: ["brand", "title", "bullet1", "bullet2"]
+        };
+        TaskLogService2.updateTaskStatus(taskId, {
+          status: "UPDATE_TM_CHECKED",
+          trademarkCheckResult: tmResult,
+          hasError: false
+        });
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "TM_CHECK_RESPONSE",
+          title: "Trademark-Pr\xFCfung bestanden (0 Treffer)",
+          content: tmResult,
+          metadata: { provider: "Productor USPTO" }
+        });
+        return { success: true, tmResult };
+      }
+      /**
+       * Step U6: SEO Translation (DE, FR, ES, IT, JA)
+       */
+      static async stepU6_TranslateListing(taskId) {
+        console.log(`[UpdatePipeline] \u{1F310} Starte Step U6 (SEO Translation) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const enListing = task.listingResult?.en || {
+          brand: task.payload?.brand || "",
+          title: task.payload?.title || "",
+          bullet1: task.payload?.bullet1 || "",
+          bullet2: task.payload?.bullet2 || "",
+          description: task.payload?.description || ""
+        };
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
+        const model = settings.llmModel || "google/gemini-2.5-flash";
+        const baseSystemPrompt = SystemPromptService.getUpdateTranslationPrompt();
+        const systemPrompt = `${baseSystemPrompt}
+
+Source EN Listing:
+- Brand: "${enListing.brand}"
+- Title: "${enListing.title}"
+- Bullet 1: "${enListing.bullet1}"
+- Bullet 2: "${enListing.bullet2}"`;
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "LLM_REQUEST",
+          title: "SEO-\xDCbersetzung anfordern (DE, FR, ES, IT)",
+          content: { sourceListing: enListing, model },
+          metadata: { model, provider: "OpenRouter" }
+        });
+        try {
+          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: "Translate to DE, FR, ES, IT now." }
+              ],
+              response_format: { type: "json_object" }
+            })
+          });
+          if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+          const json = await resp.json();
+          const contentStr = json.choices?.[0]?.message?.content || "{}";
+          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+          const fullListings = {
+            en: enListing,
+            de: parsed.de || enListing,
+            fr: parsed.fr || enListing,
+            es: parsed.es || enListing,
+            it: parsed.it || enListing
+          };
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_TRANSLATED",
+            listingResult: fullListings,
+            hasError: false
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "LLM_RESPONSE",
+            title: "SEO-\xDCbersetzungen erfolgreich generiert",
+            content: fullListings,
+            metadata: { model, provider: "OpenRouter" }
+          });
+          return { success: true, fullListings };
+        } catch (err) {
+          console.error(`[UpdatePipeline] \u274C Fehler in Step U6:`, err);
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step U7: Enqueue into Update Tab in Queue
+       */
+      static async stepU7_Enqueue(taskId) {
+        console.log(`[UpdatePipeline] \u{1F4E6} Starte Step U7 (Queue \xDCbergabe) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const listing = task.listingResult?.en || {
+          brand: task.payload?.brand || "",
+          title: task.payload?.title || "",
+          bullet1: task.payload?.bullet1 || "",
+          bullet2: task.payload?.bullet2 || ""
+        };
+        try {
+          const queueItem = QueueService.enqueueItem({
+            taskId: task.id,
+            source: "UPDATE",
+            type: "update",
+            designId: task.payload?.designId,
+            brand: listing.brand,
+            title: listing.title,
+            bullet1: listing.bullet1,
+            bullet2: listing.bullet2,
+            description: listing.description || "",
+            listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
+            fitTypes: task.analysisResult?.fitTypes || ["men", "women"],
+            avoidColor: task.analysisResult?.avoidColor || "none",
+            imagePath: task.localImagePath || "",
+            pngPath: task.localMbaPngPath || "",
+            publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
+            liveStats: task.payload?.liveStats || null,
+            liveProductSummary: task.payload?.productSummary || null,
+            liveProductTypes: task.payload?.productTypes || null
+          });
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_QUEUED",
+            hasError: false
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
+            content: {
+              queueId: queueItem.id,
+              status: queueItem.status,
+              designId: task.payload?.designId,
+              allocatedSlots: 0,
+              message: "Design erfolgreich in den Tab Update der Queue eingereiht (0 Slots Verbrauch)."
+            }
+          });
+          return { success: true, queueItem };
+        } catch (err) {
+          console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval)
+       */
+      static async runFromStep(taskId, startStep = "U4") {
+        console.log(`[UpdatePipeline] \u{1F680} F\xFChre Pipeline ab Step ${startStep} f\xFCr Task ${taskId} aus...`);
+        if (startStep === "U4") {
+          const u4 = await this.stepU4_RewriteListing(taskId);
+          if (!u4.success) return { success: false, error: u4.error };
+        }
+        if (startStep === "U4" || startStep === "U5") {
+          const u5 = await this.stepU5_TrademarkCheck(taskId);
+          if (!u5.success) return { success: false, error: u5.error };
+        }
+        if (startStep === "U4" || startStep === "U5" || startStep === "U6") {
+          const u6 = await this.stepU6_TranslateListing(taskId);
+          if (!u6.success) return { success: false, error: u6.error };
+        }
+        if (startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U7") {
+          const u7 = await this.stepU7_Enqueue(taskId);
+          if (!u7.success) return { success: false, error: u7.error };
+        }
+        const finalTask = this.getTask(taskId);
+        return { success: true, task: finalTask };
+      }
+      /**
+       * Run entire pipeline sequentially from a Design-ID
+       * (Pauses after U3 at Checkpoint 2 if aiAutonomyEnabled is false)
+       */
+      static async runUpdatePipeline(designId) {
+        const u1 = await this.stepU1_ExtractMerchData(designId);
+        if (!u1.success || !u1.task) return { success: false, error: u1.error };
+        const taskId = u1.task.id;
+        const u2 = await this.stepU2_DownloadArtwork(taskId);
+        if (!u2.success) return { success: false, error: u2.error };
+        const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
+        if (!u3.success) return { success: false, error: u3.error };
+        const settings = loadSettings();
+        if (!settings.aiAutonomyEnabled) {
+          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Pr\xFCfung) in Tasks.`);
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)",
+            content: {
+              checkpoint: "DESIGN_REVIEW",
+              reason: "Vision-Analyse abgeschlossen. Wartet auf manuelle Pr\xFCfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.",
+              isApproved: true,
+              analysis: u3.analysisResult
+            }
+          });
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "AWAITING_DESIGN_REVIEW",
+            checkpoint: "DESIGN_REVIEW",
+            analysisResult: u3.analysisResult,
+            hasError: false
+          });
+          return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: "DESIGN_REVIEW" };
+        }
+        return await this.runFromStep(taskId, "U4");
+      }
+      /**
+       * Resume pipeline from current state (e.g. U3 -> U7)
+       */
+      static async resumePipeline(taskId) {
+        console.log(`[UpdatePipeline] \u25B6\uFE0F Setze Pipeline ab aktuellem Stand f\xFCr Task ${taskId} fort...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        if (!task.localMbaPngPath || !import_fs77.default.existsSync(task.localMbaPngPath)) {
+          const u2 = await this.stepU2_DownloadArtwork(taskId);
+          if (!u2.success) return { success: false, error: u2.error };
+        }
+        if (!task.analysisResult) {
+          const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
+          if (!u3.success) return { success: false, error: u3.error };
+        }
+        return await this.runFromStep(taskId, "U4");
+      }
+      /**
+       * Run a single step (for Retry or Step-Back)
+       */
+      static async runStep(taskId, step) {
+        switch (step.toUpperCase()) {
+          case "U1": {
+            const task = this.getTask(taskId);
+            if (!task?.payload?.designId) return { success: false, error: "Design ID fehlt" };
+            return await this.stepU1_ExtractMerchData(task.payload.designId);
+          }
+          case "U2":
+            return await this.stepU2_DownloadArtwork(taskId);
+          case "U3":
+            return await this.stepU3_AnalyzeAndPrompt(taskId);
+          case "U4":
+            return await this.stepU4_RewriteListing(taskId);
+          case "U5":
+            return await this.stepU5_TrademarkCheck(taskId);
+          case "U6":
+            return await this.stepU6_TranslateListing(taskId);
+          case "U7":
+            return await this.stepU7_Enqueue(taskId);
+          case "RESUME":
+          case "CONTINUE":
+            return await this.resumePipeline(taskId);
+          default:
+            return { success: false, error: `Unbekannter Step: ${step}` };
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/updateBackfillService.ts
+var updateBackfillService_exports = {};
+__export2(updateBackfillService_exports, {
+  UpdateBackfillService: () => UpdateBackfillService
+});
+var UpdateBackfillService;
+var init_updateBackfillService = __esm2({
+  "src/server/services/updateBackfillService.ts"() {
+    "use strict";
+    init_dist4();
+    init_settingsService();
+    init_queueService();
+    init_taskLogService();
+    init_updatePipelineService();
+    UpdateBackfillService = class {
+      static inFlightDesigns = /* @__PURE__ */ new Set();
+      static isRunningLoop = false;
+      static intervalId = null;
+      /**
+       * Collect all design IDs that must NOT be pulled again
+       * (Already in Queue, active in Tasks, or currently in flight)
+       */
+      static getExcludedDesignIds(extraExcludedIds) {
+        const excluded = /* @__PURE__ */ new Set();
+        for (const id of this.inFlightDesigns) {
+          if (id) excluded.add(id.trim());
+        }
+        if (extraExcludedIds) {
+          for (const id of extraExcludedIds) {
+            if (id) excluded.add(id.trim());
+          }
+        }
+        const queueItems = QueueService.loadQueue();
+        for (const item of queueItems) {
+          if (item.designId) excluded.add(item.designId.trim());
+          if (item.taskId) {
+            const cleanTask = item.taskId.replace(/^#/, "").replace(/-U$/, "").trim();
+            excluded.add(cleanTask);
+          }
+        }
+        const tasks = TaskLogService2.loadLogs();
+        for (const task of tasks) {
+          if (task.status === "REJECTED") continue;
+          if (task.payload?.designId) excluded.add(task.payload.designId.trim());
+          if (task.id) {
+            const cleanTask = task.id.replace(/^#/, "").replace(/-U$/, "").trim();
+            excluded.add(cleanTask);
+          }
+        }
+        return excluded;
+      }
+      /**
+       * Query Supabase `mba_designs` table for the oldest updated design
+       * that matches the active product count threshold and is not already in the Hub.
+       * Strictly checks that the "published_products" cell is NOT empty.
+       */
+      static async fetchNextCandidateFromSupabase(extraExcludedIds) {
+        const settings = loadSettings();
+        if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+          console.warn("[UpdateBackfillService] \u26A0\uFE0F Supabase URL oder Service Role Key fehlt in den Einstellungen.");
+          return null;
+        }
+        const supabase = createClient(settings.supabaseUrl, settings.supabaseServiceRoleKey, {
+          auth: { persistSession: false, autoRefreshToken: false }
+        });
+        const excludedIds = this.getExcludedDesignIds(extraExcludedIds);
+        const maxActiveProducts = settings.queueUpdateMaxActiveProducts ?? 100;
+        console.log(`[UpdateBackfillService] \u{1F50D} Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
+        const { data: candidates, error } = await supabase.from("mba_designs").select("design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status").eq("status", "PUBLISHED").not("published_products", "is", null).order("updated_date", { ascending: true, nullsFirst: true }).limit(300);
+        if (error) {
+          console.error("[UpdateBackfillService] \u274C Supabase Abfrage-Fehler:", error.message);
+          return null;
+        }
+        if (!candidates || candidates.length === 0) {
+          console.log('[UpdateBackfillService] \u2139\uFE0F Keine Designs mit status="PUBLISHED" und gef\xFCllter published_products Spalte in mba_designs gefunden.');
+          return null;
+        }
+        for (const cand of candidates) {
+          const dId = cand.design_id ? String(cand.design_id).replace(/^#/, "").replace(/-U$/, "").trim() : "";
+          if (!dId) continue;
+          if (cand.status && cand.status !== "PUBLISHED") {
+            continue;
+          }
+          if (excludedIds.has(dId)) {
+            continue;
+          }
+          let activeCount = 0;
+          if (Array.isArray(cand.published_products)) {
+            activeCount = cand.published_products.length;
+          } else if (cand.published_products && typeof cand.published_products === "object") {
+            activeCount = Object.keys(cand.published_products).length;
+          } else if (Array.isArray(cand.asins)) {
+            activeCount = cand.asins.length;
+          }
+          if (activeCount === 0) {
+            continue;
+          }
+          if (activeCount >= maxActiveProducts) {
+            console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: Bereits ${activeCount} aktive Produkte (Limit: < ${maxActiveProducts}).`);
+            continue;
+          }
+          console.log(`[UpdateBackfillService] \u{1F3AF} Valider Kandidat gefunden: Design ${dId} (${activeCount} aktive Produkte in published_products, zuletzt geupdatet: ${cand.updated_date || "nie"}).`);
+          return {
+            designId: dId,
+            activeProductsCount: activeCount,
+            updatedDate: cand.updated_date
+          };
+        }
+        console.log("[UpdateBackfillService] \u2139\uFE0F Alle abgefragten Designs \xFCberschritten das Produktlimit oder sind bereits in Bearbeitung.");
+        return null;
+      }
+      /**
+       * Get exact count of active update designs recognized by the system
+       * (Prevents double counting designs that exist in both Queue and Tasks)
+       */
+      static getActiveUpdateCount() {
+        const queueItems = QueueService.loadQueue();
+        const isUpdateItem = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_") || i.taskId && String(i.taskId).endsWith("-U");
+        const activeQueueItems = queueItems.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR");
+        const queuedTaskIds = new Set(activeQueueItems.map((i) => i.taskId ? i.taskId.replace(/^#/, "").replace(/-U$/, "").trim() : "").filter(Boolean));
+        const queuedDesignIds = new Set(activeQueueItems.map((i) => i.designId ? i.designId.trim() : "").filter(Boolean));
+        const activeTasks = TaskLogService2.loadLogs();
+        const activeTasksReview = activeTasks.filter((t) => {
+          if (t.source !== "UPDATE") return false;
+          if (["COMPLETED", "REJECTED", "CANCELLED", "QUEUED", "UPDATE_QUEUED"].includes(t.status)) return false;
+          const cleanTaskId = t.id ? t.id.replace(/^#/, "").replace(/-U$/, "").trim() : "";
+          if (queuedTaskIds.has(cleanTaskId)) return false;
+          const designId = t.payload?.designId ? t.payload.designId.trim() : "";
+          if (designId && queuedDesignIds.has(designId)) return false;
+          return true;
+        });
+        const inFlightCount = this.inFlightDesigns.size;
+        const currentCount = activeQueueItems.length + activeTasksReview.length + inFlightCount;
+        return {
+          currentCount,
+          queueCount: activeQueueItems.length,
+          tasksReviewCount: activeTasksReview.length,
+          inFlightCount
+        };
+      }
+      /**
+       * Run one backfill cycle (pulls 1 design and runs U1–U7 or pauses at Tasks review)
+       */
+      static async runBackfillCycle(forceSingle = false) {
+        const settings = loadSettings();
+        if (!forceSingle && !settings.queueUpdateAutoBackfillEnabled) {
+          return { success: false, message: "Automatik ist ausgeschaltet." };
+        }
+        const counts = this.getActiveUpdateCount();
+        const targetCount = settings.queueUpdateTargetCount ?? 10;
+        if (!forceSingle && counts.currentCount >= targetCount) {
+          return { success: false, message: `Update-Pool ist bereits voll (${counts.currentCount}/${targetCount} aktive Designs im Pool).` };
+        }
+        let lastError = "Kein passendes Design mit aktiven Produkten in Supabase gefunden.";
+        const maxAttempts = 30;
+        const cycleFailedIds = /* @__PURE__ */ new Set();
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          const candidate = await this.fetchNextCandidateFromSupabase(cycleFailedIds);
+          if (!candidate) {
+            return { success: false, message: lastError };
+          }
+          const designId = candidate.designId;
+          this.inFlightDesigns.add(designId);
+          try {
+            console.log(`[UpdateBackfillService] \u{1F680} (Versuch ${attempt}/${maxAttempts}) Starte Update-Workflow f\xFCr Design ${designId}...`);
+            const result2 = await UpdatePipelineService.runUpdatePipeline(designId);
+            if (result2.success) {
+              return {
+                success: true,
+                designId,
+                message: result2.pausedAtCheckpoint ? `Design ${designId} erfolgreich gezogen und an Tasks \xFCbergeben.` : `Design ${designId} erfolgreich verarbeitet und in Update-Queue eingereiht.`
+              };
+            } else {
+              lastError = result2.error || "Fehler beim Abruf der Merch-Daten";
+              console.warn(`[UpdateBackfillService] \u26A0\uFE0F Design ${designId} auf Amazon nicht abrufbar (${lastError}). \xDCberspringe und teste n\xE4chsten Kandidaten...`);
+              cycleFailedIds.add(designId);
+            }
+          } catch (err) {
+            lastError = err.message || "Unbekannter Fehler";
+            console.error(`[UpdateBackfillService] \u274C Fehler beim Verarbeiten von Design ${designId}:`, err);
+            cycleFailedIds.add(designId);
+          } finally {
+            this.inFlightDesigns.delete(designId);
+          }
+        }
+        return { success: false, message: `Nach ${maxAttempts} Versuchen kein valides Design auf Amazon gefunden (${lastError}).` };
+      }
+      /**
+       * Start background polling scheduler
+       */
+      static startScheduler() {
+        if (this.intervalId) return;
+        console.log("[UpdateBackfillService] \u23F1\uFE0F Update-Backfill Scheduler gestartet (Pr\xFCfintervall: 10s).");
+        this.intervalId = setInterval(async () => {
+          try {
+            const settings = loadSettings();
+            if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
+              const counts = this.getActiveUpdateCount();
+              const target = settings.queueUpdateTargetCount ?? 10;
+              if (counts.currentCount < target) {
+                this.isRunningLoop = true;
+                await this.runBackfillCycle(false);
+                this.isRunningLoop = false;
+              }
+            }
+          } catch (err) {
+            this.isRunningLoop = false;
+            console.error("[UpdateBackfillService] Scheduler-Fehler:", err);
+          }
+        }, 1e4);
+      }
+      /**
+       * Stop background polling scheduler
+       */
+      static stopScheduler() {
+        if (this.intervalId) {
+          clearInterval(this.intervalId);
+          this.intervalId = null;
+          console.log("[UpdateBackfillService] \u{1F6D1} Update-Backfill Scheduler gestoppt.");
+        }
+      }
+    };
+  }
+});
+
 // src/server/services/queueService.ts
 var queueService_exports = {};
 __export2(queueService_exports, {
   QueueService: () => QueueService
 });
-var import_fs76, import_path71, NON_US_DROP_ORDER, QueueService;
+var import_fs78, import_path72, NON_US_DROP_ORDER, QueueService;
 var init_queueService = __esm2({
   "src/server/services/queueService.ts"() {
     "use strict";
-    import_fs76 = __toESM2(require("fs"), 1);
-    import_path71 = __toESM2(require("path"), 1);
+    import_fs78 = __toESM2(require("fs"), 1);
+    import_path72 = __toESM2(require("path"), 1);
     init_productCatalogService();
     init_settingsService();
     NON_US_DROP_ORDER = ["JP", "ES", "IT", "FR", "DE", "GB"];
     QueueService = class {
-      static queueFilePath = import_path71.default.resolve(process.cwd(), "data", "upload_queue.json");
-      static tasksLogPath = import_path71.default.resolve(process.cwd(), "data", "tasks_log.json");
+      static queueFilePath = import_path72.default.resolve(process.cwd(), "data", "upload_queue.json");
+      static tasksLogPath = import_path72.default.resolve(process.cwd(), "data", "tasks_log.json");
       static items = [];
       static isLoaded = false;
       static dailySlotsInfo = { free: 200, used: 0, total: 200 };
@@ -218426,8 +219685,8 @@ var init_queueService = __esm2({
        */
       static loadQueue() {
         try {
-          if (import_fs76.default.existsSync(this.queueFilePath)) {
-            const raw = import_fs76.default.readFileSync(this.queueFilePath, "utf-8");
+          if (import_fs78.default.existsSync(this.queueFilePath)) {
+            const raw = import_fs78.default.readFileSync(this.queueFilePath, "utf-8");
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) {
               this.items = parsed;
@@ -218455,8 +219714,8 @@ var init_queueService = __esm2({
        */
       static enrichListingsFromTasksLog() {
         try {
-          if (!import_fs76.default.existsSync(this.tasksLogPath)) return;
-          const tasksRaw = import_fs76.default.readFileSync(this.tasksLogPath, "utf-8");
+          if (!import_fs78.default.existsSync(this.tasksLogPath)) return;
+          const tasksRaw = import_fs78.default.readFileSync(this.tasksLogPath, "utf-8");
           const tasks = JSON.parse(tasksRaw);
           if (!Array.isArray(tasks)) return;
           const tasksMap = new Map(tasks.map((t) => [t.id, t]));
@@ -218569,7 +219828,7 @@ var init_queueService = __esm2({
             }
           }
           if (hasChanges) {
-            import_fs76.default.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), "utf-8");
+            import_fs78.default.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), "utf-8");
           }
         } catch (err) {
           console.error("[QueueService] enrichListings error:", err.message);
@@ -218580,11 +219839,11 @@ var init_queueService = __esm2({
        */
       static saveQueue() {
         try {
-          const dir = import_path71.default.dirname(this.queueFilePath);
-          if (!import_fs76.default.existsSync(dir)) {
-            import_fs76.default.mkdirSync(dir, { recursive: true });
+          const dir = import_path72.default.dirname(this.queueFilePath);
+          if (!import_fs78.default.existsSync(dir)) {
+            import_fs78.default.mkdirSync(dir, { recursive: true });
           }
-          import_fs76.default.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), "utf-8");
+          import_fs78.default.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), "utf-8");
         } catch (err) {
           console.error("[QueueService] Error writing upload_queue.json:", err.message);
         }
@@ -218684,6 +219943,14 @@ var init_queueService = __esm2({
           updateTargetCount: settings.queueUpdateTargetCount ?? 10,
           updateAutoBackfillEnabled: settings.queueUpdateAutoBackfillEnabled ?? false,
           updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100,
+          updateCurrentCount: (() => {
+            try {
+              const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
+              return UpdateBackfillService2.getActiveUpdateCount().currentCount;
+            } catch {
+              return this.items.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR").length;
+            }
+          })(),
           catalogProducts: ProductCatalogService.getCatalog().products
         };
       }
@@ -219147,1040 +220414,6 @@ var init_queueService = __esm2({
           }
         }
         return false;
-      }
-    };
-  }
-});
-
-// src/server/services/amazonInspectService.ts
-var import_fs77, import_path72, FIND_LISTINGS_URL2, PRODUCT_CONFIG_URL2, ALL_STATUSES2, AmazonInspectService;
-var init_amazonInspectService = __esm2({
-  "src/server/services/amazonInspectService.ts"() {
-    "use strict";
-    import_fs77 = __toESM2(require("fs"), 1);
-    import_path72 = __toESM2(require("path"), 1);
-    init_browserSessionService();
-    init_syncEngine();
-    init_taskLogService();
-    FIND_LISTINGS_URL2 = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
-    PRODUCT_CONFIG_URL2 = "https://merch.amazon.com/api/productconfiguration/get?id=";
-    ALL_STATUSES2 = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
-    AmazonInspectService = class {
-      /**
-       * Ensure Session 1 is open and on merch.amazon.com
-       */
-      static async getAuthenticatedPage() {
-        const session2 = await BrowserSessionService.getSession("sync");
-        const currentUrl = session2.page.url();
-        if (!currentUrl.includes("merch.amazon.com")) {
-          await session2.page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 });
-        }
-        return session2.page;
-      }
-      /**
-       * Fetch Product Config (Listing texts, brands, bullets, descriptions, colors, products)
-       */
-      static async inspectProductConfig(designId) {
-        const cleanId = (designId || "").replace(/^#/, "").replace(/-U$/, "").trim();
-        const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-        const targetUrl = `${PRODUCT_CONFIG_URL2}${cleanId}`;
-        if (!cleanId) {
-          return {
-            success: false,
-            endpoint: "productconfig",
-            designId: cleanId,
-            error: "Keine Design-ID (UUID) angegeben.",
-            timestamp
-          };
-        }
-        try {
-          const page = await this.getAuthenticatedPage();
-          const result2 = await page.evaluate(async ({ url, dId }) => {
-            try {
-              const resp = await fetch(url, {
-                method: "GET",
-                headers: { "Accept": "application/json" },
-                credentials: "include"
-              });
-              const status = resp.status;
-              const ok = resp.ok;
-              const redirectedToLogin = resp.url?.includes("signin") || resp.url?.includes("ap/signin");
-              if (redirectedToLogin) {
-                return {
-                  ok: false,
-                  status: 401,
-                  error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
-                  data: null
-                };
-              }
-              let json = null;
-              let text2 = "";
-              try {
-                json = await resp.json();
-              } catch (e) {
-                text2 = await resp.text().catch(() => "");
-              }
-              return {
-                ok,
-                status,
-                data: json || text2,
-                error: ok ? null : `HTTP ${status}: ${resp.statusText || text2 || "Fehler beim Abruf"}`
-              };
-            } catch (fetchErr) {
-              return {
-                ok: false,
-                status: 0,
-                error: fetchErr.message || "Netzwerkfehler im Browserkontext",
-                data: null
-              };
-            }
-          }, { url: targetUrl, dId: cleanId });
-          return {
-            success: result2.ok,
-            endpoint: "productconfig",
-            designId: cleanId,
-            url: targetUrl,
-            data: result2.data,
-            error: result2.error || void 0,
-            status: result2.status,
-            timestamp,
-            metadata: {
-              hasTextData: !!(result2.data && typeof result2.data === "object" && result2.data.textData),
-              languages: result2.data?.textData ? Object.keys(result2.data.textData) : []
-            }
-          };
-        } catch (err) {
-          return {
-            success: false,
-            endpoint: "productconfig",
-            designId: cleanId,
-            url: targetUrl,
-            error: `Browser Session Fehler: ${err.message}`,
-            timestamp
-          };
-        }
-      }
-      /**
-       * Query FindListings Coral RPC and extract status & product information
-       */
-      static async inspectFindListings(designId) {
-        const cleanId = (designId || "").trim();
-        const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-        try {
-          const page = await this.getAuthenticatedPage();
-          const accountId = await SyncEngine.getAccountId(page);
-          const result2 = await page.evaluate(async ({ accountId: accountId2, url, allStatuses, targetDesignId }) => {
-            const body = {
-              pageSize: 500,
-              sortField: "DateUpdated",
-              sortOrder: "Descending",
-              status: allStatuses,
-              marketplaces: null,
-              productTypes: null,
-              searchableOnRetail: null,
-              deleteReasonType: ["", "CONTENT_POLICY_VIOLATION", "INACTIVE_NO_SALES", "CONTENT_CREATOR"],
-              accountId: accountId2 || null,
-              pageToken: [],
-              __type: "com.amazon.merch.search#FindListingsRequest"
-            };
-            try {
-              const resp = await fetch(url, {
-                method: "POST",
-                headers: {
-                  "Accept": "application/json",
-                  "Content-Type": "application/json"
-                },
-                body: JSON.stringify(body),
-                credentials: "include"
-              });
-              const status = resp.status;
-              const ok = resp.ok;
-              if (resp.url?.includes("signin") || resp.url?.includes("ap/signin")) {
-                return {
-                  ok: false,
-                  status: 401,
-                  error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
-                  data: null
-                };
-              }
-              let json = null;
-              let text2 = "";
-              try {
-                json = await resp.json();
-              } catch (e) {
-                text2 = await resp.text().catch(() => "");
-              }
-              if (!ok) {
-                return {
-                  ok: false,
-                  status,
-                  error: `FindListings HTTP ${status}: ${resp.statusText || text2}`,
-                  data: json || text2
-                };
-              }
-              const rawResults = json?.results || [];
-              let filteredResults = rawResults;
-              let isDesignMatched = false;
-              if (targetDesignId) {
-                filteredResults = rawResults.filter(
-                  (r) => r.designId && r.designId.toLowerCase() === targetDesignId.toLowerCase() || r.asin && r.asin.toLowerCase() === targetDesignId.toLowerCase() || r.listingId && r.listingId.toLowerCase() === targetDesignId.toLowerCase()
-                );
-                isDesignMatched = filteredResults.length > 0;
-              }
-              const statusSummary = {};
-              for (const item of filteredResults) {
-                const st = item.status || "UNKNOWN";
-                statusSummary[st] = (statusSummary[st] || 0) + 1;
-              }
-              return {
-                ok: true,
-                status,
-                data: {
-                  targetDesignId: targetDesignId || null,
-                  matchedResultsCount: filteredResults.length,
-                  totalResultsInBatch: rawResults.length,
-                  statusSummary,
-                  isDesignMatched,
-                  items: targetDesignId ? filteredResults : rawResults.slice(0, 50),
-                  rawFullResponse: targetDesignId ? { ...json, results: filteredResults } : json
-                },
-                error: null
-              };
-            } catch (fetchErr) {
-              return {
-                ok: false,
-                status: 0,
-                error: fetchErr.message || "Netzwerkfehler im Browserkontext",
-                data: null
-              };
-            }
-          }, { accountId, url: FIND_LISTINGS_URL2, allStatuses: ALL_STATUSES2, targetDesignId: cleanId });
-          return {
-            success: result2.ok,
-            endpoint: "findlistings",
-            designId: cleanId,
-            url: FIND_LISTINGS_URL2,
-            data: result2.data,
-            error: result2.error || void 0,
-            status: result2.status,
-            timestamp,
-            metadata: {
-              matchedCount: result2.data?.matchedResultsCount || 0,
-              isDesignMatched: !!result2.data?.isDesignMatched,
-              statusSummary: result2.data?.statusSummary || {}
-            }
-          };
-        } catch (err) {
-          return {
-            success: false,
-            endpoint: "findlistings",
-            designId: cleanId,
-            url: FIND_LISTINGS_URL2,
-            error: `Browser Session Fehler: ${err.message}`,
-            timestamp
-          };
-        }
-      }
-      /**
-       * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
-       */
-      static async createUpdateTaskFromAmazon(designId) {
-        const cleanId = (designId || "").replace(/^#/, "").replace(/-U$/, "").trim();
-        if (!cleanId) {
-          throw new Error("Keine Design-ID (UUID) angegeben.");
-        }
-        const configRes = await this.inspectProductConfig(cleanId);
-        if (!configRes.success || !configRes.data) {
-          throw new Error(configRes.error || `Product Config f\xFCr Design ${cleanId} konnte nicht von Amazon geladen werden.`);
-        }
-        const configData = configRes.data;
-        const textData = configData.textData || {};
-        const masterListing = textData.en || textData.de || Object.values(textData)[0] || {};
-        const title = masterListing.title || "Amazon Merch Update Task";
-        const brand = masterListing.brandName || "";
-        const bullets = masterListing.bullets || [];
-        const description = masterListing.description || "";
-        const products = configData.products || {};
-        const productTypes = Object.keys(products);
-        let totalConfiguredSlots = 0;
-        const productSummary = {};
-        for (const [pKey, pVal] of Object.entries(products)) {
-          const marketplaces = Object.keys(pVal.marketplaceData || {});
-          totalConfiguredSlots += Math.max(1, marketplaces.length);
-          productSummary[pKey] = {
-            fits: pVal.dimensions?.FIT || [],
-            colors: pVal.dimensions?.COLOR || [],
-            marketplaces,
-            artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
-          };
-        }
-        if (productTypes.length === 0 && totalConfiguredSlots === 0) {
-          throw new Error(`Design ${cleanId} hat keine konfigurierten Produkte auf Amazon.`);
-        }
-        let statusSummary = {};
-        let publishedCount = totalConfiguredSlots;
-        let matchedItems = [];
-        let findData = null;
-        try {
-          const findRes = await this.inspectFindListings(cleanId);
-          if (findRes.success && findRes.data) {
-            findData = findRes.data;
-            statusSummary = findData.statusSummary || {};
-            matchedItems = findData.items || [];
-            const processingStatuses = ["PUBLISHING", "PROCESSING", "TRANSLATING", "REVIEW", "UNDER_REVIEW", "LOCKED", "PENDING"];
-            const activeProcessing = processingStatuses.filter((s) => (statusSummary[s] || 0) > 0);
-            if (activeProcessing.length > 0) {
-              const details = activeProcessing.map((s) => `${s}: ${statusSummary[s]}`).join(", ");
-              throw new Error(`Design ${cleanId} ist aktuell auf Amazon gesperrt/in Bearbeitung (${details}).`);
-            }
-            if (findData.isDesignMatched) {
-              const directPublished = (statusSummary.PUBLISHED || 0) + (statusSummary.PROPAGATED || 0);
-              if (directPublished > 0) {
-                publishedCount = directPublished;
-              }
-            }
-          }
-        } catch (fErr) {
-          if (fErr.message?.includes("gesperrt/in Bearbeitung")) {
-            throw fErr;
-          }
-          console.warn(`[AmazonInspectService] \u2139\uFE0F FindListings Vorab-Check f\xFCr Design ${cleanId}: ${fErr.message}`);
-        }
-        const payload = {
-          designId: cleanId,
-          editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
-          globalArtworkUrn: configData.globalArtworkUrn || null,
-          title,
-          brand,
-          bullets,
-          description,
-          masterListing,
-          textData,
-          productTypes,
-          productSummary,
-          liveStats: {
-            totalVariantsFound: matchedItems.length > 0 ? matchedItems.length : totalConfiguredSlots,
-            statusSummary: Object.keys(statusSummary).length > 0 ? statusSummary : { PUBLISHED: totalConfiguredSlots },
-            publishedCount,
-            isAllPublished: true,
-            estimatedSlotSavings: `${publishedCount} Live-Varianten (0 Slot-Verbrauch)`
-          },
-          rawProductConfig: configData,
-          rawFindListings: findData
-        };
-        const taskLog = TaskLogService2.createTaskLog({
-          source: "UPDATE",
-          payload
-        });
-        TaskLogService2.addEvent(taskLog.id, {
-          type: "TASK_HANDOFF",
-          title: `Amazon Rohdaten erfasst (${publishedCount} Varianten live)`,
-          content: {
-            designId: cleanId,
-            editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
-            globalArtworkUrn: configData.globalArtworkUrn,
-            masterListing: {
-              title,
-              brand,
-              bullets,
-              description: description.slice(0, 150) + (description.length > 150 ? "..." : "")
-            },
-            languagesAvailable: Object.keys(textData),
-            configuredProductsCount: productTypes.length,
-            liveVariantsCount: publishedCount,
-            statusSummary
-          }
-        });
-        return taskLog;
-      }
-      /**
-       * Download the master design artwork (4500x5400 px PNG) from merch.amazon.com/designs/{designId}/edit
-       * using an isolated background tab in Session 1 to prevent collisions with sync operations.
-       */
-      static async downloadDesignArtwork(taskId, designId) {
-        const cleanDesignId = (designId || "").trim();
-        const cleanTaskId = (taskId || "").trim();
-        if (!cleanDesignId || !cleanTaskId) {
-          return { success: false, error: "Task-ID oder Design-ID fehlt." };
-        }
-        const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
-        if (!import_fs77.default.existsSync(designsDir)) {
-          import_fs77.default.mkdirSync(designsDir, { recursive: true });
-        }
-        const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const filename = `${safeId}.png`;
-        const filePath = import_path72.default.join(designsDir, filename);
-        if (import_fs77.default.existsSync(filePath)) {
-          try {
-            const stats2 = import_fs77.default.statSync(filePath);
-            if (stats2.size > 5e3) {
-              console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Design bereits lokal vorhanden: ${filePath} (${(stats2.size / 1024 / 1024).toFixed(2)} MB)`);
-              const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
-              return { success: true, localUrl };
-            }
-          } catch (e) {
-          }
-        }
-        const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
-        console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
-        TaskLogService2.updateTaskStatus(cleanTaskId, {
-          status: "PROCESSING",
-          hasError: false
-        });
-        let newTab = null;
-        try {
-          const session2 = await BrowserSessionService.getSession("sync");
-          newTab = await session2.page.context().newPage();
-          await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
-          await newTab.waitForSelector('img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img', { timeout: 25e3 }).catch(() => null);
-          const extractResult = await newTab.evaluate(() => {
-            const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
-            let targetImg = images.find((e) => e.getAttribute("alt") && e.getAttribute("alt").endsWith(".png"));
-            if (!targetImg) {
-              targetImg = images.find((e) => e.getAttribute("alt") === "null");
-            }
-            if (!targetImg) {
-              targetImg = document.querySelector("img.artwork.ng-star-inserted") || document.querySelector(".artwork") || document.querySelector("#global-uploader-container img") || document.querySelector(".global-uploader img");
-            }
-            if (!targetImg || !targetImg.src) {
-              return { ok: false, error: "Kein Artwork Bild-Element auf der Amazon Edit-Seite gefunden." };
-            }
-            const rawSrc = targetImg.src;
-            const fullResUrl = rawSrc.replace(/\._[^_]+_\.(png|jpg|jpeg)$/i, ".$1");
-            return { ok: true, rawSrc, fullResUrl };
-          });
-          if (!extractResult.ok || !extractResult.fullResUrl) {
-            throw new Error(extractResult.error || "Konnte Original-Bild-URL im DOM nicht ermitteln.");
-          }
-          console.log(`[AmazonInspectService] \u{1F50D} Full-Res URL gefunden: ${extractResult.fullResUrl}`);
-          const base64Data = await newTab.evaluate(async (imgUrl) => {
-            try {
-              const resp = await fetch(imgUrl, { credentials: "include" });
-              if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
-              const blob = await resp.blob();
-              return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = () => reject(new Error("FileReader Fehler"));
-                reader.readAsDataURL(blob);
-              });
-            } catch (fetchErr) {
-              throw new Error(`Browser fetch failed: ${fetchErr.message}`);
-            }
-          }, extractResult.fullResUrl);
-          const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
-          const buffer = Buffer.from(base64Clean, "base64");
-          const designsDir2 = import_path72.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs77.default.existsSync(designsDir2)) {
-            import_fs77.default.mkdirSync(designsDir2, { recursive: true });
-          }
-          const safeId2 = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-          const filename2 = `${safeId2}.png`;
-          const filePath2 = import_path72.default.join(designsDir2, filename2);
-          import_fs77.default.writeFileSync(filePath2, buffer);
-          console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
-          const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
-          TaskLogService2.updateTaskStatus(cleanTaskId, {
-            status: "RECEIVED",
-            imageUrl: localUrl,
-            localImagePath: localUrl,
-            mbaPngUrl: localUrl,
-            localMbaPngPath: filePath2,
-            hasError: false
-          });
-          TaskLogService2.addEvent(cleanTaskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "ANALYSIS_RESPONSE",
-            title: "Original-Design heruntergeladen",
-            content: {
-              localUrl,
-              originalUrl: extractResult.fullResUrl,
-              fileSizeBytes: buffer.length,
-              fileSizeMb: (buffer.length / 1024 / 1024).toFixed(2) + " MB",
-              downloadedAt: (/* @__PURE__ */ new Date()).toISOString()
-            }
-          });
-          return { success: true, localUrl };
-        } catch (err) {
-          console.error(`[AmazonInspectService] \u274C Fehler beim Artwork-Download f\xFCr Task ${cleanTaskId}:`, err);
-          TaskLogService2.updateTaskStatus(cleanTaskId, {
-            status: "ERROR",
-            hasError: true,
-            errorDetails: err.message
-          });
-          TaskLogService2.addEvent(cleanTaskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "ERROR",
-            title: "Fehler beim Design-Download",
-            content: err.message || "Unbekannter Fehler beim Herunterladen des Original-Designs"
-          });
-        } finally {
-          if (newTab) {
-            await newTab.close().catch(() => {
-            });
-          }
-        }
-      }
-    };
-  }
-});
-
-// src/server/services/updatePipelineService.ts
-var updatePipelineService_exports = {};
-__export2(updatePipelineService_exports, {
-  UpdatePipelineService: () => UpdatePipelineService
-});
-var import_fs78, UpdatePipelineService;
-var init_updatePipelineService = __esm2({
-  "src/server/services/updatePipelineService.ts"() {
-    "use strict";
-    import_fs78 = __toESM2(require("fs"), 1);
-    init_taskLogService();
-    init_amazonInspectService();
-    init_settingsService();
-    init_queueService();
-    init_systemPromptService();
-    UpdatePipelineService = class {
-      /**
-       * Helper to retrieve a task safely
-       */
-      static getTask(taskId) {
-        const logs = TaskLogService2.loadLogs();
-        return logs.find((t) => t.id === taskId);
-      }
-      /**
-       * Step U1: Extract Merch API Data and create #xxx-U Task
-       */
-      static async stepU1_ExtractMerchData(designId) {
-        console.log(`[UpdatePipeline] \u{1F680} Starte Step U1 (Merch API Extraction) f\xFCr Design ${designId}...`);
-        try {
-          const task = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
-          if (!task || !task.id) {
-            return { success: false, error: "Task konnte nicht erstellt werden" };
-          }
-          TaskLogService2.updateTaskStatus(task.id, {
-            status: "UPDATE_EXTRACTED",
-            hasError: false
-          });
-          return { success: true, task };
-        } catch (err) {
-          return { success: false, error: err.message || "Fehler beim Abruf der Merch-Daten" };
-        }
-      }
-      /**
-       * Step U2: Download Master Artwork (4500x5400px)
-       */
-      static async stepU2_DownloadArtwork(taskId) {
-        console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Starte Step U2 (Master Artwork Download) f\xFCr Task ${taskId}...`);
-        const task = this.getTask(taskId);
-        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        const designId = task.payload?.designId;
-        if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
-        if (task.localMbaPngPath && import_fs78.default.existsSync(task.localMbaPngPath)) {
-          console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Artwork bereits lokal vorhanden: ${task.localMbaPngPath}`);
-          return { success: true, localUrl: task.imageUrl || `/api/v1/designs/image/${encodeURIComponent(taskId)}` };
-        }
-        const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
-        if (!res.success) {
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "ERROR",
-            hasError: true,
-            errorDetails: res.error
-          });
-          return { success: false, error: res.error };
-        }
-        TaskLogService2.updateTaskStatus(taskId, {
-          status: "UPDATE_ARTWORK_READY",
-          hasError: false
-        });
-        return { success: true, localUrl: res.localUrl };
-      }
-      /**
-       * Step U3: Vision & Listing Analysis
-       * Analyzes old listing + image via OpenRouter:
-       * 1. Target audience (fitTypes)
-       * 2. Avoid color (black, white, none)
-       * 3. Decision: rewriteNeeded (true/false) + reasoning
-       */
-      static async stepU3_AnalyzeAndPrompt(taskId) {
-        console.log(`[UpdatePipeline] \u{1F9E0} Starte Step U3 (Vision & Listing Analyse) f\xFCr Task ${taskId}...`);
-        const task = this.getTask(taskId);
-        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
-        if (!apiKey) {
-          const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
-          return { success: false, error: err };
-        }
-        TaskLogService2.updateTaskStatus(taskId, { status: "PROCESSING", hasError: false });
-        let imageBase64 = null;
-        if (task.localMbaPngPath && import_fs78.default.existsSync(task.localMbaPngPath)) {
-          try {
-            const fileBuffer = import_fs78.default.readFileSync(task.localMbaPngPath);
-            imageBase64 = `data:image/png;base64,${fileBuffer.toString("base64")}`;
-          } catch (err) {
-            console.warn(`[UpdatePipeline] Konnte lokales Bild f\xFCr Vision nicht lesen:`, err);
-          }
-        }
-        const rawPayload = task.payload || {};
-        const oldTitle = rawPayload.title || "";
-        const oldBrand = rawPayload.brand || "";
-        const oldBullets = [rawPayload.bullet1, rawPayload.bullet2].filter(Boolean).join("\n");
-        const oldDesc = rawPayload.description || "";
-        const baseSystemPrompt = SystemPromptService.getUpdateVisionPrompt();
-        const systemPrompt = `${baseSystemPrompt}
-
-Existing Listing Details:
-- Brand: "${oldBrand}"
-- Title: "${oldTitle}"
-- Bullets: "${oldBullets}"
-- Description: "${oldDesc}"`;
-        const userContent = [
-          {
-            type: "text",
-            text: `Analyze this Amazon Merch design and its current listing:
-Brand: ${oldBrand}
-Title: ${oldTitle}
-Bullets: ${oldBullets}`
-          }
-        ];
-        if (imageBase64) {
-          userContent.push({
-            type: "image_url",
-            image_url: { url: imageBase64 }
-          });
-        }
-        const model = settings.llmModel || "google/gemini-2.5-flash";
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "ANALYSIS_REQUEST",
-          title: "Vision & Listing Analyse (OpenRouter)",
-          content: { model, oldTitle, oldBrand, hasImage: !!imageBase64 },
-          metadata: { model, provider: "OpenRouter" }
-        });
-        try {
-          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-              "HTTP-Referer": "https://mba-hub.local",
-              "X-Title": "MBA HUB Update Pipeline"
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userContent }
-              ],
-              response_format: { type: "json_object" }
-            })
-          });
-          if (!resp.ok) {
-            throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
-          }
-          const json = await resp.json();
-          const contentStr = json.choices?.[0]?.message?.content || "{}";
-          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "UPDATE_ANALYZED",
-            analysisResult: parsed,
-            customAnswers: {
-              audience: Array.isArray(parsed.fitTypes) ? parsed.fitTypes.join(", ") : "men, women, youth",
-              avoidColor: parsed.avoidColor || "none",
-              notes: parsed.reasoning || ""
-            },
-            hasError: false
-          });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "ANALYSIS_RESPONSE",
-            title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? "empfohlen" : "nicht n\xF6tig"}`,
-            content: parsed,
-            metadata: { model, provider: "OpenRouter" }
-          });
-          return { success: true, analysisResult: parsed };
-        } catch (err) {
-          console.error(`[UpdatePipeline] \u274C Fehler in Step U3:`, err);
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "ERROR",
-            title: "Fehler bei Vision & Listing Analyse",
-            content: err.message
-          });
-          return { success: false, error: err.message };
-        }
-      }
-      /**
-       * Step U4: Listing Rewriting (EN only)
-       */
-      static async stepU4_RewriteListing(taskId) {
-        console.log(`[UpdatePipeline] \u270D\uFE0F Starte Step U4 (Listing Rewriting) f\xFCr Task ${taskId}...`);
-        const task = this.getTask(taskId);
-        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
-          console.log(`[UpdatePipeline] \u23ED\uFE0F Step U4 wird \xFCbersprungen (rewriteNeeded ist false). Verwende altes Listing.`);
-          const raw2 = task.payload || {};
-          const enListing = {
-            brand: raw2.brand || "",
-            title: raw2.title || "",
-            bullet1: raw2.bullet1 || "",
-            bullet2: raw2.bullet2 || "",
-            description: raw2.description || ""
-          };
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "UPDATE_REWRITTEN",
-            listingResult: { en: enListing }
-          });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "LISTING_RESPONSE",
-            title: "Original-Listing beibehalten (kein Rewrite n\xF6tig)",
-            content: { en: enListing, skipped: true }
-          });
-          return { success: true, listingResult: { en: enListing } };
-        }
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
-        if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
-        const raw = task.payload || {};
-        const model = settings.llmModel || "google/gemini-2.5-flash";
-        const baseSystemPrompt = SystemPromptService.getUpdateRewritePrompt();
-        const systemPrompt = `${baseSystemPrompt}
-
-Original Listing Details:
-- Brand: "${raw.brand || ""}"
-- Title: "${raw.title || ""}"
-- Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(" | ")}"`;
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "LISTING_REQUEST",
-          title: "Listing Rewrite Request (OpenRouter)",
-          content: { originalTitle: raw.title, originalBrand: raw.brand, model },
-          metadata: { model, provider: "OpenRouter" }
-        });
-        try {
-          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: "Rewrite the Merch on Demand listing now." }
-              ],
-              response_format: { type: "json_object" }
-            })
-          });
-          if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
-          const json = await resp.json();
-          const contentStr = json.choices?.[0]?.message?.content || "{}";
-          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "UPDATE_REWRITTEN",
-            listingResult: { en: parsed },
-            hasError: false
-          });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "LISTING_RESPONSE",
-            title: "Optimiertes Listing generiert (EN)",
-            content: parsed,
-            metadata: { model, provider: "OpenRouter" }
-          });
-          return { success: true, listingResult: { en: parsed } };
-        } catch (err) {
-          console.error(`[UpdatePipeline] \u274C Fehler in Step U4:`, err);
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
-          return { success: false, error: err.message };
-        }
-      }
-      /**
-       * Step U5: Trademark Check Loop (USPTO & DPMA)
-       */
-      static async stepU5_TrademarkCheck(taskId) {
-        console.log(`[UpdatePipeline] \u2696\uFE0F Starte Step U5 (Trademark Check Loop) f\xFCr Task ${taskId}...`);
-        const task = this.getTask(taskId);
-        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        const listing = task.listingResult?.en || {
-          brand: task.payload?.brand || "",
-          title: task.payload?.title || "",
-          bullet1: task.payload?.bullet1 || "",
-          bullet2: task.payload?.bullet2 || ""
-        };
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TM_CHECK_REQUEST",
-          title: "Trademark-Pr\xFCfung (USPTO & DPMA)",
-          content: { fields: listing },
-          metadata: { provider: "Productor USPTO / DPMA" }
-        });
-        const tmResult = {
-          safe: true,
-          totalHits: 0,
-          checkedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          checkedFields: ["brand", "title", "bullet1", "bullet2"]
-        };
-        TaskLogService2.updateTaskStatus(taskId, {
-          status: "UPDATE_TM_CHECKED",
-          trademarkCheckResult: tmResult,
-          hasError: false
-        });
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "TM_CHECK_RESPONSE",
-          title: "Trademark-Pr\xFCfung bestanden (0 Treffer)",
-          content: tmResult,
-          metadata: { provider: "Productor USPTO" }
-        });
-        return { success: true, tmResult };
-      }
-      /**
-       * Step U6: SEO Translation (DE, FR, ES, IT, JA)
-       */
-      static async stepU6_TranslateListing(taskId) {
-        console.log(`[UpdatePipeline] \u{1F310} Starte Step U6 (SEO Translation) f\xFCr Task ${taskId}...`);
-        const task = this.getTask(taskId);
-        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        const enListing = task.listingResult?.en || {
-          brand: task.payload?.brand || "",
-          title: task.payload?.title || "",
-          bullet1: task.payload?.bullet1 || "",
-          bullet2: task.payload?.bullet2 || "",
-          description: task.payload?.description || ""
-        };
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
-        if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
-        const model = settings.llmModel || "google/gemini-2.5-flash";
-        const baseSystemPrompt = SystemPromptService.getUpdateTranslationPrompt();
-        const systemPrompt = `${baseSystemPrompt}
-
-Source EN Listing:
-- Brand: "${enListing.brand}"
-- Title: "${enListing.title}"
-- Bullet 1: "${enListing.bullet1}"
-- Bullet 2: "${enListing.bullet2}"`;
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "LLM_REQUEST",
-          title: "SEO-\xDCbersetzung anfordern (DE, FR, ES, IT)",
-          content: { sourceListing: enListing, model },
-          metadata: { model, provider: "OpenRouter" }
-        });
-        try {
-          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: "Translate to DE, FR, ES, IT now." }
-              ],
-              response_format: { type: "json_object" }
-            })
-          });
-          if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
-          const json = await resp.json();
-          const contentStr = json.choices?.[0]?.message?.content || "{}";
-          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
-          const fullListings = {
-            en: enListing,
-            de: parsed.de || enListing,
-            fr: parsed.fr || enListing,
-            es: parsed.es || enListing,
-            it: parsed.it || enListing
-          };
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "UPDATE_TRANSLATED",
-            listingResult: fullListings,
-            hasError: false
-          });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "LLM_RESPONSE",
-            title: "SEO-\xDCbersetzungen erfolgreich generiert",
-            content: fullListings,
-            metadata: { model, provider: "OpenRouter" }
-          });
-          return { success: true, fullListings };
-        } catch (err) {
-          console.error(`[UpdatePipeline] \u274C Fehler in Step U6:`, err);
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
-          return { success: false, error: err.message };
-        }
-      }
-      /**
-       * Step U7: Enqueue into Update Tab in Queue
-       */
-      static async stepU7_Enqueue(taskId) {
-        console.log(`[UpdatePipeline] \u{1F4E6} Starte Step U7 (Queue \xDCbergabe) f\xFCr Task ${taskId}...`);
-        const task = this.getTask(taskId);
-        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        const listing = task.listingResult?.en || {
-          brand: task.payload?.brand || "",
-          title: task.payload?.title || "",
-          bullet1: task.payload?.bullet1 || "",
-          bullet2: task.payload?.bullet2 || ""
-        };
-        try {
-          const queueItem = QueueService.enqueueItem({
-            taskId: task.id,
-            source: "UPDATE",
-            type: "update",
-            designId: task.payload?.designId,
-            brand: listing.brand,
-            title: listing.title,
-            bullet1: listing.bullet1,
-            bullet2: listing.bullet2,
-            description: listing.description || "",
-            listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
-            fitTypes: task.analysisResult?.fitTypes || ["men", "women"],
-            avoidColor: task.analysisResult?.avoidColor || "none",
-            imagePath: task.localImagePath || "",
-            pngPath: task.localMbaPngPath || "",
-            publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
-            liveStats: task.payload?.liveStats || null,
-            liveProductSummary: task.payload?.productSummary || null,
-            liveProductTypes: task.payload?.productTypes || null
-          });
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "UPDATE_QUEUED",
-            hasError: false
-          });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
-            content: {
-              queueId: queueItem.id,
-              status: queueItem.status,
-              designId: task.payload?.designId,
-              allocatedSlots: 0,
-              message: "Design erfolgreich in den Tab Update der Queue eingereiht (0 Slots Verbrauch)."
-            }
-          });
-          return { success: true, queueItem };
-        } catch (err) {
-          console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
-          return { success: false, error: err.message };
-        }
-      }
-      /**
-       * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval)
-       */
-      static async runFromStep(taskId, startStep = "U4") {
-        console.log(`[UpdatePipeline] \u{1F680} F\xFChre Pipeline ab Step ${startStep} f\xFCr Task ${taskId} aus...`);
-        if (startStep === "U4") {
-          const u4 = await this.stepU4_RewriteListing(taskId);
-          if (!u4.success) return { success: false, error: u4.error };
-        }
-        if (startStep === "U4" || startStep === "U5") {
-          const u5 = await this.stepU5_TrademarkCheck(taskId);
-          if (!u5.success) return { success: false, error: u5.error };
-        }
-        if (startStep === "U4" || startStep === "U5" || startStep === "U6") {
-          const u6 = await this.stepU6_TranslateListing(taskId);
-          if (!u6.success) return { success: false, error: u6.error };
-        }
-        if (startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U7") {
-          const u7 = await this.stepU7_Enqueue(taskId);
-          if (!u7.success) return { success: false, error: u7.error };
-        }
-        const finalTask = this.getTask(taskId);
-        return { success: true, task: finalTask };
-      }
-      /**
-       * Run entire pipeline sequentially from a Design-ID
-       * (Pauses after U3 at Checkpoint 2 if aiAutonomyEnabled is false)
-       */
-      static async runUpdatePipeline(designId) {
-        const u1 = await this.stepU1_ExtractMerchData(designId);
-        if (!u1.success || !u1.task) return { success: false, error: u1.error };
-        const taskId = u1.task.id;
-        const u2 = await this.stepU2_DownloadArtwork(taskId);
-        if (!u2.success) return { success: false, error: u2.error };
-        const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-        if (!u3.success) return { success: false, error: u3.error };
-        const settings = loadSettings();
-        if (!settings.aiAutonomyEnabled) {
-          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Pr\xFCfung) in Tasks.`);
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: "\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)",
-            content: {
-              checkpoint: "DESIGN_REVIEW",
-              reason: "Vision-Analyse abgeschlossen. Wartet auf manuelle Pr\xFCfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.",
-              isApproved: true,
-              analysis: u3.analysisResult
-            }
-          });
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "AWAITING_DESIGN_REVIEW",
-            checkpoint: "DESIGN_REVIEW",
-            analysisResult: u3.analysisResult,
-            hasError: false
-          });
-          return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: "DESIGN_REVIEW" };
-        }
-        return await this.runFromStep(taskId, "U4");
-      }
-      /**
-       * Resume pipeline from current state (e.g. U3 -> U7)
-       */
-      static async resumePipeline(taskId) {
-        console.log(`[UpdatePipeline] \u25B6\uFE0F Setze Pipeline ab aktuellem Stand f\xFCr Task ${taskId} fort...`);
-        const task = this.getTask(taskId);
-        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        if (!task.localMbaPngPath || !import_fs78.default.existsSync(task.localMbaPngPath)) {
-          const u2 = await this.stepU2_DownloadArtwork(taskId);
-          if (!u2.success) return { success: false, error: u2.error };
-        }
-        if (!task.analysisResult) {
-          const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-          if (!u3.success) return { success: false, error: u3.error };
-        }
-        return await this.runFromStep(taskId, "U4");
-      }
-      /**
-       * Run a single step (for Retry or Step-Back)
-       */
-      static async runStep(taskId, step) {
-        switch (step.toUpperCase()) {
-          case "U1": {
-            const task = this.getTask(taskId);
-            if (!task?.payload?.designId) return { success: false, error: "Design ID fehlt" };
-            return await this.stepU1_ExtractMerchData(task.payload.designId);
-          }
-          case "U2":
-            return await this.stepU2_DownloadArtwork(taskId);
-          case "U3":
-            return await this.stepU3_AnalyzeAndPrompt(taskId);
-          case "U4":
-            return await this.stepU4_RewriteListing(taskId);
-          case "U5":
-            return await this.stepU5_TrademarkCheck(taskId);
-          case "U6":
-            return await this.stepU6_TranslateListing(taskId);
-          case "U7":
-            return await this.stepU7_Enqueue(taskId);
-          case "RESUME":
-          case "CONTINUE":
-            return await this.resumePipeline(taskId);
-          default:
-            return { success: false, error: `Unbekannter Step: ${step}` };
-        }
       }
     };
   }
@@ -222272,204 +222505,6 @@ Please audit the listing based on your compliance rules:
           svgContent: originalSvgContent,
           message: "SVG erfolgreich auf Originalzustand zur\xFCckgesetzt."
         };
-      }
-    };
-  }
-});
-
-// src/server/services/updateBackfillService.ts
-var updateBackfillService_exports = {};
-__export2(updateBackfillService_exports, {
-  UpdateBackfillService: () => UpdateBackfillService
-});
-var UpdateBackfillService;
-var init_updateBackfillService = __esm2({
-  "src/server/services/updateBackfillService.ts"() {
-    "use strict";
-    init_dist4();
-    init_settingsService();
-    init_queueService();
-    init_taskLogService();
-    init_updatePipelineService();
-    UpdateBackfillService = class {
-      static inFlightDesigns = /* @__PURE__ */ new Set();
-      static isRunningLoop = false;
-      static intervalId = null;
-      /**
-       * Collect all design IDs that must NOT be pulled again
-       * (Already in Queue, active in Tasks, or currently in flight)
-       */
-      static getExcludedDesignIds(extraExcludedIds) {
-        const excluded = /* @__PURE__ */ new Set();
-        for (const id of this.inFlightDesigns) {
-          if (id) excluded.add(id.trim());
-        }
-        if (extraExcludedIds) {
-          for (const id of extraExcludedIds) {
-            if (id) excluded.add(id.trim());
-          }
-        }
-        const queueItems = QueueService.loadQueue();
-        for (const item of queueItems) {
-          if (item.designId) excluded.add(item.designId.trim());
-          if (item.taskId) {
-            const cleanTask = item.taskId.replace(/^#/, "").replace(/-U$/, "").trim();
-            excluded.add(cleanTask);
-          }
-        }
-        const tasks = TaskLogService2.loadLogs();
-        for (const task of tasks) {
-          if (task.status === "REJECTED") continue;
-          if (task.payload?.designId) excluded.add(task.payload.designId.trim());
-          if (task.id) {
-            const cleanTask = task.id.replace(/^#/, "").replace(/-U$/, "").trim();
-            excluded.add(cleanTask);
-          }
-        }
-        return excluded;
-      }
-      /**
-       * Query Supabase `mba_designs` table for the oldest updated design
-       * that matches the active product count threshold and is not already in the Hub.
-       * Strictly checks that the "published_products" cell is NOT empty.
-       */
-      static async fetchNextCandidateFromSupabase(extraExcludedIds) {
-        const settings = loadSettings();
-        if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
-          console.warn("[UpdateBackfillService] \u26A0\uFE0F Supabase URL oder Service Role Key fehlt in den Einstellungen.");
-          return null;
-        }
-        const supabase = createClient(settings.supabaseUrl, settings.supabaseServiceRoleKey, {
-          auth: { persistSession: false, autoRefreshToken: false }
-        });
-        const excludedIds = this.getExcludedDesignIds(extraExcludedIds);
-        const maxActiveProducts = settings.queueUpdateMaxActiveProducts ?? 100;
-        console.log(`[UpdateBackfillService] \u{1F50D} Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
-        const { data: candidates, error } = await supabase.from("mba_designs").select("design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status").eq("status", "PUBLISHED").not("published_products", "is", null).order("updated_date", { ascending: true, nullsFirst: true }).limit(300);
-        if (error) {
-          console.error("[UpdateBackfillService] \u274C Supabase Abfrage-Fehler:", error.message);
-          return null;
-        }
-        if (!candidates || candidates.length === 0) {
-          console.log('[UpdateBackfillService] \u2139\uFE0F Keine Designs mit status="PUBLISHED" und gef\xFCllter published_products Spalte in mba_designs gefunden.');
-          return null;
-        }
-        for (const cand of candidates) {
-          const dId = cand.design_id ? String(cand.design_id).replace(/^#/, "").replace(/-U$/, "").trim() : "";
-          if (!dId) continue;
-          if (cand.status && cand.status !== "PUBLISHED") {
-            continue;
-          }
-          if (excludedIds.has(dId)) {
-            continue;
-          }
-          let activeCount = 0;
-          if (Array.isArray(cand.published_products)) {
-            activeCount = cand.published_products.length;
-          } else if (cand.published_products && typeof cand.published_products === "object") {
-            activeCount = Object.keys(cand.published_products).length;
-          } else if (Array.isArray(cand.asins)) {
-            activeCount = cand.asins.length;
-          }
-          if (activeCount === 0) {
-            continue;
-          }
-          if (activeCount >= maxActiveProducts) {
-            console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: Bereits ${activeCount} aktive Produkte (Limit: < ${maxActiveProducts}).`);
-            continue;
-          }
-          console.log(`[UpdateBackfillService] \u{1F3AF} Valider Kandidat gefunden: Design ${dId} (${activeCount} aktive Produkte in published_products, zuletzt geupdatet: ${cand.updated_date || "nie"}).`);
-          return {
-            designId: dId,
-            activeProductsCount: activeCount,
-            updatedDate: cand.updated_date
-          };
-        }
-        console.log("[UpdateBackfillService] \u2139\uFE0F Alle abgefragten Designs \xFCberschritten das Produktlimit oder sind bereits in Bearbeitung.");
-        return null;
-      }
-      /**
-       * Run one backfill cycle (pulls 1 design and runs U1–U7 or pauses at Tasks review)
-       */
-      static async runBackfillCycle(forceSingle = false) {
-        const settings = loadSettings();
-        if (!forceSingle && !settings.queueUpdateAutoBackfillEnabled) {
-          return { success: false, message: "Automatik ist ausgeschaltet." };
-        }
-        const queueItems = QueueService.loadQueue();
-        const isUpdateItem = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_");
-        const activeQueueUpdateCount = queueItems.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR").length;
-        const activeTasks = TaskLogService2.loadLogs();
-        const activeTasksUpdateCount = activeTasks.filter((t) => t.source === "UPDATE" && t.status !== "COMPLETED" && t.status !== "REJECTED").length;
-        const inFlightCount = this.inFlightDesigns.size;
-        const totalActiveUpdateCount = activeQueueUpdateCount + activeTasksUpdateCount + inFlightCount;
-        const targetCount = settings.queueUpdateTargetCount ?? 10;
-        if (!forceSingle && totalActiveUpdateCount >= targetCount) {
-          return { success: false, message: `Update-Pool ist bereits voll (${totalActiveUpdateCount}/${targetCount} aktive Designs in Queue & Tasks).` };
-        }
-        let lastError = "Kein passendes Design mit aktiven Produkten in Supabase gefunden.";
-        const maxAttempts = 30;
-        const cycleFailedIds = /* @__PURE__ */ new Set();
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          const candidate = await this.fetchNextCandidateFromSupabase(cycleFailedIds);
-          if (!candidate) {
-            return { success: false, message: lastError };
-          }
-          const designId = candidate.designId;
-          this.inFlightDesigns.add(designId);
-          try {
-            console.log(`[UpdateBackfillService] \u{1F680} (Versuch ${attempt}/${maxAttempts}) Starte Update-Workflow f\xFCr Design ${designId}...`);
-            const result2 = await UpdatePipelineService.runUpdatePipeline(designId);
-            if (result2.success) {
-              return {
-                success: true,
-                designId,
-                message: result2.pausedAtCheckpoint ? `Design ${designId} erfolgreich gezogen und an Tasks \xFCbergeben.` : `Design ${designId} erfolgreich verarbeitet und in Update-Queue eingereiht.`
-              };
-            } else {
-              lastError = result2.error || "Fehler beim Abruf der Merch-Daten";
-              console.warn(`[UpdateBackfillService] \u26A0\uFE0F Design ${designId} auf Amazon nicht abrufbar (${lastError}). \xDCberspringe und teste n\xE4chsten Kandidaten...`);
-              cycleFailedIds.add(designId);
-            }
-          } catch (err) {
-            lastError = err.message || "Unbekannter Fehler";
-            console.error(`[UpdateBackfillService] \u274C Fehler beim Verarbeiten von Design ${designId}:`, err);
-            cycleFailedIds.add(designId);
-          } finally {
-            this.inFlightDesigns.delete(designId);
-          }
-        }
-        return { success: false, message: `Nach ${maxAttempts} Versuchen kein valides Design auf Amazon gefunden (${lastError}).` };
-      }
-      /**
-       * Start background polling scheduler
-       */
-      static startScheduler() {
-        if (this.intervalId) return;
-        console.log("[UpdateBackfillService] \u23F1\uFE0F Update-Backfill Scheduler gestartet (Pr\xFCfintervall: 30s).");
-        this.intervalId = setInterval(async () => {
-          try {
-            const settings = loadSettings();
-            if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
-              this.isRunningLoop = true;
-              await this.runBackfillCycle(false);
-              this.isRunningLoop = false;
-            }
-          } catch (err) {
-            this.isRunningLoop = false;
-            console.error("[UpdateBackfillService] Scheduler-Fehler:", err);
-          }
-        }, 3e4);
-      }
-      /**
-       * Stop background polling scheduler
-       */
-      static stopScheduler() {
-        if (this.intervalId) {
-          clearInterval(this.intervalId);
-          this.intervalId = null;
-          console.log("[UpdateBackfillService] \u{1F6D1} Update-Backfill Scheduler gestoppt.");
-        }
       }
     };
   }
@@ -225503,6 +225538,12 @@ app.patch("/api/v1/queue/settings", (req, res) => {
     };
     saveSettings(updated);
     const state = QueueService.rebalanceQueue();
+    if (updated.queueUpdateAutoBackfillEnabled) {
+      const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
+      UpdateBackfillService2.runBackfillCycle(false).catch((err) => {
+        console.error("[UpdateBackfillService] Fehler beim sofortigen Backfill-Trigger:", err.message);
+      });
+    }
     res.json({ success: true, state });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

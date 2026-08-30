@@ -1412,6 +1412,14 @@ app.patch('/api/v1/queue/settings', (req, res) => {
     };
     saveSettings(updated);
     const state = QueueService.rebalanceQueue();
+    
+    if (updated.queueUpdateAutoBackfillEnabled) {
+      const { UpdateBackfillService } = require('./services/updateBackfillService');
+      UpdateBackfillService.runBackfillCycle(false).catch((err: any) => {
+        console.error('[UpdateBackfillService] Fehler beim sofortigen Backfill-Trigger:', err.message);
+      });
+    }
+
     res.json({ success: true, state });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

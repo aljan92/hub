@@ -139,6 +139,40 @@ export class UpdateBackfillService {
   }
 
   /**
+   * Get exact count of active update designs recognized by the system
+   * (Prevents double counting designs that exist in both Queue and Tasks)
+   */
+  public static getActiveUpdateCount(): { currentCount: number; queueCount: number; tasksReviewCount: number; inFlightCount: number } {
+    const queueItems = QueueService.loadQueue();
+    const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')) || (i.taskId && String(i.taskId).endsWith('-U')));
+    const activeQueueItems = queueItems.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR');
+
+    const queuedTaskIds = new Set(activeQueueItems.map(i => i.taskId ? i.taskId.replace(/^#/, '').replace(/-U$/, '').trim() : '').filter(Boolean));
+    const queuedDesignIds = new Set(activeQueueItems.map(i => i.designId ? i.designId.trim() : '').filter(Boolean));
+
+    const activeTasks = TaskLogService.loadLogs();
+    const activeTasksReview = activeTasks.filter(t => {
+      if (t.source !== 'UPDATE') return false;
+      if (['COMPLETED', 'REJECTED', 'CANCELLED', 'QUEUED', 'UPDATE_QUEUED'].includes(t.status)) return false;
+      const cleanTaskId = t.id ? t.id.replace(/^#/, '').replace(/-U$/, '').trim() : '';
+      if (queuedTaskIds.has(cleanTaskId)) return false;
+      const designId = t.payload?.designId ? t.payload.designId.trim() : '';
+      if (designId && queuedDesignIds.has(designId)) return false;
+      return true;
+    });
+
+    const inFlightCount = this.inFlightDesigns.size;
+    const currentCount = activeQueueItems.length + activeTasksReview.length + inFlightCount;
+
+    return {
+      currentCount,
+      queueCount: activeQueueItems.length,
+      tasksReviewCount: activeTasksReview.length,
+      inFlightCount
+    };
+  }
+
+  /**
    * Run one backfill cycle (pulls 1 design and runs U1–U7 or pauses at Tasks review)
    */
   public static async runBackfillCycle(forceSingle = false): Promise<{ success: boolean; message: string; designId?: string }> {
@@ -148,19 +182,11 @@ export class UpdateBackfillService {
       return { success: false, message: 'Automatik ist ausgeschaltet.' };
     }
 
-    const queueItems = QueueService.loadQueue();
-    const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')));
-    const activeQueueUpdateCount = queueItems.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR').length;
-
-    const activeTasks = TaskLogService.loadLogs();
-    const activeTasksUpdateCount = activeTasks.filter(t => t.source === 'UPDATE' && t.status !== 'COMPLETED' && t.status !== 'REJECTED').length;
-
-    const inFlightCount = this.inFlightDesigns.size;
-    const totalActiveUpdateCount = activeQueueUpdateCount + activeTasksUpdateCount + inFlightCount;
+    const counts = this.getActiveUpdateCount();
     const targetCount = settings.queueUpdateTargetCount ?? 10;
 
-    if (!forceSingle && totalActiveUpdateCount >= targetCount) {
-      return { success: false, message: `Update-Pool ist bereits voll (${totalActiveUpdateCount}/${targetCount} aktive Designs in Queue & Tasks).` };
+    if (!forceSingle && counts.currentCount >= targetCount) {
+      return { success: false, message: `Update-Pool ist bereits voll (${counts.currentCount}/${targetCount} aktive Designs im Pool).` };
     }
 
     let lastError = 'Kein passendes Design mit aktiven Produkten in Supabase gefunden.';
@@ -211,20 +237,24 @@ export class UpdateBackfillService {
   public static startScheduler() {
     if (this.intervalId) return;
 
-    console.log('[UpdateBackfillService] ⏱️ Update-Backfill Scheduler gestartet (Prüfintervall: 30s).');
+    console.log('[UpdateBackfillService] ⏱️ Update-Backfill Scheduler gestartet (Prüfintervall: 10s).');
     this.intervalId = setInterval(async () => {
       try {
         const settings = loadSettings();
         if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
-          this.isRunningLoop = true;
-          await this.runBackfillCycle(false);
-          this.isRunningLoop = false;
+          const counts = this.getActiveUpdateCount();
+          const target = settings.queueUpdateTargetCount ?? 10;
+          if (counts.currentCount < target) {
+            this.isRunningLoop = true;
+            await this.runBackfillCycle(false);
+            this.isRunningLoop = false;
+          }
         }
       } catch (err) {
         this.isRunningLoop = false;
         console.error('[UpdateBackfillService] Scheduler-Fehler:', err);
       }
-    }, 30000);
+    }, 10000);
   }
 
   /**

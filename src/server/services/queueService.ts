@@ -71,6 +71,7 @@ export interface QueueState {
   updateTargetCount?: number;
   updateAutoBackfillEnabled?: boolean;
   updateMaxActiveProducts?: number;
+  updateCurrentCount?: number;
   catalogProducts?: any[];
 }
 
@@ -395,6 +396,14 @@ export class QueueService {
       updateTargetCount: settings.queueUpdateTargetCount ?? 10,
       updateAutoBackfillEnabled: settings.queueUpdateAutoBackfillEnabled ?? false,
       updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100,
+      updateCurrentCount: (() => {
+        try {
+          const { UpdateBackfillService } = require('./updateBackfillService');
+          return UpdateBackfillService.getActiveUpdateCount().currentCount;
+        } catch {
+          return this.items.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR').length;
+        }
+      })(),
       catalogProducts: ProductCatalogService.getCatalog().products
     };
   }
