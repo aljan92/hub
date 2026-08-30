@@ -219549,25 +219549,29 @@ var init_updateBackfillService = __esm2({
         const queueItems = QueueService.loadQueue();
         const isUpdateItem = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_") || i.taskId && String(i.taskId).endsWith("-U");
         const activeQueueItems = queueItems.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR");
-        const queuedTaskIds = new Set(activeQueueItems.map((i) => i.taskId ? i.taskId.replace(/^#/, "").replace(/-U$/, "").trim() : "").filter(Boolean));
-        const queuedDesignIds = new Set(activeQueueItems.map((i) => i.designId ? i.designId.trim() : "").filter(Boolean));
         const activeTasks = TaskLogService2.loadLogs();
         const activeTasksReview = activeTasks.filter((t) => {
           if (t.source !== "UPDATE") return false;
-          if (["COMPLETED", "REJECTED", "CANCELLED", "QUEUED", "UPDATE_QUEUED"].includes(t.status)) return false;
-          const cleanTaskId = t.id ? t.id.replace(/^#/, "").replace(/-U$/, "").trim() : "";
-          if (queuedTaskIds.has(cleanTaskId)) return false;
-          const designId = t.payload?.designId ? t.payload.designId.trim() : "";
-          if (designId && queuedDesignIds.has(designId)) return false;
+          if (["COMPLETED", "REJECTED", "CANCELLED"].includes(t.status)) return false;
           return true;
         });
-        const inFlightCount = this.inFlightDesigns.size;
-        const currentCount = activeQueueItems.length + activeTasksReview.length + inFlightCount;
+        const uniqueDesignIds = /* @__PURE__ */ new Set();
+        for (const q of activeQueueItems) {
+          const id = (q.designId ? q.designId.trim() : "") || (q.taskId ? q.taskId.replace(/^#/, "").replace(/-U$/, "").trim() : "") || q.id;
+          if (id) uniqueDesignIds.add(id.toLowerCase());
+        }
+        for (const t of activeTasksReview) {
+          const id = (t.payload?.designId ? t.payload.designId.trim() : "") || (t.id ? t.id.replace(/^#/, "").replace(/-U$/, "").trim() : "");
+          if (id) uniqueDesignIds.add(id.toLowerCase());
+        }
+        for (const inflightId of this.inFlightDesigns) {
+          if (inflightId) uniqueDesignIds.add(inflightId.trim().toLowerCase());
+        }
         return {
-          currentCount,
+          currentCount: uniqueDesignIds.size,
           queueCount: activeQueueItems.length,
           tasksReviewCount: activeTasksReview.length,
-          inFlightCount
+          inFlightCount: this.inFlightDesigns.size
         };
       }
       /**
