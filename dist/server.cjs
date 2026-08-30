@@ -218549,6 +218549,14 @@ var init_queueService = __esm2({
                   item.liveStats = task.payload.liveStats;
                   hasChanges = true;
                 }
+                if (!item.liveProductSummary && task.payload?.productSummary) {
+                  item.liveProductSummary = task.payload.productSummary;
+                  hasChanges = true;
+                }
+                if (!item.liveProductTypes && task.payload?.productTypes) {
+                  item.liveProductTypes = task.payload.productTypes;
+                  hasChanges = true;
+                }
                 if (!item.designId && task.payload?.designId) {
                   item.designId = task.payload.designId;
                   hasChanges = true;
@@ -218675,7 +218683,8 @@ var init_queueService = __esm2({
           maxCatalogSlots,
           updateTargetCount: settings.queueUpdateTargetCount ?? 10,
           updateAutoBackfillEnabled: settings.queueUpdateAutoBackfillEnabled ?? false,
-          updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100
+          updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100,
+          catalogProducts: ProductCatalogService.getCatalog().products
         };
       }
       /**
@@ -218708,6 +218717,8 @@ var init_queueService = __esm2({
           if (item.designId) existing.designId = item.designId;
           if (item.publishedProductsCount !== void 0) existing.publishedProductsCount = item.publishedProductsCount;
           if (item.liveStats !== void 0) existing.liveStats = item.liveStats;
+          if (item.liveProductSummary !== void 0) existing.liveProductSummary = item.liveProductSummary;
+          if (item.liveProductTypes !== void 0) existing.liveProductTypes = item.liveProductTypes;
           this.saveQueue();
           this.rebalanceQueue();
           return existing;
@@ -218761,7 +218772,9 @@ var init_queueService = __esm2({
           type: item.type || (isUpdate ? "update" : "new"),
           designId: item.designId,
           publishedProductsCount: item.publishedProductsCount,
-          liveStats: item.liveStats
+          liveStats: item.liveStats,
+          liveProductSummary: item.liveProductSummary || item.liveStats?.productSummary || null,
+          liveProductTypes: item.liveProductTypes || item.liveStats?.productTypes || null
         };
         this.items.push(newItem);
         this.saveQueue();
@@ -220000,7 +220013,9 @@ Source EN Listing:
             imagePath: task.localImagePath || "",
             pngPath: task.localMbaPngPath || "",
             publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
-            liveStats: task.payload?.liveStats || null
+            liveStats: task.payload?.liveStats || null,
+            liveProductSummary: task.payload?.productSummary || null,
+            liveProductTypes: task.payload?.productTypes || null
           });
           TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_QUEUED",

@@ -69,6 +69,13 @@ interface QueueItem {
   avoidColor?: 'white' | 'black' | 'none';
   customBackgroundColor?: string;
   imagePath?: string;
+  source?: string;
+  type?: 'new' | 'update';
+  designId?: string;
+  publishedProductsCount?: number;
+  liveStats?: any;
+  liveProductSummary?: Record<string, any>;
+  liveProductTypes?: string[];
 }
 
 interface QueueState {
@@ -91,6 +98,7 @@ interface QueueState {
   updateMaxActiveProducts?: number;
   scheduledLiveSlotsToday?: number;
   scheduledDraftProductsToday?: number;
+  catalogProducts?: any[];
 }
 
 interface UploadProgressState {
@@ -1437,37 +1445,164 @@ export const QueueView: React.FC = () => {
                           )}
 
                           {/* Active & Dropped Marketplace Matrix */}
-                          <div className="space-y-2">
+                          <div className="space-y-2.5">
                             <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
-                              <span>Zugewiesene Produkte &amp; Marktplätze ({item.allocatedSlots} Slots)</span>
+                              {isUpdate ? (
+                                <div className="flex items-center space-x-3">
+                                  <span className="text-emerald-400">
+                                    ✓ {item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 106} Produkte Live auf Amazon
+                                  </span>
+                                  <span className="text-purple-300 font-bold">
+                                    • {item.allocatedSlots ?? 0} neue Slots werden ergänzt
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center space-x-3">
+                                  <span>Zugewiesene Produkte &amp; Marktplätze ({item.allocatedSlots} Slots)</span>
+                                  {(() => {
+                                    const dCount = Object.values(item.droppedSlotsMap || {}).reduce((acc, mps) => acc + (Array.isArray(mps) ? mps.length : 0), 0);
+                                    return dCount > 0 ? (
+                                      <span className="text-amber-400 font-mono font-normal">
+                                        ({dCount} Slots zur Optimierung gekürzt)
+                                      </span>
+                                    ) : null;
+                                  })()}
+                                </div>
+                              )}
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                              {Object.entries(item.activeProductsMap || {}).map(([prodId, mps]) => {
-                                const safeMps = Array.isArray(mps) ? mps : [];
-                                const droppedMps = Array.isArray(item.droppedSlotsMap?.[prodId]) ? item.droppedSlotsMap[prodId] : [];
-                                return (
-                                  <div key={prodId} className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-xs">
-                                    <div className="font-bold text-slate-200 truncate">{prodId}</div>
-                                    <div className="flex items-center flex-wrap gap-1 mt-1 font-mono text-[10px]">
-                                      {safeMps.map(mp => (
-                                        <span key={mp} className={`px-1.5 py-0.2 rounded ${
-                                          String(mp).toUpperCase() === 'US' 
-                                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
-                                            : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
-                                        }`}>
-                                          {mp}
-                                        </span>
-                                      ))}
-                                      {droppedMps.map(mp => (
-                                        <span key={mp} className="px-1.5 py-0.2 rounded bg-rose-950/40 text-rose-400/80 border border-rose-900/60 line-through">
-                                          {mp}
-                                        </span>
-                                      ))}
+                              {(() => {
+                                const catalogProds = queueState.catalogProducts || [];
+                                const prodKeys = catalogProds.length > 0
+                                  ? catalogProds.map(p => p.id)
+                                  : Array.from(new Set([
+                                      ...Object.keys(item.activeProductsMap || {}),
+                                      ...Object.keys(item.droppedSlotsMap || {}),
+                                      ...Object.keys(item.liveProductSummary || {})
+                                    ]));
+
+                                const catalogMap = new Map(catalogProds.map(p => [p.id, p]));
+
+                                return prodKeys.map(prodId => {
+                                  const prodDef = catalogMap.get(prodId);
+                                  const displayName = prodDef?.displayName || prodId;
+                                  const isTmBlocked = Array.isArray(item.tmBlockedProductIds) && item.tmBlockedProductIds.map(t => String(t).toUpperCase()).includes(prodId.toUpperCase());
+
+                                  if (isUpdate) {
+                                    // Update design logic: check if already live on Amazon
+                                    const isAlreadyLive = isTmBlocked 
+                                      ? false 
+                                      : (item.liveProductSummary 
+                                          ? Boolean(item.liveProductSummary[prodId]) 
+                                          : item.liveProductTypes 
+                                            ? item.liveProductTypes.includes(prodId) 
+                                            : (item.allocatedSlots === 0 || !prodKeys.slice(-Math.max(1, item.allocatedSlots || 0)).includes(prodId)));
+
+                                    const mps = isAlreadyLive 
+                                      ? (item.liveProductSummary?.[prodId]?.marketplaces || item.activeProductsMap?.[prodId] || ['US'])
+                                      : (item.activeProductsMap?.[prodId] || prodDef?.availableMarketplaces || ['US']);
+
+                                    return (
+                                      <div 
+                                        key={prodId} 
+                                        className={`p-2.5 rounded-xl border text-xs transition-all ${
+                                          isTmBlocked
+                                            ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
+                                            : !isAlreadyLive
+                                              ? 'bg-purple-950/40 border-purple-500/60 ring-1 ring-purple-500/30 shadow-sm shadow-purple-500/10'
+                                              : 'bg-slate-900/90 border-slate-800 text-slate-300'
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between gap-1">
+                                          <span className="font-bold text-slate-200 truncate">{displayName}</span>
+                                          {isTmBlocked ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
+                                              TM-Block
+                                            </span>
+                                          ) : !isAlreadyLive ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-purple-500/20 text-purple-200 border border-purple-500/40">
+                                              ✨ Neu ergänzen (+1)
+                                            </span>
+                                          ) : (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
+                                              ✓ Live (0 Slots)
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
+                                          {Array.isArray(mps) && mps.map(mp => (
+                                            <span key={mp} className={`px-1.5 py-0.2 rounded ${
+                                              !isAlreadyLive
+                                                ? 'bg-purple-900/60 text-purple-200 border border-purple-700'
+                                                : String(mp).toUpperCase() === 'US'
+                                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
+                                                  : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
+                                            }`}>
+                                              {mp}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  // New design logic:
+                                  const safeMps = Array.isArray(item.activeProductsMap?.[prodId]) ? item.activeProductsMap[prodId] : [];
+                                  const droppedMps = Array.isArray(item.droppedSlotsMap?.[prodId]) ? item.droppedSlotsMap[prodId] : [];
+                                  const isCompletelyDropped = safeMps.length === 0 && droppedMps.length > 0;
+
+                                  return (
+                                    <div 
+                                      key={prodId} 
+                                      className={`p-2.5 rounded-xl border text-xs transition-all ${
+                                        isTmBlocked
+                                          ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
+                                          : isCompletelyDropped
+                                            ? 'bg-slate-950/80 border-amber-500/30 text-slate-400 opacity-75'
+                                            : 'bg-slate-900/90 border-slate-800 text-slate-300'
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="font-bold text-slate-200 truncate">{displayName}</span>
+                                        {isTmBlocked ? (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
+                                            TM-Block
+                                          </span>
+                                        ) : isCompletelyDropped ? (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                            Gekürzt (0 Slots)
+                                          </span>
+                                        ) : droppedMps.length > 0 ? (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/15 text-amber-300 border border-amber-500/20">
+                                            {safeMps.length} von {safeMps.length + droppedMps.length} aktiv
+                                          </span>
+                                        ) : (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
+                                            {safeMps.length} Slots aktiv
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
+                                        {safeMps.map(mp => (
+                                          <span key={mp} className={`px-1.5 py-0.2 rounded ${
+                                            String(mp).toUpperCase() === 'US' 
+                                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
+                                              : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
+                                          }`}>
+                                            {mp}
+                                          </span>
+                                        ))}
+                                        {droppedMps.map(mp => (
+                                          <span key={mp} className="px-1.5 py-0.2 rounded bg-rose-950/40 text-rose-400/80 border border-rose-900/60 line-through">
+                                            {mp}
+                                          </span>
+                                        ))}
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                });
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -1832,19 +1967,238 @@ export const QueueView: React.FC = () => {
 
                       {/* Expandable Details Accordion */}
                       {isExpanded && (
-                        <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-3 animate-fadeIn text-xs">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Bullet 1:</span>
-                              <p className="text-slate-300 font-mono text-[11px] leading-relaxed bg-slate-900/60 p-2 rounded-lg border border-slate-800/60">
-                                {item.bullet1 || '-'}
-                              </p>
+                        <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-4 animate-fadeIn text-xs">
+                          {/* Question-Phase Preferences Bar */}
+                          <div className="flex flex-wrap items-center gap-2 text-xs bg-slate-950/50 border border-slate-800 p-2.5 rounded-xl">
+                            <div className="flex items-center space-x-1.5 text-slate-300">
+                              <Users className="w-3.5 h-3.5 text-primary-400" />
+                              <span className="font-semibold">Fit-Types:</span>
+                              <span className="font-mono text-slate-200">
+                                {Array.isArray(item.fitTypes) && item.fitTypes.length > 0 
+                                  ? item.fitTypes.join(', ').toUpperCase() 
+                                  : typeof item.fitTypes === 'string' 
+                                    ? String(item.fitTypes).toUpperCase() 
+                                    : 'MEN, WOMEN, YOUTH'}
+                              </span>
                             </div>
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Bullet 2:</span>
-                              <p className="text-slate-300 font-mono text-[11px] leading-relaxed bg-slate-900/60 p-2 rounded-lg border border-slate-800/60">
-                                {item.bullet2 || '-'}
-                              </p>
+
+                            <span className="text-slate-700">•</span>
+
+                            <div className="flex items-center space-x-1.5 text-slate-300">
+                              <Palette className="w-3.5 h-3.5 text-amber-400" />
+                              <span className="font-semibold">Farbregel:</span>
+                              <span className="font-mono text-slate-200">
+                                {item.avoidColor === 'white' 
+                                  ? 'Weiß vermieden (Raglan white_* ausgeschlossen)' 
+                                  : item.avoidColor === 'black'
+                                    ? 'Schwarz vermieden (Hex-Picker #FFFFFF)'
+                                    : 'Standard (Alle Swatches / Hex #000000)'}
+                              </span>
+                            </div>
+
+                            {item.designId && (
+                              <>
+                                <span className="text-slate-700">•</span>
+                                <div className="flex items-center space-x-1.5 text-purple-300 font-mono text-[11px]">
+                                  <span>Amazon ID: {item.designId}</span>
+                                  {item.publishedProductsCount !== undefined && (
+                                    <span>({item.publishedProductsCount} bereits live)</span>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          {/* SEO Listing Section with Multi-Language Switcher */}
+                          {(() => {
+                            const activeLang = itemLanguageMap[item.id] || 'en';
+                            const rawListings: any = item.listings || {};
+                            
+                            const isFlatListing = rawListings.title || rawListings.brand || rawListings.bullet1;
+                            const listingsObj: Record<string, any> = isFlatListing 
+                              ? { en: rawListings } 
+                              : (typeof rawListings === 'object' && rawListings !== null ? rawListings : {});
+
+                            const validLangKeys = Object.keys(listingsObj).filter(k => 
+                              typeof listingsObj[k] === 'object' && listingsObj[k] !== null && !Array.isArray(listingsObj[k])
+                            );
+
+                            const availableLangs = validLangKeys.length > 0 ? validLangKeys : ['en'];
+                            if (!availableLangs.includes('en')) availableLangs.unshift('en');
+
+                            const standardLangs = ['en', 'de', 'fr', 'es', 'it', 'jp'];
+                            const allLangs = Array.from(new Set([...standardLangs.filter(l => listingsObj[l] || l === 'en'), ...availableLangs]));
+
+                            const fallbackListing = {
+                              brand: item.brand || 'MBA Hub',
+                              title: item.title || item.designTitle || '',
+                              bullet1: item.bullet1 || '',
+                              bullet2: item.bullet2 || '',
+                              description: item.description || ''
+                            };
+
+                            const targetListingObj = listingsObj[activeLang] || listingsObj.en || fallbackListing;
+                            const currentListing = typeof targetListingObj === 'object' && targetListingObj !== null 
+                              ? targetListingObj 
+                              : fallbackListing;
+
+                            const langFlags: Record<string, { label: string; flag: string }> = {
+                              en: { label: 'Englisch', flag: '🇺🇸 / 🇬🇧' },
+                              de: { label: 'Deutsch', flag: '🇩🇪' },
+                              fr: { label: 'Französisch', flag: '🇫🇷' },
+                              es: { label: 'Spanisch', flag: '🇪🇸' },
+                              it: { label: 'Italienisch', flag: '🇮🇹' },
+                              jp: { label: 'Japanisch', flag: '🇯🇵' },
+                              ja: { label: 'Japanisch', flag: '🇯🇵' }
+                            };
+
+                            return (
+                              <div className="space-y-3 bg-slate-950/40 p-3.5 rounded-xl border border-slate-800">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div className="flex items-center space-x-2 text-xs font-bold text-slate-200">
+                                    <Globe className="w-4 h-4 text-accent-cyan" />
+                                    <span>Mehrsprachige Listings &amp; SEO-Metadaten</span>
+                                  </div>
+
+                                  {/* Language Tabs */}
+                                  <div className="flex items-center flex-wrap gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                                    {allLangs.map((langKey) => {
+                                      const meta = langFlags[langKey] || { label: langKey.toUpperCase(), flag: '🌐' };
+                                      const isSelected = activeLang === langKey;
+                                      return (
+                                        <button
+                                          key={langKey}
+                                          onClick={() => setItemLanguageMap(prev => ({ ...prev, [item.id]: langKey }))}
+                                          className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                                            isSelected 
+                                              ? 'bg-accent-cyan text-slate-950 shadow-sm' 
+                                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                                          }`}
+                                        >
+                                          <span>{meta.flag}</span>
+                                          <span className="uppercase">{langKey}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Listing Content Preview */}
+                                <div className="space-y-2 text-xs font-mono bg-slate-900/90 p-3 rounded-lg border border-slate-800 text-slate-300">
+                                  <div>
+                                    <span className="text-slate-500">Brand: </span>
+                                    <span className="text-slate-200 font-semibold">{currentListing.brand || '—'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-500">Titel: </span>
+                                    <span className="text-slate-100 font-bold">{currentListing.title || '—'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-500">Bullet 1: </span>
+                                    <span className="text-slate-300">{currentListing.bullet1 || '—'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-500">Bullet 2: </span>
+                                    <span className="text-slate-300">{currentListing.bullet2 || '—'}</span>
+                                  </div>
+                                  {currentListing.description && (
+                                    <div>
+                                      <span className="text-slate-500">Beschreibung: </span>
+                                      <span className="text-slate-400">{currentListing.description}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Product Matrix for Update Pool */}
+                          <div className="space-y-2.5">
+                            <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <span className="text-emerald-400">
+                                  ✓ {item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 106} Produkte Live auf Amazon
+                                </span>
+                                <span className="text-purple-300 font-bold">
+                                  • {item.allocatedSlots ?? 0} neue Slots werden ergänzt
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                              {(() => {
+                                const catalogProds = queueState.catalogProducts || [];
+                                const prodKeys = catalogProds.length > 0
+                                  ? catalogProds.map(p => p.id)
+                                  : Array.from(new Set([
+                                      ...Object.keys(item.activeProductsMap || {}),
+                                      ...Object.keys(item.droppedSlotsMap || {}),
+                                      ...Object.keys(item.liveProductSummary || {})
+                                    ]));
+
+                                const catalogMap = new Map(catalogProds.map(p => [p.id, p]));
+
+                                return prodKeys.map(prodId => {
+                                  const prodDef = catalogMap.get(prodId);
+                                  const displayName = prodDef?.displayName || prodId;
+                                  const isTmBlocked = Array.isArray(item.tmBlockedProductIds) && item.tmBlockedProductIds.map(t => String(t).toUpperCase()).includes(prodId.toUpperCase());
+
+                                  const isAlreadyLive = isTmBlocked 
+                                    ? false 
+                                    : (item.liveProductSummary 
+                                        ? Boolean(item.liveProductSummary[prodId]) 
+                                        : item.liveProductTypes 
+                                          ? item.liveProductTypes.includes(prodId) 
+                                          : (item.allocatedSlots === 0 || !prodKeys.slice(-Math.max(1, item.allocatedSlots || 0)).includes(prodId)));
+
+                                  const mps = isAlreadyLive 
+                                    ? (item.liveProductSummary?.[prodId]?.marketplaces || item.activeProductsMap?.[prodId] || ['US'])
+                                    : (item.activeProductsMap?.[prodId] || prodDef?.availableMarketplaces || ['US']);
+
+                                  return (
+                                    <div 
+                                      key={prodId} 
+                                      className={`p-2.5 rounded-xl border text-xs transition-all ${
+                                        isTmBlocked
+                                          ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
+                                          : !isAlreadyLive
+                                            ? 'bg-purple-950/40 border-purple-500/60 ring-1 ring-purple-500/30 shadow-sm shadow-purple-500/10'
+                                            : 'bg-slate-900/90 border-slate-800 text-slate-300'
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="font-bold text-slate-200 truncate">{displayName}</span>
+                                        {isTmBlocked ? (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
+                                            TM-Block
+                                          </span>
+                                        ) : !isAlreadyLive ? (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-purple-500/20 text-purple-200 border border-purple-500/40">
+                                            ✨ Neu ergänzen (+1)
+                                          </span>
+                                        ) : (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
+                                            ✓ Live (0 Slots)
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
+                                        {Array.isArray(mps) && mps.map(mp => (
+                                          <span key={mp} className={`px-1.5 py-0.2 rounded ${
+                                            !isAlreadyLive
+                                              ? 'bg-purple-900/60 text-purple-200 border border-purple-700'
+                                              : String(mp).toUpperCase() === 'US'
+                                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
+                                                : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
+                                          }`}>
+                                            {mp}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                });
+                              })()}
                             </div>
                           </div>
                         </div>

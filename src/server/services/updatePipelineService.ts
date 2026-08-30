@@ -461,7 +461,9 @@ export class UpdatePipelineService {
         imagePath: task.localImagePath || '',
         pngPath: task.localMbaPngPath || '',
         publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
-        liveStats: task.payload?.liveStats || null
+        liveStats: task.payload?.liveStats || null,
+        liveProductSummary: task.payload?.productSummary || null,
+        liveProductTypes: task.payload?.productTypes || null
       });
 
       TaskLogService.updateTaskStatus(taskId, {

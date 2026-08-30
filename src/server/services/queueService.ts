@@ -47,6 +47,8 @@ export interface QueueItem {
   designId?: string;
   publishedProductsCount?: number;            // Number of products already live on Amazon (for update items)
   liveStats?: any;                            // Live stats payload from Amazon
+  liveProductSummary?: Record<string, any>;   // Specific product summary already live on Amazon
+  liveProductTypes?: string[];                // Product type keys already live on Amazon
 }
 
 export interface QueueState {
@@ -69,6 +71,7 @@ export interface QueueState {
   updateTargetCount?: number;
   updateAutoBackfillEnabled?: boolean;
   updateMaxActiveProducts?: number;
+  catalogProducts?: any[];
 }
 
 // Strict drop sequence for non-US marketplaces within a droppable product
@@ -243,6 +246,14 @@ export class QueueService {
               item.liveStats = task.payload.liveStats;
               hasChanges = true;
             }
+            if (!item.liveProductSummary && task.payload?.productSummary) {
+              item.liveProductSummary = task.payload.productSummary;
+              hasChanges = true;
+            }
+            if (!item.liveProductTypes && task.payload?.productTypes) {
+              item.liveProductTypes = task.payload.productTypes;
+              hasChanges = true;
+            }
             if (!item.designId && task.payload?.designId) {
               item.designId = task.payload.designId;
               hasChanges = true;
@@ -383,7 +394,8 @@ export class QueueService {
       maxCatalogSlots,
       updateTargetCount: settings.queueUpdateTargetCount ?? 10,
       updateAutoBackfillEnabled: settings.queueUpdateAutoBackfillEnabled ?? false,
-      updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100
+      updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100,
+      catalogProducts: ProductCatalogService.getCatalog().products
     };
   }
 
@@ -411,6 +423,8 @@ export class QueueService {
     designId?: string;
     publishedProductsCount?: number;
     liveStats?: any;
+    liveProductSummary?: Record<string, any>;
+    liveProductTypes?: string[];
   }): QueueItem {
     this.ensureLoaded();
 
@@ -450,6 +464,8 @@ export class QueueService {
       if (item.designId) existing.designId = item.designId;
       if (item.publishedProductsCount !== undefined) existing.publishedProductsCount = item.publishedProductsCount;
       if (item.liveStats !== undefined) existing.liveStats = item.liveStats;
+      if (item.liveProductSummary !== undefined) existing.liveProductSummary = item.liveProductSummary;
+      if (item.liveProductTypes !== undefined) existing.liveProductTypes = item.liveProductTypes;
 
       this.saveQueue();
       this.rebalanceQueue();
@@ -510,7 +526,9 @@ export class QueueService {
       type: item.type || (isUpdate ? 'update' : 'new'),
       designId: item.designId,
       publishedProductsCount: item.publishedProductsCount,
-      liveStats: item.liveStats
+      liveStats: item.liveStats,
+      liveProductSummary: item.liveProductSummary || item.liveStats?.productSummary || null,
+      liveProductTypes: item.liveProductTypes || item.liveStats?.productTypes || null
     };
 
     this.items.push(newItem);
@@ -541,6 +559,8 @@ export class QueueService {
     designId?: string;
     publishedProductsCount?: number;
     liveStats?: any;
+    liveProductSummary?: Record<string, any>;
+    liveProductTypes?: string[];
   }): QueueItem {
     return this.enqueueDesign({
       ...item,
