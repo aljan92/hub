@@ -31,7 +31,8 @@ import {
   Info,
   Database,
   Power,
-  Loader2
+  Loader2,
+  Palette
 } from 'lucide-react';
 import { BrowserScreencast } from '../components/BrowserScreencast';
 

@@ -12,6 +12,8 @@ import { SettingsView } from './views/SettingsView';
 import { PromptLogView } from './views/PromptLogView';
 import { SystemPromptsView } from './views/SystemPromptsView';
 
+import { ErrorBoundary } from './components/ErrorBoundary';
+
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [tier, setTier] = useState<number | undefined>(undefined);
@@ -56,16 +58,18 @@ export const App: React.FC = () => {
         {/* Scrollable View Area */}
         <main className="flex-1 p-6 md:p-8 overflow-y-auto bg-gradient-to-b from-background via-surface/40 to-background">
           <div className="max-w-7xl mx-auto">
-            {activeTab === 'dashboard' && <DashboardView onNavigateTab={setActiveTab} />}
-            {activeTab === 'promptlog' && <PromptLogView />}
-            {activeTab === 'systemprompts' && <SystemPromptsView />}
-            {activeTab === 'designer' && <DesignerView />}
-            {activeTab === 'tasks' && <TasksView />}
-            {activeTab === 'queue' && <QueueView />}
-            {activeTab === 'products' && <ProductsView />}
-            {activeTab === 'database' && <DatabaseView />}
-            {activeTab === 'logs' && <LogsView />}
-            {activeTab === 'settings' && <SettingsView />}
+            <ErrorBoundary fallbackTitle="Fehler beim Laden dieser Ansicht">
+              {activeTab === 'dashboard' && <DashboardView onNavigateTab={setActiveTab} />}
+              {activeTab === 'promptlog' && <PromptLogView />}
+              {activeTab === 'systemprompts' && <SystemPromptsView />}
+              {activeTab === 'designer' && <DesignerView />}
+              {activeTab === 'tasks' && <TasksView />}
+              {activeTab === 'queue' && <QueueView />}
+              {activeTab === 'products' && <ProductsView />}
+              {activeTab === 'database' && <DatabaseView />}
+              {activeTab === 'logs' && <LogsView />}
+              {activeTab === 'settings' && <SettingsView />}
+            </ErrorBoundary>
           </div>
         </main>
       </div>
