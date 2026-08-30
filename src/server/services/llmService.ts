@@ -1,5 +1,14 @@
 import { loadSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
+import { BannedWordsService } from './bannedWordsService';
+
+export interface EnglishListing {
+  brand: string;
+  title: string;
+  bullet1: string;
+  bullet2: string;
+  description: string;
+}
 
 export interface ListingResult {
   title: string;
@@ -7,8 +16,8 @@ export interface ListingResult {
   bullet1: string;
   bullet2: string;
   description: string;
-  keywords: string;
-  colorCount: number;
+  keywords?: string;
+  colorCount?: number;
   audiencePrediction?: string;
   avoidColorPrediction?: string;
   reuseBackgroundPrediction?: string;
@@ -333,35 +342,53 @@ Style Preset: ${stylePreset}`;
   }
 
   /**
-   * Vision Analysis + Amazon SEO Listing Generation (single-session token efficiency)
+   * 1. Generate Master English Listing (100% English First, Suffix SEO Formula, Keyword-Dense Brand)
    */
-  static async analyzeVisionAndGenerateListing(
-    imageUrlOrBase64: string,
-    niche1?: string,
-    niche2?: string
-  ): Promise<ListingResult> {
+  static async generateMasterEnglishListing(params: {
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
+    quote?: string;
+    keywords?: string[];
+    hermesKeywords?: string[];
+    stylePreset?: string;
+    audience?: string;
+    avoidColor?: string;
+    oldListing?: any;
+  }): Promise<EnglishListing> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
-    const systemPrompt = `You are "Listing Creator", an expert in Amazon Merch on Demand SEO listings and visual design analysis.
-Analyze the image and provide a compliant, high-converting listing plus design classifications.
-Character limits:
-- Title: 55-60 chars (Include visible quote verbatim or strongest keywords, no product types like "shirt")
-- Brand: 40-50 chars (Target audience/mood in Title Case)
-- Bullet 1: 230-246 chars (Audience, context, style, visible text if not in Title)
-- Bullet 2: 230-246 chars (Occasions, related sub-niches, "perfect for...")
-- Description: 450-650 chars (Smooth story-style summary)
-- Keywords: >= 25 comma-separated unique lowercase keywords.
-- colorCount: estimated number of distinct visible colors (integer, conservative, 2-8).
-- audiencePrediction: "Men", "Women", "Youth", or "Men, Women"
-- avoidColorPrediction: "Black", "White", or "None" (if white elements exist, avoid white)
-- reuseBackgroundPrediction: "Nein" (if graphic is isolated on solid bg) or "Ja"
+    const basePrompt = SystemPromptService.getListingGeneratorPrompt();
+    const bannedSection = BannedWordsService.getBannedWordsPromptSection();
+    const systemPrompt = `${basePrompt}\n\n${bannedSection}`;
 
-Respond strictly with valid JSON conforming to these exact keys.`;
+    const n1 = params.niche1 || 'Graphic Art';
+    const n2 = params.niche2 && params.niche2.toLowerCase() !== 'none' ? params.niche2 : '';
+    const sub = params.subniche && params.subniche.toLowerCase() !== 'none' ? params.subniche : '';
+    const quote = params.quote || '';
+    const allKw = [
+      ...(params.hermesKeywords || []),
+      ...(params.keywords || [])
+    ].filter(Boolean);
 
-    const userContent: any[] = [
-      { type: 'text', text: `Niche 1: ${niche1 || ''}\nNiche 2: ${niche2 || ''}` },
-      { type: 'image_url', image_url: { url: imageUrlOrBase64 } }
-    ];
+    let userMessage = `Design Information:
+- Primary Niche (niche1): ${n1}
+- Secondary Niche (niche2): ${n2 || 'none'}
+- Subniche: ${sub || 'none'}
+- Quote / Slogan: "${quote}"
+- Keywords Pool: ${allKw.length > 0 ? allKw.join(', ') : 'none provided'}
+- Style Preset: ${params.stylePreset || 'vintage retro vector'}
+- Target Audience: ${params.audience || 'Men, Women'}
+- Avoid Colors: ${params.avoidColor || 'none'}`;
+
+    if (params.oldListing) {
+      userMessage += `\n\nExisting Listing Context (for inspiration/upgrade):
+- Old Brand: "${params.oldListing.brand || ''}"
+- Old Title: "${params.oldListing.title || ''}"
+- Old Bullets: "${[params.oldListing.bullet1, params.oldListing.bullet2].filter(Boolean).join(' | ')}"`;
+    }
+
+    userMessage += `\n\nGenerate the optimized 100% English Amazon Merch on Demand listing now. Ensure Title ends strictly with subniche/niche without trailing punctuation!`;
 
     try {
       const res = await fetch(url, {
@@ -371,33 +398,223 @@ Respond strictly with valid JSON conforming to these exact keys.`;
           model,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userContent }
+            { role: 'user', content: userMessage }
           ],
           response_format: { type: 'json_object' },
           temperature: 0.4,
-          max_tokens: 1000,
+          max_tokens: 800,
         }),
         signal: AbortSignal.timeout(25000)
       });
 
-      if (!res.ok) throw new Error(`Vision API error: ${res.statusText}`);
+      if (!res.ok) throw new Error(`LLM Listing error: ${res.status} ${res.statusText}`);
       const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-      return JSON.parse(content);
-    } catch (err: any) {
-      console.error('[LLMService] Vision Listing error:', err);
-      // Fallback
+      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
+      const parsed = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());
+
+      // Clean Title: ensure no trailing punctuation
+      let cleanTitle = (parsed.title || '').trim();
+      cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, '').trim();
+
       return {
-        title: `${niche1 || 'Vintage'} Retro Graphic Design`,
-        brand: `${niche1 || 'Retro'} Apparel Co`,
-        bullet1: `Express your unique aesthetic with this stylish ${niche1 || 'vintage'} artwork. Ideal for everyday casual wear and trendsetters.`,
-        bullet2: `A versatile addition to any collection, perfect for birthdays, holidays, summer festivals, and casual outings with friends.`,
-        description: `High-quality graphic design celebrating ${niche1 || 'retro'} vibes with vivid details and expressive artwork for enthusiasts.`,
-        keywords: 'vintage, retro, aesthetic, graphic, distressed, classic, apparel, gifts',
-        colorCount: 4,
-        audiencePrediction: 'Men, Women',
-        avoidColorPrediction: 'None',
-        reuseBackgroundPrediction: 'Nein'
+        brand: (parsed.brand || `${n1} ${sub || 'Apparel'}`).trim(),
+        title: cleanTitle || `${n1} ${quote ? quote + ' ' : ''}${sub || n1}`.trim(),
+        bullet1: (parsed.bullet1 || `Featuring unique ${n1} artwork for enthusiasts and collectors.`).trim(),
+        bullet2: (parsed.bullet2 || `Great to wear during casual outings, weekend gatherings, and hobby events.`).trim(),
+        description: (parsed.description || `Stylish ${n1} graphic design for passionate fans.`).trim()
+      };
+    } catch (err: any) {
+      console.error('[LLMService] Error generating master English listing:', err);
+      // Fallback
+      const targetEnd = sub || n1;
+      return {
+        brand: `${n1} ${sub ? sub + ' ' : ''}Apparel Accessories`.trim().slice(0, 50),
+        title: `Vintage Retro ${quote ? quote + ' ' : ''}${targetEnd}`.trim().slice(0, 60),
+        bullet1: `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`,
+        bullet2: `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`,
+        description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`
+      };
+    }
+  }
+
+  /**
+   * 2. Rewrite Listing with Specific Trademark Feedback (Feedback Loop, Class Distinctions)
+   */
+  static async rewriteListingWithTrademarkFeedback(params: {
+    currentListing: EnglishListing;
+    tmHits: any[];
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
+    quote?: string;
+  }): Promise<{
+    verdict: 'APPROVED' | 'REJECTED';
+    rejection_reason?: string | null;
+    blocked_classes?: number[];
+    actions_taken?: string[];
+    refined_listing: EnglishListing;
+  }> {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+
+    const systemPrompt = SystemPromptService.getTrademarkAuditorPrompt();
+    const hitSummary = params.tmHits.map(h => `- Term: "${h.term || h.trademark}", Class: ${h.classNumber || h.classes?.join(',') || 'unknown'}, Office: ${h.source || 'USPTO'}, Status: ${h.status || 'LIVE'}`).join('\n');
+
+    const userMessage = `Current English Listing:
+- Brand: "${params.currentListing.brand}"
+- Title: "${params.currentListing.title}"
+- Bullet 1: "${params.currentListing.bullet1}"
+- Bullet 2: "${params.currentListing.bullet2}"
+- Description: "${params.currentListing.description}"
+
+Design Metadata:
+- Primary Niche (niche1): ${params.niche1 || ''}
+- Secondary Niche (niche2): ${params.niche2 || ''}
+- Subniche: ${params.subniche || ''}
+- Quote / Slogan: "${params.quote || ''}"
+
+Detected Trademark Hits:
+${hitSummary || 'None flagged directly.'}
+
+Please audit the listing against trademark rules. If a Brand word is Class 25, replace with an alternative niche keyword. If a non-fair-use term is in Title/Bullets, rewrite. Return valid JSON.`;
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.2,
+          max_tokens: 800,
+        }),
+        signal: AbortSignal.timeout(25000)
+      });
+
+      if (!res.ok) throw new Error(`LLM TM Refine error: ${res.status} ${res.statusText}`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
+      const parsed = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());
+
+      const refined = parsed.refined_listing || params.currentListing;
+      let cleanTitle = (refined.title || params.currentListing.title).trim();
+      cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, '').trim();
+
+      return {
+        verdict: parsed.verdict === 'REJECTED' ? 'REJECTED' : 'APPROVED',
+        rejection_reason: parsed.rejection_reason || null,
+        blocked_classes: Array.isArray(parsed.blocked_classes) ? parsed.blocked_classes : [],
+        actions_taken: Array.isArray(parsed.actions_taken) ? parsed.actions_taken : [],
+        refined_listing: {
+          brand: (refined.brand || params.currentListing.brand).trim(),
+          title: cleanTitle,
+          bullet1: (refined.bullet1 || params.currentListing.bullet1).trim(),
+          bullet2: (refined.bullet2 || params.currentListing.bullet2).trim(),
+          description: (refined.description || params.currentListing.description).trim()
+        }
+      };
+    } catch (err: any) {
+      console.error('[LLMService] Error refining listing with TM feedback:', err);
+      return {
+        verdict: 'APPROVED',
+        rejection_reason: null,
+        blocked_classes: [],
+        actions_taken: ['Fallback: unchanged due to network timeout'],
+        refined_listing: params.currentListing
+      };
+    }
+  }
+
+  /**
+   * 3. Translate Approved English Master Listing into Multi-Marketplace Languages (DE, FR, ES, IT, JA)
+   * Only called AFTER English Listing is approved & TM-safe (saves ~80% tokens)
+   */
+  static async translateApprovedListing(params: {
+    englishListing: EnglishListing;
+    niche1?: string;
+    subniche?: string;
+    quote?: string;
+  }): Promise<{
+    en: EnglishListing;
+    de: EnglishListing;
+    fr: EnglishListing;
+    es: EnglishListing;
+    it: EnglishListing;
+    ja: EnglishListing;
+  }> {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+
+    const systemPrompt = SystemPromptService.getUpdateTranslationPrompt();
+
+    const userMessage = `Approved English Master Listing:
+- Brand: "${params.englishListing.brand}"
+- Title: "${params.englishListing.title}"
+- Bullet 1: "${params.englishListing.bullet1}"
+- Bullet 2: "${params.englishListing.bullet2}"
+- Description: "${params.englishListing.description}"
+
+Artwork Quote (keep verbatim in all languages): "${params.quote || ''}"
+Primary Niche: "${params.niche1 || ''}"
+Subniche: "${params.subniche || ''}"
+
+Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with the translated Niche/Subniche noun without trailing punctuation!`;
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.3,
+          max_tokens: 1500,
+        }),
+        signal: AbortSignal.timeout(30000)
+      });
+
+      if (!res.ok) throw new Error(`LLM Translation error: ${res.status} ${res.statusText}`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
+      const parsed = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());
+
+      const cleanListing = (item: any, fallback: EnglishListing): EnglishListing => {
+        if (!item || typeof item !== 'object') return fallback;
+        let t = (item.title || fallback.title).trim();
+        t = t.replace(/[,.!?:;'"\-–—]+$/, '').trim();
+        return {
+          brand: (item.brand || fallback.brand).trim().slice(0, 50),
+          title: t.slice(0, 60),
+          bullet1: (item.bullet1 || fallback.bullet1).trim().slice(0, 256),
+          bullet2: (item.bullet2 || fallback.bullet2).trim().slice(0, 256),
+          description: (item.description || fallback.description).trim().slice(0, 600)
+        };
+      };
+
+      return {
+        en: params.englishListing,
+        de: cleanListing(parsed.de, params.englishListing),
+        fr: cleanListing(parsed.fr, params.englishListing),
+        es: cleanListing(parsed.es, params.englishListing),
+        it: cleanListing(parsed.it, params.englishListing),
+        ja: cleanListing(parsed.ja, params.englishListing)
+      };
+    } catch (err: any) {
+      console.error('[LLMService] Error translating listing:', err);
+      // Fallback: reuse English listing for all
+      return {
+        en: params.englishListing,
+        de: { ...params.englishListing },
+        fr: { ...params.englishListing },
+        es: { ...params.englishListing },
+        it: { ...params.englishListing },
+        ja: { ...params.englishListing }
       };
     }
   }

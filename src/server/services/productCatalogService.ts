@@ -23,6 +23,7 @@ export interface MerchMarketplace {
 export interface MerchProduct {
   id: string;                          // CSS identifier, e.g. "STANDARD_TSHIRT"
   displayName: string;                 // Human-readable name, e.g. "Standard t-shirt"
+  niceClass?: number;                  // Nice Trademark Class (25, 18, 20, 21, 9, 16)
   colorMode: ColorMode;                // 'predefined' or 'customPicker'
   colors: MerchColorDef[];             // Available swatches
   fitTypes: MerchFitTypeDef[];         // Available fit types
@@ -32,6 +33,16 @@ export interface MerchProduct {
   lastUpdated: string;                 // ISO date string
   isDropAllowed?: boolean;             // Whether this product can be dropped during slot shortage
   dropPriorityOrder?: number;          // Order for drop cascade (1 = drop first, 2 = drop second, etc.)
+}
+
+export function inferNiceClass(idOrName: string): number {
+  const clean = (idOrName || '').toLowerCase();
+  if (clean.includes('popsocket') || clean.includes('case') || clean.includes('phone')) return 9;
+  if (clean.includes('backpack') || clean.includes('tote') || clean.includes('bag')) return 18;
+  if (clean.includes('pillow') || clean.includes('cushion')) return 20;
+  if (clean.includes('mug') || clean.includes('tumbler') || clean.includes('bottle')) return 21;
+  if (clean.includes('journal') || clean.includes('notebook') || clean.includes('book')) return 16;
+  return 25; // Default to 25 (Apparel & Headwear)
 }
 
 export interface ProductCatalogData {
@@ -174,7 +185,21 @@ export class ProductCatalogService {
     this.ensureLoaded();
 
     if (data.products !== undefined) {
-      this.catalogData.products = data.products;
+      // Merge with existing products to preserve niceClass, isDropAllowed, and dropPriorityOrder
+      const existingMap = new Map(this.catalogData.products.map(p => [p.id, p]));
+      this.catalogData.products = data.products.map(newProd => {
+        const existing = existingMap.get(newProd.id);
+        const niceClass = newProd.niceClass ?? existing?.niceClass ?? inferNiceClass(newProd.displayName || newProd.id);
+        const isDropAllowed = newProd.isDropAllowed ?? existing?.isDropAllowed ?? false;
+        const dropPriorityOrder = newProd.dropPriorityOrder ?? existing?.dropPriorityOrder;
+
+        return {
+          ...newProd,
+          niceClass,
+          isDropAllowed,
+          dropPriorityOrder
+        };
+      });
     }
     if (data.marketplaces !== undefined) {
       this.catalogData.marketplaces = data.marketplaces;
@@ -258,6 +283,39 @@ export class ProductCatalogService {
   public static getProductById(id: string): MerchProduct | undefined {
     this.ensureLoaded();
     return this.catalogData.products.find(p => p.id === id);
+  }
+
+  /**
+   * Get all products belonging to a specific Nice Trademark Class (e.g. 25, 9, 18, 20, 21, 16)
+   */
+  public static getProductsByNiceClass(niceClass: number): MerchProduct[] {
+    this.ensureLoaded();
+    return this.catalogData.products.filter(p => (p.niceClass ?? inferNiceClass(p.displayName || p.id)) === niceClass);
+  }
+
+  /**
+   * Get product IDs that should be blocked for a set of Nice Trademark Classes
+   */
+  public static getBlockedProductIdsForNiceClasses(blockedClasses: number[]): string[] {
+    if (!blockedClasses || blockedClasses.length === 0) return [];
+    this.ensureLoaded();
+    const blockedSet = new Set(blockedClasses);
+    return this.catalogData.products
+      .filter(p => blockedSet.has(p.niceClass ?? inferNiceClass(p.displayName || p.id)))
+      .map(p => p.id);
+  }
+
+  /**
+   * Update nice class for a single product
+   */
+  public static updateProductNiceClass(id: string, niceClass: number): ProductCatalogData {
+    this.ensureLoaded();
+    const prod = this.catalogData.products.find(p => p.id === id);
+    if (prod) {
+      prod.niceClass = niceClass;
+      return this.saveCatalog(this.catalogData);
+    }
+    return this.catalogData;
   }
 
   /**

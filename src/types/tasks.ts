@@ -45,6 +45,8 @@ export type EventType =
   | 'TM_CHECK_RESPONSE'
   | 'TM_REFINE_REQUEST'
   | 'TM_REFINE_RESPONSE'
+  | 'TRANSLATION_REQUEST'
+  | 'TRANSLATION_RESPONSE'
   | 'VECTORIZE_REQUEST'
   | 'VECTORIZE_RESPONSE'
   | 'SVG_EDIT_REQUEST'
@@ -84,6 +86,13 @@ export interface DesignTaskLog {
   clientIp?: string;
   payload: Record<string, any>;
   events: SessionEvent[];
+  niche1?: string;
+  niche2?: string;
+  subniche?: string;
+  hermesKeywords?: string[];
+  keywords?: string[];
+  blockedProducts?: string[];
+  blockedNiceClasses?: number[];
   resultPrompt?: string;
   imageUrl?: string;
   localImagePath?: string;
@@ -99,6 +108,9 @@ export interface DesignTaskLog {
   svgAuditResult?: any;
   analysisResult?: any;
   customAnswers?: {
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
     audience?: string;
     avoidColor?: string;
     reuseBackground?: string;
@@ -120,6 +132,7 @@ export type RetryStepType =
   | 'PREFLIGHT_TM_REQUEST'
   | 'TM_CHECK_REQUEST' 
   | 'TM_REFINE_REQUEST'
+  | 'TRANSLATION_REQUEST'
   | 'VECTORIZE_REQUEST'
   | 'SVG_AUDIT_REQUEST'
   | 'SVG_REVIEW'

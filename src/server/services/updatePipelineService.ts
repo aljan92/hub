@@ -6,6 +6,8 @@ import { AmazonInspectService } from './amazonInspectService';
 import { loadSettings } from './settingsService';
 import { QueueService } from './queueService';
 import { SystemPromptService } from './systemPromptService';
+import { LLMService } from './llmService';
+import { TrademarkService } from './trademarkService';
 
 export class UpdatePipelineService {
   /**
@@ -166,10 +168,20 @@ export class UpdatePipelineService {
       const contentStr = json.choices?.[0]?.message?.content || '{}';
       const parsed = JSON.parse(contentStr.replace(/```json/g, '').replace(/```/g, '').trim());
 
+      const niche1 = parsed.niche1 || 'Graphic Art';
+      const niche2 = parsed.niche2 || 'none';
+      const subniche = parsed.subniche || 'none';
+
       TaskLogService.updateTaskStatus(taskId, {
         status: 'UPDATE_ANALYZED',
+        niche1,
+        niche2,
+        subniche,
         analysisResult: parsed,
         customAnswers: {
+          niche1,
+          niche2,
+          subniche,
           audience: Array.isArray(parsed.fitTypes) ? parsed.fitTypes.join(', ') : 'men, women, youth',
           avoidColor: parsed.avoidColor || 'none',
           notes: parsed.reasoning || ''
@@ -180,7 +192,7 @@ export class UpdatePipelineService {
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'ANALYSIS_RESPONSE',
-        title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? 'empfohlen' : 'nicht nötig'}`,
+        title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? 'empfohlen' : 'nicht nötig'} (Nische: ${niche1})`,
         content: parsed,
         metadata: { model, provider: 'OpenRouter' }
       });
@@ -200,7 +212,7 @@ export class UpdatePipelineService {
   }
 
   /**
-   * Step U4: Listing Rewriting (EN only)
+   * Step U4: Listing Rewriting (Master English First)
    */
   static async stepU4_RewriteListing(taskId: string): Promise<{ success: boolean; listingResult?: any; error?: string }> {
     console.log(`[UpdatePipeline] ✍️ Starte Step U4 (Listing Rewriting) für Task ${taskId}...`);
@@ -234,61 +246,53 @@ export class UpdatePipelineService {
       return { success: true, listingResult: { en: enListing } };
     }
 
-    const settings = loadSettings();
-    const apiKey = settings.openRouterApiKey;
-    if (!apiKey) return { success: false, error: 'OpenRouter API-Key fehlt.' };
-
     const raw = task.payload || {};
-    const model = settings.llmModel || 'google/gemini-2.5-flash';
-
-    const baseSystemPrompt = SystemPromptService.getUpdateRewritePrompt();
-    const systemPrompt = `${baseSystemPrompt}\n\nOriginal Listing Details:\n- Brand: "${raw.brand || ''}"\n- Title: "${raw.title || ''}"\n- Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(' | ')}"`;
+    const niche1 = task.niche1 || task.customAnswers?.niche1 || task.analysisResult?.niche1 || '';
+    const niche2 = task.niche2 || task.customAnswers?.niche2 || task.analysisResult?.niche2 || '';
+    const subniche = task.subniche || task.customAnswers?.subniche || task.analysisResult?.subniche || '';
+    const audience = task.customAnswers?.audience || (Array.isArray(task.analysisResult?.fitTypes) ? task.analysisResult.fitTypes.join(', ') : 'men, women');
+    const avoidColor = task.customAnswers?.avoidColor || task.analysisResult?.avoidColor || 'none';
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'LISTING_REQUEST',
-      title: 'Listing Rewrite Request (OpenRouter)',
-      content: { originalTitle: raw.title, originalBrand: raw.brand, model },
-      metadata: { model, provider: 'OpenRouter' }
+      title: 'Master English Listing Rewrite Request (OpenRouter)',
+      content: { originalTitle: raw.title, originalBrand: raw.brand, niche1, niche2, subniche },
+      metadata: { provider: 'OpenRouter' }
     });
 
     try {
-      const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: 'Rewrite the Merch on Demand listing now.' }
-          ],
-          response_format: { type: 'json_object' }
-        })
+      const enListing = await LLMService.generateMasterEnglishListing({
+        niche1,
+        niche2,
+        subniche,
+        quote: raw.quote || '',
+        audience,
+        avoidColor,
+        oldListing: {
+          brand: raw.brand,
+          title: raw.title,
+          bullet1: raw.bullet1,
+          bullet2: raw.bullet2,
+          description: raw.description
+        }
       });
-
-      if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
-      const json = await resp.json();
-      const contentStr = json.choices?.[0]?.message?.content || '{}';
-      const parsed = JSON.parse(contentStr.replace(/```json/g, '').replace(/```/g, '').trim());
 
       TaskLogService.updateTaskStatus(taskId, {
         status: 'UPDATE_REWRITTEN',
-        listingResult: { en: parsed },
+        listingResult: { en: enListing },
         hasError: false
       });
 
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'LISTING_RESPONSE',
-        title: 'Optimiertes Listing generiert (EN)',
-        content: parsed,
-        metadata: { model, provider: 'OpenRouter' }
+        title: 'Optimiertes Master English Listing generiert',
+        content: { en: enListing },
+        metadata: { provider: 'OpenRouter' }
       });
 
-      return { success: true, listingResult: { en: parsed } };
+      return { success: true, listingResult: { en: enListing } };
     } catch (err: any) {
       console.error(`[UpdatePipeline] ❌ Fehler in Step U4:`, err);
       TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: err.message });
@@ -297,7 +301,7 @@ export class UpdatePipelineService {
   }
 
   /**
-   * Step U5: Trademark Check Loop (USPTO & DPMA)
+   * Step U5: Trademark Check Loop (USPTO, EUIPO, DPMA with Nice Class Awareness)
    */
   static async stepU5_TrademarkCheck(taskId: string): Promise<{ success: boolean; tmResult?: any; error?: string }> {
     console.log(`[UpdatePipeline] ⚖️ Starte Step U5 (Trademark Check Loop) für Task ${taskId}...`);
@@ -308,47 +312,102 @@ export class UpdatePipelineService {
       brand: task.payload?.brand || '',
       title: task.payload?.title || '',
       bullet1: task.payload?.bullet1 || '',
-      bullet2: task.payload?.bullet2 || ''
+      bullet2: task.payload?.bullet2 || '',
+      description: task.payload?.description || ''
     };
+
+    const quote = task.payload?.quote || '';
+    const niche1 = task.niche1 || task.customAnswers?.niche1 || '';
+    const niche2 = task.niche2 || task.customAnswers?.niche2 || '';
+    const subniche = task.subniche || task.customAnswers?.subniche || '';
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'TM_CHECK_REQUEST',
-      title: 'Trademark-Prüfung (USPTO & DPMA)',
-      content: { fields: listing },
-      metadata: { provider: 'Productor USPTO / DPMA' }
+      title: 'Trademark-Prüfung (USPTO, EUIPO, DPMA)',
+      content: { fields: listing, niche1, niche2, subniche },
+      metadata: { provider: 'Productor TM API' }
     });
 
-    // In a real environment, Productor/USPTO check is performed here
-    const tmResult = {
-      safe: true,
-      totalHits: 0,
-      checkedAt: new Date().toISOString(),
-      checkedFields: ['brand', 'title', 'bullet1', 'bullet2']
-    };
+    const audit = await TrademarkService.auditListingAndMetadata({
+      listing,
+      quote,
+      niche1,
+      niche2,
+      subniche,
+      offices: ['USPTO', 'EUIPO', 'DPMA']
+    });
+
+    if (audit.isHardReject) {
+      const reason = audit.hardRejectReason || 'Klasse 25 Konflikt auf Quote oder Nische.';
+      TaskLogService.updateTaskStatus(taskId, {
+        status: 'AWAITING_TM_REVIEW',
+        checkpoint: 'TM_REVIEW',
+        blockedNiceClasses: [25],
+        trademarkCheckResult: {
+          totalHits: audit.allHits.length,
+          hasInfringementClass25: true,
+          blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
+          fieldSummaries: {}
+        },
+        hasError: false,
+        errorDetails: reason
+      });
+
+      TaskLogService.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TM_REFINE_RESPONSE',
+        title: 'Trademark-Prüfung: ABGELEHNT (Klasse 25 Konflikt)',
+        content: { reason, verdict: 'REJECTED' }
+      });
+
+      return { success: false, error: reason };
+    }
+
+    // If Brand/Title needs rewriting, execute one rewrite cycle
+    let refinedListing = listing;
+    if (audit.needsRewrite && !audit.isSafe) {
+      const rewriteRes = await LLMService.rewriteListingWithTrademarkFeedback({
+        currentListing: listing,
+        tmHits: audit.allHits,
+        niche1,
+        niche2,
+        subniche,
+        quote
+      });
+      refinedListing = rewriteRes.refined_listing;
+    }
 
     TaskLogService.updateTaskStatus(taskId, {
       status: 'UPDATE_TM_CHECKED',
-      trademarkCheckResult: tmResult,
+      listingResult: { en: refinedListing },
+      blockedNiceClasses: audit.blockedNiceClasses,
+      blockedProducts: audit.blockedProducts,
+      trademarkCheckResult: {
+        totalHits: audit.allHits.length,
+        hasInfringementClass25: false,
+        blockedProducts: audit.blockedProducts,
+        fieldSummaries: {}
+      },
       hasError: false
     });
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'TM_CHECK_RESPONSE',
-      title: 'Trademark-Prüfung bestanden (0 Treffer)',
-      content: tmResult,
-      metadata: { provider: 'Productor USPTO' }
+      title: `Trademark-Prüfung abgeschlossen (${audit.allHits.length} Treffer, ${audit.blockedProducts.length} Produkte gesperrt)`,
+      content: { audit, refinedListing },
+      metadata: { provider: 'Productor USPTO / EUIPO / DPMA' }
     });
 
-    return { success: true, tmResult };
+    return { success: true, tmResult: audit };
   }
 
   /**
-   * Step U6: SEO Translation (DE, FR, ES, IT, JA)
+   * Step U6: SEO Translation (DE, FR, ES, IT, JA) & Hard Sanitizer
    */
   static async stepU6_TranslateListing(taskId: string): Promise<{ success: boolean; fullListings?: any; error?: string }> {
-    console.log(`[UpdatePipeline] 🌐 Starte Step U6 (SEO Translation) für Task ${taskId}...`);
+    console.log(`[UpdatePipeline] 🌐 Starte Step U6 (SEO Translation & Sanitizer) für Task ${taskId}...`);
     const task = this.getTask(taskId);
     if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
 
@@ -360,68 +419,43 @@ export class UpdatePipelineService {
       description: task.payload?.description || ''
     };
 
-    const settings = loadSettings();
-    const apiKey = settings.openRouterApiKey;
-    if (!apiKey) return { success: false, error: 'OpenRouter API-Key fehlt.' };
-
-    const model = settings.llmModel || 'google/gemini-2.5-flash';
-
-    const baseSystemPrompt = SystemPromptService.getUpdateTranslationPrompt();
-    const systemPrompt = `${baseSystemPrompt}\n\nSource EN Listing:\n- Brand: "${enListing.brand}"\n- Title: "${enListing.title}"\n- Bullet 1: "${enListing.bullet1}"\n- Bullet 2: "${enListing.bullet2}"`;
+    const quote = task.payload?.quote || '';
+    const niche1 = task.niche1 || task.customAnswers?.niche1 || '';
+    const subniche = task.subniche || task.customAnswers?.subniche || '';
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
-      type: 'LLM_REQUEST',
-      title: 'SEO-Übersetzung anfordern (DE, FR, ES, IT)',
-      content: { sourceListing: enListing, model },
-      metadata: { model, provider: 'OpenRouter' }
+      type: 'TRANSLATION_REQUEST',
+      title: 'SEO-Übersetzung anfordern (DE, FR, ES, IT, JA)',
+      content: { sourceListing: enListing, niche1, subniche },
+      metadata: { provider: 'OpenRouter' }
     });
 
     try {
-      const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: 'Translate to DE, FR, ES, IT now.' }
-          ],
-          response_format: { type: 'json_object' }
-        })
+      const translated = await LLMService.translateApprovedListing({
+        englishListing: enListing,
+        quote,
+        niche1,
+        subniche
       });
 
-      if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
-      const json = await resp.json();
-      const contentStr = json.choices?.[0]?.message?.content || '{}';
-      const parsed = JSON.parse(contentStr.replace(/```json/g, '').replace(/```/g, '').trim());
-
-      const fullListings = {
-        en: enListing,
-        de: parsed.de || enListing,
-        fr: parsed.fr || enListing,
-        es: parsed.es || enListing,
-        it: parsed.it || enListing
-      };
+      const sanitized = TaskLogService.sanitizeAndValidateListingBeforeQueue(translated);
 
       TaskLogService.updateTaskStatus(taskId, {
         status: 'UPDATE_TRANSLATED',
-        listingResult: fullListings,
+        listingResult: sanitized,
         hasError: false
       });
 
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
-        type: 'LLM_RESPONSE',
-        title: 'SEO-Übersetzungen erfolgreich generiert',
-        content: fullListings,
-        metadata: { model, provider: 'OpenRouter' }
+        type: 'TRANSLATION_RESPONSE',
+        title: 'SEO-Übersetzungen erfolgreich generiert & bereinigt',
+        content: sanitized,
+        metadata: { provider: 'OpenRouter' }
       });
 
-      return { success: true, fullListings };
+      return { success: true, fullListings: sanitized };
     } catch (err: any) {
       console.error(`[UpdatePipeline] ❌ Fehler in Step U6:`, err);
       TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: err.message });

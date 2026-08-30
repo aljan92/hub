@@ -163,6 +163,10 @@ export const TasksView: React.FC = () => {
   const [selectedMaxColors, setSelectedMaxColors] = useState<number>(2);
   const [editablePrompt, setEditablePrompt] = useState('');
   const [showImageZoom, setShowImageZoom] = useState(false);
+  const [editNiche1, setEditNiche1] = useState('');
+  const [editNiche2, setEditNiche2] = useState('');
+  const [editSubniche, setEditSubniche] = useState('');
+  const [editKeywords, setEditKeywords] = useState('');
 
   // Checkpoint 3 (Trademark Review) State
   const [editableListing, setEditableListing] = useState({
@@ -343,6 +347,17 @@ export const TasksView: React.FC = () => {
       setSelectedMaxColors(activeTask.customAnswers?.maxColors ?? pred?.color_analysis?.color_count ?? 2);
       setEditablePrompt(activeTask.resultPrompt || activeTask.payload?.quote || '');
 
+      // Niche Hierarchy & Keywords
+      const n1 = activeTask.niche1 || activeTask.customAnswers?.niche1 || activeTask.payload?.niche1 || activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
+      const n2 = activeTask.niche2 || activeTask.customAnswers?.niche2 || activeTask.payload?.niche2 || activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
+      const sub = activeTask.subniche || activeTask.customAnswers?.subniche || activeTask.payload?.subniche || activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
+      const kw = activeTask.keywords || activeTask.customAnswers?.keywords || activeTask.payload?.keywords || [];
+
+      setEditNiche1(n1);
+      setEditNiche2(n2 && n2.toLowerCase() !== 'none' ? n2 : '');
+      setEditSubniche(sub && sub.toLowerCase() !== 'none' ? sub : '');
+      setEditKeywords(Array.isArray(kw) ? kw.join(', ') : String(kw || ''));
+
       // TM Review Listing fields
       const fields = extractListingFields(activeTask);
       setEditableListing(fields);
@@ -395,6 +410,10 @@ export const TasksView: React.FC = () => {
     setIsSubmitting(true);
     try {
       const answers = {
+        niche1: editNiche1,
+        niche2: editNiche2,
+        subniche: editSubniche,
+        keywords: editKeywords,
         audience: selectedAudiences.join(', '),
         avoidColor: selectedAvoidColor,
         reuseBackground: selectedBgMode,
@@ -1038,6 +1057,56 @@ export const TasksView: React.FC = () => {
                             </div>
                           </div>
 
+                          {/* Niche Hierarchy & Keywords */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-2.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">Nischen-Hierarchie &amp; SEO-Keywords</span>
+                              <span className="text-[10px] text-cyan-400 font-mono font-semibold">Titel-Suffix Formel</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <div>
+                                <label className="text-[10px] font-medium text-slate-400 block mb-1">Nische 1 (Hauptthema)</label>
+                                <input
+                                  type="text"
+                                  value={editNiche1}
+                                  onChange={(e) => setEditNiche1(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-cyan-500 focus:outline-none"
+                                  placeholder="z.B. Horse"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-medium text-slate-400 block mb-1">Nische 2 (Cross-Nische)</label>
+                                <input
+                                  type="text"
+                                  value={editNiche2}
+                                  onChange={(e) => setEditNiche2(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-cyan-500 focus:outline-none"
+                                  placeholder="z.B. Coffee"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-medium text-cyan-400 block mb-1">Subnische (Titel-Ende)</label>
+                                <input
+                                  type="text"
+                                  value={editSubniche}
+                                  onChange={(e) => setEditSubniche(e.target.value)}
+                                  className="w-full bg-slate-950 border border-cyan-500/40 rounded px-2.5 py-1.5 text-xs text-cyan-300 font-bold font-mono focus:border-cyan-500 focus:outline-none"
+                                  placeholder="z.B. Shetland Pony"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-medium text-slate-400 block mb-1">Such-Keywords (Kommasepariert)</label>
+                              <input
+                                type="text"
+                                value={editKeywords}
+                                onChange={(e) => setEditKeywords(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:border-cyan-500 focus:outline-none"
+                                placeholder="equestrian, pony rider, stable..."
+                              />
+                            </div>
+                          </div>
+
                           {/* Question 2: Target Group */}
                           <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
                             <div className="flex items-center justify-between text-xs">
@@ -1316,20 +1385,30 @@ export const TasksView: React.FC = () => {
 
                     {/* Overall Summary Bar */}
                     {liveTmResult && (
-                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <ShieldCheck className="w-4 h-4 text-purple-400" />
-                          <span className="text-xs font-semibold text-slate-200">Gesamtergebnis:</span>
+                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <ShieldCheck className="w-4 h-4 text-purple-400" />
+                            <span className="text-xs font-semibold text-slate-200">Gesamtergebnis:</span>
+                          </div>
+                          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                            liveTmResult.hasInfringementClass25 
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' 
+                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          }`}>
+                            {liveTmResult.hasInfringementClass25 
+                              ? `${liveTmResult.totalHits || 0} Treffer in Klasse 25 (Bekleidung blockiert)` 
+                              : '0 Treffer in Klasse 25 (Sauber für Bekleidung ✓)'}
+                          </span>
                         </div>
-                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                          liveTmResult.hasInfringementClass25 
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' 
-                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        }`}>
-                          {liveTmResult.hasInfringementClass25 
-                            ? `${liveTmResult.totalHits || 0} Treffer in Klasse 25 (Blockiert)` 
-                            : '0 Treffer in Klasse 25 (Sauber für Bekleidung)'}
-                        </span>
+                        {Array.isArray(liveTmResult.blockedProducts) && liveTmResult.blockedProducts.length > 0 && (
+                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
+                            <span className="text-amber-400 font-medium">Gesperrte Nebenprodukte ({liveTmResult.blockedProducts.length}):</span>
+                            <span className="text-slate-300 font-mono text-[10px]">
+                              {liveTmResult.blockedProducts.join(', ')}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
 

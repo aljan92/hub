@@ -286,6 +286,29 @@ E. ALL PROHIBITED WORDS LIST:
   }
 
   /**
+   * Remove/strip banned words from a text string
+   */
+  static stripBannedWordsFromText(text: string, locale: string = 'en'): string {
+    if (!text || typeof text !== 'string') return text || '';
+    const words = this.getBannedWords(locale);
+    let cleaned = text;
+
+    for (const w of words) {
+      const escaped = w.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const regex = locale === 'ja'
+        ? new RegExp(escaped, 'gi')
+        : new RegExp(`\\b${escaped}\\b`, 'gi');
+      cleaned = cleaned.replace(regex, '');
+    }
+
+    // Clean up multiple spaces and punctuation artifacts
+    return cleaned
+      .replace(/\s+/g, ' ')
+      .replace(/\s+([,.!?;:])/g, '$1')
+      .trim();
+  }
+
+  /**
    * Validate full multi-language listing payload and return any detected banned words
    */
   static validateListing(listing: Record<string, any>): Record<string, { field: string; foundWords: string[] }[]> {

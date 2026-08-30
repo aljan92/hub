@@ -1,4 +1,5 @@
 import { loadSettings } from './settingsService';
+import { ProductCatalogService } from './productCatalogService';
 
 export type TrademarkOffice = 'USPTO' | 'EUIPO' | 'DPMA';
 
@@ -398,11 +399,12 @@ export class TrademarkService {
    */
   static analyzeHits(hitsRecord: Record<string, TrademarkHit[]>): {
     hasInfringementClass25: boolean;
+    blockedClasses: number[];
     blockedProducts: string[];
     totalHits: number;
   } {
     let hasInfringementClass25 = false;
-    const blockedProductsSet = new Set<string>();
+    const blockedClassesSet = new Set<number>();
     let totalHits = 0;
 
     for (const [, records] of Object.entries(hitsRecord)) {
@@ -414,39 +416,191 @@ export class TrademarkService {
           ? rec.classes
           : this.extractNiceClasses({ classification: rec.classNumber });
 
-        if (classes.includes('25')) {
-          hasInfringementClass25 = true;
-          blockedProductsSet.add('STANDARD_TSHIRT');
-          blockedProductsSet.add('PREMIUM_TSHIRT');
-          blockedProductsSet.add('HOODIE');
-          blockedProductsSet.add('SWEATSHIRT');
-          blockedProductsSet.add('ZIP_HOODIE');
-          blockedProductsSet.add('TANK_TOP');
-          blockedProductsSet.add('LONG_SLEEVE_TSHIRT');
-          blockedProductsSet.add('RAGLAN');
-        }
-        if (classes.includes('9')) {
-          blockedProductsSet.add('POPSOCKET');
-          blockedProductsSet.add('PHONE_CASE_APPLE_IPHONE');
-          blockedProductsSet.add('PHONE_CASE_SAMSUNG_GALAXY');
-        }
-        if (classes.includes('21')) {
-          blockedProductsSet.add('MUG');
-          blockedProductsSet.add('TUMBLER');
-        }
-        if (classes.includes('20')) {
-          blockedProductsSet.add('THROW_PILLOW');
-        }
-        if (classes.includes('8') || classes.includes('18')) {
-          blockedProductsSet.add('TOTE_BAG');
+        for (const c of classes) {
+          const num = parseInt(c, 10);
+          if (!isNaN(num)) {
+            blockedClassesSet.add(num);
+            if (num === 25) {
+              hasInfringementClass25 = true;
+            }
+          }
         }
       }
     }
 
+    const blockedClasses = Array.from(blockedClassesSet);
+    const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
+      blockedClasses.filter(c => c !== 25) // Clothing 25 is handled separately via hard-reject / rewrite
+    );
+
     return {
       hasInfringementClass25,
-      blockedProducts: Array.from(blockedProductsSet),
+      blockedClasses,
+      blockedProducts,
       totalHits
+    };
+  }
+
+  /**
+   * Comprehensive Audit for Listing + Niche Metadata (Hard-Reject, Product Blocking, Fair-Use)
+   */
+  static async auditListingAndMetadata(params: {
+    listing: { brand: string; title: string; bullet1: string; bullet2: string; description?: string };
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
+    quote?: string;
+    offices?: TrademarkOffice[];
+  }): Promise<{
+    isHardReject: boolean;
+    hardRejectReason?: string | null;
+    isSafe: boolean;
+    needsRewrite: boolean;
+    brandConflict: boolean;
+    titleConflict: boolean;
+    blockedNiceClasses: number[];
+    blockedProducts: string[];
+    allHits: TrademarkHit[];
+    hitDetails: Record<string, TrademarkHit[]>;
+  }> {
+    const offices = params.offices && params.offices.length > 0 ? params.offices : (['USPTO', 'EUIPO', 'DPMA'] as TrademarkOffice[]);
+    
+    // 1. Collect all terms to query
+    const termsToFieldMap: Record<string, string[]> = {
+      quote: params.quote ? this.extractTermsFromText(params.quote) : [],
+      niche1: params.niche1 ? this.extractTermsFromText(params.niche1) : [],
+      niche2: params.niche2 && params.niche2.toLowerCase() !== 'none' ? this.extractTermsFromText(params.niche2) : [],
+      subniche: params.subniche && params.subniche.toLowerCase() !== 'none' ? this.extractTermsFromText(params.subniche) : [],
+      brand: this.extractTermsFromText(params.listing.brand),
+      title: this.extractTermsFromText(params.listing.title),
+      bullet1: this.extractTermsFromText(params.listing.bullet1),
+      bullet2: this.extractTermsFromText(params.listing.bullet2),
+    };
+
+    const allUniqueTerms = new Set<string>();
+    for (const terms of Object.values(termsToFieldMap)) {
+      terms.forEach(t => allUniqueTerms.add(t));
+    }
+
+    const termList = Array.from(allUniqueTerms);
+    const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
+
+    // 2. Classify hits
+    let isHardReject = false;
+    let hardRejectReason: string | null = null;
+    let brandConflict = false;
+    let titleConflict = false;
+    let needsRewrite = false;
+    const blockedClassesSet = new Set<number>();
+    const allHitsList: TrademarkHit[] = [];
+
+    // Check Hard-Reject on Core Slogan & Core Niches in Class 25
+    const coreFields = ['quote', 'niche1', 'niche2', 'subniche'];
+    for (const f of coreFields) {
+      const terms = termsToFieldMap[f] || [];
+      for (const t of terms) {
+        const hits = globalHits[t] || [];
+        for (const h of hits) {
+          if (!this.isLiveStatus(h.status)) continue;
+          allHitsList.push(h);
+          const classes = (h.classes && h.classes.length > 0) ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+          if (classes.includes('25')) {
+            isHardReject = true;
+            hardRejectReason = `Core ${f} "${t}" is an active Class 25 trademark (${h.source}: ${h.trademark}).`;
+            break;
+          }
+        }
+        if (isHardReject) break;
+      }
+      if (isHardReject) break;
+    }
+
+    if (isHardReject) {
+      return {
+        isHardReject: true,
+        hardRejectReason,
+        isSafe: false,
+        needsRewrite: false,
+        brandConflict: true,
+        titleConflict: true,
+        blockedNiceClasses: [25],
+        blockedProducts: [],
+        allHits: allHitsList,
+        hitDetails: globalHits
+      };
+    }
+
+    // Check Brand Name in Class 25 (0 Tolerance)
+    const brandTerms = termsToFieldMap.brand || [];
+    for (const t of brandTerms) {
+      const hits = globalHits[t] || [];
+      for (const h of hits) {
+        if (!this.isLiveStatus(h.status)) continue;
+        allHitsList.push(h);
+        const classes = (h.classes && h.classes.length > 0) ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+        if (classes.includes('25')) {
+          brandConflict = true;
+          needsRewrite = true;
+        } else {
+          classes.forEach(c => {
+            const num = parseInt(c, 10);
+            if (!isNaN(num)) blockedClassesSet.add(num);
+          });
+        }
+      }
+    }
+
+    // Check Title & Bullets
+    const listingFields = ['title', 'bullet1', 'bullet2'];
+    for (const f of listingFields) {
+      const terms = termsToFieldMap[f] || [];
+      for (const t of terms) {
+        const hits = globalHits[t] || [];
+        for (const h of hits) {
+          if (!this.isLiveStatus(h.status)) continue;
+          allHitsList.push(h);
+          const classes = (h.classes && h.classes.length > 0) ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+          if (classes.includes('25')) {
+            if (f === 'title') {
+              // Exact matches or non-stop words in title trigger rewrite
+              if (!COMMON_STOP_WORDS.has(t)) {
+                titleConflict = true;
+                needsRewrite = true;
+              }
+            } else {
+              // In bullets: multi-word phrases or non-descriptive trademarks trigger rewrite
+              if (!COMMON_STOP_WORDS.has(t) && t.includes(' ')) {
+                needsRewrite = true;
+              }
+            }
+          } else {
+            classes.forEach(c => {
+              const num = parseInt(c, 10);
+              if (!isNaN(num)) blockedClassesSet.add(num);
+            });
+          }
+        }
+      }
+    }
+
+    const blockedNiceClasses = Array.from(blockedClassesSet);
+    const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
+      blockedNiceClasses.filter(c => c !== 25)
+    );
+
+    const isSafe = !brandConflict && !titleConflict && !needsRewrite;
+
+    return {
+      isHardReject: false,
+      hardRejectReason: null,
+      isSafe,
+      needsRewrite,
+      brandConflict,
+      titleConflict,
+      blockedNiceClasses,
+      blockedProducts,
+      allHits: allHitsList,
+      hitDetails: globalHits
     };
   }
 

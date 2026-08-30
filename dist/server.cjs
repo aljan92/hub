@@ -49915,12 +49915,340 @@ var init_settingsService = __esm2({
   }
 });
 
+// src/server/services/productCatalogService.ts
+function inferNiceClass(idOrName) {
+  const clean = (idOrName || "").toLowerCase();
+  if (clean.includes("popsocket") || clean.includes("case") || clean.includes("phone")) return 9;
+  if (clean.includes("backpack") || clean.includes("tote") || clean.includes("bag")) return 18;
+  if (clean.includes("pillow") || clean.includes("cushion")) return 20;
+  if (clean.includes("mug") || clean.includes("tumbler") || clean.includes("bottle")) return 21;
+  if (clean.includes("journal") || clean.includes("notebook") || clean.includes("book")) return 16;
+  return 25;
+}
+var import_fs72, import_path67, MERCH_COLOR_HEX_MAP, ProductCatalogService;
+var init_productCatalogService = __esm2({
+  "src/server/services/productCatalogService.ts"() {
+    "use strict";
+    import_fs72 = __toESM2(require("fs"), 1);
+    import_path67 = __toESM2(require("path"), 1);
+    MERCH_COLOR_HEX_MAP = {
+      black: "#121212",
+      white: "#FFFFFF",
+      asphalt: "#383E42",
+      navy: "#131E2E",
+      dark_heather: "#3A3D40",
+      heather_grey: "#A8A9AD",
+      heather_blue: "#4A6B82",
+      royal: "#1B4D89",
+      baby_blue: "#8CB4D9",
+      grass: "#3E8E41",
+      kelly_green: "#1E792E",
+      dark_green: "#1A3828",
+      olive: "#4D4E32",
+      olive_heather: "#4D543B",
+      red: "#B81D24",
+      cranberry: "#7D1A2B",
+      burgundy: "#5B1E28",
+      red_heather: "#873238",
+      pink: "#E88B9E",
+      light_pink: "#F4C2C2",
+      pink_heather: "#C28490",
+      purple: "#4B2E83",
+      light_purple: "#B399D4",
+      purple_heather: "#6B4C72",
+      lemon: "#F4E04D",
+      golden_yellow: "#F5A623",
+      orange: "#E65100",
+      brown: "#4E3629",
+      silver: "#C0C0C0",
+      slate: "#5C6F84",
+      sapphire: "#0F52BA",
+      ivory: "#FFFFF0",
+      light_beige: "#F5F5DC",
+      mint_green: "#98FF98",
+      deep_blue: "#0B2265",
+      plum: "#4D1F3D",
+      raspberry_red: "#911736",
+      forest: "#1E3F20",
+      forest_green: "#1E3F20",
+      tan: "#D2B48C",
+      storm: "#4F5B66",
+      mauve: "#915F6D",
+      grey: "#808080",
+      dark_grey: "#333333",
+      neon_pink: "#FF1493",
+      black_athletic_heather: "#2B2B2B",
+      black_white: "#222222",
+      dark_heather_white: "#3A3D40",
+      navy_athletic_heather: "#1A2738",
+      navy_white: "#131E2E",
+      red_white: "#B81D24",
+      royal_blue_white: "#1B4D89",
+      blue_white: "#1B4D89",
+      pink_white: "#E88B9E",
+      yellow_white: "#F4E04D",
+      orange_white: "#E65100",
+      brushed_steel: "#A2AAB0",
+      light_blue: "#8CB4D9",
+      dusty_blue: "#5C768D",
+      sage_green: "#879B86",
+      bright_pink: "#FF4081",
+      blue_tie_dye: "#2E5B88",
+      grey_tie_dye: "#6E7074",
+      purple_tie_dye: "#5B3B70",
+      fern_tie_dye: "#3D5E43",
+      umber_tie_dye: "#5A3E31"
+    };
+    ProductCatalogService = class {
+      static catalogFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog.json");
+      static catalogData = {
+        products: [],
+        marketplaces: [],
+        lastScanDate: null,
+        schemaVersion: 1
+      };
+      static isLoaded = false;
+      static ensureLoaded() {
+        if (this.isLoaded) return;
+        this.loadCatalog();
+        this.isLoaded = true;
+      }
+      /**
+       * Load catalog data from ./data/product_catalog.json
+       */
+      static loadCatalog() {
+        try {
+          if (import_fs72.default.existsSync(this.catalogFilePath)) {
+            const raw = import_fs72.default.readFileSync(this.catalogFilePath, "utf-8");
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.products)) {
+              this.catalogData = {
+                products: parsed.products,
+                marketplaces: parsed.marketplaces || this.getDefaultMarketplaces(),
+                lastScanDate: parsed.lastScanDate || null,
+                schemaVersion: parsed.schemaVersion || 1
+              };
+              this.enrichColorsWithHex();
+              return this.catalogData;
+            }
+          }
+        } catch (err) {
+          console.error("[ProductCatalogService] Failed to load product_catalog.json:", err.message);
+        }
+        this.catalogData = {
+          products: [],
+          marketplaces: this.getDefaultMarketplaces(),
+          lastScanDate: null,
+          schemaVersion: 1
+        };
+        return this.catalogData;
+      }
+      /**
+       * Save catalog data to ./data/product_catalog.json
+       */
+      static saveCatalog(data) {
+        this.ensureLoaded();
+        if (data.products !== void 0) {
+          const existingMap = new Map(this.catalogData.products.map((p) => [p.id, p]));
+          this.catalogData.products = data.products.map((newProd) => {
+            const existing = existingMap.get(newProd.id);
+            const niceClass = newProd.niceClass ?? existing?.niceClass ?? inferNiceClass(newProd.displayName || newProd.id);
+            const isDropAllowed = newProd.isDropAllowed ?? existing?.isDropAllowed ?? false;
+            const dropPriorityOrder = newProd.dropPriorityOrder ?? existing?.dropPriorityOrder;
+            return {
+              ...newProd,
+              niceClass,
+              isDropAllowed,
+              dropPriorityOrder
+            };
+          });
+        }
+        if (data.marketplaces !== void 0) {
+          this.catalogData.marketplaces = data.marketplaces;
+        }
+        if (data.lastScanDate !== void 0) {
+          this.catalogData.lastScanDate = data.lastScanDate;
+        }
+        this.enrichColorsWithHex();
+        try {
+          const dataDir = import_path67.default.dirname(this.catalogFilePath);
+          if (!import_fs72.default.existsSync(dataDir)) {
+            import_fs72.default.mkdirSync(dataDir, { recursive: true });
+          }
+          import_fs72.default.writeFileSync(this.catalogFilePath, JSON.stringify(this.catalogData, null, 2), "utf-8");
+          console.log(`[ProductCatalogService] Saved ${this.catalogData.products.length} products to ${this.catalogFilePath}`);
+        } catch (err) {
+          console.error("[ProductCatalogService] Error writing product_catalog.json:", err.message);
+        }
+        return this.catalogData;
+      }
+      /**
+       * Clear the dynamic catalog completely
+       */
+      static clearCatalog() {
+        this.catalogData = {
+          products: [],
+          marketplaces: this.getDefaultMarketplaces(),
+          lastScanDate: null,
+          schemaVersion: 1
+        };
+        try {
+          if (import_fs72.default.existsSync(this.catalogFilePath)) {
+            import_fs72.default.writeFileSync(this.catalogFilePath, JSON.stringify(this.catalogData, null, 2), "utf-8");
+          }
+          console.log("[ProductCatalogService] Cleared product catalog");
+        } catch (err) {
+          console.error("[ProductCatalogService] Error clearing catalog:", err.message);
+        }
+        return this.catalogData;
+      }
+      /**
+       * Get active catalog data
+       */
+      static getCatalog() {
+        this.ensureLoaded();
+        return this.catalogData;
+      }
+      /**
+       * Get catalog statistics (Total products, total slots across all marketplaces)
+       */
+      static getStats() {
+        this.ensureLoaded();
+        const products = this.catalogData.products || [];
+        let totalSlots = 0;
+        for (const prod of products) {
+          const mpCount = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces.length : 0;
+          totalSlots += mpCount;
+        }
+        return {
+          totalProducts: products.length,
+          totalSlots,
+          totalMarketplaces: (this.catalogData.marketplaces || []).length,
+          lastScanDate: this.catalogData.lastScanDate
+        };
+      }
+      /**
+       * Look up a single product by ID
+       */
+      static getProductById(id) {
+        this.ensureLoaded();
+        return this.catalogData.products.find((p) => p.id === id);
+      }
+      /**
+       * Get all products belonging to a specific Nice Trademark Class (e.g. 25, 9, 18, 20, 21, 16)
+       */
+      static getProductsByNiceClass(niceClass) {
+        this.ensureLoaded();
+        return this.catalogData.products.filter((p) => (p.niceClass ?? inferNiceClass(p.displayName || p.id)) === niceClass);
+      }
+      /**
+       * Get product IDs that should be blocked for a set of Nice Trademark Classes
+       */
+      static getBlockedProductIdsForNiceClasses(blockedClasses) {
+        if (!blockedClasses || blockedClasses.length === 0) return [];
+        this.ensureLoaded();
+        const blockedSet = new Set(blockedClasses);
+        return this.catalogData.products.filter((p) => blockedSet.has(p.niceClass ?? inferNiceClass(p.displayName || p.id))).map((p) => p.id);
+      }
+      /**
+       * Update nice class for a single product
+       */
+      static updateProductNiceClass(id, niceClass) {
+        this.ensureLoaded();
+        const prod = this.catalogData.products.find((p) => p.id === id);
+        if (prod) {
+          prod.niceClass = niceClass;
+          return this.saveCatalog(this.catalogData);
+        }
+        return this.catalogData;
+      }
+      /**
+       * Update drop configuration (isDropAllowed, dropPriorityOrder) for products
+       */
+      static updateDropConfig(configs) {
+        this.ensureLoaded();
+        const configMap = new Map(configs.map((c) => [c.id, c]));
+        for (const prod of this.catalogData.products) {
+          if (configMap.has(prod.id)) {
+            const conf = configMap.get(prod.id);
+            prod.isDropAllowed = conf.isDropAllowed;
+            prod.dropPriorityOrder = conf.dropPriorityOrder;
+          }
+        }
+        return this.saveCatalog(this.catalogData);
+      }
+      /**
+       * Get all products allowed to be dropped, ordered by user priority
+       */
+      static getDroppableProductsOrdered() {
+        this.ensureLoaded();
+        return this.catalogData.products.filter((p) => p.isDropAllowed === true).sort((a, b) => {
+          const orderA = a.dropPriorityOrder ?? 99;
+          const orderB = b.dropPriorityOrder ?? 99;
+          if (orderA !== orderB) return orderA - orderB;
+          return a.sortOrder - b.sortOrder;
+        });
+      }
+      /**
+       * Calculate how many non-US slots can be dropped across all droppable products
+       */
+      static calculateMaxDroppableSlotsCount() {
+        const droppables = this.getDroppableProductsOrdered();
+        let count = 0;
+        for (const prod of droppables) {
+          const nonUsMarketplaces = (prod.availableMarketplaces || []).filter((mp) => mp.toUpperCase() !== "US");
+          count += nonUsMarketplaces.length;
+        }
+        return count;
+      }
+      static getMaxDroppableSlots() {
+        return this.calculateMaxDroppableSlotsCount();
+      }
+      static getTotalBaseSlotsCount() {
+        let count = 0;
+        for (const prod of this.catalogData.products) {
+          count += (prod.availableMarketplaces || []).length;
+        }
+        return count;
+      }
+      /**
+       * Enrich color objects with hex preview codes
+       */
+      static enrichColorsWithHex() {
+        for (const prod of this.catalogData.products) {
+          if (Array.isArray(prod.colors)) {
+            for (const col of prod.colors) {
+              const cleanId = col.id.toLowerCase().replace(/-/g, "_");
+              col.hexPreview = MERCH_COLOR_HEX_MAP[cleanId] || "#718096";
+            }
+          }
+        }
+      }
+      /**
+       * Default Merch by Amazon Marketplaces
+       */
+      static getDefaultMarketplaces() {
+        return [
+          { id: "US", displayName: ".com", defaultPrice: "19.99" },
+          { id: "GB", displayName: ".co.uk", defaultPrice: "16.99" },
+          { id: "DE", displayName: ".de", defaultPrice: "17.49" },
+          { id: "FR", displayName: ".fr", defaultPrice: "18.99" },
+          { id: "IT", displayName: ".it", defaultPrice: "17.99" },
+          { id: "ES", displayName: ".es", defaultPrice: "17.99" },
+          { id: "JP", displayName: ".co.jp", defaultPrice: "2299" }
+        ];
+      }
+    };
+  }
+});
+
 // src/server/services/trademarkService.ts
 var COMMON_STOP_WORDS, TrademarkService;
 var init_trademarkService = __esm2({
   "src/server/services/trademarkService.ts"() {
     "use strict";
     init_settingsService();
+    init_productCatalogService();
     COMMON_STOP_WORDS = /* @__PURE__ */ new Set([
       "the",
       "and",
@@ -50234,45 +50562,160 @@ var init_trademarkService = __esm2({
        */
       static analyzeHits(hitsRecord) {
         let hasInfringementClass25 = false;
-        const blockedProductsSet = /* @__PURE__ */ new Set();
+        const blockedClassesSet = /* @__PURE__ */ new Set();
         let totalHits = 0;
         for (const [, records] of Object.entries(hitsRecord)) {
           for (const rec of records) {
             if (!this.isLiveStatus(rec.status)) continue;
             totalHits++;
             const classes = rec.classes && rec.classes.length > 0 ? rec.classes : this.extractNiceClasses({ classification: rec.classNumber });
-            if (classes.includes("25")) {
-              hasInfringementClass25 = true;
-              blockedProductsSet.add("STANDARD_TSHIRT");
-              blockedProductsSet.add("PREMIUM_TSHIRT");
-              blockedProductsSet.add("HOODIE");
-              blockedProductsSet.add("SWEATSHIRT");
-              blockedProductsSet.add("ZIP_HOODIE");
-              blockedProductsSet.add("TANK_TOP");
-              blockedProductsSet.add("LONG_SLEEVE_TSHIRT");
-              blockedProductsSet.add("RAGLAN");
-            }
-            if (classes.includes("9")) {
-              blockedProductsSet.add("POPSOCKET");
-              blockedProductsSet.add("PHONE_CASE_APPLE_IPHONE");
-              blockedProductsSet.add("PHONE_CASE_SAMSUNG_GALAXY");
-            }
-            if (classes.includes("21")) {
-              blockedProductsSet.add("MUG");
-              blockedProductsSet.add("TUMBLER");
-            }
-            if (classes.includes("20")) {
-              blockedProductsSet.add("THROW_PILLOW");
-            }
-            if (classes.includes("8") || classes.includes("18")) {
-              blockedProductsSet.add("TOTE_BAG");
+            for (const c of classes) {
+              const num = parseInt(c, 10);
+              if (!isNaN(num)) {
+                blockedClassesSet.add(num);
+                if (num === 25) {
+                  hasInfringementClass25 = true;
+                }
+              }
             }
           }
         }
+        const blockedClasses = Array.from(blockedClassesSet);
+        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
+          blockedClasses.filter((c) => c !== 25)
+          // Clothing 25 is handled separately via hard-reject / rewrite
+        );
         return {
           hasInfringementClass25,
-          blockedProducts: Array.from(blockedProductsSet),
+          blockedClasses,
+          blockedProducts,
           totalHits
+        };
+      }
+      /**
+       * Comprehensive Audit for Listing + Niche Metadata (Hard-Reject, Product Blocking, Fair-Use)
+       */
+      static async auditListingAndMetadata(params2) {
+        const offices = params2.offices && params2.offices.length > 0 ? params2.offices : ["USPTO", "EUIPO", "DPMA"];
+        const termsToFieldMap = {
+          quote: params2.quote ? this.extractTermsFromText(params2.quote) : [],
+          niche1: params2.niche1 ? this.extractTermsFromText(params2.niche1) : [],
+          niche2: params2.niche2 && params2.niche2.toLowerCase() !== "none" ? this.extractTermsFromText(params2.niche2) : [],
+          subniche: params2.subniche && params2.subniche.toLowerCase() !== "none" ? this.extractTermsFromText(params2.subniche) : [],
+          brand: this.extractTermsFromText(params2.listing.brand),
+          title: this.extractTermsFromText(params2.listing.title),
+          bullet1: this.extractTermsFromText(params2.listing.bullet1),
+          bullet2: this.extractTermsFromText(params2.listing.bullet2)
+        };
+        const allUniqueTerms = /* @__PURE__ */ new Set();
+        for (const terms of Object.values(termsToFieldMap)) {
+          terms.forEach((t) => allUniqueTerms.add(t));
+        }
+        const termList = Array.from(allUniqueTerms);
+        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
+        let isHardReject = false;
+        let hardRejectReason = null;
+        let brandConflict = false;
+        let titleConflict = false;
+        let needsRewrite = false;
+        const blockedClassesSet = /* @__PURE__ */ new Set();
+        const allHitsList = [];
+        const coreFields = ["quote", "niche1", "niche2", "subniche"];
+        for (const f of coreFields) {
+          const terms = termsToFieldMap[f] || [];
+          for (const t of terms) {
+            const hits = globalHits[t] || [];
+            for (const h of hits) {
+              if (!this.isLiveStatus(h.status)) continue;
+              allHitsList.push(h);
+              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+              if (classes.includes("25")) {
+                isHardReject = true;
+                hardRejectReason = `Core ${f} "${t}" is an active Class 25 trademark (${h.source}: ${h.trademark}).`;
+                break;
+              }
+            }
+            if (isHardReject) break;
+          }
+          if (isHardReject) break;
+        }
+        if (isHardReject) {
+          return {
+            isHardReject: true,
+            hardRejectReason,
+            isSafe: false,
+            needsRewrite: false,
+            brandConflict: true,
+            titleConflict: true,
+            blockedNiceClasses: [25],
+            blockedProducts: [],
+            allHits: allHitsList,
+            hitDetails: globalHits
+          };
+        }
+        const brandTerms = termsToFieldMap.brand || [];
+        for (const t of brandTerms) {
+          const hits = globalHits[t] || [];
+          for (const h of hits) {
+            if (!this.isLiveStatus(h.status)) continue;
+            allHitsList.push(h);
+            const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+            if (classes.includes("25")) {
+              brandConflict = true;
+              needsRewrite = true;
+            } else {
+              classes.forEach((c) => {
+                const num = parseInt(c, 10);
+                if (!isNaN(num)) blockedClassesSet.add(num);
+              });
+            }
+          }
+        }
+        const listingFields = ["title", "bullet1", "bullet2"];
+        for (const f of listingFields) {
+          const terms = termsToFieldMap[f] || [];
+          for (const t of terms) {
+            const hits = globalHits[t] || [];
+            for (const h of hits) {
+              if (!this.isLiveStatus(h.status)) continue;
+              allHitsList.push(h);
+              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+              if (classes.includes("25")) {
+                if (f === "title") {
+                  if (!COMMON_STOP_WORDS.has(t)) {
+                    titleConflict = true;
+                    needsRewrite = true;
+                  }
+                } else {
+                  if (!COMMON_STOP_WORDS.has(t) && t.includes(" ")) {
+                    needsRewrite = true;
+                  }
+                }
+              } else {
+                classes.forEach((c) => {
+                  const num = parseInt(c, 10);
+                  if (!isNaN(num)) blockedClassesSet.add(num);
+                });
+              }
+            }
+          }
+        }
+        const blockedNiceClasses = Array.from(blockedClassesSet);
+        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
+          blockedNiceClasses.filter((c) => c !== 25)
+        );
+        const isSafe = !brandConflict && !titleConflict && !needsRewrite;
+        return {
+          isHardReject: false,
+          hardRejectReason: null,
+          isSafe,
+          needsRewrite,
+          brandConflict,
+          titleConflict,
+          blockedNiceClasses,
+          blockedProducts,
+          allHits: allHitsList,
+          hitDetails: globalHits
         };
       }
       /**
@@ -50410,12 +50853,12 @@ var init_trademarkService = __esm2({
 });
 
 // src/server/services/systemPromptService.ts
-var import_fs72, import_path67, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT, DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
+var import_fs73, import_path68, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
 var init_systemPromptService = __esm2({
   "src/server/services/systemPromptService.ts"() {
     "use strict";
-    import_fs72 = __toESM2(require("fs"), 1);
-    import_path67 = __toESM2(require("path"), 1);
+    import_fs73 = __toESM2(require("fs"), 1);
+    import_path68 = __toESM2(require("path"), 1);
     DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT = `You are an expert AI prompt engineer and Art Director specializing in print-on-demand (POD) automation for Merch by Amazon. Your goal is to convert the incoming design parameters (niche, quote, style, feeling, colors, instructions) into a highly descriptive, visually stunning, clean vector prompt tailored for Ideogram.
 
 CORE RULES:
@@ -50427,7 +50870,7 @@ CORE RULES:
 OUTPUT FORMAT:
 Output ONLY the raw, optimized image generation prompt text. Do not include introductory text, explanations, or quotes around the whole prompt.`;
     DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT = `You are an expert AI Art Director and POD (Print on Demand) Quality Assurance Specialist for Merch by Amazon.
-Your task is to analyze the generated t-shirt / merch graphic design based on the input specifications and evaluate it strictly against the following 4 core criteria:
+Your task is to analyze the generated t-shirt / merch graphic design based on the input specifications and evaluate it strictly against the following 5 core criteria:
 
 1. QUOTE ACCURACY & VISUAL QUALITY:
 - CRITICAL RULE ON PUNCTUATION & SPACING: Punctuation differences (such as colons ":", hyphens "-", dots ".", commas ",", spaces, or line breaks) are 100% VALID AND ACCEPTABLE!
@@ -50436,32 +50879,26 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - Check for SEVERE graphic/anatomical defects: Obvious AI distortions such as malformed extra fingers/hands, melted faces, or corrupted graphic shapes.
 - Evaluation rule: Unless there are actual misspelled words or severe visual deformities, ALWAYS set "quote_matches": true, "quote_errors": null, "regenerate_recommended": false, and "overall_verdict": "APPROVED".
 
-2. TARGET AUDIENCE (FIT TYPES):
+2. NICHE & SUBNICHE CLASSIFICATION:
+- Extract and confirm the exact thematic hierarchy from the design and input:
+  * "niche1": Primary main theme/subject (e.g. "Horse", "Coffee", "Fishing", "Mechanic").
+  * "niche2": Secondary cross-niche/theme if present (e.g. "Coffee" in "I Love Horses and Coffee", else "none").
+  * "subniche": Specific breed, sub-category, specialized vehicle or style (e.g. "Shetland Pony", "Bass Fishing", "Diesel Truck", else "none").
+
+3. TARGET AUDIENCE (FIT TYPES):
 - Determine which target audiences this design is suitable for: Select from ["Men", "Women", "Youth"].
 - Multiple selections are encouraged (e.g. ["Men", "Women", "Youth"] for cute/general motifs, ["Men", "Women"] for adult-oriented quotes).
 
-3. PRODUCT COLORS TO AVOID (CONTRAST):
+4. PRODUCT COLORS TO AVOID (CONTRAST):
 - Which t-shirt / garment base color must be avoided to ensure maximum contrast and legibility?
 - DEFAULT to "None" if the design has strong contrast, solid outlines, golden/cream/colored typography, or looks great on both black and white apparel.
 - ONLY select "White" if the text or graphic elements are pure white or very light pastel without a dark border/outline.
 - ONLY select "Black" if the text or graphic elements are pure black or very dark without a light border/outline.
 - Options for "avoid": "Black", "White", or "None".
 
-4. BACKGROUND HANDLING (AUTOMATED TRANSPARENCY / ISOLATION):
-- MANDATORY CORNER & BORDER INSPECTION:
-  * Carefully examine the 4 outer corners, top/bottom edges, and perimeter of the canvas under high attention.
-  * Check for subtle textures: Leather crackles/craquel\xE9, paper grain, canvas weave, noise, grunge, brush strokes, starfield specks, or vignetting (edges/corners darker or colored differently than the center).
-  * If ANY non-flat texture, grain, craquel\xE9, vignette, radial glow, or non-uniform shading exists -> you MUST set "removal_mode": "MANUAL" and "is_design_element": true!
-  * ONLY set "AUTOMATIC" and "is_design_element": false if the entire background is 100% flat, completely solid single digital vector hex color with ZERO surface texture and ZERO gradient across all 4 corners.
-- "reason": "<Explicitly describe the background surface: flat solid color vs textured/vignetted/gradient>"
-
-5. COLOR COUNT ESTIMATION (VECTORIZATION MAX COLORS):
-- CRITICAL RULE: Count ALL distinct sensible colors across the ENTIRE image, MANDATORILY INCLUDING THE BACKGROUND COLOR(S)!
-  * Reason: Vectorizer.ai vectorizes the whole image first (including the background) before transparency is applied. If background colors are omitted, the vectorizer will crush or blend necessary palette shades.
-  * Example: If graphic has Ivory (1) and Gold (2) on a Dark Blue (3) background, the count MUST BE AT LEAST 3 colors! If there is a gradient, shadow, or secondary accent, count that as well (e.g. 4 or 5 colors).
-- Range: Integer between 1 and 12 (maximum 12 colors).
-- "color_count": Integer from 1 to 12.
-- "reason": "<List all counted colors including background color and artwork colors, e.g. 'Ivory typography, gold accents/outlines, and dark blue background = 3-4 colors'>"
+5. BACKGROUND HANDLING & COLOR COUNT:
+- Background: Is it 100% solid flat single color ("AUTOMATIC") or textured/vignetted ("MANUAL")?
+- Color Count: Integer from 1 to 12 counting all visible colors including background for vectorization.
 
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
@@ -50472,6 +50909,11 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
     "quote_matches": true,
     "quote_errors": null,
     "regenerate_recommended": false
+  },
+  "niche_analysis": {
+    "niche1": "Horse",
+    "niche2": "none",
+    "subniche": "Shetland Pony"
   },
   "target_group": {
     "selected": ["Men", "Women", "Youth"],
@@ -50489,200 +50931,164 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   },
   "color_analysis": {
     "color_count": 3,
-    "reason": "<Brief explanation of dominant visible colors in the entire image including background>"
+    "reason": "<Brief explanation of dominant visible colors>"
   },
   "overall_verdict": "APPROVED"
 }`;
-    DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) SEO listing copywriter and compliance specialist.
-Your task is to generate a high-converting, policy-compliant, and perfectly optimized Merch by Amazon listing based on the design, quote, niche, and visual elements.
+    DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are a world-class Amazon Merch on Demand (MBA) SEO Listing Copywriter and Compliance Specialist.
+Your task is to generate a high-converting, policy-compliant, 100% English Merch by Amazon listing based on the design, quote, niches, and keywords provided.
 
-### 1. RULES FOR EACH FIELD:
-- Title (Max 60 characters!):
-  * Focus on the main quote / idea and strong search keywords.
-  * Do NOT include product types (NO words like "T-Shirt", "shirt", "hoodie", "tank top").
-  * IMPORTANT Suffix-Appending Rule: Ensure the final word in the Title forms a clean long-tail keyword when Amazon automatically appends "T-Shirt" (e.g. end with "Outfit", "Apparel", "Graphic", or the main theme word like "Retro Sunset").
-- Brand (Max 50 characters!):
-  * Create a thematic brand name reflecting the niche / style of the design.
-  * Must contain relevant search keywords.
-  * Must NOT be an existing trademark or brand name. Do NOT include the word "Brand" or product types.
-- Bullet Point 1 (Max 250 characters!):
-  * Focus on the design's content, artistic style, typography, and visual appeal.
-  * Keep it relevant to the artwork. Do NOT mention garment material, fit, sizing, or print quality.
-  * Do NOT use phrases like "this shirt" \u2013 refer to the design or use neutral phrasing (e.g. "Featuring a stylish ...").
-- Bullet Point 2 (Max 250 characters!):
-  * Describe the target audience, lifestyle, or suitable occasion for wearing the artwork.
-  * Do NOT use the word "gift" or phrases like "perfect for birthday" (instead use "Great for anyone who loves...").
-- Description (Max 2000 characters):
-  * Combine the ideas from Bullets 1 & 2 into a reader-friendly, natural paragraph with soft long-tail keywords.
-  * Do NOT mention background color or physical garment properties.
+### 1. FIELD SPECIFICATIONS & SEO FORMULAS:
 
-### 2. STRICT COMPLIANCE & BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+- Title (50-60 characters! Target: 52-59 chars to maximize search volume):
+  * FORMULA: [Niche/Style at Start] + [Quote / Secondary Niche / Keywords in Middle] + [Subniche or Niche strictly at END].
+  * CRITICAL SUFFIX RULE: The Title MUST end strictly with the Subniche (preferred, e.g. "Shetland Pony") or Niche (e.g. "Horse"). Do NOT put any trailing punctuation (no periods, no hyphens, no quotes) and no filler words at the end, because Amazon automatically appends the product name (e.g. "T-Shirt" -> "Cute Vintage Equestrian Shetland Pony T-Shirt").
+  * Do NOT include product types (NO "T-Shirt", "shirt", "hoodie", "tank top", "case", "popsocket").
+  * If the quote is too long to fit in 60 characters, prioritize Niche1, Subniche, and primary keywords in the Title, and put the full quote into Bullet 1!
+
+- Brand (40-50 characters! Target: 42-48 chars):
+  * High keyword density representing the niche and relevant buyer search terms.
+  * Combine primary niche, subniche, and search terms (e.g. "Apparel", "Accessories").
+  * Do NOT use company fluff like "Studio" or "Co".
+  * Must NOT infringe any registered trademarks or brand names.
+
+- Bullet Point 1 (230-256 characters! Target: 235-255 chars):
+  * Focus strictly on the TARGET AUDIENCE, passion, lifestyle, and visual theme.
+  * If a long quote was omitted from the Title, place the full quote prominently at the beginning of Bullet 1.
+  * Keep it natural and engaging. Do NOT use phrases like "this shirt" or mention garment materials/sizing.
+
+- Bullet Point 2 (230-256 characters! Target: 235-255 chars):
+  * Focus on OCCASIONS, gatherings, events, activities, and places to wear.
+  * STRICT ZERO-TOLERANCE ON PROMOTIONAL & GIFT LANGUAGE: NO "gift", "present", "birthday", "Christmas", "anniversary", "sale", "discount", "trending". Instead use phrases like: "Great to wear during...", "Ideal for weekend outings...", "A versatile outfit for enthusiasts...".
+
+- Description (300-600 characters):
+  * A smooth, atmospheric summary combining the aesthetic, lifestyle, and passion without promotional claims.
+
+### 2. STRICT BANNED WORDS & COMPLIANCE (ZERO TOLERANCE):
 - NO faux material / physical effect claims (CRITICAL FOR 2D PRINTS): sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
 - NO quality/material claims: soft, premium, cotton, high quality, durable, lightweight, fitted, loose, size up, printed in, made in.
 - NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now, discount.
 - NO background color mentions: white design, black background, transparent.
 - NO product types in Title/Brand: t-shirt, shirt, hoodie, tank top, popsocket, pop socket.
 - NO trademarks, copyrighted characters, or brand names.
-- NO profanity, violence, or sensitive themes (must be 100% Family Friendly / PG-13).
-- NO keyword stuffing. Use full, natural sentences.
-- NO typographic or curly quotation marks (do NOT use \u201E \u201C \u201D \xAB \xBB \u2019 \u2018). Use ONLY standard ASCII double quotes (") or single quotes ('). Do not use em-dashes (\u2014); use standard hyphens (-).
-
-### 3. MULTI-MARKETPLACE TRANSLATIONS:
-Provide localized, native listings for English (en), German (de), French (fr), Italian (it), Spanish (es), and Japanese (ja).
-CRITICAL: Any English quotes or slogans on the design MUST remain in English in all translated listings! Only translate the surrounding descriptive text. Never use non-ASCII quotes in translated text (e.g. do NOT use German \u201E \u201C).
+- NO typographic or curly quotation marks (do NOT use \u201E \u201C \u201D \xAB \xBB \u2019 \u2018). Use ONLY standard ASCII double quotes (") or single quotes (').
 
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
 {
-  "en": {
-    "brand": "<Brand Name max 50 chars>",
-    "title": "<Title max 60 chars>",
-    "bullet1": "<Bullet 1 max 250 chars>",
-    "bullet2": "<Bullet 2 max 250 chars>",
-    "description": "<Description paragraph>"
-  },
-  "de": {
-    "brand": "<Deutscher Brand Name>",
-    "title": "<Deutscher Titel max 60 Zeichen>",
-    "bullet1": "<Deutscher Bullet 1 max 250 Zeichen>",
-    "bullet2": "<Deutscher Bullet 2 max 250 Zeichen>",
-    "description": "<Deutsche Beschreibung>"
-  },
-  "fr": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
-  "it": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
-  "es": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
-  "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
+  "brand": "<Keyword-dense Brand 40-50 chars>",
+  "title": "<Title 50-60 chars ending with subniche/niche>",
+  "bullet1": "<Target audience bullet 230-256 chars>",
+  "bullet2": "<Occasions bullet 230-256 chars without gift words>",
+  "description": "<Description 300-600 chars>"
 }`;
     DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT = `You are an expert Amazon Merch on Demand (MBA) Trademark Attorney and POD Compliance Auditor.
-Your job is to analyze the USPTO / Trademark hits detected for a generated Merch by Amazon listing and make a definitive compliance decision.
+Your job is to analyze the USPTO / EUIPO / DPMA Trademark hits detected for a generated Merch by Amazon listing and make a definitive compliance decision.
 
-### 1. CORE COMPLIANCE RULES:
+### 1. CORE COMPLIANCE & NICE CLASS RULES:
 
-A. DESCRIPTIVE FAIR USE (ALLOWED IN BULLETS & DESCRIPTION):
-- Generic, common words (e.g., "space", "vintage", "retro", "happy", "sun", "workout", "sunset", "cute", "angel", "reality", "manifest", "wings", "stars", "gold", "cosmic", "celestial", "radiant") are often registered as apparel trademarks by individual brands.
-- If these words appear in natural descriptive sentence context within Bullet Points or Description (e.g. "featuring celestial angel wings artwork in ivory and gold tones"), this is 100% LEGAL DESCRIPTIVE FAIR USE. Do NOT delete or butcher sentences for common descriptive words!
-
-B. SOURCE IDENTIFIERS / BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE):
-- If a trademarked word or phrase appears as the Brand Name or directly as the main subject in the Title, it functions as a trademark / source identifier.
-- Action: Brand and Title MUST be 100% free of active Class 25 (Apparel) trademarks! If Brand or Title triggers a Class 25 hit, rephrase to a unique, non-infringing phrase while keeping the niche relevance and SEO value.
-- Character limits: Brand <= 50 chars, Title <= 60 chars.
-
-C. UNACCEPTABLE TRADEMARK INFRINGEMENT (MUST REJECT):
-- If the core Quote / Slogan printed on the design or the central design motif itself directly infringes a protected trademark in Class 25 (e.g. "Just Do It", "Hakuna Matata", "Lego", "Disney", "Marvel", "Pokemon", "Star Wars", famous celebrities, or active registered slogans):
+A. HARD REJECT (ZERO CLASS 25 TOLERANCE ON QUOTE & CORE NICHES):
+- If the core Quote / Slogan printed on the design or any of the core niche keywords (niche1, niche2, subniche) is registered as a trademark in Class 25 (Apparel):
   * Set "verdict": "REJECTED"
-  * Provide a clear "rejection_reason".
+  * Provide "rejection_reason": "Core quote or niche is an active Class 25 trademark."
 
-D. SAFE REPHRASING & MBA LISTING COMPLIANCE:
-- When rewriting any fields, you MUST strictly adhere to the Amazon Merch on Demand listing guidelines:
-  * NO quality/material claims: soft, cotton, premium, durable, lightweight, fitted, loose.
-  * NO promotional or gift language: gift, present, geschenk, birthday gift, best seller, trending, sale, buy now.
-  * NO background color mentions: white design, black background, transparent.
-  * Use full, natural sentences without keyword stuffing.
-  * Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
+B. BRAND NAME CLASS 25 CONFLICTS (REPLACE WITH ALTERNATIVE KEYWORDS):
+- The Brand Name MUST be 100% free of active Class 25 trademarks!
+- If a word in the Brand Name triggers a Class 25 hit, replace that specific word with an ALTERNATIVE high-value niche keyword (do not use plain dictionary synonyms; pick another strong search keyword from the niche pool).
+- Brand MUST stay 40-50 characters.
 
-### 2. OUTPUT FORMAT:
+C. TITLE & BULLETS CLASS 25 CONFLICTS (DESCRIPTIVE FAIR USE VS REWRITE):
+- Generic single words used in purely descriptive sentence context in Bullets/Description (e.g. "space", "sun", "wings", "stars", "retro", "vintage", "cute", "angel", "manifest", "western") are 100% LEGAL DESCRIPTIVE FAIR USE. Keep them!
+- If an actual protected brand/phrase appears in Title or Bullets in a non-fair-use manner, rephrase it cleanly while keeping the mandatory Title suffix rule (Title must end with Subniche or Niche).
+
+D. OTHER NICE CLASSES (CLASS 9, 18, 20, 21, 16):
+- If trademark hits exist in non-clothing classes (Class 9 for phone cases/PopSockets, Class 18 for bags/backpacks, Class 20 for pillows, Class 21 for mugs/bottles, Class 16 for journals):
+  * Note them in "blocked_classes" (e.g. [9]) so the hub can deactivate those specific product types while keeping apparel active!
+
+OUTPUT FORMAT:
 Respond ONLY with a valid JSON object matching this schema (no markdown fences, no conversational text):
 {
   "verdict": "APPROVED",
   "rejection_reason": null,
+  "blocked_classes": [],
   "actions_taken": [
-    "Retained 'wings' and 'stars' in Bullets as descriptive fair use",
-    "Replaced 'Wings Apparel' in Brand with 'Feather Artwork Studio'"
+    "Retained 'wings' in Bullet 1 as descriptive fair use",
+    "Replaced 'Ranch Life' with 'Equestrian Stable' in Brand"
   ],
   "refined_listing": {
-    "brand": "<Cleaned Brand Name (max 50 chars)>",
-    "title": "<Cleaned Title (max 60 chars)>",
-    "bullet1": "<Cleaned Bullet 1 (max 250 chars)>",
-    "bullet2": "<Cleaned Bullet 2 (max 250 chars)>",
-    "description": "<Cleaned Description (max 2000 chars)>"
+    "brand": "<Cleaned Brand Name (40-50 chars)>",
+    "title": "<Cleaned Title (50-60 chars ending with subniche/niche)>",
+    "bullet1": "<Cleaned Bullet 1 (230-256 chars)>",
+    "bullet2": "<Cleaned Bullet 2 (230-256 chars)>",
+    "description": "<Cleaned Description (300-600 chars)>"
   }
 }`;
-    DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT = `You are an expert Print-on-Demand (POD) Production & Quality Assurance Specialist for Merch by Amazon.
-Your task is to inspect a 4-Panel Verification Image containing a vectorized t-shirt graphic placed on 4 different background colors:
-1. Top-Left: Pure White (#ffffff)
-2. Top-Right: Pure Black (#000000)
-3. Bottom-Left: Vivid Red (#d32f2f)
-4. Bottom-Right: Dark Slate / Anthracite (#1e293b)
-
-Your goal is to strictly determine if the background was cleanly and completely removed, or if manual clipping/cleanup is required.
-
-EVALUATION CRITERIA:
-1. OUTER BACKGROUND REMOVAL (CRITICAL):
-- Is there any visible outer bounding box, rectangular border, or background remnants surrounding the design on ANY of the 4 panels?
-- If an unwanted outer background rectangle/frame is still visible on the black/red/slate panels, you MUST set "cutout_verdict": "REJECTED".
-
-2. INNER LETTERS & ENCLOSED CUTOUTS:
-- Check internal negative spaces inside letters (e.g. loops in 'A', 'B', 'D', 'O', 'P', 'Q', 'R', '0', '4', '6', '8', '9') or closed graphic contours.
-- If these closed loops still contain solid white/background fills instead of transparent pass-through showing the panel background, note them in "detected_issues". If severe, set "cutout_verdict": "REJECTED".
-
-3. ARTWORK INTEGRITY:
-- Did the background removal accidentally erase vital parts of the design artwork or essential lettering?
-
-DECISION RULES:
-- "APPROVED": The graphic is cleanly isolated with transparent background. Contours are sharp and clean on all 4 panels.
-- "REJECTED": Outer background frame remains, major letter loops are un-cleared, or artwork parts were accidentally deleted.
-
-OUTPUT FORMAT:
-Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
-{
-  "cutout_verdict": "APPROVED",
-  "background_removed_cleanly": true,
-  "detected_issues": [],
-  "confidence": 0.98,
-  "explanation": "The artwork is cleanly isolated across all 4 background colors with transparent letter loops and no outer artifacts."
-}`;
     DEFAULT_UPDATE_VISION_SYSTEM_PROMPT = `You are a Senior Amazon Merch on Demand Quality & SEO Auditor.
-Your task is to analyze the existing Merch on Demand design and its current English listing.
+Your task is to analyze an existing Merch on Demand design artwork and its current English listing.
 
 Tasks:
-1. Determine the optimal Target Audience (fitTypes: choose from ["men", "women", "youth"]).
-2. Determine if any background color must be avoided (avoidColor: "black" | "white" | "none").
-3. Evaluate if the existing listing requires a rewrite. If it already has high-converting keywords, no banned words, and concise bullets, set rewriteNeeded: false. If it is keyword-stuffed, low quality, or outdated, set rewriteNeeded: true.
-4. Provide clear reasoning.
+1. Extract and confirm Niche Hierarchy:
+   - "niche1": Primary main theme/subject.
+   - "niche2": Secondary theme if present, else "none".
+   - "subniche": Specific breed/category if present, else "none".
+2. Determine the optimal Target Audience (fitTypes: choose from ["men", "women", "youth"]).
+3. Determine if any background color must be avoided (avoidColor: "black" | "white" | "none").
+4. Evaluate if the existing listing requires a rewrite (rewriteNeeded: true if outdated/keyword-stuffed/missing niche suffix, false if already perfectly compliant).
+5. Provide clear reasoning.
 
 Return ONLY valid JSON matching this schema:
 {
+  "niche1": "Horse",
+  "niche2": "none",
+  "subniche": "Shetland Pony",
   "fitTypes": ["men", "women", "youth"],
-  "avoidColor": "black" | "white" | "none",
-  "rewriteNeeded": boolean,
+  "avoidColor": "none",
+  "rewriteNeeded": true,
   "reasoning": "string explaining the decision",
   "designTheme": "short description of visual style"
 }`;
     DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT = `You are a world-class Amazon Merch on Demand Listing Copywriter.
-Rewrite and optimize the existing English listing to maximize organic search visibility and conversion rate without trademark infringements.
+Rewrite and optimize the existing English listing to maximize organic search visibility and conversion rate.
 
 Guidelines:
-1. Brand: Max 50 chars, catchy and niche-specific.
-2. Title: Max 60 chars, highly relevant primary keywords, natural sentence structure.
-3. Feature Bullets (Bullet 1 & Bullet 2): Max 256 chars each. Natural English, focusing on the theme/gift angle. NO mentions of print quality, garment fit, shipping, or copyrighted terms.
-4. Description: Short atmospheric summary (max 300 chars).
+1. Brand (40-50 chars): Keyword-dense niche combinations. No filler words like "Studio" or "Co".
+2. Title (50-60 chars): Niche at start, keywords in middle, MUST end strictly on Subniche or Niche (no trailing punctuation).
+3. Bullet 1 (230-256 chars): Target audience, passion, connection to motif.
+4. Bullet 2 (230-256 chars): Occasions, gatherings, activities. ZERO promotional/gift words.
+5. Description (300-600 chars): Atmospheric summary.
 
 Return ONLY valid JSON:
 {
-  "brand": "string",
-  "title": "string",
-  "bullet1": "string",
-  "bullet2": "string",
-  "description": "string"
+  "brand": "<Brand 40-50 chars>",
+  "title": "<Title 50-60 chars ending with subniche/niche>",
+  "bullet1": "<Bullet 1 230-256 chars>",
+  "bullet2": "<Bullet 2 230-256 chars>",
+  "description": "<Description 300-600 chars>"
 }`;
     DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT = `You are a professional multi-language Amazon Merch on Demand localization expert.
-Translate and SEO-optimize the English listing into German (de), French (fr), Spanish (es), and Italian (it).
-Adapt natural phrasing rather than literal translation.
+Translate the approved English Master Listing into German (de), French (fr), Spanish (es), Italian (it), and Japanese (ja).
+
+CRITICAL RULES:
+1. TITLE ENDING RULE: In German, French, Spanish, Italian, the Title MUST end on the translated Niche or Subniche in nominative noun form (e.g. DE: "... Shetland Pony", so Amazon appends "T-Shirt" -> "... Shetland Pony T-Shirt").
+2. ENGLISH QUOTES: Any English quote/slogan printed on the graphic MUST remain in English in all translated listings!
+3. LOCALIZED BANNED WORDS: Adhere to strict Amazon Merch policies in all languages (e.g. DE: NO "Geschenk", "Geburtstagsgeschenk", "Baumwolle", "Qualit\xE4t", "Kaufen").
+4. Character limits: Brand <= 50, Title <= 60, Bullet 1 <= 256, Bullet 2 <= 256, Description <= 600.
 
 Return ONLY valid JSON matching this schema:
 {
-  "de": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
-  "fr": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
-  "es": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" },
-  "it": { "brand": "string", "title": "string", "bullet1": "string", "bullet2": "string" }
+  "de": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "fr": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "es": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "it": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." },
+  "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
 }`;
     SystemPromptService = class {
-      static promptFile = import_path67.default.resolve(process.cwd(), "data", "system_prompts.json");
+      static promptFile = import_path68.default.resolve(process.cwd(), "data", "system_prompts.json");
       static cachedPrompts = null;
       static ensureDataDir() {
-        const dir = import_path67.default.dirname(this.promptFile);
-        if (!import_fs72.default.existsSync(dir)) {
-          import_fs72.default.mkdirSync(dir, { recursive: true });
+        const dir = import_path68.default.dirname(this.promptFile);
+        if (!import_fs73.default.existsSync(dir)) {
+          import_fs73.default.mkdirSync(dir, { recursive: true });
         }
       }
       static loadPrompts() {
@@ -50690,9 +51096,9 @@ Return ONLY valid JSON matching this schema:
           return this.cachedPrompts;
         }
         this.ensureDataDir();
-        if (import_fs72.default.existsSync(this.promptFile)) {
+        if (import_fs73.default.existsSync(this.promptFile)) {
           try {
-            const fileContent = import_fs72.default.readFileSync(this.promptFile, "utf-8");
+            const fileContent = import_fs73.default.readFileSync(this.promptFile, "utf-8");
             this.cachedPrompts = JSON.parse(fileContent);
             if (this.cachedPrompts) {
               if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
@@ -50720,7 +51126,7 @@ Return ONLY valid JSON matching this schema:
           updateLocalizationTranslator: DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT
         };
         try {
-          import_fs72.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
+          import_fs73.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
         } catch (e) {
         }
         return this.cachedPrompts;
@@ -50780,7 +51186,7 @@ Return ONLY valid JSON matching this schema:
         }
         this.cachedPrompts = prompts;
         try {
-          import_fs72.default.writeFileSync(this.promptFile, JSON.stringify(prompts, null, 2), "utf-8");
+          import_fs73.default.writeFileSync(this.promptFile, JSON.stringify(prompts, null, 2), "utf-8");
           console.log("[SystemPromptService] \u{1F4BE} System-Prompts erfolgreich gespeichert.");
         } catch (e) {
           console.error("[SystemPromptService] Failed to save system_prompts.json:", e);
@@ -50798,10 +51204,313 @@ Return ONLY valid JSON matching this schema:
         if (type3 === "updateLocalizationTranslator" || type3 === "all") current.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
         this.cachedPrompts = current;
         try {
-          import_fs72.default.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), "utf-8");
+          import_fs73.default.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), "utf-8");
         } catch (e) {
         }
         return this.getAllPrompts();
+      }
+    };
+  }
+});
+
+// src/server/services/bannedWordsService.ts
+var BANNED_WORDS_BY_LOCALE, BannedWordsService;
+var init_bannedWordsService = __esm2({
+  "src/server/services/bannedWordsService.ts"() {
+    "use strict";
+    BANNED_WORDS_BY_LOCALE = {
+      en: [
+        // Physical faux effects / Material claims (Forbidden on 2D prints)
+        "sparkling",
+        "glitter",
+        "neon",
+        "metallic",
+        "foil",
+        "rose gold",
+        "gold",
+        "glow effect",
+        "glows in black light",
+        "glow in the dark",
+        "sequin",
+        "metal",
+        "wood",
+        "diamond",
+        "gem",
+        "texture",
+        "textured",
+        "holographic",
+        "embossed",
+        "leather",
+        "rubber",
+        // Quality, Fit & Sizing claims
+        "premium",
+        "high quality",
+        "quality",
+        "fitted",
+        "looser",
+        "size up",
+        "bigger size",
+        "larger size",
+        "maternity",
+        "printed to be fitted",
+        "printed in",
+        "printed",
+        "made in",
+        // Shipping & Promotional promises
+        "free shipping",
+        "prime shipping",
+        "ships in",
+        "easy returns",
+        "refund",
+        "review",
+        "risk free",
+        "satisfaction guaranteed",
+        "limited quantities",
+        "best seller",
+        "sale",
+        "buy now",
+        "discount",
+        "trending",
+        // Gift language (Amazon MBA policy flag)
+        "gift",
+        "present",
+        "birthday gift",
+        "christmas gift",
+        // Product types in Title/Brand
+        "popsocket",
+        "pop socket",
+        "t-shirt",
+        "tshirt",
+        "t shirt",
+        "hoodie",
+        "tank top",
+        "sweatshirt",
+        // Vulgar / Adult / Sensitive
+        "fuck",
+        "shit",
+        "bitch",
+        "btch",
+        "dick",
+        "penis",
+        // Known Trap Trademarks
+        "Steppenwolf",
+        "Cycologist"
+      ],
+      de: [
+        // Physische Material- & Effekt-Behauptungen
+        "glitzernd",
+        "Glitter",
+        "Pailletten",
+        "leuchtend",
+        "leuchtet bei Schwarzlicht",
+        "leuchtet im Dunkeln",
+        "Neon",
+        "Metallic",
+        "Folie",
+        "Ros\xE9gold",
+        "Gold",
+        "Holz",
+        "Metall",
+        "Marmor",
+        "Glas",
+        "Leder",
+        "Gummi",
+        "Diamant",
+        "Edelstein",
+        "flauschig",
+        "Pl\xFCsch",
+        "gepr\xE4gt",
+        // Qualität & Passform
+        "bewertung",
+        "hohe qualit\xE4t",
+        "premium",
+        "Schwangerschaftsbekleidung",
+        "\xDCbergr\xF6\xDFe",
+        // Werbe- & Geschenk-Sprache
+        "geschenk",
+        "geburtstagsgeschenk",
+        "weihnachtsgeschenk",
+        "bester verk\xE4ufer",
+        "rabatt",
+        "jetzt kaufen",
+        // Obszönitäten & Fallen
+        "fuck",
+        "btch",
+        "bitch",
+        "penis",
+        "schie\xDFen",
+        "Steppenwolf"
+      ],
+      fr: [
+        "n\xE9on",
+        "m\xE9tallis\xE9",
+        "feuille d'aluminium",
+        "rose",
+        "\xE9tincelant",
+        "brillant",
+        "brillant \xE0 la lumi\xE8re noire",
+        "brillant dans l\u2019obscurit\xE9",
+        "m\xE9tal",
+        "marbre",
+        "paillettes",
+        "cuir",
+        "caoutchouc",
+        "pelucheuses",
+        "fourrure",
+        "verre",
+        "diamant",
+        "pierre pr\xE9cieuse",
+        "cadeau",
+        "nains"
+      ],
+      it: [
+        "metallo",
+        "marmo",
+        "paillettes",
+        "glitter",
+        "pelle",
+        "gomma",
+        "pelo o pelliccia",
+        "perline",
+        "diamanti",
+        "gemme",
+        "fluo",
+        "metallico",
+        "laminato",
+        "oro rosa",
+        "oro",
+        "brillante",
+        "fosforescente",
+        "fluorescente alla luce nera",
+        "luminoso al buio",
+        "regalo",
+        "Benito Mussolini",
+        "Benito",
+        "Mussolini",
+        "anos"
+      ],
+      es: [
+        "papel de aluminio",
+        "oro rosa",
+        "oro",
+        "brillante",
+        "brillo en luz negra",
+        "brillo en la oscuridad",
+        "como madera",
+        "metal",
+        "m\xE1rmol",
+        "lentejuelas",
+        "purpurina",
+        "cuero",
+        "caucho",
+        "tejido o peludo",
+        "vidrio",
+        "diamantes o gemas",
+        "regalo",
+        "primer"
+      ],
+      ja: [
+        "\u30C1\u30D3",
+        "\u30B8\u30F3",
+        "\u30B7\u30F3",
+        "\u30A2\u30BF\u30EA",
+        "\u30A2\u30BF",
+        "\u30AE\u30D5\u30C8",
+        "\u30D7\u30EC\u30BC\u30F3\u30C8",
+        "\u9AD8\u54C1\u8CEA",
+        "\u30D7\u30EC\u30DF\u30A2\u30E0"
+      ]
+    };
+    BannedWordsService = class {
+      /**
+       * Get banned words array for a specific locale (defaulting to English if not found)
+       */
+      static getBannedWords(locale = "en") {
+        const norm = locale.toLowerCase().trim();
+        return BANNED_WORDS_BY_LOCALE[norm] || BANNED_WORDS_BY_LOCALE.en || [];
+      }
+      /**
+       * Generate formatted Markdown section to append to the Listing Generator system prompt
+       */
+      static getBannedWordsPromptSection() {
+        const enWords = this.getBannedWords("en").join(", ");
+        const deWords = this.getBannedWords("de").join(", ");
+        return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+You MUST NEVER use any of the following prohibited words or phrases in ANY field (Brand, Title, Bullet 1, Bullet 2, Description) under ANY circumstances:
+
+A. FAUX MATERIAL & PHYSICAL EFFECT CLAIMS (CRITICAL! DO NOT DESCRIBE 2D ARTWORK AS PHYSICAL MATERIALS):
+- English: sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
+- German: glitzernd, Glitter, Pailletten, leuchtend, Neon, Metallic, Folie, Ros\xE9gold, Gold, Holz, Metall, Marmor, Glas, Leder, Diamant, Edelstein.
+
+B. QUALITY, FIT & SIZING CLAIMS:
+- English: premium, high quality, quality, fitted, looser, size up, bigger size, larger size, maternity, printed in, made in.
+- German: hohe qualit\xE4t, premium, bewertung, Schwangerschaftsbekleidung.
+
+C. PROMOTIONAL & GIFT LANGUAGE:
+- English: gift, present, birthday gift, christmas gift, best seller, sale, buy now, discount.
+- German: geschenk, geburtstagsgeschenk, weihnachtsgeschenk, rabatt.
+
+D. PRODUCT TYPE IN TITLE/BRAND:
+- NO words like: "T-Shirt", "tshirt", "shirt", "hoodie", "tank top", "popsocket", "pop socket".
+
+E. ALL PROHIBITED WORDS LIST:
+- [EN]: ${enWords}
+- [DE]: ${deWords}`;
+      }
+      /**
+       * Scan text for banned words in a given language locale
+       */
+      static findBannedWordsInText(text2, locale = "en") {
+        if (!text2 || typeof text2 !== "string") return [];
+        const words = this.getBannedWords(locale);
+        const found = [];
+        const isJapanese = locale === "ja";
+        for (const w of words) {
+          const escaped2 = w.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+          const regex = isJapanese ? new RegExp(escaped2, "gi") : new RegExp(`\\b${escaped2}\\b`, "gi");
+          if (regex.test(text2)) {
+            found.push(w);
+          }
+        }
+        return Array.from(new Set(found));
+      }
+      /**
+       * Remove/strip banned words from a text string
+       */
+      static stripBannedWordsFromText(text2, locale = "en") {
+        if (!text2 || typeof text2 !== "string") return text2 || "";
+        const words = this.getBannedWords(locale);
+        let cleaned = text2;
+        for (const w of words) {
+          const escaped2 = w.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+          const regex = locale === "ja" ? new RegExp(escaped2, "gi") : new RegExp(`\\b${escaped2}\\b`, "gi");
+          cleaned = cleaned.replace(regex, "");
+        }
+        return cleaned.replace(/\s+/g, " ").replace(/\s+([,.!?;:])/g, "$1").trim();
+      }
+      /**
+       * Validate full multi-language listing payload and return any detected banned words
+       */
+      static validateListing(listing) {
+        const issuesByLocale = {};
+        if (!listing || typeof listing !== "object") return issuesByLocale;
+        for (const [loc, fields] of Object.entries(listing)) {
+          if (fields && typeof fields === "object") {
+            const localeIssues = [];
+            for (const [fieldName, val] of Object.entries(fields)) {
+              if (typeof val === "string") {
+                const found = this.findBannedWordsInText(val, loc);
+                if (found.length > 0) {
+                  localeIssues.push({ field: fieldName, foundWords: found });
+                }
+              }
+            }
+            if (localeIssues.length > 0) {
+              issuesByLocale[loc] = localeIssues;
+            }
+          }
+        }
+        return issuesByLocale;
       }
     };
   }
@@ -50814,6 +51523,7 @@ var init_llmService = __esm2({
     "use strict";
     init_settingsService();
     init_systemPromptService();
+    init_bannedWordsService();
     cachedModels = [
       { id: "anthropic/claude-3.5-sonnet", name: "Anthropic: Claude 3.5 Sonnet" },
       { id: "anthropic/claude-3.5-sonnet:beta", name: "Anthropic: Claude 3.5 Sonnet (Beta)" },
@@ -51060,30 +51770,43 @@ Style Preset: ${stylePreset}`;
         }
       }
       /**
-       * Vision Analysis + Amazon SEO Listing Generation (single-session token efficiency)
+       * 1. Generate Master English Listing (100% English First, Suffix SEO Formula, Keyword-Dense Brand)
        */
-      static async analyzeVisionAndGenerateListing(imageUrlOrBase64, niche1, niche2) {
+      static async generateMasterEnglishListing(params2) {
         const { url, headers, model } = this.getBaseUrlAndHeaders();
-        const systemPrompt = `You are "Listing Creator", an expert in Amazon Merch on Demand SEO listings and visual design analysis.
-Analyze the image and provide a compliant, high-converting listing plus design classifications.
-Character limits:
-- Title: 55-60 chars (Include visible quote verbatim or strongest keywords, no product types like "shirt")
-- Brand: 40-50 chars (Target audience/mood in Title Case)
-- Bullet 1: 230-246 chars (Audience, context, style, visible text if not in Title)
-- Bullet 2: 230-246 chars (Occasions, related sub-niches, "perfect for...")
-- Description: 450-650 chars (Smooth story-style summary)
-- Keywords: >= 25 comma-separated unique lowercase keywords.
-- colorCount: estimated number of distinct visible colors (integer, conservative, 2-8).
-- audiencePrediction: "Men", "Women", "Youth", or "Men, Women"
-- avoidColorPrediction: "Black", "White", or "None" (if white elements exist, avoid white)
-- reuseBackgroundPrediction: "Nein" (if graphic is isolated on solid bg) or "Ja"
+        const basePrompt = SystemPromptService.getListingGeneratorPrompt();
+        const bannedSection = BannedWordsService.getBannedWordsPromptSection();
+        const systemPrompt = `${basePrompt}
 
-Respond strictly with valid JSON conforming to these exact keys.`;
-        const userContent = [
-          { type: "text", text: `Niche 1: ${niche1 || ""}
-Niche 2: ${niche2 || ""}` },
-          { type: "image_url", image_url: { url: imageUrlOrBase64 } }
-        ];
+${bannedSection}`;
+        const n1 = params2.niche1 || "Graphic Art";
+        const n2 = params2.niche2 && params2.niche2.toLowerCase() !== "none" ? params2.niche2 : "";
+        const sub = params2.subniche && params2.subniche.toLowerCase() !== "none" ? params2.subniche : "";
+        const quote5 = params2.quote || "";
+        const allKw = [
+          ...params2.hermesKeywords || [],
+          ...params2.keywords || []
+        ].filter(Boolean);
+        let userMessage = `Design Information:
+- Primary Niche (niche1): ${n1}
+- Secondary Niche (niche2): ${n2 || "none"}
+- Subniche: ${sub || "none"}
+- Quote / Slogan: "${quote5}"
+- Keywords Pool: ${allKw.length > 0 ? allKw.join(", ") : "none provided"}
+- Style Preset: ${params2.stylePreset || "vintage retro vector"}
+- Target Audience: ${params2.audience || "Men, Women"}
+- Avoid Colors: ${params2.avoidColor || "none"}`;
+        if (params2.oldListing) {
+          userMessage += `
+
+Existing Listing Context (for inspiration/upgrade):
+- Old Brand: "${params2.oldListing.brand || ""}"
+- Old Title: "${params2.oldListing.title || ""}"
+- Old Bullets: "${[params2.oldListing.bullet1, params2.oldListing.bullet2].filter(Boolean).join(" | ")}"`;
+        }
+        userMessage += `
+
+Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure Title ends strictly with subniche/niche without trailing punctuation!`;
         try {
           const res = await fetch(url, {
             method: "POST",
@@ -51092,31 +51815,178 @@ Niche 2: ${niche2 || ""}` },
               model,
               messages: [
                 { role: "system", content: systemPrompt },
-                { role: "user", content: userContent }
+                { role: "user", content: userMessage }
               ],
               response_format: { type: "json_object" },
               temperature: 0.4,
-              max_tokens: 1e3
+              max_tokens: 800
             }),
             signal: AbortSignal.timeout(25e3)
           });
-          if (!res.ok) throw new Error(`Vision API error: ${res.statusText}`);
+          if (!res.ok) throw new Error(`LLM Listing error: ${res.status} ${res.statusText}`);
           const data = await res.json();
-          const content = data.choices?.[0]?.message?.content;
-          return JSON.parse(content);
-        } catch (err) {
-          console.error("[LLMService] Vision Listing error:", err);
+          const content = data.choices?.[0]?.message?.content?.trim() || "{}";
+          const parsed = JSON.parse(content.replace(/```json/g, "").replace(/```/g, "").trim());
+          let cleanTitle = (parsed.title || "").trim();
+          cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, "").trim();
           return {
-            title: `${niche1 || "Vintage"} Retro Graphic Design`,
-            brand: `${niche1 || "Retro"} Apparel Co`,
-            bullet1: `Express your unique aesthetic with this stylish ${niche1 || "vintage"} artwork. Ideal for everyday casual wear and trendsetters.`,
-            bullet2: `A versatile addition to any collection, perfect for birthdays, holidays, summer festivals, and casual outings with friends.`,
-            description: `High-quality graphic design celebrating ${niche1 || "retro"} vibes with vivid details and expressive artwork for enthusiasts.`,
-            keywords: "vintage, retro, aesthetic, graphic, distressed, classic, apparel, gifts",
-            colorCount: 4,
-            audiencePrediction: "Men, Women",
-            avoidColorPrediction: "None",
-            reuseBackgroundPrediction: "Nein"
+            brand: (parsed.brand || `${n1} ${sub || "Apparel"}`).trim(),
+            title: cleanTitle || `${n1} ${quote5 ? quote5 + " " : ""}${sub || n1}`.trim(),
+            bullet1: (parsed.bullet1 || `Featuring unique ${n1} artwork for enthusiasts and collectors.`).trim(),
+            bullet2: (parsed.bullet2 || `Great to wear during casual outings, weekend gatherings, and hobby events.`).trim(),
+            description: (parsed.description || `Stylish ${n1} graphic design for passionate fans.`).trim()
+          };
+        } catch (err) {
+          console.error("[LLMService] Error generating master English listing:", err);
+          const targetEnd = sub || n1;
+          return {
+            brand: `${n1} ${sub ? sub + " " : ""}Apparel Accessories`.trim().slice(0, 50),
+            title: `Vintage Retro ${quote5 ? quote5 + " " : ""}${targetEnd}`.trim().slice(0, 60),
+            bullet1: `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`,
+            bullet2: `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`,
+            description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`
+          };
+        }
+      }
+      /**
+       * 2. Rewrite Listing with Specific Trademark Feedback (Feedback Loop, Class Distinctions)
+       */
+      static async rewriteListingWithTrademarkFeedback(params2) {
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
+        const systemPrompt = SystemPromptService.getTrademarkAuditorPrompt();
+        const hitSummary = params2.tmHits.map((h) => `- Term: "${h.term || h.trademark}", Class: ${h.classNumber || h.classes?.join(",") || "unknown"}, Office: ${h.source || "USPTO"}, Status: ${h.status || "LIVE"}`).join("\n");
+        const userMessage = `Current English Listing:
+- Brand: "${params2.currentListing.brand}"
+- Title: "${params2.currentListing.title}"
+- Bullet 1: "${params2.currentListing.bullet1}"
+- Bullet 2: "${params2.currentListing.bullet2}"
+- Description: "${params2.currentListing.description}"
+
+Design Metadata:
+- Primary Niche (niche1): ${params2.niche1 || ""}
+- Secondary Niche (niche2): ${params2.niche2 || ""}
+- Subniche: ${params2.subniche || ""}
+- Quote / Slogan: "${params2.quote || ""}"
+
+Detected Trademark Hits:
+${hitSummary || "None flagged directly."}
+
+Please audit the listing against trademark rules. If a Brand word is Class 25, replace with an alternative niche keyword. If a non-fair-use term is in Title/Bullets, rewrite. Return valid JSON.`;
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userMessage }
+              ],
+              response_format: { type: "json_object" },
+              temperature: 0.2,
+              max_tokens: 800
+            }),
+            signal: AbortSignal.timeout(25e3)
+          });
+          if (!res.ok) throw new Error(`LLM TM Refine error: ${res.status} ${res.statusText}`);
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content?.trim() || "{}";
+          const parsed = JSON.parse(content.replace(/```json/g, "").replace(/```/g, "").trim());
+          const refined = parsed.refined_listing || params2.currentListing;
+          let cleanTitle = (refined.title || params2.currentListing.title).trim();
+          cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+          return {
+            verdict: parsed.verdict === "REJECTED" ? "REJECTED" : "APPROVED",
+            rejection_reason: parsed.rejection_reason || null,
+            blocked_classes: Array.isArray(parsed.blocked_classes) ? parsed.blocked_classes : [],
+            actions_taken: Array.isArray(parsed.actions_taken) ? parsed.actions_taken : [],
+            refined_listing: {
+              brand: (refined.brand || params2.currentListing.brand).trim(),
+              title: cleanTitle,
+              bullet1: (refined.bullet1 || params2.currentListing.bullet1).trim(),
+              bullet2: (refined.bullet2 || params2.currentListing.bullet2).trim(),
+              description: (refined.description || params2.currentListing.description).trim()
+            }
+          };
+        } catch (err) {
+          console.error("[LLMService] Error refining listing with TM feedback:", err);
+          return {
+            verdict: "APPROVED",
+            rejection_reason: null,
+            blocked_classes: [],
+            actions_taken: ["Fallback: unchanged due to network timeout"],
+            refined_listing: params2.currentListing
+          };
+        }
+      }
+      /**
+       * 3. Translate Approved English Master Listing into Multi-Marketplace Languages (DE, FR, ES, IT, JA)
+       * Only called AFTER English Listing is approved & TM-safe (saves ~80% tokens)
+       */
+      static async translateApprovedListing(params2) {
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
+        const systemPrompt = SystemPromptService.getUpdateTranslationPrompt();
+        const userMessage = `Approved English Master Listing:
+- Brand: "${params2.englishListing.brand}"
+- Title: "${params2.englishListing.title}"
+- Bullet 1: "${params2.englishListing.bullet1}"
+- Bullet 2: "${params2.englishListing.bullet2}"
+- Description: "${params2.englishListing.description}"
+
+Artwork Quote (keep verbatim in all languages): "${params2.quote || ""}"
+Primary Niche: "${params2.niche1 || ""}"
+Subniche: "${params2.subniche || ""}"
+
+Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with the translated Niche/Subniche noun without trailing punctuation!`;
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userMessage }
+              ],
+              response_format: { type: "json_object" },
+              temperature: 0.3,
+              max_tokens: 1500
+            }),
+            signal: AbortSignal.timeout(3e4)
+          });
+          if (!res.ok) throw new Error(`LLM Translation error: ${res.status} ${res.statusText}`);
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content?.trim() || "{}";
+          const parsed = JSON.parse(content.replace(/```json/g, "").replace(/```/g, "").trim());
+          const cleanListing = (item, fallback) => {
+            if (!item || typeof item !== "object") return fallback;
+            let t = (item.title || fallback.title).trim();
+            t = t.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+            return {
+              brand: (item.brand || fallback.brand).trim().slice(0, 50),
+              title: t.slice(0, 60),
+              bullet1: (item.bullet1 || fallback.bullet1).trim().slice(0, 256),
+              bullet2: (item.bullet2 || fallback.bullet2).trim().slice(0, 256),
+              description: (item.description || fallback.description).trim().slice(0, 600)
+            };
+          };
+          return {
+            en: params2.englishListing,
+            de: cleanListing(parsed.de, params2.englishListing),
+            fr: cleanListing(parsed.fr, params2.englishListing),
+            es: cleanListing(parsed.es, params2.englishListing),
+            it: cleanListing(parsed.it, params2.englishListing),
+            ja: cleanListing(parsed.ja, params2.englishListing)
+          };
+        } catch (err) {
+          console.error("[LLMService] Error translating listing:", err);
+          return {
+            en: params2.englishListing,
+            de: { ...params2.englishListing },
+            fr: { ...params2.englishListing },
+            es: { ...params2.englishListing },
+            it: { ...params2.englishListing },
+            ja: { ...params2.englishListing }
           };
         }
       }
@@ -215985,23 +216855,23 @@ var init_playwright3 = __esm2({
 
 // src/server/services/browserSessionService.ts
 function findChromiumExecutable() {
-  if (process.env.CHROME_BIN && import_fs74.default.existsSync(process.env.CHROME_BIN)) {
+  if (process.env.CHROME_BIN && import_fs75.default.existsSync(process.env.CHROME_BIN)) {
     return process.env.CHROME_BIN;
   }
   const candidateDirs = [
     process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright",
-    import_path69.default.join(process.env.HOME || "/root", ".cache", "ms-playwright"),
-    import_path69.default.join(process.env.HOME || "/root", "Library", "Caches", "ms-playwright")
+    import_path70.default.join(process.env.HOME || "/root", ".cache", "ms-playwright"),
+    import_path70.default.join(process.env.HOME || "/root", "Library", "Caches", "ms-playwright")
   ];
   for (const dir of candidateDirs) {
-    if (import_fs74.default.existsSync(dir)) {
+    if (import_fs75.default.existsSync(dir)) {
       try {
         const files = [];
         const scan = (d, depth = 0) => {
           if (depth > 4) return;
-          const items = import_fs74.default.readdirSync(d, { withFileTypes: true });
+          const items = import_fs75.default.readdirSync(d, { withFileTypes: true });
           for (const item of items) {
-            const p = import_path69.default.join(d, item.name);
+            const p = import_path70.default.join(d, item.name);
             if (item.isDirectory()) scan(p, depth + 1);
             else files.push(p);
           }
@@ -216022,17 +216892,17 @@ function findChromiumExecutable() {
     "/usr/bin/chromium-browser"
   ];
   for (const sc of systemCandidates) {
-    if (import_fs74.default.existsSync(sc)) return sc;
+    if (import_fs75.default.existsSync(sc)) return sc;
   }
   return void 0;
 }
-var import_path69, import_fs74, BrowserSessionService;
+var import_path70, import_fs75, BrowserSessionService;
 var init_browserSessionService = __esm2({
   "src/server/services/browserSessionService.ts"() {
     "use strict";
     init_playwright3();
-    import_path69 = __toESM2(require("path"), 1);
-    import_fs74 = __toESM2(require("fs"), 1);
+    import_path70 = __toESM2(require("path"), 1);
+    import_fs75 = __toESM2(require("fs"), 1);
     BrowserSessionService = class _BrowserSessionService {
       static context = null;
       static sessions = /* @__PURE__ */ new Map();
@@ -216040,9 +216910,9 @@ var init_browserSessionService = __esm2({
       static frameBroadcasters = [];
       static isInitializing = false;
       static getProfileDir() {
-        const dir = import_path69.default.resolve(process.cwd(), "data", "chrome-profile");
-        if (!import_fs74.default.existsSync(dir)) {
-          import_fs74.default.mkdirSync(dir, { recursive: true });
+        const dir = import_path70.default.resolve(process.cwd(), "data", "chrome-profile");
+        if (!import_fs75.default.existsSync(dir)) {
+          import_fs75.default.mkdirSync(dir, { recursive: true });
         }
         return dir;
       }
@@ -217471,295 +218341,6 @@ var init_syncEngine = __esm2({
   }
 });
 
-// src/server/services/bannedWordsService.ts
-var BANNED_WORDS_BY_LOCALE, BannedWordsService;
-var init_bannedWordsService = __esm2({
-  "src/server/services/bannedWordsService.ts"() {
-    "use strict";
-    BANNED_WORDS_BY_LOCALE = {
-      en: [
-        // Physical faux effects / Material claims (Forbidden on 2D prints)
-        "sparkling",
-        "glitter",
-        "neon",
-        "metallic",
-        "foil",
-        "rose gold",
-        "gold",
-        "glow effect",
-        "glows in black light",
-        "glow in the dark",
-        "sequin",
-        "metal",
-        "wood",
-        "diamond",
-        "gem",
-        "texture",
-        "textured",
-        "holographic",
-        "embossed",
-        "leather",
-        "rubber",
-        // Quality, Fit & Sizing claims
-        "premium",
-        "high quality",
-        "quality",
-        "fitted",
-        "looser",
-        "size up",
-        "bigger size",
-        "larger size",
-        "maternity",
-        "printed to be fitted",
-        "printed in",
-        "printed",
-        "made in",
-        // Shipping & Promotional promises
-        "free shipping",
-        "prime shipping",
-        "ships in",
-        "easy returns",
-        "refund",
-        "review",
-        "risk free",
-        "satisfaction guaranteed",
-        "limited quantities",
-        "best seller",
-        "sale",
-        "buy now",
-        "discount",
-        "trending",
-        // Gift language (Amazon MBA policy flag)
-        "gift",
-        "present",
-        "birthday gift",
-        "christmas gift",
-        // Product types in Title/Brand
-        "popsocket",
-        "pop socket",
-        "t-shirt",
-        "tshirt",
-        "t shirt",
-        "hoodie",
-        "tank top",
-        "sweatshirt",
-        // Vulgar / Adult / Sensitive
-        "fuck",
-        "shit",
-        "bitch",
-        "btch",
-        "dick",
-        "penis",
-        // Known Trap Trademarks
-        "Steppenwolf",
-        "Cycologist"
-      ],
-      de: [
-        // Physische Material- & Effekt-Behauptungen
-        "glitzernd",
-        "Glitter",
-        "Pailletten",
-        "leuchtend",
-        "leuchtet bei Schwarzlicht",
-        "leuchtet im Dunkeln",
-        "Neon",
-        "Metallic",
-        "Folie",
-        "Ros\xE9gold",
-        "Gold",
-        "Holz",
-        "Metall",
-        "Marmor",
-        "Glas",
-        "Leder",
-        "Gummi",
-        "Diamant",
-        "Edelstein",
-        "flauschig",
-        "Pl\xFCsch",
-        "gepr\xE4gt",
-        // Qualität & Passform
-        "bewertung",
-        "hohe qualit\xE4t",
-        "premium",
-        "Schwangerschaftsbekleidung",
-        "\xDCbergr\xF6\xDFe",
-        // Werbe- & Geschenk-Sprache
-        "geschenk",
-        "geburtstagsgeschenk",
-        "weihnachtsgeschenk",
-        "bester verk\xE4ufer",
-        "rabatt",
-        "jetzt kaufen",
-        // Obszönitäten & Fallen
-        "fuck",
-        "btch",
-        "bitch",
-        "penis",
-        "schie\xDFen",
-        "Steppenwolf"
-      ],
-      fr: [
-        "n\xE9on",
-        "m\xE9tallis\xE9",
-        "feuille d'aluminium",
-        "rose",
-        "\xE9tincelant",
-        "brillant",
-        "brillant \xE0 la lumi\xE8re noire",
-        "brillant dans l\u2019obscurit\xE9",
-        "m\xE9tal",
-        "marbre",
-        "paillettes",
-        "cuir",
-        "caoutchouc",
-        "pelucheuses",
-        "fourrure",
-        "verre",
-        "diamant",
-        "pierre pr\xE9cieuse",
-        "cadeau",
-        "nains"
-      ],
-      it: [
-        "metallo",
-        "marmo",
-        "paillettes",
-        "glitter",
-        "pelle",
-        "gomma",
-        "pelo o pelliccia",
-        "perline",
-        "diamanti",
-        "gemme",
-        "fluo",
-        "metallico",
-        "laminato",
-        "oro rosa",
-        "oro",
-        "brillante",
-        "fosforescente",
-        "fluorescente alla luce nera",
-        "luminoso al buio",
-        "regalo",
-        "Benito Mussolini",
-        "Benito",
-        "Mussolini",
-        "anos"
-      ],
-      es: [
-        "papel de aluminio",
-        "oro rosa",
-        "oro",
-        "brillante",
-        "brillo en luz negra",
-        "brillo en la oscuridad",
-        "como madera",
-        "metal",
-        "m\xE1rmol",
-        "lentejuelas",
-        "purpurina",
-        "cuero",
-        "caucho",
-        "tejido o peludo",
-        "vidrio",
-        "diamantes o gemas",
-        "regalo",
-        "primer"
-      ],
-      ja: [
-        "\u30C1\u30D3",
-        "\u30B8\u30F3",
-        "\u30B7\u30F3",
-        "\u30A2\u30BF\u30EA",
-        "\u30A2\u30BF",
-        "\u30AE\u30D5\u30C8",
-        "\u30D7\u30EC\u30BC\u30F3\u30C8",
-        "\u9AD8\u54C1\u8CEA",
-        "\u30D7\u30EC\u30DF\u30A2\u30E0"
-      ]
-    };
-    BannedWordsService = class {
-      /**
-       * Get banned words array for a specific locale (defaulting to English if not found)
-       */
-      static getBannedWords(locale = "en") {
-        const norm = locale.toLowerCase().trim();
-        return BANNED_WORDS_BY_LOCALE[norm] || BANNED_WORDS_BY_LOCALE.en || [];
-      }
-      /**
-       * Generate formatted Markdown section to append to the Listing Generator system prompt
-       */
-      static getBannedWordsPromptSection() {
-        const enWords = this.getBannedWords("en").join(", ");
-        const deWords = this.getBannedWords("de").join(", ");
-        return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
-You MUST NEVER use any of the following prohibited words or phrases in ANY field (Brand, Title, Bullet 1, Bullet 2, Description) under ANY circumstances:
-
-A. FAUX MATERIAL & PHYSICAL EFFECT CLAIMS (CRITICAL! DO NOT DESCRIBE 2D ARTWORK AS PHYSICAL MATERIALS):
-- English: sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
-- German: glitzernd, Glitter, Pailletten, leuchtend, Neon, Metallic, Folie, Ros\xE9gold, Gold, Holz, Metall, Marmor, Glas, Leder, Diamant, Edelstein.
-
-B. QUALITY, FIT & SIZING CLAIMS:
-- English: premium, high quality, quality, fitted, looser, size up, bigger size, larger size, maternity, printed in, made in.
-- German: hohe qualit\xE4t, premium, bewertung, Schwangerschaftsbekleidung.
-
-C. PROMOTIONAL & GIFT LANGUAGE:
-- English: gift, present, birthday gift, christmas gift, best seller, sale, buy now, discount.
-- German: geschenk, geburtstagsgeschenk, weihnachtsgeschenk, rabatt.
-
-D. PRODUCT TYPE IN TITLE/BRAND:
-- NO words like: "T-Shirt", "tshirt", "shirt", "hoodie", "tank top", "popsocket", "pop socket".
-
-E. ALL PROHIBITED WORDS LIST:
-- [EN]: ${enWords}
-- [DE]: ${deWords}`;
-      }
-      /**
-       * Scan text for banned words in a given language locale
-       */
-      static findBannedWordsInText(text2, locale = "en") {
-        if (!text2 || typeof text2 !== "string") return [];
-        const words = this.getBannedWords(locale);
-        const found = [];
-        const isJapanese = locale === "ja";
-        for (const w of words) {
-          const escaped2 = w.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
-          const regex = isJapanese ? new RegExp(escaped2, "gi") : new RegExp(`\\b${escaped2}\\b`, "gi");
-          if (regex.test(text2)) {
-            found.push(w);
-          }
-        }
-        return Array.from(new Set(found));
-      }
-      /**
-       * Validate full multi-language listing payload and return any detected banned words
-       */
-      static validateListing(listing) {
-        const issuesByLocale = {};
-        if (!listing || typeof listing !== "object") return issuesByLocale;
-        for (const [loc, fields] of Object.entries(listing)) {
-          if (fields && typeof fields === "object") {
-            const localeIssues = [];
-            for (const [fieldName, val] of Object.entries(fields)) {
-              if (typeof val === "string") {
-                const found = this.findBannedWordsInText(val, loc);
-                if (found.length > 0) {
-                  localeIssues.push({ field: fieldName, foundWords: found });
-                }
-              }
-            }
-            if (localeIssues.length > 0) {
-              issuesByLocale[loc] = localeIssues;
-            }
-          }
-        }
-        return issuesByLocale;
-      }
-    };
-  }
-});
-
 // src/server/services/svgRenderService.ts
 async function getBrowser() {
   if (!sharedBrowser || !sharedBrowser.isConnected()) {
@@ -218115,284 +218696,6 @@ var init_svgRenderService = __esm2({
 var init_tasks = __esm2({
   "src/types/tasks.ts"() {
     "use strict";
-  }
-});
-
-// src/server/services/productCatalogService.ts
-var import_fs75, import_path70, MERCH_COLOR_HEX_MAP, ProductCatalogService;
-var init_productCatalogService = __esm2({
-  "src/server/services/productCatalogService.ts"() {
-    "use strict";
-    import_fs75 = __toESM2(require("fs"), 1);
-    import_path70 = __toESM2(require("path"), 1);
-    MERCH_COLOR_HEX_MAP = {
-      black: "#121212",
-      white: "#FFFFFF",
-      asphalt: "#383E42",
-      navy: "#131E2E",
-      dark_heather: "#3A3D40",
-      heather_grey: "#A8A9AD",
-      heather_blue: "#4A6B82",
-      royal: "#1B4D89",
-      baby_blue: "#8CB4D9",
-      grass: "#3E8E41",
-      kelly_green: "#1E792E",
-      dark_green: "#1A3828",
-      olive: "#4D4E32",
-      olive_heather: "#4D543B",
-      red: "#B81D24",
-      cranberry: "#7D1A2B",
-      burgundy: "#5B1E28",
-      red_heather: "#873238",
-      pink: "#E88B9E",
-      light_pink: "#F4C2C2",
-      pink_heather: "#C28490",
-      purple: "#4B2E83",
-      light_purple: "#B399D4",
-      purple_heather: "#6B4C72",
-      lemon: "#F4E04D",
-      golden_yellow: "#F5A623",
-      orange: "#E65100",
-      brown: "#4E3629",
-      silver: "#C0C0C0",
-      slate: "#5C6F84",
-      sapphire: "#0F52BA",
-      ivory: "#FFFFF0",
-      light_beige: "#F5F5DC",
-      mint_green: "#98FF98",
-      deep_blue: "#0B2265",
-      plum: "#4D1F3D",
-      raspberry_red: "#911736",
-      forest: "#1E3F20",
-      forest_green: "#1E3F20",
-      tan: "#D2B48C",
-      storm: "#4F5B66",
-      mauve: "#915F6D",
-      grey: "#808080",
-      dark_grey: "#333333",
-      neon_pink: "#FF1493",
-      black_athletic_heather: "#2B2B2B",
-      black_white: "#222222",
-      dark_heather_white: "#3A3D40",
-      navy_athletic_heather: "#1A2738",
-      navy_white: "#131E2E",
-      red_white: "#B81D24",
-      royal_blue_white: "#1B4D89",
-      blue_white: "#1B4D89",
-      pink_white: "#E88B9E",
-      yellow_white: "#F4E04D",
-      orange_white: "#E65100",
-      brushed_steel: "#A2AAB0",
-      light_blue: "#8CB4D9",
-      dusty_blue: "#5C768D",
-      sage_green: "#879B86",
-      bright_pink: "#FF4081",
-      blue_tie_dye: "#2E5B88",
-      grey_tie_dye: "#6E7074",
-      purple_tie_dye: "#5B3B70",
-      fern_tie_dye: "#3D5E43",
-      umber_tie_dye: "#5A3E31"
-    };
-    ProductCatalogService = class {
-      static catalogFilePath = import_path70.default.resolve(process.cwd(), "data", "product_catalog.json");
-      static catalogData = {
-        products: [],
-        marketplaces: [],
-        lastScanDate: null,
-        schemaVersion: 1
-      };
-      static isLoaded = false;
-      static ensureLoaded() {
-        if (this.isLoaded) return;
-        this.loadCatalog();
-        this.isLoaded = true;
-      }
-      /**
-       * Load catalog data from ./data/product_catalog.json
-       */
-      static loadCatalog() {
-        try {
-          if (import_fs75.default.existsSync(this.catalogFilePath)) {
-            const raw = import_fs75.default.readFileSync(this.catalogFilePath, "utf-8");
-            const parsed = JSON.parse(raw);
-            if (parsed && Array.isArray(parsed.products)) {
-              this.catalogData = {
-                products: parsed.products,
-                marketplaces: parsed.marketplaces || this.getDefaultMarketplaces(),
-                lastScanDate: parsed.lastScanDate || null,
-                schemaVersion: parsed.schemaVersion || 1
-              };
-              this.enrichColorsWithHex();
-              return this.catalogData;
-            }
-          }
-        } catch (err) {
-          console.error("[ProductCatalogService] Failed to load product_catalog.json:", err.message);
-        }
-        this.catalogData = {
-          products: [],
-          marketplaces: this.getDefaultMarketplaces(),
-          lastScanDate: null,
-          schemaVersion: 1
-        };
-        return this.catalogData;
-      }
-      /**
-       * Save catalog data to ./data/product_catalog.json
-       */
-      static saveCatalog(data) {
-        this.ensureLoaded();
-        if (data.products !== void 0) {
-          this.catalogData.products = data.products;
-        }
-        if (data.marketplaces !== void 0) {
-          this.catalogData.marketplaces = data.marketplaces;
-        }
-        if (data.lastScanDate !== void 0) {
-          this.catalogData.lastScanDate = data.lastScanDate;
-        }
-        this.enrichColorsWithHex();
-        try {
-          const dataDir = import_path70.default.dirname(this.catalogFilePath);
-          if (!import_fs75.default.existsSync(dataDir)) {
-            import_fs75.default.mkdirSync(dataDir, { recursive: true });
-          }
-          import_fs75.default.writeFileSync(this.catalogFilePath, JSON.stringify(this.catalogData, null, 2), "utf-8");
-          console.log(`[ProductCatalogService] Saved ${this.catalogData.products.length} products to ${this.catalogFilePath}`);
-        } catch (err) {
-          console.error("[ProductCatalogService] Error writing product_catalog.json:", err.message);
-        }
-        return this.catalogData;
-      }
-      /**
-       * Clear the dynamic catalog completely
-       */
-      static clearCatalog() {
-        this.catalogData = {
-          products: [],
-          marketplaces: this.getDefaultMarketplaces(),
-          lastScanDate: null,
-          schemaVersion: 1
-        };
-        try {
-          if (import_fs75.default.existsSync(this.catalogFilePath)) {
-            import_fs75.default.writeFileSync(this.catalogFilePath, JSON.stringify(this.catalogData, null, 2), "utf-8");
-          }
-          console.log("[ProductCatalogService] Cleared product catalog");
-        } catch (err) {
-          console.error("[ProductCatalogService] Error clearing catalog:", err.message);
-        }
-        return this.catalogData;
-      }
-      /**
-       * Get active catalog data
-       */
-      static getCatalog() {
-        this.ensureLoaded();
-        return this.catalogData;
-      }
-      /**
-       * Get catalog statistics (Total products, total slots across all marketplaces)
-       */
-      static getStats() {
-        this.ensureLoaded();
-        const products = this.catalogData.products || [];
-        let totalSlots = 0;
-        for (const prod of products) {
-          const mpCount = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces.length : 0;
-          totalSlots += mpCount;
-        }
-        return {
-          totalProducts: products.length,
-          totalSlots,
-          totalMarketplaces: (this.catalogData.marketplaces || []).length,
-          lastScanDate: this.catalogData.lastScanDate
-        };
-      }
-      /**
-       * Look up a single product by ID
-       */
-      static getProductById(id) {
-        this.ensureLoaded();
-        return this.catalogData.products.find((p) => p.id === id);
-      }
-      /**
-       * Update drop configuration (isDropAllowed, dropPriorityOrder) for products
-       */
-      static updateDropConfig(configs) {
-        this.ensureLoaded();
-        const configMap = new Map(configs.map((c) => [c.id, c]));
-        for (const prod of this.catalogData.products) {
-          if (configMap.has(prod.id)) {
-            const conf = configMap.get(prod.id);
-            prod.isDropAllowed = conf.isDropAllowed;
-            prod.dropPriorityOrder = conf.dropPriorityOrder;
-          }
-        }
-        return this.saveCatalog(this.catalogData);
-      }
-      /**
-       * Get all products allowed to be dropped, ordered by user priority
-       */
-      static getDroppableProductsOrdered() {
-        this.ensureLoaded();
-        return this.catalogData.products.filter((p) => p.isDropAllowed === true).sort((a, b) => {
-          const orderA = a.dropPriorityOrder ?? 99;
-          const orderB = b.dropPriorityOrder ?? 99;
-          if (orderA !== orderB) return orderA - orderB;
-          return a.sortOrder - b.sortOrder;
-        });
-      }
-      /**
-       * Calculate how many non-US slots can be dropped across all droppable products
-       */
-      static calculateMaxDroppableSlotsCount() {
-        const droppables = this.getDroppableProductsOrdered();
-        let count = 0;
-        for (const prod of droppables) {
-          const nonUsMarketplaces = (prod.availableMarketplaces || []).filter((mp) => mp.toUpperCase() !== "US");
-          count += nonUsMarketplaces.length;
-        }
-        return count;
-      }
-      static getMaxDroppableSlots() {
-        return this.calculateMaxDroppableSlotsCount();
-      }
-      static getTotalBaseSlotsCount() {
-        let count = 0;
-        for (const prod of this.catalogData.products) {
-          count += (prod.availableMarketplaces || []).length;
-        }
-        return count;
-      }
-      /**
-       * Enrich color objects with hex preview codes
-       */
-      static enrichColorsWithHex() {
-        for (const prod of this.catalogData.products) {
-          if (Array.isArray(prod.colors)) {
-            for (const col of prod.colors) {
-              const cleanId = col.id.toLowerCase().replace(/-/g, "_");
-              col.hexPreview = MERCH_COLOR_HEX_MAP[cleanId] || "#718096";
-            }
-          }
-        }
-      }
-      /**
-       * Default Merch by Amazon Marketplaces
-       */
-      static getDefaultMarketplaces() {
-        return [
-          { id: "US", displayName: ".com", defaultPrice: "19.99" },
-          { id: "GB", displayName: ".co.uk", defaultPrice: "16.99" },
-          { id: "DE", displayName: ".de", defaultPrice: "17.49" },
-          { id: "FR", displayName: ".fr", defaultPrice: "18.99" },
-          { id: "IT", displayName: ".it", defaultPrice: "17.99" },
-          { id: "ES", displayName: ".es", defaultPrice: "17.99" },
-          { id: "JP", displayName: ".co.jp", defaultPrice: "2299" }
-        ];
-      }
-    };
   }
 });
 
@@ -218884,6 +219187,8 @@ var init_updatePipelineService = __esm2({
     init_settingsService();
     init_queueService();
     init_systemPromptService();
+    init_llmService();
+    init_trademarkService();
     UpdatePipelineService = class {
       /**
        * Helper to retrieve a task safely
@@ -219027,10 +219332,19 @@ Bullets: ${oldBullets}`
           const json = await resp.json();
           const contentStr = json.choices?.[0]?.message?.content || "{}";
           const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
+          const niche1 = parsed.niche1 || "Graphic Art";
+          const niche2 = parsed.niche2 || "none";
+          const subniche = parsed.subniche || "none";
           TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_ANALYZED",
+            niche1,
+            niche2,
+            subniche,
             analysisResult: parsed,
             customAnswers: {
+              niche1,
+              niche2,
+              subniche,
               audience: Array.isArray(parsed.fitTypes) ? parsed.fitTypes.join(", ") : "men, women, youth",
               avoidColor: parsed.avoidColor || "none",
               notes: parsed.reasoning || ""
@@ -219040,7 +219354,7 @@ Bullets: ${oldBullets}`
           TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ANALYSIS_RESPONSE",
-            title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? "empfohlen" : "nicht n\xF6tig"}`,
+            title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? "empfohlen" : "nicht n\xF6tig"} (Nische: ${niche1})`,
             content: parsed,
             metadata: { model, provider: "OpenRouter" }
           });
@@ -219058,7 +219372,7 @@ Bullets: ${oldBullets}`
         }
       }
       /**
-       * Step U4: Listing Rewriting (EN only)
+       * Step U4: Listing Rewriting (Master English First)
        */
       static async stepU4_RewriteListing(taskId) {
         console.log(`[UpdatePipeline] \u270D\uFE0F Starte Step U4 (Listing Rewriting) f\xFCr Task ${taskId}...`);
@@ -219086,58 +219400,48 @@ Bullets: ${oldBullets}`
           });
           return { success: true, listingResult: { en: enListing } };
         }
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
-        if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
         const raw = task.payload || {};
-        const model = settings.llmModel || "google/gemini-2.5-flash";
-        const baseSystemPrompt = SystemPromptService.getUpdateRewritePrompt();
-        const systemPrompt = `${baseSystemPrompt}
-
-Original Listing Details:
-- Brand: "${raw.brand || ""}"
-- Title: "${raw.title || ""}"
-- Bullets: "${[raw.bullet1, raw.bullet2].filter(Boolean).join(" | ")}"`;
+        const niche1 = task.niche1 || task.customAnswers?.niche1 || task.analysisResult?.niche1 || "";
+        const niche2 = task.niche2 || task.customAnswers?.niche2 || task.analysisResult?.niche2 || "";
+        const subniche = task.subniche || task.customAnswers?.subniche || task.analysisResult?.subniche || "";
+        const audience = task.customAnswers?.audience || (Array.isArray(task.analysisResult?.fitTypes) ? task.analysisResult.fitTypes.join(", ") : "men, women");
+        const avoidColor = task.customAnswers?.avoidColor || task.analysisResult?.avoidColor || "none";
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "LISTING_REQUEST",
-          title: "Listing Rewrite Request (OpenRouter)",
-          content: { originalTitle: raw.title, originalBrand: raw.brand, model },
-          metadata: { model, provider: "OpenRouter" }
+          title: "Master English Listing Rewrite Request (OpenRouter)",
+          content: { originalTitle: raw.title, originalBrand: raw.brand, niche1, niche2, subniche },
+          metadata: { provider: "OpenRouter" }
         });
         try {
-          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: "Rewrite the Merch on Demand listing now." }
-              ],
-              response_format: { type: "json_object" }
-            })
+          const enListing = await LLMService.generateMasterEnglishListing({
+            niche1,
+            niche2,
+            subniche,
+            quote: raw.quote || "",
+            audience,
+            avoidColor,
+            oldListing: {
+              brand: raw.brand,
+              title: raw.title,
+              bullet1: raw.bullet1,
+              bullet2: raw.bullet2,
+              description: raw.description
+            }
           });
-          if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
-          const json = await resp.json();
-          const contentStr = json.choices?.[0]?.message?.content || "{}";
-          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
           TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_REWRITTEN",
-            listingResult: { en: parsed },
+            listingResult: { en: enListing },
             hasError: false
           });
           TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "LISTING_RESPONSE",
-            title: "Optimiertes Listing generiert (EN)",
-            content: parsed,
-            metadata: { model, provider: "OpenRouter" }
+            title: "Optimiertes Master English Listing generiert",
+            content: { en: enListing },
+            metadata: { provider: "OpenRouter" }
           });
-          return { success: true, listingResult: { en: parsed } };
+          return { success: true, listingResult: { en: enListing } };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U4:`, err);
           TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
@@ -219145,7 +219449,7 @@ Original Listing Details:
         }
       }
       /**
-       * Step U5: Trademark Check Loop (USPTO & DPMA)
+       * Step U5: Trademark Check Loop (USPTO, EUIPO, DPMA with Nice Class Awareness)
        */
       static async stepU5_TrademarkCheck(taskId) {
         console.log(`[UpdatePipeline] \u2696\uFE0F Starte Step U5 (Trademark Check Loop) f\xFCr Task ${taskId}...`);
@@ -219155,40 +219459,90 @@ Original Listing Details:
           brand: task.payload?.brand || "",
           title: task.payload?.title || "",
           bullet1: task.payload?.bullet1 || "",
-          bullet2: task.payload?.bullet2 || ""
+          bullet2: task.payload?.bullet2 || "",
+          description: task.payload?.description || ""
         };
+        const quote5 = task.payload?.quote || "";
+        const niche1 = task.niche1 || task.customAnswers?.niche1 || "";
+        const niche2 = task.niche2 || task.customAnswers?.niche2 || "";
+        const subniche = task.subniche || task.customAnswers?.subniche || "";
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_CHECK_REQUEST",
-          title: "Trademark-Pr\xFCfung (USPTO & DPMA)",
-          content: { fields: listing },
-          metadata: { provider: "Productor USPTO / DPMA" }
+          title: "Trademark-Pr\xFCfung (USPTO, EUIPO, DPMA)",
+          content: { fields: listing, niche1, niche2, subniche },
+          metadata: { provider: "Productor TM API" }
         });
-        const tmResult = {
-          safe: true,
-          totalHits: 0,
-          checkedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          checkedFields: ["brand", "title", "bullet1", "bullet2"]
-        };
+        const audit = await TrademarkService.auditListingAndMetadata({
+          listing,
+          quote: quote5,
+          niche1,
+          niche2,
+          subniche,
+          offices: ["USPTO", "EUIPO", "DPMA"]
+        });
+        if (audit.isHardReject) {
+          const reason = audit.hardRejectReason || "Klasse 25 Konflikt auf Quote oder Nische.";
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "AWAITING_TM_REVIEW",
+            checkpoint: "TM_REVIEW",
+            blockedNiceClasses: [25],
+            trademarkCheckResult: {
+              totalHits: audit.allHits.length,
+              hasInfringementClass25: true,
+              blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
+              fieldSummaries: {}
+            },
+            hasError: false,
+            errorDetails: reason
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TM_REFINE_RESPONSE",
+            title: "Trademark-Pr\xFCfung: ABGELEHNT (Klasse 25 Konflikt)",
+            content: { reason, verdict: "REJECTED" }
+          });
+          return { success: false, error: reason };
+        }
+        let refinedListing = listing;
+        if (audit.needsRewrite && !audit.isSafe) {
+          const rewriteRes = await LLMService.rewriteListingWithTrademarkFeedback({
+            currentListing: listing,
+            tmHits: audit.allHits,
+            niche1,
+            niche2,
+            subniche,
+            quote: quote5
+          });
+          refinedListing = rewriteRes.refined_listing;
+        }
         TaskLogService2.updateTaskStatus(taskId, {
           status: "UPDATE_TM_CHECKED",
-          trademarkCheckResult: tmResult,
+          listingResult: { en: refinedListing },
+          blockedNiceClasses: audit.blockedNiceClasses,
+          blockedProducts: audit.blockedProducts,
+          trademarkCheckResult: {
+            totalHits: audit.allHits.length,
+            hasInfringementClass25: false,
+            blockedProducts: audit.blockedProducts,
+            fieldSummaries: {}
+          },
           hasError: false
         });
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_CHECK_RESPONSE",
-          title: "Trademark-Pr\xFCfung bestanden (0 Treffer)",
-          content: tmResult,
-          metadata: { provider: "Productor USPTO" }
+          title: `Trademark-Pr\xFCfung abgeschlossen (${audit.allHits.length} Treffer, ${audit.blockedProducts.length} Produkte gesperrt)`,
+          content: { audit, refinedListing },
+          metadata: { provider: "Productor USPTO / EUIPO / DPMA" }
         });
-        return { success: true, tmResult };
+        return { success: true, tmResult: audit };
       }
       /**
-       * Step U6: SEO Translation (DE, FR, ES, IT, JA)
+       * Step U6: SEO Translation (DE, FR, ES, IT, JA) & Hard Sanitizer
        */
       static async stepU6_TranslateListing(taskId) {
-        console.log(`[UpdatePipeline] \u{1F310} Starte Step U6 (SEO Translation) f\xFCr Task ${taskId}...`);
+        console.log(`[UpdatePipeline] \u{1F310} Starte Step U6 (SEO Translation & Sanitizer) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
         const enListing = task.listingResult?.en || {
@@ -219198,65 +219552,37 @@ Original Listing Details:
           bullet2: task.payload?.bullet2 || "",
           description: task.payload?.description || ""
         };
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
-        if (!apiKey) return { success: false, error: "OpenRouter API-Key fehlt." };
-        const model = settings.llmModel || "google/gemini-2.5-flash";
-        const baseSystemPrompt = SystemPromptService.getUpdateTranslationPrompt();
-        const systemPrompt = `${baseSystemPrompt}
-
-Source EN Listing:
-- Brand: "${enListing.brand}"
-- Title: "${enListing.title}"
-- Bullet 1: "${enListing.bullet1}"
-- Bullet 2: "${enListing.bullet2}"`;
+        const quote5 = task.payload?.quote || "";
+        const niche1 = task.niche1 || task.customAnswers?.niche1 || "";
+        const subniche = task.subniche || task.customAnswers?.subniche || "";
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "LLM_REQUEST",
-          title: "SEO-\xDCbersetzung anfordern (DE, FR, ES, IT)",
-          content: { sourceListing: enListing, model },
-          metadata: { model, provider: "OpenRouter" }
+          type: "TRANSLATION_REQUEST",
+          title: "SEO-\xDCbersetzung anfordern (DE, FR, ES, IT, JA)",
+          content: { sourceListing: enListing, niche1, subniche },
+          metadata: { provider: "OpenRouter" }
         });
         try {
-          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: "Translate to DE, FR, ES, IT now." }
-              ],
-              response_format: { type: "json_object" }
-            })
+          const translated = await LLMService.translateApprovedListing({
+            englishListing: enListing,
+            quote: quote5,
+            niche1,
+            subniche
           });
-          if (!resp.ok) throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
-          const json = await resp.json();
-          const contentStr = json.choices?.[0]?.message?.content || "{}";
-          const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
-          const fullListings = {
-            en: enListing,
-            de: parsed.de || enListing,
-            fr: parsed.fr || enListing,
-            es: parsed.es || enListing,
-            it: parsed.it || enListing
-          };
+          const sanitized = TaskLogService2.sanitizeAndValidateListingBeforeQueue(translated);
           TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_TRANSLATED",
-            listingResult: fullListings,
+            listingResult: sanitized,
             hasError: false
           });
           TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "LLM_RESPONSE",
-            title: "SEO-\xDCbersetzungen erfolgreich generiert",
-            content: fullListings,
-            metadata: { model, provider: "OpenRouter" }
+            type: "TRANSLATION_RESPONSE",
+            title: "SEO-\xDCbersetzungen erfolgreich generiert & bereinigt",
+            content: sanitized,
+            metadata: { provider: "OpenRouter" }
           });
-          return { success: true, fullListings };
+          return { success: true, fullListings: sanitized };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U6:`, err);
           TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
@@ -220496,6 +220822,25 @@ var init_taskLogService = __esm2({
         if (!txt || typeof txt !== "string") return txt || "";
         return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
       }
+      static sanitizeAndValidateListingBeforeQueue(listing) {
+        if (!listing || typeof listing !== "object") return listing;
+        const result2 = {};
+        for (const [lang, obj] of Object.entries(listing)) {
+          if (obj && typeof obj === "object" && !Array.isArray(obj) && !lang.startsWith("_")) {
+            const item = obj;
+            const brand = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.brand || ""), lang).slice(0, 50);
+            let title = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.title || ""), lang);
+            title = title.replace(/[,.!?:;'"\-–—]+$/, "").trim().slice(0, 60);
+            const bullet1 = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.bullet1 || item.bullet_1 || ""), lang).slice(0, 256);
+            const bullet2 = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.bullet2 || item.bullet_2 || ""), lang).slice(0, 256);
+            const description = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.description || ""), lang).slice(0, 600);
+            result2[lang] = { brand, title, bullet1, bullet2, description };
+          } else {
+            result2[lang] = obj;
+          }
+        }
+        return result2;
+      }
       static sanitizeListingObject(listing) {
         if (!listing || typeof listing !== "object") return listing;
         if (Array.isArray(listing)) {
@@ -220578,6 +220923,11 @@ var init_taskLogService = __esm2({
           status: "RECEIVED",
           receivedAt: now,
           clientIp: params2.clientIp,
+          niche1: params2.payload?.niche1 || params2.payload?.niche || void 0,
+          niche2: params2.payload?.niche2 || void 0,
+          subniche: params2.payload?.subniche || void 0,
+          keywords: params2.payload?.keywords || void 0,
+          hermesKeywords: params2.payload?.hermesKeywords || (Array.isArray(params2.payload?.keywords) ? params2.payload.keywords : void 0),
           payload: params2.payload || {},
           events: [initialEvent],
           hasError: Boolean(params2.hasError),
@@ -221154,7 +221504,7 @@ Beantworte die 4 Kernfragen streng als JSON!`;
         }
       }
       /**
-       * Automatically generate MBA SEO Listing across all marketplaces (en, de, fr, it, es, ja)
+       * Automatically generate Master English MBA SEO Listing and proceed to Trademark Loop
        */
       static async generateListingWithOpenRouter(taskId) {
         const task = this.getTaskLogById(taskId);
@@ -221171,105 +221521,64 @@ Beantworte die 4 Kernfragen streng als JSON!`;
           this.updateTaskStatus(taskId, { status: "COMPLETED" });
           return;
         }
-        const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
-        const baseListingPrompt = SystemPromptService.getListingGeneratorPrompt();
-        const bannedWordsSection = BannedWordsService.getBannedWordsPromptSection();
-        const listingPrompt = `${baseListingPrompt}
-
-${bannedWordsSection}`;
         const quote5 = task.payload?.quote || "";
-        const niche1 = task.payload?.niche1 || "";
-        const niche2 = task.payload?.niche2 || "";
+        const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || task.analysisResult?.niche_analysis?.niche1 || "";
+        const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || task.analysisResult?.niche_analysis?.niche2 || "";
+        const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || task.analysisResult?.niche_analysis?.subniche || "";
+        const keywords = task.keywords || task.customAnswers?.keywords || task.payload?.keywords || [];
+        const hermesKeywords = task.hermesKeywords || task.payload?.hermesKeywords || [];
         const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "Men, Women, Youth";
         const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || "None";
-        const userPromptText = `Please generate the full, multi-language Amazon Merch on Demand (MBA) SEO listing for this design based on the following details:
-
-- Quote / Text: "${quote5}"
-- Primary Niche: "${niche1}"
-- Secondary Niche: "${niche2}"
-- Target Audience: ${targetGroup}
-- Colors to Avoid: ${avoidColors}
-- Ideogram Prompt: "${task.resultPrompt || ""}"
-
-Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to character limits and compliance rules!`;
         this.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "LISTING_REQUEST",
-          title: `Senden an OpenRouter (Listing Generator)`,
+          title: `Senden an OpenRouter (Master English Listing Generator)`,
           content: {
-            systemPrompt: listingPrompt,
-            userMessage: userPromptText
+            niche1,
+            niche2,
+            subniche,
+            quote: quote5,
+            keywords,
+            hermesKeywords,
+            targetAudience: targetGroup,
+            avoidColors
           },
-          metadata: { model, provider: "OpenRouter" }
+          metadata: { provider: "OpenRouter" }
         });
         const start3 = Date.now();
         try {
-          const response2 = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-              "HTTP-Referer": "https://mbahub.local",
-              "X-Title": "MBA HUB Listing Generator"
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                { role: "system", content: listingPrompt },
-                { role: "user", content: userPromptText }
-              ],
-              temperature: 0.7,
-              max_tokens: 4e3
-            }),
-            signal: AbortSignal.timeout(9e4)
+          const enListing = await LLMService.generateMasterEnglishListing({
+            niche1,
+            niche2,
+            subniche,
+            quote: quote5,
+            keywords,
+            hermesKeywords,
+            stylePreset: task.payload?.stylePreset || task.payload?.style || "vintage retro vector",
+            audience: targetGroup,
+            avoidColor: avoidColors
           });
           const latencyMs = Date.now() - start3;
-          if (!response2.ok) {
-            const errorText = await response2.text();
-            throw new Error(`OpenRouter Listing API Fehler: ${response2.status} - ${errorText}`);
-          }
-          const data = await response2.json();
-          const rawContent = data.choices?.[0]?.message?.content || "";
-          let parsedListing = null;
-          try {
-            let cleanJsonStr = rawContent.trim();
-            if (cleanJsonStr.startsWith("```")) {
-              cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-            }
-            parsedListing = JSON.parse(cleanJsonStr);
-          } catch (pe) {
-            parsedListing = rawContent;
-          }
-          parsedListing = this.sanitizeListingObject(parsedListing);
-          const bannedIssues = BannedWordsService.validateListing(parsedListing);
-          const hasBannedIssues = Object.keys(bannedIssues).length > 0;
-          if (hasBannedIssues) {
-            console.warn(`[TaskLogService] \u26A0\uFE0F Blacklist-Treffer in generiertem Listing f\xFCr Task ${taskId}:`, JSON.stringify(bannedIssues));
-          }
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "LISTING_RESPONSE",
-            title: `Empfangen von OpenRouter (MBA Listing)`,
+            title: `Empfangen von OpenRouter (Master English Listing)`,
             content: {
-              ...parsedListing,
-              ...hasBannedIssues ? { _banned_word_warnings: bannedIssues } : {}
+              en: enListing
             },
             metadata: {
-              model: data.model || model,
-              latencyMs,
-              tokens: data.usage ? {
-                prompt: data.usage.prompt_tokens,
-                completion: data.usage.completion_tokens,
-                total: data.usage.total_tokens
-              } : void 0
+              latencyMs
             }
           });
           this.updateTaskStatus(taskId, {
             status: "CHECKING_TRADEMARKS",
-            listingResult: parsedListing,
+            listingResult: { en: enListing },
+            niche1,
+            niche2,
+            subniche,
             hasError: false
           });
-          console.log(`[TaskLogService] \u{1F4DD} MBA Listing f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms. Starte Trademark Audit...`);
+          console.log(`[TaskLogService] \u{1F4DD} Master English Listing f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms. Starte Trademark Audit...`);
           await this.auditListingTrademarks(taskId);
         } catch (err) {
           const latencyMs = Date.now() - start3;
@@ -221279,371 +221588,247 @@ Generate the complete JSON for en, de, fr, it, es, ja strictly adhering to chara
             type: "ERROR",
             title: "Fehler bei Listing-Generierung",
             content: errorMsg,
-            metadata: { latencyMs, model }
+            metadata: { latencyMs }
           });
           this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
         }
       }
       /**
-       * Automatically check USPTO Trademarks for the generated English listing and run LLM refinement loop
-       * Supports up to 4 TM checks and 3 LLM rewrite cycles.
-       * If Class 25 hits still exist after the 4th TM check, the task is marked as REJECTED.
+       * Automatically audit Trademarks across USPTO, EUIPO, DPMA with Nice Class awareness
+       * Handles Hard-Rejects (Class 25 on quote/niches), Brand rewriting, Product Blocking (Classes 9, 18, 20, 21, 16),
+       * and post-approval localization into DE, FR, ES, IT, JA.
        */
       static async auditListingTrademarks(taskId) {
         const task = this.getTaskLogById(taskId);
         if (!task || !task.listingResult) return;
         const enListing = task.listingResult.en || task.listingResult;
         let currentFields = {
-          quote: task.payload?.quote || "",
           brand: typeof enListing === "object" ? enListing.brand || "" : "",
           title: typeof enListing === "object" ? enListing.title || "" : "",
           bullet1: typeof enListing === "object" ? enListing.bullet1 || "" : "",
           bullet2: typeof enListing === "object" ? enListing.bullet2 || "" : "",
           description: typeof enListing === "object" ? enListing.description || "" : ""
         };
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
-        const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
-        const auditorPrompt = SystemPromptService.getTrademarkAuditorPrompt();
-        const APPAREL_SET = /* @__PURE__ */ new Set(["STANDARD_TSHIRT", "PREMIUM_TSHIRT", "HOODIE", "SWEATSHIRT", "ZIP_HOODIE", "TANK_TOP", "LONG_SLEEVE_TSHIRT", "RAGLAN"]);
+        const quote5 = task.payload?.quote || "";
+        const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || "";
+        const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || "";
+        const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || "";
         const MAX_CHECKS = 4;
         try {
           for (let checkRound = 1; checkRound <= MAX_CHECKS; checkRound++) {
             const isInitial = checkRound === 1;
             const isFinal = checkRound === MAX_CHECKS;
-            console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte USPTO TM-Pr\xFCfung Runde ${checkRound}/${MAX_CHECKS} f\xFCr Task ${taskId}...`);
+            console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Markenrechts-Pr\xFCfung Runde ${checkRound}/${MAX_CHECKS} f\xFCr Task ${taskId}...`);
             this.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "TM_CHECK_REQUEST",
-              title: isInitial ? "Senden an Productor / USPTO (Trademark-Pr\xFCfung)" : `Senden an Productor / USPTO (Nachpr\xFCfung Runde ${checkRound})`,
+              title: isInitial ? "Senden an Productor (USPTO, EUIPO, DPMA Pr\xFCfung)" : `Senden an Productor (Nachpr\xFCfung Runde ${checkRound})`,
               content: {
                 round: checkRound,
                 maxRounds: MAX_CHECKS,
-                offices: ["USPTO"],
+                offices: ["USPTO", "EUIPO", "DPMA"],
+                quote: quote5,
+                niche1,
+                niche2,
+                subniche,
                 fields: { ...currentFields }
               },
-              metadata: {
-                provider: "Productor USPTO"
-              }
+              metadata: { provider: "Productor TM API" }
             });
             const start3 = Date.now();
-            const batchResult = await TrademarkService.checkBatchFields({
-              offices: ["USPTO"],
-              fields: currentFields
+            const audit = await TrademarkService.auditListingAndMetadata({
+              listing: currentFields,
+              quote: quote5,
+              niche1,
+              niche2,
+              subniche,
+              offices: ["USPTO", "EUIPO", "DPMA"]
             });
-            const totalHits = batchResult.summary?.totalHits ?? 0;
-            const hasCls25 = batchResult.hasInfringementClass25 || false;
-            const fieldResults = batchResult.fieldResults || {};
             const latencyMs = Date.now() - start3;
             this.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "TM_CHECK_RESPONSE",
-              title: isInitial ? `Empfangen von Productor / USPTO (${totalHits} Treffer)` : `Empfangen von Productor / USPTO (Nachpr\xFCfung Runde ${checkRound}: ${totalHits} Treffer)`,
+              title: isInitial ? `Empfangen von Productor (${audit.allHits.length} Treffer)` : `Empfangen von Productor (Nachpr\xFCfung Runde ${checkRound}: ${audit.allHits.length} Treffer)`,
               content: {
                 round: checkRound,
-                totalHits,
-                hasInfringementClass25: hasCls25,
-                blockedProducts: batchResult.blockedProducts,
-                fieldSummaries: fieldResults,
-                summary: batchResult.summary
+                totalHits: audit.allHits.length,
+                isHardReject: audit.isHardReject,
+                hardRejectReason: audit.hardRejectReason,
+                isSafe: audit.isSafe,
+                needsRewrite: audit.needsRewrite,
+                brandConflict: audit.brandConflict,
+                titleConflict: audit.titleConflict,
+                blockedNiceClasses: audit.blockedNiceClasses,
+                blockedProducts: audit.blockedProducts,
+                hits: audit.allHits
               },
-              metadata: {
-                provider: "Productor USPTO",
-                latencyMs
-              }
+              metadata: { provider: "Productor TM API", latencyMs }
             });
-            if (fieldResults.quote?.hasInfringementClass25) {
-              const rejectionReason = `Die Quote "${currentFields.quote}" verletzt ein eingetragenes Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Pr\xFCfung in Tasks.`;
+            if (audit.isHardReject) {
+              const reason = audit.hardRejectReason || `Klasse 25 Markenrechtsverletzung auf Quote oder Nische.`;
               this.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "TM_REFINE_RESPONSE",
-                title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT)`,
+                title: "Empfangen von Trademark Auditor (HARD REJECT - Klasse 25 Konflikt)",
                 content: {
                   verdict: "REJECTED",
-                  rejection_reason: rejectionReason,
+                  rejection_reason: reason,
                   blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-                  actions_taken: ["Quote in Klasse 25 gesch\xFCtzt -> Zur manuellen Pr\xFCfung an Tasks \xFCbergeben."]
+                  actions_taken: ["Design verworfen zum Schutz des Merch-Accounts."]
                 }
               });
               this.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "TASK_HANDOFF",
-                title: "\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)",
+                title: "\xDCbergeben an Tasks (Abgelehnt - Class 25 Trademark)",
                 content: {
                   checkpoint: "TM_REVIEW",
-                  reason: rejectionReason,
+                  reason,
                   verdict: "REJECTED",
                   round: checkRound,
-                  totalHits,
-                  fieldSummaries: fieldResults
+                  totalHits: audit.allHits.length
                 }
               });
               this.updateTaskStatus(taskId, {
                 status: "AWAITING_TM_REVIEW",
                 checkpoint: "TM_REVIEW",
                 trademarkCheckResult: {
-                  totalHits,
+                  totalHits: audit.allHits.length,
                   hasInfringementClass25: true,
                   blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-                  fieldSummaries: fieldResults
+                  fieldSummaries: {}
                 },
                 trademarkRefineResult: {
                   verdict: "REJECTED",
-                  rejection_reason: rejectionReason,
+                  rejection_reason: reason,
                   blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
                 },
                 hasError: false,
-                errorDetails: rejectionReason
+                errorDetails: reason
               });
-              console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (Quote ist Class 25 Trademark).`);
               return;
             }
-            if (totalHits === 0) {
-              const finalBlockedProducts = (batchResult.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
-              const refineSuccessResult = {
-                verdict: "APPROVED",
-                rejection_reason: null,
-                actions_taken: ["Keine Markenrechts-Treffer gefunden. Listing vollst\xE4ndig frei."],
-                blockedProducts: finalBlockedProducts,
-                refined_listing: {
-                  brand: currentFields.brand,
-                  title: currentFields.title,
-                  bullet1: currentFields.bullet1,
-                  bullet2: currentFields.bullet2,
-                  description: currentFields.description
+            if (audit.isSafe || !audit.brandConflict && !audit.titleConflict) {
+              console.log(`[TaskLogService] \u{1F6E1}\uFE0F Master English Listing freigegeben f\xFCr Task ${taskId}! Starte \xDCbersetzung in DE, FR, ES, IT, JA...`);
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TRANSLATION_REQUEST",
+                title: "Master English Listing freigegeben -> Starte Multi-Marketplace Lokalisierung",
+                content: {
+                  approvedEnglish: currentFields,
+                  blockedNiceClasses: audit.blockedNiceClasses,
+                  blockedProducts: audit.blockedProducts
                 }
-              };
+              });
+              const transStart = Date.now();
+              const translatedListings = await LLMService.translateApprovedListing({
+                englishListing: currentFields,
+                quote: quote5,
+                niche1,
+                subniche
+              });
+              const transLatencyMs = Date.now() - transStart;
+              const sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TRANSLATION_RESPONSE",
+                title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
+                content: sanitizedListings,
+                metadata: { latencyMs: transLatencyMs }
+              });
               this.updateTaskStatus(taskId, {
                 status: "CHECKING_TRADEMARKS",
-                listingResult: task.listingResult,
+                listingResult: sanitizedListings,
+                blockedNiceClasses: audit.blockedNiceClasses,
+                blockedProducts: audit.blockedProducts,
                 trademarkCheckResult: {
-                  totalHits: 0,
+                  totalHits: audit.allHits.length,
                   hasInfringementClass25: false,
-                  blockedProducts: finalBlockedProducts,
-                  fieldSummaries: fieldResults
+                  blockedProducts: audit.blockedProducts,
+                  fieldSummaries: {}
                 },
-                trademarkRefineResult: refineSuccessResult,
+                trademarkRefineResult: {
+                  verdict: "APPROVED",
+                  rejection_reason: null,
+                  actions_taken: ["Listing freigegeben, \xFCbersetzt und durch Hard-Sanitizer bereinigt."],
+                  blockedProducts: audit.blockedProducts,
+                  refined_listing: currentFields
+                },
                 hasError: false
               });
-              console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} sofort freigegeben (0 Treffer) -> Starte Vektorisierung \u2713`);
+              console.log(`[TaskLogService] \u2728 Task ${taskId} Listing freigegeben und lokalisiert -> Starte Vektorisierung \u2713`);
               this.vectorizeDesignTask(taskId).catch((err) => {
                 console.error(`[TaskLogService] Vektorisierung f\xFCr Task ${taskId} fehlgeschlagen:`, err);
               });
               return;
             }
             if (isFinal) {
-              const rejectionMsg = `Nach 4 USPTO-Pr\xFCfungen und 3 automatischen Korrekturl\xE4ufen konnten die Markenrechts-Treffer in Klasse 25 f\xFCr Brand/Title nicht vollst\xE4ndig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
+              const rejectionMsg = `Nach 4 Markenrechtspr\xFCfungen und 3 automatischen Korrekturl\xE4ufen konnten die Treffer in Klasse 25 nicht vollst\xE4ndig eliminiert werden.`;
               this.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "TASK_HANDOFF",
-                title: `\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)`,
+                title: "\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)",
                 content: {
                   checkpoint: "TM_REVIEW",
                   reason: rejectionMsg,
-                  totalHits,
-                  fieldSummaries: fieldResults
+                  totalHits: audit.allHits.length
                 }
               });
               this.updateTaskStatus(taskId, {
                 status: "AWAITING_TM_REVIEW",
                 checkpoint: "TM_REVIEW",
+                blockedNiceClasses: audit.blockedNiceClasses,
+                blockedProducts: audit.blockedProducts,
                 trademarkCheckResult: {
-                  totalHits,
+                  totalHits: audit.allHits.length,
                   hasInfringementClass25: true,
-                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-                  fieldSummaries: fieldResults
+                  blockedProducts: audit.blockedProducts,
+                  fieldSummaries: {}
                 },
                 hasError: false,
                 errorDetails: rejectionMsg
               });
-              console.log(`[TaskLogService] \u{1F6D1} Task ${taskId} an Tasks \xFCbergeben zur manuellen TM-Optimierung.`);
               return;
             }
-            if (!apiKey) {
-              console.warn(`[TaskLogService] Kein OpenRouter API-Key vorhanden f\xFCr TM Refine.`);
-              break;
-            }
-            const hitsSummary = [];
-            for (const [fieldName, fieldData] of Object.entries(fieldResults)) {
-              if (fieldData.totalHits > 0 && fieldData.hits) {
-                for (const [term, hits] of Object.entries(fieldData.hits)) {
-                  const classInfo = hits.map((h) => `Class ${h.classNumber} (${h.status || "LIVE"})`).join(", ");
-                  const isK25 = hits.some((h) => h.classes && h.classes.includes("25") || String(h.classNumber).split(/[,;\s]+/).includes("25"));
-                  hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo} ${isK25 ? "\u{1F534} CLASS 25 CONFLICT!" : "\u{1F7E1} Secondary Class"}`);
-                }
-              }
-            }
-            const userMessage = `Here is the current English listing and the detected USPTO Trademark hits (Correction Round ${checkRound}/3):
-
-### Current Listing:
-- Quote / Slogan: "${currentFields.quote}"
-- Brand: "${currentFields.brand}"
-- Title: "${currentFields.title}"
-- Bullet 1: "${currentFields.bullet1}"
-- Bullet 2: "${currentFields.bullet2}"
-- Description: "${currentFields.description}"
-
-### Detected USPTO Trademark Hits:
-${hitsSummary.length > 0 ? hitsSummary.join("\n") : "- No hits detected."}
-
-Please audit the listing based on your compliance rules:
-1. BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE): Brand Name and Title MUST be 100% free of active Class 25 (Apparel) trademarks! Rephrase any matched terms to unique, non-infringing phrases with high SEO value.
-2. BULLETS & DESCRIPTION (DESCRIPTIVE FAIR USE): Common generic words (e.g. "space", "angel", "wings", "stars", "gold", "cosmic", "celestial", "radiant") in natural sentence context fall under Descriptive Fair Use. Do NOT butcher or delete natural descriptive sentences!
-3. MBA LISTING RULES COMPLIANCE:
-   - NO quality/material claims (soft, cotton, premium, durable, lightweight).
-   - NO promotional or gift language (gift, present, birthday gift, best seller, sale, buy now).
-   - NO background color mentions (white design, black background).
-   - Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
-4. Return your decision as JSON strictly matching the schema!`;
             this.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "TM_REFINE_REQUEST",
               title: `Senden an OpenRouter (Trademark Auditor & Refiner - Runde ${checkRound})`,
               content: {
                 round: checkRound,
-                systemPrompt: auditorPrompt,
-                userMessage
-              },
-              metadata: { model, provider: "OpenRouter" }
+                brandConflict: audit.brandConflict,
+                titleConflict: audit.titleConflict,
+                hits: audit.allHits
+              }
             });
             const refineStart = Date.now();
-            const response2 = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://mbahub.local",
-                "X-Title": "MBA HUB TM Auditor"
-              },
-              body: JSON.stringify({
-                model,
-                messages: [
-                  { role: "system", content: auditorPrompt },
-                  { role: "user", content: userMessage }
-                ],
-                temperature: 0.2,
-                max_tokens: 2e3
-              }),
-              signal: AbortSignal.timeout(6e4)
+            const refinedResult = await LLMService.rewriteListingWithTrademarkFeedback({
+              currentListing: currentFields,
+              tmHits: audit.allHits,
+              niche1,
+              niche2,
+              subniche,
+              quote: quote5
             });
             const refineLatencyMs = Date.now() - refineStart;
-            if (!response2.ok) {
-              const errText = await response2.text();
-              throw new Error(`OpenRouter TM Auditor Fehler in Runde ${checkRound}: ${response2.status} - ${errText}`);
-            }
-            const data = await response2.json();
-            const rawContent = data.choices?.[0]?.message?.content || "";
-            let parsedRefined = null;
-            try {
-              let cleanJsonStr = rawContent.trim();
-              if (cleanJsonStr.startsWith("```")) {
-                cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-              }
-              parsedRefined = JSON.parse(cleanJsonStr);
-            } catch (pe) {
-              parsedRefined = rawContent;
-            }
-            if (parsedRefined?.verdict === "REJECTED") {
-              this.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "TM_REFINE_RESPONSE",
-                title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT in Runde ${checkRound})`,
-                content: {
-                  ...parsedRefined,
-                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
-                },
-                metadata: {
-                  model: data.model || model,
-                  latencyMs: refineLatencyMs,
-                  tokens: data.usage ? {
-                    prompt: data.usage.prompt_tokens,
-                    completion: data.usage.completion_tokens,
-                    total: data.usage.total_tokens
-                  } : void 0
-                }
-              });
-              this.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "TASK_HANDOFF",
-                title: `\xDCbergeben an Tasks (Trademark-Ablehnung in Runde ${checkRound})`,
-                content: {
-                  checkpoint: "TM_REVIEW",
-                  reason: parsedRefined.rejection_reason || "Markenrechtsverletzung vom LLM festgestellt. Wartet auf manuelle Pr\xFCfung in Tasks.",
-                  verdict: "REJECTED",
-                  round: checkRound,
-                  totalHits,
-                  fieldSummaries: fieldResults
-                }
-              });
-              this.updateTaskStatus(taskId, {
-                status: "AWAITING_TM_REVIEW",
-                checkpoint: "TM_REVIEW",
-                trademarkCheckResult: {
-                  totalHits,
-                  hasInfringementClass25: true,
-                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-                  fieldSummaries: fieldResults
-                },
-                trademarkRefineResult: {
-                  ...parsedRefined,
-                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
-                },
-                hasError: false,
-                errorDetails: parsedRefined.rejection_reason || "Markenrechtsverletzung festgestellt."
-              });
-              console.log(`[TaskLogService] \u{1F4CB} Task ${taskId} an Tasks \xFCbergeben (TM-Ablehnung in Runde ${checkRound}): ${parsedRefined.rejection_reason}`);
-              return;
-            }
             this.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "TM_REFINE_RESPONSE",
-              title: `Empfangen von OpenRouter (Trademark-Bewertung: ${parsedRefined?.verdict || "FREIGEGEBEN"} in Runde ${checkRound})`,
-              content: parsedRefined,
-              metadata: {
-                model: data.model || model,
-                latencyMs: refineLatencyMs,
-                tokens: data.usage ? {
-                  prompt: data.usage.prompt_tokens,
-                  completion: data.usage.completion_tokens,
-                  total: data.usage.total_tokens
-                } : void 0
-              }
+              title: `Empfangen von OpenRouter (Trademark-Bewertung: ${refinedResult.verdict} in Runde ${checkRound})`,
+              content: refinedResult,
+              metadata: { latencyMs: refineLatencyMs }
             });
-            const refinedListing = parsedRefined?.refined_listing || {};
-            if (refinedListing.brand) currentFields.brand = refinedListing.brand;
-            if (refinedListing.title) currentFields.title = refinedListing.title;
-            if (refinedListing.bullet1) currentFields.bullet1 = refinedListing.bullet1;
-            if (refinedListing.bullet2) currentFields.bullet2 = refinedListing.bullet2;
-            if (refinedListing.description) currentFields.description = refinedListing.description;
-            if (task.listingResult) {
-              if (task.listingResult.en) {
-                task.listingResult.en = { ...task.listingResult.en, ...refinedListing };
-              } else if (typeof task.listingResult === "object") {
-                task.listingResult = { ...task.listingResult, ...refinedListing };
-              }
-            }
-            const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
-            const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
-            if (!brandHasClass25 && !titleHasClass25) {
-              const finalBlockedProducts = (batchResult.blockedProducts || []).filter((p) => !APPAREL_SET.has(p));
+            if (refinedResult.verdict === "REJECTED") {
               this.updateTaskStatus(taskId, {
-                status: "CHECKING_TRADEMARKS",
-                listingResult: task.listingResult,
-                trademarkCheckResult: {
-                  totalHits,
-                  hasInfringementClass25: false,
-                  blockedProducts: finalBlockedProducts,
-                  fieldSummaries: fieldResults
-                },
-                trademarkRefineResult: parsedRefined,
-                hasError: false
-              });
-              console.log(`[TaskLogService] \u{1F6E1}\uFE0F Task ${taskId} in Runde ${checkRound} erfolgreich durch Trademark-Auditor freigegeben -> Starte Vektorisierung \u2713`);
-              this.vectorizeDesignTask(taskId).catch((err) => {
-                console.error(`[TaskLogService] Vektorisierung f\xFCr Task ${taskId} fehlgeschlagen:`, err);
+                status: "AWAITING_TM_REVIEW",
+                checkpoint: "TM_REVIEW",
+                trademarkRefineResult: refinedResult,
+                hasError: false,
+                errorDetails: refinedResult.rejection_reason || "Markenrechtsverletzung festgestellt."
               });
               return;
             }
+            currentFields = { ...refinedResult.refined_listing };
           }
         } catch (err) {
           console.error(`[TaskLogService] Unerwarteter Fehler beim TM Audit f\xFCr Task ${taskId}:`, err);
@@ -222139,7 +222324,32 @@ Please audit the listing based on your compliance rules:
         if (params2.action === "APPROVE") {
           if (params2.answers) {
             task.customAnswers = params2.answers;
+            if (params2.answers.niche1) {
+              task.niche1 = params2.answers.niche1;
+              if (!task.payload) task.payload = {};
+              task.payload.niche1 = params2.answers.niche1;
+            }
+            if (params2.answers.niche2) {
+              task.niche2 = params2.answers.niche2;
+              if (!task.payload) task.payload = {};
+              task.payload.niche2 = params2.answers.niche2;
+            }
+            if (params2.answers.subniche) {
+              task.subniche = params2.answers.subniche;
+              if (!task.payload) task.payload = {};
+              task.payload.subniche = params2.answers.subniche;
+            }
+            if (params2.answers.keywords) {
+              task.keywords = Array.isArray(params2.answers.keywords) ? params2.answers.keywords : String(params2.answers.keywords).split(",").map((s) => s.trim()).filter(Boolean);
+            }
             if (task.analysisResult && typeof task.analysisResult === "object") {
+              if (params2.answers.niche1 || params2.answers.niche2 || params2.answers.subniche) {
+                task.analysisResult.niche_analysis = {
+                  niche1: params2.answers.niche1 || task.analysisResult.niche_analysis?.niche1 || "",
+                  niche2: params2.answers.niche2 || task.analysisResult.niche_analysis?.niche2 || "none",
+                  subniche: params2.answers.subniche || task.analysisResult.niche_analysis?.subniche || "none"
+                };
+              }
               if (params2.answers.audience) {
                 task.analysisResult.target_group = {
                   selected: params2.answers.audience.split(",").map((s) => s.trim()),
@@ -222542,8 +222752,8 @@ init_ideogramService();
 init_vectorizerService();
 
 // src/server/services/supabaseService.ts
-var import_fs73 = __toESM2(require("fs"), 1);
-var import_path68 = __toESM2(require("path"), 1);
+var import_fs74 = __toESM2(require("fs"), 1);
+var import_path69 = __toESM2(require("path"), 1);
 init_dist4();
 init_settingsService();
 var SupabaseService = class {
@@ -222611,11 +222821,11 @@ var SupabaseService = class {
     if (this.cachedStats && now - this.lastStatsFetch < 15e3) {
       return this.cachedStats;
     }
-    const statsFile = import_path68.default.resolve(process.cwd(), "data", "supabase_stats.json");
+    const statsFile = import_path69.default.resolve(process.cwd(), "data", "supabase_stats.json");
     const loadPersisted = () => {
       try {
-        if (import_fs73.default.existsSync(statsFile)) {
-          return JSON.parse(import_fs73.default.readFileSync(statsFile, "utf-8"));
+        if (import_fs74.default.existsSync(statsFile)) {
+          return JSON.parse(import_fs74.default.readFileSync(statsFile, "utf-8"));
         }
       } catch (e) {
       }
@@ -222657,9 +222867,9 @@ var SupabaseService = class {
       };
       if (result2.totalDesigns > 0 || result2.liveDesigns > 0) {
         try {
-          const dataDir = import_path68.default.resolve(process.cwd(), "data");
-          if (!import_fs73.default.existsSync(dataDir)) import_fs73.default.mkdirSync(dataDir, { recursive: true });
-          import_fs73.default.writeFileSync(statsFile, JSON.stringify(result2, null, 2), "utf-8");
+          const dataDir = import_path69.default.resolve(process.cwd(), "data");
+          if (!import_fs74.default.existsSync(dataDir)) import_fs74.default.mkdirSync(dataDir, { recursive: true });
+          import_fs74.default.writeFileSync(statsFile, JSON.stringify(result2, null, 2), "utf-8");
         } catch (e) {
         }
       }

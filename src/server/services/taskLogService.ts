@@ -94,6 +94,26 @@ export class TaskLogService {
       .trim();
   }
 
+  public static sanitizeAndValidateListingBeforeQueue(listing: any): any {
+    if (!listing || typeof listing !== 'object') return listing;
+    const result: Record<string, any> = {};
+    for (const [lang, obj] of Object.entries(listing)) {
+      if (obj && typeof obj === 'object' && !Array.isArray(obj) && !lang.startsWith('_')) {
+        const item = obj as any;
+        const brand = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.brand || ''), lang).slice(0, 50);
+        let title = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.title || ''), lang);
+        title = title.replace(/[,.!?:;'"\-–—]+$/, '').trim().slice(0, 60);
+        const bullet1 = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.bullet1 || item.bullet_1 || ''), lang).slice(0, 256);
+        const bullet2 = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.bullet2 || item.bullet_2 || ''), lang).slice(0, 256);
+        const description = BannedWordsService.stripBannedWordsFromText(this.sanitizeString(item.description || ''), lang).slice(0, 600);
+        result[lang] = { brand, title, bullet1, bullet2, description };
+      } else {
+        result[lang] = obj;
+      }
+    }
+    return result;
+  }
+
   public static sanitizeListingObject(listing: any): any {
     if (!listing || typeof listing !== 'object') return listing;
     if (Array.isArray(listing)) {
@@ -189,6 +209,11 @@ export class TaskLogService {
       status: 'RECEIVED',
       receivedAt: now,
       clientIp: params.clientIp,
+      niche1: params.payload?.niche1 || params.payload?.niche || undefined,
+      niche2: params.payload?.niche2 || undefined,
+      subniche: params.payload?.subniche || undefined,
+      keywords: params.payload?.keywords || undefined,
+      hermesKeywords: params.payload?.hermesKeywords || (Array.isArray(params.payload?.keywords) ? params.payload.keywords : undefined),
       payload: params.payload || {},
       events: [initialEvent],
       hasError: Boolean(params.hasError),
@@ -872,7 +897,7 @@ export class TaskLogService {
   }
 
   /**
-   * Automatically generate MBA SEO Listing across all marketplaces (en, de, fr, it, es, ja)
+   * Automatically generate Master English MBA SEO Listing and proceed to Trademark Loop
    */
   static async generateListingWithOpenRouter(taskId: string) {
     const task = this.getTaskLogById(taskId);
@@ -891,112 +916,74 @@ export class TaskLogService {
       return;
     }
 
-    const model = settings.llmModel || 'anthropic/claude-3-5-sonnet';
-    const baseListingPrompt = SystemPromptService.getListingGeneratorPrompt();
-    const bannedWordsSection = BannedWordsService.getBannedWordsPromptSection();
-    const listingPrompt = `${baseListingPrompt}\n\n${bannedWordsSection}`;
-
     const quote = task.payload?.quote || '';
-    const niche1 = task.payload?.niche1 || '';
-    const niche2 = task.payload?.niche2 || '';
+    const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || task.analysisResult?.niche_analysis?.niche1 || '';
+    const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || task.analysisResult?.niche_analysis?.niche2 || '';
+    const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || task.analysisResult?.niche_analysis?.subniche || '';
+    const keywords = task.keywords || task.customAnswers?.keywords || task.payload?.keywords || [];
+    const hermesKeywords = task.hermesKeywords || task.payload?.hermesKeywords || [];
     const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) 
       ? task.analysisResult.target_group.selected.join(', ') 
       : 'Men, Women, Youth';
     const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || 'None';
 
-    const userPromptText = `Please generate the full, multi-language Amazon Merch on Demand (MBA) SEO listing for this design based on the following details:\n\n- Quote / Text: "${quote}"\n- Primary Niche: "${niche1}"\n- Secondary Niche: "${niche2}"\n- Target Audience: ${targetGroup}\n- Colors to Avoid: ${avoidColors}\n- Ideogram Prompt: "${task.resultPrompt || ''}"\n\nGenerate the complete JSON for en, de, fr, it, es, ja strictly adhering to character limits and compliance rules!`;
-
-    // 1. Log Event: Senden an OpenRouter (Listing Generator)
+    // 1. Log Event: Senden an OpenRouter (Master English Listing)
     this.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'LISTING_REQUEST',
-      title: `Senden an OpenRouter (Listing Generator)`,
+      title: `Senden an OpenRouter (Master English Listing Generator)`,
       content: {
-        systemPrompt: listingPrompt,
-        userMessage: userPromptText
+        niche1,
+        niche2,
+        subniche,
+        quote,
+        keywords,
+        hermesKeywords,
+        targetAudience: targetGroup,
+        avoidColors
       },
-      metadata: { model, provider: 'OpenRouter' }
+      metadata: { provider: 'OpenRouter' }
     });
 
     const start = Date.now();
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://mbahub.local',
-          'X-Title': 'MBA HUB Listing Generator'
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: listingPrompt },
-            { role: 'user', content: userPromptText }
-          ],
-          temperature: 0.7,
-          max_tokens: 4000
-        }),
-        signal: AbortSignal.timeout(90000)
+      const enListing = await LLMService.generateMasterEnglishListing({
+        niche1,
+        niche2,
+        subniche,
+        quote,
+        keywords,
+        hermesKeywords,
+        stylePreset: task.payload?.stylePreset || task.payload?.style || 'vintage retro vector',
+        audience: targetGroup,
+        avoidColor: avoidColors
       });
 
       const latencyMs = Date.now() - start;
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`OpenRouter Listing API Fehler: ${response.status} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      const rawContent = data.choices?.[0]?.message?.content || '';
-
-      let parsedListing: any = null;
-      try {
-        let cleanJsonStr = rawContent.trim();
-        if (cleanJsonStr.startsWith('```')) {
-          cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-        }
-        parsedListing = JSON.parse(cleanJsonStr);
-      } catch (pe) {
-        parsedListing = rawContent;
-      }
-
-      // Automatically sanitize all quotes, apostrophes, dashes and invalid characters across all generated languages
-      parsedListing = this.sanitizeListingObject(parsedListing);
-
-      // Check for any banned word violations
-      const bannedIssues = BannedWordsService.validateListing(parsedListing);
-      const hasBannedIssues = Object.keys(bannedIssues).length > 0;
-      if (hasBannedIssues) {
-        console.warn(`[TaskLogService] ⚠️ Blacklist-Treffer in generiertem Listing für Task ${taskId}:`, JSON.stringify(bannedIssues));
-      }
 
       // 2. Log Event: Empfangen von OpenRouter (Listing)
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'LISTING_RESPONSE',
-        title: `Empfangen von OpenRouter (MBA Listing)`,
+        title: `Empfangen von OpenRouter (Master English Listing)`,
         content: {
-          ...parsedListing,
-          ...(hasBannedIssues ? { _banned_word_warnings: bannedIssues } : {})
+          en: enListing
         },
         metadata: {
-          model: data.model || model,
-          latencyMs,
-          tokens: data.usage ? {
-            prompt: data.usage.prompt_tokens,
-            completion: data.usage.completion_tokens,
-            total: data.usage.total_tokens
-          } : undefined
+          latencyMs
         }
       });
 
       this.updateTaskStatus(taskId, {
         status: 'CHECKING_TRADEMARKS',
-        listingResult: parsedListing,
+        listingResult: { en: enListing },
+        niche1,
+        niche2,
+        subniche,
         hasError: false
       });
 
-      console.log(`[TaskLogService] 📝 MBA Listing für Task ${taskId} erfolgreich generiert in ${latencyMs}ms. Starte Trademark Audit...`);
+      console.log(`[TaskLogService] 📝 Master English Listing für Task ${taskId} erfolgreich generiert in ${latencyMs}ms. Starte Trademark Audit...`);
 
       // Trigger automatic Trademark Check & Refinement loop!
       await this.auditListingTrademarks(taskId);
@@ -1008,16 +995,16 @@ export class TaskLogService {
         type: 'ERROR',
         title: 'Fehler bei Listing-Generierung',
         content: errorMsg,
-        metadata: { latencyMs, model }
+        metadata: { latencyMs }
       });
       this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
     }
   }
 
   /**
-   * Automatically check USPTO Trademarks for the generated English listing and run LLM refinement loop
-   * Supports up to 4 TM checks and 3 LLM rewrite cycles.
-   * If Class 25 hits still exist after the 4th TM check, the task is marked as REJECTED.
+   * Automatically audit Trademarks across USPTO, EUIPO, DPMA with Nice Class awareness
+   * Handles Hard-Rejects (Class 25 on quote/niches), Brand rewriting, Product Blocking (Classes 9, 18, 20, 21, 16),
+   * and post-approval localization into DE, FR, ES, IT, JA.
    */
   static async auditListingTrademarks(taskId: string) {
     const task = this.getTaskLogById(taskId);
@@ -1025,7 +1012,6 @@ export class TaskLogService {
 
     const enListing = task.listingResult.en || task.listingResult;
     let currentFields = {
-      quote: task.payload?.quote || '',
       brand: typeof enListing === 'object' ? enListing.brand || '' : '',
       title: typeof enListing === 'object' ? enListing.title || '' : '',
       bullet1: typeof enListing === 'object' ? enListing.bullet1 || '' : '',
@@ -1033,11 +1019,10 @@ export class TaskLogService {
       description: typeof enListing === 'object' ? enListing.description || '' : ''
     };
 
-    const settings = loadSettings();
-    const apiKey = settings.openRouterApiKey;
-    const model = settings.llmModel || 'anthropic/claude-3-5-sonnet';
-    const auditorPrompt = SystemPromptService.getTrademarkAuditorPrompt();
-    const APPAREL_SET = new Set(['STANDARD_TSHIRT', 'PREMIUM_TSHIRT', 'HOODIE', 'SWEATSHIRT', 'ZIP_HOODIE', 'TANK_TOP', 'LONG_SLEEVE_TSHIRT', 'RAGLAN']);
+    const quote = task.payload?.quote || '';
+    const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || '';
+    const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || '';
+    const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || '';
 
     const MAX_CHECKS = 4;
 
@@ -1046,387 +1031,246 @@ export class TaskLogService {
         const isInitial = checkRound === 1;
         const isFinal = checkRound === MAX_CHECKS;
 
-        console.log(`[TaskLogService] 🛡️ Starte USPTO TM-Prüfung Runde ${checkRound}/${MAX_CHECKS} für Task ${taskId}...`);
+        console.log(`[TaskLogService] 🛡️ Starte Markenrechts-Prüfung Runde ${checkRound}/${MAX_CHECKS} für Task ${taskId}...`);
 
-        // 1. Log Event: Senden an Productor / USPTO
         this.addEvent(taskId, {
           timestamp: new Date().toISOString(),
           type: 'TM_CHECK_REQUEST',
           title: isInitial
-            ? 'Senden an Productor / USPTO (Trademark-Prüfung)'
-            : `Senden an Productor / USPTO (Nachprüfung Runde ${checkRound})`,
+            ? 'Senden an Productor (USPTO, EUIPO, DPMA Prüfung)'
+            : `Senden an Productor (Nachprüfung Runde ${checkRound})`,
           content: {
             round: checkRound,
             maxRounds: MAX_CHECKS,
-            offices: ['USPTO'],
+            offices: ['USPTO', 'EUIPO', 'DPMA'],
+            quote,
+            niche1,
+            niche2,
+            subniche,
             fields: { ...currentFields }
           },
-          metadata: {
-            provider: 'Productor USPTO'
-          }
+          metadata: { provider: 'Productor TM API' }
         });
 
         const start = Date.now();
-        const batchResult = await TrademarkService.checkBatchFields({
-          offices: ['USPTO'],
-          fields: currentFields
+        const audit = await TrademarkService.auditListingAndMetadata({
+          listing: currentFields,
+          quote,
+          niche1,
+          niche2,
+          subniche,
+          offices: ['USPTO', 'EUIPO', 'DPMA']
         });
-
-        const totalHits = batchResult.summary?.totalHits ?? 0;
-        const hasCls25 = batchResult.hasInfringementClass25 || false;
-        const fieldResults = batchResult.fieldResults || {};
         const latencyMs = Date.now() - start;
 
-        // 2. Log Event: Empfangen von Productor / USPTO
         this.addEvent(taskId, {
           timestamp: new Date().toISOString(),
           type: 'TM_CHECK_RESPONSE',
           title: isInitial
-            ? `Empfangen von Productor / USPTO (${totalHits} Treffer)`
-            : `Empfangen von Productor / USPTO (Nachprüfung Runde ${checkRound}: ${totalHits} Treffer)`,
+            ? `Empfangen von Productor (${audit.allHits.length} Treffer)`
+            : `Empfangen von Productor (Nachprüfung Runde ${checkRound}: ${audit.allHits.length} Treffer)`,
           content: {
             round: checkRound,
-            totalHits,
-            hasInfringementClass25: hasCls25,
-            blockedProducts: batchResult.blockedProducts,
-            fieldSummaries: fieldResults,
-            summary: batchResult.summary
+            totalHits: audit.allHits.length,
+            isHardReject: audit.isHardReject,
+            hardRejectReason: audit.hardRejectReason,
+            isSafe: audit.isSafe,
+            needsRewrite: audit.needsRewrite,
+            brandConflict: audit.brandConflict,
+            titleConflict: audit.titleConflict,
+            blockedNiceClasses: audit.blockedNiceClasses,
+            blockedProducts: audit.blockedProducts,
+            hits: audit.allHits
           },
-          metadata: {
-            provider: 'Productor USPTO',
-            latencyMs
-          }
+          metadata: { provider: 'Productor TM API', latencyMs }
         });
 
-        // 3. Wenn Quote selbst ein aktives Klasse 25 Trademark verletzt -> Übergabe an Tasks zur manuellen Freigabe/Anpassung
-        if (fieldResults.quote?.hasInfringementClass25) {
-          const rejectionReason = `Die Quote "${currentFields.quote}" verletzt ein eingetragenes Markenrecht in Nizza-Klasse 25 (Bekleidung). Wartet auf manuelle Prüfung in Tasks.`;
+        // 1. HARD REJECT (Klasse 25 Treffer auf Quote, Niche1, Niche2 oder Subniche)
+        if (audit.isHardReject) {
+          const reason = audit.hardRejectReason || `Klasse 25 Markenrechtsverletzung auf Quote oder Nische.`;
           this.addEvent(taskId, {
             timestamp: new Date().toISOString(),
             type: 'TM_REFINE_RESPONSE',
-            title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT)`,
+            title: 'Empfangen von Trademark Auditor (HARD REJECT - Klasse 25 Konflikt)',
             content: {
               verdict: 'REJECTED',
-              rejection_reason: rejectionReason,
+              rejection_reason: reason,
               blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              actions_taken: ['Quote in Klasse 25 geschützt -> Zur manuellen Prüfung an Tasks übergeben.']
+              actions_taken: ['Design verworfen zum Schutz des Merch-Accounts.']
             }
           });
 
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'TASK_HANDOFF',
+            title: 'Übergeben an Tasks (Abgelehnt - Class 25 Trademark)',
+            content: {
+              checkpoint: 'TM_REVIEW',
+              reason,
+              verdict: 'REJECTED',
+              round: checkRound,
+              totalHits: audit.allHits.length
+            }
+          });
+
+          this.updateTaskStatus(taskId, {
+            status: 'AWAITING_TM_REVIEW',
+            checkpoint: 'TM_REVIEW',
+            trademarkCheckResult: {
+              totalHits: audit.allHits.length,
+              hasInfringementClass25: true,
+              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
+              fieldSummaries: {}
+            },
+            trademarkRefineResult: {
+              verdict: 'REJECTED',
+              rejection_reason: reason,
+              blockedProducts: ['ALL_PRODUCTS_BLOCKED']
+            },
+            hasError: false,
+            errorDetails: reason
+          });
+          return;
+        }
+
+        // 2. WENN SAFE (Keine Brand/Title Klasse 25 Konflikte, Bullets fair-use) -> Post-Approval Localization!
+        if (audit.isSafe || (!audit.brandConflict && !audit.titleConflict)) {
+          console.log(`[TaskLogService] 🛡️ Master English Listing freigegeben für Task ${taskId}! Starte Übersetzung in DE, FR, ES, IT, JA...`);
+
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'TRANSLATION_REQUEST',
+            title: 'Master English Listing freigegeben -> Starte Multi-Marketplace Lokalisierung',
+            content: {
+              approvedEnglish: currentFields,
+              blockedNiceClasses: audit.blockedNiceClasses,
+              blockedProducts: audit.blockedProducts
+            }
+          });
+
+          const transStart = Date.now();
+          const translatedListings = await LLMService.translateApprovedListing({
+            englishListing: currentFields,
+            quote,
+            niche1,
+            subniche
+          });
+          const transLatencyMs = Date.now() - transStart;
+
+          // 3. HARD SANITIZER GATEKEEPER
+          const sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
+
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'TRANSLATION_RESPONSE',
+            title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
+            content: sanitizedListings,
+            metadata: { latencyMs: transLatencyMs }
+          });
+
+          this.updateTaskStatus(taskId, {
+            status: 'CHECKING_TRADEMARKS',
+            listingResult: sanitizedListings,
+            blockedNiceClasses: audit.blockedNiceClasses,
+            blockedProducts: audit.blockedProducts,
+            trademarkCheckResult: {
+              totalHits: audit.allHits.length,
+              hasInfringementClass25: false,
+              blockedProducts: audit.blockedProducts,
+              fieldSummaries: {}
+            },
+            trademarkRefineResult: {
+              verdict: 'APPROVED',
+              rejection_reason: null,
+              actions_taken: ['Listing freigegeben, übersetzt und durch Hard-Sanitizer bereinigt.'],
+              blockedProducts: audit.blockedProducts,
+              refined_listing: currentFields
+            },
+            hasError: false
+          });
+
+          console.log(`[TaskLogService] ✨ Task ${taskId} Listing freigegeben und lokalisiert -> Starte Vektorisierung ✓`);
+          this.vectorizeDesignTask(taskId).catch(err => {
+            console.error(`[TaskLogService] Vektorisierung für Task ${taskId} fehlgeschlagen:`, err);
+          });
+          return;
+        }
+
+        // 3. WENN FINAL ROUND ERREICHT UND NOCH KONFLIKTE
+        if (isFinal) {
+          const rejectionMsg = `Nach 4 Markenrechtsprüfungen und 3 automatischen Korrekturläufen konnten die Treffer in Klasse 25 nicht vollständig eliminiert werden.`;
           this.addEvent(taskId, {
             timestamp: new Date().toISOString(),
             type: 'TASK_HANDOFF',
             title: 'Übergeben an Tasks (Manuelle Trademark-Optimierung)',
             content: {
               checkpoint: 'TM_REVIEW',
-              reason: rejectionReason,
-              verdict: 'REJECTED',
-              round: checkRound,
-              totalHits,
-              fieldSummaries: fieldResults
-            }
-          });
-
-          this.updateTaskStatus(taskId, {
-            status: 'AWAITING_TM_REVIEW',
-            checkpoint: 'TM_REVIEW',
-            trademarkCheckResult: {
-              totalHits,
-              hasInfringementClass25: true,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              fieldSummaries: fieldResults
-            },
-            trademarkRefineResult: {
-              verdict: 'REJECTED',
-              rejection_reason: rejectionReason,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED']
-            },
-            hasError: false,
-            errorDetails: rejectionReason
-          });
-          console.log(`[TaskLogService] 📋 Task ${taskId} an Tasks übergeben (Quote ist Class 25 Trademark).`);
-          return;
-        }
-
-        // 4. Wenn ÜBERHAUPT KEINE Treffer vorhanden sind (totalHits === 0):
-        if (totalHits === 0) {
-          const finalBlockedProducts = (batchResult.blockedProducts || []).filter(p => !APPAREL_SET.has(p));
-          const refineSuccessResult = {
-            verdict: 'APPROVED',
-            rejection_reason: null,
-            actions_taken: ['Keine Markenrechts-Treffer gefunden. Listing vollständig frei.'],
-            blockedProducts: finalBlockedProducts,
-            refined_listing: {
-              brand: currentFields.brand,
-              title: currentFields.title,
-              bullet1: currentFields.bullet1,
-              bullet2: currentFields.bullet2,
-              description: currentFields.description
-            }
-          };
-
-          this.updateTaskStatus(taskId, {
-            status: 'CHECKING_TRADEMARKS',
-            listingResult: task.listingResult,
-            trademarkCheckResult: {
-              totalHits: 0,
-              hasInfringementClass25: false,
-              blockedProducts: finalBlockedProducts,
-              fieldSummaries: fieldResults
-            },
-            trademarkRefineResult: refineSuccessResult,
-            hasError: false
-          });
-
-          console.log(`[TaskLogService] 🛡️ Task ${taskId} sofort freigegeben (0 Treffer) -> Starte Vektorisierung ✓`);
-          this.vectorizeDesignTask(taskId).catch(err => {
-            console.error(`[TaskLogService] Vektorisierung für Task ${taskId} fehlgeschlagen:`, err);
-          });
-          return;
-        }
-
-        // 5. Wenn nach dem 4. TM Check immer noch Klasse 25 Treffer in Brand/Title vorhanden sind:
-        if (isFinal) {
-          const rejectionMsg = `Nach 4 USPTO-Prüfungen und 3 automatischen Korrekturläufen konnten die Markenrechts-Treffer in Klasse 25 für Brand/Title nicht vollständig eliminiert werden. Wartet auf manuelle Bearbeitung in Tasks.`;
-          
-          this.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'TASK_HANDOFF',
-            title: `Übergeben an Tasks (Manuelle Trademark-Optimierung)`,
-            content: {
-              checkpoint: 'TM_REVIEW',
               reason: rejectionMsg,
-              totalHits,
-              fieldSummaries: fieldResults
+              totalHits: audit.allHits.length
             }
           });
 
           this.updateTaskStatus(taskId, {
             status: 'AWAITING_TM_REVIEW',
             checkpoint: 'TM_REVIEW',
+            blockedNiceClasses: audit.blockedNiceClasses,
+            blockedProducts: audit.blockedProducts,
             trademarkCheckResult: {
-              totalHits,
+              totalHits: audit.allHits.length,
               hasInfringementClass25: true,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              fieldSummaries: fieldResults
+              blockedProducts: audit.blockedProducts,
+              fieldSummaries: {}
             },
             hasError: false,
             errorDetails: rejectionMsg
           });
-
-          console.log(`[TaskLogService] 🛑 Task ${taskId} an Tasks übergeben zur manuellen TM-Optimierung.`);
           return;
         }
 
-        // 6. Hits in Brand/Title vorhanden & noch Runden übrig -> LLM Refinement anfordern
-        if (!apiKey) {
-          console.warn(`[TaskLogService] Kein OpenRouter API-Key vorhanden für TM Refine.`);
-          break;
-        }
-
-        // Hits-Zusammenfassung für den Prompt erstellen
-        const hitsSummary: string[] = [];
-        for (const [fieldName, fieldData] of Object.entries(fieldResults)) {
-          if (fieldData.totalHits > 0 && fieldData.hits) {
-            for (const [term, hits] of Object.entries(fieldData.hits)) {
-              const classInfo = hits.map(h => `Class ${h.classNumber} (${h.status || 'LIVE'})`).join(', ');
-              const isK25 = hits.some(h => (h.classes && h.classes.includes('25')) || String(h.classNumber).split(/[,;\s]+/).includes('25'));
-              hitsSummary.push(`- In Field [${fieldName.toUpperCase()}]: matched term "${term}" -> ${classInfo} ${isK25 ? '🔴 CLASS 25 CONFLICT!' : '🟡 Secondary Class'}`);
-            }
-          }
-        }
-
-        const userMessage = `Here is the current English listing and the detected USPTO Trademark hits (Correction Round ${checkRound}/3):
-
-### Current Listing:
-- Quote / Slogan: "${currentFields.quote}"
-- Brand: "${currentFields.brand}"
-- Title: "${currentFields.title}"
-- Bullet 1: "${currentFields.bullet1}"
-- Bullet 2: "${currentFields.bullet2}"
-- Description: "${currentFields.description}"
-
-### Detected USPTO Trademark Hits:
-${hitsSummary.length > 0 ? hitsSummary.join('\n') : '- No hits detected.'}
-
-Please audit the listing based on your compliance rules:
-1. BRAND & TITLE (STRICT ZERO CLASS 25 TOLERANCE): Brand Name and Title MUST be 100% free of active Class 25 (Apparel) trademarks! Rephrase any matched terms to unique, non-infringing phrases with high SEO value.
-2. BULLETS & DESCRIPTION (DESCRIPTIVE FAIR USE): Common generic words (e.g. "space", "angel", "wings", "stars", "gold", "cosmic", "celestial", "radiant") in natural sentence context fall under Descriptive Fair Use. Do NOT butcher or delete natural descriptive sentences!
-3. MBA LISTING RULES COMPLIANCE:
-   - NO quality/material claims (soft, cotton, premium, durable, lightweight).
-   - NO promotional or gift language (gift, present, birthday gift, best seller, sale, buy now).
-   - NO background color mentions (white design, black background).
-   - Strict Character Limits: Brand <= 50, Title <= 60, Bullet 1 <= 250, Bullet 2 <= 250, Description <= 2000.
-4. Return your decision as JSON strictly matching the schema!`;
-
+        // 4. REWRITE CYCLE MIT TRADEMARK FEEDBACK
         this.addEvent(taskId, {
           timestamp: new Date().toISOString(),
           type: 'TM_REFINE_REQUEST',
           title: `Senden an OpenRouter (Trademark Auditor & Refiner - Runde ${checkRound})`,
           content: {
             round: checkRound,
-            systemPrompt: auditorPrompt,
-            userMessage
-          },
-          metadata: { model, provider: 'OpenRouter' }
+            brandConflict: audit.brandConflict,
+            titleConflict: audit.titleConflict,
+            hits: audit.allHits
+          }
         });
 
         const refineStart = Date.now();
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://mbahub.local',
-            'X-Title': 'MBA HUB TM Auditor'
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: 'system', content: auditorPrompt },
-              { role: 'user', content: userMessage }
-            ],
-            temperature: 0.2,
-            max_tokens: 2000
-          }),
-          signal: AbortSignal.timeout(60000)
+        const refinedResult = await LLMService.rewriteListingWithTrademarkFeedback({
+          currentListing: currentFields,
+          tmHits: audit.allHits,
+          niche1,
+          niche2,
+          subniche,
+          quote
         });
-
         const refineLatencyMs = Date.now() - refineStart;
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(`OpenRouter TM Auditor Fehler in Runde ${checkRound}: ${response.status} - ${errText}`);
-        }
 
-        const data = await response.json();
-        const rawContent = data.choices?.[0]?.message?.content || '';
-
-        let parsedRefined: any = null;
-        try {
-          let cleanJsonStr = rawContent.trim();
-          if (cleanJsonStr.startsWith('```')) {
-            cleanJsonStr = cleanJsonStr.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-          }
-          parsedRefined = JSON.parse(cleanJsonStr);
-        } catch (pe) {
-          parsedRefined = rawContent;
-        }
-
-        // Wenn LLM selbst sagt REJECTED (z.B. Motiv/Quote nicht safe):
-        if (parsedRefined?.verdict === 'REJECTED') {
-          this.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'TM_REFINE_RESPONSE',
-            title: `Empfangen von OpenRouter (Trademark-Bewertung: ABGELEHNT in Runde ${checkRound})`,
-            content: {
-              ...parsedRefined,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED']
-            },
-            metadata: {
-              model: data.model || model,
-              latencyMs: refineLatencyMs,
-              tokens: data.usage ? {
-                prompt: data.usage.prompt_tokens,
-                completion: data.usage.completion_tokens,
-                total: data.usage.total_tokens
-              } : undefined
-            }
-          });
-
-          this.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'TASK_HANDOFF',
-            title: `Übergeben an Tasks (Trademark-Ablehnung in Runde ${checkRound})`,
-            content: {
-              checkpoint: 'TM_REVIEW',
-              reason: parsedRefined.rejection_reason || 'Markenrechtsverletzung vom LLM festgestellt. Wartet auf manuelle Prüfung in Tasks.',
-              verdict: 'REJECTED',
-              round: checkRound,
-              totalHits,
-              fieldSummaries: fieldResults
-            }
-          });
-
-          this.updateTaskStatus(taskId, {
-            status: 'AWAITING_TM_REVIEW',
-            checkpoint: 'TM_REVIEW',
-            trademarkCheckResult: {
-              totalHits,
-              hasInfringementClass25: true,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              fieldSummaries: fieldResults
-            },
-            trademarkRefineResult: {
-              ...parsedRefined,
-            blockedProducts: ['ALL_PRODUCTS_BLOCKED']
-            },
-            hasError: false,
-            errorDetails: parsedRefined.rejection_reason || 'Markenrechtsverletzung festgestellt.'
-          });
-          console.log(`[TaskLogService] 📋 Task ${taskId} an Tasks übergeben (TM-Ablehnung in Runde ${checkRound}): ${parsedRefined.rejection_reason}`);
-          return;
-        }
-
-        // Event für diese Korrektur-Runde loggen
         this.addEvent(taskId, {
           timestamp: new Date().toISOString(),
           type: 'TM_REFINE_RESPONSE',
-          title: `Empfangen von OpenRouter (Trademark-Bewertung: ${parsedRefined?.verdict || 'FREIGEGEBEN'} in Runde ${checkRound})`,
-          content: parsedRefined,
-          metadata: {
-            model: data.model || model,
-            latencyMs: refineLatencyMs,
-            tokens: data.usage ? {
-              prompt: data.usage.prompt_tokens,
-              completion: data.usage.completion_tokens,
-              total: data.usage.total_tokens
-            } : undefined
-          }
+          title: `Empfangen von OpenRouter (Trademark-Bewertung: ${refinedResult.verdict} in Runde ${checkRound})`,
+          content: refinedResult,
+          metadata: { latencyMs: refineLatencyMs }
         });
 
-        // Felder mit den neuen Korrekturen des LLMs aktualisieren für den nächsten USPTO-Check!
-        const refinedListing = parsedRefined?.refined_listing || {};
-        if (refinedListing.brand) currentFields.brand = refinedListing.brand;
-        if (refinedListing.title) currentFields.title = refinedListing.title;
-        if (refinedListing.bullet1) currentFields.bullet1 = refinedListing.bullet1;
-        if (refinedListing.bullet2) currentFields.bullet2 = refinedListing.bullet2;
-        if (refinedListing.description) currentFields.description = refinedListing.description;
-
-        // Update Listing Result im Task
-        if (task.listingResult) {
-          if (task.listingResult.en) {
-            task.listingResult.en = { ...task.listingResult.en, ...refinedListing };
-          } else if (typeof task.listingResult === 'object') {
-            task.listingResult = { ...task.listingResult, ...refinedListing };
-          }
-        }
-
-        // Prüfen: Wenn Brand & Title in dieser Runde sauber von Klasse 25 waren (und Bullets unter Fair Use freigegeben wurden):
-        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
-        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
-
-        if (!brandHasClass25 && !titleHasClass25) {
-          const finalBlockedProducts = (batchResult.blockedProducts || []).filter(p => !APPAREL_SET.has(p));
-
+        if (refinedResult.verdict === 'REJECTED') {
           this.updateTaskStatus(taskId, {
-            status: 'CHECKING_TRADEMARKS',
-            listingResult: task.listingResult,
-            trademarkCheckResult: {
-              totalHits,
-              hasInfringementClass25: false,
-              blockedProducts: finalBlockedProducts,
-              fieldSummaries: fieldResults
-            },
-            trademarkRefineResult: parsedRefined,
-            hasError: false
-          });
-
-          console.log(`[TaskLogService] 🛡️ Task ${taskId} in Runde ${checkRound} erfolgreich durch Trademark-Auditor freigegeben -> Starte Vektorisierung ✓`);
-          this.vectorizeDesignTask(taskId).catch(err => {
-            console.error(`[TaskLogService] Vektorisierung für Task ${taskId} fehlgeschlagen:`, err);
+            status: 'AWAITING_TM_REVIEW',
+            checkpoint: 'TM_REVIEW',
+            trademarkRefineResult: refinedResult,
+            hasError: false,
+            errorDetails: refinedResult.rejection_reason || 'Markenrechtsverletzung festgestellt.'
           });
           return;
         }
+
+        currentFields = { ...refinedResult.refined_listing };
       }
     } catch (err: any) {
       console.error(`[TaskLogService] Unerwarteter Fehler beim TM Audit für Task ${taskId}:`, err);
@@ -2009,7 +1853,35 @@ Please audit the listing based on your compliance rules:
     if (params.action === 'APPROVE') {
       if (params.answers) {
         task.customAnswers = params.answers;
+        if (params.answers.niche1) {
+          task.niche1 = params.answers.niche1;
+          if (!task.payload) task.payload = {};
+          task.payload.niche1 = params.answers.niche1;
+        }
+        if (params.answers.niche2) {
+          task.niche2 = params.answers.niche2;
+          if (!task.payload) task.payload = {};
+          task.payload.niche2 = params.answers.niche2;
+        }
+        if (params.answers.subniche) {
+          task.subniche = params.answers.subniche;
+          if (!task.payload) task.payload = {};
+          task.payload.subniche = params.answers.subniche;
+        }
+        if (params.answers.keywords) {
+          task.keywords = Array.isArray(params.answers.keywords)
+            ? params.answers.keywords
+            : String(params.answers.keywords).split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+
         if (task.analysisResult && typeof task.analysisResult === 'object') {
+          if (params.answers.niche1 || params.answers.niche2 || params.answers.subniche) {
+            task.analysisResult.niche_analysis = {
+              niche1: params.answers.niche1 || task.analysisResult.niche_analysis?.niche1 || '',
+              niche2: params.answers.niche2 || task.analysisResult.niche_analysis?.niche2 || 'none',
+              subniche: params.answers.subniche || task.analysisResult.niche_analysis?.subniche || 'none'
+            };
+          }
           if (params.answers.audience) {
             task.analysisResult.target_group = {
               selected: params.answers.audience.split(',').map(s => s.trim()),

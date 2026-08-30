@@ -247,6 +247,11 @@ MBA HUB/
 │   ├── product_catalog.json       # Dynamische Merch by Amazon Produktdatenbank & Slots
 │   ├── upload_queue.json          # Intelligente Upload-Queue mit Slot-Balancing
 │   ├── system_prompts.json        # Anpassbare System Prompts für LLM-Pipelines
+│   ├── product_catalog.json       # 33 MBA-Produkte mit Nizza-Klassen (25, 18, 20, 21, 9, 16) & Drop-Prioritäten
+│   ├── system_prompts.json        # 6 zentrale System-Prompts für alle Workflows
+│   ├── banned_words.json          # Mehrsprachige Sperrwort-Listen
+│   ├── settings.json              # API-Keys, Modelle & Kosten-Konfiguration
+│   ├── queue.json                 # Upload-Warteschlange (Live, Paused, Update)
 │   ├── tasks_log.json             # Audit-Log und Tasks State Machine
 │   ├── tasks_counter.json         # Persistenter Task-ID Zähler
 │   ├── chrome-profile/            # Persistentes Chrome Profil (Cookies, 2FA, Amazon-Session)
@@ -266,8 +271,8 @@ MBA HUB/
 │   │       ├── DashboardView.tsx     # Hauptansicht mit Topologie & schlanken Metriken
 │   │       ├── DatabaseView.tsx      # MBA Supabase Live-Design Viewer & Sync Controls
 │   │       ├── DesignerView.tsx      # Prompt- & Image-Generator
-│   │       ├── TasksView.tsx         # 4-Stufen Human-in-the-Loop Co-Pilot & TM-Workspace
-│   │       ├── ProductsView.tsx      # MBA Produktdatenbank, Slot-Rechner & Farbmatrix
+│   │       ├── TasksView.tsx         # 4-Stufen Human-in-the-Loop Co-Pilot & TM-Workspace (Nischen-Matrix)
+│   │       ├── ProductsView.tsx      # MBA Produktdatenbank mit Nizza-Klassen Badges & Slot-Rechner
 │   │       ├── PromptLogView.tsx     # Vollständiger Prompt- & LLM-Verlauf mit Re-Push Button
 │   │       ├── QueueView.tsx         # Upload Queue, Slot-Optimizer, Stepper & Pause-Controls
 │   │       ├── LogsView.tsx          # Dediziertes System- & Aktivitäts-Log Terminal
@@ -277,22 +282,22 @@ MBA HUB/
 │       ├── services/
 │       │   ├── browserSessionService.ts # Playwright CDP Engine & Mac Stealth Controller
 │       │   ├── uploadWorkerService.ts   # Playwright Session 2 Upload Engine mit doppelter Verifikation
-│       │   ├── productCatalogService.ts # Dynamic Product Catalog Storage & Slot Engine
+│       │   ├── productCatalogService.ts # Dynamic Product Catalog mit Nizza-Klassen (25, 9, 18, 20, 21, 16)
 │       │   ├── productScannerService.ts # Session 1 CDP DOM Scanner & 12-18h Jitter Scheduler
 │       │   ├── queueService.ts          # Upload Queue Management, Pause & Mathematical Slot Balancing
 │       │   ├── updateBackfillService.ts # Automatischer Supabase Update-Kandidaten-Selector & Pool-Scheduler
-│       │   ├── updatePipelineService.ts # 7-Stufen Update-Workflow (U1 bis U7)
+│       │   ├── updatePipelineService.ts # 7-Stufen Update-Workflow (U1 bis U7) mit Master-Listing & TM Loop
 │       │   ├── amazonInspectService.ts  # Autoritativer Merch-API Inspector & Artwork Downloader
 │       │   ├── supabaseService.ts       # Supabase REST & Query Client
 │       │   ├── syncEngine.ts            # MBA Database Sync, Ratelimiter & Keep-Alive
 │       │   ├── ideogramService.ts       # Ideogram 3.0 API Adapter
 │       │   ├── vectorizerService.ts     # Vectorizer.ai API Adapter
 │       │   ├── svgRenderService.ts      # Server-Side Headless Renderer (4500x5400 PNG & 4-Panel Testbild)
-│       │   ├── taskLogService.ts        # Co-Pilot Task-Engine & State-Machine
-│       │   ├── llmService.ts            # OpenRouter / Vision Listing Generator & Cutout Auditor
+│       │   ├── taskLogService.ts        # Co-Pilot Task-Engine & State-Machine (Nischen-Hierarchie & Sanitizer)
+│       │   ├── llmService.ts            # Master English Listing Generator, TM Feedback Rewriter, SEO Translator
 │       │   ├── systemPromptService.ts   # System-Prompt Manager & LLM-Audit Logging
-│       │   ├── trademarkService.ts      # Multi-Office TM Scans (USPTO, EUIPO, DPMA)
-│       │   ├── bannedWordsService.ts    # Multi-Language MBA Blacklist & Prompt Injection
+│       │   ├── trademarkService.ts      # Multi-Office TM Scans (USPTO, EUIPO, DPMA) mit Nizza-Klassen Logik
+│       │   ├── bannedWordsService.ts    # Multi-Language MBA Blacklist & Hard-Stripping Sanitizer
 │       │   └── settingsService.ts       # Einstellungen lesen/schreiben & Persistenz
 │       └── index.ts                     # Express Server, WebSocket Server & REST Router
 ├── Dockerfile                     # Standalone Playwright Image (mcr.microsoft.com/playwright:v1.50.1-noble)
@@ -302,3 +307,41 @@ MBA HUB/
 ├── brain.md                       # Projekt-Brain & Master-Architektur
 └── Alex Todo.md                   # Aufgabenliste & Roadmap
 ```
+
+---
+
+## 9. 🛡️ Unified Listing Engine, Nischen-Hierarchie & Nizza-Klassen TM-Loop
+
+### 9.1 Nischen-Hierarchie (`niche1`, `niche2`, `subniche`, `keywords`)
+1. **Nische 1 (`niche1`):** Das primäre Nischen-Hauptthema (z. B. `Horse`, `Dog`, `Nurse`, `Camping`).
+2. **Nische 2 (`niche2`):** Optionale Cross-Nische / Zweit-Thema (z. B. `Coffee`, `Wine`, `Tacos`, `Book Reading`).
+3. **Subnische (`subniche`):** Spezifische Rasse, Unterart, Typ (z. B. `Shetland Pony`, `Golden Retriever`, `ICU Nurse`).
+4. **Such-Keywords (`keywords`):** Hermes liefert strukturierte SEO-Begriffe, die in der Question Phase ergänzt und an das LLM übergeben werden.
+
+### 9.2 Master English Listing Engine (100% Token-Effizient)
+- **English First:** Die Generierung und bis zu 3 Trademark-Refine-Loops erfolgen ausschließlich auf Englisch. Dadurch werden **~80% der LLM-Tokens gespart**.
+- **Titel-Formel (50–60 Zeichen):** Start mit Nische/Style, Mitte mit Quote/Keywords, **Ende zwingend auf Subnische (bevorzugt) oder Nische**. Keine Satzzeichen am Ende, da Amazon automatisch den Produktsuffix anhängt (z. B. `... Shetland Pony` ➔ `... Shetland Pony T-Shirt`).
+- **Brand-Formel (40–50 Zeichen):** Maximale Keyword-Dichte. Relevante Suchbegriffe wie `Apparel`, `Accessories`, `Collection`. Keine leeren Fluff-Wörter (`Studio`, `Co`, `Designs`).
+- **Bullet 1 (230–256 Zeichen):** Zielgruppe, Leidenschaft, Lifestyle, Motiv-Bezug.
+- **Bullet 2 (230–256 Zeichen):** Anlässe, Aktivitäten, Orte zum Tragen. 0% Geschenkbegriffe (`gift`, `present`, `birthday`).
+- **Description (300–600 Zeichen):** Atmosphärische Kurzzusammenfassung.
+
+### 9.3 Nizza-Klassen Trademark-Audit (33 MBA-Produkte)
+- **Klasse 25 (Bekleidung & Kopfbedeckungen - 24 Produkte):** Standard/Premium/CC T-Shirts, Hoodies, Sweatshirts, Tank Tops, Jerseys, Caps, Visors etc.
+  - *Hard Reject:* Ist die Quote, `niche1`, `niche2` oder `subniche` in Klasse 25 eingetragen ➔ Design wird sofort als `REJECTED` verworfen (Account-Schutz).
+  - *Brand/Title Konflikt:* LLM ersetzt das Wort im Feedback-Loop durch ein anderes Nischen-Keyword.
+- **Nebenklassen (Gezieltes Produkt-Blocking statt Design-Verwerfung):**
+  - **Klasse 9 (Tech-Zubehör):** PopSockets, iPhone Cases.
+  - **Klasse 18 (Taschen):** Sport Backpack, Tote Bag.
+  - **Klasse 20 (Home Decor):** Throw Pillows.
+  - **Klasse 21 (Drinkware):** Tumbler, Ceramic Mug, Water Bottle.
+  - **Klasse 16 (Stationery):** Hardcover Journal.
+  - Bei TM-Hits in Nebenklassen werden ausschließlich die betroffenen Produkte gesperrt (`blockedProducts`). Die Slot-Berechnung der Queue zieht gesperrte Produkte automatisch ab.
+
+### 9.4 Post-Approval Lokalisierung & Hard Sanitizer
+1. **Übersetzung:** Erst nach bestandenem Trademark-Check wird das Listing nach DE, FR, ES, IT, JA übersetzt. Zitate auf der Grafik bleiben englisch. Übersetzte Titel enden im Nominativ auf der Nische/Subnische.
+2. **Hard Sanitizer Gatekeeper:**
+   - Bereinigt typografische Sonderzeichen (`“`, `”`, `’`, `–`) zu standard ASCII (`"`, `'`, `-`).
+   - Entfernt trailing Satzzeichen (`.`, `-`, `,`) am Ende des Titels.
+   - Letzter Pass zur sicheren Entfernung versehentlicher MBA-Sperrwörter.
+

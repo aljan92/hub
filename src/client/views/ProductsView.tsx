@@ -51,6 +51,7 @@ interface MerchProduct {
   lastUpdated: string;
   isDropAllowed?: boolean;
   dropPriorityOrder?: number;
+  niceClass?: number;
 }
 
 interface ProductCatalogStats {
@@ -531,6 +532,9 @@ export const ProductsView: React.FC = () => {
                           <div className={`text-sm font-bold transition-colors ${isSelected ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>
                             {product.displayName}
                           </div>
+                          <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                            Kl. {product.niceClass || 25}
+                          </span>
                           {product.isDropAllowed && (
                             <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
                               Prio #{product.dropPriorityOrder || 1}
@@ -598,6 +602,9 @@ export const ProductsView: React.FC = () => {
                       <h2 className="text-xl font-bold text-slate-100">{selectedProduct.displayName}</h2>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
                         {selectedProduct.id}
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        Nizza-Klasse {selectedProduct.niceClass || 25}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
