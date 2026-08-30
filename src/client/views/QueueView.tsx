@@ -1093,8 +1093,7 @@ export const QueueView: React.FC = () => {
                   const droppedCount = Object.values(item.droppedSlotsMap || {}).reduce((sum, list) => sum + list.length, 0);
 
                   // Border & Glow styling:
-                  // Lila = Uploading (gerade im Upload)
-                  // Türkis/Teal = Update-Design (0 Slots, Live-Modus)
+                  // Lila = Uploading oder Update-Design (Update-Kennzeichnung)
                   // Grün = Heute eingeplant / zum Upload bereit (canUploadToday)
                   // Gelb = Wartend, aber heute nicht mehr dran (Slot-Limit im Live Mode erreicht)
                   // Orange = Pausiert (isPaused)
@@ -1104,7 +1103,7 @@ export const QueueView: React.FC = () => {
                   } else if (isPaused) {
                     borderClass = 'border-amber-500/80 shadow-amber-500/15 ring-1 ring-amber-500/40 hover:border-amber-500/90 opacity-80';
                   } else if (isUpdate) {
-                    borderClass = 'border-teal-500/70 shadow-teal-500/10 ring-1 ring-teal-500/30 hover:border-teal-400';
+                    borderClass = 'border-purple-500/70 shadow-purple-500/15 ring-1 ring-purple-500/30 hover:border-purple-400';
                   } else if (!canUploadToday) {
                     borderClass = 'border-amber-300/80 shadow-amber-300/10 ring-1 ring-amber-300/30 hover:border-amber-300';
                   }
@@ -1193,7 +1192,7 @@ export const QueueView: React.FC = () => {
                               </span>
                               <span className={`text-[10px] font-mono px-2 py-0.5 rounded border shrink-0 font-bold ${
                                 isUpdate 
-                                  ? 'bg-teal-500/15 text-teal-300 border-teal-500/30' 
+                                  ? 'bg-purple-500/15 text-purple-300 border-purple-500/30' 
                                   : 'bg-primary-500/15 text-primary-300 border-primary-500/30'
                               }`}>
                                 {isUpdate ? 'Update' : 'Task'} {item.taskId.startsWith('#') ? item.taskId : `#${item.taskId}`}
@@ -1215,7 +1214,7 @@ export const QueueView: React.FC = () => {
                                 : isPaused
                                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                                   : isUpdate
-                                    ? 'bg-teal-500/15 text-teal-300 border-teal-500/30'
+                                    ? 'bg-purple-500/15 text-purple-300 border-purple-500/30 shadow-sm shadow-purple-500/10'
                                     : canUploadToday
                                       ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                                       : 'bg-amber-300/15 text-amber-300 border-amber-300/30'
@@ -1225,7 +1224,7 @@ export const QueueView: React.FC = () => {
                                 : isPaused
                                   ? '⏸️ Pausiert'
                                   : isUpdate
-                                    ? '🔄 Update (0 Slots • Live)'
+                                    ? `🟣 ${item.allocatedSlots ?? 0} Slots`
                                     : canUploadToday
                                       ? `🟢 ${item.allocatedSlots} Slots`
                                       : '🟡 Wartet auf freie Slots'}
@@ -1719,7 +1718,7 @@ export const QueueView: React.FC = () => {
                   return (
                     <div 
                       key={item.id} 
-                      className="bg-surface/90 border border-teal-500/50 shadow-teal-500/10 ring-1 ring-teal-500/30 rounded-2xl p-4 shadow-sm backdrop-blur-md transition-all overflow-hidden relative hover:border-teal-400"
+                      className="bg-surface/90 border border-purple-500/50 shadow-purple-500/10 ring-1 ring-purple-500/30 rounded-2xl p-4 shadow-sm backdrop-blur-md transition-all overflow-hidden relative hover:border-purple-400"
                     >
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="flex items-center space-x-3 sm:space-x-4">
@@ -1727,7 +1726,7 @@ export const QueueView: React.FC = () => {
                           <div 
                             onMouseEnter={(e) => handleMouseEnterThumbnail(item, e)}
                             onMouseLeave={handleMouseLeaveThumbnail}
-                            className="w-14 h-14 rounded-xl border border-teal-500/30 bg-slate-950 overflow-hidden shrink-0 relative group cursor-zoom-in transition-transform hover:scale-105 p-0.5 flex items-center justify-center"
+                            className="w-14 h-14 rounded-xl border border-purple-500/30 bg-slate-950 overflow-hidden shrink-0 relative group cursor-zoom-in transition-transform hover:scale-105 p-0.5 flex items-center justify-center"
                           >
                             <img
                               src={thumbUrl}
@@ -1744,8 +1743,8 @@ export const QueueView: React.FC = () => {
                                 {item.title || item.designTitle}
                               </h4>
                               
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-teal-500/20 text-teal-300 border border-teal-500/30">
-                                0 Slots (Update)
+                              <span className="px-2.5 py-1 rounded-xl text-xs font-bold font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-sm shadow-purple-500/10">
+                                🟣 {item.allocatedSlots ?? 0} Slots
                               </span>
                               <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                                 Update Bereit
