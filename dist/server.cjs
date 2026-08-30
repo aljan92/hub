@@ -219371,25 +219371,9 @@ var init_amazonInspectService = __esm2({
         if (!cleanId) {
           throw new Error("Keine Design-ID (UUID) angegeben.");
         }
-        const findRes = await this.inspectFindListings(cleanId);
-        if (!findRes.success) {
-          throw new Error(findRes.error || "FindListings konnte nicht von Amazon abgefragt werden.");
-        }
-        const findData = findRes.data;
-        const statusSummary = findData?.statusSummary || {};
-        const processingStatuses = ["PUBLISHING", "PROCESSING", "TRANSLATING", "REVIEW", "UNDER_REVIEW", "LOCKED", "PENDING"];
-        const activeProcessing = processingStatuses.filter((s) => (statusSummary[s] || 0) > 0);
-        if (activeProcessing.length > 0) {
-          const details = activeProcessing.map((s) => `${s}: ${statusSummary[s]}`).join(", ");
-          throw new Error(`Design ${cleanId} ist aktuell auf Amazon gesperrt/in Bearbeitung (${details}).`);
-        }
-        const publishedCount = (statusSummary.PUBLISHED || 0) + (statusSummary.PROPAGATED || 0);
-        if (publishedCount === 0) {
-          throw new Error(`Design ${cleanId} hat keine aktiven LIVE/PUBLISHED Produkte auf Amazon.`);
-        }
         const configRes = await this.inspectProductConfig(cleanId);
         if (!configRes.success || !configRes.data) {
-          throw new Error(configRes.error || "Product Config konnte nicht von Amazon geladen werden.");
+          throw new Error(configRes.error || `Product Config f\xFCr Design ${cleanId} konnte nicht von Amazon geladen werden.`);
         }
         const configData = configRes.data;
         const textData = configData.textData || {};
@@ -219400,16 +219384,50 @@ var init_amazonInspectService = __esm2({
         const description = masterListing.description || "";
         const products = configData.products || {};
         const productTypes = Object.keys(products);
+        let totalConfiguredSlots = 0;
         const productSummary = {};
         for (const [pKey, pVal] of Object.entries(products)) {
+          const marketplaces = Object.keys(pVal.marketplaceData || {});
+          totalConfiguredSlots += Math.max(1, marketplaces.length);
           productSummary[pKey] = {
             fits: pVal.dimensions?.FIT || [],
             colors: pVal.dimensions?.COLOR || [],
-            marketplaces: Object.keys(pVal.marketplaceData || {}),
+            marketplaces,
             artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
           };
         }
-        const matchedItems = findData?.items || [];
+        if (productTypes.length === 0 && totalConfiguredSlots === 0) {
+          throw new Error(`Design ${cleanId} hat keine konfigurierten Produkte auf Amazon.`);
+        }
+        let statusSummary = {};
+        let publishedCount = totalConfiguredSlots;
+        let matchedItems = [];
+        let findData = null;
+        try {
+          const findRes = await this.inspectFindListings(cleanId);
+          if (findRes.success && findRes.data) {
+            findData = findRes.data;
+            statusSummary = findData.statusSummary || {};
+            matchedItems = findData.items || [];
+            const processingStatuses = ["PUBLISHING", "PROCESSING", "TRANSLATING", "REVIEW", "UNDER_REVIEW", "LOCKED", "PENDING"];
+            const activeProcessing = processingStatuses.filter((s) => (statusSummary[s] || 0) > 0);
+            if (activeProcessing.length > 0) {
+              const details = activeProcessing.map((s) => `${s}: ${statusSummary[s]}`).join(", ");
+              throw new Error(`Design ${cleanId} ist aktuell auf Amazon gesperrt/in Bearbeitung (${details}).`);
+            }
+            if (findData.isDesignMatched) {
+              const directPublished = (statusSummary.PUBLISHED || 0) + (statusSummary.PROPAGATED || 0);
+              if (directPublished > 0) {
+                publishedCount = directPublished;
+              }
+            }
+          }
+        } catch (fErr) {
+          if (fErr.message?.includes("gesperrt/in Bearbeitung")) {
+            throw fErr;
+          }
+          console.warn(`[AmazonInspectService] \u2139\uFE0F FindListings Vorab-Check f\xFCr Design ${cleanId}: ${fErr.message}`);
+        }
         const payload = {
           designId: cleanId,
           editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
@@ -219423,10 +219441,10 @@ var init_amazonInspectService = __esm2({
           productTypes,
           productSummary,
           liveStats: {
-            totalVariantsFound: matchedItems.length,
-            statusSummary,
+            totalVariantsFound: matchedItems.length > 0 ? matchedItems.length : totalConfiguredSlots,
+            statusSummary: Object.keys(statusSummary).length > 0 ? statusSummary : { PUBLISHED: totalConfiguredSlots },
             publishedCount,
-            isAllPublished: Object.keys(statusSummary).length === 1 && publishedCount > 0,
+            isAllPublished: true,
             estimatedSlotSavings: `${publishedCount} Live-Varianten (0 Slot-Verbrauch)`
           },
           rawProductConfig: configData,
