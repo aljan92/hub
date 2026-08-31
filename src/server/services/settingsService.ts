@@ -10,6 +10,7 @@ export interface AppSettings {
   llmModel: string;
   llmTemperature: number;
   llmMaxTokens: number;
+  llmTimeoutSeconds: number;
   ideogramApiKey: string;
   ideogramModel: string;
   ideogramRenderingSpeed: string;
@@ -64,6 +65,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   llmModel: process.env.LLM_MODEL || 'anthropic/claude-3-5-sonnet',
   llmTemperature: 0.35,
   llmMaxTokens: 3000,
+  llmTimeoutSeconds: 90,
   ideogramApiKey: process.env.IDEOGRAM_API_KEY || '',
   ideogramModel: process.env.IDEOGRAM_MODEL || 'V_3',
   ideogramRenderingSpeed: 'DEFAULT',

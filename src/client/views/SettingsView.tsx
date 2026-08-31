@@ -50,6 +50,7 @@ export const SettingsView: React.FC = () => {
   const [llmModel, setLlmModel] = useState<string>(initialSettings.llmModel || 'anthropic/claude-3.5-sonnet');
   const [llmTemperature, setLlmTemperature] = useState<number>(initialSettings.llmTemperature ?? 0.35);
   const [llmMaxTokens, setLlmMaxTokens] = useState<number>(initialSettings.llmMaxTokens ?? 3000);
+  const [llmTimeoutSeconds, setLlmTimeoutSeconds] = useState<number>(initialSettings.llmTimeoutSeconds ?? 90);
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string; promptPrice?: string; completionPrice?: string }[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
@@ -135,6 +136,7 @@ export const SettingsView: React.FC = () => {
           setLlmModel(s.llmModel || 'anthropic/claude-3.5-sonnet');
           setLlmTemperature(s.llmTemperature ?? 0.35);
           setLlmMaxTokens(s.llmMaxTokens ?? 3000);
+          setLlmTimeoutSeconds(s.llmTimeoutSeconds ?? 90);
           setIdeogramApiKey(s.ideogramApiKey || '');
           setIdeogramModel(s.ideogramModel || 'V_3');
           setIdeogramRenderingSpeed(s.ideogramRenderingSpeed || 'DEFAULT');
@@ -245,6 +247,7 @@ export const SettingsView: React.FC = () => {
         llmModel,
         llmTemperature: Number(llmTemperature),
         llmMaxTokens: Number(llmMaxTokens),
+        llmTimeoutSeconds: Number(llmTimeoutSeconds),
         ideogramApiKey,
         ideogramModel,
         ideogramRenderingSpeed,
@@ -442,8 +445,8 @@ export const SettingsView: React.FC = () => {
               Aktuell gewählt: <strong>{llmModel}</strong>
             </div>
 
-            {/* LLM Parameters: Temperature & Max Tokens */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+            {/* LLM Parameters: Temperature, Max Tokens & Timeout */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
                   <span>Temperature</span>
@@ -458,7 +461,7 @@ export const SettingsView: React.FC = () => {
                   onChange={(e) => setLlmTemperature(parseFloat(e.target.value) || 0.35)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
                 />
-                <span className="text-[10px] text-slate-500 mt-0.5 block">0.2–0.5 empfohlen für SEO Listings</span>
+                <span className="text-[10px] text-slate-500 mt-0.5 block">0.2–0.5 empfohlen</span>
               </div>
 
               <div>
@@ -475,7 +478,24 @@ export const SettingsView: React.FC = () => {
                   onChange={(e) => setLlmMaxTokens(parseInt(e.target.value, 10) || 3000)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
                 />
-                <span className="text-[10px] text-slate-500 mt-0.5 block">2500–4000 für vollständige Listings</span>
+                <span className="text-[10px] text-slate-500 mt-0.5 block">2500–4000 für Listings</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Timeout (Sek.)</span>
+                  <span className="font-mono text-cyan-400 font-bold">{llmTimeoutSeconds}s</span>
+                </label>
+                <input
+                  type="number"
+                  step="10"
+                  min="15"
+                  max="300"
+                  value={llmTimeoutSeconds}
+                  onChange={(e) => setLlmTimeoutSeconds(parseInt(e.target.value, 10) || 90)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">60–120s für Claude/Gemini</span>
               </div>
             </div>
           </div>

@@ -1885,35 +1885,33 @@ export class TaskLogService {
     if (params.action === 'APPROVE') {
       if (params.answers) {
         task.customAnswers = params.answers;
-        if (params.answers.niche1) {
-          task.niche1 = params.answers.niche1;
-          if (!task.payload) task.payload = {};
-          task.payload.niche1 = params.answers.niche1;
-        }
-        if (params.answers.niche2) {
-          task.niche2 = params.answers.niche2;
-          if (!task.payload) task.payload = {};
-          task.payload.niche2 = params.answers.niche2;
-        }
-        if (params.answers.subniche) {
-          task.subniche = params.answers.subniche;
-          if (!task.payload) task.payload = {};
-          task.payload.subniche = params.answers.subniche;
-        }
-        if (params.answers.keywords) {
-          task.keywords = Array.isArray(params.answers.keywords)
-            ? params.answers.keywords
-            : String(params.answers.keywords).split(',').map((s: string) => s.trim()).filter(Boolean);
-        }
+        const n1 = params.answers.niche1 !== undefined ? params.answers.niche1.trim() : (task.niche1 || '');
+        const n2 = params.answers.niche2 !== undefined ? params.answers.niche2.trim() : (task.niche2 || '');
+        const sub = params.answers.subniche !== undefined ? params.answers.subniche.trim() : (task.subniche || '');
+        const kwList = params.answers.keywords !== undefined
+          ? (Array.isArray(params.answers.keywords) ? params.answers.keywords : String(params.answers.keywords).split(',').map((s: string) => s.trim()).filter(Boolean))
+          : (task.keywords || []);
+
+        task.niche1 = n1;
+        task.niche2 = n2;
+        task.subniche = sub;
+        task.keywords = kwList;
+
+        if (!task.payload) task.payload = {};
+        task.payload.niche1 = n1;
+        task.payload.niche2 = n2;
+        task.payload.subniche = sub;
+        task.payload.keywords = kwList;
 
         if (task.analysisResult && typeof task.analysisResult === 'object') {
-          if (params.answers.niche1 || params.answers.niche2 || params.answers.subniche) {
-            task.analysisResult.niche_analysis = {
-              niche1: params.answers.niche1 || task.analysisResult.niche_analysis?.niche1 || '',
-              niche2: params.answers.niche2 || task.analysisResult.niche_analysis?.niche2 || 'none',
-              subniche: params.answers.subniche || task.analysisResult.niche_analysis?.subniche || 'none'
-            };
-          }
+          task.analysisResult.niche1 = n1;
+          task.analysisResult.niche2 = n2 || 'none';
+          task.analysisResult.subniche = sub || 'none';
+          task.analysisResult.niche_analysis = {
+            niche1: n1,
+            niche2: n2 || 'none',
+            subniche: sub || 'none'
+          };
           if (params.answers.audience) {
             task.analysisResult.target_group = {
               selected: params.answers.audience.split(',').map(s => s.trim()),

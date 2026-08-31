@@ -432,11 +432,12 @@ Style Preset: ${stylePreset}`;
     };
 
     try {
+      const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
       const res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(timeoutMs)
       });
 
       if (!res.ok) throw new Error(`LLM Listing error: ${res.status} ${res.statusText}`);
@@ -536,11 +537,12 @@ Please audit the listing against trademark rules. If a Brand word is Class 25, r
     };
 
     try {
+      const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
       const res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(timeoutMs)
       });
 
       if (!res.ok) throw new Error(`LLM TM Refine error: ${res.status} ${res.statusText}`);
@@ -629,11 +631,12 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
     };
 
     try {
+      const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
       const res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
-        signal: AbortSignal.timeout(35000)
+        signal: AbortSignal.timeout(timeoutMs)
       });
 
       if (!res.ok) throw new Error(`LLM Translation error: ${res.status} ${res.statusText}`);

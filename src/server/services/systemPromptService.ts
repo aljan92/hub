@@ -32,7 +32,8 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - Determine which target audiences this design is suitable for: Select from ["Men", "Women", "Youth"].
 - Multiple selections are encouraged (e.g. ["Men", "Women", "Youth"] for cute/general motifs, ["Men", "Women"] for adult-oriented quotes).
 
-4. PRODUCT COLORS TO AVOID (CONTRAST):
+4. PRODUCT COLORS TO AVOID (CONTRAST) & TRANSPARENT PNGs:
+- IMPORTANT ON TRANSPARENT PNGs: Merch artwork is isolated on a transparent alpha channel. If an image contains white or light text/graphics with transparency, it is intended for dark apparel (e.g. Black/Navy). In this case, recognize the white lettering/motif and select "White" to avoid white shirts.
 - Which t-shirt / garment base color must be avoided to ensure maximum contrast and legibility?
 - DEFAULT to "None" if the design has strong contrast, solid outlines, golden/cream/colored typography, or looks great on both black and white apparel.
 - ONLY select "White" if the text or graphic elements are pure white or very light pastel without a dark border/outline.
@@ -78,6 +79,8 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   },
   "overall_verdict": "APPROVED"
 }`;
+
+export const DEFAULT_UPDATE_VISION_SYSTEM_PROMPT = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
 
 export const DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are a world-class Amazon Merch on Demand (MBA) SEO strategist, niche researcher, listing copywriter and compliance specialist.
 

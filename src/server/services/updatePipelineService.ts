@@ -247,9 +247,12 @@ export class UpdatePipelineService {
     }
 
     const raw = task.payload || {};
-    const niche1 = task.niche1 || task.customAnswers?.niche1 || task.analysisResult?.niche1 || '';
-    const niche2 = task.niche2 || task.customAnswers?.niche2 || task.analysisResult?.niche2 || '';
-    const subniche = task.subniche || task.customAnswers?.subniche || task.analysisResult?.subniche || '';
+    const niche1 = task.customAnswers?.niche1 !== undefined ? task.customAnswers.niche1 : (task.niche1 || task.analysisResult?.niche1 || '');
+    const niche2 = task.customAnswers?.niche2 !== undefined ? task.customAnswers.niche2 : (task.niche2 || task.analysisResult?.niche2 || '');
+    const subniche = task.customAnswers?.subniche !== undefined ? task.customAnswers.subniche : (task.subniche || task.analysisResult?.subniche || '');
+    const keywords = task.customAnswers?.keywords !== undefined
+      ? (Array.isArray(task.customAnswers.keywords) ? task.customAnswers.keywords : String(task.customAnswers.keywords).split(',').map((s: string) => s.trim()).filter(Boolean))
+      : (task.keywords || task.payload?.keywords || []);
     const audience = task.customAnswers?.audience || (Array.isArray(task.analysisResult?.fitTypes) ? task.analysisResult.fitTypes.join(', ') : 'men, women');
     const avoidColor = task.customAnswers?.avoidColor || task.analysisResult?.avoidColor || 'none';
 
@@ -257,7 +260,7 @@ export class UpdatePipelineService {
       timestamp: new Date().toISOString(),
       type: 'LISTING_REQUEST',
       title: 'Master English Listing Rewrite Request (OpenRouter)',
-      content: { originalTitle: raw.title, originalBrand: raw.brand, niche1, niche2, subniche },
+      content: { originalTitle: raw.title, originalBrand: raw.brand, niche1, niche2, subniche, keywords },
       metadata: { provider: 'OpenRouter' }
     });
 
@@ -266,6 +269,7 @@ export class UpdatePipelineService {
         niche1,
         niche2,
         subniche,
+        keywords,
         quote: raw.quote || '',
         audience,
         avoidColor,

@@ -364,8 +364,11 @@ MBA HUB/
 - **Pool-Reset & In-Flight Bereinigung:** Button *„Pool zurücksetzen“* im Header der Queue zur sofortigen Freigabe von In-Memory Locks und Bereinigung offener Tasks.
 
 ### 10.5 ⚙️ Konfigurierbare LLM-Parameter & 25-Punkte Meister-SEO-Prompt
-- **LLM Settings (`SettingsView.tsx`, `settingsService.ts`):** `Temperature` (Standard: 0.35) und `Max Tokens` (Standard: 3000) sind nun direkt in den Einstellungen unter *OpenRouter / OpenAI LLM* einstellbar.
+- **LLM Settings (`SettingsView.tsx`, `settingsService.ts`):** `Temperature` (Standard: 0.35), `Max Tokens` (Standard: 3000) und `Timeout (Sek.)` (Standard: 90s) sind direkt in den Einstellungen unter *OpenRouter / OpenAI LLM* einstellbar.
 - **25-Punkte MBA Master-Prompt (`systemPromptService.ts`):** Standard-Listing-Prompt für beide Pipelines (Neu & Update) mit interner Nischen-Recherche, Insider-Terminologie, Cross-Field Deduplikation, Quote-Fallback in Bullet 1 bei Platzmangel und strikter Subnischen-Suffix-Titelformel (50–60 Zeichen).
+- **Transparente PNG Alpha-Erkennung:** Vision-System-Prompts erkennen nun helle/weiße Motive auf transparentem Alpha-Kanal gezielt als Designs für dunkle Shirts und wählen automatisch `avoidColor: "White"`.
+- **Single Source of Truth bei Nischen-Feldern:** Explizites Respektieren leerer/gelöschter Felder (z.B. gelöschte Subnische wird als leer an den Listing-Generator übergeben).
+
 
 
 

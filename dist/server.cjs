@@ -49872,6 +49872,7 @@ var init_settingsService = __esm2({
       llmModel: process.env.LLM_MODEL || "anthropic/claude-3-5-sonnet",
       llmTemperature: 0.35,
       llmMaxTokens: 3e3,
+      llmTimeoutSeconds: 90,
       ideogramApiKey: process.env.IDEOGRAM_API_KEY || "",
       ideogramModel: process.env.IDEOGRAM_MODEL || "V_3",
       ideogramRenderingSpeed: "DEFAULT",
@@ -50981,7 +50982,7 @@ var init_trademarkService = __esm2({
 });
 
 // src/server/services/systemPromptService.ts
-var import_fs74, import_path69, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
+var import_fs74, import_path69, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
 var init_systemPromptService = __esm2({
   "src/server/services/systemPromptService.ts"() {
     "use strict";
@@ -51017,7 +51018,8 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - Determine which target audiences this design is suitable for: Select from ["Men", "Women", "Youth"].
 - Multiple selections are encouraged (e.g. ["Men", "Women", "Youth"] for cute/general motifs, ["Men", "Women"] for adult-oriented quotes).
 
-4. PRODUCT COLORS TO AVOID (CONTRAST):
+4. PRODUCT COLORS TO AVOID (CONTRAST) & TRANSPARENT PNGs:
+- IMPORTANT ON TRANSPARENT PNGs: Merch artwork is isolated on a transparent alpha channel. If an image contains white or light text/graphics with transparency, it is intended for dark apparel (e.g. Black/Navy). In this case, recognize the white lettering/motif and select "White" to avoid white shirts.
 - Which t-shirt / garment base color must be avoided to ensure maximum contrast and legibility?
 - DEFAULT to "None" if the design has strong contrast, solid outlines, golden/cream/colored typography, or looks great on both black and white apparel.
 - ONLY select "White" if the text or graphic elements are pure white or very light pastel without a dark border/outline.
@@ -51063,6 +51065,7 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   },
   "overall_verdict": "APPROVED"
 }`;
+    DEFAULT_UPDATE_VISION_SYSTEM_PROMPT = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
     DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are a world-class Amazon Merch on Demand (MBA) SEO strategist, niche researcher, listing copywriter and compliance specialist.
 
 Your task is to create a highly relevant, search-optimized, natural-sounding and policy-compliant English Merch by Amazon listing based on the provided design, quote, niches and keywords.
@@ -52570,11 +52573,12 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
           max_tokens: settings.llmMaxTokens || 3e3
         };
         try {
+          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
           const res = await fetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify(requestPayload),
-            signal: AbortSignal.timeout(3e4)
+            signal: AbortSignal.timeout(timeoutMs)
           });
           if (!res.ok) throw new Error(`LLM Listing error: ${res.status} ${res.statusText}`);
           const data = await res.json();
@@ -52647,11 +52651,12 @@ Please audit the listing against trademark rules. If a Brand word is Class 25, r
           max_tokens: settings.llmMaxTokens || 3e3
         };
         try {
+          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
           const res = await fetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify(requestPayload),
-            signal: AbortSignal.timeout(3e4)
+            signal: AbortSignal.timeout(timeoutMs)
           });
           if (!res.ok) throw new Error(`LLM TM Refine error: ${res.status} ${res.statusText}`);
           const data = await res.json();
@@ -52718,11 +52723,12 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
           max_tokens: Math.max(settings.llmMaxTokens || 3e3, 2500)
         };
         try {
+          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
           const res = await fetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify(requestPayload),
-            signal: AbortSignal.timeout(35e3)
+            signal: AbortSignal.timeout(timeoutMs)
           });
           if (!res.ok) throw new Error(`LLM Translation error: ${res.status} ${res.statusText}`);
           const data = await res.json();
@@ -220175,16 +220181,17 @@ Bullets: ${oldBullets}`
           return { success: true, listingResult: { en: enListing } };
         }
         const raw = task.payload || {};
-        const niche1 = task.niche1 || task.customAnswers?.niche1 || task.analysisResult?.niche1 || "";
-        const niche2 = task.niche2 || task.customAnswers?.niche2 || task.analysisResult?.niche2 || "";
-        const subniche = task.subniche || task.customAnswers?.subniche || task.analysisResult?.subniche || "";
+        const niche1 = task.customAnswers?.niche1 !== void 0 ? task.customAnswers.niche1 : task.niche1 || task.analysisResult?.niche1 || "";
+        const niche2 = task.customAnswers?.niche2 !== void 0 ? task.customAnswers.niche2 : task.niche2 || task.analysisResult?.niche2 || "";
+        const subniche = task.customAnswers?.subniche !== void 0 ? task.customAnswers.subniche : task.subniche || task.analysisResult?.subniche || "";
+        const keywords = task.customAnswers?.keywords !== void 0 ? Array.isArray(task.customAnswers.keywords) ? task.customAnswers.keywords : String(task.customAnswers.keywords).split(",").map((s) => s.trim()).filter(Boolean) : task.keywords || task.payload?.keywords || [];
         const audience = task.customAnswers?.audience || (Array.isArray(task.analysisResult?.fitTypes) ? task.analysisResult.fitTypes.join(", ") : "men, women");
         const avoidColor = task.customAnswers?.avoidColor || task.analysisResult?.avoidColor || "none";
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "LISTING_REQUEST",
           title: "Master English Listing Rewrite Request (OpenRouter)",
-          content: { originalTitle: raw.title, originalBrand: raw.brand, niche1, niche2, subniche },
+          content: { originalTitle: raw.title, originalBrand: raw.brand, niche1, niche2, subniche, keywords },
           metadata: { provider: "OpenRouter" }
         });
         try {
@@ -220192,6 +220199,7 @@ Bullets: ${oldBullets}`
             niche1,
             niche2,
             subniche,
+            keywords,
             quote: raw.quote || "",
             audience,
             avoidColor,
@@ -223155,32 +223163,28 @@ Beantworte die 4 Kernfragen streng als JSON!`;
         if (params2.action === "APPROVE") {
           if (params2.answers) {
             task.customAnswers = params2.answers;
-            if (params2.answers.niche1) {
-              task.niche1 = params2.answers.niche1;
-              if (!task.payload) task.payload = {};
-              task.payload.niche1 = params2.answers.niche1;
-            }
-            if (params2.answers.niche2) {
-              task.niche2 = params2.answers.niche2;
-              if (!task.payload) task.payload = {};
-              task.payload.niche2 = params2.answers.niche2;
-            }
-            if (params2.answers.subniche) {
-              task.subniche = params2.answers.subniche;
-              if (!task.payload) task.payload = {};
-              task.payload.subniche = params2.answers.subniche;
-            }
-            if (params2.answers.keywords) {
-              task.keywords = Array.isArray(params2.answers.keywords) ? params2.answers.keywords : String(params2.answers.keywords).split(",").map((s) => s.trim()).filter(Boolean);
-            }
+            const n1 = params2.answers.niche1 !== void 0 ? params2.answers.niche1.trim() : task.niche1 || "";
+            const n2 = params2.answers.niche2 !== void 0 ? params2.answers.niche2.trim() : task.niche2 || "";
+            const sub = params2.answers.subniche !== void 0 ? params2.answers.subniche.trim() : task.subniche || "";
+            const kwList = params2.answers.keywords !== void 0 ? Array.isArray(params2.answers.keywords) ? params2.answers.keywords : String(params2.answers.keywords).split(",").map((s) => s.trim()).filter(Boolean) : task.keywords || [];
+            task.niche1 = n1;
+            task.niche2 = n2;
+            task.subniche = sub;
+            task.keywords = kwList;
+            if (!task.payload) task.payload = {};
+            task.payload.niche1 = n1;
+            task.payload.niche2 = n2;
+            task.payload.subniche = sub;
+            task.payload.keywords = kwList;
             if (task.analysisResult && typeof task.analysisResult === "object") {
-              if (params2.answers.niche1 || params2.answers.niche2 || params2.answers.subniche) {
-                task.analysisResult.niche_analysis = {
-                  niche1: params2.answers.niche1 || task.analysisResult.niche_analysis?.niche1 || "",
-                  niche2: params2.answers.niche2 || task.analysisResult.niche_analysis?.niche2 || "none",
-                  subniche: params2.answers.subniche || task.analysisResult.niche_analysis?.subniche || "none"
-                };
-              }
+              task.analysisResult.niche1 = n1;
+              task.analysisResult.niche2 = n2 || "none";
+              task.analysisResult.subniche = sub || "none";
+              task.analysisResult.niche_analysis = {
+                niche1: n1,
+                niche2: n2 || "none",
+                subniche: sub || "none"
+              };
               if (params2.answers.audience) {
                 task.analysisResult.target_group = {
                   selected: params2.answers.audience.split(",").map((s) => s.trim()),
