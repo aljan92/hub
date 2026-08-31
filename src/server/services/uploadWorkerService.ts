@@ -597,51 +597,61 @@ export class UploadWorkerService {
 
           // Helper 1: Element checked state (checks true container/parent flowcheckbox)
           const isElementChecked = (el: Element): boolean => {
-            const target = el.closest('flowcheckbox') || el;
+            const container = el.closest('label') || el.closest('flowcheckbox') || el;
 
-            // 1. Angular SCI Icon check (Authoritative on Merch by Amazon)
-            const icon = target.querySelector('.sci-icon, i, svg');
+            // 1. Angular SCI Icon check (The authoritative visual state on Merch by Amazon)
+            const icon = container.querySelector('.sci-icon, i, svg');
             if (icon) {
-              if (icon.classList.contains('sci-check-box-blank') || icon.classList.contains('sci-checkbox-blank')) {
+              const iconClass = (icon.className || '').toLowerCase();
+              // In unchecked state: "sci-icon sci-check-box-outline-blank" or any class containing "blank"
+              if (iconClass.includes('blank')) {
                 return false;
               }
-              if (icon.classList.contains('sci-check-box') || icon.classList.contains('sci-checkbox') || icon.classList.contains('checkmark')) {
+              // In checked state: "sci-icon sci-check-box"
+              if (iconClass.includes('sci-check-box') || iconClass.includes('checkmark')) {
                 return true;
               }
             }
 
-            // 2. Direct input checkbox
-            const input = target.querySelector('input[type="checkbox"], input') as HTMLInputElement;
+            // 2. Direct native input checkbox
+            const input = container.querySelector('input[type="checkbox"], input') as HTMLInputElement;
             if (input && typeof input.checked === 'boolean') {
               return input.checked;
             }
-            if (target instanceof HTMLInputElement && typeof target.checked === 'boolean') {
-              return target.checked;
+            if (container instanceof HTMLInputElement && typeof container.checked === 'boolean') {
+              return container.checked;
             }
 
             // 3. Aria attributes or classes
-            if (target.getAttribute('aria-checked') === 'true') return true;
-            if (target.getAttribute('aria-checked') === 'false') return false;
+            const flow = el.closest('flowcheckbox') || el;
+            if (flow.getAttribute('aria-checked') === 'true') return true;
+            if (flow.getAttribute('aria-checked') === 'false') return false;
 
-            const hasSelectedClass = target.classList.contains('selected') || 
-              target.classList.contains('checked') || 
-              target.classList.contains('active') ||
-              target.querySelector('.selected, .checked, .active') !== null;
-
-            return hasSelectedClass;
+            return flow.classList.contains('checked') || flow.classList.contains('selected') || flow.classList.contains('active');
           };
 
-          // Helper 2: Click element (triggers Angular @HostListener and native events)
+          // Helper 2: Click element (triggers Angular @HostListener and native label events)
           const clickTargetElement = (el: Element) => {
-            const host = (el.closest('flowcheckbox') || el) as HTMLElement;
-            host.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-            host.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-            host.click();
+            const label = (el.closest('label') || el) as HTMLElement;
+            const flow = (label.querySelector('flowcheckbox') || el.closest('flowcheckbox') || el) as HTMLElement;
+            const input = (label.querySelector('input') || el.querySelector('input')) as HTMLInputElement;
 
-            const input = host.querySelector('input') as HTMLInputElement;
+            // 1. Click flowcheckbox host
+            flow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            flow.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            flow.click();
+
+            // 2. Click label wrapper
+            if (label && label !== flow) {
+              label.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+              label.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+              label.click();
+            }
+
+            // 3. Trigger native input event if present
             if (input) {
-              input.click();
               input.dispatchEvent(new Event('change', { bubbles: true }));
+              input.dispatchEvent(new Event('input', { bubbles: true }));
             }
           };
 
@@ -711,67 +721,53 @@ export class UploadWorkerService {
           if (desiredFits.includes('youth') && !desiredFits.includes('men') && !desiredFits.includes('women')) {
             desiredFits.push('men');
           }
+          // Rule: If youth is active, always select girls as well
           if (desiredFits.includes('youth') && !desiredFits.includes('girls')) {
             desiredFits.push('girls');
           }
           desiredFits.push('adult_unisex', 'unisex');
 
-          // Find genuine fit checkbox elements (excluding color swatches)
-          const allCheckboxes = Array.from(editor.querySelectorAll('flowcheckbox, input[type="checkbox"], .fit-checkbox')) as HTMLElement[];
-          const fitCandidateCheckboxes = allCheckboxes.filter(cb => {
-            const isColor = cb.tagName.toLowerCase() === 'colorcheckbox' || 
-              cb.classList.contains('color-checkbox') || 
-              (cb.getAttribute('formcontrolname') || '').toLowerCase().includes('color') ||
-              cb.closest('.color-selection-container') !== null;
-            return !isColor;
-          });
+          // Find genuine fit controls within the editor's fit container
+          const fitContainer = editor.querySelector('.fit-type-container') || editor;
+          const fitCandidateLabels = Array.from(fitContainer.querySelectorAll('label[class*="-label"], flowcheckbox[class*="-checkbox"], .fit-type-container label, .fit-checkbox'));
 
           const fitControlsMap = new Map<string, HTMLElement>();
 
-          for (const cb of fitCandidateCheckboxes) {
-            const fcn = (cb.getAttribute('formcontrolname') || '').toLowerCase();
-            const name = (cb.getAttribute('name') || '').toLowerCase();
-            const id = (cb.getAttribute('id') || '').toLowerCase();
-            const cls = (cb.className || '').toLowerCase();
-            const labelTxt = (cb.querySelector('label')?.textContent || cb.textContent || '').trim().toLowerCase();
-            const combo = `${fcn} ${name} ${id} ${cls} ${labelTxt}`;
+          for (const el of fitCandidateLabels) {
+            const parentLabel = (el.closest('label') || el) as HTMLElement;
+            const cls = `${(el.className || '')} ${(parentLabel.className || '')}`.toLowerCase();
+            const text = (parentLabel.textContent || '').trim().toLowerCase();
+            const formControl = (el.getAttribute('formcontrolname') || el.querySelector('flowcheckbox')?.getAttribute('formcontrolname') || '').toLowerCase();
+            const combo = `${cls} ${text} ${formControl}`;
 
             let fitKey = '';
-            if (fcn === 'men' || fcn === 'fittypemen' || cls.includes('men-checkbox') || id.includes('men') || labelTxt === 'men' || labelTxt === 'männer' || labelTxt === 'herren') {
-              fitKey = 'men';
-            } else if (fcn === 'women' || fcn === 'fittypewomen' || cls.includes('women-checkbox') || id.includes('women') || labelTxt === 'women' || labelTxt === 'frauen' || labelTxt === 'damen') {
-              fitKey = 'women';
-            } else if (fcn === 'youth' || fcn === 'fittypeyouth' || cls.includes('youth-checkbox') || id.includes('youth') || labelTxt === 'youth' || labelTxt === 'kinder' || labelTxt === 'kids') {
-              fitKey = 'youth';
-            } else if (fcn === 'girls' || fcn === 'fittypegirls' || cls.includes('girls-checkbox') || id.includes('girls') || labelTxt === 'girls' || labelTxt === 'mädchen') {
+            if (cls.includes('girls') || text.includes('girls') || combo.includes('girls') || combo.includes('mädchen')) {
               fitKey = 'girls';
-            } else if (combo.includes('unisex')) {
+            } else if (cls.includes('youth') || text.includes('youth') || combo.includes('youth') || combo.includes('kinder') || combo.includes('kids')) {
+              fitKey = 'youth';
+            } else if (cls.includes('women') || text.includes('women') || combo.includes('women') || combo.includes('frauen') || combo.includes('damen')) {
+              fitKey = 'women';
+            } else if (cls.includes('men') || /\bmen\b/.test(text) || combo.includes('männer') || combo.includes('herren')) {
+              fitKey = 'men';
+            } else if (combo.includes('unisex') || combo.includes('adult')) {
               fitKey = 'adult_unisex';
-            } else if (combo.includes('girls') || combo.includes('mädchen') || combo.includes('girl')) {
-              fitKey = 'girls';
-            } else if (combo.includes('youth') || combo.includes('kinder') || combo.includes('kids')) {
-              fitKey = 'youth';
-            } else if (combo.includes('women') || combo.includes('frauen') || combo.includes('damen')) {
-              fitKey = 'women';
-            } else if (/\bmen\b/.test(combo) || combo.includes('männer') || combo.includes('herren')) {
-              fitKey = 'men';
             }
 
-            if (fitKey) {
-              fitControlsMap.set(fitKey, cb);
+            if (fitKey && !fitControlsMap.has(fitKey)) {
+              fitControlsMap.set(fitKey, parentLabel);
             }
           }
 
           // Apply fit selections: EXACTLY ONE check/click per distinct fitKey with active verification
           const activeFitsApplied: string[] = [];
-          for (const [fitKey, cb] of fitControlsMap.entries()) {
+          for (const [fitKey, controlEl] of fitControlsMap.entries()) {
             const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === 'adult_unisex';
-            let isChecked = isElementChecked(cb);
+            let isChecked = isElementChecked(controlEl);
 
             if (isChecked !== shouldBeChecked) {
-              clickTargetElement(cb);
-              await sleep(80);
-              isChecked = isElementChecked(cb);
+              clickTargetElement(controlEl);
+              await sleep(100);
+              isChecked = isElementChecked(controlEl);
             }
 
             if (isChecked) {
@@ -783,9 +779,9 @@ export class UploadWorkerService {
           if (fitControlsMap.size > 0 && activeFitsApplied.length === 0) {
             const fallbackKey = fitControlsMap.has('men') ? 'men' : fitControlsMap.keys().next().value;
             if (fallbackKey) {
-              const fallbackCb = fitControlsMap.get(fallbackKey)!;
-              clickTargetElement(fallbackCb);
-              await sleep(80);
+              const fallbackEl = fitControlsMap.get(fallbackKey)!;
+              clickTargetElement(fallbackEl);
+              await sleep(100);
               activeFitsApplied.push(fallbackKey);
             }
           }

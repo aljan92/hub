@@ -227170,37 +227170,44 @@ var UploadWorkerService = class _UploadWorkerService {
           const editor = document.querySelector(`product-editor .${pid}-container`)?.closest("product-editor") || document.querySelector(`product-editor[id*="${pid}"]`) || document.querySelector("product-editor");
           if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
           const isElementChecked = (el) => {
-            const target = el.closest("flowcheckbox") || el;
-            const icon = target.querySelector(".sci-icon, i, svg");
+            const container = el.closest("label") || el.closest("flowcheckbox") || el;
+            const icon = container.querySelector(".sci-icon, i, svg");
             if (icon) {
-              if (icon.classList.contains("sci-check-box-blank") || icon.classList.contains("sci-checkbox-blank")) {
+              const iconClass = (icon.className || "").toLowerCase();
+              if (iconClass.includes("blank")) {
                 return false;
               }
-              if (icon.classList.contains("sci-check-box") || icon.classList.contains("sci-checkbox") || icon.classList.contains("checkmark")) {
+              if (iconClass.includes("sci-check-box") || iconClass.includes("checkmark")) {
                 return true;
               }
             }
-            const input = target.querySelector('input[type="checkbox"], input');
+            const input = container.querySelector('input[type="checkbox"], input');
             if (input && typeof input.checked === "boolean") {
               return input.checked;
             }
-            if (target instanceof HTMLInputElement && typeof target.checked === "boolean") {
-              return target.checked;
+            if (container instanceof HTMLInputElement && typeof container.checked === "boolean") {
+              return container.checked;
             }
-            if (target.getAttribute("aria-checked") === "true") return true;
-            if (target.getAttribute("aria-checked") === "false") return false;
-            const hasSelectedClass = target.classList.contains("selected") || target.classList.contains("checked") || target.classList.contains("active") || target.querySelector(".selected, .checked, .active") !== null;
-            return hasSelectedClass;
+            const flow = el.closest("flowcheckbox") || el;
+            if (flow.getAttribute("aria-checked") === "true") return true;
+            if (flow.getAttribute("aria-checked") === "false") return false;
+            return flow.classList.contains("checked") || flow.classList.contains("selected") || flow.classList.contains("active");
           };
           const clickTargetElement = (el) => {
-            const host = el.closest("flowcheckbox") || el;
-            host.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-            host.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-            host.click();
-            const input = host.querySelector("input");
+            const label = el.closest("label") || el;
+            const flow = label.querySelector("flowcheckbox") || el.closest("flowcheckbox") || el;
+            const input = label.querySelector("input") || el.querySelector("input");
+            flow.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+            flow.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+            flow.click();
+            if (label && label !== flow) {
+              label.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+              label.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+              label.click();
+            }
             if (input) {
-              input.click();
               input.dispatchEvent(new Event("change", { bubbles: true }));
+              input.dispatchEvent(new Event("input", { bubbles: true }));
             }
           };
           const extractColorClues = (cb) => {
@@ -227266,51 +227273,39 @@ var UploadWorkerService = class _UploadWorkerService {
             desiredFits.push("girls");
           }
           desiredFits.push("adult_unisex", "unisex");
-          const allCheckboxes = Array.from(editor.querySelectorAll('flowcheckbox, input[type="checkbox"], .fit-checkbox'));
-          const fitCandidateCheckboxes = allCheckboxes.filter((cb) => {
-            const isColor = cb.tagName.toLowerCase() === "colorcheckbox" || cb.classList.contains("color-checkbox") || (cb.getAttribute("formcontrolname") || "").toLowerCase().includes("color") || cb.closest(".color-selection-container") !== null;
-            return !isColor;
-          });
+          const fitContainer = editor.querySelector(".fit-type-container") || editor;
+          const fitCandidateLabels = Array.from(fitContainer.querySelectorAll('label[class*="-label"], flowcheckbox[class*="-checkbox"], .fit-type-container label, .fit-checkbox'));
           const fitControlsMap = /* @__PURE__ */ new Map();
-          for (const cb of fitCandidateCheckboxes) {
-            const fcn = (cb.getAttribute("formcontrolname") || "").toLowerCase();
-            const name = (cb.getAttribute("name") || "").toLowerCase();
-            const id = (cb.getAttribute("id") || "").toLowerCase();
-            const cls = (cb.className || "").toLowerCase();
-            const labelTxt = (cb.querySelector("label")?.textContent || cb.textContent || "").trim().toLowerCase();
-            const combo = `${fcn} ${name} ${id} ${cls} ${labelTxt}`;
+          for (const el of fitCandidateLabels) {
+            const parentLabel = el.closest("label") || el;
+            const cls = `${el.className || ""} ${parentLabel.className || ""}`.toLowerCase();
+            const text2 = (parentLabel.textContent || "").trim().toLowerCase();
+            const formControl = (el.getAttribute("formcontrolname") || el.querySelector("flowcheckbox")?.getAttribute("formcontrolname") || "").toLowerCase();
+            const combo = `${cls} ${text2} ${formControl}`;
             let fitKey = "";
-            if (fcn === "men" || fcn === "fittypemen" || cls.includes("men-checkbox") || id.includes("men") || labelTxt === "men" || labelTxt === "m\xE4nner" || labelTxt === "herren") {
-              fitKey = "men";
-            } else if (fcn === "women" || fcn === "fittypewomen" || cls.includes("women-checkbox") || id.includes("women") || labelTxt === "women" || labelTxt === "frauen" || labelTxt === "damen") {
-              fitKey = "women";
-            } else if (fcn === "youth" || fcn === "fittypeyouth" || cls.includes("youth-checkbox") || id.includes("youth") || labelTxt === "youth" || labelTxt === "kinder" || labelTxt === "kids") {
-              fitKey = "youth";
-            } else if (fcn === "girls" || fcn === "fittypegirls" || cls.includes("girls-checkbox") || id.includes("girls") || labelTxt === "girls" || labelTxt === "m\xE4dchen") {
+            if (cls.includes("girls") || text2.includes("girls") || combo.includes("girls") || combo.includes("m\xE4dchen")) {
               fitKey = "girls";
-            } else if (combo.includes("unisex")) {
+            } else if (cls.includes("youth") || text2.includes("youth") || combo.includes("youth") || combo.includes("kinder") || combo.includes("kids")) {
+              fitKey = "youth";
+            } else if (cls.includes("women") || text2.includes("women") || combo.includes("women") || combo.includes("frauen") || combo.includes("damen")) {
+              fitKey = "women";
+            } else if (cls.includes("men") || /\bmen\b/.test(text2) || combo.includes("m\xE4nner") || combo.includes("herren")) {
+              fitKey = "men";
+            } else if (combo.includes("unisex") || combo.includes("adult")) {
               fitKey = "adult_unisex";
-            } else if (combo.includes("girls") || combo.includes("m\xE4dchen") || combo.includes("girl")) {
-              fitKey = "girls";
-            } else if (combo.includes("youth") || combo.includes("kinder") || combo.includes("kids")) {
-              fitKey = "youth";
-            } else if (combo.includes("women") || combo.includes("frauen") || combo.includes("damen")) {
-              fitKey = "women";
-            } else if (/\bmen\b/.test(combo) || combo.includes("m\xE4nner") || combo.includes("herren")) {
-              fitKey = "men";
             }
-            if (fitKey) {
-              fitControlsMap.set(fitKey, cb);
+            if (fitKey && !fitControlsMap.has(fitKey)) {
+              fitControlsMap.set(fitKey, parentLabel);
             }
           }
           const activeFitsApplied = [];
-          for (const [fitKey, cb] of fitControlsMap.entries()) {
+          for (const [fitKey, controlEl] of fitControlsMap.entries()) {
             const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === "adult_unisex";
-            let isChecked = isElementChecked(cb);
+            let isChecked = isElementChecked(controlEl);
             if (isChecked !== shouldBeChecked) {
-              clickTargetElement(cb);
-              await sleep2(80);
-              isChecked = isElementChecked(cb);
+              clickTargetElement(controlEl);
+              await sleep2(100);
+              isChecked = isElementChecked(controlEl);
             }
             if (isChecked) {
               activeFitsApplied.push(fitKey);
@@ -227319,9 +227314,9 @@ var UploadWorkerService = class _UploadWorkerService {
           if (fitControlsMap.size > 0 && activeFitsApplied.length === 0) {
             const fallbackKey = fitControlsMap.has("men") ? "men" : fitControlsMap.keys().next().value;
             if (fallbackKey) {
-              const fallbackCb = fitControlsMap.get(fallbackKey);
-              clickTargetElement(fallbackCb);
-              await sleep2(80);
+              const fallbackEl = fitControlsMap.get(fallbackKey);
+              clickTargetElement(fallbackEl);
+              await sleep2(100);
               activeFitsApplied.push(fallbackKey);
             }
           }
