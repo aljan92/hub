@@ -227194,21 +227194,10 @@ var UploadWorkerService = class _UploadWorkerService {
             return flow.classList.contains("checked") || flow.classList.contains("selected") || flow.classList.contains("active");
           };
           const clickTargetElement = (el) => {
-            const label = el.closest("label") || el;
-            const flow = label.querySelector("flowcheckbox") || el.closest("flowcheckbox") || el;
-            const input = label.querySelector("input") || el.querySelector("input");
+            const flow = el.tagName.toLowerCase() === "flowcheckbox" ? el : el.querySelector("flowcheckbox") || el.closest("flowcheckbox") || el;
             flow.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
             flow.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
             flow.click();
-            if (label && label !== flow) {
-              label.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-              label.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-              label.click();
-            }
-            if (input) {
-              input.dispatchEvent(new Event("change", { bubbles: true }));
-              input.dispatchEvent(new Event("input", { bubbles: true }));
-            }
           };
           const extractColorClues = (cb) => {
             const clues = [];
@@ -227273,14 +227262,16 @@ var UploadWorkerService = class _UploadWorkerService {
             desiredFits.push("girls");
           }
           desiredFits.push("adult_unisex", "unisex");
-          const fitContainer = editor.querySelector(".fit-type-container") || editor;
-          const fitCandidateLabels = Array.from(fitContainer.querySelectorAll('label[class*="-label"], flowcheckbox[class*="-checkbox"], .fit-type-container label, .fit-checkbox'));
+          const fitCandidateLabels = Array.from(document.querySelectorAll(
+            '.fit-type-container label, .fit-type-container flowcheckbox, label.men-label, label.women-label, label.youth-label, label.girls-label, flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, label[class*="-label"], flowcheckbox[class*="-checkbox"]'
+          ));
           const fitControlsMap = /* @__PURE__ */ new Map();
           for (const el of fitCandidateLabels) {
             const parentLabel = el.closest("label") || el;
-            const cls = `${el.className || ""} ${parentLabel.className || ""}`.toLowerCase();
-            const text2 = (parentLabel.textContent || "").trim().toLowerCase();
-            const formControl = (el.getAttribute("formcontrolname") || el.querySelector("flowcheckbox")?.getAttribute("formcontrolname") || "").toLowerCase();
+            const flow = parentLabel.querySelector("flowcheckbox") || el.closest("flowcheckbox") || el;
+            const cls = `${flow.className || ""} ${parentLabel.className || ""} ${el.className || ""}`.toLowerCase();
+            const text2 = (parentLabel.textContent || el.textContent || "").trim().toLowerCase();
+            const formControl = (flow.getAttribute("formcontrolname") || el.getAttribute("formcontrolname") || "").toLowerCase();
             const combo = `${cls} ${text2} ${formControl}`;
             let fitKey = "";
             if (cls.includes("girls") || text2.includes("girls") || combo.includes("girls") || combo.includes("m\xE4dchen")) {
@@ -227295,18 +227286,31 @@ var UploadWorkerService = class _UploadWorkerService {
               fitKey = "adult_unisex";
             }
             if (fitKey && !fitControlsMap.has(fitKey)) {
-              fitControlsMap.set(fitKey, parentLabel);
+              fitControlsMap.set(fitKey, flow);
             }
           }
           const activeFitsApplied = [];
-          for (const [fitKey, controlEl] of fitControlsMap.entries()) {
+          const fitDebugSummary = {};
+          for (const [fitKey, flowEl] of fitControlsMap.entries()) {
             const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === "adult_unisex";
-            let isChecked = isElementChecked(controlEl);
+            const initialChecked = isElementChecked(flowEl);
+            let isChecked = initialChecked;
             if (isChecked !== shouldBeChecked) {
-              clickTargetElement(controlEl);
-              await sleep2(100);
-              isChecked = isElementChecked(controlEl);
+              clickTargetElement(flowEl);
+              await sleep2(120);
+              isChecked = isElementChecked(flowEl);
+              if (isChecked !== shouldBeChecked) {
+                const parentLabel = flowEl.closest("label");
+                if (parentLabel) {
+                  parentLabel.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+                  parentLabel.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+                  parentLabel.click();
+                  await sleep2(120);
+                  isChecked = isElementChecked(flowEl);
+                }
+              }
             }
+            fitDebugSummary[fitKey] = { initial: initialChecked, target: shouldBeChecked, final: isChecked };
             if (isChecked) {
               activeFitsApplied.push(fitKey);
             }
@@ -227445,6 +227449,7 @@ var UploadWorkerService = class _UploadWorkerService {
             success: true,
             activeColors: finalActiveColorNames,
             fitTypesApplied: activeFitsApplied,
+            fitDebug: fitDebugSummary,
             selfHealedColor
           };
         }, {
@@ -227456,12 +227461,13 @@ var UploadWorkerService = class _UploadWorkerService {
           catalogColors: Array.isArray(product.colors) ? product.colors.map((c) => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || "none" })) : []
         });
         if (editResult.success) {
+          const colorsList = editResult.activeColors && editResult.activeColors.length > 0 ? editResult.activeColors.join(", ") : "OK";
+          const fitsList = editResult.fitTypesApplied && editResult.fitTypesApplied.length > 0 ? editResult.fitTypesApplied.join(", ") : "Standard";
+          const fitDetails = editResult.fitDebug && Object.keys(editResult.fitDebug).length > 0 ? ` [Fits: ${Object.entries(editResult.fitDebug).map(([k, v]) => `${k}:${v.final ? "\u2713" : "\u2717"}`).join(" ")}]` : "";
           if (editResult.selfHealedColor) {
-            this.log(`\u26A0\uFE0F ${product.displayName}: 0 Farben verhindert \u2794 Selbstheilung: "${editResult.selfHealedColor}" aktiviert \u2713`);
+            this.log(`\u26A0\uFE0F ${product.displayName}: 0 Farben verhindert \u2794 Selbstheilung: "${editResult.selfHealedColor}" aktiviert \u2713 | Fit: ${fitsList}${fitDetails}`);
           } else {
-            const colorsList = editResult.activeColors && editResult.activeColors.length > 0 ? editResult.activeColors.join(", ") : "OK";
-            const fitsList = editResult.fitTypesApplied && editResult.fitTypesApplied.length > 0 ? editResult.fitTypesApplied.join(", ") : "Standard";
-            this.log(`\u2713 ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}`);
+            this.log(`\u2713 ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}${fitDetails}`);
           }
         } else {
           this.log(`\u26A0\uFE0F Hinweis zu ${product.displayName}: ${editResult.reason}`);

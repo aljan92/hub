@@ -630,29 +630,15 @@ export class UploadWorkerService {
             return flow.classList.contains('checked') || flow.classList.contains('selected') || flow.classList.contains('active');
           };
 
-          // Helper 2: Click element (triggers Angular @HostListener and native label events)
+          // Helper 2: Click element (single host click to prevent double-toggle on label+flow)
           const clickTargetElement = (el: Element) => {
-            const label = (el.closest('label') || el) as HTMLElement;
-            const flow = (label.querySelector('flowcheckbox') || el.closest('flowcheckbox') || el) as HTMLElement;
-            const input = (label.querySelector('input') || el.querySelector('input')) as HTMLInputElement;
+            const flow = (el.tagName.toLowerCase() === 'flowcheckbox' 
+              ? el 
+              : (el.querySelector('flowcheckbox') || el.closest('flowcheckbox') || el)) as HTMLElement;
 
-            // 1. Click flowcheckbox host
             flow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
             flow.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
             flow.click();
-
-            // 2. Click label wrapper
-            if (label && label !== flow) {
-              label.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-              label.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-              label.click();
-            }
-
-            // 3. Trigger native input event if present
-            if (input) {
-              input.dispatchEvent(new Event('change', { bubbles: true }));
-              input.dispatchEvent(new Event('input', { bubbles: true }));
-            }
           };
 
           // Helper 3: Clue gathering
@@ -727,17 +713,22 @@ export class UploadWorkerService {
           }
           desiredFits.push('adult_unisex', 'unisex');
 
-          // Find genuine fit controls within the editor's fit container
-          const fitContainer = editor.querySelector('.fit-type-container') || editor;
-          const fitCandidateLabels = Array.from(fitContainer.querySelectorAll('label[class*="-label"], flowcheckbox[class*="-checkbox"], .fit-type-container label, .fit-checkbox'));
+          // Find genuine fit controls across editor and active fit container
+          const fitCandidateLabels = Array.from(document.querySelectorAll(
+            '.fit-type-container label, .fit-type-container flowcheckbox, ' +
+            'label.men-label, label.women-label, label.youth-label, label.girls-label, ' +
+            'flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, ' +
+            'label[class*="-label"], flowcheckbox[class*="-checkbox"]'
+          ));
 
           const fitControlsMap = new Map<string, HTMLElement>();
 
           for (const el of fitCandidateLabels) {
             const parentLabel = (el.closest('label') || el) as HTMLElement;
-            const cls = `${(el.className || '')} ${(parentLabel.className || '')}`.toLowerCase();
-            const text = (parentLabel.textContent || '').trim().toLowerCase();
-            const formControl = (el.getAttribute('formcontrolname') || el.querySelector('flowcheckbox')?.getAttribute('formcontrolname') || '').toLowerCase();
+            const flow = (parentLabel.querySelector('flowcheckbox') || el.closest('flowcheckbox') || el) as HTMLElement;
+            const cls = `${(flow.className || '')} ${(parentLabel.className || '')} ${(el.className || '')}`.toLowerCase();
+            const text = (parentLabel.textContent || el.textContent || '').trim().toLowerCase();
+            const formControl = (flow.getAttribute('formcontrolname') || el.getAttribute('formcontrolname') || '').toLowerCase();
             const combo = `${cls} ${text} ${formControl}`;
 
             let fitKey = '';
@@ -754,21 +745,38 @@ export class UploadWorkerService {
             }
 
             if (fitKey && !fitControlsMap.has(fitKey)) {
-              fitControlsMap.set(fitKey, parentLabel);
+              fitControlsMap.set(fitKey, flow);
             }
           }
 
           // Apply fit selections: EXACTLY ONE check/click per distinct fitKey with active verification
           const activeFitsApplied: string[] = [];
-          for (const [fitKey, controlEl] of fitControlsMap.entries()) {
+          const fitDebugSummary: Record<string, { initial: boolean; target: boolean; final: boolean }> = {};
+
+          for (const [fitKey, flowEl] of fitControlsMap.entries()) {
             const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === 'adult_unisex';
-            let isChecked = isElementChecked(controlEl);
+            const initialChecked = isElementChecked(flowEl);
+            let isChecked = initialChecked;
 
             if (isChecked !== shouldBeChecked) {
-              clickTargetElement(controlEl);
-              await sleep(100);
-              isChecked = isElementChecked(controlEl);
+              clickTargetElement(flowEl);
+              await sleep(120);
+              isChecked = isElementChecked(flowEl);
+
+              // If state didn't change after clicking flowcheckbox, try clicking the parent label
+              if (isChecked !== shouldBeChecked) {
+                const parentLabel = flowEl.closest('label');
+                if (parentLabel) {
+                  parentLabel.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                  parentLabel.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                  parentLabel.click();
+                  await sleep(120);
+                  isChecked = isElementChecked(flowEl);
+                }
+              }
             }
+
+            fitDebugSummary[fitKey] = { initial: initialChecked, target: shouldBeChecked, final: isChecked };
 
             if (isChecked) {
               activeFitsApplied.push(fitKey);
@@ -961,6 +969,7 @@ export class UploadWorkerService {
             success: true, 
             activeColors: finalActiveColorNames,
             fitTypesApplied: activeFitsApplied,
+            fitDebug: fitDebugSummary,
             selfHealedColor
           };
         }, {
@@ -973,12 +982,16 @@ export class UploadWorkerService {
         });
 
         if (editResult.success) {
+          const colorsList = editResult.activeColors && editResult.activeColors.length > 0 ? editResult.activeColors.join(', ') : 'OK';
+          const fitsList = editResult.fitTypesApplied && editResult.fitTypesApplied.length > 0 ? editResult.fitTypesApplied.join(', ') : 'Standard';
+          const fitDetails = editResult.fitDebug && Object.keys(editResult.fitDebug).length > 0 
+            ? ` [Fits: ${Object.entries(editResult.fitDebug).map(([k, v]) => `${k}:${v.final ? '✓' : '✗'}`).join(' ')}]` 
+            : '';
+
           if (editResult.selfHealedColor) {
-            this.log(`⚠️ ${product.displayName}: 0 Farben verhindert ➔ Selbstheilung: "${editResult.selfHealedColor}" aktiviert ✓`);
+            this.log(`⚠️ ${product.displayName}: 0 Farben verhindert ➔ Selbstheilung: "${editResult.selfHealedColor}" aktiviert ✓ | Fit: ${fitsList}${fitDetails}`);
           } else {
-            const colorsList = editResult.activeColors && editResult.activeColors.length > 0 ? editResult.activeColors.join(', ') : 'OK';
-            const fitsList = editResult.fitTypesApplied && editResult.fitTypesApplied.length > 0 ? editResult.fitTypesApplied.join(', ') : 'Standard';
-            this.log(`✓ ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}`);
+            this.log(`✓ ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}${fitDetails}`);
           }
         } else {
           this.log(`⚠️ Hinweis zu ${product.displayName}: ${editResult.reason}`);
