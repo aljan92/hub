@@ -8,6 +8,7 @@ import { BannedWordsService } from './bannedWordsService';
 import { VectorizerService } from './vectorizerService';
 import { SvgRenderService } from './svgRenderService';
 import { LLMService } from './llmService';
+import { VisionOptimizationService } from './visionOptimizationService';
 
 export * from '../../types/tasks';
 import { 
@@ -764,12 +765,12 @@ export class TaskLogService {
       }
     });
 
-    // Prepare image for vision model
+    // Prepare image for vision model using high-contrast Dual-Panel Vision Optimizer
     let imageSource = imageUrl;
     if (fs.existsSync(localFilePath)) {
       try {
-        const buffer = fs.readFileSync(localFilePath);
-        imageSource = `data:image/png;base64,${buffer.toString('base64')}`;
+        const { base64DataUrl } = await VisionOptimizationService.prepareVisionImage(localFilePath);
+        imageSource = base64DataUrl || imageSource;
       } catch (e) {}
     }
 
@@ -845,8 +846,9 @@ export class TaskLogService {
       const isApproved = parsedAnalysis?.overall_verdict === 'APPROVED' || 
         (parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended);
 
-      // Check Global AI Autonomy Switch
-      if (settings.aiAutonomyEnabled && isApproved) {
+      // Check AI Autonomy Switch for Design Pipeline
+      const autonomyDesign = settings.aiAutonomyDesignEnabled ?? settings.aiAutonomyEnabled;
+      if (autonomyDesign && isApproved) {
         console.log(`[TaskLogService] ⚡ Autonomie aktiv: Task ${taskId} überspringt Human-in-the-Loop (Design freigegeben) -> Listing-Generierung gestartet.`);
         this.updateTaskStatus(taskId, {
           status: 'GENERATING_LISTING',

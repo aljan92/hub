@@ -51,6 +51,8 @@ export const SettingsView: React.FC = () => {
   const [llmTemperature, setLlmTemperature] = useState<number>(initialSettings.llmTemperature ?? 0.35);
   const [llmMaxTokens, setLlmMaxTokens] = useState<number>(initialSettings.llmMaxTokens ?? 3000);
   const [llmTimeoutSeconds, setLlmTimeoutSeconds] = useState<number>(initialSettings.llmTimeoutSeconds ?? 90);
+  const [aiAutonomyDesignEnabled, setAiAutonomyDesignEnabled] = useState<boolean>(initialSettings.aiAutonomyDesignEnabled ?? false);
+  const [aiAutonomyUpdateEnabled, setAiAutonomyUpdateEnabled] = useState<boolean>(initialSettings.aiAutonomyUpdateEnabled ?? false);
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string; promptPrice?: string; completionPrice?: string }[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
@@ -137,6 +139,8 @@ export const SettingsView: React.FC = () => {
           setLlmTemperature(s.llmTemperature ?? 0.35);
           setLlmMaxTokens(s.llmMaxTokens ?? 3000);
           setLlmTimeoutSeconds(s.llmTimeoutSeconds ?? 90);
+          setAiAutonomyDesignEnabled(s.aiAutonomyDesignEnabled ?? s.aiAutonomyEnabled ?? false);
+          setAiAutonomyUpdateEnabled(s.aiAutonomyUpdateEnabled ?? s.aiAutonomyEnabled ?? false);
           setIdeogramApiKey(s.ideogramApiKey || '');
           setIdeogramModel(s.ideogramModel || 'V_3');
           setIdeogramRenderingSpeed(s.ideogramRenderingSpeed || 'DEFAULT');
@@ -248,6 +252,8 @@ export const SettingsView: React.FC = () => {
         llmTemperature: Number(llmTemperature),
         llmMaxTokens: Number(llmMaxTokens),
         llmTimeoutSeconds: Number(llmTimeoutSeconds),
+        aiAutonomyDesignEnabled: Boolean(aiAutonomyDesignEnabled),
+        aiAutonomyUpdateEnabled: Boolean(aiAutonomyUpdateEnabled),
         ideogramApiKey,
         ideogramModel,
         ideogramRenderingSpeed,
@@ -1108,6 +1114,66 @@ export const SettingsView: React.FC = () => {
               onChange={(e) => setAutoSlotFillHour(Number(e.target.value))}
               className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 focus:border-primary-500 focus:outline-none"
             />
+          </div>
+        </div>
+
+        {/* 6.1 Pipeline Autonomy Card */}
+        <div className="glass-card p-5 rounded-2xl space-y-4 md:col-span-2 border border-slate-800">
+          <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center justify-between">
+            <span className="flex items-center">
+              <Bot className="w-4 h-4 mr-2 text-primary-400" />
+              KI-Autonomie &amp; Human-in-the-Loop
+            </span>
+          </h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Design Pipeline */}
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-4 h-4 text-primary-400" />
+                  <span className="text-xs font-bold text-slate-200">Design-Pipeline Autonomie</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Automatische Freigabe von neuen Designs (C1–C4), wenn Bild, Quote und Trademarks fehlerfrei sind.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiAutonomyDesignEnabled(!aiAutonomyDesignEnabled)}
+                className={`w-11 h-6 rounded-full transition-colors relative ml-4 shrink-0 ${
+                  aiAutonomyDesignEnabled ? 'bg-primary-500' : 'bg-slate-700'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white transition-transform transform absolute top-1 ${
+                  aiAutonomyDesignEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            {/* Update Pipeline */}
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <Bot className="w-4 h-4 text-teal-400" />
+                  <span className="text-xs font-bold text-slate-200">Update-Pipeline Autonomie</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Automatische Freigabe von Amazon-Update-Tasks (U1–U7) ohne manuelles Anhalten in der Question Phase.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiAutonomyUpdateEnabled(!aiAutonomyUpdateEnabled)}
+                className={`w-11 h-6 rounded-full transition-colors relative ml-4 shrink-0 ${
+                  aiAutonomyUpdateEnabled ? 'bg-teal-500' : 'bg-slate-700'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white transition-transform transform absolute top-1 ${
+                  aiAutonomyUpdateEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
           </div>
         </div>
 

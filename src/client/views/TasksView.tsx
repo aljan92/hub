@@ -149,7 +149,8 @@ export const TasksView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string>('');
   const [filter, setFilter] = useState<'ALL' | 'PRE_FLIGHT' | 'DESIGN' | 'TRADEMARK' | 'SVG'>('ALL');
-  const [aiAutonomyEnabled, setAiAutonomyEnabled] = useState(false);
+  const [aiAutonomyDesignEnabled, setAiAutonomyDesignEnabled] = useState(false);
+  const [aiAutonomyUpdateEnabled, setAiAutonomyUpdateEnabled] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -262,21 +263,37 @@ export const TasksView: React.FC = () => {
       const res = await fetch('/api/v1/settings');
       const data = await res.json();
       if (data.success && data.settings) {
-        setAiAutonomyEnabled(Boolean(data.settings.aiAutonomyEnabled));
+        setAiAutonomyDesignEnabled(Boolean(data.settings.aiAutonomyDesignEnabled ?? data.settings.aiAutonomyEnabled));
+        setAiAutonomyUpdateEnabled(Boolean(data.settings.aiAutonomyUpdateEnabled ?? data.settings.aiAutonomyEnabled));
       }
     } catch (e) {}
   };
 
-  const toggleAiAutonomy = async () => {
-    const newVal = !aiAutonomyEnabled;
-    setAiAutonomyEnabled(newVal);
+  const toggleAiAutonomyDesign = async () => {
+    const newVal = !aiAutonomyDesignEnabled;
+    setAiAutonomyDesignEnabled(newVal);
     try {
       await fetch('/api/v1/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aiAutonomyEnabled: newVal })
+        body: JSON.stringify({ aiAutonomyDesignEnabled: newVal })
       });
-      showNotification('success', newVal ? 'KI-Autonomie aktiviert' : 'Human-in-the-Loop aktiviert');
+      showNotification('success', newVal ? 'Design-Autonomie aktiviert' : 'Design Human-in-the-Loop aktiviert');
+    } catch (err) {
+      showNotification('error', 'Fehler beim Speichern der Einstellung');
+    }
+  };
+
+  const toggleAiAutonomyUpdate = async () => {
+    const newVal = !aiAutonomyUpdateEnabled;
+    setAiAutonomyUpdateEnabled(newVal);
+    try {
+      await fetch('/api/v1/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aiAutonomyUpdateEnabled: newVal })
+      });
+      showNotification('success', newVal ? 'Update-Autonomie aktiviert' : 'Update Human-in-the-Loop aktiviert');
     } catch (err) {
       showNotification('error', 'Fehler beim Speichern der Einstellung');
     }
@@ -579,30 +596,59 @@ export const TasksView: React.FC = () => {
           </p>
         </div>
 
-        {/* AI Autonomy Switch */}
-        <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-2 shadow-sm">
-          <div className="w-7 h-7 rounded-lg bg-primary-500/10 flex items-center justify-center text-primary-400 border border-primary-500/20">
-            <Bot className="w-3.5 h-3.5" />
-          </div>
-          <div className="flex flex-col">
-            <div className="flex items-center space-x-1.5">
-              <span className="text-xs font-semibold text-slate-200">Autonomie</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${aiAutonomyEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                {aiAutonomyEnabled ? 'Aktiv' : 'Aus'}
-              </span>
+        {/* AI Autonomy Switches for Design & Update Pipelines */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Design Pipeline Autonomy */}
+          <div className="flex items-center space-x-2.5 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
+            <div className="w-6 h-6 rounded-lg bg-primary-500/10 flex items-center justify-center text-primary-400 border border-primary-500/20">
+              <Sparkles className="w-3 h-3" />
             </div>
-            <span className="text-[10px] text-slate-400">Automatische Freigabe bei sauberem Befund</span>
+            <div className="flex flex-col">
+              <div className="flex items-center space-x-1">
+                <span className="text-[11px] font-semibold text-slate-200">Design Autonomie</span>
+                <span className={`text-[9px] px-1 py-0.2 rounded font-mono font-bold ${aiAutonomyDesignEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                  {aiAutonomyDesignEnabled ? 'Aktiv' : 'Aus'}
+                </span>
+              </div>
+              <span className="text-[9px] text-slate-500">Neue Designs (C1–C4)</span>
+            </div>
+            <button
+              onClick={toggleAiAutonomyDesign}
+              className={`w-8 h-4.5 rounded-full transition-colors relative ml-1.5 ${
+                aiAutonomyDesignEnabled ? 'bg-primary-500' : 'bg-slate-700'
+              }`}
+            >
+              <div className={`w-3 h-3 rounded-full bg-white transition-transform transform absolute top-0.5 ${
+                aiAutonomyDesignEnabled ? 'translate-x-4' : 'translate-x-0.5'
+              }`} />
+            </button>
           </div>
-          <button
-            onClick={toggleAiAutonomy}
-            className={`w-10 h-5 rounded-full transition-colors relative ml-2 ${
-              aiAutonomyEnabled ? 'bg-primary-500' : 'bg-slate-700'
-            }`}
-          >
-            <div className={`w-3.5 h-3.5 rounded-full bg-white transition-transform transform absolute top-0.5 ${
-              aiAutonomyEnabled ? 'translate-x-5' : 'translate-x-1'
-            }`} />
-          </button>
+
+          {/* Update Pipeline Autonomy */}
+          <div className="flex items-center space-x-2.5 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
+            <div className="w-6 h-6 rounded-lg bg-teal-500/10 flex items-center justify-center text-teal-400 border border-teal-500/20">
+              <Bot className="w-3 h-3" />
+            </div>
+            <div className="flex flex-col">
+              <div className="flex items-center space-x-1">
+                <span className="text-[11px] font-semibold text-slate-200">Update Autonomie</span>
+                <span className={`text-[9px] px-1 py-0.2 rounded font-mono font-bold ${aiAutonomyUpdateEnabled ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                  {aiAutonomyUpdateEnabled ? 'Aktiv' : 'Aus'}
+                </span>
+              </div>
+              <span className="text-[9px] text-slate-500">Amazon Updates (U1–U7)</span>
+            </div>
+            <button
+              onClick={toggleAiAutonomyUpdate}
+              className={`w-8 h-4.5 rounded-full transition-colors relative ml-1.5 ${
+                aiAutonomyUpdateEnabled ? 'bg-teal-500' : 'bg-slate-700'
+              }`}
+            >
+              <div className={`w-3 h-3 rounded-full bg-white transition-transform transform absolute top-0.5 ${
+                aiAutonomyUpdateEnabled ? 'translate-x-4' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
         </div>
       </div>
 

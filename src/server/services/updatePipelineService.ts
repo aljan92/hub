@@ -8,6 +8,7 @@ import { QueueService } from './queueService';
 import { SystemPromptService } from './systemPromptService';
 import { LLMService } from './llmService';
 import { TrademarkService } from './trademarkService';
+import { VisionOptimizationService } from './visionOptimizationService';
 
 export class UpdatePipelineService {
   /**
@@ -97,14 +98,21 @@ export class UpdatePipelineService {
 
     TaskLogService.updateTaskStatus(taskId, { status: 'PROCESSING', hasError: false });
 
-    // Prepare image base64 if available
+    // Prepare high-contrast dual-panel image for vision analysis
     let imageBase64: string | null = null;
-    if (task.localMbaPngPath && fs.existsSync(task.localMbaPngPath)) {
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const mbaPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+    const rawPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+    const targetPath = (task.localMbaPngPath && fs.existsSync(task.localMbaPngPath))
+      ? task.localMbaPngPath
+      : fs.existsSync(mbaPath) ? mbaPath : fs.existsSync(rawPath) ? rawPath : null;
+
+    if (targetPath) {
       try {
-        const fileBuffer = fs.readFileSync(task.localMbaPngPath);
-        imageBase64 = `data:image/png;base64,${fileBuffer.toString('base64')}`;
+        const { base64DataUrl } = await VisionOptimizationService.prepareVisionImage(targetPath);
+        imageBase64 = base64DataUrl;
       } catch (err) {
-        console.warn(`[UpdatePipeline] Konnte lokales Bild für Vision nicht lesen:`, err);
+        console.warn(`[UpdatePipeline] Konnte Bild für Vision nicht optimieren:`, err);
       }
     }
 
@@ -115,7 +123,7 @@ export class UpdatePipelineService {
     const oldDesc = rawPayload.description || '';
 
     const baseSystemPrompt = SystemPromptService.getUpdateVisionPrompt();
-    const systemPrompt = `${baseSystemPrompt}\n\nExisting Listing Details:\n- Brand: "${oldBrand}"\n- Title: "${oldTitle}"\n- Bullets: "${oldBullets}"\n- Description: "${oldDesc}"`;
+    const systemPrompt = `${baseSystemPrompt}\n\nNOTE ON 2-PANEL PREVIEW: The input image is rendered as a side-by-side dual panel (Left = on Dark Garment #0f172a, Right = on Light Garment #ffffff). This allows you to inspect contrast, read white or black text accurately, and determine which garment color to avoid.\n\nExisting Listing Details:\n- Brand: "${oldBrand}"\n- Title: "${oldTitle}"\n- Bullets: "${oldBullets}"\n- Description: "${oldDesc}"`;
 
     const userContent: any[] = [
       {
@@ -578,9 +586,10 @@ export class UpdatePipelineService {
     const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
     if (!u3.success) return { success: false, error: u3.error };
 
-    // Check Global AI Autonomy Switch
+    // Check AI Autonomy Switch for Update Pipeline
     const settings = loadSettings();
-    if (!settings.aiAutonomyEnabled) {
+    const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
+    if (!autonomyUpdate) {
       console.log(`[UpdatePipeline] 🛑 Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Prüfung) in Tasks.`);
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),

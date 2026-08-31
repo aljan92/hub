@@ -178,9 +178,9 @@ export class UpdateBackfillService {
 
     const activeTasks = TaskLogService.loadLogs();
     const activeTasksReview = activeTasks.filter(t => {
-      if (t.source !== 'UPDATE') return false;
+      if (t.source !== 'UPDATE' && t.suffix !== 'U') return false;
       if (['COMPLETED', 'REJECTED', 'CANCELLED', 'ERROR'].includes(t.status) || t.hasError) return false;
-      return true;
+      return ['AWAITING_DESIGN_REVIEW', 'UPDATE_ANALYZED', 'AWAITING_TM_REVIEW'].includes(t.status);
     });
 
     // Collect distinct design identifiers across Queue, active Tasks, and In-Flight
@@ -206,6 +206,15 @@ export class UpdateBackfillService {
       tasksReviewCount: activeTasksReview.length,
       inFlightCount: this.inFlightDesigns.size
     };
+  }
+
+  /**
+   * Release a specific design lock from inFlight
+   */
+  public static releaseInFlight(designId: string) {
+    if (!designId) return;
+    this.inFlightDesigns.delete(designId.trim().toLowerCase());
+    this.inFlightDesigns.delete(designId.trim());
   }
 
   /**

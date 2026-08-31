@@ -361,13 +361,19 @@ MBA HUB/
 ### 10.4 Update-Pipeline & Queue Optimierung
 - **Überspringen der Vektorisierung:** Update-Tasks (#xxx-U) überspringen nach Freigabe des Listings automatisch die Vektorisierung und wandern direkt in die Upload-Queue (Step U7).
 - **Transparente Master-PNG Thumbnails:** Alle Thumbnails in der Queue nutzen die echte, freigestellte `_mba.png`.
-- **Pool-Reset & In-Flight Bereinigung:** Button *„Pool zurücksetzen“* im Header der Queue zur sofortigen Freigabe von In-Memory Locks und Bereinigung offener Tasks.
-
 ### 10.5 ⚙️ Konfigurierbare LLM-Parameter & 25-Punkte Meister-SEO-Prompt
 - **LLM Settings (`SettingsView.tsx`, `settingsService.ts`):** `Temperature` (Standard: 0.35), `Max Tokens` (Standard: 3000) und `Timeout (Sek.)` (Standard: 90s) sind direkt in den Einstellungen unter *OpenRouter / OpenAI LLM* einstellbar.
 - **25-Punkte MBA Master-Prompt (`systemPromptService.ts`):** Standard-Listing-Prompt für beide Pipelines (Neu & Update) mit interner Nischen-Recherche, Insider-Terminologie, Cross-Field Deduplikation, Quote-Fallback in Bullet 1 bei Platzmangel und strikter Subnischen-Suffix-Titelformel (50–60 Zeichen).
-- **Transparente PNG Alpha-Erkennung:** Vision-System-Prompts erkennen nun helle/weiße Motive auf transparentem Alpha-Kanal gezielt als Designs für dunkle Shirts und wählen automatisch `avoidColor: "White"`.
 - **Single Source of Truth bei Nischen-Feldern:** Explizites Respektieren leerer/gelöschter Felder (z.B. gelöschte Subnische wird als leer an den Listing-Generator übergeben).
+
+### 10.6 👁️ Dual-Panel Vision Optimizer, Getrennte Pipeline-Autonomie & Live Pool-Sync
+- **Dual-Panel Vision Optimizer (`visionOptimizationService.ts`):** Vor der Übergabe an Vision-Modelle rendert die Engine transparente Designs als 1024x512 Dual-Panel (Links: dunkler Hintergrund `#0f172a`, Rechts: weißer Hintergrund `#ffffff`). Rein weiße Schriften und helle Zitate heben sich links mit 100% Kontrast glasklar ab.
+- **Getrennte Pipeline-Autonomie (`TasksView.tsx`, `SettingsView.tsx`, `settingsService.ts`):** Zwei getrennte Schalter:
+  - 🎨 **Design-Pipeline Autonomie (`aiAutonomyDesignEnabled`):** Automatisches Überspringen von Checkpoints 1–4 für neue Designs.
+  - 🔄 **Update-Pipeline Autonomie (`aiAutonomyUpdateEnabled`):** Automatisches Überspringen der Question Phase für Amazon-Updates.
+- **Live Pool-Bestand Sync beim Queue-Löschen (`queueService.ts`, `updateBackfillService.ts`):** Das Löschen eines Designs in der Queue bricht zugehörige Tasks ab und gibt In-Flight Locks sofort frei, sodass der Pool-Zähler in Echtzeit sinkt und die Automatik direkt nachzieht.
+
+
 
 
 

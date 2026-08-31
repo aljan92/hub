@@ -41,6 +41,8 @@ export interface AppSettings {
   autoSyncEnabled: boolean;
   mcpApiKey: string;
   aiAutonomyEnabled: boolean;
+  aiAutonomyDesignEnabled: boolean;
+  aiAutonomyUpdateEnabled: boolean;
   queueUploadScheduleTime: string; // e.g. "04:00" or "off"
   queueMaxDropPerDesign: number;   // e.g. 10
   queueAutoBalance: boolean;       // e.g. true
@@ -96,6 +98,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoSyncEnabled: true,
   mcpApiKey: process.env.MBA_MCP_API_KEY || '',
   aiAutonomyEnabled: false,
+  aiAutonomyDesignEnabled: false,
+  aiAutonomyUpdateEnabled: false,
   queueUploadScheduleTime: 'off',
   queueMaxDropPerDesign: 10,
   queueAutoBalance: true,

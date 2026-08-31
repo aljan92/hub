@@ -656,7 +656,7 @@ export class QueueService {
     );
     if (index === -1) return false;
 
-    this.items.splice(index, 1);
+    const [removedItem] = this.items.splice(index, 1);
     // Re-index sortOrder
     this.items.forEach((item, idx) => {
       item.sortOrder = idx;
@@ -664,6 +664,31 @@ export class QueueService {
 
     this.saveQueue();
     this.rebalanceQueue();
+
+    // If removed item was an update item or associated with a task, cancel the task in taskLogService
+    try {
+      const targetTaskId = removedItem.taskId || removedItem.id;
+      const targetDesignId = removedItem.designId;
+      const { TaskLogService } = require('./taskLogService');
+      const allLogs = TaskLogService.loadLogs();
+      let changed = false;
+      for (const t of allLogs) {
+        if (
+          t.id === targetTaskId || 
+          t.id === `#${targetTaskId}` || 
+          (targetDesignId && (t.payload?.designId === targetDesignId || t.id.includes(targetDesignId)))
+        ) {
+          if (!['COMPLETED', 'REJECTED', 'CANCELLED'].includes(t.status)) {
+            t.status = 'CANCELLED';
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        TaskLogService.saveLogs(allLogs);
+      }
+    } catch (e) {}
+
     return true;
   }
 
