@@ -51067,7 +51067,87 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   },
   "overall_verdict": "APPROVED"
 }`;
-    DEFAULT_UPDATE_VISION_SYSTEM_PROMPT = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+    DEFAULT_UPDATE_VISION_SYSTEM_PROMPT = `You are an expert AI Art Director and POD (Print on Demand) Quality Assurance Specialist for Amazon Merch on Demand.
+Your task is to analyze an existing Amazon Merch design and its current listing to extract accurate niche data, verify typography, determine garment color rules, and audit overall visual quality.
+
+==================================================
+1. 2x2 COLOR GRID LAYOUT:
+==================================================
+The input artwork is rendered onto a 2x2 Grid with 4 standard Merch garment colors:
+- Top-Left: Black (#111827) \u2014 checks white/light text and dark shirt contrast.
+- Top-Right: White (#ffffff) \u2014 checks black/dark text and light shirt contrast.
+- Bottom-Left: Red / Cranberry (#c53030) \u2014 checks color harmony and legibility on vibrant shirts.
+- Bottom-Right: Asphalt (#383E42) \u2014 checks midtone contrast and subtle background artifacts.
+
+==================================================
+2. QUOTE & TEXT EXTRACTION:
+==================================================
+- Read and transcribe the exact text/phrase visible in the design across the panels where contrast is strongest.
+- Minor punctuation differences (colons, dashes, line breaks) are 100% acceptable.
+- Only flag quote errors if words are misspelled, corrupted, or completely missing.
+
+==================================================
+3. NICHE & SUBNICHE CLASSIFICATION:
+==================================================
+- "niche1": Primary main subject/theme (e.g. "Horse", "Coffee", "Fishing", "Truck").
+- "niche2": Secondary cross-theme if present (e.g. "Coffee" in "I Love Horses and Coffee", else "none").
+- "subniche": Specific breed, vehicle model, sub-species or niche style (e.g. "Shetland Pony", "Bass Fishing", "Diesel Truck", else "none").
+
+==================================================
+4. TARGET AUDIENCE (FIT TYPES):
+==================================================
+- Select from ["Men", "Women", "Youth"]. Multiple selections encouraged for general/humorous themes.
+
+==================================================
+5. PRODUCT COLORS TO AVOID (CONTRAST):
+==================================================
+- Inspect how the graphic appears across the 4 panels:
+  * If the design is pure white or very light and invisible on the White panel -> select "White".
+  * If the design is pure black or very dark and invisible on the Black panel -> select "Black".
+  * If the design has strong contrast, colored borders, or works well on all colors -> select "None".
+
+==================================================
+6. DESIGN QUALITY & ARTIFACTS AUDIT:
+==================================================
+Inspect the artwork for quality defects:
+- Are there ugly white or gray halos around edges visible on the Black/Asphalt panels?
+- Is the graphic severely pixelated, blurry, or suffering from heavy JPEG artifacts?
+- Is the text cut off or illegible?
+- If clean and production-ready: "quality_verdict": "APPROVED", "quality_issues": null, "recommendation": "PROCEED", "overall_verdict": "APPROVED".
+- If severe visual flaws / halos / low-res flaws exist: "quality_verdict": "DEFECTIVE", "quality_issues": "<Concise description of defect>", "recommendation": "MANUAL_INSPECTION_REQUIRED", "overall_verdict": "REJECTED".
+
+==================================================
+OUTPUT FORMAT:
+==================================================
+Respond ONLY with a valid JSON object strictly matching this schema:
+{
+  "quote_check": {
+    "requested_quote": "<Listing quote or detected text>",
+    "detected_quote": "<Actual text read from artwork>",
+    "quote_matches": true,
+    "quote_errors": null,
+    "regenerate_recommended": false
+  },
+  "niche_analysis": {
+    "niche1": "Horse",
+    "niche2": "none",
+    "subniche": "Shetland Pony"
+  },
+  "target_group": {
+    "selected": ["Men", "Women", "Youth"],
+    "reason": "<Brief explanation>"
+  },
+  "avoid_product_colors": {
+    "avoid": "None",
+    "reason": "<Brief explanation>"
+  },
+  "design_quality": {
+    "quality_verdict": "APPROVED",
+    "quality_issues": null,
+    "recommendation": "PROCEED"
+  },
+  "overall_verdict": "APPROVED"
+}`;
     DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are a world-class Amazon Merch on Demand (MBA) SEO strategist, niche researcher, listing copywriter and compliance specialist.
 
 Your task is to create a highly relevant, search-optimized, natural-sounding and policy-compliant English Merch by Amazon listing based on the provided design, quote, niches and keywords.
@@ -219483,12 +219563,13 @@ var init_visionOptimizationService = __esm2({
     import_fs77 = __toESM2(require("fs"), 1);
     VisionOptimizationService = class {
       /**
-       * Generates a high-contrast Vision-optimized image for LLMs (OpenRouter/Claude/Gemini).
-       * For transparent PNGs: Creates a 1024x512 Dual-Panel canvas
-       * - Left Panel (512x512, Dark Slate #0f172a): Perfect contrast for pure white/light text and graphics.
-       * - Right Panel (512x512, Pure White #ffffff): Perfect contrast for pure black/dark text and graphics.
+       * Generates a 4-color 2x2 Grid (1024x1024) preview for Vision LLMs (OpenRouter/Claude/Gemini).
+       * - Top-Left: Black (#111827) - checks white/bright graphics & edge halos
+       * - Top-Right: White (#ffffff) - checks black/dark graphics & contrast
+       * - Bottom-Left: Red / Cranberry (#c53030) - checks color clashes & vibrancy
+       * - Bottom-Right: Asphalt (#383E42) - checks midtone legibility & subtle artifacts
        *
-       * For non-transparent images: Scales to max 1024x1024 for fast inference and token efficiency.
+       * For non-transparent images: Scales down to max 1024x1024 for fast inference and token efficiency.
        */
       static async prepareVisionImage(input) {
         try {
@@ -219517,16 +219598,16 @@ var init_visionOptimizationService = __esm2({
             const designHeight = resizedMeta.height || maxDesignSize;
             const leftOffset = Math.round((panelSize - designWidth) / 2);
             const topOffset = Math.round((panelSize - designHeight) / 2);
-            const darkPanel = await (0, import_sharp.default)({
+            const blackPanel = await (0, import_sharp.default)({
               create: {
                 width: panelSize,
                 height: panelSize,
                 channels: 4,
-                background: { r: 15, g: 23, b: 42, alpha: 1 }
-                // #0f172a
+                background: { r: 17, g: 24, b: 39, alpha: 1 }
+                // #111827
               }
             }).composite([{ input: resizedDesignBuffer, left: leftOffset, top: topOffset }]).png().toBuffer();
-            const lightPanel = await (0, import_sharp.default)({
+            const whitePanel = await (0, import_sharp.default)({
               create: {
                 width: panelSize,
                 height: panelSize,
@@ -219535,38 +219616,58 @@ var init_visionOptimizationService = __esm2({
                 // #ffffff
               }
             }).composite([{ input: resizedDesignBuffer, left: leftOffset, top: topOffset }]).png().toBuffer();
-            const dualPanel = await (0, import_sharp.default)({
+            const redPanel = await (0, import_sharp.default)({
               create: {
-                width: panelSize * 2,
+                width: panelSize,
                 height: panelSize,
                 channels: 4,
-                background: { r: 30, g: 41, b: 59, alpha: 1 }
-                // #1e293b
+                background: { r: 197, g: 48, b: 48, alpha: 1 }
+                // #c53030
+              }
+            }).composite([{ input: resizedDesignBuffer, left: leftOffset, top: topOffset }]).png().toBuffer();
+            const asphaltPanel = await (0, import_sharp.default)({
+              create: {
+                width: panelSize,
+                height: panelSize,
+                channels: 4,
+                background: { r: 56, g: 62, b: 66, alpha: 1 }
+                // #383E42
+              }
+            }).composite([{ input: resizedDesignBuffer, left: leftOffset, top: topOffset }]).png().toBuffer();
+            const grid2x2 = await (0, import_sharp.default)({
+              create: {
+                width: panelSize * 2,
+                height: panelSize * 2,
+                channels: 4,
+                background: { r: 15, g: 23, b: 42, alpha: 1 }
+                // #0f172a divider background
               }
             }).composite([
-              { input: darkPanel, left: 0, top: 0 },
-              { input: lightPanel, left: panelSize, top: 0 }
+              { input: blackPanel, left: 0, top: 0 },
+              { input: whitePanel, left: panelSize, top: 0 },
+              { input: redPanel, left: 0, top: panelSize },
+              { input: asphaltPanel, left: panelSize, top: panelSize }
             ]).jpeg({ quality: 88 }).toBuffer();
             return {
-              base64DataUrl: `data:image/jpeg;base64,${dualPanel.toString("base64")}`,
-              isDualPanel: true
+              base64DataUrl: `data:image/jpeg;base64,${grid2x2.toString("base64")}`,
+              is4Panel: true
             };
           } else {
             const resized = await (0, import_sharp.default)(buffer).resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
             return {
               base64DataUrl: `data:image/jpeg;base64,${resized.toString("base64")}`,
-              isDualPanel: false
+              is4Panel: false
             };
           }
         } catch (err) {
           console.warn(`[VisionOptimizationService] Fallback to raw buffer:`, err.message);
           if (typeof input === "string" && input.startsWith("data:image")) {
-            return { base64DataUrl: input, isDualPanel: false };
+            return { base64DataUrl: input, is4Panel: false };
           }
           if (Buffer.isBuffer(input)) {
-            return { base64DataUrl: `data:image/png;base64,${input.toString("base64")}`, isDualPanel: false };
+            return { base64DataUrl: `data:image/png;base64,${input.toString("base64")}`, is4Panel: false };
           }
-          return { base64DataUrl: "", isDualPanel: false };
+          return { base64DataUrl: "", is4Panel: false };
         }
       }
     };
@@ -220167,8 +220268,6 @@ var init_updatePipelineService = __esm2({
         const baseSystemPrompt = SystemPromptService.getUpdateVisionPrompt();
         const systemPrompt = `${baseSystemPrompt}
 
-NOTE ON 2-PANEL PREVIEW: The input image is rendered as a side-by-side dual panel (Left = on Dark Garment #0f172a, Right = on Light Garment #ffffff). This allows you to inspect contrast, read white or black text accurately, and determine which garment color to avoid.
-
 Existing Listing Details:
 - Brand: "${oldBrand}"
 - Title: "${oldTitle}"
@@ -220575,24 +220674,29 @@ Bullets: ${oldBullets}`
         if (!u3.success) return { success: false, error: u3.error };
         const settings = loadSettings();
         const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
-        if (!autonomyUpdate) {
-          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Pr\xFCfung) in Tasks.`);
+        const isDefective = u3.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || u3.analysisResult?.overall_verdict === "REJECTED";
+        const qualityReason = u3.analysisResult?.design_quality?.quality_issues;
+        if (!autonomyUpdate || isDefective) {
+          const pauseReason = isDefective ? `\u26A0\uFE0F Mangelhafte Design-Qualit\xE4t erkannt (${qualityReason || "Kantenfehler/Halos/Artefakte"}). Autonomie pausiert zur manuellen Sichtpr\xFCfung.` : "Vision-Analyse abgeschlossen. Wartet auf manuelle Pr\xFCfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.";
+          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Pr\xFCfung) in Tasks: ${pauseReason}`);
           TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
-            title: "\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)",
+            title: isDefective ? "\u26A0\uFE0F Qualit\xE4tswarnung: \xDCbergeben an Tasks" : "\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)",
             content: {
               checkpoint: "DESIGN_REVIEW",
-              reason: "Vision-Analyse abgeschlossen. Wartet auf manuelle Pr\xFCfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.",
-              isApproved: true,
-              analysis: u3.analysisResult
+              reason: pauseReason,
+              isApproved: !isDefective,
+              analysis: u3.analysisResult,
+              isDefective,
+              qualityIssues: qualityReason
             }
           });
           TaskLogService2.updateTaskStatus(taskId, {
             status: "AWAITING_DESIGN_REVIEW",
             checkpoint: "DESIGN_REVIEW",
             analysisResult: u3.analysisResult,
-            hasError: false
+            hasError: isDefective
           });
           return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: "DESIGN_REVIEW" };
         }

@@ -123,7 +123,7 @@ export class UpdatePipelineService {
     const oldDesc = rawPayload.description || '';
 
     const baseSystemPrompt = SystemPromptService.getUpdateVisionPrompt();
-    const systemPrompt = `${baseSystemPrompt}\n\nNOTE ON 2-PANEL PREVIEW: The input image is rendered as a side-by-side dual panel (Left = on Dark Garment #0f172a, Right = on Light Garment #ffffff). This allows you to inspect contrast, read white or black text accurately, and determine which garment color to avoid.\n\nExisting Listing Details:\n- Brand: "${oldBrand}"\n- Title: "${oldTitle}"\n- Bullets: "${oldBullets}"\n- Description: "${oldDesc}"`;
+    const systemPrompt = `${baseSystemPrompt}\n\nExisting Listing Details:\n- Brand: "${oldBrand}"\n- Title: "${oldTitle}"\n- Bullets: "${oldBullets}"\n- Description: "${oldDesc}"`;
 
     const userContent: any[] = [
       {
@@ -586,20 +586,29 @@ export class UpdatePipelineService {
     const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
     if (!u3.success) return { success: false, error: u3.error };
 
-    // Check AI Autonomy Switch for Update Pipeline
+    // Check AI Autonomy Switch & Quality Assessment for Update Pipeline
     const settings = loadSettings();
     const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
-    if (!autonomyUpdate) {
-      console.log(`[UpdatePipeline] 🛑 Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Prüfung) in Tasks.`);
+    const isDefective = u3.analysisResult?.design_quality?.quality_verdict === 'DEFECTIVE' || u3.analysisResult?.overall_verdict === 'REJECTED';
+    const qualityReason = u3.analysisResult?.design_quality?.quality_issues;
+
+    if (!autonomyUpdate || isDefective) {
+      const pauseReason = isDefective
+        ? `⚠️ Mangelhafte Design-Qualität erkannt (${qualityReason || 'Kantenfehler/Halos/Artefakte'}). Autonomie pausiert zur manuellen Sichtprüfung.`
+        : 'Vision-Analyse abgeschlossen. Wartet auf manuelle Prüfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.';
+
+      console.log(`[UpdatePipeline] 🛑 Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Prüfung) in Tasks: ${pauseReason}`);
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TASK_HANDOFF',
-        title: 'Übergeben an Tasks (Design- & Fragen-Prüfung)',
+        title: isDefective ? '⚠️ Qualitätswarnung: Übergeben an Tasks' : 'Übergeben an Tasks (Design- & Fragen-Prüfung)',
         content: {
           checkpoint: 'DESIGN_REVIEW',
-          reason: 'Vision-Analyse abgeschlossen. Wartet auf manuelle Prüfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.',
-          isApproved: true,
-          analysis: u3.analysisResult
+          reason: pauseReason,
+          isApproved: !isDefective,
+          analysis: u3.analysisResult,
+          isDefective,
+          qualityIssues: qualityReason
         }
       });
 
@@ -607,13 +616,13 @@ export class UpdatePipelineService {
         status: 'AWAITING_DESIGN_REVIEW',
         checkpoint: 'DESIGN_REVIEW',
         analysisResult: u3.analysisResult,
-        hasError: false
+        hasError: isDefective
       });
 
       return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: 'DESIGN_REVIEW' };
     }
 
-    // If autonomy is enabled, proceed automatically through U4 -> U7
+    // If autonomy is enabled and design quality is approved, proceed automatically through U4 -> U7
     return await this.runFromStep(taskId, 'U4');
   }
 

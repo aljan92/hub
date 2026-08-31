@@ -366,11 +366,15 @@ MBA HUB/
 - **25-Punkte MBA Master-Prompt (`systemPromptService.ts`):** Standard-Listing-Prompt für beide Pipelines (Neu & Update) mit interner Nischen-Recherche, Insider-Terminologie, Cross-Field Deduplikation, Quote-Fallback in Bullet 1 bei Platzmangel und strikter Subnischen-Suffix-Titelformel (50–60 Zeichen).
 - **Single Source of Truth bei Nischen-Feldern:** Explizites Respektieren leerer/gelöschter Felder (z.B. gelöschte Subnische wird als leer an den Listing-Generator übergeben).
 
-### 10.6 👁️ Dual-Panel Vision Optimizer, Getrennte Pipeline-Autonomie & Live Pool-Sync
-- **Dual-Panel Vision Optimizer (`visionOptimizationService.ts`):** Vor der Übergabe an Vision-Modelle rendert die Engine transparente Designs als 1024x512 Dual-Panel (Links: dunkler Hintergrund `#0f172a`, Rechts: weißer Hintergrund `#ffffff`). Rein weiße Schriften und helle Zitate heben sich links mit 100% Kontrast glasklar ab.
-- **Getrennte Pipeline-Autonomie (`TasksView.tsx`, `SettingsView.tsx`, `settingsService.ts`):** Zwei getrennte Schalter:
-  - 🎨 **Design-Pipeline Autonomie (`aiAutonomyDesignEnabled`):** Automatisches Überspringen von Checkpoints 1–4 für neue Designs.
-  - 🔄 **Update-Pipeline Autonomie (`aiAutonomyUpdateEnabled`):** Automatisches Überspringen der Question Phase für Amazon-Updates.
+### 10.6 👁️ 2x2 Grid Vision Optimizer, Design-Qualitätsaudit & Exklusive Task-Autonomie
+- **2x2 Grid Vision Optimizer (`visionOptimizationService.ts`):** Rendert transparente Designs für die Vision-KI als 1024x1024 4-Farben-Grid auf den 4 Merch-Standardfarben:
+  - **Oben Links:** Schwarz (`#111827`) — Kontrast für weiße Schriften & Erkennung von Kanten-Halos.
+  - **Oben Rechts:** Weiß (`#ffffff`) — Kontrast für dunkle Typografie.
+  - **Unten Links:** Rot / Cranberry (`#c53030`) — Erkennung von Farbkonflikten.
+  - **Unten Rechts:** Asphalt (`#383E42`) — Prüfung von Zwischentönen und Bildartefakten.
+- **Design-Qualitätsaudit (`DEFAULT_UPDATE_VISION_SYSTEM_PROMPT`):** Die Vision-KI bewertet die visuelle Qualität mit `design_quality: { quality_verdict: "APPROVED" | "DEFECTIVE", quality_issues }`.
+- **Autonomie-Sicherheitsstopp bei Mängeln (`updatePipelineService.ts`, `TasksView.tsx`):** Ergibt der Qualitätsbefund `DEFECTIVE`, stoppt der Task zwingend in `Tasks & Review` mit roter Warnbox, selbst wenn die Update-Autonomie aktiv ist.
+- **Exklusive Task-Autonomie:** Die Autonomie-Schalter für Design- und Update-Pipeline befinden sich exklusiv im Header von `Tasks & Review`.
 - **Live Pool-Bestand Sync beim Queue-Löschen (`queueService.ts`, `updateBackfillService.ts`):** Das Löschen eines Designs in der Queue bricht zugehörige Tasks ab und gibt In-Flight Locks sofort frei, sodass der Pool-Zähler in Echtzeit sinkt und die Automatik direkt nachzieht.
 
 

@@ -957,6 +957,42 @@ export const TasksView: React.FC = () => {
                             Update-Audit &amp; Fragen
                           </h4>
 
+                          {/* Quality Check Card */}
+                          {activeTask.analysisResult?.design_quality && (
+                            <div className={`p-3 rounded-xl border space-y-1.5 ${
+                              activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE'
+                                ? 'bg-rose-500/10 border-rose-500/30'
+                                : 'bg-emerald-500/10 border-emerald-500/20'
+                            }`}>
+                              <div className="flex items-center justify-between text-xs">
+                                <span className={`font-semibold flex items-center gap-1.5 ${
+                                  activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE'
+                                    ? 'text-rose-300'
+                                    : 'text-emerald-300'
+                                }`}>
+                                  {activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE' ? (
+                                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                                  ) : (
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                                  )}
+                                  Design-Qualitätsprüfung (2x2 Grid)
+                                </span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                  activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE'
+                                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                }`}>
+                                  {activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE' ? 'MANGELHAFT (DEFECTIVE)' : 'SAUBER (APPROVED)'}
+                                </span>
+                              </div>
+                              {activeTask.analysisResult.design_quality.quality_issues && (
+                                <p className="text-[11px] text-rose-200 leading-relaxed bg-slate-950/80 p-2 rounded-lg border border-rose-500/20 font-mono">
+                                  {activeTask.analysisResult.design_quality.quality_issues}
+                                </p>
+                              )}
+                            </div>
+                          )}
+
                           {/* Question 1: Rewrite Needed & Reasoning */}
                           <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
                             <div className="flex items-center justify-between text-xs">

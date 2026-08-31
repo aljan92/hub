@@ -1117,66 +1117,6 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* 6.1 Pipeline Autonomy Card */}
-        <div className="glass-card p-5 rounded-2xl space-y-4 md:col-span-2 border border-slate-800">
-          <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center justify-between">
-            <span className="flex items-center">
-              <Bot className="w-4 h-4 mr-2 text-primary-400" />
-              KI-Autonomie &amp; Human-in-the-Loop
-            </span>
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Design Pipeline */}
-            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <Sparkles className="w-4 h-4 text-primary-400" />
-                  <span className="text-xs font-bold text-slate-200">Design-Pipeline Autonomie</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Automatische Freigabe von neuen Designs (C1–C4), wenn Bild, Quote und Trademarks fehlerfrei sind.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAiAutonomyDesignEnabled(!aiAutonomyDesignEnabled)}
-                className={`w-11 h-6 rounded-full transition-colors relative ml-4 shrink-0 ${
-                  aiAutonomyDesignEnabled ? 'bg-primary-500' : 'bg-slate-700'
-                }`}
-              >
-                <div className={`w-4 h-4 rounded-full bg-white transition-transform transform absolute top-1 ${
-                  aiAutonomyDesignEnabled ? 'translate-x-6' : 'translate-x-1'
-                }`} />
-              </button>
-            </div>
-
-            {/* Update Pipeline */}
-            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <Bot className="w-4 h-4 text-teal-400" />
-                  <span className="text-xs font-bold text-slate-200">Update-Pipeline Autonomie</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Automatische Freigabe von Amazon-Update-Tasks (U1–U7) ohne manuelles Anhalten in der Question Phase.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAiAutonomyUpdateEnabled(!aiAutonomyUpdateEnabled)}
-                className={`w-11 h-6 rounded-full transition-colors relative ml-4 shrink-0 ${
-                  aiAutonomyUpdateEnabled ? 'bg-teal-500' : 'bg-slate-700'
-                }`}
-              >
-                <div className={`w-4 h-4 rounded-full bg-white transition-transform transform absolute top-1 ${
-                  aiAutonomyUpdateEnabled ? 'translate-x-6' : 'translate-x-1'
-                }`} />
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* 7. Hermes Agent & Remote API (MCP) Card */}
         <div className="glass-card p-5 rounded-2xl space-y-4 md:col-span-2 border border-primary-500/30 shadow-xl relative overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
