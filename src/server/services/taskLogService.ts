@@ -1814,6 +1814,108 @@ export class TaskLogService {
     this.saveLogs([]);
   }
 
+  /**
+   * Complete System Purge / Fresh Workspace Reset:
+   * 1. Deletes all tasks and event logs
+   * 2. Resets task counter to 0 (#001 next)
+   * 3. Clears upload queue completely
+   * 4. Deletes all generated/downloaded artwork, PNGs, SVGs, 4-Panels and 2x2 Grids
+   * 5. Emits realtime WebSocket events
+   */
+  static purgeAllWorkspaceData(): {
+    deletedTasks: number;
+    deletedQueueItems: number;
+    deletedFiles: number;
+  } {
+    console.log('[TaskLogService] 🚨 Starte vollständigen System-Reset (Purge All Workspace Data)...');
+    
+    // 1. Clear Tasks
+    const logs = this.loadLogs();
+    const deletedTasks = logs.length;
+    this.inMemoryLogs = [];
+    this.saveLogs([]);
+
+    // 2. Reset Counter to 0
+    this.currentCounter = 0;
+    try {
+      if (fs.existsSync(this.counterFile)) {
+        fs.writeFileSync(this.counterFile, JSON.stringify({ counter: 0 }, null, 2), 'utf-8');
+      }
+    } catch (err) {
+      console.warn('[TaskLogService] Konnte Counter-Datei nicht zurücksetzen:', err);
+    }
+
+    // 3. Clear Upload Queue
+    let deletedQueueItems = 0;
+    try {
+      const { QueueService } = require('./queueService');
+      const queueItems = QueueService.loadQueue();
+      deletedQueueItems = queueItems.length;
+      QueueService.clearQueue(false);
+    } catch (err) {
+      console.warn('[TaskLogService] Konnte Queue nicht leeren:', err);
+    }
+
+    // 4. Delete all files in data/designs/
+    let deletedFiles = 0;
+    const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+    if (fs.existsSync(designsDir)) {
+      try {
+        const files = fs.readdirSync(designsDir);
+        for (const file of files) {
+          if (file.startsWith('.')) continue;
+          try {
+            const filePath = path.join(designsDir, file);
+            if (fs.statSync(filePath).isFile()) {
+              fs.unlinkSync(filePath);
+              deletedFiles++;
+            }
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.warn('[TaskLogService] Konnte designs-Ordner nicht auslesen:', err);
+      }
+    }
+
+    // 5. Delete any temporary/leftover design files in data/ directory
+    try {
+      const dataDir = path.resolve(process.cwd(), 'data');
+      if (fs.existsSync(dataDir)) {
+        const files = fs.readdirSync(dataDir);
+        for (const file of files) {
+          if (
+            file.endsWith('_grid2x2.jpg') ||
+            file.endsWith('_mba.png') ||
+            file.endsWith('_orig.svg') ||
+            file.endsWith('_4panel.jpg') ||
+            file.endsWith('.svg') ||
+            file.startsWith('test_')
+          ) {
+            try {
+              const filePath = path.join(dataDir, file);
+              if (fs.statSync(filePath).isFile()) {
+                fs.unlinkSync(filePath);
+                deletedFiles++;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[TaskLogService] Konnte temporäre data-Dateien nicht löschen:', err);
+    }
+
+    // 6. Broadcast Realtime WebSocket Events
+    if (this.eventBroadcaster) {
+      this.eventBroadcaster('ALL_TASKS_CLEARED', { deletedTasks, deletedQueueItems, deletedFiles });
+      this.eventBroadcaster('TASKS_UPDATED', { tasks: [] });
+      this.eventBroadcaster('QUEUE_UPDATED', { items: [] });
+    }
+
+    console.log(`[TaskLogService] ✅ System-Reset abgeschlossen: ${deletedTasks} Tasks, ${deletedQueueItems} Queue-Elemente, ${deletedFiles} Bild/Design-Dateien gelöscht.`);
+    return { deletedTasks, deletedQueueItems, deletedFiles };
+  }
+
   static deleteTaskLog(taskId: string): boolean {
     const logs = this.loadLogs();
     const initialLen = logs.length;

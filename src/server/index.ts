@@ -1112,6 +1112,39 @@ app.delete('/api/v1/tasks/log', (req, res) => {
   res.json({ success: true, message: 'All task logs cleared' });
 });
 
+// Full Workspace Reset: Deletes all tasks, queue items, and all design/artwork files on disk
+app.post('/api/v1/system/purge-all-data', (req, res) => {
+  try {
+    const result = TaskLogService.purgeAllWorkspaceData();
+    broadcast('TASK_LOGS_CLEARED', {});
+    broadcast('TASKS_UPDATED', { tasks: [] });
+    broadcast('QUEUE_UPDATED', { items: [] });
+    res.json({
+      success: true,
+      message: `System erfolgreich zurückgesetzt: ${result.deletedTasks} Tasks, ${result.deletedQueueItems} Queue-Einträge und ${result.deletedFiles} Design-Dateien gelöscht.`,
+      ...result
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Fehler beim System-Reset' });
+  }
+});
+
+app.delete('/api/v1/system/purge-all-data', (req, res) => {
+  try {
+    const result = TaskLogService.purgeAllWorkspaceData();
+    broadcast('TASK_LOGS_CLEARED', {});
+    broadcast('TASKS_UPDATED', { tasks: [] });
+    broadcast('QUEUE_UPDATED', { items: [] });
+    res.json({
+      success: true,
+      message: `System erfolgreich zurückgesetzt: ${result.deletedTasks} Tasks, ${result.deletedQueueItems} Queue-Einträge und ${result.deletedFiles} Design-Dateien gelöscht.`,
+      ...result
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Fehler beim System-Reset' });
+  }
+});
+
 app.delete('/api/v1/tasks/:taskId', (req, res) => {
   const { taskId } = req.params;
   const deleted = TaskLogService.deleteTaskLog(taskId);

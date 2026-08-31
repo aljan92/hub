@@ -223485,6 +223485,85 @@ Beantworte die Analysefragen streng als JSON!`;
         this.inMemoryLogs = [];
         this.saveLogs([]);
       }
+      /**
+       * Complete System Purge / Fresh Workspace Reset:
+       * 1. Deletes all tasks and event logs
+       * 2. Resets task counter to 0 (#001 next)
+       * 3. Clears upload queue completely
+       * 4. Deletes all generated/downloaded artwork, PNGs, SVGs, 4-Panels and 2x2 Grids
+       * 5. Emits realtime WebSocket events
+       */
+      static purgeAllWorkspaceData() {
+        console.log("[TaskLogService] \u{1F6A8} Starte vollst\xE4ndigen System-Reset (Purge All Workspace Data)...");
+        const logs = this.loadLogs();
+        const deletedTasks = logs.length;
+        this.inMemoryLogs = [];
+        this.saveLogs([]);
+        this.currentCounter = 0;
+        try {
+          if (import_fs81.default.existsSync(this.counterFile)) {
+            import_fs81.default.writeFileSync(this.counterFile, JSON.stringify({ counter: 0 }, null, 2), "utf-8");
+          }
+        } catch (err) {
+          console.warn("[TaskLogService] Konnte Counter-Datei nicht zur\xFCcksetzen:", err);
+        }
+        let deletedQueueItems = 0;
+        try {
+          const { QueueService: QueueService2 } = (init_queueService(), __toCommonJS2(queueService_exports));
+          const queueItems = QueueService2.loadQueue();
+          deletedQueueItems = queueItems.length;
+          QueueService2.clearQueue(false);
+        } catch (err) {
+          console.warn("[TaskLogService] Konnte Queue nicht leeren:", err);
+        }
+        let deletedFiles = 0;
+        const designsDir = import_path76.default.resolve(process.cwd(), "data", "designs");
+        if (import_fs81.default.existsSync(designsDir)) {
+          try {
+            const files = import_fs81.default.readdirSync(designsDir);
+            for (const file of files) {
+              if (file.startsWith(".")) continue;
+              try {
+                const filePath = import_path76.default.join(designsDir, file);
+                if (import_fs81.default.statSync(filePath).isFile()) {
+                  import_fs81.default.unlinkSync(filePath);
+                  deletedFiles++;
+                }
+              } catch (e) {
+              }
+            }
+          } catch (err) {
+            console.warn("[TaskLogService] Konnte designs-Ordner nicht auslesen:", err);
+          }
+        }
+        try {
+          const dataDir = import_path76.default.resolve(process.cwd(), "data");
+          if (import_fs81.default.existsSync(dataDir)) {
+            const files = import_fs81.default.readdirSync(dataDir);
+            for (const file of files) {
+              if (file.endsWith("_grid2x2.jpg") || file.endsWith("_mba.png") || file.endsWith("_orig.svg") || file.endsWith("_4panel.jpg") || file.endsWith(".svg") || file.startsWith("test_")) {
+                try {
+                  const filePath = import_path76.default.join(dataDir, file);
+                  if (import_fs81.default.statSync(filePath).isFile()) {
+                    import_fs81.default.unlinkSync(filePath);
+                    deletedFiles++;
+                  }
+                } catch (e) {
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("[TaskLogService] Konnte tempor\xE4re data-Dateien nicht l\xF6schen:", err);
+        }
+        if (this.eventBroadcaster) {
+          this.eventBroadcaster("ALL_TASKS_CLEARED", { deletedTasks, deletedQueueItems, deletedFiles });
+          this.eventBroadcaster("TASKS_UPDATED", { tasks: [] });
+          this.eventBroadcaster("QUEUE_UPDATED", { items: [] });
+        }
+        console.log(`[TaskLogService] \u2705 System-Reset abgeschlossen: ${deletedTasks} Tasks, ${deletedQueueItems} Queue-Elemente, ${deletedFiles} Bild/Design-Dateien gel\xF6scht.`);
+        return { deletedTasks, deletedQueueItems, deletedFiles };
+      }
       static deleteTaskLog(taskId) {
         const logs = this.loadLogs();
         const initialLen = logs.length;
@@ -226739,6 +226818,36 @@ app.delete("/api/v1/tasks/log", (req, res) => {
   TaskLogService2.clearTaskLogs();
   broadcast("TASK_LOGS_CLEARED", {});
   res.json({ success: true, message: "All task logs cleared" });
+});
+app.post("/api/v1/system/purge-all-data", (req, res) => {
+  try {
+    const result2 = TaskLogService2.purgeAllWorkspaceData();
+    broadcast("TASK_LOGS_CLEARED", {});
+    broadcast("TASKS_UPDATED", { tasks: [] });
+    broadcast("QUEUE_UPDATED", { items: [] });
+    res.json({
+      success: true,
+      message: `System erfolgreich zur\xFCckgesetzt: ${result2.deletedTasks} Tasks, ${result2.deletedQueueItems} Queue-Eintr\xE4ge und ${result2.deletedFiles} Design-Dateien gel\xF6scht.`,
+      ...result2
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || "Fehler beim System-Reset" });
+  }
+});
+app.delete("/api/v1/system/purge-all-data", (req, res) => {
+  try {
+    const result2 = TaskLogService2.purgeAllWorkspaceData();
+    broadcast("TASK_LOGS_CLEARED", {});
+    broadcast("TASKS_UPDATED", { tasks: [] });
+    broadcast("QUEUE_UPDATED", { items: [] });
+    res.json({
+      success: true,
+      message: `System erfolgreich zur\xFCckgesetzt: ${result2.deletedTasks} Tasks, ${result2.deletedQueueItems} Queue-Eintr\xE4ge und ${result2.deletedFiles} Design-Dateien gel\xF6scht.`,
+      ...result2
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || "Fehler beim System-Reset" });
+  }
 });
 app.delete("/api/v1/tasks/:taskId", (req, res) => {
   const { taskId } = req.params;

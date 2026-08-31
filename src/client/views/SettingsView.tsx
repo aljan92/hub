@@ -25,7 +25,11 @@ import {
   Terminal,
   RotateCcw,
   Tag,
-  Calculator
+  Calculator,
+  Trash2,
+  AlertTriangle,
+  AlertCircle,
+  X
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -113,6 +117,12 @@ export const SettingsView: React.FC = () => {
   const [costPerVectorization, setCostPerVectorization] = useState<number>(initialSettings.costPerVectorization ?? 0.05);
   const [costStats, setCostStats] = useState<any>(null);
   const [resettingCosts, setResettingCosts] = useState(false);
+
+  // Danger Zone: Full Workspace Reset
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
+  const [purgeConfirmText, setPurgeConfirmText] = useState('');
+  const [purging, setPurging] = useState(false);
+  const [purgeResult, setPurgeResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const fetchCostStats = () => {
     fetch('/api/v1/stats/costs')
@@ -223,22 +233,62 @@ export const SettingsView: React.FC = () => {
       .catch(err => console.warn('[Settings] Failed to fetch models:', err))
       .finally(() => setLoadingModels(false));
   };
-
   const handleResetCostStats = async () => {
-    if (!window.confirm('Möchtest du die Kostenstatistik wirklich auf $0.00 zurücksetzen? Die Ausgaben für OpenRouter, Ideogram und Vectorizer werden ab sofort neu gezählt.')) {
+    if (!window.confirm('Möchtest du die Ausgaben- und Design-Statistiken wirklich auf 0 zurücksetzen?')) {
       return;
     }
     setResettingCosts(true);
     try {
-      const res = await fetch('/api/v1/stats/costs/reset', { method: 'POST' });
+      const res = await fetch('/api/v1/costs/stats', { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
-        setCostStats(data);
+        fetchCostStats();
       }
     } catch (err) {
-      alert('Fehler beim Zurücksetzen der Kostenstatistik');
+      console.error('Fehler beim Zurücksetzen der Kostenstatistik:', err);
     } finally {
       setResettingCosts(false);
+    }
+  };
+
+  const handlePurgeAllData = async () => {
+    const text = purgeConfirmText.trim().toLowerCase();
+    if (text !== 'löschen' && text !== 'delete') {
+      return;
+    }
+    setPurging(true);
+    setPurgeResult(null);
+    try {
+      const res = await fetch('/api/v1/system/purge-all-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPurgeResult({
+          success: true,
+          message: data.message || 'Alle Tasks, Bilddateien und Queue-Einträge wurden gelöscht.'
+        });
+        fetchCostStats();
+        setTimeout(() => {
+          setShowPurgeModal(false);
+          setPurgeConfirmText('');
+          setPurging(false);
+          setPurgeResult(null);
+        }, 2200);
+      } else {
+        setPurgeResult({
+          success: false,
+          message: data.error || 'Fehler beim Löschen der Daten.'
+        });
+        setPurging(false);
+      }
+    } catch (err: any) {
+      setPurgeResult({
+        success: false,
+        message: err.message || 'Netzwerkfehler beim System-Reset.'
+      });
+      setPurging(false);
     }
   };
 
@@ -1366,7 +1416,153 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
+        {/* ========================================================================= */}
+        {/* DANGER ZONE: FULL SYSTEM RESET / DATA PURGE                               */}
+        {/* ========================================================================= */}
+        <div className="glass-panel p-6 rounded-2xl border border-rose-500/30 space-y-4 bg-gradient-to-b from-rose-950/20 via-slate-950/60 to-slate-950/80 shadow-lg">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-rose-500/20">
+            <div className="flex items-center space-x-2.5">
+              <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-rose-300">Gefahrenzone: Alle Workspace-Daten zurücksetzen</h3>
+                <p className="text-xs text-slate-400">Vollständige Bereinigung aller Test-Designs, Tasks, Listings, Bilder &amp; Queue-Einträge.</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowPurgeModal(true);
+                setPurgeConfirmText('');
+                setPurgeResult(null);
+              }}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 hover:border-rose-500/60 flex items-center space-x-2 transition-all shadow-sm self-start sm:self-auto"
+            >
+              <Trash2 className="w-4 h-4 text-rose-400" />
+              <span>Workspace frisch zurücksetzen</span>
+            </button>
+          </div>
+
+          <div className="text-xs text-slate-400 space-y-1.5 leading-relaxed bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+            <p className="flex items-start space-x-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <span>
+                <strong>Was wird gelöscht:</strong> Alle aktiven &amp; abgeschlossenen Tasks in <em>Tasks</em> und <em>Prompt Log</em>, alle generierten Bilddateien &amp; Vektoren (PNG, SVG, 4-Panel, 2x2 Grids) auf der Festplatte sowie alle Einträge in der <em>Upload Queue</em>. Der Task-Zähler wird auf #001 zurückgesetzt.
+              </span>
+            </p>
+            <p className="text-slate-500 pl-6">
+              <strong>Was erhalten bleibt:</strong> Deine API-Keys, Modelleinstellungen, System-Prompts, Marken-Whitelist und der Amazon-Produktkatalog bleiben unberührt.
+            </p>
+          </div>
+        </div>
+
       </div>
+
+      {/* ========================================================================= */}
+      {/* DOUBLE CONFIRMATION MODAL                                                 */}
+      {/* ========================================================================= */}
+      {showPurgeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-lg bg-slate-900 border border-rose-500/40 rounded-2xl p-6 shadow-2xl space-y-5">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-400">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Workspace unwiderruflich leeren?</h3>
+                  <p className="text-xs text-rose-300 font-semibold">Doppelte Sicherheitsbestätigung erforderlich</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !purging && setShowPurgeModal(false)}
+                disabled={purging}
+                className="text-slate-400 hover:text-slate-200 transition-colors p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Warning Box */}
+            <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-500/30 space-y-2 text-xs text-slate-300">
+              <p className="font-semibold text-rose-300">
+                ⚠️ Folgende Daten werden dauerhaft von der Festplatte gelöscht:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-slate-400 pl-1 font-mono text-[11px]">
+                <li>Alle Tasks in Checkpoint 1, 2, 3 &amp; 4</li>
+                <li>Alle Prompt-Logs &amp; Session-Events</li>
+                <li>Alle PNG-Bilder, SVG-Vektoren &amp; Vorschau-Grids</li>
+                <li>Alle Einträge in der Upload-Queue (Neu &amp; Update)</li>
+                <li>Task-Counter wird auf #001 zurückgesetzt</li>
+              </ul>
+              <p className="text-[11px] text-emerald-400 pt-1 border-t border-rose-500/20">
+                ✓ API-Keys &amp; Systemeinstellungen bleiben sicher erhalten.
+              </p>
+            </div>
+
+            {/* Confirmation Input Field */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-200 block">
+                Tippe zur Bestätigung <span className="font-mono text-rose-400 font-bold bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-500/30">LÖSCHEN</span> in das Feld:
+              </label>
+              <input
+                type="text"
+                value={purgeConfirmText}
+                onChange={(e) => setPurgeConfirmText(e.target.value)}
+                disabled={purging}
+                placeholder="LÖSCHEN"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 font-mono focus:border-rose-500 focus:outline-none placeholder:text-slate-600"
+                autoFocus
+              />
+            </div>
+
+            {/* Result / Error Banner */}
+            {purgeResult && (
+              <div className={`p-3 rounded-xl border text-xs flex items-center space-x-2 ${
+                purgeResult.success ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+              }`}>
+                {purgeResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />}
+                <span>{purgeResult.message}</span>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowPurgeModal(false)}
+                disabled={purging}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50"
+              >
+                Abbrechen
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePurgeAllData}
+                disabled={purging || (purgeConfirmText.trim().toLowerCase() !== 'löschen' && purgeConfirmText.trim().toLowerCase() !== 'delete')}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40 disabled:hover:bg-rose-600 flex items-center space-x-2 transition-all shadow-md shadow-rose-900/30"
+              >
+                {purging ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Lösche alle Daten...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Ja, alles unwiderruflich löschen</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

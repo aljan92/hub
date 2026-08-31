@@ -397,6 +397,17 @@ MBA HUB/
   - **Error / Rejected:** Rose (`bg-rose-500/15 text-rose-300 border-rose-500/30`)
 - **Aktive Pulse-Animationen & Spinner:** Laufende API-Operationen (Download, Bildgenerierung, Vision-Audit, Listing-Rewrite, Trademark-Check, Übersetzung, Vektorisierung) pulsieren dezent mit rotierendem/animiertem Icon.
 
+### 10.9 🚨 Full Workspace Reset & Purge (`POST /api/v1/system/purge-all-data`)
+- **Gefahrenzone in Settings:** Befindet sich ganz unten in [SettingsView.tsx](file:///Users/alexanderjanssen/Desktop/MBA%20HUB/src/client/views/SettingsView.tsx) mit doppelter Sicherheitsabfrage (Eingabe des Worts `LÖSCHEN`).
+- **Was bereinigt wird:**
+  - `data/tasks_log.json` wird geleert (`[]`).
+  - `data/tasks_counter.json` wird auf 0 zurückgesetzt (nächster Task beginnt bei `#001`).
+  - `data/upload_queue.json` wird vollständig geleert (`[]`).
+  - `data/designs/` wird vollständig von allen PNG-, SVG-, 4-Panel- und 2x2-Grid-Dateien befreit.
+  - Temporäre Test-Assets im `data/`-Stammverzeichnis werden gelöscht.
+  - Sendet Realtime-WebSocket-Events (`TASK_LOGS_CLEARED`, `TASKS_UPDATED`, `QUEUE_UPDATED`) an alle geöffneten Tabs.
+- **Was unberührt bleibt:** API-Keys, Modelleinstellungen, System-Prompts, Marken-Whitelist und der Amazon-Produktkatalog bleiben 100% erhalten.
+
 
 
 
