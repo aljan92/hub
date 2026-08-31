@@ -81,6 +81,7 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
       { name: '{niche1}', desc: 'Hauptnische (z. B. Horse)' },
       { name: '{niche2}', desc: 'Cross-Nische (z. B. Coffee)' },
       { name: '{subniche}', desc: 'Subnische (z. B. Shetland Pony)' },
+      { name: '{keywords}', desc: 'Erkannte SEO- & Motiv-Keywords' },
       { name: '{requested_quote}', desc: 'Ursprüngliches Zitat' },
       { name: '{fitTypes}', desc: 'Men, Women, Youth' },
       { name: '{avoid}', desc: 'None, Black, White' },
@@ -159,7 +160,9 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
       { name: '{oldTitle}', desc: 'Aktueller Titel auf Amazon' },
       { name: '{oldBullets}', desc: 'Aktuelle Bullets 1 & 2' },
       { name: '{niche1}', desc: 'Erkannte Hauptnische' },
+      { name: '{niche2}', desc: 'Erkannte Cross-Nische' },
       { name: '{subniche}', desc: 'Erkannte Subnische' },
+      { name: '{keywords}', desc: 'Erkannte SEO- & Motiv-Keywords' },
       { name: '{rewriteNeeded}', desc: 'Entscheidung: true oder false' }
     ]
   },

@@ -1221,9 +1221,12 @@ export const TasksView: React.FC = () => {
                                     const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
                                     const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
                                     const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
+                                    const aiKw = activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords || [];
                                     if (aiN1) setEditNiche1(aiN1);
                                     if (aiN2 && aiN2.toLowerCase() !== 'none') setEditNiche2(aiN2); else if (!aiN2 || aiN2.toLowerCase() === 'none') setEditNiche2('');
                                     if (aiSub && aiSub.toLowerCase() !== 'none') setEditSubniche(aiSub); else if (!aiSub || aiSub.toLowerCase() === 'none') setEditSubniche('');
+                                    if (Array.isArray(aiKw) && aiKw.length > 0) setEditKeywords(aiKw.join(', '));
+                                    else if (typeof aiKw === 'string' && aiKw) setEditKeywords(aiKw);
                                   }}
                                   className="px-2.5 py-1 rounded text-[10px] font-semibold bg-teal-500/10 text-teal-300 hover:bg-teal-500/20 border border-teal-500/30 transition-colors flex items-center gap-1"
                                 >
@@ -1261,6 +1264,7 @@ export const TasksView: React.FC = () => {
                                   <div>N1: <span className="text-slate-200">{activeTask.payload?.niche1 || activeTask.payload?.niche || '-'}</span></div>
                                   <div>Cross: <span className="text-slate-300">{activeTask.payload?.niche2 || 'none'}</span></div>
                                   <div>Subnische: <span className="text-slate-300">{activeTask.payload?.subniche || 'none'}</span></div>
+                                  <div>Keywords: <span className="text-slate-400 text-[10px] truncate block" title={Array.isArray(activeTask.payload?.keywords || activeTask.payload?.hermesKeywords) ? (activeTask.payload?.keywords || activeTask.payload?.hermesKeywords).join(', ') : (activeTask.payload?.keywords || 'none')}>{Array.isArray(activeTask.payload?.keywords || activeTask.payload?.hermesKeywords) ? (activeTask.payload?.keywords || activeTask.payload?.hermesKeywords).join(', ') : (activeTask.payload?.keywords || 'none')}</span></div>
                                 </div>
                               </div>
 
@@ -1273,6 +1277,7 @@ export const TasksView: React.FC = () => {
                                   <div>N1: <strong className="text-slate-100">{activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '-'}</strong></div>
                                   <div>Cross: <span className="text-slate-300">{activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || 'none'}</span></div>
                                   <div>Subnische: <strong className="text-teal-300">{activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || 'none'}</strong></div>
+                                  <div>Keywords: <span className="text-teal-300/80 text-[10px] truncate block" title={Array.isArray(activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords) ? (activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords).join(', ') : 'none'}>{Array.isArray(activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords) ? (activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords).join(', ') : 'none'}</span></div>
                                 </div>
                               </div>
                             </div>
@@ -1589,9 +1594,12 @@ export const TasksView: React.FC = () => {
                                     const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
                                     const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
                                     const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
+                                    const aiKw = activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords || [];
                                     if (aiN1) setEditNiche1(aiN1);
                                     if (aiN2 && aiN2.toLowerCase() !== 'none') setEditNiche2(aiN2); else if (!aiN2 || aiN2.toLowerCase() === 'none') setEditNiche2('');
                                     if (aiSub && aiSub.toLowerCase() !== 'none') setEditSubniche(aiSub); else if (!aiSub || aiSub.toLowerCase() === 'none') setEditSubniche('');
+                                    if (Array.isArray(aiKw) && aiKw.length > 0) setEditKeywords(aiKw.join(', '));
+                                    else if (typeof aiKw === 'string' && aiKw) setEditKeywords(aiKw);
                                   }}
                                   className="px-2.5 py-1 rounded text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 border border-cyan-500/30 transition-colors flex items-center gap-1"
                                 >
@@ -1629,6 +1637,7 @@ export const TasksView: React.FC = () => {
                                   <div>N1: <span className="text-slate-200">{activeTask.payload?.niche1 || activeTask.payload?.niche || '-'}</span></div>
                                   <div>Cross: <span className="text-slate-300">{activeTask.payload?.niche2 || 'none'}</span></div>
                                   <div>Subnische: <span className="text-slate-300">{activeTask.payload?.subniche || 'none'}</span></div>
+                                  <div>Keywords: <span className="text-slate-400 text-[10px] truncate block" title={Array.isArray(activeTask.payload?.keywords || activeTask.payload?.hermesKeywords) ? (activeTask.payload?.keywords || activeTask.payload?.hermesKeywords).join(', ') : (activeTask.payload?.keywords || 'none')}>{Array.isArray(activeTask.payload?.keywords || activeTask.payload?.hermesKeywords) ? (activeTask.payload?.keywords || activeTask.payload?.hermesKeywords).join(', ') : (activeTask.payload?.keywords || 'none')}</span></div>
                                 </div>
                               </div>
 
@@ -1641,6 +1650,7 @@ export const TasksView: React.FC = () => {
                                   <div>N1: <strong className="text-slate-100">{activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '-'}</strong></div>
                                   <div>Cross: <span className="text-slate-300">{activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || 'none'}</span></div>
                                   <div>Subnische: <strong className="text-cyan-300">{activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || 'none'}</strong></div>
+                                  <div>Keywords: <span className="text-cyan-300/80 text-[10px] truncate block" title={Array.isArray(activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords) ? (activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords).join(', ') : 'none'}>{Array.isArray(activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords) ? (activeTask.analysisResult?.niche_analysis?.keywords || activeTask.analysisResult?.keywords || activeTask.keywords).join(', ') : 'none'}</span></div>
                                 </div>
                               </div>
                             </div>

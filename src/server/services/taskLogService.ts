@@ -850,12 +850,26 @@ export class TaskLogService {
       const isApproved = parsedAnalysis?.overall_verdict === 'APPROVED' || 
         (parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended);
 
+      const aiN1 = parsedAnalysis?.niche_analysis?.niche1 || parsedAnalysis?.niche1;
+      const rawAiN2 = parsedAnalysis?.niche_analysis?.niche2 || parsedAnalysis?.niche2;
+      const aiN2 = rawAiN2 && rawAiN2.toLowerCase() !== 'none' ? rawAiN2 : 'none';
+      const rawAiSub = parsedAnalysis?.niche_analysis?.subniche || parsedAnalysis?.subniche;
+      const aiSub = rawAiSub && rawAiSub.toLowerCase() !== 'none' ? rawAiSub : 'none';
+      const rawAiKw = parsedAnalysis?.niche_analysis?.keywords || parsedAnalysis?.keywords || parsedAnalysis?.seo_keywords;
+      const aiKeywords: string[] | undefined = Array.isArray(rawAiKw)
+        ? rawAiKw.map((k: any) => String(k).trim()).filter(Boolean)
+        : (typeof rawAiKw === 'string' ? rawAiKw.split(',').map(s => s.trim()).filter(Boolean) : undefined);
+
       // Check AI Autonomy Switch for Design Pipeline
       const autonomyDesign = settings.aiAutonomyDesignEnabled ?? settings.aiAutonomyEnabled;
       if (autonomyDesign && isApproved) {
         console.log(`[TaskLogService] ⚡ Autonomie aktiv: Task ${taskId} überspringt Human-in-the-Loop (Design freigegeben) -> Listing-Generierung gestartet.`);
         this.updateTaskStatus(taskId, {
           status: 'GENERATING_LISTING',
+          niche1: aiN1 || task.niche1,
+          niche2: aiN2 !== 'none' ? aiN2 : task.niche2,
+          subniche: aiSub !== 'none' ? aiSub : task.subniche,
+          keywords: aiKeywords || task.keywords,
           analysisResult: parsedAnalysis,
           hasError: false
         });
@@ -881,6 +895,10 @@ export class TaskLogService {
         this.updateTaskStatus(taskId, {
           status: 'AWAITING_DESIGN_REVIEW',
           checkpoint: 'DESIGN_REVIEW',
+          niche1: aiN1 || task.niche1,
+          niche2: aiN2 !== 'none' ? aiN2 : task.niche2,
+          subniche: aiSub !== 'none' ? aiSub : task.subniche,
+          keywords: aiKeywords || task.keywords,
           analysisResult: parsedAnalysis,
           hasError: false,
           errorDetails: isApproved ? undefined : reason

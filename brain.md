@@ -462,3 +462,23 @@ MBA HUB/
   - **Exakte zweifarbige Queue-Darstellung:**
     - Die Queue nutzt diese reale DOM-Matrix: Bereits live-geschaltete Marktplätze werden dunkelgrau/grün mit Häkchen (`US ✓`, `DE ✓`, `GB ✓`) angezeigt (0 Slots), während neu zu uploadende Marktplätze lila hervorgehoben (`+ FR`, `+ IT`, `+ ES`) mit dem echten Mehrbedarf kalkuliert werden.
 
+### 10.15 🎯 Taxonomische Nischen- & Subnischen-Hierarchie (Strikter Buyer-Market & Keywords)
+- **Hintergrund & Problemstellung:**
+  - Bei Motiven mit Feiertagen oder mehreren Elementen (z. B. Weihnachtstruck mit Baum) neigte die Vision-KI dazu, `subniche = "Vintage Pickup Truck"` oder bei Backmotiven `subniche = "Christmas Baking"` zu erfinden.
+  - Dadurch endete der generierte Titel fälschlicherweise auf die Subnische des sekundären Elements (z. B. `... Vintage Pickup Truck T-Shirt`) statt auf den primären Buyer-Market (`... Christmas T-Shirt`).
+- **Lösung & Klassifikations-Architektur:**
+  - **`niche1` (Primäre Hauptnische):** Bildet zwingend den primären Zielmarkt / Buyer Market ab (z. B. `Christmas`, `Dog`, `Nurse`, `Fishing`).
+  - **`niche2` (Cross-Nische):** Sekundäres visuelles Element oder Cross-Thema (z. B. `Truck`, `Baking`, `Coffee`, `Cat`, sonst `none`).
+  - **`subniche` (Strikte Taxonomie von `niche1`):**
+    - Darf ausschließlich eine echte taxonomische / biologische / fachliche Unterart von `niche1` sein (z. B. `Dog -> Golden Retriever`, `Horse -> Shetland Pony`, `Nurse -> ICU Nurse`, `Fishing -> Bass Fishing`).
+    - **Strikte Verbote:** Bei Events/Feiertagen (`Christmas`, `Halloween`, `Birthday` etc.) ist `subniche` zwingend `none`.
+    - Verbot von Wortkombinationen (`Christmas Baking` ❌).
+    - Verbot von Ableitungen aus `niche2` (`Vintage Pickup Truck` ❌).
+  - **`keywords` (SEO & Motiv-Keywords):**
+    - Beschreibende Begriffe und visuelle Details wandern in das `keywords`-Array (z. B. `["vintage pickup", "farmhouse christmas", "red truck", "christmas tree"]`).
+  - **Frontend UI & Übernahme:**
+    - Beide Audit-Sektionen in `TasksView.tsx` zeigen die Keywords im Vergleich an.
+    - Der Button **„Von LLM übernehmen“** befüllt automatisch auch das Feld `editKeywords`.
+
+
+

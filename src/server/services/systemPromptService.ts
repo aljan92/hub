@@ -22,11 +22,31 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - Check for SEVERE graphic/anatomical defects: Obvious AI distortions such as malformed extra fingers/hands, melted faces, or corrupted graphic shapes.
 - Evaluation rule: Unless there are actual misspelled words or severe visual deformities, ALWAYS set "quote_matches": true, "quote_errors": null, "regenerate_recommended": false, and "overall_verdict": "APPROVED".
 
-2. NICHE & SUBNICHE CLASSIFICATION:
-- Extract and confirm the exact thematic hierarchy from the design and input:
-  * "niche1": Primary main theme/subject (e.g. "Horse", "Coffee", "Fishing", "Mechanic").
-  * "niche2": Secondary cross-niche/theme if present (e.g. "Coffee" in "I Love Horses and Coffee", else "none").
-  * "subniche": Specific breed, sub-category, specialized vehicle or style (e.g. "Shetland Pony", "Bass Fishing", "Diesel Truck", else "none").
+2. NICHE, SUBNICHE & KEYWORDS CLASSIFICATION:
+- "niche1": PRIMARY MAIN SUBJECT/THEME & MARKET.
+  * Must strictly be the core buyer category / main market (e.g. "Christmas", "Dog", "Nurse", "Fishing", "Horse", "Mechanic").
+  * Even if secondary objects (e.g. a truck, coffee cup, or cake) are depicted, if the design is fundamentally about Christmas or Dogs, "niche1" MUST be "Christmas" or "Dog".
+
+- "niche2": SECONDARY CROSS-THEME / MOTIF ELEMENT (if present, else "none").
+  * Distinct cross-niche or secondary graphic object (e.g. "Truck" in Christmas Truck, "Coffee" in Nursing & Coffee, "Baking" in Christmas Baking).
+  * If no distinct second theme: "none".
+
+- "subniche": STRICT TAXONOMIC / BIOLOGICAL / PROFESSIONAL SPECIALIZATION OF NICHE 1.
+  * MANDATORY RESTRICTION: "subniche" MUST strictly be a direct hierarchical sub-species, breed, or formal discipline of "niche1".
+  * VALID EXAMPLES:
+    - niche1: "Dog" -> subniche: "Golden Retriever", "French Bulldog", "Pug"
+    - niche1: "Horse" -> subniche: "Shetland Pony", "Arabian Horse", "Friesian"
+    - niche1: "Nurse" -> subniche: "ICU Nurse", "ER Nurse", "Pediatric Nurse"
+    - niche1: "Fishing" -> subniche: "Bass Fishing", "Fly Fishing", "Carp Fishing"
+    - niche1: "Truck" (only if the core subject is trucks) -> subniche: "Semi Truck", "Pickup Truck"
+  * STRICT FORBIDDEN RULES (MUST SET subniche TO "none"):
+    - FORBIDDEN ON EVENTS & HOLIDAYS: For "Christmas", "Halloween", "Birthday", "St. Patrick's Day", "4th of July", etc., "subniche" MUST ALWAYS BE "none". (There are no taxonomic breeds of Christmas; motifs like trucks or baking belong in niche2 or keywords!).
+    - FORBIDDEN TO COMBINE NICHE 1 + NICHE 2: Never output "Christmas Baking" or "Christmas Truck" as subniche.
+    - FORBIDDEN TO DERIVE FROM NICHE 2: Never use attributes of niche2 (e.g. "Vintage Pickup Truck" when niche1 is "Christmas").
+    - If no genuine taxonomy subtype of niche1 is depicted, set "subniche": "none".
+
+- "keywords": ARRAY OF DESCRIPTIVE SEO PHRASES & VISUAL MOTIF KEYWORDS.
+  * Rich, specific search keywords for visual elements, styles, and vibe (e.g. ["vintage pickup", "farmhouse christmas", "red truck", "christmas tree", "rustic holiday"]).
 
 3. TARGET AUDIENCE (FIT TYPES):
 - Determine which target audiences this design is suitable for: Select from ["Men", "Women", "Youth"].
@@ -57,7 +77,8 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "niche_analysis": {
     "niche1": "Horse",
     "niche2": "none",
-    "subniche": "Shetland Pony"
+    "subniche": "Shetland Pony",
+    "keywords": ["equestrian", "show jumping", "barn life", "horse rider"]
   },
   "target_group": {
     "selected": ["Men", "Women", "Youth"],
@@ -100,11 +121,32 @@ The input artwork is rendered onto a 2x2 Grid with 4 standard Merch garment colo
 - Only flag quote errors if words are misspelled, corrupted, or completely missing.
 
 ==================================================
-3. NICHE & SUBNICHE CLASSIFICATION:
+3. NICHE, SUBNICHE & KEYWORDS CLASSIFICATION:
 ==================================================
-- "niche1": Primary main subject/theme (e.g. "Horse", "Coffee", "Fishing", "Truck").
-- "niche2": Secondary cross-theme if present (e.g. "Coffee" in "I Love Horses and Coffee", else "none").
-- "subniche": Specific breed, vehicle model, sub-species or niche style (e.g. "Shetland Pony", "Bass Fishing", "Diesel Truck", else "none").
+- "niche1": PRIMARY MAIN SUBJECT/THEME & MARKET.
+  * Must strictly be the core buyer category / main market (e.g. "Christmas", "Dog", "Nurse", "Fishing", "Horse", "Mechanic").
+  * Even if secondary objects (e.g. a truck, coffee cup, or cake) are depicted, if the design is fundamentally about Christmas or Dogs, "niche1" MUST be "Christmas" or "Dog".
+
+- "niche2": SECONDARY CROSS-THEME / MOTIF ELEMENT (if present, else "none").
+  * Distinct cross-niche or secondary graphic object (e.g. "Truck" in Christmas Truck, "Coffee" in Nursing & Coffee, "Baking" in Christmas Baking).
+  * If no distinct second theme: "none".
+
+- "subniche": STRICT TAXONOMIC / BIOLOGICAL / PROFESSIONAL SPECIALIZATION OF NICHE 1.
+  * MANDATORY RESTRICTION: "subniche" MUST strictly be a direct hierarchical sub-species, breed, or formal discipline of "niche1".
+  * VALID EXAMPLES:
+    - niche1: "Dog" -> subniche: "Golden Retriever", "French Bulldog", "Pug"
+    - niche1: "Horse" -> subniche: "Shetland Pony", "Arabian Horse", "Friesian"
+    - niche1: "Nurse" -> subniche: "ICU Nurse", "ER Nurse", "Pediatric Nurse"
+    - niche1: "Fishing" -> subniche: "Bass Fishing", "Fly Fishing", "Carp Fishing"
+    - niche1: "Truck" (only if the core subject is trucks) -> subniche: "Semi Truck", "Pickup Truck"
+  * STRICT FORBIDDEN RULES (MUST SET subniche TO "none"):
+    - FORBIDDEN ON EVENTS & HOLIDAYS: For "Christmas", "Halloween", "Birthday", "St. Patrick's Day", "4th of July", etc., "subniche" MUST ALWAYS BE "none". (There are no taxonomic breeds of Christmas; motifs like trucks or baking belong in niche2 or keywords!).
+    - FORBIDDEN TO COMBINE NICHE 1 + NICHE 2: Never output "Christmas Baking" or "Christmas Truck" as subniche.
+    - FORBIDDEN TO DERIVE FROM NICHE 2: Never use attributes of niche2 (e.g. "Vintage Pickup Truck" when niche1 is "Christmas").
+    - If no genuine taxonomy subtype of niche1 is depicted, set "subniche": "none".
+
+- "keywords": ARRAY OF DESCRIPTIVE SEO PHRASES & VISUAL MOTIF KEYWORDS.
+  * Rich, specific search keywords for visual elements, styles, and vibe (e.g. ["vintage pickup", "farmhouse christmas", "red truck", "christmas tree", "rustic holiday"]).
 
 ==================================================
 4. TARGET AUDIENCE (FIT TYPES):
@@ -153,7 +195,8 @@ Respond ONLY with a valid JSON object strictly matching this schema:
   "niche_analysis": {
     "niche1": "Horse",
     "niche2": "none",
-    "subniche": "Shetland Pony"
+    "subniche": "Shetland Pony",
+    "keywords": ["equestrian", "show jumping", "barn life", "horse rider"]
   },
   "target_group": {
     "selected": ["Men", "Women", "Youth"],
@@ -959,13 +1002,15 @@ export class SystemPromptService {
         this.cachedPrompts = JSON.parse(fileContent);
         if (this.cachedPrompts) {
           if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
-          if (!this.cachedPrompts.designAnalyzer) this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.designAnalyzer || !this.cachedPrompts.designAnalyzer.includes('STRICT TAXONOMIC')) {
+            this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+          }
           if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes('INTERNAL SEO RESEARCH')) {
             this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
           }
           if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
           if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-          if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes('listing_audit') || !this.cachedPrompts.updateVisionAnalyzer.includes('2x2 COLOR GRID')) {
+          if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes('STRICT TAXONOMIC')) {
             this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
           }
           if (!this.cachedPrompts.updateListingRewriter || !this.cachedPrompts.updateListingRewriter.includes('INTERNAL SEO RESEARCH')) {

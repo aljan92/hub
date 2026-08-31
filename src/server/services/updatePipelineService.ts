@@ -179,8 +179,14 @@ export class UpdatePipelineService {
       const parsed = JSON.parse(contentStr.replace(/```json/g, '').replace(/```/g, '').trim());
 
       const niche1 = parsed.niche_analysis?.niche1 || parsed.niche1 || 'Graphic Art';
-      const niche2 = parsed.niche_analysis?.niche2 || parsed.niche2 || 'none';
-      const subniche = parsed.niche_analysis?.subniche || parsed.subniche || 'none';
+      const rawNiche2 = parsed.niche_analysis?.niche2 || parsed.niche2 || 'none';
+      const niche2 = rawNiche2 && rawNiche2.toLowerCase() !== 'none' ? rawNiche2 : 'none';
+      const rawSub = parsed.niche_analysis?.subniche || parsed.subniche || 'none';
+      const subniche = rawSub && rawSub.toLowerCase() !== 'none' ? rawSub : 'none';
+      const rawKw = parsed.niche_analysis?.keywords || parsed.keywords || parsed.seo_keywords || [];
+      const keywords: string[] = Array.isArray(rawKw)
+        ? rawKw.map((k: any) => String(k).trim()).filter(Boolean)
+        : (typeof rawKw === 'string' ? rawKw.split(',').map(s => s.trim()).filter(Boolean) : []);
       const avoidColor = parsed.avoid_product_colors?.avoid || parsed.avoidColor || 'none';
       const fitTypes = parsed.target_group?.selected || (Array.isArray(parsed.fitTypes) ? parsed.fitTypes : ['Men', 'Women', 'Youth']);
       const detectedQuote = parsed.quote_check?.detected_quote || parsed.detected_quote || rawPayload.quote || '';
@@ -192,6 +198,7 @@ export class UpdatePipelineService {
         niche1,
         niche2,
         subniche,
+        keywords,
         previewUrl: gridPreviewUrl || task.previewUrl,
         grid2x2Url: gridPreviewUrl,
         analysisResult: {
@@ -199,6 +206,7 @@ export class UpdatePipelineService {
           niche1,
           niche2,
           subniche,
+          keywords,
           avoidColor,
           fitTypes,
           rewriteNeeded,
@@ -210,6 +218,7 @@ export class UpdatePipelineService {
           niche1,
           niche2,
           subniche,
+          keywords,
           audience: Array.isArray(fitTypes) ? fitTypes.join(', ') : 'Men, Women, Youth',
           avoidColor,
           notes: reasoning

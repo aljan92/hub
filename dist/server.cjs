@@ -51034,11 +51034,31 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - Check for SEVERE graphic/anatomical defects: Obvious AI distortions such as malformed extra fingers/hands, melted faces, or corrupted graphic shapes.
 - Evaluation rule: Unless there are actual misspelled words or severe visual deformities, ALWAYS set "quote_matches": true, "quote_errors": null, "regenerate_recommended": false, and "overall_verdict": "APPROVED".
 
-2. NICHE & SUBNICHE CLASSIFICATION:
-- Extract and confirm the exact thematic hierarchy from the design and input:
-  * "niche1": Primary main theme/subject (e.g. "Horse", "Coffee", "Fishing", "Mechanic").
-  * "niche2": Secondary cross-niche/theme if present (e.g. "Coffee" in "I Love Horses and Coffee", else "none").
-  * "subniche": Specific breed, sub-category, specialized vehicle or style (e.g. "Shetland Pony", "Bass Fishing", "Diesel Truck", else "none").
+2. NICHE, SUBNICHE & KEYWORDS CLASSIFICATION:
+- "niche1": PRIMARY MAIN SUBJECT/THEME & MARKET.
+  * Must strictly be the core buyer category / main market (e.g. "Christmas", "Dog", "Nurse", "Fishing", "Horse", "Mechanic").
+  * Even if secondary objects (e.g. a truck, coffee cup, or cake) are depicted, if the design is fundamentally about Christmas or Dogs, "niche1" MUST be "Christmas" or "Dog".
+
+- "niche2": SECONDARY CROSS-THEME / MOTIF ELEMENT (if present, else "none").
+  * Distinct cross-niche or secondary graphic object (e.g. "Truck" in Christmas Truck, "Coffee" in Nursing & Coffee, "Baking" in Christmas Baking).
+  * If no distinct second theme: "none".
+
+- "subniche": STRICT TAXONOMIC / BIOLOGICAL / PROFESSIONAL SPECIALIZATION OF NICHE 1.
+  * MANDATORY RESTRICTION: "subniche" MUST strictly be a direct hierarchical sub-species, breed, or formal discipline of "niche1".
+  * VALID EXAMPLES:
+    - niche1: "Dog" -> subniche: "Golden Retriever", "French Bulldog", "Pug"
+    - niche1: "Horse" -> subniche: "Shetland Pony", "Arabian Horse", "Friesian"
+    - niche1: "Nurse" -> subniche: "ICU Nurse", "ER Nurse", "Pediatric Nurse"
+    - niche1: "Fishing" -> subniche: "Bass Fishing", "Fly Fishing", "Carp Fishing"
+    - niche1: "Truck" (only if the core subject is trucks) -> subniche: "Semi Truck", "Pickup Truck"
+  * STRICT FORBIDDEN RULES (MUST SET subniche TO "none"):
+    - FORBIDDEN ON EVENTS & HOLIDAYS: For "Christmas", "Halloween", "Birthday", "St. Patrick's Day", "4th of July", etc., "subniche" MUST ALWAYS BE "none". (There are no taxonomic breeds of Christmas; motifs like trucks or baking belong in niche2 or keywords!).
+    - FORBIDDEN TO COMBINE NICHE 1 + NICHE 2: Never output "Christmas Baking" or "Christmas Truck" as subniche.
+    - FORBIDDEN TO DERIVE FROM NICHE 2: Never use attributes of niche2 (e.g. "Vintage Pickup Truck" when niche1 is "Christmas").
+    - If no genuine taxonomy subtype of niche1 is depicted, set "subniche": "none".
+
+- "keywords": ARRAY OF DESCRIPTIVE SEO PHRASES & VISUAL MOTIF KEYWORDS.
+  * Rich, specific search keywords for visual elements, styles, and vibe (e.g. ["vintage pickup", "farmhouse christmas", "red truck", "christmas tree", "rustic holiday"]).
 
 3. TARGET AUDIENCE (FIT TYPES):
 - Determine which target audiences this design is suitable for: Select from ["Men", "Women", "Youth"].
@@ -51069,7 +51089,8 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "niche_analysis": {
     "niche1": "Horse",
     "niche2": "none",
-    "subniche": "Shetland Pony"
+    "subniche": "Shetland Pony",
+    "keywords": ["equestrian", "show jumping", "barn life", "horse rider"]
   },
   "target_group": {
     "selected": ["Men", "Women", "Youth"],
@@ -51111,11 +51132,32 @@ The input artwork is rendered onto a 2x2 Grid with 4 standard Merch garment colo
 - Only flag quote errors if words are misspelled, corrupted, or completely missing.
 
 ==================================================
-3. NICHE & SUBNICHE CLASSIFICATION:
+3. NICHE, SUBNICHE & KEYWORDS CLASSIFICATION:
 ==================================================
-- "niche1": Primary main subject/theme (e.g. "Horse", "Coffee", "Fishing", "Truck").
-- "niche2": Secondary cross-theme if present (e.g. "Coffee" in "I Love Horses and Coffee", else "none").
-- "subniche": Specific breed, vehicle model, sub-species or niche style (e.g. "Shetland Pony", "Bass Fishing", "Diesel Truck", else "none").
+- "niche1": PRIMARY MAIN SUBJECT/THEME & MARKET.
+  * Must strictly be the core buyer category / main market (e.g. "Christmas", "Dog", "Nurse", "Fishing", "Horse", "Mechanic").
+  * Even if secondary objects (e.g. a truck, coffee cup, or cake) are depicted, if the design is fundamentally about Christmas or Dogs, "niche1" MUST be "Christmas" or "Dog".
+
+- "niche2": SECONDARY CROSS-THEME / MOTIF ELEMENT (if present, else "none").
+  * Distinct cross-niche or secondary graphic object (e.g. "Truck" in Christmas Truck, "Coffee" in Nursing & Coffee, "Baking" in Christmas Baking).
+  * If no distinct second theme: "none".
+
+- "subniche": STRICT TAXONOMIC / BIOLOGICAL / PROFESSIONAL SPECIALIZATION OF NICHE 1.
+  * MANDATORY RESTRICTION: "subniche" MUST strictly be a direct hierarchical sub-species, breed, or formal discipline of "niche1".
+  * VALID EXAMPLES:
+    - niche1: "Dog" -> subniche: "Golden Retriever", "French Bulldog", "Pug"
+    - niche1: "Horse" -> subniche: "Shetland Pony", "Arabian Horse", "Friesian"
+    - niche1: "Nurse" -> subniche: "ICU Nurse", "ER Nurse", "Pediatric Nurse"
+    - niche1: "Fishing" -> subniche: "Bass Fishing", "Fly Fishing", "Carp Fishing"
+    - niche1: "Truck" (only if the core subject is trucks) -> subniche: "Semi Truck", "Pickup Truck"
+  * STRICT FORBIDDEN RULES (MUST SET subniche TO "none"):
+    - FORBIDDEN ON EVENTS & HOLIDAYS: For "Christmas", "Halloween", "Birthday", "St. Patrick's Day", "4th of July", etc., "subniche" MUST ALWAYS BE "none". (There are no taxonomic breeds of Christmas; motifs like trucks or baking belong in niche2 or keywords!).
+    - FORBIDDEN TO COMBINE NICHE 1 + NICHE 2: Never output "Christmas Baking" or "Christmas Truck" as subniche.
+    - FORBIDDEN TO DERIVE FROM NICHE 2: Never use attributes of niche2 (e.g. "Vintage Pickup Truck" when niche1 is "Christmas").
+    - If no genuine taxonomy subtype of niche1 is depicted, set "subniche": "none".
+
+- "keywords": ARRAY OF DESCRIPTIVE SEO PHRASES & VISUAL MOTIF KEYWORDS.
+  * Rich, specific search keywords for visual elements, styles, and vibe (e.g. ["vintage pickup", "farmhouse christmas", "red truck", "christmas tree", "rustic holiday"]).
 
 ==================================================
 4. TARGET AUDIENCE (FIT TYPES):
@@ -51164,7 +51206,8 @@ Respond ONLY with a valid JSON object strictly matching this schema:
   "niche_analysis": {
     "niche1": "Horse",
     "niche2": "none",
-    "subniche": "Shetland Pony"
+    "subniche": "Shetland Pony",
+    "keywords": ["equestrian", "show jumping", "barn life", "horse rider"]
   },
   "target_group": {
     "selected": ["Men", "Women", "Youth"],
@@ -51952,13 +51995,15 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
             this.cachedPrompts = JSON.parse(fileContent);
             if (this.cachedPrompts) {
               if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
-              if (!this.cachedPrompts.designAnalyzer) this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.designAnalyzer || !this.cachedPrompts.designAnalyzer.includes("STRICT TAXONOMIC")) {
+                this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
+              }
               if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes("INTERNAL SEO RESEARCH")) {
                 this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
               }
               if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
               if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-              if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes("listing_audit") || !this.cachedPrompts.updateVisionAnalyzer.includes("2x2 COLOR GRID")) {
+              if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes("STRICT TAXONOMIC")) {
                 this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
               }
               if (!this.cachedPrompts.updateListingRewriter || !this.cachedPrompts.updateListingRewriter.includes("INTERNAL SEO RESEARCH")) {
@@ -220814,8 +220859,12 @@ Bullets: ${oldBullets}`
           const contentStr = json.choices?.[0]?.message?.content || "{}";
           const parsed = JSON.parse(contentStr.replace(/```json/g, "").replace(/```/g, "").trim());
           const niche1 = parsed.niche_analysis?.niche1 || parsed.niche1 || "Graphic Art";
-          const niche2 = parsed.niche_analysis?.niche2 || parsed.niche2 || "none";
-          const subniche = parsed.niche_analysis?.subniche || parsed.subniche || "none";
+          const rawNiche2 = parsed.niche_analysis?.niche2 || parsed.niche2 || "none";
+          const niche2 = rawNiche2 && rawNiche2.toLowerCase() !== "none" ? rawNiche2 : "none";
+          const rawSub = parsed.niche_analysis?.subniche || parsed.subniche || "none";
+          const subniche = rawSub && rawSub.toLowerCase() !== "none" ? rawSub : "none";
+          const rawKw = parsed.niche_analysis?.keywords || parsed.keywords || parsed.seo_keywords || [];
+          const keywords = Array.isArray(rawKw) ? rawKw.map((k) => String(k).trim()).filter(Boolean) : typeof rawKw === "string" ? rawKw.split(",").map((s) => s.trim()).filter(Boolean) : [];
           const avoidColor = parsed.avoid_product_colors?.avoid || parsed.avoidColor || "none";
           const fitTypes = parsed.target_group?.selected || (Array.isArray(parsed.fitTypes) ? parsed.fitTypes : ["Men", "Women", "Youth"]);
           const detectedQuote = parsed.quote_check?.detected_quote || parsed.detected_quote || rawPayload.quote || "";
@@ -220826,6 +220875,7 @@ Bullets: ${oldBullets}`
             niche1,
             niche2,
             subniche,
+            keywords,
             previewUrl: gridPreviewUrl || task.previewUrl,
             grid2x2Url: gridPreviewUrl,
             analysisResult: {
@@ -220833,6 +220883,7 @@ Bullets: ${oldBullets}`
               niche1,
               niche2,
               subniche,
+              keywords,
               avoidColor,
               fitTypes,
               rewriteNeeded,
@@ -220844,6 +220895,7 @@ Bullets: ${oldBullets}`
               niche1,
               niche2,
               subniche,
+              keywords,
               audience: Array.isArray(fitTypes) ? fitTypes.join(", ") : "Men, Women, Youth",
               avoidColor,
               notes: reasoning
@@ -223162,11 +223214,22 @@ Beantworte die Analysefragen streng als JSON!`;
           });
           console.log(`[TaskLogService] \u{1F441}\uFE0F Vision Design-Analyse f\xFCr Task ${taskId} erfolgreich in ${latencyMs}ms`);
           const isApproved = parsedAnalysis?.overall_verdict === "APPROVED" || parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended;
+          const aiN1 = parsedAnalysis?.niche_analysis?.niche1 || parsedAnalysis?.niche1;
+          const rawAiN2 = parsedAnalysis?.niche_analysis?.niche2 || parsedAnalysis?.niche2;
+          const aiN2 = rawAiN2 && rawAiN2.toLowerCase() !== "none" ? rawAiN2 : "none";
+          const rawAiSub = parsedAnalysis?.niche_analysis?.subniche || parsedAnalysis?.subniche;
+          const aiSub = rawAiSub && rawAiSub.toLowerCase() !== "none" ? rawAiSub : "none";
+          const rawAiKw = parsedAnalysis?.niche_analysis?.keywords || parsedAnalysis?.keywords || parsedAnalysis?.seo_keywords;
+          const aiKeywords = Array.isArray(rawAiKw) ? rawAiKw.map((k) => String(k).trim()).filter(Boolean) : typeof rawAiKw === "string" ? rawAiKw.split(",").map((s) => s.trim()).filter(Boolean) : void 0;
           const autonomyDesign = settings.aiAutonomyDesignEnabled ?? settings.aiAutonomyEnabled;
           if (autonomyDesign && isApproved) {
             console.log(`[TaskLogService] \u26A1 Autonomie aktiv: Task ${taskId} \xFCberspringt Human-in-the-Loop (Design freigegeben) -> Listing-Generierung gestartet.`);
             this.updateTaskStatus(taskId, {
               status: "GENERATING_LISTING",
+              niche1: aiN1 || task.niche1,
+              niche2: aiN2 !== "none" ? aiN2 : task.niche2,
+              subniche: aiSub !== "none" ? aiSub : task.subniche,
+              keywords: aiKeywords || task.keywords,
               analysisResult: parsedAnalysis,
               hasError: false
             });
@@ -223187,6 +223250,10 @@ Beantworte die Analysefragen streng als JSON!`;
             this.updateTaskStatus(taskId, {
               status: "AWAITING_DESIGN_REVIEW",
               checkpoint: "DESIGN_REVIEW",
+              niche1: aiN1 || task.niche1,
+              niche2: aiN2 !== "none" ? aiN2 : task.niche2,
+              subniche: aiSub !== "none" ? aiSub : task.subniche,
+              keywords: aiKeywords || task.keywords,
               analysisResult: parsedAnalysis,
               hasError: false,
               errorDetails: isApproved ? void 0 : reason
