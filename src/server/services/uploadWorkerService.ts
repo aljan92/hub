@@ -714,71 +714,66 @@ export class UploadWorkerService {
 
             for (const cb of colorCheckboxes) {
               const colorClass = Array.from(cb.classList).find(c => c.endsWith('-checkbox')) || cb.className || '';
-              const colorName = colorClass.replace('-checkbox', '').toLowerCase().replace(/[\s_]+/g, '');
+              const rawName = colorClass.replace('-checkbox', '').toLowerCase().replace(/[\s_]+/g, '');
+              const attrName = (cb.getAttribute('name') || cb.getAttribute('id') || cb.getAttribute('aria-label') || cb.getAttribute('title') || '').toLowerCase().replace(/[\s_]+/g, '');
+              const colorName = rawName || attrName;
 
-              let shouldBeChecked = true;
+              // 1. Check if this color is allowed according to product catalog definition
+              let isCatalogAllowed = true;
+              if (params.catalogColors && params.catalogColors.length > 0) {
+                isCatalogAllowed = params.catalogColors.some((ac: string) => {
+                  const cleanAc = ac.replace(/[\s_]+/g, '');
+                  return colorName === cleanAc || colorName.includes(cleanAc) || cleanAc.includes(colorName);
+                });
+              }
 
+              let shouldBeChecked = isCatalogAllowed;
+
+              // 2. Apply Avoid Color Rules
               if (params.avoidColor === 'white') {
-                if (colorName === 'white') {
+                if (colorName === 'white' || colorName.includes('white') || colorClass.includes('white') || attrName.includes('white')) {
                   shouldBeChecked = false;
-                } else if (isSoccer) {
-                  // Soccer Jersey: deselect white_black and white_white
-                  if (colorClass.includes('white_black') || colorClass.includes('white_white') || colorName.includes('white_black') || colorName.includes('whitewhite') || colorName === 'white') {
-                    shouldBeChecked = false;
-                  }
-                } else if (isBasketball) {
-                  // Basketball Jersey: deselect white_white
-                  if (colorClass.includes('white_white') || colorName.includes('whitewhite') || colorName === 'white') {
-                    shouldBeChecked = false;
-                  }
-                } else if (isRaglan) {
-                  // Raglan: deselect black_white, dark_heather_white, navy_white, red_white, royal_blue_white and any white combination
-                  if (
-                    colorClass.includes('black_white') ||
-                    colorClass.includes('dark_heather_white') ||
-                    colorClass.includes('navy_white') ||
-                    colorClass.includes('red_white') ||
-                    colorClass.includes('royal_blue_white') ||
-                    colorName.includes('white')
-                  ) {
-                    shouldBeChecked = false;
-                  }
-                } else if (isTrucker || isVisor) {
-                  // Trucker Hat & Sun Visor: deselect all colors containing 'white'
+                } else if (isSoccer || isBasketball || isRaglan || isTrucker || isVisor) {
                   if (colorName.includes('white') || colorClass.includes('white')) {
                     shouldBeChecked = false;
                   }
                 }
               } else if (params.avoidColor === 'black') {
-                if (colorName === 'black') {
+                if (colorName === 'black' || colorName.includes('black') || colorClass.includes('black') || attrName.includes('black')) {
                   shouldBeChecked = false;
-                } else if (isBasketball) {
-                  // Basketball Jersey: deselect black_white and black_black
-                  if (colorClass.includes('black_white') || colorClass.includes('black_black') || colorName.includes('blackwhite') || colorName === 'black') {
-                    shouldBeChecked = false;
-                  }
-                } else if (isSoccer) {
-                  // Soccer Jersey: deselect any black base
-                  if (colorClass.includes('black_black') || colorClass.includes('black_white') || colorName.includes('black')) {
-                    shouldBeChecked = false;
-                  }
-                } else if (isTrucker || isVisor) {
-                  // Trucker Hat & Sun Visor: deselect all colors containing 'black'
+                } else if (isSoccer || isBasketball || isTrucker || isVisor) {
                   if (colorName.includes('black') || colorClass.includes('black')) {
                     shouldBeChecked = false;
                   }
                 }
               }
 
-              const icon = cb.querySelector('.sci-icon, i.sci-icon');
-              const isChecked = icon 
-                ? (icon.classList.contains('checkmark') || icon.classList.contains('sci-check-box') || icon.classList.contains('sci-check'))
-                : ((cb.querySelector('input') as HTMLInputElement)?.checked ?? false);
+              // 3. Accurately detect if swatch is currently checked on Amazon Merch DOM
+              const icon = cb.querySelector('.sci-icon, i.sci-icon, i.sci-check, i');
+              const hasCheckIcon = Boolean(
+                icon && 
+                (
+                  icon.classList.contains('sci-check') || 
+                  icon.classList.contains('sci-check-box') || 
+                  icon.classList.contains('checkmark') ||
+                  (typeof icon.className === 'string' && icon.className.includes('check'))
+                ) && 
+                !icon.classList.contains('sci-check-box-blank')
+              );
+
+              const isChecked = Boolean(
+                cb.classList.contains('selected') || 
+                cb.classList.contains('checked') || 
+                cb.getAttribute('aria-checked') === 'true' ||
+                cb.querySelector('.selected, .checked, [aria-checked="true"]') !== null ||
+                hasCheckIcon ||
+                (cb.querySelector('input') as HTMLInputElement)?.checked
+              );
 
               if (isChecked !== shouldBeChecked) {
-                const input = (cb.querySelector('input[type="checkbox"]') || cb.querySelector('.sci-icon') || cb) as HTMLElement;
-                input.click();
-                await sleep(40);
+                const clickTarget = (cb.querySelector('.color-checkbox') || cb.querySelector('input') || cb.querySelector('.sci-icon') || cb) as HTMLElement;
+                clickTarget.click();
+                await sleep(50);
               }
             }
           }
@@ -789,8 +784,9 @@ export class UploadWorkerService {
           productId: product.id,
           colorMode: product.colorMode,
           fitTypes,
-          avoidColor,
-          customBgColor
+          avoidColor: String(avoidColor).toLowerCase(),
+          customBgColor,
+          catalogColors: Array.isArray(product.colors) ? product.colors.map(c => c.id.toLowerCase().replace(/[\s_]+/g, '')) : []
         });
 
         if (!editResult.success) {
