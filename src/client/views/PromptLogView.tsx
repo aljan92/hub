@@ -313,11 +313,35 @@ export const PromptLogView: React.FC = () => {
   const [inspectDesignId, setInspectDesignId] = useState('495f452e-8245-42be-96e3-a1d3dcc752d9');
   const [inspectLoadingConfig, setInspectLoadingConfig] = useState(false);
   const [inspectLoadingListings, setInspectLoadingListings] = useState(false);
+  const [inspectLoadingDom, setInspectLoadingDom] = useState(false);
   const [inspectConfigResult, setInspectConfigResult] = useState<any>(null);
   const [inspectListingsResult, setInspectListingsResult] = useState<any>(null);
+  const [inspectDomResult, setInspectDomResult] = useState<any>(null);
   const [inspectError, setInspectError] = useState<string | null>(null);
   const [creatingUpdateTask, setCreatingUpdateTask] = useState(false);
   const [updateTaskSuccessMessage, setUpdateTaskSuccessMessage] = useState<string | null>(null);
+
+  const handleInspectDomLive = async () => {
+    if (!inspectDesignId.trim()) return;
+    setInspectLoadingDom(true);
+    setInspectError(null);
+    try {
+      const res = await fetch('/api/v1/debug/amazon-inspect-dom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ designId: inspectDesignId.trim() })
+      });
+      const data = await res.json();
+      setInspectDomResult(data);
+      if (!data.success && data.error) {
+        setInspectError(`DOM-Inspektion Fehler: ${data.error}`);
+      }
+    } catch (err: any) {
+      setInspectError(`Netzwerkfehler: ${err.message}`);
+    } finally {
+      setInspectLoadingDom(false);
+    }
+  };
 
   const handleInspectProductConfig = async () => {
     if (!inspectDesignId.trim()) return;
@@ -760,11 +784,12 @@ export const PromptLogView: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-2">
-            {(inspectConfigResult || inspectListingsResult) && (
+            {(inspectConfigResult || inspectListingsResult || inspectDomResult) && (
               <button
                 onClick={() => {
                   setInspectConfigResult(null);
                   setInspectListingsResult(null);
+                  setInspectDomResult(null);
                   setInspectError(null);
                 }}
                 className="px-2 py-1 rounded-lg text-[10px] font-semibold text-slate-400 hover:text-slate-200 bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors"
@@ -776,8 +801,8 @@ export const PromptLogView: React.FC = () => {
         </div>
 
         {/* Input Bar & Actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
-          <div className="lg:col-span-5 space-y-1">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-end">
+          <div className="lg:col-span-4 space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
               <span>Design ID (UUID)</span>
               <span className="text-[9px] font-normal text-slate-500 font-mono">Format: xxxxxxxx-...</span>
@@ -797,7 +822,7 @@ export const PromptLogView: React.FC = () => {
             <button
               onClick={handleInspectProductConfig}
               disabled={inspectLoadingConfig || !inspectDesignId.trim()}
-              className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-all shadow-md active:scale-95"
+              className="w-full flex items-center justify-center space-x-1.5 px-2.5 py-2 rounded-xl text-xs font-semibold bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-all shadow-md active:scale-95"
             >
               <FileJson className={`w-3.5 h-3.5 ${inspectLoadingConfig ? 'animate-spin' : ''}`} />
               <span>{inspectLoadingConfig ? 'Lade...' : '1. Config'}</span>
@@ -808,22 +833,34 @@ export const PromptLogView: React.FC = () => {
             <button
               onClick={handleInspectFindListings}
               disabled={inspectLoadingListings || !inspectDesignId.trim()}
-              className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-cyan-700 hover:bg-cyan-600 text-white disabled:opacity-50 transition-all shadow-md active:scale-95"
+              className="w-full flex items-center justify-center space-x-1.5 px-2.5 py-2 rounded-xl text-xs font-semibold bg-cyan-700 hover:bg-cyan-600 text-white disabled:opacity-50 transition-all shadow-md active:scale-95"
             >
               <Database className={`w-3.5 h-3.5 ${inspectLoadingListings ? 'animate-spin' : ''}`} />
               <span>{inspectLoadingListings ? 'Suche...' : '2. Listings'}</span>
             </button>
           </div>
 
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2">
+            <button
+              onClick={handleInspectDomLive}
+              disabled={inspectLoadingDom || !inspectDesignId.trim()}
+              className="w-full flex items-center justify-center space-x-1.5 px-2.5 py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-50 transition-all shadow-md active:scale-95 border border-purple-400/30"
+              title="Öffnet die Merch Edit-Seite im Browser und liest die echte Select-Products Live-Tabelle im DOM aus"
+            >
+              <SearchCode className={`w-3.5 h-3.5 ${inspectLoadingDom ? 'animate-spin' : ''}`} />
+              <span>{inspectLoadingDom ? 'Scannt DOM...' : '3. 🔍 DOM Live'}</span>
+            </button>
+          </div>
+
+          <div className="lg:col-span-2">
             <button
               onClick={() => handleRunFullUpdatePipeline(inspectDesignId.trim())}
               disabled={creatingUpdateTask || !inspectDesignId.trim()}
-              className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white disabled:opacity-50 transition-all shadow-lg active:scale-95 border border-amber-400/30"
+              className="w-full flex items-center justify-center space-x-1 px-2 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white disabled:opacity-50 transition-all shadow-lg active:scale-95 border border-amber-400/30"
               title="Führt die gesamte Update-Pipeline von U1 bis U7 durch und reiht in die Queue ein"
             >
               <Sparkles className={`w-3.5 h-3.5 ${creatingUpdateTask ? 'animate-spin' : ''}`} />
-              <span>{creatingUpdateTask ? 'Pipeline läuft...' : '3. 🚀 Pipeline Starten'}</span>
+              <span>{creatingUpdateTask ? 'Läuft...' : '4. 🚀 Pipeline'}</span>
             </button>
           </div>
         </div>
@@ -926,6 +963,86 @@ export const PromptLogView: React.FC = () => {
                 <p className="text-[11px] text-slate-500 italic py-6 text-center">Noch nicht abgefragt. Klicke auf "2. FindListings".</p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Panel 3: Standalone DOM Live Products Inspector */}
+        {inspectDomResult && (
+          <div className="glass-panel p-4 rounded-xl border border-purple-500/40 bg-slate-950/90 space-y-3 shadow-xl">
+            <div className="flex flex-wrap items-center justify-between border-b border-slate-800/80 pb-2.5 gap-2">
+              <div className="flex items-center space-x-2">
+                <SearchCode className="w-4 h-4 text-purple-400" />
+                <span className="text-xs font-bold text-slate-100 uppercase tracking-wider">DOM Live-Inspektion (Select Products)</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                  ⚡ {inspectDomResult.totalLiveSlots ?? 0} Live-Slots auf Amazon
+                </span>
+                {inspectDomResult.hasRejection ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-rose-400" />
+                    <span>⚠️ Rejections / Policy erkannt</span>
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Keine Rejections</span>
+                  </span>
+                )}
+              </div>
+              <CopyButton text={JSON.stringify(inspectDomResult, null, 2)} label="DOM-JSON kopieren" />
+            </div>
+
+            {inspectDomResult.rejectionReason && (
+              <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-500/50 text-rose-200 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span><strong>Rejection-Hinweis:</strong> {inspectDomResult.rejectionReason}</span>
+              </div>
+            )}
+
+            {/* Live Products Matrix Chips */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Verifizierte Live-Produkte &amp; Marktplätze:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {Object.entries<string[]>(inspectDomResult.liveProducts || {}).map(([prod, mps]) => (
+                  <div key={prod} className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-xs space-y-1">
+                    <div className="font-mono text-[11px] font-bold text-slate-200 truncate">{prod}</div>
+                    <div className="flex flex-wrap gap-1">
+                      {mps.map(mp => (
+                        <span key={mp} className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                          {mp} ✓
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {Object.keys(inspectDomResult.liveProducts || {}).length === 0 && (
+                  <div className="text-xs text-slate-500 italic col-span-full py-2">Keine aktiven Live-Produkte im DOM gefunden.</div>
+                )}
+              </div>
+            </div>
+
+            {/* Unapproved / Draft Checkboxes */}
+            {inspectDomResult.unapprovedOrDraftProducts?.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block">Nicht publizierte / Entwurf-Checkboxen ({inspectDomResult.unapprovedOrDraftProducts.length}):</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {inspectDomResult.unapprovedOrDraftProducts.map((p: string) => (
+                    <span key={p} className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Full JSON Foldout */}
+            <details className="pt-2 text-xs text-slate-400">
+              <summary className="cursor-pointer hover:text-slate-200 font-mono text-[11px] select-none">
+                ▶ Vollständiges DOM-Ergebnis anzeigen ({inspectDomResult.detailedElements?.length ?? 0} Elemente)
+              </summary>
+              <pre className="mt-2 p-2.5 bg-slate-900/90 rounded-lg text-purple-200 font-mono text-[10px] border border-slate-800 overflow-x-auto max-h-64 custom-scrollbar whitespace-pre-wrap">
+                {JSON.stringify(inspectDomResult, null, 2)}
+              </pre>
+            </details>
           </div>
         )}
       </div>

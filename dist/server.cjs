@@ -219921,7 +219921,7 @@ var init_amazonInspectService = __esm2({
     FIND_LISTINGS_URL2 = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
     PRODUCT_CONFIG_URL2 = "https://merch.amazon.com/api/productconfiguration/get?id=";
     ALL_STATUSES2 = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
-    AmazonInspectService = class {
+    AmazonInspectService = class _AmazonInspectService {
       /**
        * Ensure Session 1 is open and on merch.amazon.com
        */
@@ -220137,6 +220137,42 @@ var init_amazonInspectService = __esm2({
           };
         }
       }
+      // Helper to normalize Amazon marketplace codes to standard 2-letter country codes
+      static normalizeMarketplace(raw) {
+        const s = String(raw).trim().toUpperCase();
+        if (["US", "1", "COM", "AMAZON.COM", "ATVPDKIKX0DER"].includes(s)) return "US";
+        if (["GB", "UK", "3", "CO.UK", "AMAZON.CO.UK", "A1F83G8C2ARO7P"].includes(s)) return "GB";
+        if (["DE", "4", "AMAZON.DE", "A1PA6795UKMFR9"].includes(s)) return "DE";
+        if (["FR", "5", "AMAZON.FR", "A13V1IB3VIYZZH"].includes(s)) return "FR";
+        if (["IT", "6", "AMAZON.IT", "APJ6JRA9NG5V4"].includes(s)) return "IT";
+        if (["ES", "7", "AMAZON.ES", "A1RKKUPIHCS9HS"].includes(s)) return "ES";
+        if (["JP", "8", "CO.JP", "AMAZON.CO.JP", "A1VC38T7YXB528"].includes(s)) return "JP";
+        return s;
+      }
+      // Helper to normalize Amazon product keys to catalog product IDs
+      static normalizeProductKey(raw) {
+        const s = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_");
+        if (["STANDARD_TSHIRT", "STANDARD_T_SHIRT", "TSHIRT", "STANDARD"].includes(s)) return "STANDARD_TSHIRT";
+        if (["VALUE_GRAPHIC_TSHIRT", "VALUE_GRAPHIC_T_SHIRT", "VALUE_TSHIRT", "VALUE_T_SHIRT"].includes(s)) return "VALUE_GRAPHIC_TSHIRT";
+        if (["PREMIUM_TSHIRT", "PREMIUM_T_SHIRT", "PREMIUM"].includes(s)) return "PREMIUM_TSHIRT";
+        if (["COMFORT_COLORS_HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS", "HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS_TSHIRT"].includes(s)) return "COMFORT_COLORS_HEAVYWEIGHT_TSHIRT";
+        if (["VNECK_TSHIRT", "VNECK", "V_NECK", "V_NECK_TSHIRT", "V_NECK_T_SHIRT"].includes(s)) return "VNECK_TSHIRT";
+        if (["TANK_TOP", "TANKTOP", "TANK"].includes(s)) return "TANK_TOP";
+        if (["LONG_SLEEVE_TSHIRT", "LONG_SLEEVE_T_SHIRT", "LONGSLEEVE", "LONG_SLEEVE"].includes(s)) return "LONG_SLEEVE_TSHIRT";
+        if (["RAGLAN", "BASEBALL_TEE", "RAGLAN_TSHIRT"].includes(s)) return "RAGLAN";
+        if (["SOCCER_JERSEY", "SOCCER"].includes(s)) return "SOCCER_JERSEY";
+        if (["BASKETBALL_JERSEY", "BASKETBALL"].includes(s)) return "BASKETBALL_JERSEY";
+        if (["SWEATSHIRT", "SWEAT_SHIRT"].includes(s)) return "SWEATSHIRT";
+        if (["PULLOVER_HOODIE", "HOODIE", "PULLOVER"].includes(s)) return "PULLOVER_HOODIE";
+        if (["ZIP_HOODIE", "ZIPHOODIE", "ZIPPER_HOODIE"].includes(s)) return "ZIP_HOODIE";
+        if (["POPSOCKET", "POPSOCKETS", "POP_SOCKET", "POP_SOCKETS"].includes(s)) return "POPSOCKET";
+        if (["IPHONE_CASE", "IPHONE_CASES", "IPHONE"].includes(s)) return "IPHONE_CASE";
+        if (["SAMSUNG_GALAXY_CASE", "SAMSUNG_CASE", "SAMSUNG", "SAMSUNG_GALAXY_CASES"].includes(s)) return "SAMSUNG_GALAXY_CASE";
+        if (["TOTE_BAG", "TOTE_BAGS", "TOTEBAG", "TOTEBAGS", "BAG"].includes(s)) return "TOTE_BAG";
+        if (["THROW_PILLOW", "THROW_PILLOWS", "PILLOW", "PILLOWS"].includes(s)) return "THROW_PILLOW";
+        if (["TUMBLER", "TUMBLERS"].includes(s)) return "TUMBLER";
+        return s;
+      }
       /**
        * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
        */
@@ -220156,49 +220192,15 @@ var init_amazonInspectService = __esm2({
         const brand = masterListing.brandName || "";
         const bullets = masterListing.bullets || [];
         const description = masterListing.description || "";
-        const normalizeMarketplace = (raw) => {
-          const s = String(raw).trim().toUpperCase();
-          if (["US", "1", "COM", "AMAZON.COM", "ATVPDKIKX0DER"].includes(s)) return "US";
-          if (["GB", "UK", "3", "CO.UK", "AMAZON.CO.UK", "A1F83G8C2ARO7P"].includes(s)) return "GB";
-          if (["DE", "4", "AMAZON.DE", "A1PA6795UKMFR9"].includes(s)) return "DE";
-          if (["FR", "5", "AMAZON.FR", "A13V1IB3VIYZZH"].includes(s)) return "FR";
-          if (["IT", "6", "AMAZON.IT", "APJ6JRA9NG5V4"].includes(s)) return "IT";
-          if (["ES", "7", "AMAZON.ES", "A1RKKUPIHCS9HS"].includes(s)) return "ES";
-          if (["JP", "8", "CO.JP", "AMAZON.CO.JP", "A1VC38T7YXB528"].includes(s)) return "JP";
-          return s;
-        };
-        const normalizeProductKey2 = (raw) => {
-          const s = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_");
-          if (["STANDARD_TSHIRT", "STANDARD_T_SHIRT", "TSHIRT", "STANDARD"].includes(s)) return "STANDARD_TSHIRT";
-          if (["VALUE_GRAPHIC_TSHIRT", "VALUE_GRAPHIC_T_SHIRT", "VALUE_TSHIRT", "VALUE_T_SHIRT"].includes(s)) return "VALUE_GRAPHIC_TSHIRT";
-          if (["PREMIUM_TSHIRT", "PREMIUM_T_SHIRT", "PREMIUM"].includes(s)) return "PREMIUM_TSHIRT";
-          if (["COMFORT_COLORS_HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS", "HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS_TSHIRT"].includes(s)) return "COMFORT_COLORS_HEAVYWEIGHT_TSHIRT";
-          if (["VNECK_TSHIRT", "VNECK", "V_NECK", "V_NECK_TSHIRT", "V_NECK_T_SHIRT"].includes(s)) return "VNECK_TSHIRT";
-          if (["TANK_TOP", "TANKTOP", "TANK"].includes(s)) return "TANK_TOP";
-          if (["LONG_SLEEVE_TSHIRT", "LONG_SLEEVE_T_SHIRT", "LONGSLEEVE", "LONG_SLEEVE"].includes(s)) return "LONG_SLEEVE_TSHIRT";
-          if (["RAGLAN", "BASEBALL_TEE", "RAGLAN_TSHIRT"].includes(s)) return "RAGLAN";
-          if (["SOCCER_JERSEY", "SOCCER"].includes(s)) return "SOCCER_JERSEY";
-          if (["BASKETBALL_JERSEY", "BASKETBALL"].includes(s)) return "BASKETBALL_JERSEY";
-          if (["SWEATSHIRT", "SWEAT_SHIRT"].includes(s)) return "SWEATSHIRT";
-          if (["PULLOVER_HOODIE", "HOODIE", "PULLOVER"].includes(s)) return "PULLOVER_HOODIE";
-          if (["ZIP_HOODIE", "ZIPHOODIE", "ZIPPER_HOODIE"].includes(s)) return "ZIP_HOODIE";
-          if (["POPSOCKET", "POPSOCKETS", "POP_SOCKET", "POP_SOCKETS"].includes(s)) return "POPSOCKET";
-          if (["IPHONE_CASE", "IPHONE_CASES", "IPHONE"].includes(s)) return "IPHONE_CASE";
-          if (["SAMSUNG_GALAXY_CASE", "SAMSUNG_CASE", "SAMSUNG", "SAMSUNG_GALAXY_CASES"].includes(s)) return "SAMSUNG_GALAXY_CASE";
-          if (["TOTE_BAG", "TOTE_BAGS", "TOTEBAG", "TOTEBAGS", "BAG"].includes(s)) return "TOTE_BAG";
-          if (["THROW_PILLOW", "THROW_PILLOWS", "PILLOW", "PILLOWS"].includes(s)) return "THROW_PILLOW";
-          if (["TUMBLER", "TUMBLERS"].includes(s)) return "TUMBLER";
-          return s;
-        };
         const products = configData.products || {};
         const productTypes = [];
         let totalConfiguredSlots = 0;
         const productSummary = {};
         for (const [pKey, pVal] of Object.entries(products)) {
-          const normalizedKey = normalizeProductKey2(pKey);
+          const normalizedKey = _AmazonInspectService.normalizeProductKey(pKey);
           productTypes.push(normalizedKey);
           const rawMarketplaces = Object.keys(pVal.marketplaceData || {});
-          const normalizedMarketplaces = Array.from(new Set(rawMarketplaces.map(normalizeMarketplace)));
+          const normalizedMarketplaces = Array.from(new Set(rawMarketplaces.map(_AmazonInspectService.normalizeMarketplace)));
           totalConfiguredSlots += Math.max(1, normalizedMarketplaces.length);
           const entry = {
             fits: pVal.dimensions?.FIT || [],
@@ -220425,7 +220427,7 @@ var init_amazonInspectService = __esm2({
               });
               if (domResult && domResult.pubMap) {
                 for (const [rKey, mps] of Object.entries(domResult.pubMap)) {
-                  const normKey = normalizeProductKey(rKey);
+                  const normKey = _AmazonInspectService.normalizeProductKey(rKey);
                   domLiveSummary[normKey] = mps;
                   if (rKey !== normKey) {
                     domLiveSummary[rKey] = mps;
@@ -220491,6 +220493,127 @@ var init_amazonInspectService = __esm2({
             title: "Fehler beim Design-Download",
             content: err.message || "Unbekannter Fehler beim Herunterladen des Original-Designs"
           });
+          return { success: false, error: err.message };
+        } finally {
+          if (newTab) {
+            await newTab.close().catch(() => {
+            });
+          }
+        }
+      }
+      /**
+       * Standalone DOM inspection of merch.amazon.com/designs/{designId}/edit
+       * Opens the 'Select Products' popup and returns the exact live product matrix and rejections.
+       */
+      static async inspectDomProducts(designId) {
+        const cleanDesignId = (designId || "").trim();
+        if (!cleanDesignId) {
+          return {
+            success: false,
+            designId: "",
+            editUrl: "",
+            totalLiveSlots: 0,
+            liveProducts: {},
+            unapprovedOrDraftProducts: [],
+            hasRejection: false,
+            rejectionReason: null,
+            detailedElements: [],
+            error: "Keine Design-ID angegeben."
+          };
+        }
+        const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
+        console.log(`[AmazonInspectService] \u{1F50D} Starte Standalone DOM-Inspektion f\xFCr Design ${cleanDesignId}...`);
+        let newTab = null;
+        try {
+          const session2 = await BrowserSessionService.getSession("sync");
+          newTab = await session2.page.context().newPage();
+          await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
+          const pageRejectionInfo = await newTab.evaluate(() => {
+            const alertElements = Array.from(document.querySelectorAll('.alert-danger, .alert-warning, .error-banner, .validation-error, [role="alert"]'));
+            const alertText = alertElements.map((a) => a.textContent?.trim() || "").filter(Boolean).join(" | ");
+            const bodyText = document.body.innerText || "";
+            const hasKeywords = /rejected|policy violation|content policy|copyright violation|trademark violation/i.test(bodyText);
+            return {
+              hasAlert: alertElements.length > 0 || hasKeywords,
+              alertText: alertText || (hasKeywords ? "Amazon Rejection / Policy Violation Text auf Seite erkannt" : "")
+            };
+          });
+          const selectBtn = await newTab.$('#select-marketplace-button-original, button:has-text("Select Products")');
+          if (!selectBtn) {
+            throw new Error('Button "Select Products" (#select-marketplace-button-original) konnte im DOM nicht gefunden werden.');
+          }
+          await selectBtn.click();
+          await newTab.waitForSelector(".select-products-table, .modal-body table", { timeout: 12e3 });
+          const domResult = await newTab.evaluate(() => {
+            const liveMap = {};
+            let liveCount = 0;
+            const drafts = [];
+            const details = [];
+            const checkboxes = Array.from(document.querySelectorAll('flowcheckbox[formcontrolname="shouldPublish"], flowcheckbox[class*="-"]'));
+            for (const cb of checkboxes) {
+              const className = cb.className || "";
+              const match = className.match(/([A-Z0-9_]+)-([A-Z]{2})/);
+              if (!match) continue;
+              const rawProd = match[1];
+              const mp = match[2].toUpperCase();
+              const isReadonly = Boolean(
+                cb.querySelector("span.readonly") || cb.querySelector("input[readonly]") || cb.querySelector("i.sci-check-box") && cb.querySelector("span.readonly")
+              );
+              const isChecked = Boolean(cb.querySelector("i.sci-check-box"));
+              details.push({
+                product: rawProd,
+                marketplace: mp,
+                isReadonly,
+                isChecked,
+                rawClass: className
+              });
+              if (isReadonly) {
+                if (!liveMap[rawProd]) liveMap[rawProd] = [];
+                if (!liveMap[rawProd].includes(mp)) {
+                  liveMap[rawProd].push(mp);
+                  liveCount++;
+                }
+              } else if (isChecked && !isReadonly) {
+                drafts.push(`${rawProd}-${mp}`);
+              }
+            }
+            const closeBtn = document.querySelector("button.close, .modal-header button, #select-marketplace-cancel-button");
+            if (closeBtn) closeBtn.click();
+            return { liveMap, liveCount, drafts, details };
+          });
+          const normalizedLiveProducts = {};
+          for (const [rKey, mps] of Object.entries(domResult.liveMap || {})) {
+            const normKey = _AmazonInspectService.normalizeProductKey(rKey);
+            normalizedLiveProducts[normKey] = mps;
+          }
+          const hasRejection = pageRejectionInfo.hasAlert || domResult.drafts.length > 0;
+          const rejectionReason = pageRejectionInfo.alertText || (domResult.drafts.length > 0 ? `Unpublizierte/abgelehnte Produkte erkannt: ${domResult.drafts.join(", ")}` : null);
+          console.log(`[AmazonInspectService] \u{1F3AF} Standalone DOM-Inspektion abgeschlossen: ${domResult.liveCount} Live-Slots \xFCber ${Object.keys(normalizedLiveProducts).length} Produkte. Rejections: ${domResult.drafts.length}`);
+          return {
+            success: true,
+            designId: cleanDesignId,
+            editUrl,
+            totalLiveSlots: domResult.liveCount,
+            liveProducts: normalizedLiveProducts,
+            unapprovedOrDraftProducts: domResult.drafts,
+            hasRejection,
+            rejectionReason,
+            detailedElements: domResult.details
+          };
+        } catch (err) {
+          console.error(`[AmazonInspectService] \u274C Standalone DOM-Inspektion fehlgeschlagen:`, err);
+          return {
+            success: false,
+            designId: cleanDesignId,
+            editUrl,
+            totalLiveSlots: 0,
+            liveProducts: {},
+            unapprovedOrDraftProducts: [],
+            hasRejection: false,
+            rejectionReason: null,
+            detailedElements: [],
+            error: err.message || "Fehler beim Auslesen des DOM-Produkt-Popups"
+          };
         } finally {
           if (newTab) {
             await newTab.close().catch(() => {
@@ -226915,6 +227038,25 @@ app.post("/api/v1/debug/amazon-inspect", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: err.message || "Interner Serverfehler beim Amazon API Inspector"
+    });
+  }
+});
+app.post("/api/v1/debug/amazon-inspect-dom", async (req, res) => {
+  const { designId } = req.body;
+  try {
+    if (!designId) {
+      return res.status(400).json({
+        success: false,
+        error: "Keine Design-ID (UUID) angegeben."
+      });
+    }
+    const result2 = await AmazonInspectService.inspectDomProducts(designId);
+    return res.json(result2);
+  } catch (err) {
+    console.error("[AmazonInspectService] Fehler bei inspectDomProducts:", err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Fehler beim Auslesen des DOM-Produkt-Popups"
     });
   }
 });

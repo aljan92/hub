@@ -600,6 +600,28 @@ app.post('/api/v1/debug/amazon-inspect', async (req, res) => {
   }
 });
 
+// Amazon Merch Standalone DOM Live Products Inspector
+app.post('/api/v1/debug/amazon-inspect-dom', async (req, res) => {
+  const { designId } = req.body;
+  try {
+    if (!designId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Keine Design-ID (UUID) angegeben.'
+      });
+    }
+
+    const result = await AmazonInspectService.inspectDomProducts(designId);
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[AmazonInspectService] Fehler bei inspectDomProducts:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Fehler beim Auslesen des DOM-Produkt-Popups'
+    });
+  }
+});
+
 // Amazon Merch Create Update Task Endpoint (#xxx-U from Session 1)
 app.post('/api/v1/debug/amazon-create-update-task', async (req, res) => {
   const { designId } = req.body;
