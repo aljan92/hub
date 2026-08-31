@@ -528,8 +528,7 @@ export class QueueService {
     let totalBaseSlots = 0;
 
     const liveSummary = item.liveProductSummary || item.liveStats?.productSummary || {};
-    const liveTypes = new Set((item.liveProductTypes || item.liveStats?.productTypes || []).map((t: any) => String(t).toUpperCase()));
-    const hasLiveDetail = Object.keys(liveSummary).length > 0 || liveTypes.size > 0;
+    const hasLiveDetail = Object.keys(liveSummary).length > 0;
 
     if (isUpdate && hasLiveDetail) {
       for (const prod of catalog.products) {
@@ -545,10 +544,12 @@ export class QueueService {
         const liveProductInfo = matchedSummaryKey ? liveSummary[matchedSummaryKey] : null;
 
         let liveMps: string[] = [];
-        if (liveProductInfo && Array.isArray(liveProductInfo.marketplaces)) {
-          liveMps = liveProductInfo.marketplaces.map(normalizeMarketplaceCode);
-        } else if (liveTypes.has(prodId.toUpperCase())) {
-          liveMps = ['US'];
+        if (liveProductInfo) {
+          if (Array.isArray(liveProductInfo.marketplaces)) {
+            liveMps = liveProductInfo.marketplaces.map(normalizeMarketplaceCode);
+          } else if (Array.isArray(liveProductInfo)) {
+            liveMps = liveProductInfo.map(normalizeMarketplaceCode);
+          }
         }
 
         // Exact delta of missing marketplaces to be published
@@ -916,8 +917,7 @@ export class QueueService {
       }
 
       const liveSummary = uItem.liveProductSummary || {};
-      const liveTypes = new Set((uItem.liveProductTypes || []).map(t => String(t).toUpperCase()));
-      const hasLiveDetail = Object.keys(liveSummary).length > 0 || liveTypes.size > 0;
+      const hasLiveDetail = Object.keys(liveSummary).length > 0;
 
       let netSlots = 0;
       const calculatedActiveMap: Record<string, string[]> = {};
@@ -936,11 +936,12 @@ export class QueueService {
           const liveProductInfo = matchedSummaryKey ? liveSummary[matchedSummaryKey] : null;
 
           let liveMps: string[] = [];
-          if (liveProductInfo && Array.isArray(liveProductInfo.marketplaces)) {
-            liveMps = liveProductInfo.marketplaces.map(normalizeMarketplaceCode);
-          } else if (liveTypes.has(prodId.toUpperCase())) {
-            // Product is live but no marketplace breakdown -> assume only existing marketplaces are live
-            liveMps = ['US'];
+          if (liveProductInfo) {
+            if (Array.isArray(liveProductInfo.marketplaces)) {
+              liveMps = liveProductInfo.marketplaces.map(normalizeMarketplaceCode);
+            } else if (Array.isArray(liveProductInfo)) {
+              liveMps = liveProductInfo.map(normalizeMarketplaceCode);
+            }
           }
 
           // 2. Exact delta of missing marketplaces that need to be newly uploaded/added

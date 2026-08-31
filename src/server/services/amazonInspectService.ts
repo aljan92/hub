@@ -284,19 +284,35 @@ export class AmazonInspectService {
     if (['COMFORT_COLORS_HEAVYWEIGHT_TSHIRT', 'COMFORT_COLORS', 'HEAVYWEIGHT_TSHIRT', 'COMFORT_COLORS_TSHIRT'].includes(s)) return 'COMFORT_COLORS_HEAVYWEIGHT_TSHIRT';
     if (['VNECK_TSHIRT', 'VNECK', 'V_NECK', 'V_NECK_TSHIRT', 'V_NECK_T_SHIRT'].includes(s)) return 'VNECK_TSHIRT';
     if (['TANK_TOP', 'TANKTOP', 'TANK'].includes(s)) return 'TANK_TOP';
-    if (['LONG_SLEEVE_TSHIRT', 'LONG_SLEEVE_T_SHIRT', 'LONGSLEEVE', 'LONG_SLEEVE'].includes(s)) return 'LONG_SLEEVE_TSHIRT';
+    if (['STANDARD_LONG_SLEEVE', 'LONG_SLEEVE_TSHIRT', 'LONG_SLEEVE_T_SHIRT', 'LONGSLEEVE', 'LONG_SLEEVE', 'STANDARD_LONG_SLEEVE_TSHIRT'].includes(s)) return 'LONG_SLEEVE_TSHIRT';
     if (['RAGLAN', 'BASEBALL_TEE', 'RAGLAN_TSHIRT'].includes(s)) return 'RAGLAN';
     if (['SOCCER_JERSEY', 'SOCCER'].includes(s)) return 'SOCCER_JERSEY';
     if (['BASKETBALL_JERSEY', 'BASKETBALL'].includes(s)) return 'BASKETBALL_JERSEY';
-    if (['SWEATSHIRT', 'SWEAT_SHIRT'].includes(s)) return 'SWEATSHIRT';
-    if (['PULLOVER_HOODIE', 'HOODIE', 'PULLOVER'].includes(s)) return 'PULLOVER_HOODIE';
+    if (['BASEBALL_JERSEY', 'BASEBALL'].includes(s)) return 'BASEBALL_JERSEY';
+    if (['STANDARD_SWEATSHIRT', 'SWEATSHIRT', 'SWEAT_SHIRT'].includes(s)) return 'SWEATSHIRT';
+    if (['STANDARD_PULLOVER_HOODIE', 'PULLOVER_HOODIE', 'HOODIE', 'PULLOVER'].includes(s)) return 'PULLOVER_HOODIE';
     if (['ZIP_HOODIE', 'ZIPHOODIE', 'ZIPPER_HOODIE'].includes(s)) return 'ZIP_HOODIE';
-    if (['POPSOCKET', 'POPSOCKETS', 'POP_SOCKET', 'POP_SOCKETS'].includes(s)) return 'POPSOCKET';
-    if (['IPHONE_CASE', 'IPHONE_CASES', 'IPHONE'].includes(s)) return 'IPHONE_CASE';
-    if (['SAMSUNG_GALAXY_CASE', 'SAMSUNG_CASE', 'SAMSUNG', 'SAMSUNG_GALAXY_CASES'].includes(s)) return 'SAMSUNG_GALAXY_CASE';
+    if (['POP_SOCKET', 'POPSOCKET', 'POPSOCKETS', 'POP_SOCKETS'].includes(s)) return 'POPSOCKET';
+    if (['PHONE_CASE_APPLE_IPHONE', 'IPHONE_CASE', 'IPHONE_CASES', 'IPHONE'].includes(s)) return 'IPHONE_CASE';
+    if (['PHONE_CASE_SAMSUNG_GALAXY', 'SAMSUNG_GALAXY_CASE', 'SAMSUNG_CASE', 'SAMSUNG', 'SAMSUNG_GALAXY_CASES'].includes(s)) return 'SAMSUNG_GALAXY_CASE';
     if (['TOTE_BAG', 'TOTE_BAGS', 'TOTEBAG', 'TOTEBAGS', 'BAG'].includes(s)) return 'TOTE_BAG';
     if (['THROW_PILLOW', 'THROW_PILLOWS', 'PILLOW', 'PILLOWS'].includes(s)) return 'THROW_PILLOW';
     if (['TUMBLER', 'TUMBLERS'].includes(s)) return 'TUMBLER';
+    if (['OVERSIZED_TSHIRT', 'OVERSIZED_T_SHIRT', 'OVERSIZED'].includes(s)) return 'OVERSIZED_TSHIRT';
+    if (['COMFORT_COLORS_SWEATSHIRT'].includes(s)) return 'COMFORT_COLORS_SWEATSHIRT';
+    if (['COMFORT_COLORS_CROP_SWEATSHIRT'].includes(s)) return 'COMFORT_COLORS_CROP_SWEATSHIRT';
+    if (['CROP_TOP', 'CROPTOP'].includes(s)) return 'CROP_TOP';
+    if (['PERFORMANCE_HOODIE'].includes(s)) return 'PERFORMANCE_HOODIE';
+    if (['PERFORMANCE_TSHIRT', 'PERFORMANCE_T_SHIRT'].includes(s)) return 'PERFORMANCE_TSHIRT';
+    if (['POLO'].includes(s)) return 'POLO';
+    if (['QUARTER_ZIP', 'QUARTERZIP'].includes(s)) return 'QUARTER_ZIP';
+    if (['PRINTED_BASEBALL_HAT'].includes(s)) return 'PRINTED_BASEBALL_HAT';
+    if (['PRINTED_TRUCKER_HAT'].includes(s)) return 'PRINTED_TRUCKER_HAT';
+    if (['SPORT_SUN_VISOR'].includes(s)) return 'SPORT_SUN_VISOR';
+    if (['SPORT_BACKPACK'].includes(s)) return 'SPORT_BACKPACK';
+    if (['MUG', 'MUGS'].includes(s)) return 'MUG';
+    if (['WATER_BOTTLE', 'WATER_BOTTLES'].includes(s)) return 'WATER_BOTTLE';
+    if (['HARDCOVER_JOURNAL', 'JOURNAL'].includes(s)) return 'HARDCOVER_JOURNAL';
     return s;
   }
 
@@ -572,12 +588,12 @@ export class AmazonInspectService {
 
       try {
         const selectBtnSelector = '#select-marketplace-button-original, button:has-text("Select Products"), button:has-text("Produkte auswählen"), button.btn-outline-primary:has-text("Select"), [id*="select-marketplace"]';
-        await newTab.waitForSelector(selectBtnSelector, { timeout: 25000 }).catch(() => null);
+        await newTab.waitForSelector(selectBtnSelector, { timeout: 45000 }).catch(() => null);
         const selectBtn = await newTab.$(selectBtnSelector);
         if (selectBtn) {
           console.log(`[AmazonInspectService] 🔍 Öffne 'Select Products' Popup im DOM für Task ${cleanTaskId}...`);
           await selectBtn.click().catch(() => null);
-          await newTab.waitForSelector('.select-products-table, .modal-body table', { timeout: 15000 }).catch(() => null);
+          await newTab.waitForSelector('.select-products-table, .modal-body table', { timeout: 35000 }).catch(() => null);
 
           const domResult = await newTab.evaluate(() => {
             const pubMap: Record<string, string[]> = {};
@@ -772,14 +788,14 @@ export class AmazonInspectService {
 
       // 2. Open "Select Products" popup
       const selectBtnSelector = '#select-marketplace-button-original, button:has-text("Select Products"), button:has-text("Produkte auswählen"), button.btn-outline-primary:has-text("Select"), [id*="select-marketplace"]';
-      await newTab.waitForSelector(selectBtnSelector, { timeout: 30000 });
+      await newTab.waitForSelector(selectBtnSelector, { timeout: 45000 });
       const selectBtn = await newTab.$(selectBtnSelector);
       if (!selectBtn) {
         throw new Error('Button "Select Products" (#select-marketplace-button-original) konnte im DOM nicht gefunden werden.');
       }
 
       await selectBtn.click();
-      await newTab.waitForSelector('.select-products-table, .modal-body table', { timeout: 15000 });
+      await newTab.waitForSelector('.select-products-table, .modal-body table', { timeout: 35000 });
 
       // 3. Evaluate table
       const domResult = await newTab.evaluate(() => {
