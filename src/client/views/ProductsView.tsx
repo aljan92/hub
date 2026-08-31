@@ -26,6 +26,7 @@ interface MerchColorDef {
   id: string;
   displayName: string;
   hexPreview?: string;
+  avoidRule?: 'none' | 'white' | 'black';
 }
 
 interface MerchFitTypeDef {
@@ -104,6 +105,35 @@ export const ProductsView: React.FC = () => {
   const [maxDroppableCapacity, setMaxDroppableCapacity] = useState(0);
   const [queueTolerance, setQueueTolerance] = useState(10);
   const [isUpdatingDropConfig, setIsUpdatingDropConfig] = useState(false);
+
+  const handleCycleColorAvoidRule = async (productId: string, colorId: string, currentRule?: 'none' | 'white' | 'black') => {
+    const nextRule: 'none' | 'white' | 'black' = 
+      (!currentRule || currentRule === 'none') ? 'white' :
+      currentRule === 'white' ? 'black' : 'none';
+
+    // Optimistically update local state immediately
+    setProducts(prev => prev.map(prod => {
+      if (prod.id !== productId) return prod;
+      return {
+        ...prod,
+        colors: (prod.colors || []).map(col => {
+          if (col.id !== colorId) return col;
+          return { ...col, avoidRule: nextRule };
+        })
+      };
+    }));
+
+    try {
+      await fetch('/api/v1/products/color-avoid-rule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, colorId, avoidRule: nextRule })
+      });
+    } catch (err) {
+      console.error('Failed to update color avoid rule:', err);
+      fetchCatalogData(); // Revert on failure
+    }
+  };
 
   // Fetch catalog & scanner state
   const fetchCatalogData = async () => {
@@ -755,28 +785,80 @@ export const ProductsView: React.FC = () => {
                   </div>
 
                   {selectedProduct.colorMode === 'predefined' ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
-                      {selectedProduct.colors.map((color) => (
-                        <div
-                          key={color.id}
-                          onClick={() => handleCopyColor(color.id)}
-                          className="flex items-center space-x-2.5 p-2 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-primary-500/40 hover:bg-slate-800/50 cursor-pointer transition-all group"
-                          title="Klicke um Farb-ID zu kopieren"
-                        >
-                          <span
-                            style={{ backgroundColor: color.hexPreview || '#4a5568' }}
-                            className="w-5 h-5 rounded-full border border-slate-700/80 shrink-0 shadow-sm"
-                          />
-                          <div className="overflow-hidden">
-                            <div className="text-xs font-medium text-slate-200 truncate group-hover:text-white">
-                              {color.displayName}
-                            </div>
-                            <div className="text-[9px] font-mono text-slate-400 truncate">
-                              .{color.id}-checkbox
-                            </div>
-                          </div>
+                    <div className="space-y-2.5">
+                      {/* Guide Banner */}
+                      <div className="text-[11px] text-slate-400 bg-slate-900/80 border border-slate-800 p-2.5 rounded-xl flex items-center justify-between gap-2">
+                        <div className="flex items-center space-x-2">
+                          <Sliders className="w-3.5 h-3.5 text-accent-cyan shrink-0" />
+                          <span>
+                            <strong>3-State Farbregel:</strong> Klicke auf eine Farbe zum Durchschalten:
+                            <span className="inline-flex items-center gap-1.5 ml-2 font-mono text-[10px]">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Immer aktiv</span>
+                              <span>➔</span>
+                              <span className="px-1.5 py-0.5 rounded bg-white/20 text-white border border-white/40">⚪ Weiß meiden</span>
+                              <span>➔</span>
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">⚫ Schwarz meiden</span>
+                            </span>
+                          </span>
                         </div>
-                      ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-80 overflow-y-auto pr-1">
+                        {selectedProduct.colors.map((color) => {
+                          const rule = color.avoidRule || 'none';
+                          const isAvoidWhite = rule === 'white';
+                          const isAvoidBlack = rule === 'black';
+
+                          return (
+                            <div
+                              key={color.id}
+                              onClick={() => handleCycleColorAvoidRule(selectedProduct.id, color.id, color.avoidRule)}
+                              className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all select-none group ${
+                                isAvoidWhite
+                                  ? 'bg-slate-800/90 border-white/40 shadow-sm shadow-white/10 ring-1 ring-white/20'
+                                  : isAvoidBlack
+                                    ? 'bg-amber-950/20 border-amber-500/40 shadow-sm shadow-amber-500/10 ring-1 ring-amber-500/20'
+                                    : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-850'
+                              }`}
+                              title={`Klicke zum Ändern der Farbregel (Aktuell: ${isAvoidWhite ? 'Bei Weiß vermeiden' : isAvoidBlack ? 'Bei Schwarz vermeiden' : 'Immer aktiv'})`}
+                            >
+                              <div className="flex items-center space-x-2.5 min-w-0">
+                                <span
+                                  style={{ backgroundColor: color.hexPreview || '#4a5568' }}
+                                  className="w-5 h-5 rounded-full border border-slate-700/80 shrink-0 shadow-sm"
+                                />
+                                <div className="overflow-hidden">
+                                  <div className="text-xs font-semibold text-slate-100 truncate">
+                                    {color.displayName}
+                                  </div>
+                                  <div className="text-[9px] font-mono text-slate-400 truncate">
+                                    .{color.id}-checkbox
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 3-State Avoid Rule Badge */}
+                              <div className="shrink-0 ml-2">
+                                {isAvoidWhite ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-white/20 text-white border border-white/40 flex items-center space-x-1">
+                                    <span>⚪</span>
+                                    <span>Weiß meiden</span>
+                                  </span>
+                                ) : isAvoidBlack ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1">
+                                    <span>⚫</span>
+                                    <span>Schwarz meiden</span>
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-800/80 border border-slate-700/60 group-hover:text-slate-200">
+                                    Immer aktiv
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : (
                     /* Color Picker Mode (e.g. PopSockets, Cases, Pillows, Tote Bags) */

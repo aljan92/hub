@@ -773,35 +773,44 @@ export class UploadWorkerService {
                 }
               }
 
-              // 3. Determine if color is allowed in product catalog
+              // 3. Determine if color is allowed in product catalog and get its specific avoidRule
               let isCatalogAllowed = true;
+              let colorAvoidRule: 'none' | 'white' | 'black' = 'none';
+
               if (params.catalogColors && params.catalogColors.length > 0) {
-                if (matchedColorId) {
-                  isCatalogAllowed = params.catalogColors.includes(matchedColorId) || 
-                    params.catalogColors.some((ac: string) => haystack.includes(ac));
+                const matchedConfig = params.catalogColors.find((c: any) => 
+                  (matchedColorId && c.id === matchedColorId) || 
+                  haystack.includes(c.id) ||
+                  (matchedColorId && c.id.includes(matchedColorId))
+                );
+
+                if (matchedConfig) {
+                  isCatalogAllowed = true;
+                  colorAvoidRule = matchedConfig.avoidRule || 'none';
                 } else {
-                  isCatalogAllowed = params.catalogColors.some((ac: string) => haystack.includes(ac));
+                  isCatalogAllowed = false;
                 }
               }
 
               let shouldBeChecked = isCatalogAllowed;
 
-              // 4. Apply Avoid Color Rules
+              // 4. Apply Avoid Color Rules based on user's catalog configuration
               if (params.avoidColor === 'white') {
-                if (
-                  matchedColorId === 'white' ||
-                  haystack.includes('white') ||
-                  haystack.includes('weiß') ||
-                  haystack.includes('weiss')
-                ) {
+                if (colorAvoidRule === 'white') {
+                  shouldBeChecked = false;
+                } else if (colorAvoidRule === 'none') {
+                  // Color explicitly marked as "Never avoid"
+                  shouldBeChecked = isCatalogAllowed;
+                } else if (matchedColorId === 'white' || haystack.includes('white') || haystack.includes('weiß') || haystack.includes('weiss')) {
                   shouldBeChecked = false;
                 }
               } else if (params.avoidColor === 'black') {
-                if (
-                  matchedColorId === 'black' ||
-                  haystack.includes('black') ||
-                  haystack.includes('schwarz')
-                ) {
+                if (colorAvoidRule === 'black') {
+                  shouldBeChecked = false;
+                } else if (colorAvoidRule === 'none') {
+                  // Color explicitly marked as "Never avoid"
+                  shouldBeChecked = isCatalogAllowed;
+                } else if (matchedColorId === 'black' || haystack.includes('black') || haystack.includes('schwarz')) {
                   shouldBeChecked = false;
                 }
               }
@@ -831,7 +840,7 @@ export class UploadWorkerService {
 
               const isChecked = Boolean(hasSelectedClass || hasAriaChecked || hasCheckIcon || hasCheckedInput);
 
-              // 7. Click if state differs
+              // 6. Click if state differs
               if (isChecked !== shouldBeChecked) {
                 const clickTarget = (cb.querySelector('.color-checkbox') || cb.querySelector('input') || cb.querySelector('.sci-icon') || cb) as HTMLElement;
                 clickTarget.click();
@@ -848,7 +857,7 @@ export class UploadWorkerService {
           fitTypes,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
-          catalogColors: Array.isArray(product.colors) ? product.colors.map(c => c.id.toLowerCase()) : []
+          catalogColors: Array.isArray(product.colors) ? product.colors.map(c => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || 'none' })) : []
         });
 
         if (!editResult.success) {

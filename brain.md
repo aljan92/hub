@@ -416,6 +416,18 @@ MBA HUB/
   - **Button in Queue-Leiste:** Schneller 1-Click-Toggle `[ ⏸️ Vor Publish pausieren ]` (mit LocalStorage-Speicherung).
   - **Live-Aktionen im Banner:** Während der Pause erscheinen die Buttons `[ 🚀 Jetzt veröffentlichen (Publish) ]` (`POST /api/v1/upload/resume-publish`), `[ 🛑 Abbrechen ]` und `[ 📺 Live ansehen ]` (Live-Screencast).
 
+### 10.11 🎨 Granulare 3-State Farbregeln im Produktkatalog (`avoidRule: 'none' | 'white' | 'black'`)
+- **3-State Farbauswahl pro Produktfarbe:**
+  - Jede Farbe jedes Produkts im Produktkatalog ([ProductsView.tsx](file:///Users/alexanderjanssen/Desktop/MBA%20HUB/src/client/views/ProductsView.tsx)) kann per Klick durchgeschaltet werden:
+    - **Normal (`none`):** `Immer aktiv` – wird nie ausgelassen.
+    - **Weiß meiden (`white`):** `⚪ Bei Weiß meiden` – wird ausgelassen, wenn `avoidColor === 'white'`.
+    - **Schwarz meiden (`black`):** `⚫ Bei Schwarz meiden` – wird ausgelassen, wenn `avoidColor === 'black'`.
+- **Persistenz & Scan-Schutz:**
+  - Gespeichert in `data/product_catalog.json` unter `product.colors[].avoidRule`.
+  - Bei automatischer oder manueller Katalog-Aktualisierung / MBA-Scans (`ProductScannerService` / `saveCatalog`) bleiben die manuell konfigurierten `avoidRule`-Werte 100% erhalten.
+- **Upload Worker Integration:**
+  - Der Upload-Bot gleicht jedes Farbfeld im Amazon-DOM mit der `avoidRule` der entsprechenden Farbe im Produktkatalog ab. Ist z. B. `avoidColor === 'white'` und die Farbe hat `avoidRule: 'white'`, wird sie gezielt abgewählt, während alle anderen Farben aktiv bleiben.
+
 
 
 

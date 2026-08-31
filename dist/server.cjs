@@ -50060,8 +50060,17 @@ var init_productCatalogService = __esm2({
             const niceClass = newProd.niceClass ?? existing?.niceClass ?? inferNiceClass(newProd.displayName || newProd.id);
             const isDropAllowed = newProd.isDropAllowed ?? existing?.isDropAllowed ?? false;
             const dropPriorityOrder = newProd.dropPriorityOrder ?? existing?.dropPriorityOrder;
+            const existingColorsMap = new Map((existing?.colors || []).map((c) => [c.id, c]));
+            const mergedColors = (newProd.colors || []).map((newCol) => {
+              const existCol = existingColorsMap.get(newCol.id);
+              return {
+                ...newCol,
+                avoidRule: newCol.avoidRule ?? existCol?.avoidRule ?? "none"
+              };
+            });
             return {
               ...newProd,
+              colors: mergedColors,
               niceClass,
               isDropAllowed,
               dropPriorityOrder
@@ -50164,6 +50173,21 @@ var init_productCatalogService = __esm2({
         if (prod) {
           prod.niceClass = niceClass;
           return this.saveCatalog(this.catalogData);
+        }
+        return this.catalogData;
+      }
+      /**
+       * Update avoid rule for a specific color of a product
+       */
+      static updateProductColorAvoidRule(productId, colorId, avoidRule) {
+        this.ensureLoaded();
+        const prod = this.catalogData.products.find((p) => p.id === productId);
+        if (prod && Array.isArray(prod.colors)) {
+          const col = prod.colors.find((c) => c.id === colorId);
+          if (col) {
+            col.avoidRule = avoidRule;
+            return this.saveCatalog(this.catalogData);
+          }
         }
         return this.catalogData;
       }
@@ -225445,20 +225469,33 @@ var UploadWorkerService = class _UploadWorkerService {
                 }
               }
               let isCatalogAllowed = true;
+              let colorAvoidRule = "none";
               if (params2.catalogColors && params2.catalogColors.length > 0) {
-                if (matchedColorId) {
-                  isCatalogAllowed = params2.catalogColors.includes(matchedColorId) || params2.catalogColors.some((ac) => haystack.includes(ac));
+                const matchedConfig = params2.catalogColors.find(
+                  (c) => matchedColorId && c.id === matchedColorId || haystack.includes(c.id) || matchedColorId && c.id.includes(matchedColorId)
+                );
+                if (matchedConfig) {
+                  isCatalogAllowed = true;
+                  colorAvoidRule = matchedConfig.avoidRule || "none";
                 } else {
-                  isCatalogAllowed = params2.catalogColors.some((ac) => haystack.includes(ac));
+                  isCatalogAllowed = false;
                 }
               }
               let shouldBeChecked = isCatalogAllowed;
               if (params2.avoidColor === "white") {
-                if (matchedColorId === "white" || haystack.includes("white") || haystack.includes("wei\xDF") || haystack.includes("weiss")) {
+                if (colorAvoidRule === "white") {
+                  shouldBeChecked = false;
+                } else if (colorAvoidRule === "none") {
+                  shouldBeChecked = isCatalogAllowed;
+                } else if (matchedColorId === "white" || haystack.includes("white") || haystack.includes("wei\xDF") || haystack.includes("weiss")) {
                   shouldBeChecked = false;
                 }
               } else if (params2.avoidColor === "black") {
-                if (matchedColorId === "black" || haystack.includes("black") || haystack.includes("schwarz")) {
+                if (colorAvoidRule === "black") {
+                  shouldBeChecked = false;
+                } else if (colorAvoidRule === "none") {
+                  shouldBeChecked = isCatalogAllowed;
+                } else if (matchedColorId === "black" || haystack.includes("black") || haystack.includes("schwarz")) {
                   shouldBeChecked = false;
                 }
               }
@@ -225484,7 +225521,7 @@ var UploadWorkerService = class _UploadWorkerService {
           fitTypes,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
-          catalogColors: Array.isArray(product.colors) ? product.colors.map((c) => c.id.toLowerCase()) : []
+          catalogColors: Array.isArray(product.colors) ? product.colors.map((c) => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || "none" })) : []
         });
         if (!editResult.success) {
           this.log(`\u26A0\uFE0F Hinweis zu ${product.displayName}: ${editResult.reason}`);
@@ -227483,6 +227520,23 @@ app.patch("/api/v1/products/drop-config", (req, res) => {
       stats: stats2,
       maxDroppableCapacity,
       queueState
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/products/color-avoid-rule", (req, res) => {
+  try {
+    const { productId, colorId, avoidRule } = req.body;
+    if (!productId || !colorId) {
+      return res.status(400).json({ success: false, error: "productId und colorId erforderlich" });
+    }
+    const validRule = avoidRule === "white" ? "white" : avoidRule === "black" ? "black" : "none";
+    const catalog = ProductCatalogService.updateProductColorAvoidRule(productId, colorId, validRule);
+    res.json({
+      success: true,
+      catalog,
+      message: `Farbregel f\xFCr ${colorId} auf ${validRule} gesetzt.`
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

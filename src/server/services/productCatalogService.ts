@@ -7,6 +7,7 @@ export interface MerchColorDef {
   id: string;          // e.g. "dark_heather"
   displayName: string; // e.g. "Dark Heather"
   hexPreview?: string; // e.g. "#3A3D40"
+  avoidRule?: 'none' | 'white' | 'black'; // 'none' (default) | 'white' (avoid on white) | 'black' (avoid on black)
 }
 
 export interface MerchFitTypeDef {
@@ -185,7 +186,7 @@ export class ProductCatalogService {
     this.ensureLoaded();
 
     if (data.products !== undefined) {
-      // Merge with existing products to preserve niceClass, isDropAllowed, and dropPriorityOrder
+      // Merge with existing products to preserve niceClass, isDropAllowed, dropPriorityOrder, and color avoidRules
       const existingMap = new Map(this.catalogData.products.map(p => [p.id, p]));
       this.catalogData.products = data.products.map(newProd => {
         const existing = existingMap.get(newProd.id);
@@ -193,8 +194,18 @@ export class ProductCatalogService {
         const isDropAllowed = newProd.isDropAllowed ?? existing?.isDropAllowed ?? false;
         const dropPriorityOrder = newProd.dropPriorityOrder ?? existing?.dropPriorityOrder;
 
+        const existingColorsMap = new Map((existing?.colors || []).map(c => [c.id, c]));
+        const mergedColors = (newProd.colors || []).map(newCol => {
+          const existCol = existingColorsMap.get(newCol.id);
+          return {
+            ...newCol,
+            avoidRule: newCol.avoidRule ?? existCol?.avoidRule ?? 'none'
+          };
+        });
+
         return {
           ...newProd,
+          colors: mergedColors,
           niceClass,
           isDropAllowed,
           dropPriorityOrder
@@ -314,6 +325,22 @@ export class ProductCatalogService {
     if (prod) {
       prod.niceClass = niceClass;
       return this.saveCatalog(this.catalogData);
+    }
+    return this.catalogData;
+  }
+
+  /**
+   * Update avoid rule for a specific color of a product
+   */
+  public static updateProductColorAvoidRule(productId: string, colorId: string, avoidRule: 'none' | 'white' | 'black'): ProductCatalogData {
+    this.ensureLoaded();
+    const prod = this.catalogData.products.find(p => p.id === productId);
+    if (prod && Array.isArray(prod.colors)) {
+      const col = prod.colors.find(c => c.id === colorId);
+      if (col) {
+        col.avoidRule = avoidRule;
+        return this.saveCatalog(this.catalogData);
+      }
     }
     return this.catalogData;
   }

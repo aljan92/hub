@@ -1751,6 +1751,25 @@ app.patch('/api/v1/products/drop-config', (req, res) => {
   }
 });
 
+// Update Avoid Rule for a single product color
+app.post('/api/v1/products/color-avoid-rule', (req, res) => {
+  try {
+    const { productId, colorId, avoidRule } = req.body;
+    if (!productId || !colorId) {
+      return res.status(400).json({ success: false, error: 'productId und colorId erforderlich' });
+    }
+    const validRule = avoidRule === 'white' ? 'white' : (avoidRule === 'black' ? 'black' : 'none');
+    const catalog = ProductCatalogService.updateProductColorAvoidRule(productId, colorId, validRule);
+    res.json({
+      success: true,
+      catalog,
+      message: `Farbregel für ${colorId} auf ${validRule} gesetzt.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ==============================================================================
 // 12. Product Database & CDP Scanner API
 // ==============================================================================
