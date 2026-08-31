@@ -408,6 +408,14 @@ MBA HUB/
   - Sendet Realtime-WebSocket-Events (`TASK_LOGS_CLEARED`, `TASKS_UPDATED`, `QUEUE_UPDATED`) an alle geöffneten Tabs.
 - **Was unberührt bleibt:** API-Keys, Modelleinstellungen, System-Prompts, Marken-Whitelist und der Amazon-Produktkatalog bleiben 100% erhalten.
 
+### 10.10 🛡️ Upload Prüfmodus: "Vor Publish pausieren" (`QueueView.tsx` & `UploadWorkerService`)
+- **Ablauf im Prüfmodus:**
+  - Der Bot führt alle Schritte automatisiert aus: Öffnet die Merch Edit/Create-Seite, wählt Produkte, stellt Fit Types und Farben ein, deaktiviert Auto-Translate, befüllt alle DE/EN/FR/ES/IT/JA Listings und scrollt nach unten.
+  - **Stoppt bei 92 % vor dem Klick auf `Publish`:** Der Worker pausiert und schaltet in den Zustand `⏸️ PRÜFMODUS PAUSIERT`.
+- **Interaktive Steuerung:**
+  - **Button in Queue-Leiste:** Schneller 1-Click-Toggle `[ ⏸️ Vor Publish pausieren ]` (mit LocalStorage-Speicherung).
+  - **Live-Aktionen im Banner:** Während der Pause erscheinen die Buttons `[ 🚀 Jetzt veröffentlichen (Publish) ]` (`POST /api/v1/upload/resume-publish`), `[ 🛑 Abbrechen ]` und `[ 📺 Live ansehen ]` (Live-Screencast).
+
 
 
 

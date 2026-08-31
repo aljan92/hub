@@ -224823,6 +224823,9 @@ init_productCatalogService();
 init_syncEngine();
 var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
+  static isPausedBeforePublish = false;
+  static pauseBeforePublishRequested = false;
+  static resumePublishResolver = null;
   static currentQueueId = null;
   static currentTaskId = null;
   static currentDesignTitle = null;
@@ -224847,6 +224850,7 @@ var UploadWorkerService = class _UploadWorkerService {
     const percent = this.totalSteps > 0 ? Math.min(100, Math.round(this.stepIndex / this.totalSteps * 100)) : 0;
     return {
       isUploading: this.isUploading,
+      isPausedBeforePublish: this.isPausedBeforePublish,
       currentQueueId: this.currentQueueId,
       taskId: this.currentTaskId,
       designTitle: this.currentDesignTitle,
@@ -224884,13 +224888,32 @@ var UploadWorkerService = class _UploadWorkerService {
   static cancelUpload() {
     if (!this.isUploading) return false;
     this.abortRequested = true;
+    if (this.resumePublishResolver) {
+      this.isPausedBeforePublish = false;
+      this.resumePublishResolver();
+      this.resumePublishResolver = null;
+    }
     this.log("\u{1F6D1} Upload-Abbruch angefordert...", "Wird abgebrochen...");
     return true;
   }
   /**
+   * Resume upload that was paused before publish in inspection mode
+   */
+  static resumeAndPublish() {
+    if (!this.isUploading || !this.isPausedBeforePublish || !this.resumePublishResolver) {
+      return { success: false, message: "Kein pausierter Upload-Vorgang im Pr\xFCfmodus aktiv." };
+    }
+    this.log("\u{1F680} Pr\xFCfmodus: Klick auf Publish vom Benutzer freigegeben!", "Ver\xF6ffentliche...");
+    const resolver = this.resumePublishResolver;
+    this.resumePublishResolver = null;
+    this.isPausedBeforePublish = false;
+    resolver();
+    return { success: true, message: "Publish wird ausgef\xFChrt..." };
+  }
+  /**
    * Start upload for a specific queue item or next item in queue
    */
-  static async startUpload(queueItemId, mode = "draft") {
+  static async startUpload(queueItemId, mode = "draft", pauseBeforePublish = false) {
     if (this.isUploading) {
       return { success: false, message: "Es l\xE4uft bereits ein Upload-Vorgang." };
     }
@@ -224918,6 +224941,9 @@ var UploadWorkerService = class _UploadWorkerService {
     const isUpdateItem = isUpdate(targetItem);
     const effectiveMode = isUpdateItem ? "publish" : queueMode === "live" || mode === "publish" ? "publish" : "draft";
     this.isUploading = true;
+    this.isPausedBeforePublish = false;
+    this.pauseBeforePublishRequested = Boolean(pauseBeforePublish);
+    this.resumePublishResolver = null;
     this.abortRequested = false;
     this.currentQueueId = targetItem.id;
     this.currentTaskId = targetItem.taskId;
@@ -225474,6 +225500,23 @@ var UploadWorkerService = class _UploadWorkerService {
       await page.waitForTimeout(1500);
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       if (mode === "publish") {
+        if (this.pauseBeforePublishRequested) {
+          this.isPausedBeforePublish = true;
+          this.log(`\u23F8\uFE0F Upload vor Publish pausiert (Pr\xFCfmodus aktiv). \xDCberpr\xFCfe die Amazon-Seite im Screencast!`, "Pausiert vor Publish (Pr\xFCfmodus)", 92, 100);
+          this.broadcastStatus();
+          await new Promise((resolve, reject) => {
+            this.resumePublishResolver = resolve;
+            const checkAbortInterval = setInterval(() => {
+              if (this.abortRequested) {
+                clearInterval(checkAbortInterval);
+                this.isPausedBeforePublish = false;
+                reject(new Error("Upload vom Benutzer im Pr\xFCfmodus abgebrochen."));
+              }
+            }, 500);
+          });
+          this.isPausedBeforePublish = false;
+          if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
+        }
         this.log(`\u{1F680} Klicke 'Publish' Button f\xFCr Live-Ver\xF6ffentlichung...`, "Ver\xF6ffentliche...", 95, 100);
         const publishCheck = await page.evaluate(() => {
           const submitBtn = document.getElementById("submit-button") || document.querySelector('button[id*="submit"], button.btn-submit');
@@ -227227,8 +227270,16 @@ app.post("/api/v1/queue/update-backfill/run-once", async (req, res) => {
 });
 app.post("/api/v1/upload/start", async (req, res) => {
   try {
-    const { queueId, mode } = req.body;
-    const result2 = await UploadWorkerService.startUpload(queueId, mode || "draft");
+    const { queueId, mode, pauseBeforePublish } = req.body;
+    const result2 = await UploadWorkerService.startUpload(queueId, mode || "draft", Boolean(pauseBeforePublish));
+    res.json(result2);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/upload/resume-publish", (req, res) => {
+  try {
+    const result2 = UploadWorkerService.resumeAndPublish();
     res.json(result2);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

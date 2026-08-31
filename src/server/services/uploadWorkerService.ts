@@ -8,6 +8,7 @@ import { Page } from 'playwright';
 
 export interface UploadProgressState {
   isUploading: boolean;
+  isPausedBeforePublish?: boolean;
   currentQueueId: string | null;
   taskId: string | null;
   designTitle: string | null;
@@ -22,6 +23,9 @@ export interface UploadProgressState {
 
 export class UploadWorkerService {
   private static isUploading = false;
+  private static isPausedBeforePublish = false;
+  private static pauseBeforePublishRequested = false;
+  private static resumePublishResolver: (() => void) | null = null;
   private static currentQueueId: string | null = null;
   private static currentTaskId: string | null = null;
   private static currentDesignTitle: string | null = null;
@@ -48,6 +52,7 @@ export class UploadWorkerService {
     const percent = this.totalSteps > 0 ? Math.min(100, Math.round((this.stepIndex / this.totalSteps) * 100)) : 0;
     return {
       isUploading: this.isUploading,
+      isPausedBeforePublish: this.isPausedBeforePublish,
       currentQueueId: this.currentQueueId,
       taskId: this.currentTaskId,
       designTitle: this.currentDesignTitle,
@@ -89,14 +94,38 @@ export class UploadWorkerService {
   public static cancelUpload(): boolean {
     if (!this.isUploading) return false;
     this.abortRequested = true;
+    if (this.resumePublishResolver) {
+      this.isPausedBeforePublish = false;
+      this.resumePublishResolver();
+      this.resumePublishResolver = null;
+    }
     this.log('🛑 Upload-Abbruch angefordert...', 'Wird abgebrochen...');
     return true;
   }
 
   /**
+   * Resume upload that was paused before publish in inspection mode
+   */
+  public static resumeAndPublish(): { success: boolean; message: string } {
+    if (!this.isUploading || !this.isPausedBeforePublish || !this.resumePublishResolver) {
+      return { success: false, message: 'Kein pausierter Upload-Vorgang im Prüfmodus aktiv.' };
+    }
+    this.log('🚀 Prüfmodus: Klick auf Publish vom Benutzer freigegeben!', 'Veröffentliche...');
+    const resolver = this.resumePublishResolver;
+    this.resumePublishResolver = null;
+    this.isPausedBeforePublish = false;
+    resolver();
+    return { success: true, message: 'Publish wird ausgeführt...' };
+  }
+
+  /**
    * Start upload for a specific queue item or next item in queue
    */
-  public static async startUpload(queueItemId?: string, mode: 'draft' | 'publish' = 'draft'): Promise<{ success: boolean; message: string }> {
+  public static async startUpload(
+    queueItemId?: string, 
+    mode: 'draft' | 'publish' = 'draft',
+    pauseBeforePublish = false
+  ): Promise<{ success: boolean; message: string }> {
     if (this.isUploading) {
       return { success: false, message: 'Es läuft bereits ein Upload-Vorgang.' };
     }
@@ -135,6 +164,9 @@ export class UploadWorkerService {
     const effectiveMode: 'draft' | 'publish' = isUpdateItem ? 'publish' : (queueMode === 'live' || mode === 'publish' ? 'publish' : 'draft');
 
     this.isUploading = true;
+    this.isPausedBeforePublish = false;
+    this.pauseBeforePublishRequested = Boolean(pauseBeforePublish);
+    this.resumePublishResolver = null;
     this.abortRequested = false;
     this.currentQueueId = targetItem.id;
     this.currentTaskId = targetItem.taskId;
@@ -908,6 +940,26 @@ export class UploadWorkerService {
 
       // 9. Final Action: Save Draft vs. Live Publish (with Strict Validation & State Verification)
       if (mode === 'publish') {
+        if (this.pauseBeforePublishRequested) {
+          this.isPausedBeforePublish = true;
+          this.log(`⏸️ Upload vor Publish pausiert (Prüfmodus aktiv). Überprüfe die Amazon-Seite im Screencast!`, 'Pausiert vor Publish (Prüfmodus)', 92, 100);
+          this.broadcastStatus();
+
+          await new Promise<void>((resolve, reject) => {
+            this.resumePublishResolver = resolve;
+            const checkAbortInterval = setInterval(() => {
+              if (this.abortRequested) {
+                clearInterval(checkAbortInterval);
+                this.isPausedBeforePublish = false;
+                reject(new Error('Upload vom Benutzer im Prüfmodus abgebrochen.'));
+              }
+            }, 500);
+          });
+
+          this.isPausedBeforePublish = false;
+          if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
+        }
+
         this.log(`🚀 Klicke 'Publish' Button für Live-Veröffentlichung...`, 'Veröffentliche...', 95, 100);
 
         // Check form validity before clicking

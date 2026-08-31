@@ -1603,8 +1603,18 @@ app.post('/api/v1/queue/update-backfill/run-once', async (req, res) => {
 // Start Automated Upload
 app.post('/api/v1/upload/start', async (req, res) => {
   try {
-    const { queueId, mode } = req.body;
-    const result = await UploadWorkerService.startUpload(queueId, mode || 'draft');
+    const { queueId, mode, pauseBeforePublish } = req.body;
+    const result = await UploadWorkerService.startUpload(queueId, mode || 'draft', Boolean(pauseBeforePublish));
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Resume and Publish upload paused in inspection mode
+app.post('/api/v1/upload/resume-publish', (req, res) => {
+  try {
+    const result = UploadWorkerService.resumeAndPublish();
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

@@ -158,6 +158,24 @@ export const QueueView: React.FC = () => {
   const [isScreencastOpen, setIsScreencastOpen] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
 
+  // Pause Before Publish Toggle (Inspection Mode for Updates & Live Uploads)
+  const [pauseBeforePublish, setPauseBeforePublish] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('mba_pause_before_publish');
+      return saved !== null ? JSON.parse(saved) : true; // Default to true (safe inspection mode)
+    } catch {
+      return true;
+    }
+  });
+
+  const handleTogglePauseBeforePublish = () => {
+    const nextVal = !pauseBeforePublish;
+    setPauseBeforePublish(nextVal);
+    try {
+      localStorage.setItem('mba_pause_before_publish', JSON.stringify(nextVal));
+    } catch {}
+  };
+
   // 1-Second Delayed Hover Popover State
   const [hoveredItem, setHoveredItem] = useState<QueueItem | null>(null);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
@@ -493,7 +511,7 @@ export const QueueView: React.FC = () => {
       const res = await fetch('/api/v1/upload/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queueId, mode: globalMode })
+        body: JSON.stringify({ queueId, mode: globalMode, pauseBeforePublish })
       });
       const data = await res.json();
       if (data.success) {
@@ -504,6 +522,17 @@ export const QueueView: React.FC = () => {
       }
     } catch (err) {
       console.error('Start upload error:', err);
+    }
+  };
+
+  const handleResumePublish = async () => {
+    try {
+      const res = await fetch('/api/v1/upload/resume-publish', { method: 'POST' });
+      const data = await res.json();
+      fetchUploadStatus();
+      fetchQueue();
+    } catch (err) {
+      console.error('Resume publish error:', err);
     }
   };
 
@@ -633,6 +662,23 @@ export const QueueView: React.FC = () => {
             </button>
           </div>
 
+          {/* Pause Before Publish Toggle (Inspection Mode) */}
+          <button
+            onClick={handleTogglePauseBeforePublish}
+            className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center space-x-1.5 transition-all shadow-sm ${
+              pauseBeforePublish
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-amber-500/10'
+                : 'bg-slate-900/90 text-slate-400 border-slate-800 hover:text-slate-200'
+            }`}
+            title={pauseBeforePublish ? 'Prüfmodus AKTIV: Upload stoppt vor dem Klick auf Publish zur visuellen Kontrolle im Screencast.' : 'Prüfmodus AUS: Bot klickt nach dem Ausfüllen automatisch auf Publish.'}
+          >
+            <Pause className={`w-3.5 h-3.5 ${pauseBeforePublish ? 'text-amber-400' : 'text-slate-500'}`} />
+            <span>Vor Publish pausieren</span>
+            {pauseBeforePublish && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping ml-0.5" />
+            )}
+          </button>
+
           {/* Start / Cancel Upload Button */}
           {isUploadActive ? (
             <button
@@ -749,22 +795,28 @@ export const QueueView: React.FC = () => {
       {/* Live Upload Progress Banner (if upload is running or recently finished) */}
       {uploadProgress && (uploadProgress.isUploading || uploadProgress.currentStep !== 'Bereit') && (
         <div className={`border rounded-2xl p-4.5 shadow-lg backdrop-blur-md transition-all ${
-          uploadProgress.isUploading 
-            ? 'bg-primary-950/40 border-primary-500/40 shadow-primary-500/10 animate-pulse'
-            : uploadProgress.error 
-              ? 'bg-rose-950/40 border-rose-500/40 shadow-rose-500/10'
-              : 'bg-emerald-950/40 border-emerald-500/40 shadow-emerald-500/10'
+          uploadProgress.isPausedBeforePublish
+            ? 'bg-amber-950/40 border-amber-500/50 shadow-amber-500/20'
+            : uploadProgress.isUploading 
+              ? 'bg-primary-950/40 border-primary-500/40 shadow-primary-500/10 animate-pulse'
+              : uploadProgress.error 
+                ? 'bg-rose-950/40 border-rose-500/40 shadow-rose-500/10'
+                : 'bg-emerald-950/40 border-emerald-500/40 shadow-emerald-500/10'
         }`}>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
             <div className="flex items-center space-x-3">
               <div className={`p-2 rounded-xl border ${
-                uploadProgress.isUploading 
-                  ? 'bg-primary-500/20 text-primary-300 border-primary-500/30' 
-                  : uploadProgress.error
-                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                uploadProgress.isPausedBeforePublish
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                  : uploadProgress.isUploading 
+                    ? 'bg-primary-500/20 text-primary-300 border-primary-500/30' 
+                    : uploadProgress.error
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
               }`}>
-                {uploadProgress.isUploading ? (
+                {uploadProgress.isPausedBeforePublish ? (
+                  <Pause className="w-5 h-5 text-amber-400" />
+                ) : uploadProgress.isUploading ? (
                   <RefreshCw className="w-5 h-5 animate-spin" />
                 ) : uploadProgress.error ? (
                   <AlertTriangle className="w-5 h-5" />
@@ -787,6 +839,11 @@ export const QueueView: React.FC = () => {
                   }`}>
                     {uploadProgress.mode === 'publish' ? '🔴 LIVE PUBLISH' : '🟡 DRAFT'}
                   </span>
+                  {uploadProgress.isPausedBeforePublish && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                      ⏸️ PRÜFMODUS PAUSIERT
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-slate-300 mt-1 font-medium flex items-center space-x-2">
                   <span>{uploadProgress.currentStep}</span>
@@ -794,13 +851,33 @@ export const QueueView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center space-x-3">
-              <span className="text-xl font-bold font-mono text-slate-100">
+            <div className="flex items-center flex-wrap gap-2.5">
+              {uploadProgress.isPausedBeforePublish ? (
+                <>
+                  <button
+                    onClick={handleResumePublish}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 flex items-center space-x-1.5 transition-all shadow-md shadow-amber-500/20 active:scale-95"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>Jetzt veröffentlichen (Publish)</span>
+                  </button>
+
+                  <button
+                    onClick={handleCancelUpload}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center space-x-1.5 transition-all"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Abbrechen</span>
+                  </button>
+                </>
+              ) : null}
+
+              <span className="text-xl font-bold font-mono text-slate-100 px-2">
                 {uploadProgress.percent}%
               </span>
               <button
                 onClick={() => setIsScreencastOpen(true)}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700 flex items-center space-x-1.5 transition-all"
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700 flex items-center space-x-1.5 transition-all shadow-sm"
               >
                 <Monitor className="w-3.5 h-3.5 text-accent-cyan" />
                 <span>Live ansehen</span>
