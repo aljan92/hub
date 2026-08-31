@@ -745,8 +745,6 @@ export class UploadWorkerService {
               { id: 'black_black', matchers: ['black_black', 'black-black', 'black black'] }
             ];
 
-            let selectedCount = 0;
-
             for (const cb of colorCheckboxes) {
               // 1. Gather all clues from element, children, attributes and tooltips
               const clues: string[] = [];
@@ -808,16 +806,7 @@ export class UploadWorkerService {
                 }
               }
 
-              // 5. Manage Amazon max 10 colors limit per apparel item
-              if (shouldBeChecked) {
-                if (selectedCount >= 10) {
-                  shouldBeChecked = false;
-                } else {
-                  selectedCount++;
-                }
-              }
-
-              // 6. Accurately detect if swatch is currently checked on Amazon Merch DOM
+              // 5. Accurately detect if swatch is currently checked on Amazon Merch DOM
               const hasSelectedClass = cb.classList.contains('selected') || 
                 cb.classList.contains('checked') || 
                 cb.classList.contains('active') ||

@@ -225421,7 +225421,6 @@ var UploadWorkerService = class _UploadWorkerService {
               { id: "white_white", matchers: ["white_white", "white-white", "white white"] },
               { id: "black_black", matchers: ["black_black", "black-black", "black black"] }
             ];
-            let selectedCount = 0;
             for (const cb of colorCheckboxes) {
               const clues = [];
               if (cb.className) clues.push(String(cb.className));
@@ -225461,13 +225460,6 @@ var UploadWorkerService = class _UploadWorkerService {
               } else if (params2.avoidColor === "black") {
                 if (matchedColorId === "black" || haystack.includes("black") || haystack.includes("schwarz")) {
                   shouldBeChecked = false;
-                }
-              }
-              if (shouldBeChecked) {
-                if (selectedCount >= 10) {
-                  shouldBeChecked = false;
-                } else {
-                  selectedCount++;
                 }
               }
               const hasSelectedClass = cb.classList.contains("selected") || cb.classList.contains("checked") || cb.classList.contains("active") || cb.querySelector(".selected, .checked, .active") !== null;
