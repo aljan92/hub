@@ -227170,13 +227170,14 @@ var UploadWorkerService = class _UploadWorkerService {
           const editor = document.querySelector(`product-editor .${pid}-container`)?.closest("product-editor") || document.querySelector(`product-editor[id*="${pid}"]`) || document.querySelector("product-editor");
           if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
           const isElementChecked = (el) => {
-            const hasSelectedClass = el.classList.contains("selected") || el.classList.contains("checked") || el.classList.contains("active") || el.querySelector(".selected, .checked, .active") !== null;
-            const hasAriaChecked = el.getAttribute("aria-checked") === "true" || el.querySelector('[aria-checked="true"]') !== null;
-            const icon = el.querySelector(".sci-icon, i.sci-icon, i.sci-check, i, svg");
+            const target = el.closest("flowcheckbox") || el;
+            const hasSelectedClass = target.classList.contains("selected") || target.classList.contains("checked") || target.classList.contains("active") || target.querySelector(".selected, .checked, .active") !== null;
+            const hasAriaChecked = target.getAttribute("aria-checked") === "true" || target.querySelector('[aria-checked="true"]') !== null;
+            const icon = target.querySelector(".sci-icon, i.sci-icon, i.sci-check, i, svg");
             const hasCheckIcon = Boolean(
               icon && (icon.classList.contains("sci-check") || icon.classList.contains("sci-check-box") || icon.classList.contains("checkmark") || typeof icon.className === "string" && icon.className.includes("check")) && !icon.classList.contains("sci-check-box-blank")
             );
-            const hasCheckedInput = Boolean(el.querySelector('input[type="checkbox"], input')?.checked);
+            const hasCheckedInput = Boolean(target.querySelector('input[type="checkbox"], input')?.checked);
             return Boolean(hasSelectedClass || hasAriaChecked || hasCheckIcon || hasCheckedInput);
           };
           const clickTargetElement = (el) => {
@@ -227248,31 +227249,40 @@ var UploadWorkerService = class _UploadWorkerService {
             desiredFits.push("girls");
           }
           desiredFits.push("adult_unisex", "unisex");
-          const fitCandidateLabels = Array.from(editor.querySelectorAll('label[class*="-label"], flowcheckbox, .fit-checkbox, label'));
-          const foundFitElements = [];
-          for (const el of fitCandidateLabels) {
+          const allFitCandidates = Array.from(editor.querySelectorAll('flowcheckbox, .fit-checkbox, label[class*="-label"], input[name*="fit"], label'));
+          const fitControlsMap = /* @__PURE__ */ new Map();
+          for (const el of allFitCandidates) {
             const text2 = (el.textContent || "").trim().toLowerCase();
             const className = (el.className || "").toLowerCase();
+            const attrName = (el.getAttribute("formcontrolname") || el.getAttribute("name") || el.getAttribute("id") || "").toLowerCase();
+            const combined = `${className} ${attrName} ${text2}`;
             let fitKey = "";
-            if (className.includes("adult_unisex") || className.includes("unisex") || text2.includes("adult unisex") || text2.includes("unisex")) {
+            if (combined.includes("adult_unisex") || combined.includes("adult unisex") || combined.includes("unisex")) {
               fitKey = "adult_unisex";
-            } else if (className.includes("girls") || text2.includes("girls") || text2.includes("m\xE4dchen")) {
+            } else if (combined.includes("girls") || combined.includes("m\xE4dchen") || combined.includes("girl")) {
               fitKey = "girls";
-            } else if (className.includes("youth") || className.includes("kids") || text2.includes("youth") || text2.includes("kinder")) {
+            } else if (combined.includes("youth") || combined.includes("kids") || combined.includes("kinder")) {
               fitKey = "youth";
-            } else if (className.includes("women") || text2.includes("women") || text2.includes("frauen") || text2.includes("damen")) {
+            } else if (combined.includes("women") || combined.includes("frauen") || combined.includes("damen") || combined.includes("woman")) {
               fitKey = "women";
-            } else if (className.includes("men") || text2.includes("men") || text2.includes("m\xE4nner") || text2.includes("herren")) {
+            } else if (combined.includes("men") || combined.includes("m\xE4nner") || combined.includes("herren") || combined.includes("man")) {
               fitKey = "men";
             }
             if (fitKey) {
-              foundFitElements.push({ fitKey, el });
-              const isChecked = isElementChecked(el);
-              const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === "adult_unisex";
-              if (isChecked !== shouldBeChecked) {
-                clickTargetElement(el);
-                await sleep2(60);
+              const isFlow = el.tagName.toLowerCase() === "flowcheckbox" || el.classList.contains("fit-checkbox");
+              if (!fitControlsMap.has(fitKey) || isFlow) {
+                fitControlsMap.set(fitKey, el);
               }
+            }
+          }
+          const foundFitElements = [];
+          for (const [fitKey, el] of fitControlsMap.entries()) {
+            foundFitElements.push({ fitKey, el });
+            const isChecked = isElementChecked(el);
+            const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === "adult_unisex";
+            if (isChecked !== shouldBeChecked) {
+              clickTargetElement(el);
+              await sleep2(60);
             }
           }
           const activeFitsApplied = [];
