@@ -1629,7 +1629,7 @@ export const QueueView: React.FC = () => {
 
                                 const catalogMap = new Map(catalogProds.filter(p => p && p.id).map(p => [String(p.id), p]));
                                 const rawTm = Array.isArray(item.tmBlockedProductIds) ? item.tmBlockedProductIds : [];
-                                const cleanTmIds = rawTm.map(t => typeof t === 'object' && t !== null ? String((t as any).id || (t as any).name || '') : String(t)).filter(Boolean);
+                              const cleanTmIds = rawTm.map(t => typeof t === 'object' && t !== null ? String((t as any).id || (t as any).name || '') : String(t)).filter(Boolean);
 
                                 return prodKeys.map(prodId => {
                                   const cleanProdId = String(prodId || '').trim();
@@ -1638,19 +1638,31 @@ export const QueueView: React.FC = () => {
                                   const isTmBlocked = cleanTmIds.some(t => t.toUpperCase() === cleanProdId.toUpperCase());
 
                                   if (isUpdate) {
-                                    // Update design logic: check if already live on Amazon
-                                    const isAlreadyLive = isTmBlocked 
-                                      ? false 
-                                      : (item.liveProductSummary && typeof item.liveProductSummary === 'object'
-                                          ? Boolean(item.liveProductSummary[cleanProdId]) 
-                                          : Array.isArray(item.liveProductTypes) 
-                                            ? item.liveProductTypes.map(String).includes(cleanProdId) 
-                                            : (item.allocatedSlots === 0 || !prodKeys.slice(-Math.max(1, item.allocatedSlots || 0)).includes(cleanProdId)));
+                                    // Update design logic: check exact live vs missing marketplaces
+                                    const catalogMps = Array.isArray(prodDef?.availableMarketplaces) ? prodDef.availableMarketplaces : ['US'];
+                                    
+                                    // Find live summary for this product (case-insensitive & underscore-insensitive)
+                                    const liveSummary = item.liveProductSummary || {};
+                                    const matchedKey = Object.keys(liveSummary).find(k => 
+                                      k.toUpperCase() === cleanProdId.toUpperCase() || 
+                                      k.toUpperCase().replace(/_/g, '') === cleanProdId.toUpperCase().replace(/_/g, '')
+                                    );
+                                    const liveInfo = matchedKey ? liveSummary[matchedKey] : null;
 
-                                    const rawMps = isAlreadyLive 
-                                      ? (item.liveProductSummary?.[cleanProdId]?.marketplaces || item.activeProductsMap?.[cleanProdId] || ['US'])
-                                      : (item.activeProductsMap?.[cleanProdId] || prodDef?.availableMarketplaces || ['US']);
-                                    const mps = Array.isArray(rawMps) ? rawMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).filter(Boolean) : ['US'];
+                                    let rawLiveMps: string[] = [];
+                                    if (liveInfo && Array.isArray(liveInfo.marketplaces)) {
+                                      rawLiveMps = liveInfo.marketplaces;
+                                    } else if (Array.isArray(item.liveProductTypes) && item.liveProductTypes.some(t => String(t).toUpperCase() === cleanProdId.toUpperCase())) {
+                                      rawLiveMps = ['US'];
+                                    }
+
+                                    const liveMps = rawLiveMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).map(m => m.trim().toUpperCase());
+                                    
+                                    // Missing marketplaces that will be newly uploaded
+                                    const missingMps = catalogMps.filter(mp => !liveMps.includes(mp.toUpperCase()));
+                                    const allLive = missingMps.length === 0 && liveMps.length > 0;
+                                    const allNew = liveMps.length === 0;
+                                    const isPartiallyLive = liveMps.length > 0 && missingMps.length > 0;
 
                                     return (
                                       <div 
@@ -1658,9 +1670,11 @@ export const QueueView: React.FC = () => {
                                         className={`p-2.5 rounded-xl border text-xs transition-all ${
                                           isTmBlocked
                                             ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
-                                            : !isAlreadyLive
-                                              ? 'bg-purple-950/40 border-purple-500/60 ring-1 ring-purple-500/30 shadow-sm shadow-purple-500/10'
-                                              : 'bg-slate-900/90 border-slate-800 text-slate-300'
+                                            : isPartiallyLive
+                                              ? 'bg-slate-900/90 border-amber-500/50 ring-1 ring-amber-500/20 shadow-sm'
+                                              : allNew
+                                                ? 'bg-purple-950/40 border-purple-500/60 ring-1 ring-purple-500/30 shadow-sm shadow-purple-500/10'
+                                                : 'bg-slate-900/90 border-slate-800 text-slate-300'
                                         }`}
                                       >
                                         <div className="flex items-center justify-between gap-1">
@@ -1669,28 +1683,37 @@ export const QueueView: React.FC = () => {
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
                                               TM-Block
                                             </span>
-                                          ) : !isAlreadyLive ? (
-                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-purple-500/20 text-purple-200 border border-purple-500/40">
-                                              ✨ Neu ergänzen (+{mps.length} {mps.length === 1 ? 'Slot' : 'Slots'})
+                                          ) : allLive ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800">
+                                              ✓ {liveMps.length} Live (0 Slots)
+                                            </span>
+                                          ) : isPartiallyLive ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-950/80 text-amber-200 border border-amber-700/60">
+                                              ⚡ {liveMps.length} Live | +{missingMps.length} Neu ({missingMps.length} {missingMps.length === 1 ? 'Slot' : 'Slots'})
                                             </span>
                                           ) : (
-                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
-                                              ✓ Live (0 Slots)
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-purple-500/20 text-purple-200 border border-purple-500/40">
+                                              ✨ Neu (+{missingMps.length} {missingMps.length === 1 ? 'Slot' : 'Slots'})
                                             </span>
                                           )}
                                         </div>
                                         <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
-                                          {mps.map((mp, mIdx) => (
-                                            <span key={`${mp}_${mIdx}`} className={`px-1.5 py-0.2 rounded ${
-                                              !isAlreadyLive
-                                                ? 'bg-purple-900/60 text-purple-200 border border-purple-700'
-                                                : mp.toUpperCase() === 'US'
-                                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
-                                                  : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
-                                            }`}>
-                                              {mp}
-                                            </span>
-                                          ))}
+                                          {catalogMps.map((mp, mIdx) => {
+                                            const isMpLive = liveMps.includes(mp.toUpperCase());
+                                            return (
+                                              <span 
+                                                key={`${mp}_${mIdx}`} 
+                                                className={`px-1.5 py-0.5 rounded border transition-all ${
+                                                  isMpLive
+                                                    ? 'bg-slate-800 text-slate-300 border-slate-700 font-medium'
+                                                    : 'bg-purple-900/70 text-purple-200 border-purple-500/60 font-bold'
+                                                }`}
+                                                title={isMpLive ? `${mp}: Bereits auf Amazon live (0 Slots)` : `${mp}: Wird durch Update neu hochgeladen (+1 Slot)`}
+                                              >
+                                                {isMpLive ? `${mp} ✓` : `+ ${mp}`}
+                                              </span>
+                                            );
+                                          })}
                                         </div>
                                       </div>
                                     );
@@ -2339,19 +2362,96 @@ export const QueueView: React.FC = () => {
                                   const prodDef = catalogMap.get(cleanProdId);
                                   const displayName = prodDef?.displayName || cleanProdId;
                                   const isTmBlocked = cleanTmIds.some(t => t.toUpperCase() === cleanProdId.toUpperCase());
+                                  const isUpdate = !!(item.liveProductSummary || item.liveProductTypes);
 
-                                  const isAlreadyLive = isTmBlocked 
-                                    ? false 
-                                    : (item.liveProductSummary && typeof item.liveProductSummary === 'object'
-                                        ? Boolean(item.liveProductSummary[cleanProdId]) 
-                                        : Array.isArray(item.liveProductTypes) 
-                                          ? item.liveProductTypes.map(String).includes(cleanProdId) 
-                                          : (item.allocatedSlots === 0 || !prodKeys.slice(-Math.max(1, item.allocatedSlots || 0)).includes(cleanProdId)));
+                                  if (isUpdate) {
+                                    // Update design logic: check exact live vs missing marketplaces
+                                    const catalogMps = Array.isArray(prodDef?.availableMarketplaces) ? prodDef.availableMarketplaces : ['US'];
+                                    
+                                    // Find live summary for this product (case-insensitive & underscore-insensitive)
+                                    const liveSummary = item.liveProductSummary || {};
+                                    const matchedKey = Object.keys(liveSummary).find(k => 
+                                      k.toUpperCase() === cleanProdId.toUpperCase() || 
+                                      k.toUpperCase().replace(/_/g, '') === cleanProdId.toUpperCase().replace(/_/g, '')
+                                    );
+                                    const liveInfo = matchedKey ? liveSummary[matchedKey] : null;
 
-                                  const rawMps = isAlreadyLive 
-                                    ? (item.liveProductSummary?.[cleanProdId]?.marketplaces || item.activeProductsMap?.[cleanProdId] || ['US'])
-                                    : (item.activeProductsMap?.[cleanProdId] || prodDef?.availableMarketplaces || ['US']);
-                                  const mps = Array.isArray(rawMps) ? rawMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).filter(Boolean) : ['US'];
+                                    let rawLiveMps: string[] = [];
+                                    if (liveInfo && Array.isArray(liveInfo.marketplaces)) {
+                                      rawLiveMps = liveInfo.marketplaces;
+                                    } else if (Array.isArray(item.liveProductTypes) && item.liveProductTypes.some(t => String(t).toUpperCase() === cleanProdId.toUpperCase())) {
+                                      rawLiveMps = ['US'];
+                                    }
+
+                                    const liveMps = rawLiveMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).map(m => m.trim().toUpperCase());
+                                    
+                                    // Missing marketplaces that will be newly uploaded
+                                    const missingMps = catalogMps.filter(mp => !liveMps.includes(mp.toUpperCase()));
+                                    const allLive = missingMps.length === 0 && liveMps.length > 0;
+                                    const allNew = liveMps.length === 0;
+                                    const isPartiallyLive = liveMps.length > 0 && missingMps.length > 0;
+
+                                    return (
+                                      <div 
+                                        key={cleanProdId} 
+                                        className={`p-2.5 rounded-xl border text-xs transition-all ${
+                                          isTmBlocked
+                                            ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
+                                            : isPartiallyLive
+                                              ? 'bg-slate-900/90 border-amber-500/50 ring-1 ring-amber-500/20 shadow-sm'
+                                              : allNew
+                                                ? 'bg-purple-950/40 border-purple-500/60 ring-1 ring-purple-500/30 shadow-sm shadow-purple-500/10'
+                                                : 'bg-slate-900/90 border-slate-800 text-slate-300'
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between gap-1">
+                                          <span className="font-bold text-slate-200 truncate">{displayName}</span>
+                                          {isTmBlocked ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
+                                              TM-Block
+                                            </span>
+                                          ) : allLive ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800">
+                                              ✓ {liveMps.length} Live (0 Slots)
+                                            </span>
+                                          ) : isPartiallyLive ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-950/80 text-amber-200 border border-amber-700/60">
+                                              ⚡ {liveMps.length} Live | +{missingMps.length} Neu ({missingMps.length} {missingMps.length === 1 ? 'Slot' : 'Slots'})
+                                            </span>
+                                          ) : (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-purple-500/20 text-purple-200 border border-purple-500/40">
+                                              ✨ Neu (+{missingMps.length} {missingMps.length === 1 ? 'Slot' : 'Slots'})
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
+                                          {catalogMps.map((mp, mIdx) => {
+                                            const isMpLive = liveMps.includes(mp.toUpperCase());
+                                            return (
+                                              <span 
+                                                key={`${mp}_${mIdx}`} 
+                                                className={`px-1.5 py-0.5 rounded border transition-all ${
+                                                  isMpLive
+                                                    ? 'bg-slate-800 text-slate-300 border-slate-700 font-medium'
+                                                    : 'bg-purple-900/70 text-purple-200 border-purple-500/60 font-bold'
+                                                }`}
+                                                title={isMpLive ? `${mp}: Bereits auf Amazon live (0 Slots)` : `${mp}: Wird durch Update neu hochgeladen (+1 Slot)`}
+                                              >
+                                                {isMpLive ? `${mp} ✓` : `+ ${mp}`}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  // New design logic:
+                                  const rawSafeMps = item.activeProductsMap?.[cleanProdId];
+                                  const safeMps = Array.isArray(rawSafeMps) ? rawSafeMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).filter(Boolean) : [];
+                                  const rawDroppedMps = item.droppedSlotsMap?.[cleanProdId];
+                                  const droppedMps = Array.isArray(rawDroppedMps) ? rawDroppedMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).filter(Boolean) : [];
+                                  const isCompletelyDropped = safeMps.length === 0 && droppedMps.length > 0;
 
                                   return (
                                     <div 
@@ -2359,8 +2459,8 @@ export const QueueView: React.FC = () => {
                                       className={`p-2.5 rounded-xl border text-xs transition-all ${
                                         isTmBlocked
                                           ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
-                                          : !isAlreadyLive
-                                            ? 'bg-purple-950/40 border-purple-500/60 ring-1 ring-purple-500/30 shadow-sm shadow-purple-500/10'
+                                          : isCompletelyDropped
+                                            ? 'bg-slate-950/80 border-amber-500/30 text-slate-400 opacity-75'
                                             : 'bg-slate-900/90 border-slate-800 text-slate-300'
                                       }`}
                                     >
@@ -2370,25 +2470,28 @@ export const QueueView: React.FC = () => {
                                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
                                             TM-Block
                                           </span>
-                                        ) : !isAlreadyLive ? (
-                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-purple-500/20 text-purple-200 border border-purple-500/40">
-                                            ✨ Neu ergänzen (+{mps.length} {mps.length === 1 ? 'Slot' : 'Slots'})
+                                        ) : isCompletelyDropped ? (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-950/80 text-amber-300 border border-amber-800">
+                                            Ausgelassen (Puffer)
                                           </span>
                                         ) : (
-                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
-                                            ✓ Live (0 Slots)
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-slate-800 text-slate-300 border border-slate-700">
+                                            {safeMps.length} {safeMps.length === 1 ? 'Slot' : 'Slots'}
                                           </span>
                                         )}
                                       </div>
                                       <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
-                                        {mps.map((mp, mIdx) => (
+                                        {safeMps.map((mp, mIdx) => (
                                           <span key={`${mp}_${mIdx}`} className={`px-1.5 py-0.2 rounded ${
-                                            !isAlreadyLive
-                                              ? 'bg-purple-900/60 text-purple-200 border border-purple-700'
-                                              : mp.toUpperCase() === 'US'
-                                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
-                                                : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
+                                            mp.toUpperCase() === 'US' 
+                                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold' 
+                                              : 'bg-slate-800 text-slate-300 border border-slate-700'
                                           }`}>
+                                            {mp}
+                                          </span>
+                                        ))}
+                                        {droppedMps.map((mp, dIdx) => (
+                                          <span key={`drop_${mp}_${dIdx}`} className="px-1.5 py-0.2 rounded bg-amber-950/40 text-amber-400/80 border border-amber-800/40 line-through">
                                             {mp}
                                           </span>
                                         ))}

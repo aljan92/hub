@@ -220167,20 +220167,49 @@ var init_amazonInspectService = __esm2({
           if (["JP", "8", "CO.JP", "AMAZON.CO.JP", "A1VC38T7YXB528"].includes(s)) return "JP";
           return s;
         };
+        const normalizeProductKey = (raw) => {
+          const s = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_");
+          if (["STANDARD_TSHIRT", "STANDARD_T_SHIRT", "TSHIRT", "STANDARD"].includes(s)) return "STANDARD_TSHIRT";
+          if (["VALUE_GRAPHIC_TSHIRT", "VALUE_GRAPHIC_T_SHIRT", "VALUE_TSHIRT", "VALUE_T_SHIRT"].includes(s)) return "VALUE_GRAPHIC_TSHIRT";
+          if (["PREMIUM_TSHIRT", "PREMIUM_T_SHIRT", "PREMIUM"].includes(s)) return "PREMIUM_TSHIRT";
+          if (["COMFORT_COLORS_HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS", "HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS_TSHIRT"].includes(s)) return "COMFORT_COLORS_HEAVYWEIGHT_TSHIRT";
+          if (["VNECK_TSHIRT", "VNECK", "V_NECK", "V_NECK_TSHIRT", "V_NECK_T_SHIRT"].includes(s)) return "VNECK_TSHIRT";
+          if (["TANK_TOP", "TANKTOP", "TANK"].includes(s)) return "TANK_TOP";
+          if (["LONG_SLEEVE_TSHIRT", "LONG_SLEEVE_T_SHIRT", "LONGSLEEVE", "LONG_SLEEVE"].includes(s)) return "LONG_SLEEVE_TSHIRT";
+          if (["RAGLAN", "BASEBALL_TEE", "RAGLAN_TSHIRT"].includes(s)) return "RAGLAN";
+          if (["SOCCER_JERSEY", "SOCCER"].includes(s)) return "SOCCER_JERSEY";
+          if (["BASKETBALL_JERSEY", "BASKETBALL"].includes(s)) return "BASKETBALL_JERSEY";
+          if (["SWEATSHIRT", "SWEAT_SHIRT"].includes(s)) return "SWEATSHIRT";
+          if (["PULLOVER_HOODIE", "HOODIE", "PULLOVER"].includes(s)) return "PULLOVER_HOODIE";
+          if (["ZIP_HOODIE", "ZIPHOODIE", "ZIPPER_HOODIE"].includes(s)) return "ZIP_HOODIE";
+          if (["POPSOCKET", "POPSOCKETS", "POP_SOCKET", "POP_SOCKETS"].includes(s)) return "POPSOCKET";
+          if (["IPHONE_CASE", "IPHONE_CASES", "IPHONE"].includes(s)) return "IPHONE_CASE";
+          if (["SAMSUNG_GALAXY_CASE", "SAMSUNG_CASE", "SAMSUNG", "SAMSUNG_GALAXY_CASES"].includes(s)) return "SAMSUNG_GALAXY_CASE";
+          if (["TOTE_BAG", "TOTE_BAGS", "TOTEBAG", "TOTEBAGS", "BAG"].includes(s)) return "TOTE_BAG";
+          if (["THROW_PILLOW", "THROW_PILLOWS", "PILLOW", "PILLOWS"].includes(s)) return "THROW_PILLOW";
+          if (["TUMBLER", "TUMBLERS"].includes(s)) return "TUMBLER";
+          return s;
+        };
         const products = configData.products || {};
-        const productTypes = Object.keys(products);
+        const productTypes = [];
         let totalConfiguredSlots = 0;
         const productSummary = {};
         for (const [pKey, pVal] of Object.entries(products)) {
+          const normalizedKey = normalizeProductKey(pKey);
+          productTypes.push(normalizedKey);
           const rawMarketplaces = Object.keys(pVal.marketplaceData || {});
           const normalizedMarketplaces = Array.from(new Set(rawMarketplaces.map(normalizeMarketplace)));
           totalConfiguredSlots += Math.max(1, normalizedMarketplaces.length);
-          productSummary[pKey] = {
+          const entry = {
             fits: pVal.dimensions?.FIT || [],
             colors: pVal.dimensions?.COLOR || [],
             marketplaces: normalizedMarketplaces,
             artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
           };
+          productSummary[normalizedKey] = entry;
+          if (pKey !== normalizedKey) {
+            productSummary[pKey] = entry;
+          }
         }
         if (productTypes.length === 0 && totalConfiguredSlots === 0) {
           throw new Error(`Design ${cleanId} hat keine konfigurierten Produkte auf Amazon.`);
