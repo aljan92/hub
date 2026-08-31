@@ -10,20 +10,18 @@
     "dev:client": "vite",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
-    "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:chromium-bidi --external:electron --external:sharp --external:fsevents && cp node_modules/playwright-core/browsers.json ./browsers.json && cp node_modules/playwright-core/browsers.json ./dist/browsers.json",
+    "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:chromium-bidi --external:electron --external:fsevents && cp node_modules/playwright-core/browsers.json ./browsers.json && cp node_modules/playwright-core/browsers.json ./dist/browsers.json",
     "start": "NODE_ENV=production node dist/server.cjs",
     "deploy:nas": "./deploy.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
-    "@types/sharp": "^0.31.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "lucide-react": "^0.475.0",
     "multer": "^1.4.5-lts.1",
     "playwright": "^1.50.1",
-    "sharp": "^0.35.4",
     "ws": "^8.18.0"
   },
   "devDependencies": {

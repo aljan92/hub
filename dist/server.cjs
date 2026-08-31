@@ -219555,117 +219555,154 @@ var init_svgRenderService = __esm2({
 });
 
 // src/server/services/visionOptimizationService.ts
-var import_sharp, import_fs77, VisionOptimizationService;
+async function getBrowser2() {
+  if (!sharedBrowser2 || !sharedBrowser2.isConnected()) {
+    const executablePath = findChromiumExecutable();
+    const launchOptions = {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
+      ]
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    sharedBrowser2 = await chromium.launch(launchOptions);
+  }
+  return sharedBrowser2;
+}
+var import_fs77, sharedBrowser2, VisionOptimizationService;
 var init_visionOptimizationService = __esm2({
   "src/server/services/visionOptimizationService.ts"() {
     "use strict";
-    import_sharp = __toESM2(require("sharp"), 1);
+    init_playwright3();
     import_fs77 = __toESM2(require("fs"), 1);
+    init_browserSessionService();
+    sharedBrowser2 = null;
     VisionOptimizationService = class {
       /**
-       * Generates a 4-color 2x2 Grid (1024x1024) preview for Vision LLMs (OpenRouter/Claude/Gemini).
+       * Generates a 4-color 2x2 Grid (1024x1024) preview for Vision LLMs (OpenRouter/Claude/Gemini)
+       * using the container's built-in Playwright Chromium engine (zero native C++ dependencies).
        * - Top-Left: Black (#111827) - checks white/bright graphics & edge halos
        * - Top-Right: White (#ffffff) - checks black/dark graphics & contrast
        * - Bottom-Left: Red / Cranberry (#c53030) - checks color clashes & vibrancy
        * - Bottom-Right: Asphalt (#383E42) - checks midtone legibility & subtle artifacts
-       *
-       * For non-transparent images: Scales down to max 1024x1024 for fast inference and token efficiency.
        */
       static async prepareVisionImage(input) {
         try {
-          let buffer;
+          let dataUri;
           if (typeof input === "string") {
             if (input.startsWith("data:image")) {
-              const cleanBase64 = input.replace(/^data:image\/\w+;base64,/, "");
-              buffer = Buffer.from(cleanBase64, "base64");
+              dataUri = input;
             } else if (import_fs77.default.existsSync(input)) {
-              buffer = import_fs77.default.readFileSync(input);
+              const fileBuf = import_fs77.default.readFileSync(input);
+              dataUri = `data:image/png;base64,${fileBuf.toString("base64")}`;
             } else {
               throw new Error(`File not found: ${input}`);
             }
+          } else if (Buffer.isBuffer(input)) {
+            dataUri = `data:image/png;base64,${input.toString("base64")}`;
           } else {
-            buffer = input;
+            return { base64DataUrl: "", is4Panel: false };
           }
-          const metadata = await (0, import_sharp.default)(buffer).metadata();
-          const hasAlpha = metadata.hasAlpha || metadata.channels && metadata.channels >= 4;
-          if (hasAlpha) {
-            const panelSize = 512;
-            const padding = 24;
-            const maxDesignSize = panelSize - padding * 2;
-            const resizedDesignBuffer = await (0, import_sharp.default)(buffer).resize(maxDesignSize, maxDesignSize, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
-            const resizedMeta = await (0, import_sharp.default)(resizedDesignBuffer).metadata();
-            const designWidth = resizedMeta.width || maxDesignSize;
-            const designHeight = resizedMeta.height || maxDesignSize;
-            const leftOffset = Math.round((panelSize - designWidth) / 2);
-            const topOffset = Math.round((panelSize - designHeight) / 2);
-            const blackPanel = await (0, import_sharp.default)({
-              create: {
-                width: panelSize,
-                height: panelSize,
-                channels: 4,
-                background: { r: 17, g: 24, b: 39, alpha: 1 }
-                // #111827
+          const browser = await getBrowser2();
+          const context2 = await browser.newContext({
+            viewport: { width: 1024, height: 1024 },
+            deviceScaleFactor: 1
+          });
+          const page = await context2.newPage();
+          try {
+            const html = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              body {
+                width: 1024px;
+                height: 1024px;
+                background: #0f172a;
+                display: grid;
+                grid-template-columns: 512px 512px;
+                grid-template-rows: 512px 512px;
+                overflow: hidden;
               }
-            }).composite([{ input: resizedDesignBuffer, left: leftOffset, top: topOffset }]).png().toBuffer();
-            const whitePanel = await (0, import_sharp.default)({
-              create: {
-                width: panelSize,
-                height: panelSize,
-                channels: 4,
-                background: { r: 255, g: 255, b: 255, alpha: 1 }
-                // #ffffff
+              .panel {
+                width: 512px;
+                height: 512px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                padding: 24px;
               }
-            }).composite([{ input: resizedDesignBuffer, left: leftOffset, top: topOffset }]).png().toBuffer();
-            const redPanel = await (0, import_sharp.default)({
-              create: {
-                width: panelSize,
-                height: panelSize,
-                channels: 4,
-                background: { r: 197, g: 48, b: 48, alpha: 1 }
-                // #c53030
+              .p-black { background: #111827; }
+              .p-white { background: #ffffff; }
+              .p-red { background: #c53030; }
+              .p-asphalt { background: #383E42; }
+              .panel img {
+                max-width: 464px;
+                max-height: 464px;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                display: block;
               }
-            }).composite([{ input: resizedDesignBuffer, left: leftOffset, top: topOffset }]).png().toBuffer();
-            const asphaltPanel = await (0, import_sharp.default)({
-              create: {
-                width: panelSize,
-                height: panelSize,
-                channels: 4,
-                background: { r: 56, g: 62, b: 66, alpha: 1 }
-                // #383E42
+              .label {
+                position: absolute;
+                bottom: 8px;
+                left: 12px;
+                font-family: system-ui, -apple-system, sans-serif;
+                font-size: 11px;
+                font-weight: 700;
+                padding: 2px 8px;
+                border-radius: 4px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
               }
-            }).composite([{ input: resizedDesignBuffer, left: leftOffset, top: topOffset }]).png().toBuffer();
-            const grid2x2 = await (0, import_sharp.default)({
-              create: {
-                width: panelSize * 2,
-                height: panelSize * 2,
-                channels: 4,
-                background: { r: 15, g: 23, b: 42, alpha: 1 }
-                // #0f172a divider background
-              }
-            }).composite([
-              { input: blackPanel, left: 0, top: 0 },
-              { input: whitePanel, left: panelSize, top: 0 },
-              { input: redPanel, left: 0, top: panelSize },
-              { input: asphaltPanel, left: panelSize, top: panelSize }
-            ]).jpeg({ quality: 88 }).toBuffer();
+              .label-dark { background: rgba(255,255,255,0.15); color: #f8fafc; }
+              .label-light { background: rgba(0,0,0,0.15); color: #0f172a; }
+            </style>
+          </head>
+          <body>
+            <div class="panel p-black">
+              <img src="${dataUri}" />
+              <span class="label label-dark">1. Black (#111827)</span>
+            </div>
+            <div class="panel p-white">
+              <img src="${dataUri}" />
+              <span class="label label-light">2. White (#ffffff)</span>
+            </div>
+            <div class="panel p-red">
+              <img src="${dataUri}" />
+              <span class="label label-dark">3. Red (#c53030)</span>
+            </div>
+            <div class="panel p-asphalt">
+              <img src="${dataUri}" />
+              <span class="label label-dark">4. Asphalt (#383E42)</span>
+            </div>
+          </body>
+          </html>
+        `;
+            await page.setContent(html);
+            await page.waitForTimeout(30);
+            const screenshotBuf = await page.screenshot({ type: "jpeg", quality: 88 });
             return {
-              base64DataUrl: `data:image/jpeg;base64,${grid2x2.toString("base64")}`,
+              base64DataUrl: `data:image/jpeg;base64,${screenshotBuf.toString("base64")}`,
               is4Panel: true
             };
-          } else {
-            const resized = await (0, import_sharp.default)(buffer).resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
-            return {
-              base64DataUrl: `data:image/jpeg;base64,${resized.toString("base64")}`,
-              is4Panel: false
-            };
+          } finally {
+            await context2.close().catch(() => {
+            });
           }
         } catch (err) {
-          console.warn(`[VisionOptimizationService] Fallback to raw buffer:`, err.message);
+          console.warn("[VisionOptimizationService] Playwright render fallback:", err.message);
           if (typeof input === "string" && input.startsWith("data:image")) {
             return { base64DataUrl: input, is4Panel: false };
-          }
-          if (Buffer.isBuffer(input)) {
-            return { base64DataUrl: `data:image/png;base64,${input.toString("base64")}`, is4Panel: false };
           }
           return { base64DataUrl: "", is4Panel: false };
         }
