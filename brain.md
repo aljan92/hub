@@ -437,19 +437,28 @@ MBA HUB/
   - **Schnellerer Cache:** Cache-TTL auf 10s verkürzt für maximale Aktualität.
   - **Manueller 1-Click Refresh:** In der Queue-Card (Tages-Uploads) befindet sich nun ein Refresh-Button (`POST /api/v1/queue/refresh-slots`), der sofort live die aktuellsten Slots von Amazon abruft.
 
-### 10.14 🔍 DOM-basierte Live-Matrix-Inspektion & Rejection-Sicherheitsprüfung bei Update-Tasks
+### 10.14 🔍 DOM-basierte Live-Matrix-Inspektion, Rejection-Sicherheitsprüfung & Exakte Slot-Delta-Berechnung
 - **Hintergrund & Problemstellung:**
-  - Die Amazon API `productconfiguration/get` liefert oft nur den Entwurfs- bzw. Preset-Zustand des Designs (z. B. Standard T-Shirt mit allen Marktplätzen vorgewählt), selbst wenn auf Amazon nur 3 Marktplätze publiziert wurden oder Produkte abgelehnt wurden.
+  - Die Amazon API `productconfiguration/get` liefert oft nur den initialen Entwurfs- bzw. Preset-Zustand des Designs (z. B. Standard T-Shirt mit allen Marktplätzen vorgewählt), selbst wenn auf Amazon nur wenige Marktplätze publiziert wurden oder Produkte abgelehnt wurden.
 - **Lösung & DOM-Inspektion beim Artwork-Download:**
   - **Ein kombinierter Aufruf:** Beim ohnehin stattfindenden Artwork-Download auf `merch.amazon.com/designs/{designId}/edit` öffnet der Bot via Playwright das Modal `#select-marketplace-button-original` („Select Products“).
   - **100% deterministischer DOM-Scan:**
-    - Liest alle `<flowcheckbox formcontrolname="shouldPublish">` mit Klassen wie `STANDARD_TSHIRT-GB`.
+    - Liest alle `<flowcheckbox formcontrolname="shouldPublish">` mit Klassen wie `STANDARD_TSHIRT-GB` aus.
     - Ist `span.readonly` oder `input[readonly]` vorhanden, ist das Produkt auf diesem Marktplatz **garantiert live auf Amazon** (`liveProductSummary[prodKey] = [countries...]`).
     - Ist eine Checkbox markiert (`sci-check-box`), aber **nicht** `readonly`, deutet dies auf ein unpubliziertes, beanstandetes oder abgelehntes Produkt hin.
+  - **Umfassende DOM-Key-Normalisierung (`AmazonInspectService.normalizeProductKey`):**
+    - Wandelt alle Amazon-DOM-Klassenbezeichnungen nahtlos in die Produkt-IDs des Katalogs um (z. B. `STANDARD_LONG_SLEEVE` ➔ `LONG_SLEEVE_TSHIRT`, `STANDARD_SWEATSHIRT` ➔ `SWEATSHIRT`, `STANDARD_PULLOVER_HOODIE` ➔ `PULLOVER_HOODIE`, `POP_SOCKET` ➔ `POPSOCKET`, `PHONE_CASE_APPLE_IPHONE` ➔ `IPHONE_CASE`, `VNECK` ➔ `VNECK_TSHIRT`, `VALUE_TSHIRT` ➔ `VALUE_GRAPHIC_TSHIRT` usw.).
+  - **Exakte Netto-Slot-Delta-Kalkulation ohne Falsch-Annahmen:**
+    - Beseitigung alter Heuristiken: Wenn ein Produkt im DOM nicht als `readonly` markiert ist, gilt `liveMps = []` (kein fälschlicher Rückgriff auf `['US']`).
+    - Dadurch ergibt sich immer die mathematisch exakte Gleichung: **Live-Slots (z. B. 29) + Fehlende Ergänzungs-Slots (z. B. 80) = Gesamt-Katalogslots (z. B. 109)**.
+  - **Robuste Timeout-Steuerung:**
+    - 60s Page-Load, 45s Selector-Wartezeit auf den Angular-*Select Products*-Button und 35s für das Rendern der Modal-Tabelle.
   - **Rejection-Sicherheitsprüfung & Task-Stopp:**
     - Werden auf der Seite oder im Modal Rejection-Hinweise (z. B. Policy Violations, Error Banners, Rejections) festgestellt, setzt der Bot `hasRejection = true`.
     - **Manueller Stopp:** Der Task wird zwingend in den **Manual Task Review** (`needsManualReview: true`, `status: 'AWAITING_DESIGN_REVIEW'`) geschoben – selbst wenn der Trademark-Check grün ist.
     - Im Frontend wird ein gut sichtbares Warnbanner (`⚠️ Amazon Rejection / Policy-Warnung`) eingeblendet.
-- **Exakte zweifarbige Queue-Darstellung:**
-  - Die Queue nutzt diese reale DOM-Matrix: Bereits live-geschaltete Marktplätze werden dunkelgrau/grün mit Häkchen (`US ✓`, `DE ✓`, `GB ✓`) angezeigt (0 Slots), während neu zu uploadende Marktplätze lila hervorgehoben (`+ FR`, `+ IT`, `+ ES`) mit dem echten Mehrbedarf kalkuliert werden.
+  - **Standalone DOM Live Inspector Tool (`PromptLogView.tsx`):**
+    - Taste **`3. 🔍 DOM Live`** im Amazon Merch API Inspector führt eine isolierte Live-Inspektion der Edit-Page aus und zeigt Live-Slots, Rejection-Warnungen, Produkt-Chips mit Marktplätzen und vollständiges DOM-JSON an.
+  - **Exakte zweifarbige Queue-Darstellung:**
+    - Die Queue nutzt diese reale DOM-Matrix: Bereits live-geschaltete Marktplätze werden dunkelgrau/grün mit Häkchen (`US ✓`, `DE ✓`, `GB ✓`) angezeigt (0 Slots), während neu zu uploadende Marktplätze lila hervorgehoben (`+ FR`, `+ IT`, `+ ES`) mit dem echten Mehrbedarf kalkuliert werden.
 
