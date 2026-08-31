@@ -615,10 +615,10 @@ export class UpdatePipelineService {
         avoidColor: resolvedAvoidColor,
         imagePath: task.localImagePath || '',
         pngPath: task.localMbaPngPath || '',
-        publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
+        publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
         liveStats: task.payload?.liveStats || null,
-        liveProductSummary: task.payload?.productSummary || null,
-        liveProductTypes: task.payload?.productTypes || null,
+        liveProductSummary: task.payload?.productSummary || task.payload?.liveProductSummary || null,
+        liveProductTypes: task.payload?.productTypes || task.payload?.liveProductTypes || null,
         tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
       });
 

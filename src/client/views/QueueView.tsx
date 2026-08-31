@@ -571,6 +571,23 @@ export const QueueView: React.FC = () => {
   const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')) || (i.taskId && String(i.taskId).endsWith('-U')));
   const isNewItem = (i: any) => !isUpdateItem(i);
 
+  // Exact live products/slots count derived directly from DOM liveProductSummary
+  const getLiveProductsCount = (item: any): number => {
+    const liveSummary = item.liveProductSummary || item.liveStats?.productSummary;
+    if (liveSummary && typeof liveSummary === 'object' && Object.keys(liveSummary).length > 0) {
+      let count = 0;
+      for (const [_, info] of Object.entries<any>(liveSummary)) {
+        if (Array.isArray(info?.marketplaces)) {
+          count += info.marketplaces.length;
+        } else if (Array.isArray(info)) {
+          count += info.length;
+        }
+      }
+      if (count > 0) return count;
+    }
+    return item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 0;
+  };
+
   const activeNewDesigns = queueState.items.filter(i => isNewItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
   const activeUpdateDesigns = queueState.items.filter(i => isUpdateItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING'));
 
@@ -1466,9 +1483,7 @@ export const QueueView: React.FC = () => {
                                 <span className="text-slate-700">•</span>
                                 <div className="flex items-center space-x-1.5 text-purple-300 font-mono text-[11px]">
                                   <span>Amazon ID: {item.designId}</span>
-                                  {item.publishedProductsCount !== undefined && (
-                                    <span>({item.publishedProductsCount} bereits live)</span>
-                                  )}
+                                  <span>({getLiveProductsCount(item)} bereits live)</span>
                                 </div>
                               </>
                             )}
@@ -1488,78 +1503,54 @@ export const QueueView: React.FC = () => {
                               : (typeof rawListings === 'object' && rawListings !== null ? rawListings : {});
 
                             const validLangKeys = Object.keys(listingsObj).filter(k => 
-                              typeof listingsObj[k] === 'object' && listingsObj[k] !== null && !Array.isArray(listingsObj[k])
+                              ['en', 'de', 'fr', 'es', 'it', 'ja'].includes(k.toLowerCase()) &&
+                              listingsObj[k] && 
+                              (listingsObj[k].title || listingsObj[k].brand)
                             );
 
                             const availableLangs = validLangKeys.length > 0 ? validLangKeys : ['en'];
-                            if (!availableLangs.includes('en')) availableLangs.unshift('en');
-
-                            const standardLangs = ['en', 'de', 'fr', 'es', 'it', 'jp'];
-                            const allLangs = Array.from(new Set([...standardLangs.filter(l => listingsObj[l] || l === 'en'), ...availableLangs]));
-
-                            const fallbackListing = {
-                              brand: item.brand || 'MBA Hub',
-                              title: item.title || item.designTitle || '',
-                              bullet1: item.bullet1 || '',
-                              bullet2: item.bullet2 || '',
-                              description: item.description || ''
-                            };
-
-                            const targetListingObj = listingsObj[activeLang] || listingsObj.en || fallbackListing;
-                            const currentListing = typeof targetListingObj === 'object' && targetListingObj !== null 
-                              ? targetListingObj 
-                              : fallbackListing;
-
-                            const langFlags: Record<string, { label: string; flag: string }> = {
-                              en: { label: 'Englisch', flag: '🇺🇸 / 🇬🇧' },
-                              de: { label: 'Deutsch', flag: '🇩🇪' },
-                              fr: { label: 'Französisch', flag: '🇫🇷' },
-                              es: { label: 'Spanisch', flag: '🇪🇸' },
-                              it: { label: 'Italienisch', flag: '🇮🇹' },
-                              jp: { label: 'Japanisch', flag: '🇯🇵' },
-                              ja: { label: 'Japanisch', flag: '🇯🇵' }
-                            };
+                            const currentListing = listingsObj[activeLang] || listingsObj.en || (isFlatListing ? rawListings : {}) || {};
 
                             return (
-                              <div className="space-y-3 bg-slate-950/40 p-3.5 rounded-xl border border-slate-800">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                  <div className="flex items-center space-x-2 text-xs font-bold text-slate-200">
-                                    <Globe className="w-4 h-4 text-accent-cyan" />
-                                    <span>Mehrsprachige Listings &amp; SEO-Metadaten</span>
+                              <div className="bg-slate-950/40 border border-slate-800 p-3 rounded-xl space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-1.5 text-slate-300 font-semibold">
+                                    <Globe className="w-3.5 h-3.5 text-accent-cyan" />
+                                    <span>SEO Listing ({activeLang.toUpperCase()})</span>
                                   </div>
 
-                                  {/* Language Tabs */}
-                                  <div className="flex items-center flex-wrap gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
-                                    {allLangs.map((langKey) => {
-                                      const meta = langFlags[langKey] || { label: langKey.toUpperCase(), flag: '🌐' };
-                                      const isSelected = activeLang === langKey;
-                                      return (
+                                  {/* Language Switcher Tabs */}
+                                  {availableLangs.length > 1 && (
+                                    <div className="flex items-center space-x-1 bg-slate-900 border border-slate-800 p-0.5 rounded-lg">
+                                      {availableLangs.map(lang => (
                                         <button
-                                          key={langKey}
-                                          onClick={() => setItemLanguageMap(prev => ({ ...prev, [item.id]: langKey }))}
-                                          className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center space-x-1.5 ${
-                                            isSelected 
-                                              ? 'bg-accent-cyan text-slate-950 shadow-sm' 
-                                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                                          key={lang}
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setItemLanguageMap(prev => ({ ...prev, [item.id]: lang }));
+                                          }}
+                                          className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase transition-all ${
+                                            activeLang === lang
+                                              ? 'bg-accent-cyan text-slate-950 shadow-sm shadow-accent-cyan/20'
+                                              : 'text-slate-400 hover:text-slate-200'
                                           }`}
                                         >
-                                          <span>{meta.flag}</span>
-                                          <span className="uppercase">{langKey}</span>
+                                          {lang}
                                         </button>
-                                      );
-                                    })}
-                                  </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
 
-                                {/* Listing Content Preview */}
-                                <div className="space-y-2 text-xs font-mono bg-slate-900/90 p-3 rounded-lg border border-slate-800 text-slate-300">
+                                <div className="space-y-1 text-slate-300 text-xs">
                                   <div>
                                     <span className="text-slate-500">Brand: </span>
-                                    <span className="text-slate-200 font-semibold">{renderSafeText(currentListing.brand) || '—'}</span>
+                                    <span className="font-semibold text-slate-200">{renderSafeText(currentListing.brand) || renderSafeText(item.brand) || '—'}</span>
                                   </div>
                                   <div>
-                                    <span className="text-slate-500">Titel: </span>
-                                    <span className="text-slate-100 font-bold">{renderSafeText(currentListing.title) || '—'}</span>
+                                    <span className="text-slate-500">Title: </span>
+                                    <span className="text-slate-200">{renderSafeText(currentListing.title) || renderSafeText(item.title) || '—'}</span>
                                   </div>
                                   <div>
                                     <span className="text-slate-500">Bullet 1: </span>
@@ -1594,7 +1585,7 @@ export const QueueView: React.FC = () => {
                               {isUpdate ? (
                                 <div className="flex items-center space-x-3">
                                   <span className="text-emerald-400">
-                                    ✓ {item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 106} Produkte Live auf Amazon
+                                    ✓ {getLiveProductsCount(item)} Produkte Live auf Amazon
                                   </span>
                                   <span className="text-purple-300 font-bold">
                                     • {(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} neue Slots werden ergänzt
@@ -2246,9 +2237,7 @@ export const QueueView: React.FC = () => {
                                 <span className="text-slate-700">•</span>
                                 <div className="flex items-center space-x-1.5 text-purple-300 font-mono text-[11px]">
                                   <span>Amazon ID: {item.designId}</span>
-                                  {item.publishedProductsCount !== undefined && (
-                                    <span>({item.publishedProductsCount} bereits live)</span>
-                                  )}
+                                  <span>({getLiveProductsCount(item)} bereits live)</span>
                                 </div>
                               </>
                             )}
@@ -2365,7 +2354,7 @@ export const QueueView: React.FC = () => {
                             <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
                               <div className="flex items-center space-x-3">
                                 <span className="text-emerald-400">
-                                  ✓ {item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 106} Produkte Live auf Amazon
+                                  ✓ {getLiveProductsCount(item)} Produkte Live auf Amazon
                                 </span>
                                 <span className="text-purple-300 font-bold">
                                   • {(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} neue Slots werden ergänzt

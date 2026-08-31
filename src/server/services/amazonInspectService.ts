@@ -661,11 +661,20 @@ export class AmazonInspectService {
 
       // Update Task in TaskLogService with true DOM-scanned product summary & rejection status
       const currentTask = TaskLogService.getTask(cleanTaskId);
+      const trueLiveCount = Object.keys(domLiveSummary).length > 0 ? totalLiveSlots : (currentTask?.payload?.publishedCount ?? totalLiveSlots);
       const updatedPayload = {
         ...(currentTask?.payload || {}),
         hasRejection,
         rejectionReason,
-        publishedCount: Object.keys(domLiveSummary).length > 0 ? totalLiveSlots : (currentTask?.payload?.publishedCount ?? totalLiveSlots),
+        publishedCount: trueLiveCount,
+        liveStats: {
+          ...(currentTask?.payload?.liveStats || {}),
+          publishedCount: trueLiveCount,
+          totalLiveSlots,
+          totalVariantsFound: totalLiveSlots,
+          statusSummary: { PUBLISHED: trueLiveCount },
+          isAllPublished: true
+        },
         productSummary: Object.keys(domLiveSummary).length > 0 
           ? Object.fromEntries(Object.entries(domLiveSummary).map(([k, mps]) => [k, { marketplaces: mps }]))
           : (currentTask?.payload?.productSummary || {}),

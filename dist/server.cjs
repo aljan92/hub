@@ -221779,11 +221779,20 @@ var init_amazonInspectService = __esm2({
           const hasRejection = pageRejectionInfo.hasAlert || rejectedOrDraftItems.length > 0;
           const rejectionReason = pageRejectionInfo.alertText || (rejectedOrDraftItems.length > 0 ? `Nicht publizierte/abgelehnte Produkte erkannt: ${rejectedOrDraftItems.join(", ")}` : null);
           const currentTask = TaskLogService2.getTask(cleanTaskId);
+          const trueLiveCount = Object.keys(domLiveSummary).length > 0 ? totalLiveSlots : currentTask?.payload?.publishedCount ?? totalLiveSlots;
           const updatedPayload = {
             ...currentTask?.payload || {},
             hasRejection,
             rejectionReason,
-            publishedCount: Object.keys(domLiveSummary).length > 0 ? totalLiveSlots : currentTask?.payload?.publishedCount ?? totalLiveSlots,
+            publishedCount: trueLiveCount,
+            liveStats: {
+              ...currentTask?.payload?.liveStats || {},
+              publishedCount: trueLiveCount,
+              totalLiveSlots,
+              totalVariantsFound: totalLiveSlots,
+              statusSummary: { PUBLISHED: trueLiveCount },
+              isAllPublished: true
+            },
             productSummary: Object.keys(domLiveSummary).length > 0 ? Object.fromEntries(Object.entries(domLiveSummary).map(([k, mps]) => [k, { marketplaces: mps }])) : currentTask?.payload?.productSummary || {},
             liveProductSummary: Object.keys(domLiveSummary).length > 0 ? Object.fromEntries(Object.entries(domLiveSummary).map(([k, mps]) => [k, { marketplaces: mps }])) : currentTask?.payload?.liveProductSummary || {},
             liveProductTypes: Object.keys(domLiveSummary).length > 0 ? Object.keys(domLiveSummary) : currentTask?.payload?.liveProductTypes || []
@@ -222508,10 +222517,10 @@ Bullets: ${oldBullets}`
             avoidColor: resolvedAvoidColor,
             imagePath: task.localImagePath || "",
             pngPath: task.localMbaPngPath || "",
-            publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
+            publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
             liveStats: task.payload?.liveStats || null,
-            liveProductSummary: task.payload?.productSummary || null,
-            liveProductTypes: task.payload?.productTypes || null,
+            liveProductSummary: task.payload?.productSummary || task.payload?.liveProductSummary || null,
+            liveProductTypes: task.payload?.productTypes || task.payload?.liveProductTypes || null,
             tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
           });
           TaskLogService2.updateTaskStatus(taskId, {
