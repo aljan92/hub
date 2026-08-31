@@ -227262,8 +227262,13 @@ var UploadWorkerService = class _UploadWorkerService {
             desiredFits.push("girls");
           }
           desiredFits.push("adult_unisex", "unisex");
-          const fitCandidateLabels = Array.from(document.querySelectorAll(
-            '.fit-type-container label, .fit-type-container flowcheckbox, label.men-label, label.women-label, label.youth-label, label.girls-label, flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, label[class*="-label"], flowcheckbox[class*="-checkbox"]'
+          const allFitContainers = Array.from(document.querySelectorAll('.fit-type-container, .fit-types, [class*="fit-type"]'));
+          const visibleFitContainer = allFitContainers.find((c) => {
+            const rect = c.getBoundingClientRect();
+            return rect.height > 0 && rect.width > 0;
+          }) || editor.querySelector(".fit-type-container") || editor;
+          const fitCandidateLabels = Array.from(visibleFitContainer.querySelectorAll(
+            'label[class*="-label"], flowcheckbox[class*="-checkbox"], label, flowcheckbox'
           ));
           const fitControlsMap = /* @__PURE__ */ new Map();
           for (const el of fitCandidateLabels) {
@@ -227273,17 +227278,18 @@ var UploadWorkerService = class _UploadWorkerService {
             const text2 = (parentLabel.textContent || el.textContent || "").trim().toLowerCase();
             const formControl = (flow.getAttribute("formcontrolname") || el.getAttribute("formcontrolname") || "").toLowerCase();
             const combo = `${cls} ${text2} ${formControl}`;
+            if (text2 === "choose fit types:" || text2.includes("choose fit types")) continue;
             let fitKey = "";
             if (cls.includes("girls") || text2.includes("girls") || combo.includes("girls") || combo.includes("m\xE4dchen")) {
               fitKey = "girls";
             } else if (cls.includes("youth") || text2.includes("youth") || combo.includes("youth") || combo.includes("kinder") || combo.includes("kids")) {
               fitKey = "youth";
+            } else if (cls.includes("unisex") || text2.includes("unisex") || combo.includes("unisex") || combo.includes("adult")) {
+              fitKey = "adult_unisex";
             } else if (cls.includes("women") || text2.includes("women") || combo.includes("women") || combo.includes("frauen") || combo.includes("damen")) {
               fitKey = "women";
             } else if (cls.includes("men") || /\bmen\b/.test(text2) || combo.includes("m\xE4nner") || combo.includes("herren")) {
               fitKey = "men";
-            } else if (combo.includes("unisex") || combo.includes("adult")) {
-              fitKey = "adult_unisex";
             }
             if (fitKey && !fitControlsMap.has(fitKey)) {
               fitControlsMap.set(fitKey, flow);
