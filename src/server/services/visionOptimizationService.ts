@@ -1,5 +1,6 @@
 import { chromium, Browser } from 'playwright';
 import fs from 'fs';
+import path from 'path';
 import { findChromiumExecutable } from './browserSessionService';
 
 let sharedBrowser: Browser | null = null;

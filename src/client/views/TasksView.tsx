@@ -1072,6 +1072,11 @@ export const TasksView: React.FC = () => {
                                 );
                               })}
                             </div>
+                            {activeTask.analysisResult?.target_group?.reason && (
+                              <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
+                                💡 <strong className="text-teal-300">KI-Befund:</strong> {activeTask.analysisResult.target_group.reason}
+                              </p>
+                            )}
                           </div>
 
                           {/* Question 3: Avoid Color */}
@@ -1101,6 +1106,11 @@ export const TasksView: React.FC = () => {
                                 );
                               })}
                             </div>
+                            {activeTask.analysisResult?.avoid_product_colors?.reason && (
+                              <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
+                                💡 <strong className="text-teal-300">KI-Befund:</strong> {activeTask.analysisResult.avoid_product_colors.reason}
+                              </p>
+                            )}
                           </div>
 
                           {/* Question 4: Niche Hierarchy & Keywords for Update */}
@@ -1109,6 +1119,24 @@ export const TasksView: React.FC = () => {
                               <span className="font-semibold text-slate-200">4. Nischen-Hierarchie &amp; SEO-Keywords</span>
                               <span className="text-[10px] text-teal-400 font-mono font-semibold">Titel-Suffix Formel</span>
                             </div>
+
+                            {/* Quote check info if available */}
+                            {activeTask.analysisResult?.quote_check && (
+                              <div className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80 flex flex-wrap items-center justify-between gap-1 font-mono">
+                                <div>
+                                  🔍 <strong className="text-teal-300">Erkannter Text:</strong> "{activeTask.analysisResult.quote_check.detected_quote || activeTask.analysisResult.quote_check.requested_quote || '-'}"
+                                </div>
+                                {activeTask.analysisResult.quote_check.quote_matches !== undefined && (
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                    activeTask.analysisResult.quote_check.quote_matches 
+                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+                                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  }`}>
+                                    {activeTask.analysisResult.quote_check.quote_matches ? 'Text exakt übereinstimmend' : 'Textabweichung'}
+                                  </span>
+                                )}
+                              </div>
+                            )}
 
                             {/* AI vs Hermes Comparison Card */}
                             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
