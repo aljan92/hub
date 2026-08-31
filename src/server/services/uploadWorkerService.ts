@@ -711,7 +711,8 @@ export class UploadWorkerService {
           if (desiredFits.includes('youth') && !desiredFits.includes('girls')) {
             desiredFits.push('girls');
           }
-          desiredFits.push('adult_unisex', 'unisex');
+          // Rule: Adult Unisex is always active for any product offering it
+          desiredFits.push('adult_unisex', 'unisex', 'adult');
 
           // Find the active, currently visible fit container
           const allFitContainers = Array.from(document.querySelectorAll('.fit-type-container, .fit-types, [class*="fit-type"]'));
@@ -742,7 +743,7 @@ export class UploadWorkerService {
               fitKey = 'girls';
             } else if (cls.includes('youth') || text.includes('youth') || combo.includes('youth') || combo.includes('kinder') || combo.includes('kids')) {
               fitKey = 'youth';
-            } else if (cls.includes('unisex') || text.includes('unisex') || combo.includes('unisex') || combo.includes('adult')) {
+            } else if (cls.includes('unisex') || text.includes('unisex') || combo.includes('unisex') || combo.includes('adult') || cls.includes('adult')) {
               fitKey = 'adult_unisex';
             } else if (cls.includes('women') || text.includes('women') || combo.includes('women') || combo.includes('frauen') || combo.includes('damen')) {
               fitKey = 'women';
@@ -760,7 +761,7 @@ export class UploadWorkerService {
           const fitDebugSummary: Record<string, { initial: boolean; target: boolean; final: boolean }> = {};
 
           for (const [fitKey, flowEl] of fitControlsMap.entries()) {
-            const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === 'adult_unisex';
+            const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === 'adult_unisex' || fitKey === 'unisex';
             const initialChecked = isElementChecked(flowEl);
             let isChecked = initialChecked;
 
