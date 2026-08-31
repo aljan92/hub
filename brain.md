@@ -502,4 +502,29 @@ MBA HUB/
   2. **Auto-Enrichment & Normalisierung:** `QueueService.loadQueue()` / `enrichListingsFromTasksLog()` pflegt fehlende `tmBlockedProductIds` automatisch aus `tasks_log.json` nach.
   3. **Dynamische Nizza-Klassen:** `ProductCatalogService.getBlockedProductIdsForNiceClasses` sperrt Produkte dynamisch basierend auf der im Katalog hinterlegten `niceClass` jedes Produkts.
   4. **Slot-Kalkulation & Balancing:** Geblockte Produkte werden aus `activeProductsMap` ausgeschlossen und verbrauchen 0 Slots (`allocatedSlots` spiegelt exakt die uploadbaren Produkte wider).
-  5. **UI & Uploader:** Die Queue-Tabelle zeigt gesperrte Produkte mit rotem Badge (`🚫 TM-Block (Kl. X) (0 Slots)`) und deaktivierten Chips. Der Playwright/CDP Upload-Bot erhält nur die bereinigte `activeProductsMap` und wählt gesperrte Produkte im Amazon-Modal nicht an.
+### 10.19 🛡️ Trademark-Workflow V2 (USPTO Live Batch, Dual-LLM Referee & Verifier, Multi-Round Loop & Zero Auto-Abandon)
+- **Problem & Ursache:**
+  - Frühere TM-Prüfungen blockierten normale beschreibende Wörter in Klasse 25 (z. B. *western, angel, teacher, vintage, mountain*) pauschal, führten zu False-Positives und blockierten wertvolle SEO-Keywords.
+  - Mehrfache Re-Scans bei Rewrites fehlten oder führten zu Endlosschleifen zwischen geschützten Begriffen.
+  - Core-Design-Konflikte wurden nicht sofort sauber erkannt oder führten zu riskanten Teillösungen.
+- **Lösung & Architektur (100% Umsetzung aus `Trademark-Workflow V2.md`):**
+  1. **USPTO-Fokus für English Master Listings:** Da Master Listings rein englisch verfasst werden, scannt die Pipeline gezielt `classes=25,9,18,20,35,16,24,41,40,21` via Productor USPTO Live Batch API.
+  2. **1–5 Grams & N-Gramm Match-Klassifizierung (`TrademarkService.extractTermsFromTextV2` & `normalizeAndClassifyMatches`):**
+     - Extrahiert 1-5 Grams unter Stopword-Schutz in Phrasen sowie den vollständigen Design-Spruch (`quote`).
+     - Klassifiziert Treffer deterministisch in `FULL_EXACT`, `EXACT_NGRAM`, `SINGLE_WORD_EXACT`, `CONTAINS_REGISTERED_MARK`, `QUERY_INSIDE_LONGER_MARK` und `FUZZY_OR_SIMILAR`.
+  3. **Pass 1 – Trademark Referee (`LLMService.evaluateTrademarkReferee` mit GPT-5.6 Sol):**
+     - Unterscheidet `ORDINARY_DESCRIPTIVE` von `FANCIFUL_OR_ARBITRARY`.
+     - Gibt normale beschreibende Wörter als `KEEP` frei und schützt SEO-Keywords.
+     - Bewertet das tatsächliche Amazon-Rejection-Risiko (`LOW`, `MEDIUM`, `HIGH`, `VERY_HIGH`).
+  4. **Pass 2 – Adversarial Amazon Verifier (`LLMService.evaluateTrademarkVerifier` mit GPT-5.6 Sol):**
+     - Agiert streng und unnachgiebig wie der Amazon Compliance Bot und unterzieht freigegebene Listings einer finalen Sicherheitsprüfung (`SAFE` vs. `HIGH_RISK`).
+  5. **Multi-Round Rewrite Loop (max. 3 Runden):**
+     - Verwendet `forbiddenTermsForTask`, um zuvor identifizierte Marken für diesen Task dauerhaft zu sperren.
+     - Jeder Rewrite (`rewriteListingForTrademarkV2`) durchläuft einen **100% neuen USPTO-Live-Scan**.
+  6. **Zero Auto-Abandon & Eskalation:**
+     - Designs werden **niemals automatisch gelöscht, abandonet oder übersprungen**.
+     - Echte Core-Design-Konflikte (`CORE_QUOTE_CLASS25_CONFLICT`) oder Reached Limit (`REWRITE_LIMIT_REACHED`) eskalieren direkt zu `AWAITING_TM_REVIEW` (Checkpoint 3).
+  7. **UI & Checkpoint 3:**
+     - `TasksView.tsx` visualisiert Treffer nach Match-Typ, Referee/Verifier Verdicts, verbotene Begriffe und bietet einen Live USPTO Recheck.
+  8. **Unit & Acceptance Tests:**
+     - `tests/trademarkV2.test.ts` verifiziert alle 9 Tests (§41) mit 14/14 bestandenen Assertions.

@@ -498,6 +498,348 @@ Style Preset: ${stylePreset}`;
   /**
    * 2. Rewrite Listing with Specific Trademark Feedback (Feedback Loop, Class Distinctions)
    */
+  /**
+   * V2 Trademark Referee (GPT-5.6 Sol)
+   * Semantic risk analysis, distinction between common descriptive words vs distinctive/famous marks
+   */
+  static async evaluateTrademarkReferee(params: {
+    currentListing: EnglishListing;
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
+    quote?: string;
+    normalizedHits: any[];
+    rewriteIteration?: number;
+    forbiddenTermsForTask?: string[];
+    blockedProducts?: string[];
+  }): Promise<{
+    decision: 'APPROVE' | 'REWRITE' | 'APPROVE_WITH_BLOCKED_PRODUCTS' | 'ESCALATE';
+    canBeFixedByListingRewrite: boolean;
+    reasonCode?: string | null;
+    recommendedAction?: string | null;
+    hits: Array<{
+      searchedTerm: string;
+      registeredMark: string;
+      field?: string;
+      classes?: number[];
+      markNature?: string;
+      usageType?: string;
+      knownBrand?: boolean;
+      amazonRejectionRisk?: string;
+      decision?: string;
+      confidence?: number;
+      reason?: string;
+    }>;
+    blockedProducts: string[];
+    rewriteRequired: boolean;
+    rewriteInstructions: string[];
+    escalation?: any;
+    _rawRequest?: any;
+    _rawResponse?: any;
+  }> {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const systemPrompt = SystemPromptService.getTrademarkRefereePrompt();
+
+    const userMessage = `Current English Listing:
+- Brand: "${params.currentListing.brand}"
+- Title: "${params.currentListing.title}"
+- Bullet 1: "${params.currentListing.bullet1}"
+- Bullet 2: "${params.currentListing.bullet2}"
+- Description: "${params.currentListing.description}"
+
+Design Metadata:
+- Primary Niche (niche1): ${params.niche1 || 'none'}
+- Secondary Niche (niche2): ${params.niche2 || 'none'}
+- Subniche: ${params.subniche || 'none'}
+- Printed Design Quote / Slogan: "${params.quote || 'none'}"
+
+Normalized Trademark Hits from USPTO:
+${JSON.stringify(params.normalizedHits, null, 2)}
+
+Rewrite Context:
+- Rewrite Iteration: ${params.rewriteIteration || 0} / 3
+- Forbidden Terms for Task: ${JSON.stringify(params.forbiddenTermsForTask || [])}
+- Currently Blocked Products: ${JSON.stringify(params.blockedProducts || [])}
+
+Please evaluate all hits against Amazon Merch risk rules. Classify each hit, determine if normal descriptive words can be KEPT, and decide whether REWRITE, APPROVE, APPROVE_WITH_BLOCKED_PRODUCTS or ESCALATE is required. Return valid JSON only.`;
+
+    const settings = loadSettings();
+    const requestPayload = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
+      max_tokens: settings.llmMaxTokens || 3500
+    };
+
+    try {
+      const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestPayload),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+
+      if (!res.ok) throw new Error(`LLM TM Referee error: ${res.status} ${res.statusText}`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
+      const parsed = this.extractJsonFromLlmResponse(content);
+
+      const decision = parsed.decision || 'APPROVE';
+      const canBeFixed = parsed.canBeFixedByListingRewrite !== undefined ? Boolean(parsed.canBeFixedByListingRewrite) : (decision === 'REWRITE');
+
+      return {
+        decision: ['APPROVE', 'REWRITE', 'APPROVE_WITH_BLOCKED_PRODUCTS', 'ESCALATE'].includes(decision) ? decision : 'APPROVE',
+        canBeFixedByListingRewrite: canBeFixed,
+        reasonCode: parsed.reasonCode || parsed.reason_code || null,
+        recommendedAction: parsed.recommendedAction || parsed.recommended_action || null,
+        hits: Array.isArray(parsed.hits) ? parsed.hits : [],
+        blockedProducts: Array.isArray(parsed.blockedProducts) ? parsed.blockedProducts : (Array.isArray(parsed.blocked_products) ? parsed.blocked_products : (params.blockedProducts || [])),
+        rewriteRequired: parsed.rewriteRequired !== undefined ? Boolean(parsed.rewriteRequired) : (decision === 'REWRITE'),
+        rewriteInstructions: Array.isArray(parsed.rewriteInstructions) ? parsed.rewriteInstructions : (Array.isArray(parsed.rewrite_instructions) ? parsed.rewrite_instructions : []),
+        escalation: parsed.escalation || null,
+        _rawRequest: requestPayload,
+        _rawResponse: content
+      };
+    } catch (err: any) {
+      console.error('[LLMService] Error in evaluateTrademarkReferee:', err);
+      return {
+        decision: 'ESCALATE',
+        canBeFixedByListingRewrite: false,
+        reasonCode: 'TM_REFEREE_FAILURE',
+        recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
+        hits: [],
+        blockedProducts: params.blockedProducts || [],
+        rewriteRequired: false,
+        rewriteInstructions: [],
+        escalation: { error: err.message },
+        _rawRequest: requestPayload,
+        _rawResponse: err.message
+      };
+    }
+  }
+
+  /**
+   * V2 Amazon Rejection Verifier (GPT-5.6 Sol - Adversarial Reviewer)
+   */
+  static async evaluateTrademarkVerifier(params: {
+    currentListing: EnglishListing;
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
+    quote?: string;
+    normalizedHits: any[];
+    refereeDecision?: string;
+    blockedProducts?: string[];
+  }): Promise<{
+    verdict: 'SAFE' | 'HIGH_RISK';
+    identifiedRisks: Array<{
+      term: string;
+      field: string;
+      riskType: string;
+      explanation: string;
+    }>;
+    canBeFixedByListingRewrite: boolean;
+    recommendation: string;
+    _rawRequest?: any;
+    _rawResponse?: any;
+  }> {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const systemPrompt = SystemPromptService.getTrademarkVerifierPrompt();
+
+    const userMessage = `Candidate English Listing for Amazon Merch Submission:
+- Brand: "${params.currentListing.brand}"
+- Title: "${params.currentListing.title}"
+- Bullet 1: "${params.currentListing.bullet1}"
+- Bullet 2: "${params.currentListing.bullet2}"
+- Description: "${params.currentListing.description}"
+
+Design Metadata:
+- Primary Niche (niche1): ${params.niche1 || 'none'}
+- Secondary Niche (niche2): ${params.niche2 || 'none'}
+- Subniche: ${params.subniche || 'none'}
+- Printed Design Quote / Slogan: "${params.quote || 'none'}"
+
+USPTO Trademark Hits Data:
+${JSON.stringify(params.normalizedHits, null, 2)}
+
+Previous Referee Verdict: "${params.refereeDecision || 'APPROVE'}"
+Blocked Products: ${JSON.stringify(params.blockedProducts || [])}
+
+Act as the final adversarial Amazon Merch reviewer. Do you see any plausible trademark, brand, or policy reasons why Amazon Merch might reject this submission or penalize the account? Return valid JSON.`;
+
+    const settings = loadSettings();
+    const requestPayload = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
+      max_tokens: settings.llmMaxTokens || 2500
+    };
+
+    try {
+      const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestPayload),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+
+      if (!res.ok) throw new Error(`LLM TM Verifier error: ${res.status} ${res.statusText}`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
+      const parsed = this.extractJsonFromLlmResponse(content);
+
+      const verdict = parsed.verdict === 'HIGH_RISK' ? 'HIGH_RISK' : 'SAFE';
+      const canBeFixed = parsed.canBeFixedByListingRewrite !== undefined ? Boolean(parsed.canBeFixedByListingRewrite) : true;
+
+      return {
+        verdict,
+        identifiedRisks: Array.isArray(parsed.identifiedRisks) ? parsed.identifiedRisks : (Array.isArray(parsed.identified_risks) ? parsed.identified_risks : []),
+        canBeFixedByListingRewrite: canBeFixed,
+        recommendation: parsed.recommendation || (verdict === 'SAFE' ? 'SAFE_TO_PUBLISH' : 'REWRITE_NEEDED'),
+        _rawRequest: requestPayload,
+        _rawResponse: content
+      };
+    } catch (err: any) {
+      console.error('[LLMService] Error in evaluateTrademarkVerifier:', err);
+      return {
+        verdict: 'HIGH_RISK',
+        identifiedRisks: [{ term: 'N/A', field: 'all', riskType: 'VERIFIER_API_FAILURE', explanation: err.message }],
+        canBeFixedByListingRewrite: false,
+        recommendation: 'ESCALATE_TO_HUMAN',
+        _rawRequest: requestPayload,
+        _rawResponse: err.message
+      };
+    }
+  }
+
+  /**
+   * V2 SEO-Preserving Rewrite for Trademark Issues
+   */
+  static async rewriteListingForTrademarkV2(params: {
+    currentListing: EnglishListing;
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
+    quote?: string;
+    rewriteIteration: number;
+    forbiddenTermsForTask: string[];
+    rewriteInstructions: string[];
+    hitsToFix?: any[];
+  }): Promise<{
+    refinedListing: EnglishListing;
+    actionsTaken: string[];
+    _rawRequest?: any;
+    _rawResponse?: any;
+  }> {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const systemPrompt = SystemPromptService.getListingGeneratorPrompt();
+
+    const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params.rewriteIteration} of 3).
+
+Current Listing:
+- Brand: "${params.currentListing.brand}"
+- Title: "${params.currentListing.title}"
+- Bullet 1: "${params.currentListing.bullet1}"
+- Bullet 2: "${params.currentListing.bullet2}"
+- Description: "${params.currentListing.description}"
+
+Design Metadata:
+- Primary Niche (niche1): ${params.niche1 || ''}
+- Secondary Niche (niche2): ${params.niche2 || ''}
+- Subniche: ${params.subniche || ''}
+- Quote / Slogan: "${params.quote || ''}"
+
+SPECIFIC TRADEMARK ISSUES TO RESOLVE:
+${params.rewriteInstructions.length > 0 ? params.rewriteInstructions.map(i => `- ${i}`).join('\n') : '- Replace flagged trademark terms with strong compliant niche keywords.'}
+
+CRITICAL CONSTRAINTS:
+1. STRICTLY FORBIDDEN TERMS (DO NOT USE THESE OR CLOSE VARIANTS):
+   ${JSON.stringify(params.forbiddenTermsForTask)}
+2. LOCKED TITLE SUFFIX: Title MUST end literally with "${params.subniche || params.niche2 || params.niche1 || ''}"
+3. EXACT CHARACTER LIMITS:
+   - Brand: 40-50 chars
+   - Title: 50-60 chars (ending with locked suffix)
+   - Bullet 1: 230-256 chars
+   - Bullet 2: 230-256 chars
+   - Description: 300-600 chars
+4. PRESERVE SEO DEPTH: Replace only the problematic terms with high-performing niche terms. Keep legitimate keywords intact.
+
+Return ONLY valid JSON matching this schema:
+{
+  "brand": "...",
+  "title": "...",
+  "bullet1": "...",
+  "bullet2": "...",
+  "description": "...",
+  "actions_taken": ["Replaced term X with Y in Brand", "Rewrote Bullet 1 to remove phrase Z"]
+}`;
+
+    const settings = loadSettings();
+    const requestPayload = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
+      max_tokens: settings.llmMaxTokens || 3500
+    };
+
+    try {
+      const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestPayload),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+
+      if (!res.ok) throw new Error(`LLM TM Rewrite V2 error: ${res.status} ${res.statusText}`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
+      const parsed = this.extractJsonFromLlmResponse(content);
+
+      let cleanTitle = (parsed.title || params.currentListing.title).trim();
+      cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, '').trim();
+
+      const refined: EnglishListing = {
+        brand: (parsed.brand || params.currentListing.brand).trim().slice(0, 50),
+        title: cleanTitle.slice(0, 60),
+        bullet1: (parsed.bullet1 || params.currentListing.bullet1).trim().slice(0, 256),
+        bullet2: (parsed.bullet2 || params.currentListing.bullet2).trim().slice(0, 256),
+        description: (parsed.description || params.currentListing.description).trim().slice(0, 600)
+      };
+
+      const actionsTaken = Array.isArray(parsed.actions_taken) ? parsed.actions_taken : (Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : ['Automated trademark rewrite applied']);
+
+      return {
+        refinedListing: refined,
+        actionsTaken,
+        _rawRequest: requestPayload,
+        _rawResponse: content
+      };
+    } catch (err: any) {
+      console.error('[LLMService] Error in rewriteListingForTrademarkV2:', err);
+      return {
+        refinedListing: params.currentListing,
+        actionsTaken: ['Failed to rewrite: network/timeout error'],
+        _rawRequest: requestPayload,
+        _rawResponse: err.message
+      };
+    }
+  }
+
+  /**
+   * Backward-compatibility wrapper for rewriteListingWithTrademarkFeedback
+   */
   static async rewriteListingWithTrademarkFeedback(params: {
     currentListing: EnglishListing;
     tmHits: any[];
@@ -514,85 +856,26 @@ Style Preset: ${stylePreset}`;
     _rawRequest?: any;
     _rawResponse?: any;
   }> {
-    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const res = await this.rewriteListingForTrademarkV2({
+      currentListing: params.currentListing,
+      niche1: params.niche1,
+      niche2: params.niche2,
+      subniche: params.subniche,
+      quote: params.quote,
+      rewriteIteration: 1,
+      forbiddenTermsForTask: [],
+      rewriteInstructions: params.tmHits.map(h => `Resolve trademark hit: ${h.term || h.trademark} (Class ${h.classNumber || '25'})`)
+    });
 
-    const systemPrompt = SystemPromptService.getTrademarkAuditorPrompt();
-    const hitSummary = params.tmHits.map(h => `- Term: "${h.term || h.trademark}", Class: ${h.classNumber || h.classes?.join(',') || 'unknown'}, Office: ${h.source || 'USPTO'}, Status: ${h.status || 'LIVE'}`).join('\n');
-
-    const userMessage = `Current English Listing:
-- Brand: "${params.currentListing.brand}"
-- Title: "${params.currentListing.title}"
-- Bullet 1: "${params.currentListing.bullet1}"
-- Bullet 2: "${params.currentListing.bullet2}"
-- Description: "${params.currentListing.description}"
-
-Design Metadata:
-- Primary Niche (niche1): ${params.niche1 || ''}
-- Secondary Niche (niche2): ${params.niche2 || ''}
-- Subniche: ${params.subniche || ''}
-- Quote / Slogan: "${params.quote || ''}"
-
-Detected Trademark Hits:
-${hitSummary || 'None flagged directly.'}
-
-Please audit the listing against trademark rules. If a Brand word is Class 25, replace with an alternative niche keyword. If a non-fair-use term is in Title/Bullets, rewrite. Return valid JSON.`;
-
-    const settings = loadSettings();
-    const requestPayload = {
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage }
-      ],
-      temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
-      max_tokens: settings.llmMaxTokens || 3000
+    return {
+      verdict: 'APPROVED',
+      rejection_reason: null,
+      blocked_classes: [],
+      actions_taken: res.actionsTaken,
+      refined_listing: res.refinedListing,
+      _rawRequest: res._rawRequest,
+      _rawResponse: res._rawResponse
     };
-
-    try {
-      const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestPayload),
-        signal: AbortSignal.timeout(timeoutMs)
-      });
-
-      if (!res.ok) throw new Error(`LLM TM Refine error: ${res.status} ${res.statusText}`);
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
-      const parsed = this.extractJsonFromLlmResponse(content);
-
-      const refined = parsed.refined_listing || parsed.refinedListing || parsed.listing || params.currentListing;
-      let cleanTitle = (refined.title || params.currentListing.title).trim();
-      cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, '').trim();
-
-      return {
-        verdict: parsed.verdict === 'REJECTED' ? 'REJECTED' : 'APPROVED',
-        rejection_reason: parsed.rejection_reason || parsed.rejectionReason || null,
-        blocked_classes: Array.isArray(parsed.blocked_classes) ? parsed.blocked_classes : (Array.isArray(parsed.blockedClasses) ? parsed.blockedClasses : []),
-        actions_taken: Array.isArray(parsed.actions_taken) ? parsed.actions_taken : (Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : []),
-        refined_listing: {
-          brand: (refined.brand || params.currentListing.brand).trim().slice(0, 50),
-          title: cleanTitle.slice(0, 60),
-          bullet1: (refined.bullet1 || params.currentListing.bullet1).trim().slice(0, 256),
-          bullet2: (refined.bullet2 || params.currentListing.bullet2).trim().slice(0, 256),
-          description: (refined.description || params.currentListing.description).trim().slice(0, 600)
-        },
-        _rawRequest: requestPayload,
-        _rawResponse: content
-      };
-    } catch (err: any) {
-      console.error('[LLMService] Error refining listing with TM feedback:', err);
-      return {
-        verdict: 'APPROVED',
-        rejection_reason: null,
-        blocked_classes: [],
-        actions_taken: ['Fallback: unchanged due to network timeout'],
-        refined_listing: params.currentListing,
-        _rawRequest: requestPayload,
-        _rawResponse: err.message
-      };
-    }
   }
 
   /**

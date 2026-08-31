@@ -6,7 +6,7 @@ import { AmazonInspectService } from './amazonInspectService';
 import { loadSettings } from './settingsService';
 import { QueueService } from './queueService';
 import { SystemPromptService } from './systemPromptService';
-import { LLMService } from './llmService';
+import { LLMService, EnglishListing } from './llmService';
 import { TrademarkService } from './trademarkService';
 import { VisionOptimizationService } from './visionOptimizationService';
 
@@ -379,12 +379,13 @@ export class UpdatePipelineService {
 
     TaskLogService.updateTaskStatus(taskId, { status: 'CHECKING_TRADEMARKS', hasError: false });
 
-    const listing = task.listingResult?.en || {
-      brand: task.payload?.brand || '',
-      title: task.payload?.title || '',
-      bullet1: task.payload?.bullet1 || '',
-      bullet2: task.payload?.bullet2 || '',
-      description: task.payload?.description || ''
+    const rawListing = task.listingResult?.en || task.payload?.listing || {};
+    const listing: EnglishListing = {
+      brand: rawListing.brand || task.payload?.brand || '',
+      title: rawListing.title || task.payload?.title || '',
+      bullet1: rawListing.bullet1 || task.payload?.bullet1 || '',
+      bullet2: rawListing.bullet2 || task.payload?.bullet2 || '',
+      description: rawListing.description || task.payload?.description || ''
     };
 
     const quote = task.payload?.quote || '';
@@ -395,83 +396,100 @@ export class UpdatePipelineService {
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'TM_CHECK_REQUEST',
-      title: 'Trademark-Prüfung (USPTO, EUIPO, DPMA)',
-      content: { fields: listing, niche1, niche2, subniche },
-      metadata: { provider: 'Productor TM API' }
+      title: 'Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)',
+      content: { fields: listing, niche1, niche2, subniche, quote },
+      metadata: { provider: 'Productor USPTO / GPT-5.6 Sol' }
     });
 
-    const audit = await TrademarkService.auditListingAndMetadata({
+    const auditV2 = await TrademarkService.executeTrademarkAuditV2({
       listing,
       quote,
       niche1,
       niche2,
       subniche,
-      offices: ['USPTO', 'EUIPO', 'DPMA']
+      maxRewriteCycles: 3,
+      onEvent: (ev) => {
+        TaskLogService.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: ev.type,
+          title: ev.title,
+          content: ev.content
+        });
+      }
     });
 
-    if (audit.isHardReject) {
-      const reason = audit.hardRejectReason || 'Klasse 25 Konflikt auf Quote oder Nische.';
+    if (auditV2.finalDecision === 'ESCALATE' || !auditV2.isSafe) {
+      const reason = auditV2.reasonCode || 'Trademark-Konflikt erfordert manuelle Freigabe.';
       TaskLogService.updateTaskStatus(taskId, {
         status: 'AWAITING_TM_REVIEW',
         checkpoint: 'TM_REVIEW',
-        blockedNiceClasses: [25],
+        blockedNiceClasses: auditV2.blockedNiceClasses,
+        blockedProducts: auditV2.blockedProducts,
         trademarkCheckResult: {
-          totalHits: audit.allHits.length,
-          hasInfringementClass25: true,
-          blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
+          totalHits: auditV2.finalTrademarkHits.length,
+          hasInfringementClass25: auditV2.finalDecision === 'ESCALATE',
+          blockedProducts: auditV2.blockedProducts,
           fieldSummaries: {}
         },
+        trademarkRefineResult: {
+          verdict: 'REJECTED',
+          rejection_reason: reason,
+          actions_taken: auditV2.rewriteIterations.flatMap(i => i.actionsTaken),
+          blockedProducts: auditV2.blockedProducts,
+          refined_listing: auditV2.finalListing
+        },
         hasError: false,
-        errorDetails: reason
+        errorDetails: reason,
+        ...( { tmAuditV2: auditV2 } as any )
       });
 
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
-        type: 'TM_REFINE_RESPONSE',
-        title: 'Trademark-Prüfung: ABGELEHNT (Klasse 25 Konflikt)',
-        content: { reason, verdict: 'REJECTED' }
+        type: 'TASK_HANDOFF',
+        title: `Übergeben an Tasks (Update TM Eskalation: ${reason})`,
+        content: {
+          checkpoint: 'TM_REVIEW',
+          reason,
+          finalDecision: auditV2.finalDecision,
+          totalHits: auditV2.finalTrademarkHits.length,
+          forbiddenTerms: auditV2.forbiddenTermsForTask
+        }
       });
 
       return { success: false, error: reason };
     }
 
-    // If Brand/Title needs rewriting, execute one rewrite cycle
-    let refinedListing = listing;
-    if (audit.needsRewrite && !audit.isSafe) {
-      const rewriteRes = await LLMService.rewriteListingWithTrademarkFeedback({
-        currentListing: listing,
-        tmHits: audit.allHits,
-        niche1,
-        niche2,
-        subniche,
-        quote
-      });
-      refinedListing = rewriteRes.refined_listing;
-    }
-
     TaskLogService.updateTaskStatus(taskId, {
       status: 'UPDATE_TM_CHECKED',
-      listingResult: { en: refinedListing },
-      blockedNiceClasses: audit.blockedNiceClasses,
-      blockedProducts: audit.blockedProducts,
+      listingResult: { en: auditV2.finalListing },
+      blockedNiceClasses: auditV2.blockedNiceClasses,
+      blockedProducts: auditV2.blockedProducts,
       trademarkCheckResult: {
-        totalHits: audit.allHits.length,
+        totalHits: auditV2.finalTrademarkHits.length,
         hasInfringementClass25: false,
-        blockedProducts: audit.blockedProducts,
+        blockedProducts: auditV2.blockedProducts,
         fieldSummaries: {}
       },
-      hasError: false
+      trademarkRefineResult: {
+        verdict: 'APPROVED',
+        rejection_reason: null,
+        actions_taken: auditV2.rewriteIterations.flatMap(i => i.actionsTaken),
+        blockedProducts: auditV2.blockedProducts,
+        refined_listing: auditV2.finalListing
+      },
+      hasError: false,
+      ...( { tmAuditV2: auditV2 } as any )
     });
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'TM_CHECK_RESPONSE',
-      title: `Trademark-Prüfung abgeschlossen (${audit.allHits.length} Treffer, ${audit.blockedProducts.length} Produkte gesperrt)`,
-      content: { audit, refinedListing },
-      metadata: { provider: 'Productor USPTO / EUIPO / DPMA' }
+      title: `Trademark Workflow V2 freigegeben (${auditV2.finalTrademarkHits.length} Treffer, ${auditV2.blockedProducts.length} Produkte gesperrt)`,
+      content: { auditV2, refinedListing: auditV2.finalListing },
+      metadata: { provider: 'Productor USPTO / GPT-5.6 Sol' }
     });
 
-    return { success: true, tmResult: audit };
+    return { success: true, tmResult: auditV2 };
   }
 
   /**

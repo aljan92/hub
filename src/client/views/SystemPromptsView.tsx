@@ -25,6 +25,8 @@ export type PromptKey =
   | 'designAnalyzer'
   | 'listingGenerator'
   | 'trademarkAuditor'
+  | 'trademarkReferee'
+  | 'trademarkVerifier'
   | 'svgBgAuditor'
   | 'updateVisionAnalyzer'
   | 'updateLocalizationTranslator';
@@ -111,20 +113,36 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     ]
   },
   {
-    key: 'trademarkAuditor',
-    stepCode: 'D6 / U5',
+    key: 'trademarkReferee',
+    stepCode: 'D6 / U5 (Pass 1)',
     category: 'SHARED',
-    title: 'Trademark Auditor & Refiner (Beide Pipelines)',
-    shortDesc: 'Nizza-Klassen TM-Prüfung (USPTO, EUIPO, DPMA). Kl. 25 Hard-Reject auf Quote/Nische; Nebenklassen (9, 18, 20, 21, 16) sperren gezielt Produkte.',
+    title: 'Trademark Referee (GPT-5.6 Sol)',
+    shortDesc: 'Schützt legitime beschreibende SEO-Keywords, klassifiziert Mark Nature (FANCIFUL vs ORDINARY_DESCRIPTIVE) und bewertet das Amazon Rejection Risk.',
     colorClass: 'text-amber-300',
     badgeBg: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
     borderClass: 'border-amber-500/40',
     icon: ShieldCheck,
     variables: [
-      { name: '{hits}', desc: 'Gefundene TM-Treffer mit Nizza-Klassen' },
-      { name: '{verdict}', desc: 'APPROVED oder REJECTED (bei Kl. 25 Treffer)' },
-      { name: '{blocked_classes}', desc: 'Gesperrte Nizza-Klassen (z. B. [9])' },
-      { name: '{refined_listing}', desc: 'Keyword-bereinigtes Listing' }
+      { name: '{hits}', desc: 'Normalisierte USPTO-Treffer mit Match-Typ' },
+      { name: '{niche_context}', desc: 'Nischen-Hierarchie (Niche1, Niche2, Subniche)' },
+      { name: '{quote}', desc: 'Design-Spruch (prüft auf Hard Conflict)' },
+      { name: '{decision}', desc: 'APPROVE, APPROVE_WITH_BLOCKED_PRODUCTS, REWRITE oder ESCALATE' }
+    ]
+  },
+  {
+    key: 'trademarkVerifier',
+    stepCode: 'D6 / U5 (Pass 2)',
+    category: 'SHARED',
+    title: 'Adversarial Amazon Verifier (GPT-5.6 Sol)',
+    shortDesc: 'Strenge Gegenprüfung: Agiert wie der Amazon Compliance Bot und blockt verbleibende Markenrisiken, Brand Hijacking und illegitime Markennutzung.',
+    colorClass: 'text-orange-300',
+    badgeBg: 'bg-orange-500/10 text-orange-300 border-orange-500/30',
+    borderClass: 'border-orange-500/40',
+    icon: ShieldCheck,
+    variables: [
+      { name: '{hits}', desc: 'USPTO-Trefferliste' },
+      { name: '{refereeDecision}', desc: 'Vorentscheidung des Referee' },
+      { name: '{verdict}', desc: 'SAFE oder HIGH_RISK' }
     ]
   },
   {
@@ -197,6 +215,8 @@ export const SystemPromptsView: React.FC = () => {
     designAnalyzer: '',
     listingGenerator: '',
     trademarkAuditor: '',
+    trademarkReferee: '',
+    trademarkVerifier: '',
     svgBgAuditor: '',
     updateVisionAnalyzer: '',
     updateLocalizationTranslator: ''
@@ -222,6 +242,8 @@ export const SystemPromptsView: React.FC = () => {
             designAnalyzer: data.designAnalyzer || '',
             listingGenerator: data.listingGenerator || '',
             trademarkAuditor: data.trademarkAuditor || '',
+            trademarkReferee: data.trademarkReferee || '',
+            trademarkVerifier: data.trademarkVerifier || '',
             svgBgAuditor: data.svgBgAuditor || '',
             updateVisionAnalyzer: data.updateVisionAnalyzer || '',
             updateLocalizationTranslator: data.updateLocalizationTranslator || ''
@@ -311,7 +333,7 @@ export const SystemPromptsView: React.FC = () => {
 
   // 4. Reset all prompts to default
   const handleResetAll = async () => {
-    if (!confirm('Möchtest du wirklich ALLE 7 Systemprompts auf ihre Standardvorlagen zurücksetzen?')) return;
+    if (!confirm('Möchtest du wirklich ALLE Systemprompts auf ihre Standardvorlagen zurücksetzen?')) return;
     setSaving(true);
     try {
       const res = await fetch('/api/v1/systemprompts/reset', { 
@@ -326,6 +348,8 @@ export const SystemPromptsView: React.FC = () => {
           designAnalyzer: data.designAnalyzer || '',
           listingGenerator: data.listingGenerator || '',
           trademarkAuditor: data.trademarkAuditor || '',
+          trademarkReferee: data.trademarkReferee || '',
+          trademarkVerifier: data.trademarkVerifier || '',
           svgBgAuditor: data.svgBgAuditor || '',
           updateVisionAnalyzer: data.updateVisionAnalyzer || '',
           updateLocalizationTranslator: data.updateLocalizationTranslator || ''

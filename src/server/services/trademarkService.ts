@@ -1,8 +1,59 @@
 import { loadSettings } from './settingsService';
 import { ProductCatalogService } from './productCatalogService';
 import { TrademarkWhitelistService } from './trademarkWhitelistService';
+import { LLMService, EnglishListing } from './llmService';
 
 export type TrademarkOffice = 'USPTO' | 'EUIPO' | 'DPMA';
+
+export type MatchTypeV2 = 
+  | 'FULL_EXACT'
+  | 'EXACT_NGRAM'
+  | 'SINGLE_WORD_EXACT'
+  | 'CONTAINS_REGISTERED_MARK'
+  | 'QUERY_INSIDE_LONGER_MARK'
+  | 'FUZZY_OR_SIMILAR';
+
+export interface TrademarkHitV2 {
+  searchedTerm: string;
+  registeredMark: string;
+  field?: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description' | 'quote' | string;
+  office: 'USPTO' | 'EUIPO' | 'DPMA';
+  status: string;
+  markFeature: 'Word' | 'Figurative' | 'Combined' | string;
+  classes: number[];
+  classNumber: string;
+  wordCount: number;
+  matchType: MatchTypeV2;
+  isFullQuoteMatch: boolean;
+  isKnownPhraseMatch: boolean;
+  serialNumber?: string | number;
+  registrationNumber?: string | number;
+  applicant?: string;
+  filingDate?: string;
+  registrationDate?: string;
+}
+
+export interface TrademarkAuditResultV2 {
+  finalDecision: 'APPROVED' | 'APPROVE_WITH_BLOCKED_PRODUCTS' | 'REWRITE' | 'ESCALATE';
+  isSafe: boolean;
+  canBeFixedByListingRewrite: boolean;
+  reasonCode: string | null;
+  recommendedAction: string | null;
+  initialTrademarkHits: TrademarkHitV2[];
+  finalTrademarkHits: TrademarkHitV2[];
+  rewriteIterations: Array<{
+    iteration: number;
+    actionsTaken: string[];
+    listing: EnglishListing;
+    hitsFound: number;
+  }>;
+  refereeResult: any;
+  verifierResult: any;
+  forbiddenTermsForTask: string[];
+  blockedProducts: string[];
+  blockedNiceClasses: number[];
+  finalListing: EnglishListing;
+}
 
 export interface TrademarkHit {
   trademark: string;
@@ -778,4 +829,482 @@ export class TrademarkService {
       fieldResults
     };
   }
+
+  /**
+   * =========================================================================
+   * TRADEMARK WORKFLOW V2 METHODS (USPTO Focus, 1-5 Grams, Multi-Round Loop)
+   * =========================================================================
+   */
+
+  /**
+   * V2 Term Extraction: 1-5 Grams + Full Quote, Stopword preservation in phrases
+   */
+  static extractTermsFromTextV2(params: {
+    listing: { brand?: string; title?: string; bullet1?: string; bullet2?: string; description?: string };
+    quote?: string;
+  }): { terms: string[]; termToFieldsMap: Record<string, string[]> } {
+    const stopWords = new Set([
+      'the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'for', 'with', 'on', 'at', 'by', 'from',
+      'up', 'about', 'into', 'over', 'after', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+      'this', 'that', 'your', 'my', 'its', 'their', 'our', 'all', 'any', 'each', 'shirt', 'tshirt', 't-shirt'
+    ]);
+
+    const termToFieldsMap: Record<string, Set<string>> = {};
+    const addTerm = (term: string, field: string) => {
+      const clean = term.trim().toLowerCase();
+      if (clean.length < 2) return;
+      if (!termToFieldsMap[clean]) termToFieldsMap[clean] = new Set();
+      termToFieldsMap[clean].add(field);
+    };
+
+    const fields: Array<[string, string | undefined]> = [
+      ['brand', params.listing.brand],
+      ['title', params.listing.title],
+      ['bullet1', params.listing.bullet1],
+      ['bullet2', params.listing.bullet2],
+      ['description', params.listing.description],
+      ['quote', params.quote]
+    ];
+
+    for (const [field, text] of fields) {
+      if (!text || typeof text !== 'string') continue;
+      const trimmed = text.trim();
+      if (!trimmed) continue;
+
+      const rawTokens = trimmed
+        .split(/[\s,.;:!?/()"\-+–—[\]{}#*~`^|\\]+/)
+        .map(w => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '').trim().toLowerCase())
+        .filter(Boolean);
+
+      // For quote, always include the full quote phrase
+      if (field === 'quote' && rawTokens.length > 0) {
+        addTerm(rawTokens.join(' '), 'quote');
+      }
+
+      // 1-Grams: add word if length >= 3 and not a single stopword
+      for (const w of rawTokens) {
+        if (w.length >= 3 && !stopWords.has(w)) {
+          addTerm(w, field);
+        }
+      }
+
+      // 2-Grams to 5-Grams (preserve stopwords inside multi-word phrases!)
+      for (let len = 2; len <= 5; len++) {
+        for (let i = 0; i <= rawTokens.length - len; i++) {
+          const nGramTokens = rawTokens.slice(i, i + len);
+          const hasSubstantialWord = nGramTokens.some(tok => !stopWords.has(tok) && tok.length >= 3);
+          if (hasSubstantialWord) {
+            addTerm(nGramTokens.join(' '), field);
+          }
+        }
+      }
+    }
+
+    const result: Record<string, string[]> = {};
+    for (const [t, set] of Object.entries(termToFieldsMap)) {
+      result[t] = Array.from(set);
+    }
+
+    return {
+      terms: Object.keys(result),
+      termToFieldsMap: result
+    };
+  }
+
+  /**
+   * Query USPTO batch endpoint (batching up to 50 terms per request)
+   */
+  static async queryUsptoBatch(terms: string[]): Promise<Record<string, any[]>> {
+    const settings = loadSettings();
+    const allResults: Record<string, any[]> = {};
+    if (terms.length === 0) return allResults;
+
+    const defaultHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+      'Origin': 'chrome-extension://kgicddkelkheehndihemgimanfdighkk',
+      'Authorization': settings.productorUsptoAuth || 'Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=='
+    };
+
+    const chunkSize = 50;
+    for (let i = 0; i < terms.length; i += chunkSize) {
+      const chunk = terms.slice(i, i + chunkSize);
+      try {
+        const fd = new FormData();
+        fd.append('trademarks', JSON.stringify(chunk));
+
+        const res = await fetch('https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21', {
+          method: 'POST',
+          headers: defaultHeaders,
+          body: fd,
+          signal: AbortSignal.timeout(10000)
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          for (const [k, v] of Object.entries(data)) {
+            if (Array.isArray(v) && v.length > 0) {
+              allResults[k.toLowerCase()] = v;
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn('[TrademarkService] USPTO query error chunk:', err.message || err);
+      }
+    }
+
+    return allResults;
+  }
+
+  /**
+   * Deterministic Match Normalization & Classification before LLM
+   */
+  static normalizeAndClassifyMatches(
+    rawHits: Record<string, any[]>,
+    termToFieldsMap: Record<string, string[]>,
+    quote?: string
+  ): TrademarkHitV2[] {
+    const normalizedHits: TrademarkHitV2[] = [];
+    const cleanQuote = quote ? quote.trim().toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, '') : '';
+    const seenKeys = new Set<string>();
+
+    for (const [term, records] of Object.entries(rawHits)) {
+      const termLower = term.toLowerCase().trim();
+      const fields = termToFieldsMap[termLower] || ['listing'];
+
+      for (const r of records) {
+        const rawStatus = r.status || r.status_code || 'LIVE';
+        if (!this.isLiveStatus(rawStatus)) continue;
+
+        const registeredMark = String(r.mark_identification || r.trademark || r.MarkVerbalElementText || term).trim();
+        const regMarkClean = registeredMark.toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, '').trim();
+        const rawClasses = this.extractNiceClasses(r);
+        const classes = rawClasses.map(c => parseInt(c, 10)).filter(n => !isNaN(n));
+
+        const wordCount = regMarkClean.split(/\s+/).filter(Boolean).length;
+
+        // Match type calculation
+        let matchType: MatchTypeV2 = 'FUZZY_OR_SIMILAR';
+        if (regMarkClean === termLower) {
+          if (cleanQuote && termLower === cleanQuote) {
+            matchType = 'FULL_EXACT';
+          } else if (wordCount === 1) {
+            matchType = 'SINGLE_WORD_EXACT';
+          } else {
+            matchType = 'EXACT_NGRAM';
+          }
+        } else if (termLower.includes(regMarkClean)) {
+          matchType = 'CONTAINS_REGISTERED_MARK';
+        } else if (regMarkClean.includes(termLower)) {
+          matchType = 'QUERY_INSIDE_LONGER_MARK';
+        }
+
+        const isFullQuoteMatch = Boolean(cleanQuote && (regMarkClean === cleanQuote || matchType === 'FULL_EXACT'));
+        const isKnownPhraseMatch = wordCount >= 2 && (matchType === 'EXACT_NGRAM' || matchType === 'FULL_EXACT' || matchType === 'CONTAINS_REGISTERED_MARK');
+
+        const drawing = String(r.mark_drawing || r.MarkFeature || r.markFeature || '').toUpperCase();
+        let markFeature = 'Word';
+        if (drawing.includes('DESIGN') || drawing.includes('COMBINED') || drawing.includes('BILD') || drawing.includes('FIGURATIVE')) {
+          markFeature = 'Combined';
+        }
+
+        for (const f of fields) {
+          const uniqueKey = `USPTO-${registeredMark}-${classes.join(',')}-${termLower}-${f}`;
+          if (seenKeys.has(uniqueKey)) continue;
+          seenKeys.add(uniqueKey);
+
+          normalizedHits.push({
+            searchedTerm: termLower,
+            registeredMark,
+            field: f,
+            office: 'USPTO',
+            status: 'LIVE',
+            markFeature,
+            classes,
+            classNumber: classes.join(', ') || 'N/A',
+            wordCount,
+            matchType,
+            isFullQuoteMatch,
+            isKnownPhraseMatch,
+            serialNumber: r.serial_number || r.ApplicationNumber || r.applicationNumber,
+            registrationNumber: r.registration_number || r.registration_date,
+            filingDate: r.filing_date || r.ApplicationDate,
+            registrationDate: r.registration_date || r.RegistrationDate
+          });
+        }
+      }
+    }
+
+    return normalizedHits;
+  }
+
+  /**
+   * Complete V2 Trademark Audit Orchestrator:
+   * Scan ➔ Match Normalization ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) with full re-scan ➔ Verifier ➔ Result
+   */
+  static async executeTrademarkAuditV2(params: {
+    listing: EnglishListing;
+    quote?: string;
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
+    maxRewriteCycles?: number;
+    onEvent?: (event: { type: string; title: string; content: any }) => void;
+  }): Promise<TrademarkAuditResultV2> {
+    let currentListing: EnglishListing = { ...params.listing };
+    const forbiddenTermsForTask: string[] = [];
+    const rewriteIterations: Array<{
+      iteration: number;
+      actionsTaken: string[];
+      listing: EnglishListing;
+      hitsFound: number;
+    }> = [];
+
+    let initialTrademarkHits: TrademarkHitV2[] = [];
+    let finalRefereeResult: any = null;
+    let finalVerifierResult: any = null;
+    let blockedProducts: string[] = [];
+    let blockedNiceClasses: number[] = [];
+    const maxCycles = params.maxRewriteCycles ?? 3;
+
+    for (let cycle = 0; cycle <= maxCycles; cycle++) {
+      console.log(`[TrademarkServiceV2] 🔍 Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles})...`);
+
+      // 1. Term extraction V2
+      const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
+        listing: currentListing,
+        quote: params.quote
+      });
+
+      // 2. USPTO Live query
+      const rawHits = await this.queryUsptoBatch(terms);
+
+      // 3. Match classification
+      const normalizedHits = this.normalizeAndClassifyMatches(rawHits, termToFieldsMap, params.quote);
+
+      if (cycle === 0) {
+        initialTrademarkHits = [...normalizedHits];
+      }
+
+      params.onEvent?.({
+        type: 'TM_SCAN_RESPONSE',
+        title: cycle === 0 ? `USPTO TM Scan abgeschlossen (${normalizedHits.length} Treffer)` : `USPTO TM Scan (Runde ${cycle}: ${normalizedHits.length} Treffer)`,
+        content: { cycle, totalHits: normalizedHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
+      });
+
+      // 4. GPT-5.6 Sol Trademark Referee Pass
+      const refereeRes = await LLMService.evaluateTrademarkReferee({
+        currentListing,
+        niche1: params.niche1,
+        niche2: params.niche2,
+        subniche: params.subniche,
+        quote: params.quote,
+        normalizedHits,
+        rewriteIteration: cycle,
+        forbiddenTermsForTask,
+        blockedProducts
+      });
+
+      finalRefereeResult = refereeRes;
+
+      // Accumulate blocked products from referee
+      if (Array.isArray(refereeRes.blockedProducts) && refereeRes.blockedProducts.length > 0) {
+        blockedProducts = Array.from(new Set([...blockedProducts, ...refereeRes.blockedProducts]));
+      }
+
+      params.onEvent?.({
+        type: 'TM_REFEREE_RESPONSE',
+        title: `Trademark Referee: ${refereeRes.decision} (Zyklus ${cycle})`,
+        content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits }
+      });
+
+      // A. Check for Immediate Escalation (Core design quote conflict / Unfixable / Famous Brand in artwork)
+      if (refereeRes.decision === 'ESCALATE' || refereeRes.canBeFixedByListingRewrite === false) {
+        console.warn(`[TrademarkServiceV2] 🚨 Eskalation ausgelöst: ${refereeRes.reasonCode || 'CORE_QUOTE_CLASS25_CONFLICT'}`);
+        return {
+          finalDecision: 'ESCALATE',
+          isSafe: false,
+          canBeFixedByListingRewrite: false,
+          reasonCode: refereeRes.reasonCode || 'CORE_QUOTE_CLASS25_CONFLICT',
+          recommendedAction: refereeRes.recommendedAction || 'DO_NOT_SUBMIT',
+          initialTrademarkHits,
+          finalTrademarkHits: normalizedHits,
+          rewriteIterations,
+          refereeResult: refereeRes,
+          verifierResult: null,
+          forbiddenTermsForTask,
+          blockedProducts,
+          blockedNiceClasses,
+          finalListing: currentListing
+        };
+      }
+
+      // B. If Referee approves (APPROVE or APPROVE_WITH_BLOCKED_PRODUCTS) ➔ Run Adversarial Verifier Pass!
+      if (refereeRes.decision === 'APPROVE' || refereeRes.decision === 'APPROVE_WITH_BLOCKED_PRODUCTS') {
+        console.log(`[TrademarkServiceV2] 🛡️ Referee hat genehmigt (${refereeRes.decision}). Starte Verifier Pass...`);
+        
+        const verifierRes = await LLMService.evaluateTrademarkVerifier({
+          currentListing,
+          niche1: params.niche1,
+          niche2: params.niche2,
+          subniche: params.subniche,
+          quote: params.quote,
+          normalizedHits,
+          refereeDecision: refereeRes.decision,
+          blockedProducts
+        });
+
+        finalVerifierResult = verifierRes;
+
+        params.onEvent?.({
+          type: 'TM_VERIFIER_RESPONSE',
+          title: `Amazon Rejection Verifier: ${verifierRes.verdict}`,
+          content: { verdict: verifierRes.verdict, recommendation: verifierRes.recommendation, risks: verifierRes.identifiedRisks }
+        });
+
+        if (verifierRes.verdict === 'SAFE') {
+          console.log(`[TrademarkServiceV2] ✅ Verifier bestätigt SAFE. Listing endgültig freigegeben!`);
+          return {
+            finalDecision: refereeRes.decision,
+            isSafe: true,
+            canBeFixedByListingRewrite: true,
+            reasonCode: null,
+            recommendedAction: null,
+            initialTrademarkHits,
+            finalTrademarkHits: normalizedHits,
+            rewriteIterations,
+            refereeResult: refereeRes,
+            verifierResult: verifierRes,
+            forbiddenTermsForTask,
+            blockedProducts,
+            blockedNiceClasses,
+            finalListing: currentListing
+          };
+        }
+
+        // If Verifier flagged HIGH_RISK:
+        console.warn(`[TrademarkServiceV2] ⚠️ Verifier hat HIGH_RISK gemeldet (${verifierRes.identifiedRisks.length} Risiken).`);
+        if (!verifierRes.canBeFixedByListingRewrite) {
+          return {
+            finalDecision: 'ESCALATE',
+            isSafe: false,
+            canBeFixedByListingRewrite: false,
+            reasonCode: 'VERIFIER_UNFIXABLE_RISK',
+            recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
+            initialTrademarkHits,
+            finalTrademarkHits: normalizedHits,
+            rewriteIterations,
+            refereeResult: refereeRes,
+            verifierResult: verifierRes,
+            forbiddenTermsForTask,
+            blockedProducts,
+            blockedNiceClasses,
+            finalListing: currentListing
+          };
+        }
+
+        if (cycle >= maxCycles) {
+          return {
+            finalDecision: 'ESCALATE',
+            isSafe: false,
+            canBeFixedByListingRewrite: true,
+            reasonCode: 'REWRITE_LIMIT_REACHED',
+            recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
+            initialTrademarkHits,
+            finalTrademarkHits: normalizedHits,
+            rewriteIterations,
+            refereeResult: refereeRes,
+            verifierResult: verifierRes,
+            forbiddenTermsForTask,
+            blockedProducts,
+            blockedNiceClasses,
+            finalListing: currentListing
+          };
+        }
+
+        // Add verifier risks to rewrite instructions and continue loop
+        const verifierInstructions = verifierRes.identifiedRisks.map(r => `Resolve ${r.riskType} in ${r.field}: "${r.term}" - ${r.explanation}`);
+        refereeRes.rewriteInstructions.push(...verifierInstructions);
+        verifierRes.identifiedRisks.forEach(r => {
+          if (r.term && r.term.length > 2) forbiddenTermsForTask.push(r.term.toLowerCase());
+        });
+      }
+
+      // C. If Rewrite is required:
+      if (cycle >= maxCycles) {
+        console.warn(`[TrademarkServiceV2] 🚨 Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
+        return {
+          finalDecision: 'ESCALATE',
+          isSafe: false,
+          canBeFixedByListingRewrite: true,
+          reasonCode: 'REWRITE_LIMIT_REACHED',
+          recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
+          initialTrademarkHits,
+          finalTrademarkHits: normalizedHits,
+          rewriteIterations,
+          refereeResult: refereeRes,
+          verifierResult: finalVerifierResult,
+          forbiddenTermsForTask,
+          blockedProducts,
+          blockedNiceClasses,
+          finalListing: currentListing
+        };
+      }
+
+      // Collect terms that need fixing into forbidden list
+      for (const h of refereeRes.hits) {
+        if (h.decision === 'REWRITE' || h.amazonRejectionRisk === 'HIGH' || h.amazonRejectionRisk === 'VERY_HIGH') {
+          if (h.searchedTerm) forbiddenTermsForTask.push(h.searchedTerm.toLowerCase());
+          if (h.registeredMark) forbiddenTermsForTask.push(h.registeredMark.toLowerCase());
+        }
+      }
+
+      console.log(`[TrademarkServiceV2] ✍️ Führe SEO-Rewrite durch (Runde ${cycle + 1}). Verbotene Begriffe: [${forbiddenTermsForTask.join(', ')}]`);
+
+      const rewriteRes = await LLMService.rewriteListingForTrademarkV2({
+        currentListing,
+        niche1: params.niche1,
+        niche2: params.niche2,
+        subniche: params.subniche,
+        quote: params.quote,
+        rewriteIteration: cycle + 1,
+        forbiddenTermsForTask: Array.from(new Set(forbiddenTermsForTask)),
+        rewriteInstructions: refereeRes.rewriteInstructions,
+        hitsToFix: refereeRes.hits
+      });
+
+      currentListing = rewriteRes.refinedListing;
+
+      rewriteIterations.push({
+        iteration: cycle + 1,
+        actionsTaken: rewriteRes.actionsTaken,
+        listing: { ...currentListing },
+        hitsFound: normalizedHits.length
+      });
+
+      params.onEvent?.({
+        type: 'TM_REWRITE_RESPONSE',
+        title: `SEO-Rewrite Runde ${cycle + 1} abgeschlossen`,
+        content: { iteration: cycle + 1, actionsTaken: rewriteRes.actionsTaken, listing: currentListing }
+      });
+    }
+
+    // Default fallback escalation if loop finishes without safe verdict
+    return {
+      finalDecision: 'ESCALATE',
+      isSafe: false,
+      canBeFixedByListingRewrite: true,
+      reasonCode: 'REWRITE_LIMIT_REACHED',
+      recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
+      initialTrademarkHits,
+      finalTrademarkHits: [],
+      rewriteIterations,
+      refereeResult: finalRefereeResult,
+      verifierResult: finalVerifierResult,
+      forbiddenTermsForTask,
+      blockedProducts,
+      blockedNiceClasses,
+      finalListing: currentListing
+    };
+  }
 }
+

@@ -1046,16 +1046,16 @@ export class TaskLogService {
   }
 
   /**
-   * Automatically audit Trademarks across USPTO, EUIPO, DPMA with Nice Class awareness
-   * Handles Hard-Rejects (Class 25 on quote/niches), Brand rewriting, Product Blocking (Classes 9, 18, 20, 21, 16),
-   * and post-approval localization into DE, FR, ES, IT, JA.
+   * Automatically audit Trademarks via Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)
+   * Handles single common words, multi-word marks, core quote conflicts, up to 3 rewrite cycles with forbidden list,
+   * product blocking, and post-approval localization into DE, FR, ES, IT, JA.
    */
   static async auditListingTrademarks(taskId: string) {
     const task = this.getTaskLogById(taskId);
     if (!task || !task.listingResult) return;
 
     const enListing = task.listingResult.en || task.listingResult;
-    let currentFields = {
+    const initialFields: EnglishListing = {
       brand: typeof enListing === 'object' ? enListing.brand || '' : '',
       title: typeof enListing === 'object' ? enListing.title || '' : '',
       bullet1: typeof enListing === 'object' ? enListing.bullet1 || '' : '',
@@ -1068,278 +1068,161 @@ export class TaskLogService {
     const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || '';
     const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || '';
 
-    const MAX_CHECKS = 4;
-
     try {
-      for (let checkRound = 1; checkRound <= MAX_CHECKS; checkRound++) {
-        const isInitial = checkRound === 1;
-        const isFinal = checkRound === MAX_CHECKS;
+      console.log(`[TaskLogService] 🛡️ Starte Trademark Workflow V2 für Task ${taskId}...`);
 
-        console.log(`[TaskLogService] 🛡️ Starte Markenrechts-Prüfung Runde ${checkRound}/${MAX_CHECKS} für Task ${taskId}...`);
-
-        this.addEvent(taskId, {
-          timestamp: new Date().toISOString(),
-          type: 'TM_CHECK_REQUEST',
-          title: isInitial
-            ? 'Senden an Productor (USPTO, EUIPO, DPMA Prüfung)'
-            : `Senden an Productor (Nachprüfung Runde ${checkRound})`,
-          content: {
-            round: checkRound,
-            maxRounds: MAX_CHECKS,
-            offices: ['USPTO', 'EUIPO', 'DPMA'],
-            quote,
-            niche1,
-            niche2,
-            subniche,
-            fields: { ...currentFields }
-          },
-          metadata: { provider: 'Productor TM API' }
-        });
-
-        const start = Date.now();
-        const audit = await TrademarkService.auditListingAndMetadata({
-          listing: currentFields,
-          quote,
-          niche1,
-          niche2,
-          subniche,
-          offices: ['USPTO', 'EUIPO', 'DPMA']
-        });
-        const latencyMs = Date.now() - start;
-
-        this.addEvent(taskId, {
-          timestamp: new Date().toISOString(),
-          type: 'TM_CHECK_RESPONSE',
-          title: isInitial
-            ? `Empfangen von Productor (${audit.allHits.length} Treffer)`
-            : `Empfangen von Productor (Nachprüfung Runde ${checkRound}: ${audit.allHits.length} Treffer)`,
-          content: {
-            round: checkRound,
-            totalHits: audit.allHits.length,
-            isHardReject: audit.isHardReject,
-            hardRejectReason: audit.hardRejectReason,
-            isSafe: audit.isSafe,
-            needsRewrite: audit.needsRewrite,
-            brandConflict: audit.brandConflict,
-            titleConflict: audit.titleConflict,
-            blockedNiceClasses: audit.blockedNiceClasses,
-            blockedProducts: audit.blockedProducts,
-            hits: audit.allHits
-          },
-          metadata: { provider: 'Productor TM API', latencyMs }
-        });
-
-        // 1. HARD REJECT (Klasse 25 Treffer auf Quote, Niche1, Niche2 oder Subniche)
-        if (audit.isHardReject) {
-          const reason = audit.hardRejectReason || `Klasse 25 Markenrechtsverletzung auf Quote oder Nische.`;
-          this.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'TM_REFINE_RESPONSE',
-            title: 'Empfangen von Trademark Auditor (HARD REJECT - Klasse 25 Konflikt)',
-            content: {
-              verdict: 'REJECTED',
-              rejection_reason: reason,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              actions_taken: ['Design verworfen zum Schutz des Merch-Accounts.']
-            }
-          });
-
-          this.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'TASK_HANDOFF',
-            title: 'Übergeben an Tasks (Abgelehnt - Class 25 Trademark)',
-            content: {
-              checkpoint: 'TM_REVIEW',
-              reason,
-              verdict: 'REJECTED',
-              round: checkRound,
-              totalHits: audit.allHits.length
-            }
-          });
-
-          this.updateTaskStatus(taskId, {
-            status: 'AWAITING_TM_REVIEW',
-            checkpoint: 'TM_REVIEW',
-            trademarkCheckResult: {
-              totalHits: audit.allHits.length,
-              hasInfringementClass25: true,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              fieldSummaries: {}
-            },
-            trademarkRefineResult: {
-              verdict: 'REJECTED',
-              rejection_reason: reason,
-              blockedProducts: ['ALL_PRODUCTS_BLOCKED']
-            },
-            hasError: false,
-            errorDetails: reason
-          });
-          return;
-        }
-
-        // 2. WENN SAFE (Keine Brand/Title Klasse 25 Konflikte, Bullets fair-use) -> Post-Approval Localization!
-        if (audit.isSafe || (!audit.brandConflict && !audit.titleConflict)) {
-          console.log(`[TaskLogService] 🛡️ Master English Listing freigegeben für Task ${taskId}! Starte Übersetzung in DE, FR, ES, IT, JA...`);
-
-          this.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'TRANSLATION_REQUEST',
-            title: 'Master English Listing freigegeben -> Starte Multi-Marketplace Lokalisierung',
-            content: {
-              approvedEnglish: currentFields,
-              blockedNiceClasses: audit.blockedNiceClasses,
-              blockedProducts: audit.blockedProducts
-            }
-          });
-
-          this.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', hasError: false });
-
-          const transStart = Date.now();
-          const translatedListings = await LLMService.translateApprovedListing({
-            englishListing: currentFields,
-            quote,
-            niche1,
-            subniche
-          });
-          const transLatencyMs = Date.now() - transStart;
-
-          // 3. HARD SANITIZER GATEKEEPER
-          const sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
-
-          this.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'TRANSLATION_RESPONSE',
-            title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
-            content: sanitizedListings,
-            metadata: { latencyMs: transLatencyMs }
-          });
-
-          this.updateTaskStatus(taskId, {
-            status: 'CHECKING_TRADEMARKS',
-            listingResult: sanitizedListings,
-            blockedNiceClasses: audit.blockedNiceClasses,
-            blockedProducts: audit.blockedProducts,
-            trademarkCheckResult: {
-              totalHits: audit.allHits.length,
-              hasInfringementClass25: false,
-              blockedProducts: audit.blockedProducts,
-              fieldSummaries: {}
-            },
-            trademarkRefineResult: {
-              verdict: 'APPROVED',
-              rejection_reason: null,
-              actions_taken: ['Listing freigegeben, übersetzt und durch Hard-Sanitizer bereinigt.'],
-              blockedProducts: audit.blockedProducts,
-              refined_listing: currentFields
-            },
-            hasError: false
-          });
-
-          if (task.source === 'UPDATE' || task.suffix === 'U') {
-            console.log(`[TaskLogService] ✨ Update-Task ${taskId} Listing freigegeben -> Direkte Übergabe an Queue (keine Vektorisierung nötig) ✓`);
-            try {
-              const { UpdatePipelineService } = require('./updatePipelineService');
-              UpdatePipelineService.stepU7_Enqueue(taskId).catch((err: any) => {
-                console.error(`[TaskLogService] Fehler bei Step U7 Enqueue für ${taskId}:`, err);
-              });
-            } catch (err) {
-              console.error(`[TaskLogService] Konnte UpdatePipelineService nicht laden:`, err);
-            }
-            return;
-          }
-
-          console.log(`[TaskLogService] ✨ Task ${taskId} Listing freigegeben und lokalisiert -> Starte Vektorisierung ✓`);
-          this.vectorizeDesignTask(taskId).catch(err => {
-            console.error(`[TaskLogService] Vektorisierung für Task ${taskId} fehlgeschlagen:`, err);
-          });
-          return;
-        }
-
-        // 3. WENN FINAL ROUND ERREICHT UND NOCH KONFLIKTE
-        if (isFinal) {
-          const rejectionMsg = `Nach 4 Markenrechtsprüfungen und 3 automatischen Korrekturläufen konnten die Treffer in Klasse 25 nicht vollständig eliminiert werden.`;
-          this.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'TASK_HANDOFF',
-            title: 'Übergeben an Tasks (Manuelle Trademark-Optimierung)',
-            content: {
-              checkpoint: 'TM_REVIEW',
-              reason: rejectionMsg,
-              totalHits: audit.allHits.length
-            }
-          });
-
-          this.updateTaskStatus(taskId, {
-            status: 'AWAITING_TM_REVIEW',
-            checkpoint: 'TM_REVIEW',
-            blockedNiceClasses: audit.blockedNiceClasses,
-            blockedProducts: audit.blockedProducts,
-            trademarkCheckResult: {
-              totalHits: audit.allHits.length,
-              hasInfringementClass25: true,
-              blockedProducts: audit.blockedProducts,
-              fieldSummaries: {}
-            },
-            hasError: false,
-            errorDetails: rejectionMsg
-          });
-          return;
-        }
-
-        // 4. REWRITE CYCLE MIT TRADEMARK FEEDBACK
-        this.addEvent(taskId, {
-          timestamp: new Date().toISOString(),
-          type: 'TM_REFINE_REQUEST',
-          title: `Senden an OpenRouter (Trademark Auditor & Refiner - Runde ${checkRound})`,
-          content: {
-            round: checkRound,
-            brandConflict: audit.brandConflict,
-            titleConflict: audit.titleConflict,
-            hits: audit.allHits
-          }
-        });
-
-        const refineStart = Date.now();
-        const refinedResult = await LLMService.rewriteListingWithTrademarkFeedback({
-          currentListing: currentFields,
-          tmHits: audit.allHits,
-          niche1,
-          niche2,
-          subniche,
-          quote
-        });
-        const refineLatencyMs = Date.now() - refineStart;
-
-        this.addEvent(taskId, {
-          timestamp: new Date().toISOString(),
-          type: 'TM_REFINE_RESPONSE',
-          title: `Empfangen von OpenRouter (Trademark-Bewertung: ${refinedResult.verdict} in Runde ${checkRound})`,
-          content: refinedResult,
-          metadata: { latencyMs: refineLatencyMs }
-        });
-
-        if (refinedResult.verdict === 'REJECTED') {
-          this.updateTaskStatus(taskId, {
-            status: 'AWAITING_TM_REVIEW',
-            checkpoint: 'TM_REVIEW',
-            trademarkRefineResult: refinedResult,
-            hasError: false,
-            errorDetails: refinedResult.rejection_reason || 'Markenrechtsverletzung festgestellt.'
-          });
-          return;
-        }
-
-        currentFields = { ...refinedResult.refined_listing };
-      }
-    } catch (err: any) {
-      console.error(`[TaskLogService] Unerwarteter Fehler beim TM Audit für Task ${taskId}:`, err);
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
-        type: 'ERROR',
-        title: 'Fehler beim Trademark Audit',
-        content: err.message || 'Fehler bei der USPTO TM Prüfung'
+        type: 'TM_CHECK_REQUEST',
+        title: 'Starte Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)',
+        content: { quote, niche1, niche2, subniche, fields: initialFields }
       });
-      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
+
+      const auditV2 = await TrademarkService.executeTrademarkAuditV2({
+        listing: initialFields,
+        quote,
+        niche1,
+        niche2,
+        subniche,
+        maxRewriteCycles: 3,
+        onEvent: (ev) => {
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: ev.type,
+            title: ev.title,
+            content: ev.content
+          });
+        }
+      });
+
+      // 1. WENN ESKALATION (Core Quote Class 25 Conflict, Famous Brand in design, oder Limit erreicht)
+      if (auditV2.finalDecision === 'ESCALATE' || !auditV2.isSafe) {
+        const reason = auditV2.reasonCode || 'Trademark-Konflikt erfordert manuelle Freigabe.';
+        console.warn(`[TaskLogService] 🚨 Task ${taskId} eskaliert zu AWAITING_TM_REVIEW (${reason})`);
+
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'TASK_HANDOFF',
+          title: `Übergeben an Tasks (Eskalation: ${reason})`,
+          content: {
+            checkpoint: 'TM_REVIEW',
+            reason,
+            recommendedAction: auditV2.recommendedAction,
+            finalDecision: auditV2.finalDecision,
+            totalHits: auditV2.finalTrademarkHits.length,
+            forbiddenTerms: auditV2.forbiddenTermsForTask
+          }
+        });
+
+        this.updateTaskStatus(taskId, {
+          status: 'AWAITING_TM_REVIEW',
+          checkpoint: 'TM_REVIEW',
+          blockedNiceClasses: auditV2.blockedNiceClasses,
+          blockedProducts: auditV2.blockedProducts,
+          trademarkCheckResult: {
+            totalHits: auditV2.finalTrademarkHits.length,
+            hasInfringementClass25: auditV2.finalDecision === 'ESCALATE',
+            blockedProducts: auditV2.blockedProducts,
+            fieldSummaries: {}
+          },
+          trademarkRefineResult: {
+            verdict: 'REJECTED',
+            rejection_reason: reason,
+            actions_taken: auditV2.rewriteIterations.flatMap(i => i.actionsTaken),
+            blockedProducts: auditV2.blockedProducts,
+            refined_listing: auditV2.finalListing
+          },
+          hasError: false,
+          errorDetails: reason,
+          ...( { tmAuditV2: auditV2 } as any )
+        });
+        return;
+      }
+
+      // 2. WENN FREIGEGEBEN (SAFE / APPROVED / APPROVE_WITH_BLOCKED_PRODUCTS)
+      console.log(`[TaskLogService] 🛡️ Master English Listing durch V2 freigegeben (${auditV2.finalDecision})! Starte Lokalisierung...`);
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TRANSLATION_REQUEST',
+        title: 'Master English Listing V2 freigegeben -> Starte Multi-Marketplace Lokalisierung',
+        content: {
+          approvedEnglish: auditV2.finalListing,
+          blockedNiceClasses: auditV2.blockedNiceClasses,
+          blockedProducts: auditV2.blockedProducts,
+          finalDecision: auditV2.finalDecision
+        }
+      });
+
+      this.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', hasError: false });
+
+      const transStart = Date.now();
+      const translatedListings = await LLMService.translateApprovedListing({
+        englishListing: auditV2.finalListing,
+        quote,
+        niche1,
+        subniche
+      });
+      const transLatencyMs = Date.now() - transStart;
+
+      // 3. Hard Sanitizer Gatekeeper
+      const sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TRANSLATION_RESPONSE',
+        title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
+        content: sanitizedListings,
+        metadata: { latencyMs: transLatencyMs }
+      });
+
+      this.updateTaskStatus(taskId, {
+        status: 'CHECKING_TRADEMARKS',
+        listingResult: sanitizedListings,
+        blockedNiceClasses: auditV2.blockedNiceClasses,
+        blockedProducts: auditV2.blockedProducts,
+        trademarkCheckResult: {
+          totalHits: auditV2.finalTrademarkHits.length,
+          hasInfringementClass25: false,
+          blockedProducts: auditV2.blockedProducts,
+          fieldSummaries: {}
+        },
+        trademarkRefineResult: {
+          verdict: 'APPROVED',
+          rejection_reason: null,
+          actions_taken: auditV2.rewriteIterations.flatMap(i => i.actionsTaken),
+          blockedProducts: auditV2.blockedProducts,
+          refined_listing: auditV2.finalListing
+        },
+        hasError: false,
+        ...( { tmAuditV2: auditV2 } as any )
+      });
+
+      if (task.source === 'UPDATE' || task.suffix === 'U') {
+        console.log(`[TaskLogService] ✨ Update-Task ${taskId} Listing freigegeben -> Direkte Übergabe an Queue ✓`);
+        try {
+          const { UpdatePipelineService } = require('./updatePipelineService');
+          UpdatePipelineService.stepU7_Enqueue(taskId).catch((err: any) => {
+            console.error(`[TaskLogService] Fehler bei Step U7 Enqueue für ${taskId}:`, err);
+          });
+        } catch (err) {
+          console.error(`[TaskLogService] Konnte UpdatePipelineService nicht laden:`, err);
+        }
+        return;
+      }
+
+      console.log(`[TaskLogService] ✨ Task ${taskId} Listing freigegeben und lokalisiert -> Starte Vektorisierung ✓`);
+      this.vectorizeDesignTask(taskId).catch(err => {
+        console.error(`[TaskLogService] Vektorisierung für Task ${taskId} fehlgeschlagen:`, err);
+      });
+    } catch (err: any) {
+      console.error(`[TaskLogService] ❌ Unerwarteter Fehler beim TM Audit V2 für Task ${taskId}:`, err);
+      this.updateTaskStatus(taskId, {
+        status: 'AWAITING_TM_REVIEW',
+        checkpoint: 'TM_REVIEW',
+        hasError: false,
+        errorDetails: `Technischer Fehler bei TM-Prüfung: ${err.message}`
+      });
     }
   }
 
@@ -2160,25 +2043,31 @@ export class TaskLogService {
     if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
 
     if (params.action === 'RECHECK') {
-      const listingToCheck = params.refinedListing || task.listingResult?.en || {};
-      const batchResult = await TrademarkService.checkBatchFields({
-        offices: ['USPTO'],
-        fields: {
-          brand: listingToCheck.brand || '',
-          title: listingToCheck.title || '',
-          bullet1: listingToCheck.bullet1 || '',
-          bullet2: listingToCheck.bullet2 || '',
-          description: listingToCheck.description || '',
-          quote: task.payload?.quote || ''
-        }
+      const listingToCheck: EnglishListing = params.refinedListing || task.listingResult?.en || {
+        brand: '',
+        title: '',
+        bullet1: '',
+        bullet2: '',
+        description: ''
+      };
+
+      const auditV2 = await TrademarkService.executeTrademarkAuditV2({
+        listing: listingToCheck,
+        quote: task.payload?.quote || '',
+        niche1: task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || '',
+        niche2: task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || '',
+        subniche: task.subniche || task.customAnswers?.subniche || task.payload?.subniche || '',
+        maxRewriteCycles: 0 // In manual check, just scan and evaluate the provided text
       });
 
       return {
         success: true,
-        totalHits: batchResult.summary?.totalHits ?? 0,
-        hasInfringementClass25: batchResult.hasInfringementClass25 || false,
-        blockedProducts: batchResult.blockedProducts || [],
-        fieldSummaries: batchResult.fieldResults || {}
+        auditV2,
+        totalHits: auditV2.finalTrademarkHits.length,
+        hasInfringementClass25: auditV2.finalDecision === 'ESCALATE',
+        blockedProducts: auditV2.blockedProducts,
+        decision: auditV2.finalDecision,
+        reasonCode: auditV2.reasonCode
       };
     }
 
@@ -2208,7 +2097,7 @@ export class TaskLogService {
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TM_REFINE_RESPONSE',
-        title: `Task manuell freigegeben (Human Loop) & Vektorisierung gestartet`,
+        title: `Task manuell freigegeben (Human Loop) & Übersetzung/Vektorisierung gestartet`,
         content: {
           verdict: 'APPROVED',
           refinedListing: params.refinedListing,
@@ -2218,6 +2107,11 @@ export class TaskLogService {
 
       this.saveLogs(this.loadLogs());
       this.emitUpdate(task);
+
+      const approvedEn = task.listingResult?.en || task.listingResult;
+      const quote = task.payload?.quote || '';
+      const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || '';
+      const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || '';
 
       if (task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U')) {
         console.log(`[TaskLogService] ✨ Update-Task ${taskId} TM manuell freigegeben -> Übersetzung (U6) und Übergabe an Queue (U7) ✓`);
@@ -2232,11 +2126,27 @@ export class TaskLogService {
         return { success: true, message: 'Update-Listing freigegeben! Übersetzung & Queue-Übergabe laufen.' };
       }
 
-      this.vectorizeDesignTask(taskId).catch(err => {
-        console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe für Task ${taskId} fehlgeschlagen:`, err);
+      // For Creation Tasks: Translate and then vectorize
+      LLMService.translateApprovedListing({
+        englishListing: approvedEn,
+        quote,
+        niche1,
+        subniche
+      }).then(translatedListings => {
+        const sanitized = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
+        task.listingResult = sanitized;
+        this.saveLogs(this.loadLogs());
+        this.emitUpdate(task);
+        this.vectorizeDesignTask(taskId).catch(err => {
+          console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe für Task ${taskId} fehlgeschlagen:`, err);
+        });
+      }).catch(err => {
+        console.error(`[TaskLogService] Fehler bei Übersetzung nach manueller TM-Freigabe für Task ${taskId}:`, err);
+        // Fallback: continue vectorization even if translation fails
+        this.vectorizeDesignTask(taskId).catch(vErr => console.error(vErr));
       });
 
-      return { success: true, message: 'Listing manuell freigegeben und Vektorisierung gestartet.' };
+      return { success: true, message: 'Listing manuell freigegeben! Übersetzung und Vektorisierung gestartet.' };
     }
 
     if (params.action === 'REJECT') {

@@ -1745,186 +1745,261 @@ export const TasksView: React.FC = () => {
                 {/* ========================================================================= */}
                 {/* CHECKPOINT 3: MANUELLE TRADEMARK- & LISTING-PRÜFUNG                       */}
                 {/* ========================================================================= */}
-                {activeTask.status === 'AWAITING_TM_REVIEW' && (
-                  <div className="space-y-5">
-                    {/* Intro Banner */}
-                    <div className="bg-purple-950/20 border border-purple-500/30 p-3.5 rounded-xl flex items-center justify-between">
-                      <div className="flex items-center space-x-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0">
-                          <ShieldAlert className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-100">Manuelle Trademark-Prüfung</h4>
-                          <p className="text-[11px] text-slate-400">
-                            Passe die Felder an, um Markentreffer in Klasse 25 (Bekleidung) zu eliminieren.
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={handleTmRecheck}
-                        disabled={isCheckingTm || isSubmitting}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white flex items-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm"
-                      >
-                        <Search className={`w-3.5 h-3.5 ${isCheckingTm ? 'animate-spin' : ''}`} />
-                        <span>{isCheckingTm ? 'Prüfe...' : 'USPTO prüfen'}</span>
-                      </button>
-                    </div>
+                {/* ========================================================================= */}
+                {/* CHECKPOINT 3: MANUELLE TRADEMARK- & LISTING-PRÜFUNG (WORKFLOW V2)         */}
+                {/* ========================================================================= */}
+                {activeTask.status === 'AWAITING_TM_REVIEW' && (() => {
+                  const auditV2 = liveTmResult?.auditV2 || (activeTask as any).tmAuditV2;
+                  const hitsList = auditV2?.finalTrademarkHits || auditV2?.initialTrademarkHits || [];
+                  const forbiddenTerms: string[] = auditV2?.forbiddenTermsForTask || [];
+                  const refereeDecision = auditV2?.refereeResult?.decision || auditV2?.finalDecision;
+                  const verifierVerdict = auditV2?.verifierResult?.verdict;
 
-                    {/* Listing Fields Editor */}
-                    <div className="space-y-4">
-                      {/* Brand */}
-                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Brand Name</span>
-                          <span className={`font-mono text-[10px] font-bold ${editableListing.brand.length > 50 ? 'text-rose-400' : 'text-slate-400'}`}>
-                            {editableListing.brand.length}/50
-                          </span>
-                        </div>
-                        <input
-                          type="text"
-                          value={editableListing.brand}
-                          onChange={(e) => setEditableListing({ ...editableListing, brand: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
-                          placeholder="Brand Name eingeben..."
-                        />
-                        <FieldTmWordChips label="Brand" fieldData={fieldSummaries.brand} />
-                      </div>
-
-                      {/* Title */}
-                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Design Title</span>
-                          <span className={`font-mono text-[10px] font-bold ${editableListing.title.length > 60 ? 'text-rose-400' : 'text-slate-400'}`}>
-                            {editableListing.title.length}/60
-                          </span>
-                        </div>
-                        <input
-                          type="text"
-                          value={editableListing.title}
-                          onChange={(e) => setEditableListing({ ...editableListing, title: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-purple-300 font-semibold focus:outline-none focus:border-purple-500"
-                          placeholder="Design Title eingeben..."
-                        />
-                        <FieldTmWordChips label="Title" fieldData={fieldSummaries.title} />
-                      </div>
-
-                      {/* Bullet 1 */}
-                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 1</span>
-                          <span className={`font-mono text-[10px] font-bold ${editableListing.bullet1.length > 250 ? 'text-rose-400' : 'text-slate-400'}`}>
-                            {editableListing.bullet1.length}/250
-                          </span>
-                        </div>
-                        <textarea
-                          value={editableListing.bullet1}
-                          onChange={(e) => setEditableListing({ ...editableListing, bullet1: e.target.value })}
-                          rows={6}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
-                          placeholder="Feature Bullet 1 eingeben..."
-                        />
-                        <FieldTmWordChips label="Bullet 1" fieldData={fieldSummaries.bullet1} />
-                      </div>
-
-                      {/* Bullet 2 */}
-                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 2</span>
-                          <span className={`font-mono text-[10px] font-bold ${editableListing.bullet2.length > 250 ? 'text-rose-400' : 'text-slate-400'}`}>
-                            {editableListing.bullet2.length}/250
-                          </span>
-                        </div>
-                        <textarea
-                          value={editableListing.bullet2}
-                          onChange={(e) => setEditableListing({ ...editableListing, bullet2: e.target.value })}
-                          rows={6}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
-                          placeholder="Feature Bullet 2 eingeben..."
-                        />
-                        <FieldTmWordChips label="Bullet 2" fieldData={fieldSummaries.bullet2} />
-                      </div>
-
-                      {/* Product Description */}
-                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-300 uppercase tracking-wider">Product Description</span>
-                          <span className={`font-mono text-[10px] font-bold ${editableListing.description.length > 2000 ? 'text-rose-400' : 'text-slate-400'}`}>
-                            {editableListing.description.length}/2000
-                          </span>
-                        </div>
-                        <textarea
-                          value={editableListing.description}
-                          onChange={(e) => setEditableListing({ ...editableListing, description: e.target.value })}
-                          rows={10}
-                          placeholder="Produktbeschreibung eingeben..."
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[200px]"
-                        />
-                        <FieldTmWordChips label="Description" fieldData={fieldSummaries.description} />
-                      </div>
-                    </div>
-
-                    {/* Overall Summary Bar */}
-                    {liveTmResult && (
-                      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <ShieldCheck className="w-4 h-4 text-purple-400" />
-                            <span className="text-xs font-semibold text-slate-200">Gesamtergebnis:</span>
+                  return (
+                    <div className="space-y-5">
+                      {/* Intro & V2 Status Banner */}
+                      <div className="bg-purple-950/25 border border-purple-500/30 p-4 rounded-xl space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="flex items-center space-x-2.5">
+                            <div className="w-9 h-9 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center justify-center shrink-0">
+                              <ShieldAlert className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <h4 className="text-xs font-bold text-slate-100">Trademark Workflow V2 Review</h4>
+                                {refereeDecision && (
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    refereeDecision === 'APPROVE' || refereeDecision === 'APPROVE_WITH_BLOCKED_PRODUCTS'
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                      : refereeDecision === 'REWRITE'
+                                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                  }`}>
+                                    Referee: {refereeDecision}
+                                  </span>
+                                )}
+                                {verifierVerdict && (
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    verifierVerdict === 'SAFE'
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                  }`}>
+                                    Verifier: {verifierVerdict}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-400">
+                                {activeTask.errorDetails || 'Passe das Listing an, um Markentreffer in Klasse 25 (Bekleidung) zu eliminieren.'}
+                              </p>
+                            </div>
                           </div>
-                          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                            liveTmResult.hasInfringementClass25 
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' 
-                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          }`}>
-                            {liveTmResult.hasInfringementClass25 
-                              ? `${liveTmResult.totalHits || 0} Treffer in Klasse 25 (Bekleidung blockiert)` 
-                              : '0 Treffer in Klasse 25 (Sauber für Bekleidung ✓)'}
-                          </span>
+                          <button
+                            onClick={handleTmRecheck}
+                            disabled={isCheckingTm || isSubmitting}
+                            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm shrink-0"
+                          >
+                            <Search className={`w-3.5 h-3.5 ${isCheckingTm ? 'animate-spin' : ''}`} />
+                            <span>{isCheckingTm ? 'Prüfe USPTO...' : 'Neu prüfen (USPTO)'}</span>
+                          </button>
                         </div>
-                        {Array.isArray(liveTmResult.blockedProducts) && liveTmResult.blockedProducts.length > 0 && (
-                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
-                            <span className="text-amber-400 font-medium">Gesperrte Nebenprodukte ({liveTmResult.blockedProducts.length}):</span>
-                            <span className="text-slate-300 font-mono text-[10px]">
-                              {liveTmResult.blockedProducts.join(', ')}
+
+                        {/* Forbidden Terms Chips */}
+                        {forbiddenTerms.length > 0 && (
+                          <div className="pt-2.5 border-t border-purple-500/20 space-y-1">
+                            <span className="text-[10px] uppercase font-bold text-rose-400 tracking-wider flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> Verbotene / Blockierte Begriffe in diesem Task:
                             </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {forbiddenTerms.map((term, i) => (
+                                <span key={i} className="px-2 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-500/40 text-[11px] font-mono font-medium">
+                                  ✕ {term}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
-                    )}
 
-                    {/* Checkpoint 3 Action Buttons */}
-                    <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-800">
-                      <button
-                        onClick={() => handleTmDecision('REJECT')}
-                        disabled={isSubmitting}
-                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
-                      >
-                        <XCircle className="w-3.5 h-3.5 text-rose-400" />
-                        <span>Ablehnen</span>
-                      </button>
+                      {/* V2 Normalized Hits Table (if available) */}
+                      {hitsList.length > 0 && (
+                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-200">
+                            <span className="flex items-center gap-1.5">
+                              <ShieldCheck className="w-4 h-4 text-amber-400" />
+                              Erkannte Schutzrechte ({hitsList.length} Treffer):
+                            </span>
+                            <span className="text-[10px] text-slate-400">Quelle: USPTO Live Batch API</span>
+                          </div>
+                          <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                            {hitsList.map((h: any, i: number) => {
+                              const isK25 = (h.classes || []).includes(25);
+                              return (
+                                <div key={i} className={`p-2 rounded-lg border text-[11px] font-mono flex items-center justify-between gap-2 ${
+                                  isK25 ? 'bg-rose-950/20 border-rose-500/30 text-rose-200' : 'bg-slate-900 border-slate-800 text-slate-300'
+                                }`}>
+                                  <div className="space-y-0.5 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <strong className="text-slate-100 font-bold">{h.registeredMark || h.searchedTerm}</strong>
+                                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-semibold ${
+                                        h.matchType === 'FULL_EXACT' ? 'bg-rose-600 text-white' :
+                                        h.matchType === 'EXACT_NGRAM' ? 'bg-rose-500/30 text-rose-300' :
+                                        h.matchType === 'SINGLE_WORD_EXACT' ? 'bg-amber-500/30 text-amber-300' :
+                                        'bg-slate-800 text-slate-400'
+                                      }`}>
+                                        {h.matchType || 'MATCH'}
+                                      </span>
+                                      {h.field && (
+                                        <span className="text-[10px] text-purple-400 uppercase font-sans font-bold">
+                                          in {h.field}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                                      <span>Gesucht: "{h.searchedTerm}"</span>
+                                      <span>•</span>
+                                      <span>Typ: {h.markFeature || 'Word'}</span>
+                                      {h.serialNumber && <span>• SN: {h.serialNumber}</span>}
+                                    </div>
+                                  </div>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                                    isK25 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  }`}>
+                                    Klasse {Array.isArray(h.classes) ? h.classes.join(', ') : (h.classNumber || '25')}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
-                      <div className="flex items-center space-x-2">
+                      {/* Listing Fields Editor */}
+                      <div className="space-y-4">
+                        {/* Brand */}
+                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Brand Name (40–50 Zeichen)</span>
+                            <span className={`font-mono text-[10px] font-bold ${editableListing.brand.length > 50 ? 'text-rose-400' : 'text-slate-400'}`}>
+                              {editableListing.brand.length}/50
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            value={editableListing.brand}
+                            onChange={(e) => setEditableListing({ ...editableListing, brand: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                            placeholder="Brand Name eingeben..."
+                          />
+                          <FieldTmWordChips label="Brand" fieldData={fieldSummaries.brand} />
+                        </div>
+
+                        {/* Title */}
+                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Design Title (50–60 Zeichen, locked Subniche Suffix)</span>
+                            <span className={`font-mono text-[10px] font-bold ${editableListing.title.length > 60 ? 'text-rose-400' : 'text-slate-400'}`}>
+                              {editableListing.title.length}/60
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            value={editableListing.title}
+                            onChange={(e) => setEditableListing({ ...editableListing, title: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-purple-300 font-semibold focus:outline-none focus:border-purple-500"
+                            placeholder="Design Title eingeben..."
+                          />
+                          <FieldTmWordChips label="Title" fieldData={fieldSummaries.title} />
+                        </div>
+
+                        {/* Bullet 1 */}
+                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 1 (230–256 Zeichen)</span>
+                            <span className={`font-mono text-[10px] font-bold ${editableListing.bullet1.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
+                              {editableListing.bullet1.length}/256
+                            </span>
+                          </div>
+                          <textarea
+                            value={editableListing.bullet1}
+                            onChange={(e) => setEditableListing({ ...editableListing, bullet1: e.target.value })}
+                            rows={6}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
+                            placeholder="Feature Bullet 1 eingeben..."
+                          />
+                          <FieldTmWordChips label="Bullet 1" fieldData={fieldSummaries.bullet1} />
+                        </div>
+
+                        {/* Bullet 2 */}
+                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 2 (230–256 Zeichen)</span>
+                            <span className={`font-mono text-[10px] font-bold ${editableListing.bullet2.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
+                              {editableListing.bullet2.length}/256
+                            </span>
+                          </div>
+                          <textarea
+                            value={editableListing.bullet2}
+                            onChange={(e) => setEditableListing({ ...editableListing, bullet2: e.target.value })}
+                            rows={6}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
+                            placeholder="Feature Bullet 2 eingeben..."
+                          />
+                          <FieldTmWordChips label="Bullet 2" fieldData={fieldSummaries.bullet2} />
+                        </div>
+
+                        {/* Product Description */}
+                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Product Description (300–600 Zeichen)</span>
+                            <span className={`font-mono text-[10px] font-bold ${editableListing.description.length > 2000 ? 'text-rose-400' : 'text-slate-400'}`}>
+                              {editableListing.description.length}/2000
+                            </span>
+                          </div>
+                          <textarea
+                            value={editableListing.description}
+                            onChange={(e) => setEditableListing({ ...editableListing, description: e.target.value })}
+                            rows={10}
+                            placeholder="Produktbeschreibung eingeben..."
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[200px]"
+                          />
+                          <FieldTmWordChips label="Description" fieldData={fieldSummaries.description} />
+                        </div>
+                      </div>
+
+                      {/* Checkpoint 3 Action Buttons */}
+                      <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-800">
                         <button
-                          onClick={handleTmRecheck}
-                          disabled={isCheckingTm || isSubmitting}
-                          className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
-                        >
-                          <Search className={`w-3.5 h-3.5 ${isCheckingTm ? 'animate-spin' : 'text-purple-400'}`} />
-                          <span>USPTO prüfen</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleTmDecision('APPROVE')}
+                          onClick={() => handleTmDecision('REJECT')}
                           disabled={isSubmitting}
-                          className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-1.5 transition-all disabled:opacity-50 shadow-sm"
+                          className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Freigeben</span>
+                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                          <span>Ablehnen</span>
                         </button>
+
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={handleTmRecheck}
+                            disabled={isCheckingTm || isSubmitting}
+                            className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 flex items-center space-x-1.5 transition-all disabled:opacity-50"
+                          >
+                            <Search className={`w-3.5 h-3.5 ${isCheckingTm ? 'animate-spin' : 'text-purple-400'}`} />
+                            <span>USPTO prüfen</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleTmDecision('APPROVE')}
+                            disabled={isSubmitting}
+                            className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-1.5 transition-all disabled:opacity-50 shadow-sm"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Freigeben &amp; Weiter</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* ========================================================================= */}
                 {/* CHECKPOINT 4: SVG HINTERGRUND & VEKTOR-PRÜFUNG                            */}

@@ -50390,625 +50390,8 @@ var init_trademarkWhitelistService = __esm2({
   }
 });
 
-// src/server/services/trademarkService.ts
-var COMMON_STOP_WORDS, TrademarkService;
-var init_trademarkService = __esm2({
-  "src/server/services/trademarkService.ts"() {
-    "use strict";
-    init_settingsService();
-    init_productCatalogService();
-    init_trademarkWhitelistService();
-    COMMON_STOP_WORDS = /* @__PURE__ */ new Set([
-      "the",
-      "and",
-      "for",
-      "with",
-      "this",
-      "that",
-      "from",
-      "your",
-      "have",
-      "are",
-      "was",
-      "were",
-      "will",
-      "been",
-      "each",
-      "when",
-      "into",
-      "just",
-      "more",
-      "some",
-      "than",
-      "them",
-      "then",
-      "they",
-      "what",
-      "which",
-      "who",
-      "will",
-      "shirt",
-      "tshirt",
-      "t-shirt",
-      "apparel",
-      "gift",
-      "ideas",
-      "great",
-      "cool",
-      "love",
-      "lovers",
-      "graphic",
-      "design",
-      "men",
-      "women",
-      "kids",
-      "boys",
-      "girls",
-      "youth",
-      "funny",
-      "retro",
-      "vintage",
-      "classic"
-    ]);
-    TrademarkService = class {
-      /**
-       * Test connection to Productor Trademark APIs
-       */
-      static async testConnection() {
-        const settings = loadSettings();
-        const start3 = Date.now();
-        try {
-          const fd = new FormData();
-          fd.append("trademarks", JSON.stringify(["nike"]));
-          const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
-            method: "POST",
-            headers: {
-              "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
-              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-              "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
-            },
-            body: fd,
-            signal: AbortSignal.timeout(6e3)
-          });
-          const latencyMs = Date.now() - start3;
-          if (res.ok) {
-            return { success: true, latencyMs };
-          }
-          return { success: false, latencyMs, error: `USPTO API antwortet mit HTTP ${res.status}` };
-        } catch (err) {
-          return { success: false, latencyMs: Date.now() - start3, error: err.message || "Verbindungs-Timeout" };
-        }
-      }
-      /**
-       * Parse office inputs (e.g. 'USPTO', 'EUIPO', 'DPMA' or fallback 'US', 'DE', 'EU')
-       */
-      static normalizeOffices(input, marketplace) {
-        const rawList = [];
-        if (Array.isArray(input)) {
-          rawList.push(...input);
-        } else if (typeof input === "string" && input.trim()) {
-          rawList.push(...input.split(",").map((s) => s.trim()));
-        } else if (marketplace && typeof marketplace === "string") {
-          rawList.push(marketplace.trim());
-        }
-        const offices = /* @__PURE__ */ new Set();
-        for (const raw of rawList) {
-          const up = raw.toUpperCase();
-          if (up === "USPTO" || up === "US" || up === "COM") {
-            offices.add("USPTO");
-          } else if (up === "EUIPO" || up === "EU" || up === "UK" || up === "GB" || up === "FR" || up === "IT" || up === "ES") {
-            offices.add("EUIPO");
-          } else if (up === "DPMA" || up === "DE") {
-            offices.add("DPMA");
-            offices.add("EUIPO");
-          }
-        }
-        if (offices.size === 0) {
-          offices.add("USPTO");
-        }
-        return Array.from(offices);
-      }
-      /**
-       * Extract search terms from text: full phrase + n-grams + individual significant keywords
-       */
-      static extractTermsFromText(text2) {
-        if (!text2 || typeof text2 !== "string") return [];
-        const trimmed = text2.trim();
-        if (trimmed.length < 2) return [];
-        const terms = /* @__PURE__ */ new Set();
-        if (trimmed.length <= 60) {
-          terms.add(trimmed.toLowerCase());
-        }
-        const words = trimmed.split(/[\s,.;:!?/()"\-+]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter((w) => w.length >= 3);
-        for (const w of words) {
-          if (w.length >= 4 && !COMMON_STOP_WORDS.has(w)) {
-            terms.add(w);
-          }
-        }
-        for (let i = 0; i < words.length - 1; i++) {
-          const twoGram = `${words[i]} ${words[i + 1]}`;
-          terms.add(twoGram);
-          if (i < words.length - 2) {
-            const threeGram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
-            terms.add(threeGram);
-          }
-        }
-        return Array.from(terms);
-      }
-      /**
-       * Extract and normalize Nice Classification numbers (e.g. '041' -> '41', '009,042' -> ['9', '42'])
-       */
-      static extractNiceClasses(r) {
-        if (!r) return [];
-        const raw = r.classification || r.Classification || r.classes || r.class_id || r.class || r.international_class || "";
-        if (!raw) return [];
-        if (Array.isArray(raw)) {
-          return raw.map((c) => String(c).replace(/^0+/, "").trim()).filter(Boolean);
-        }
-        return String(raw).split(/[,;\s]+/).map((c) => c.replace(/[^0-9]/g, "").replace(/^0+/, "").trim()).filter(Boolean);
-      }
-      /**
-       * Check if a trademark status string or code represents an active/live registered trademark
-       * Strictly filters out PENDING, DEAD, ABANDONED, CANCELLED, EXPIRED, REFUSED
-       */
-      static isLiveStatus(rawStatus) {
-        if (rawStatus === void 0 || rawStatus === null || rawStatus === "") {
-          return false;
-        }
-        const s = String(rawStatus).trim().toUpperCase();
-        if (s.includes("DEAD") || s.includes("PENDING") || s.includes("CANCEL") || s.includes("ABANDON") || s.includes("EXPIRE") || s.includes("REFUSE") || s.includes("SUSPEND")) {
-          return false;
-        }
-        return s.includes("LIVE") || s.includes("REGISTERED") || s.includes("ACTIVE") || s.includes("EINGETRAGEN") || s === "REG" || s === "700" || s === "701";
-      }
-      /**
-       * Check terms across specified trademark offices
-       */
-      static async queryOffices(uniqueTerms, offices) {
-        const settings = loadSettings();
-        const allHits = {};
-        if (uniqueTerms.length === 0 || offices.length === 0) {
-          return allHits;
-        }
-        const defaultHeaders = {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
-        };
-        const promises = [];
-        if (offices.includes("USPTO")) {
-          promises.push((async () => {
-            try {
-              const usptoFd = new FormData();
-              usptoFd.append("trademarks", JSON.stringify(uniqueTerms));
-              const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
-                method: "POST",
-                headers: {
-                  ...defaultHeaders,
-                  "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
-                },
-                body: usptoFd,
-                signal: AbortSignal.timeout(9e3)
-              });
-              if (res.ok) {
-                const data = await res.json();
-                for (const [term, records] of Object.entries(data)) {
-                  if (Array.isArray(records) && records.length > 0) {
-                    records.forEach((r) => {
-                      const rawStatus = r.status || r.status_code || "LIVE";
-                      if (this.isLiveStatus(rawStatus)) {
-                        const classes = this.extractNiceClasses(r);
-                        allHits[term] = allHits[term] || [];
-                        allHits[term].push({
-                          term,
-                          trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
-                          classNumber: classes.join(", ") || "N/A",
-                          classes,
-                          status: "LIVE",
-                          registrationNumber: r.registration_number || r.registration_date,
-                          serialNumber: r.serial_number || r.applicationNumber,
-                          goodsAndServices: r.goods_and_services || r.goods_services,
-                          source: "USPTO"
-                        });
-                      }
-                    });
-                  }
-                }
-              }
-            } catch (err) {
-              console.warn("[TrademarkService] USPTO query error:", err.message || err);
-            }
-          })());
-        }
-        if (offices.includes("EUIPO")) {
-          promises.push((async () => {
-            try {
-              const euFd = new FormData();
-              euFd.append("trademarks", JSON.stringify(uniqueTerms));
-              const res = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
-                method: "POST",
-                headers: {
-                  ...defaultHeaders,
-                  "Authorization": settings.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
-                },
-                body: euFd,
-                signal: AbortSignal.timeout(9e3)
-              });
-              if (res.ok) {
-                const data = await res.json();
-                for (const [term, records] of Object.entries(data)) {
-                  if (Array.isArray(records) && records.length > 0) {
-                    records.forEach((r) => {
-                      const rawStatus = r.markCurrentStatusCode || r.status || "LIVE";
-                      if (this.isLiveStatus(rawStatus)) {
-                        const classes = this.extractNiceClasses(r);
-                        allHits[term] = allHits[term] || [];
-                        allHits[term].push({
-                          term,
-                          trademark: r.trademark || r.mark_identification || term,
-                          classNumber: classes.join(", ") || "N/A",
-                          classes,
-                          status: "LIVE",
-                          serialNumber: r.applicationNumber,
-                          source: "EUIPO"
-                        });
-                      }
-                    });
-                  }
-                }
-              }
-            } catch (err) {
-              console.warn("[TrademarkService] EUIPO query error:", err.message || err);
-            }
-          })());
-        }
-        if (offices.includes("DPMA")) {
-          promises.push((async () => {
-            try {
-              const dpmaFd = new FormData();
-              dpmaFd.append("trademarks", JSON.stringify(uniqueTerms));
-              const res = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
-                method: "POST",
-                headers: {
-                  ...defaultHeaders,
-                  "Authorization": settings.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
-                },
-                body: dpmaFd,
-                signal: AbortSignal.timeout(9e3)
-              });
-              if (res.ok) {
-                const data = await res.json();
-                for (const [term, records] of Object.entries(data)) {
-                  if (Array.isArray(records) && records.length > 0) {
-                    records.forEach((r) => {
-                      const rawStatus = r.MarkCurrentStatusCode || r.status || "LIVE";
-                      if (this.isLiveStatus(rawStatus)) {
-                        const classes = this.extractNiceClasses(r);
-                        allHits[term] = allHits[term] || [];
-                        allHits[term].push({
-                          term,
-                          trademark: r.MarkVerbalElementText || r.trademark || term,
-                          classNumber: classes.join(", ") || "N/A",
-                          classes,
-                          status: "LIVE",
-                          serialNumber: r.ApplicationNumber,
-                          source: "DPMA"
-                        });
-                      }
-                    });
-                  }
-                }
-              }
-            } catch (err) {
-              console.warn("[TrademarkService] DPMA query error:", err.message || err);
-            }
-          })());
-        }
-        await Promise.all(promises);
-        return allHits;
-      }
-      /**
-       * Analyze hits to calculate blocked products and class 25 status
-       */
-      static analyzeHits(hitsRecord) {
-        let hasInfringementClass25 = false;
-        const blockedClassesSet = /* @__PURE__ */ new Set();
-        let totalHits = 0;
-        for (const [term, records] of Object.entries(hitsRecord)) {
-          for (const rec of records) {
-            if (!this.isLiveStatus(rec.status)) continue;
-            const hitTerm = rec.term || term || "";
-            const hitMark = rec.trademark || "";
-            const source12 = rec.source || "GLOBAL";
-            if (TrademarkWhitelistService.isWhitelisted(hitTerm, source12) || TrademarkWhitelistService.isWhitelisted(hitMark, source12)) {
-              continue;
-            }
-            totalHits++;
-            const classes = rec.classes && rec.classes.length > 0 ? rec.classes : this.extractNiceClasses({ classification: rec.classNumber });
-            for (const c of classes) {
-              const num = parseInt(c, 10);
-              if (!isNaN(num)) {
-                blockedClassesSet.add(num);
-                if (num === 25) {
-                  hasInfringementClass25 = true;
-                }
-              }
-            }
-          }
-        }
-        const blockedClasses = Array.from(blockedClassesSet);
-        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
-          blockedClasses.filter((c) => c !== 25)
-          // Clothing 25 is handled separately via hard-reject / rewrite
-        );
-        return {
-          hasInfringementClass25,
-          blockedClasses,
-          blockedProducts,
-          totalHits
-        };
-      }
-      /**
-       * Comprehensive Audit for Listing + Niche Metadata (Hard-Reject, Product Blocking, Fair-Use)
-       */
-      static async auditListingAndMetadata(params2) {
-        const offices = params2.offices && params2.offices.length > 0 ? params2.offices : ["USPTO", "EUIPO", "DPMA"];
-        const termsToFieldMap = {
-          quote: params2.quote ? this.extractTermsFromText(params2.quote) : [],
-          niche1: params2.niche1 ? this.extractTermsFromText(params2.niche1) : [],
-          niche2: params2.niche2 && params2.niche2.toLowerCase() !== "none" ? this.extractTermsFromText(params2.niche2) : [],
-          subniche: params2.subniche && params2.subniche.toLowerCase() !== "none" ? this.extractTermsFromText(params2.subniche) : [],
-          brand: this.extractTermsFromText(params2.listing.brand),
-          title: this.extractTermsFromText(params2.listing.title),
-          bullet1: this.extractTermsFromText(params2.listing.bullet1),
-          bullet2: this.extractTermsFromText(params2.listing.bullet2)
-        };
-        const allUniqueTerms = /* @__PURE__ */ new Set();
-        for (const terms of Object.values(termsToFieldMap)) {
-          terms.forEach((t) => allUniqueTerms.add(t));
-        }
-        const termList = Array.from(allUniqueTerms);
-        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
-        let isHardReject = false;
-        let hardRejectReason = null;
-        let brandConflict = false;
-        let titleConflict = false;
-        let needsRewrite = false;
-        const blockedClassesSet = /* @__PURE__ */ new Set();
-        const allHitsList = [];
-        const coreFields = ["quote", "niche1", "niche2", "subniche"];
-        for (const f of coreFields) {
-          const terms = termsToFieldMap[f] || [];
-          for (const t of terms) {
-            const hits = globalHits[t] || [];
-            for (const h of hits) {
-              if (!this.isLiveStatus(h.status)) continue;
-              allHitsList.push(h);
-              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
-              if (classes.includes("25")) {
-                isHardReject = true;
-                hardRejectReason = `Core ${f} "${t}" is an active Class 25 trademark (${h.source}: ${h.trademark}).`;
-                break;
-              }
-            }
-            if (isHardReject) break;
-          }
-          if (isHardReject) break;
-        }
-        if (isHardReject) {
-          return {
-            isHardReject: true,
-            hardRejectReason,
-            isSafe: false,
-            needsRewrite: false,
-            brandConflict: true,
-            titleConflict: true,
-            blockedNiceClasses: [25],
-            blockedProducts: [],
-            allHits: allHitsList,
-            hitDetails: globalHits
-          };
-        }
-        const brandTerms = termsToFieldMap.brand || [];
-        for (const t of brandTerms) {
-          const hits = globalHits[t] || [];
-          for (const h of hits) {
-            if (!this.isLiveStatus(h.status)) continue;
-            allHitsList.push(h);
-            const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
-            if (classes.includes("25")) {
-              brandConflict = true;
-              needsRewrite = true;
-            } else {
-              classes.forEach((c) => {
-                const num = parseInt(c, 10);
-                if (!isNaN(num)) blockedClassesSet.add(num);
-              });
-            }
-          }
-        }
-        const listingFields = ["title", "bullet1", "bullet2"];
-        for (const f of listingFields) {
-          const terms = termsToFieldMap[f] || [];
-          for (const t of terms) {
-            const hits = globalHits[t] || [];
-            for (const h of hits) {
-              if (!this.isLiveStatus(h.status)) continue;
-              allHitsList.push(h);
-              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
-              if (classes.includes("25")) {
-                if (f === "title") {
-                  if (!COMMON_STOP_WORDS.has(t)) {
-                    titleConflict = true;
-                    needsRewrite = true;
-                  }
-                } else {
-                  if (!COMMON_STOP_WORDS.has(t) && t.includes(" ")) {
-                    needsRewrite = true;
-                  }
-                }
-              } else {
-                classes.forEach((c) => {
-                  const num = parseInt(c, 10);
-                  if (!isNaN(num)) blockedClassesSet.add(num);
-                });
-              }
-            }
-          }
-        }
-        const blockedNiceClasses = Array.from(blockedClassesSet);
-        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
-          blockedNiceClasses.filter((c) => c !== 25)
-        );
-        const isSafe = !brandConflict && !titleConflict && !needsRewrite;
-        return {
-          isHardReject: false,
-          hardRejectReason: null,
-          isSafe,
-          needsRewrite,
-          brandConflict,
-          titleConflict,
-          blockedNiceClasses,
-          blockedProducts,
-          allHits: allHitsList,
-          hitDetails: globalHits
-        };
-      }
-      /**
-       * Legacy check method for single term array (used by UI Designer)
-       */
-      static async checkTrademarks(terms, locale = "en") {
-        const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
-        const uniqueTerms = Array.from(new Set(cleanTerms));
-        if (uniqueTerms.length === 0) {
-          return {
-            hasInfringementClass25: false,
-            blockedProducts: [],
-            hits: {},
-            totalHits: 0,
-            message: "No terms to check."
-          };
-        }
-        const offices = locale === "de" ? ["USPTO", "EUIPO", "DPMA"] : ["USPTO", "EUIPO"];
-        const hits = await this.queryOffices(uniqueTerms, offices);
-        const analysis = this.analyzeHits(hits);
-        return {
-          hasInfringementClass25: analysis.hasInfringementClass25,
-          blockedProducts: analysis.blockedProducts,
-          hits,
-          totalHits: analysis.totalHits,
-          message: analysis.hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : analysis.totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${analysis.blockedProducts.length} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
-        };
-      }
-      /**
-       * Comprehensive Multi-Field Batch Check for Hermes Agent & MCP Integration
-       */
-      static async checkBatchFields(input) {
-        const offices = this.normalizeOffices(input.offices, input.marketplace);
-        const fields = input.fields || {};
-        const fieldTermsMap = {};
-        const allUniqueTerms = /* @__PURE__ */ new Set();
-        for (const [fieldName, rawValue] of Object.entries(fields)) {
-          if (rawValue && typeof rawValue === "string") {
-            const terms = this.extractTermsFromText(rawValue);
-            fieldTermsMap[fieldName] = terms;
-            terms.forEach((t) => allUniqueTerms.add(t));
-          }
-        }
-        const termList = Array.from(allUniqueTerms);
-        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
-        const fieldResults = {};
-        let totalGlobalHits = 0;
-        let globalHasInfringementClass25 = false;
-        const globalBlockedProducts = /* @__PURE__ */ new Set();
-        for (const [fieldName, terms] of Object.entries(fieldTermsMap)) {
-          const fieldHits = {};
-          for (const t of terms) {
-            if (globalHits[t] && globalHits[t].length > 0) {
-              fieldHits[t] = globalHits[t];
-            }
-          }
-          const analysis = this.analyzeHits(fieldHits);
-          if (analysis.hasInfringementClass25) globalHasInfringementClass25 = true;
-          analysis.blockedProducts.forEach((p) => globalBlockedProducts.add(p));
-          totalGlobalHits += analysis.totalHits;
-          fieldResults[fieldName] = {
-            safe: !analysis.hasInfringementClass25,
-            hasInfringementClass25: analysis.hasInfringementClass25,
-            totalHits: analysis.totalHits,
-            blockedProducts: analysis.blockedProducts,
-            hits: fieldHits
-          };
-        }
-        const isCompletelySafe = !globalHasInfringementClass25 && globalBlockedProducts.size === 0;
-        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
-        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
-        const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
-        const hasBrandTitleClass25 = brandHasClass25 || titleHasClass25 || quoteHasClass25;
-        let verdict;
-        let message;
-        if (hasBrandTitleClass25) {
-          verdict = "REJECTED_CLASS_25";
-          const affected = [brandHasClass25 && "Brand", titleHasClass25 && "Title", quoteHasClass25 && "Quote"].filter(Boolean);
-          message = `Klasse 25 Konflikt in Identifikatoren (${affected.join(", ")}). Automatisches Umschreiben erforderlich.`;
-        } else if (globalHasInfringementClass25) {
-          verdict = "NEEDS_AUDIT";
-          message = `Treffer in Bullets/Description gefunden (${totalGlobalHits} Treffer). Fair-Use-Pr\xFCfung durch Trademark Auditor.`;
-        } else if (globalBlockedProducts.size > 0) {
-          verdict = "SAFE_FOR_APPAREL";
-          message = `Keine Treffer in Klasse 25 (Bekleidung sicher). ${globalBlockedProducts.size} Nebenprodukte gesperrt.`;
-        } else {
-          verdict = "SAFE_ALL";
-          message = "Keine aktiven Schutzrechte gefunden. Listing ist sauber \u2713";
-        }
-        const rawInputPhrases = /* @__PURE__ */ new Set();
-        for (const rawValue of Object.values(fields)) {
-          if (rawValue && typeof rawValue === "string") {
-            const tr = rawValue.trim().toLowerCase();
-            if (tr.length > 0) rawInputPhrases.add(tr);
-          }
-        }
-        const exactPhraseHits = [];
-        const keywordHits = [];
-        const affectedClassesSet = /* @__PURE__ */ new Set();
-        const seenHitKeys = /* @__PURE__ */ new Set();
-        for (const [term, hits] of Object.entries(globalHits)) {
-          for (const hit of hits) {
-            const uniqueKey = `${hit.source}-${hit.trademark}-${hit.classNumber}-${hit.term}`;
-            if (seenHitKeys.has(uniqueKey)) continue;
-            seenHitKeys.add(uniqueKey);
-            (hit.classes || []).forEach((c) => affectedClassesSet.add(c));
-            if (rawInputPhrases.has(term.toLowerCase())) {
-              exactPhraseHits.push(hit);
-            } else {
-              keywordHits.push(hit);
-            }
-          }
-        }
-        return {
-          success: true,
-          safe: !hasBrandTitleClass25,
-          hasInfringementClass25: globalHasInfringementClass25,
-          affectedClasses: Array.from(affectedClassesSet).sort((a, b) => Number(a) - Number(b)),
-          blockedProducts: Array.from(globalBlockedProducts),
-          officesChecked: offices,
-          summary: {
-            totalHits: totalGlobalHits,
-            verdict,
-            message,
-            exactPhraseHitsCount: exactPhraseHits.length,
-            keywordHitsCount: keywordHits.length
-          },
-          exactPhraseHits,
-          keywordHits,
-          fieldResults
-        };
-      }
-    };
-  }
-});
-
 // src/server/services/systemPromptService.ts
-var import_fs74, import_path69, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
+var import_fs74, import_path69, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
 var init_systemPromptService = __esm2({
   "src/server/services/systemPromptService.ts"() {
     "use strict";
@@ -52460,6 +51843,137 @@ Use exactly this schema:
   "description": "<300-600 characters>"
 }
 `;
+    DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT = `You are a conservative Amazon Merch trademark risk referee (GPT-5.6 Sol).
+
+Your task is not to determine absolute legal infringement.
+Your task is to minimize Amazon Merch trademark rejections while preserving legitimate, valuable generic and descriptive SEO keywords whenever their use does not reasonably appear to reference or identify a third-party brand.
+
+The trademark registry results provided to you are factual and must never be ignored.
+Use your world knowledge to recognize famous brands and obvious third-party brand references, but never assume that an unknown trademark is harmless merely because you do not recognize it.
+
+==================================================
+CORE PRINCIPLES & DECISION RULES:
+==================================================
+
+1. COMMON WORDS VS. DISTINCTIVE MARKS (CLASS 25):
+- Single common dictionary words (e.g. "western", "angel", "stars", "wings", "horse", "teacher", "manifest", "vintage", "mountain", "retro", "cute", "space") that are used purely in their ordinary descriptive meaning in listing fields or quotes:
+  * markNature: "COMMON_DICTIONARY_WORD"
+  * usageType: "ORDINARY_DESCRIPTIVE"
+  * amazonRejectionRisk: "LOW" or "VERY_LOW"
+  * decision: "KEEP"
+  * Do NOT remove or rewrite ordinary descriptive single words simply because a Class 25 registration exists.
+
+2. FAMOUS / DISTINCTIVE BRANDS (HARD SAFETY OVERRIDE):
+- If you recognize a registered term as a famous or known brand (e.g. "Nike", "Disney", "Ford", "Marvel", "PlayStation", "Gucci", "Star Wars", etc.):
+  * markNature: "FAMOUS_OR_KNOWN_BRAND" or "DISTINCTIVE_BRAND"
+  * usageType: "THIRD_PARTY_BRAND_REFERENCE" or "SOURCE_IDENTIFYING"
+  * amazonRejectionRisk: "HIGH" or "VERY_HIGH"
+  * In Listing (Brand, Title, Bullets, Description): decision = "REWRITE"
+  * In Core Design / Quote: decision = "ESCALATE", canBeFixedByListingRewrite = false
+  * NEVER approve famous brands under a descriptive argument!
+
+3. MULTI-WORD TRADEMARKS:
+- Exact active multi-word word marks (e.g. "CRAZY CHICKEN LADY", "WILD SPIRIT", "MAMA BEAR", "BOY MOM", "JUST DO IT") must be treated very conservatively.
+  * In Listing: decision = "REWRITE"
+  * In Core Design / Quote (if it forms the central slogan): decision = "ESCALATE", canBeFixedByListingRewrite = false
+
+4. CORE QUOTE / DESIGN RULES:
+- The quote is printed directly on the physical apparel.
+- FULL QUOTE EXACT MATCH: If the full quote or nearly identical normalized phrase is an active Class 25 Word Mark:
+  * decision: "ESCALATE"
+  * reasonCode: "CORE_QUOTE_CLASS25_CONFLICT"
+  * canBeFixedByListingRewrite: false
+  * recommendedAction: "DO_NOT_SUBMIT"
+- A single common word inside the quote (e.g. "western" in "Wild Western Horse Girl") does NOT trigger a core quote conflict if used descriptively (decision: "KEEP").
+
+5. BRAND NAME FIELD (CLASS 25):
+- Brand is the most sensitive field.
+- If a word in Brand is part of a distinctive brand or multi-word trademark, require REWRITE.
+- If the entire Brand phrase is ordinary and descriptive (e.g. "Western Horse Rider Gifts") without brand reference, it may be kept (decision: "KEEP").
+
+6. NICE CLASSES & SECONDARY PRODUCTS:
+- Class 25 = Apparel (T-Shirts, Hoodies, Sweatshirts, Tanks, etc.)
+- Class 9 = Phone Cases, PopSockets
+- Class 18 = Bags, Backpacks, Totes
+- Class 20 = Pillows, Cushions
+- Class 21 = Mugs, Tumblers, Water Bottles
+- Class 16 = Notebooks, Journals
+- A trademark hit in a secondary class (e.g. Class 9) only blocks secondary products if the term is distinctive/brand-like for those products. If it is purely descriptive (e.g. "western" in Class 9), do NOT block products. If it is distinctive (e.g. "SUPER PHONE HERO" in Class 9), add the relevant product IDs to "blockedProducts".
+
+7. TOP-LEVEL DECISION & CAN_BE_FIXED:
+- "APPROVE": All hits are evaluated as KEEP (or no hits found). No listing changes required.
+- "APPROVE_WITH_BLOCKED_PRODUCTS": Approved for apparel, but specific secondary products are blocked in "blockedProducts".
+- "REWRITE": One or more listing fields contain problematic terms that must be rewritten. "canBeFixedByListingRewrite": true. Provide clear "rewriteInstructions".
+- "ESCALATE": Cannot be resolved by listing rewrite (e.g. core quote/design conflict, known brand in artwork, limit reached). "canBeFixedByListingRewrite": false.
+
+==================================================
+OUTPUT FORMAT:
+==================================================
+Respond ONLY with a valid JSON object matching this schema (no markdown, no conversational text):
+{
+  "decision": "APPROVE",
+  "canBeFixedByListingRewrite": true,
+  "reasonCode": null,
+  "recommendedAction": null,
+  "hits": [
+    {
+      "searchedTerm": "western",
+      "registeredMark": "WESTERN",
+      "field": "bullet1",
+      "classes": [25],
+      "markNature": "COMMON_DICTIONARY_WORD",
+      "usageType": "ORDINARY_DESCRIPTIVE",
+      "knownBrand": false,
+      "amazonRejectionRisk": "LOW",
+      "decision": "KEEP",
+      "confidence": 0.95,
+      "reason": "Used in ordinary descriptive sentence context."
+    }
+  ],
+  "blockedProducts": [],
+  "rewriteRequired": false,
+  "rewriteInstructions": [],
+  "escalation": null
+}
+`;
+    DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT = `You are the final Amazon Merch trademark rejection verifier (GPT-5.6 Sol).
+
+Assume that a previous referee has already evaluated the listing to preserve legitimate generic/descriptive SEO keywords.
+Your sole job is now to act as an adversarial reviewer and identify plausible remaining trademark-related reasons why Amazon Merch might reject this submission or trigger an account strike.
+
+Be conservative and rigorous.
+Do NOT invent imaginary trademark registrations that are not present in the provided registry data.
+However, use your world knowledge for clearly famous brands, pop-culture IP, and obvious third-party brand references.
+
+Pay particular attention to:
+- Exact multi-word word marks
+- Full or substantial quote matches on the design
+- Brand field usage
+- Famous brands or deceptive brand references
+- Source-identifying usage
+- Phrase combinations remaining in the listing
+- Affected product classes
+
+DECISION RULES:
+- "verdict": "SAFE" -> No significant Amazon trademark rejection risk detected.
+- "verdict": "HIGH_RISK" -> Credible risk of Amazon rejection or policy violation.
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object matching this schema (no markdown, no conversational text):
+{
+  "verdict": "SAFE",
+  "identifiedRisks": [
+    {
+      "term": "...",
+      "field": "brand",
+      "riskType": "EXACT_MULTIWORD_MARK",
+      "explanation": "..."
+    }
+  ],
+  "canBeFixedByListingRewrite": true,
+  "recommendation": "SAFE_TO_PUBLISH"
+}
+`;
     DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT = `You are a professional multi-language Amazon Merch on Demand (MBA) localization and SEO translation expert.
 Translate the approved English Master Listing into German (de), French (fr), Spanish (es), Italian (it), and Japanese (ja).
 
@@ -52505,7 +52019,9 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
               if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes("LOCK TITLE SUFFIX BEFORE WRITING THE TITLE")) {
                 this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
               }
-              if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.trademarkReferee) this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.trademarkVerifier) this.cachedPrompts.trademarkVerifier = DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = this.cachedPrompts.trademarkReferee;
               if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
               if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes("STRICT TAXONOMIC")) {
                 this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
@@ -52526,7 +52042,9 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
           promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
           designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
           listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
-          trademarkAuditor: DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
+          trademarkAuditor: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+          trademarkReferee: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+          trademarkVerifier: DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT,
           svgBgAuditor: DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
           updateVisionAnalyzer: DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
           updateListingRewriter: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
@@ -52550,9 +52068,16 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
         const prompts = this.loadPrompts();
         return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
       }
-      static getTrademarkAuditorPrompt() {
+      static getTrademarkRefereePrompt() {
         const prompts = this.loadPrompts();
-        return prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+        return prompts.trademarkReferee || prompts.trademarkAuditor || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+      }
+      static getTrademarkVerifierPrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.trademarkVerifier || DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
+      }
+      static getTrademarkAuditorPrompt() {
+        return this.getTrademarkRefereePrompt();
       }
       static getSvgBgAuditorPrompt() {
         const prompts = this.loadPrompts();
@@ -52575,7 +52100,9 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
           promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
           designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
           listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
-          trademarkAuditor: prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
+          trademarkAuditor: prompts.trademarkReferee || prompts.trademarkAuditor || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+          trademarkReferee: prompts.trademarkReferee || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+          trademarkVerifier: prompts.trademarkVerifier || DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT,
           svgBgAuditor: prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
           updateVisionAnalyzer: prompts.updateVisionAnalyzer || DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
           updateListingRewriter: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
@@ -52593,6 +52120,9 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
         if (updates.listingGenerator) {
           prompts.updateListingRewriter = updates.listingGenerator;
         }
+        if (updates.trademarkReferee) {
+          prompts.trademarkAuditor = updates.trademarkReferee;
+        }
         this.cachedPrompts = prompts;
         try {
           import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(prompts, null, 2), "utf-8");
@@ -52609,7 +52139,11 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
           current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
           current.updateListingRewriter = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
         }
-        if (type3 === "trademarkAuditor" || type3 === "all") current.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+        if (type3 === "trademarkAuditor" || type3 === "trademarkReferee" || type3 === "all") {
+          current.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+          current.trademarkAuditor = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+        }
+        if (type3 === "trademarkVerifier" || type3 === "all") current.trademarkVerifier = DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
         if (type3 === "svgBgAuditor" || type3 === "all") current.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
         if (type3 === "updateVisionAnalyzer" || type3 === "all") current.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
         if (type3 === "updateLocalizationTranslator" || type3 === "all") current.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
@@ -53310,11 +52844,168 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
       /**
        * 2. Rewrite Listing with Specific Trademark Feedback (Feedback Loop, Class Distinctions)
        */
-      static async rewriteListingWithTrademarkFeedback(params2) {
+      /**
+       * V2 Trademark Referee (GPT-5.6 Sol)
+       * Semantic risk analysis, distinction between common descriptive words vs distinctive/famous marks
+       */
+      static async evaluateTrademarkReferee(params2) {
         const { url, headers, model } = this.getBaseUrlAndHeaders();
-        const systemPrompt = SystemPromptService.getTrademarkAuditorPrompt();
-        const hitSummary = params2.tmHits.map((h) => `- Term: "${h.term || h.trademark}", Class: ${h.classNumber || h.classes?.join(",") || "unknown"}, Office: ${h.source || "USPTO"}, Status: ${h.status || "LIVE"}`).join("\n");
+        const systemPrompt = SystemPromptService.getTrademarkRefereePrompt();
         const userMessage = `Current English Listing:
+- Brand: "${params2.currentListing.brand}"
+- Title: "${params2.currentListing.title}"
+- Bullet 1: "${params2.currentListing.bullet1}"
+- Bullet 2: "${params2.currentListing.bullet2}"
+- Description: "${params2.currentListing.description}"
+
+Design Metadata:
+- Primary Niche (niche1): ${params2.niche1 || "none"}
+- Secondary Niche (niche2): ${params2.niche2 || "none"}
+- Subniche: ${params2.subniche || "none"}
+- Printed Design Quote / Slogan: "${params2.quote || "none"}"
+
+Normalized Trademark Hits from USPTO:
+${JSON.stringify(params2.normalizedHits, null, 2)}
+
+Rewrite Context:
+- Rewrite Iteration: ${params2.rewriteIteration || 0} / 3
+- Forbidden Terms for Task: ${JSON.stringify(params2.forbiddenTermsForTask || [])}
+- Currently Blocked Products: ${JSON.stringify(params2.blockedProducts || [])}
+
+Please evaluate all hits against Amazon Merch risk rules. Classify each hit, determine if normal descriptive words can be KEPT, and decide whether REWRITE, APPROVE, APPROVE_WITH_BLOCKED_PRODUCTS or ESCALATE is required. Return valid JSON only.`;
+        const settings = loadSettings();
+        const requestPayload = {
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage }
+          ],
+          temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
+          max_tokens: settings.llmMaxTokens || 3500
+        };
+        try {
+          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
+          const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(requestPayload),
+            signal: AbortSignal.timeout(timeoutMs)
+          });
+          if (!res.ok) throw new Error(`LLM TM Referee error: ${res.status} ${res.statusText}`);
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content?.trim() || "{}";
+          const parsed = this.extractJsonFromLlmResponse(content);
+          const decision = parsed.decision || "APPROVE";
+          const canBeFixed = parsed.canBeFixedByListingRewrite !== void 0 ? Boolean(parsed.canBeFixedByListingRewrite) : decision === "REWRITE";
+          return {
+            decision: ["APPROVE", "REWRITE", "APPROVE_WITH_BLOCKED_PRODUCTS", "ESCALATE"].includes(decision) ? decision : "APPROVE",
+            canBeFixedByListingRewrite: canBeFixed,
+            reasonCode: parsed.reasonCode || parsed.reason_code || null,
+            recommendedAction: parsed.recommendedAction || parsed.recommended_action || null,
+            hits: Array.isArray(parsed.hits) ? parsed.hits : [],
+            blockedProducts: Array.isArray(parsed.blockedProducts) ? parsed.blockedProducts : Array.isArray(parsed.blocked_products) ? parsed.blocked_products : params2.blockedProducts || [],
+            rewriteRequired: parsed.rewriteRequired !== void 0 ? Boolean(parsed.rewriteRequired) : decision === "REWRITE",
+            rewriteInstructions: Array.isArray(parsed.rewriteInstructions) ? parsed.rewriteInstructions : Array.isArray(parsed.rewrite_instructions) ? parsed.rewrite_instructions : [],
+            escalation: parsed.escalation || null,
+            _rawRequest: requestPayload,
+            _rawResponse: content
+          };
+        } catch (err) {
+          console.error("[LLMService] Error in evaluateTrademarkReferee:", err);
+          return {
+            decision: "ESCALATE",
+            canBeFixedByListingRewrite: false,
+            reasonCode: "TM_REFEREE_FAILURE",
+            recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+            hits: [],
+            blockedProducts: params2.blockedProducts || [],
+            rewriteRequired: false,
+            rewriteInstructions: [],
+            escalation: { error: err.message },
+            _rawRequest: requestPayload,
+            _rawResponse: err.message
+          };
+        }
+      }
+      /**
+       * V2 Amazon Rejection Verifier (GPT-5.6 Sol - Adversarial Reviewer)
+       */
+      static async evaluateTrademarkVerifier(params2) {
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
+        const systemPrompt = SystemPromptService.getTrademarkVerifierPrompt();
+        const userMessage = `Candidate English Listing for Amazon Merch Submission:
+- Brand: "${params2.currentListing.brand}"
+- Title: "${params2.currentListing.title}"
+- Bullet 1: "${params2.currentListing.bullet1}"
+- Bullet 2: "${params2.currentListing.bullet2}"
+- Description: "${params2.currentListing.description}"
+
+Design Metadata:
+- Primary Niche (niche1): ${params2.niche1 || "none"}
+- Secondary Niche (niche2): ${params2.niche2 || "none"}
+- Subniche: ${params2.subniche || "none"}
+- Printed Design Quote / Slogan: "${params2.quote || "none"}"
+
+USPTO Trademark Hits Data:
+${JSON.stringify(params2.normalizedHits, null, 2)}
+
+Previous Referee Verdict: "${params2.refereeDecision || "APPROVE"}"
+Blocked Products: ${JSON.stringify(params2.blockedProducts || [])}
+
+Act as the final adversarial Amazon Merch reviewer. Do you see any plausible trademark, brand, or policy reasons why Amazon Merch might reject this submission or penalize the account? Return valid JSON.`;
+        const settings = loadSettings();
+        const requestPayload = {
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage }
+          ],
+          temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
+          max_tokens: settings.llmMaxTokens || 2500
+        };
+        try {
+          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
+          const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(requestPayload),
+            signal: AbortSignal.timeout(timeoutMs)
+          });
+          if (!res.ok) throw new Error(`LLM TM Verifier error: ${res.status} ${res.statusText}`);
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content?.trim() || "{}";
+          const parsed = this.extractJsonFromLlmResponse(content);
+          const verdict = parsed.verdict === "HIGH_RISK" ? "HIGH_RISK" : "SAFE";
+          const canBeFixed = parsed.canBeFixedByListingRewrite !== void 0 ? Boolean(parsed.canBeFixedByListingRewrite) : true;
+          return {
+            verdict,
+            identifiedRisks: Array.isArray(parsed.identifiedRisks) ? parsed.identifiedRisks : Array.isArray(parsed.identified_risks) ? parsed.identified_risks : [],
+            canBeFixedByListingRewrite: canBeFixed,
+            recommendation: parsed.recommendation || (verdict === "SAFE" ? "SAFE_TO_PUBLISH" : "REWRITE_NEEDED"),
+            _rawRequest: requestPayload,
+            _rawResponse: content
+          };
+        } catch (err) {
+          console.error("[LLMService] Error in evaluateTrademarkVerifier:", err);
+          return {
+            verdict: "HIGH_RISK",
+            identifiedRisks: [{ term: "N/A", field: "all", riskType: "VERIFIER_API_FAILURE", explanation: err.message }],
+            canBeFixedByListingRewrite: false,
+            recommendation: "ESCALATE_TO_HUMAN",
+            _rawRequest: requestPayload,
+            _rawResponse: err.message
+          };
+        }
+      }
+      /**
+       * V2 SEO-Preserving Rewrite for Trademark Issues
+       */
+      static async rewriteListingForTrademarkV2(params2) {
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
+        const systemPrompt = SystemPromptService.getListingGeneratorPrompt();
+        const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params2.rewriteIteration} of 3).
+
+Current Listing:
 - Brand: "${params2.currentListing.brand}"
 - Title: "${params2.currentListing.title}"
 - Bullet 1: "${params2.currentListing.bullet1}"
@@ -53327,10 +53018,30 @@ Design Metadata:
 - Subniche: ${params2.subniche || ""}
 - Quote / Slogan: "${params2.quote || ""}"
 
-Detected Trademark Hits:
-${hitSummary || "None flagged directly."}
+SPECIFIC TRADEMARK ISSUES TO RESOLVE:
+${params2.rewriteInstructions.length > 0 ? params2.rewriteInstructions.map((i) => `- ${i}`).join("\n") : "- Replace flagged trademark terms with strong compliant niche keywords."}
 
-Please audit the listing against trademark rules. If a Brand word is Class 25, replace with an alternative niche keyword. If a non-fair-use term is in Title/Bullets, rewrite. Return valid JSON.`;
+CRITICAL CONSTRAINTS:
+1. STRICTLY FORBIDDEN TERMS (DO NOT USE THESE OR CLOSE VARIANTS):
+   ${JSON.stringify(params2.forbiddenTermsForTask)}
+2. LOCKED TITLE SUFFIX: Title MUST end literally with "${params2.subniche || params2.niche2 || params2.niche1 || ""}"
+3. EXACT CHARACTER LIMITS:
+   - Brand: 40-50 chars
+   - Title: 50-60 chars (ending with locked suffix)
+   - Bullet 1: 230-256 chars
+   - Bullet 2: 230-256 chars
+   - Description: 300-600 chars
+4. PRESERVE SEO DEPTH: Replace only the problematic terms with high-performing niche terms. Keep legitimate keywords intact.
+
+Return ONLY valid JSON matching this schema:
+{
+  "brand": "...",
+  "title": "...",
+  "bullet1": "...",
+  "bullet2": "...",
+  "description": "...",
+  "actions_taken": ["Replaced term X with Y in Brand", "Rewrote Bullet 1 to remove phrase Z"]
+}`;
         const settings = loadSettings();
         const requestPayload = {
           model,
@@ -53339,7 +53050,7 @@ Please audit the listing against trademark rules. If a Brand word is Class 25, r
             { role: "user", content: userMessage }
           ],
           temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
-          max_tokens: settings.llmMaxTokens || 3e3
+          max_tokens: settings.llmMaxTokens || 3500
         };
         try {
           const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
@@ -53349,40 +53060,59 @@ Please audit the listing against trademark rules. If a Brand word is Class 25, r
             body: JSON.stringify(requestPayload),
             signal: AbortSignal.timeout(timeoutMs)
           });
-          if (!res.ok) throw new Error(`LLM TM Refine error: ${res.status} ${res.statusText}`);
+          if (!res.ok) throw new Error(`LLM TM Rewrite V2 error: ${res.status} ${res.statusText}`);
           const data = await res.json();
           const content = data.choices?.[0]?.message?.content?.trim() || "{}";
           const parsed = this.extractJsonFromLlmResponse(content);
-          const refined = parsed.refined_listing || parsed.refinedListing || parsed.listing || params2.currentListing;
-          let cleanTitle = (refined.title || params2.currentListing.title).trim();
+          let cleanTitle = (parsed.title || params2.currentListing.title).trim();
           cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+          const refined = {
+            brand: (parsed.brand || params2.currentListing.brand).trim().slice(0, 50),
+            title: cleanTitle.slice(0, 60),
+            bullet1: (parsed.bullet1 || params2.currentListing.bullet1).trim().slice(0, 256),
+            bullet2: (parsed.bullet2 || params2.currentListing.bullet2).trim().slice(0, 256),
+            description: (parsed.description || params2.currentListing.description).trim().slice(0, 600)
+          };
+          const actionsTaken = Array.isArray(parsed.actions_taken) ? parsed.actions_taken : Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : ["Automated trademark rewrite applied"];
           return {
-            verdict: parsed.verdict === "REJECTED" ? "REJECTED" : "APPROVED",
-            rejection_reason: parsed.rejection_reason || parsed.rejectionReason || null,
-            blocked_classes: Array.isArray(parsed.blocked_classes) ? parsed.blocked_classes : Array.isArray(parsed.blockedClasses) ? parsed.blockedClasses : [],
-            actions_taken: Array.isArray(parsed.actions_taken) ? parsed.actions_taken : Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : [],
-            refined_listing: {
-              brand: (refined.brand || params2.currentListing.brand).trim().slice(0, 50),
-              title: cleanTitle.slice(0, 60),
-              bullet1: (refined.bullet1 || params2.currentListing.bullet1).trim().slice(0, 256),
-              bullet2: (refined.bullet2 || params2.currentListing.bullet2).trim().slice(0, 256),
-              description: (refined.description || params2.currentListing.description).trim().slice(0, 600)
-            },
+            refinedListing: refined,
+            actionsTaken,
             _rawRequest: requestPayload,
             _rawResponse: content
           };
         } catch (err) {
-          console.error("[LLMService] Error refining listing with TM feedback:", err);
+          console.error("[LLMService] Error in rewriteListingForTrademarkV2:", err);
           return {
-            verdict: "APPROVED",
-            rejection_reason: null,
-            blocked_classes: [],
-            actions_taken: ["Fallback: unchanged due to network timeout"],
-            refined_listing: params2.currentListing,
+            refinedListing: params2.currentListing,
+            actionsTaken: ["Failed to rewrite: network/timeout error"],
             _rawRequest: requestPayload,
             _rawResponse: err.message
           };
         }
+      }
+      /**
+       * Backward-compatibility wrapper for rewriteListingWithTrademarkFeedback
+       */
+      static async rewriteListingWithTrademarkFeedback(params2) {
+        const res = await this.rewriteListingForTrademarkV2({
+          currentListing: params2.currentListing,
+          niche1: params2.niche1,
+          niche2: params2.niche2,
+          subniche: params2.subniche,
+          quote: params2.quote,
+          rewriteIteration: 1,
+          forbiddenTermsForTask: [],
+          rewriteInstructions: params2.tmHits.map((h) => `Resolve trademark hit: ${h.term || h.trademark} (Class ${h.classNumber || "25"})`)
+        });
+        return {
+          verdict: "APPROVED",
+          rejection_reason: null,
+          blocked_classes: [],
+          actions_taken: res.actionsTaken,
+          refined_listing: res.refinedListing,
+          _rawRequest: res._rawRequest,
+          _rawResponse: res._rawResponse
+        };
       }
       /**
        * 3. Translate Approved English Master Listing into Multi-Marketplace Languages (DE, FR, ES, IT, JA)
@@ -53553,6 +53283,1041 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
             latencyMs: Date.now() - start3
           };
         }
+      }
+    };
+  }
+});
+
+// src/server/services/trademarkService.ts
+var COMMON_STOP_WORDS, TrademarkService;
+var init_trademarkService = __esm2({
+  "src/server/services/trademarkService.ts"() {
+    "use strict";
+    init_settingsService();
+    init_productCatalogService();
+    init_trademarkWhitelistService();
+    init_llmService();
+    COMMON_STOP_WORDS = /* @__PURE__ */ new Set([
+      "the",
+      "and",
+      "for",
+      "with",
+      "this",
+      "that",
+      "from",
+      "your",
+      "have",
+      "are",
+      "was",
+      "were",
+      "will",
+      "been",
+      "each",
+      "when",
+      "into",
+      "just",
+      "more",
+      "some",
+      "than",
+      "them",
+      "then",
+      "they",
+      "what",
+      "which",
+      "who",
+      "will",
+      "shirt",
+      "tshirt",
+      "t-shirt",
+      "apparel",
+      "gift",
+      "ideas",
+      "great",
+      "cool",
+      "love",
+      "lovers",
+      "graphic",
+      "design",
+      "men",
+      "women",
+      "kids",
+      "boys",
+      "girls",
+      "youth",
+      "funny",
+      "retro",
+      "vintage",
+      "classic"
+    ]);
+    TrademarkService = class {
+      /**
+       * Test connection to Productor Trademark APIs
+       */
+      static async testConnection() {
+        const settings = loadSettings();
+        const start3 = Date.now();
+        try {
+          const fd = new FormData();
+          fd.append("trademarks", JSON.stringify(["nike"]));
+          const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
+            method: "POST",
+            headers: {
+              "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+              "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
+            },
+            body: fd,
+            signal: AbortSignal.timeout(6e3)
+          });
+          const latencyMs = Date.now() - start3;
+          if (res.ok) {
+            return { success: true, latencyMs };
+          }
+          return { success: false, latencyMs, error: `USPTO API antwortet mit HTTP ${res.status}` };
+        } catch (err) {
+          return { success: false, latencyMs: Date.now() - start3, error: err.message || "Verbindungs-Timeout" };
+        }
+      }
+      /**
+       * Parse office inputs (e.g. 'USPTO', 'EUIPO', 'DPMA' or fallback 'US', 'DE', 'EU')
+       */
+      static normalizeOffices(input, marketplace) {
+        const rawList = [];
+        if (Array.isArray(input)) {
+          rawList.push(...input);
+        } else if (typeof input === "string" && input.trim()) {
+          rawList.push(...input.split(",").map((s) => s.trim()));
+        } else if (marketplace && typeof marketplace === "string") {
+          rawList.push(marketplace.trim());
+        }
+        const offices = /* @__PURE__ */ new Set();
+        for (const raw of rawList) {
+          const up = raw.toUpperCase();
+          if (up === "USPTO" || up === "US" || up === "COM") {
+            offices.add("USPTO");
+          } else if (up === "EUIPO" || up === "EU" || up === "UK" || up === "GB" || up === "FR" || up === "IT" || up === "ES") {
+            offices.add("EUIPO");
+          } else if (up === "DPMA" || up === "DE") {
+            offices.add("DPMA");
+            offices.add("EUIPO");
+          }
+        }
+        if (offices.size === 0) {
+          offices.add("USPTO");
+        }
+        return Array.from(offices);
+      }
+      /**
+       * Extract search terms from text: full phrase + n-grams + individual significant keywords
+       */
+      static extractTermsFromText(text2) {
+        if (!text2 || typeof text2 !== "string") return [];
+        const trimmed = text2.trim();
+        if (trimmed.length < 2) return [];
+        const terms = /* @__PURE__ */ new Set();
+        if (trimmed.length <= 60) {
+          terms.add(trimmed.toLowerCase());
+        }
+        const words = trimmed.split(/[\s,.;:!?/()"\-+]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter((w) => w.length >= 3);
+        for (const w of words) {
+          if (w.length >= 4 && !COMMON_STOP_WORDS.has(w)) {
+            terms.add(w);
+          }
+        }
+        for (let i = 0; i < words.length - 1; i++) {
+          const twoGram = `${words[i]} ${words[i + 1]}`;
+          terms.add(twoGram);
+          if (i < words.length - 2) {
+            const threeGram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
+            terms.add(threeGram);
+          }
+        }
+        return Array.from(terms);
+      }
+      /**
+       * Extract and normalize Nice Classification numbers (e.g. '041' -> '41', '009,042' -> ['9', '42'])
+       */
+      static extractNiceClasses(r) {
+        if (!r) return [];
+        const raw = r.classification || r.Classification || r.classes || r.class_id || r.class || r.international_class || "";
+        if (!raw) return [];
+        if (Array.isArray(raw)) {
+          return raw.map((c) => String(c).replace(/^0+/, "").trim()).filter(Boolean);
+        }
+        return String(raw).split(/[,;\s]+/).map((c) => c.replace(/[^0-9]/g, "").replace(/^0+/, "").trim()).filter(Boolean);
+      }
+      /**
+       * Check if a trademark status string or code represents an active/live registered trademark
+       * Strictly filters out PENDING, DEAD, ABANDONED, CANCELLED, EXPIRED, REFUSED
+       */
+      static isLiveStatus(rawStatus) {
+        if (rawStatus === void 0 || rawStatus === null || rawStatus === "") {
+          return false;
+        }
+        const s = String(rawStatus).trim().toUpperCase();
+        if (s.includes("DEAD") || s.includes("PENDING") || s.includes("CANCEL") || s.includes("ABANDON") || s.includes("EXPIRE") || s.includes("REFUSE") || s.includes("SUSPEND")) {
+          return false;
+        }
+        return s.includes("LIVE") || s.includes("REGISTERED") || s.includes("ACTIVE") || s.includes("EINGETRAGEN") || s === "REG" || s === "700" || s === "701";
+      }
+      /**
+       * Check terms across specified trademark offices
+       */
+      static async queryOffices(uniqueTerms, offices) {
+        const settings = loadSettings();
+        const allHits = {};
+        if (uniqueTerms.length === 0 || offices.length === 0) {
+          return allHits;
+        }
+        const defaultHeaders = {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
+        };
+        const promises = [];
+        if (offices.includes("USPTO")) {
+          promises.push((async () => {
+            try {
+              const usptoFd = new FormData();
+              usptoFd.append("trademarks", JSON.stringify(uniqueTerms));
+              const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
+                method: "POST",
+                headers: {
+                  ...defaultHeaders,
+                  "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
+                },
+                body: usptoFd,
+                signal: AbortSignal.timeout(9e3)
+              });
+              if (res.ok) {
+                const data = await res.json();
+                for (const [term, records] of Object.entries(data)) {
+                  if (Array.isArray(records) && records.length > 0) {
+                    records.forEach((r) => {
+                      const rawStatus = r.status || r.status_code || "LIVE";
+                      if (this.isLiveStatus(rawStatus)) {
+                        const classes = this.extractNiceClasses(r);
+                        allHits[term] = allHits[term] || [];
+                        allHits[term].push({
+                          term,
+                          trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
+                          classNumber: classes.join(", ") || "N/A",
+                          classes,
+                          status: "LIVE",
+                          registrationNumber: r.registration_number || r.registration_date,
+                          serialNumber: r.serial_number || r.applicationNumber,
+                          goodsAndServices: r.goods_and_services || r.goods_services,
+                          source: "USPTO"
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn("[TrademarkService] USPTO query error:", err.message || err);
+            }
+          })());
+        }
+        if (offices.includes("EUIPO")) {
+          promises.push((async () => {
+            try {
+              const euFd = new FormData();
+              euFd.append("trademarks", JSON.stringify(uniqueTerms));
+              const res = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
+                method: "POST",
+                headers: {
+                  ...defaultHeaders,
+                  "Authorization": settings.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
+                },
+                body: euFd,
+                signal: AbortSignal.timeout(9e3)
+              });
+              if (res.ok) {
+                const data = await res.json();
+                for (const [term, records] of Object.entries(data)) {
+                  if (Array.isArray(records) && records.length > 0) {
+                    records.forEach((r) => {
+                      const rawStatus = r.markCurrentStatusCode || r.status || "LIVE";
+                      if (this.isLiveStatus(rawStatus)) {
+                        const classes = this.extractNiceClasses(r);
+                        allHits[term] = allHits[term] || [];
+                        allHits[term].push({
+                          term,
+                          trademark: r.trademark || r.mark_identification || term,
+                          classNumber: classes.join(", ") || "N/A",
+                          classes,
+                          status: "LIVE",
+                          serialNumber: r.applicationNumber,
+                          source: "EUIPO"
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn("[TrademarkService] EUIPO query error:", err.message || err);
+            }
+          })());
+        }
+        if (offices.includes("DPMA")) {
+          promises.push((async () => {
+            try {
+              const dpmaFd = new FormData();
+              dpmaFd.append("trademarks", JSON.stringify(uniqueTerms));
+              const res = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
+                method: "POST",
+                headers: {
+                  ...defaultHeaders,
+                  "Authorization": settings.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
+                },
+                body: dpmaFd,
+                signal: AbortSignal.timeout(9e3)
+              });
+              if (res.ok) {
+                const data = await res.json();
+                for (const [term, records] of Object.entries(data)) {
+                  if (Array.isArray(records) && records.length > 0) {
+                    records.forEach((r) => {
+                      const rawStatus = r.MarkCurrentStatusCode || r.status || "LIVE";
+                      if (this.isLiveStatus(rawStatus)) {
+                        const classes = this.extractNiceClasses(r);
+                        allHits[term] = allHits[term] || [];
+                        allHits[term].push({
+                          term,
+                          trademark: r.MarkVerbalElementText || r.trademark || term,
+                          classNumber: classes.join(", ") || "N/A",
+                          classes,
+                          status: "LIVE",
+                          serialNumber: r.ApplicationNumber,
+                          source: "DPMA"
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn("[TrademarkService] DPMA query error:", err.message || err);
+            }
+          })());
+        }
+        await Promise.all(promises);
+        return allHits;
+      }
+      /**
+       * Analyze hits to calculate blocked products and class 25 status
+       */
+      static analyzeHits(hitsRecord) {
+        let hasInfringementClass25 = false;
+        const blockedClassesSet = /* @__PURE__ */ new Set();
+        let totalHits = 0;
+        for (const [term, records] of Object.entries(hitsRecord)) {
+          for (const rec of records) {
+            if (!this.isLiveStatus(rec.status)) continue;
+            const hitTerm = rec.term || term || "";
+            const hitMark = rec.trademark || "";
+            const source12 = rec.source || "GLOBAL";
+            if (TrademarkWhitelistService.isWhitelisted(hitTerm, source12) || TrademarkWhitelistService.isWhitelisted(hitMark, source12)) {
+              continue;
+            }
+            totalHits++;
+            const classes = rec.classes && rec.classes.length > 0 ? rec.classes : this.extractNiceClasses({ classification: rec.classNumber });
+            for (const c of classes) {
+              const num = parseInt(c, 10);
+              if (!isNaN(num)) {
+                blockedClassesSet.add(num);
+                if (num === 25) {
+                  hasInfringementClass25 = true;
+                }
+              }
+            }
+          }
+        }
+        const blockedClasses = Array.from(blockedClassesSet);
+        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
+          blockedClasses.filter((c) => c !== 25)
+          // Clothing 25 is handled separately via hard-reject / rewrite
+        );
+        return {
+          hasInfringementClass25,
+          blockedClasses,
+          blockedProducts,
+          totalHits
+        };
+      }
+      /**
+       * Comprehensive Audit for Listing + Niche Metadata (Hard-Reject, Product Blocking, Fair-Use)
+       */
+      static async auditListingAndMetadata(params2) {
+        const offices = params2.offices && params2.offices.length > 0 ? params2.offices : ["USPTO", "EUIPO", "DPMA"];
+        const termsToFieldMap = {
+          quote: params2.quote ? this.extractTermsFromText(params2.quote) : [],
+          niche1: params2.niche1 ? this.extractTermsFromText(params2.niche1) : [],
+          niche2: params2.niche2 && params2.niche2.toLowerCase() !== "none" ? this.extractTermsFromText(params2.niche2) : [],
+          subniche: params2.subniche && params2.subniche.toLowerCase() !== "none" ? this.extractTermsFromText(params2.subniche) : [],
+          brand: this.extractTermsFromText(params2.listing.brand),
+          title: this.extractTermsFromText(params2.listing.title),
+          bullet1: this.extractTermsFromText(params2.listing.bullet1),
+          bullet2: this.extractTermsFromText(params2.listing.bullet2)
+        };
+        const allUniqueTerms = /* @__PURE__ */ new Set();
+        for (const terms of Object.values(termsToFieldMap)) {
+          terms.forEach((t) => allUniqueTerms.add(t));
+        }
+        const termList = Array.from(allUniqueTerms);
+        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
+        let isHardReject = false;
+        let hardRejectReason = null;
+        let brandConflict = false;
+        let titleConflict = false;
+        let needsRewrite = false;
+        const blockedClassesSet = /* @__PURE__ */ new Set();
+        const allHitsList = [];
+        const coreFields = ["quote", "niche1", "niche2", "subniche"];
+        for (const f of coreFields) {
+          const terms = termsToFieldMap[f] || [];
+          for (const t of terms) {
+            const hits = globalHits[t] || [];
+            for (const h of hits) {
+              if (!this.isLiveStatus(h.status)) continue;
+              allHitsList.push(h);
+              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+              if (classes.includes("25")) {
+                isHardReject = true;
+                hardRejectReason = `Core ${f} "${t}" is an active Class 25 trademark (${h.source}: ${h.trademark}).`;
+                break;
+              }
+            }
+            if (isHardReject) break;
+          }
+          if (isHardReject) break;
+        }
+        if (isHardReject) {
+          return {
+            isHardReject: true,
+            hardRejectReason,
+            isSafe: false,
+            needsRewrite: false,
+            brandConflict: true,
+            titleConflict: true,
+            blockedNiceClasses: [25],
+            blockedProducts: [],
+            allHits: allHitsList,
+            hitDetails: globalHits
+          };
+        }
+        const brandTerms = termsToFieldMap.brand || [];
+        for (const t of brandTerms) {
+          const hits = globalHits[t] || [];
+          for (const h of hits) {
+            if (!this.isLiveStatus(h.status)) continue;
+            allHitsList.push(h);
+            const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+            if (classes.includes("25")) {
+              brandConflict = true;
+              needsRewrite = true;
+            } else {
+              classes.forEach((c) => {
+                const num = parseInt(c, 10);
+                if (!isNaN(num)) blockedClassesSet.add(num);
+              });
+            }
+          }
+        }
+        const listingFields = ["title", "bullet1", "bullet2"];
+        for (const f of listingFields) {
+          const terms = termsToFieldMap[f] || [];
+          for (const t of terms) {
+            const hits = globalHits[t] || [];
+            for (const h of hits) {
+              if (!this.isLiveStatus(h.status)) continue;
+              allHitsList.push(h);
+              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+              if (classes.includes("25")) {
+                if (f === "title") {
+                  if (!COMMON_STOP_WORDS.has(t)) {
+                    titleConflict = true;
+                    needsRewrite = true;
+                  }
+                } else {
+                  if (!COMMON_STOP_WORDS.has(t) && t.includes(" ")) {
+                    needsRewrite = true;
+                  }
+                }
+              } else {
+                classes.forEach((c) => {
+                  const num = parseInt(c, 10);
+                  if (!isNaN(num)) blockedClassesSet.add(num);
+                });
+              }
+            }
+          }
+        }
+        const blockedNiceClasses = Array.from(blockedClassesSet);
+        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
+          blockedNiceClasses.filter((c) => c !== 25)
+        );
+        const isSafe = !brandConflict && !titleConflict && !needsRewrite;
+        return {
+          isHardReject: false,
+          hardRejectReason: null,
+          isSafe,
+          needsRewrite,
+          brandConflict,
+          titleConflict,
+          blockedNiceClasses,
+          blockedProducts,
+          allHits: allHitsList,
+          hitDetails: globalHits
+        };
+      }
+      /**
+       * Legacy check method for single term array (used by UI Designer)
+       */
+      static async checkTrademarks(terms, locale = "en") {
+        const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
+        const uniqueTerms = Array.from(new Set(cleanTerms));
+        if (uniqueTerms.length === 0) {
+          return {
+            hasInfringementClass25: false,
+            blockedProducts: [],
+            hits: {},
+            totalHits: 0,
+            message: "No terms to check."
+          };
+        }
+        const offices = locale === "de" ? ["USPTO", "EUIPO", "DPMA"] : ["USPTO", "EUIPO"];
+        const hits = await this.queryOffices(uniqueTerms, offices);
+        const analysis = this.analyzeHits(hits);
+        return {
+          hasInfringementClass25: analysis.hasInfringementClass25,
+          blockedProducts: analysis.blockedProducts,
+          hits,
+          totalHits: analysis.totalHits,
+          message: analysis.hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : analysis.totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${analysis.blockedProducts.length} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
+        };
+      }
+      /**
+       * Comprehensive Multi-Field Batch Check for Hermes Agent & MCP Integration
+       */
+      static async checkBatchFields(input) {
+        const offices = this.normalizeOffices(input.offices, input.marketplace);
+        const fields = input.fields || {};
+        const fieldTermsMap = {};
+        const allUniqueTerms = /* @__PURE__ */ new Set();
+        for (const [fieldName, rawValue] of Object.entries(fields)) {
+          if (rawValue && typeof rawValue === "string") {
+            const terms = this.extractTermsFromText(rawValue);
+            fieldTermsMap[fieldName] = terms;
+            terms.forEach((t) => allUniqueTerms.add(t));
+          }
+        }
+        const termList = Array.from(allUniqueTerms);
+        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
+        const fieldResults = {};
+        let totalGlobalHits = 0;
+        let globalHasInfringementClass25 = false;
+        const globalBlockedProducts = /* @__PURE__ */ new Set();
+        for (const [fieldName, terms] of Object.entries(fieldTermsMap)) {
+          const fieldHits = {};
+          for (const t of terms) {
+            if (globalHits[t] && globalHits[t].length > 0) {
+              fieldHits[t] = globalHits[t];
+            }
+          }
+          const analysis = this.analyzeHits(fieldHits);
+          if (analysis.hasInfringementClass25) globalHasInfringementClass25 = true;
+          analysis.blockedProducts.forEach((p) => globalBlockedProducts.add(p));
+          totalGlobalHits += analysis.totalHits;
+          fieldResults[fieldName] = {
+            safe: !analysis.hasInfringementClass25,
+            hasInfringementClass25: analysis.hasInfringementClass25,
+            totalHits: analysis.totalHits,
+            blockedProducts: analysis.blockedProducts,
+            hits: fieldHits
+          };
+        }
+        const isCompletelySafe = !globalHasInfringementClass25 && globalBlockedProducts.size === 0;
+        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
+        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
+        const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
+        const hasBrandTitleClass25 = brandHasClass25 || titleHasClass25 || quoteHasClass25;
+        let verdict;
+        let message;
+        if (hasBrandTitleClass25) {
+          verdict = "REJECTED_CLASS_25";
+          const affected = [brandHasClass25 && "Brand", titleHasClass25 && "Title", quoteHasClass25 && "Quote"].filter(Boolean);
+          message = `Klasse 25 Konflikt in Identifikatoren (${affected.join(", ")}). Automatisches Umschreiben erforderlich.`;
+        } else if (globalHasInfringementClass25) {
+          verdict = "NEEDS_AUDIT";
+          message = `Treffer in Bullets/Description gefunden (${totalGlobalHits} Treffer). Fair-Use-Pr\xFCfung durch Trademark Auditor.`;
+        } else if (globalBlockedProducts.size > 0) {
+          verdict = "SAFE_FOR_APPAREL";
+          message = `Keine Treffer in Klasse 25 (Bekleidung sicher). ${globalBlockedProducts.size} Nebenprodukte gesperrt.`;
+        } else {
+          verdict = "SAFE_ALL";
+          message = "Keine aktiven Schutzrechte gefunden. Listing ist sauber \u2713";
+        }
+        const rawInputPhrases = /* @__PURE__ */ new Set();
+        for (const rawValue of Object.values(fields)) {
+          if (rawValue && typeof rawValue === "string") {
+            const tr = rawValue.trim().toLowerCase();
+            if (tr.length > 0) rawInputPhrases.add(tr);
+          }
+        }
+        const exactPhraseHits = [];
+        const keywordHits = [];
+        const affectedClassesSet = /* @__PURE__ */ new Set();
+        const seenHitKeys = /* @__PURE__ */ new Set();
+        for (const [term, hits] of Object.entries(globalHits)) {
+          for (const hit of hits) {
+            const uniqueKey = `${hit.source}-${hit.trademark}-${hit.classNumber}-${hit.term}`;
+            if (seenHitKeys.has(uniqueKey)) continue;
+            seenHitKeys.add(uniqueKey);
+            (hit.classes || []).forEach((c) => affectedClassesSet.add(c));
+            if (rawInputPhrases.has(term.toLowerCase())) {
+              exactPhraseHits.push(hit);
+            } else {
+              keywordHits.push(hit);
+            }
+          }
+        }
+        return {
+          success: true,
+          safe: !hasBrandTitleClass25,
+          hasInfringementClass25: globalHasInfringementClass25,
+          affectedClasses: Array.from(affectedClassesSet).sort((a, b) => Number(a) - Number(b)),
+          blockedProducts: Array.from(globalBlockedProducts),
+          officesChecked: offices,
+          summary: {
+            totalHits: totalGlobalHits,
+            verdict,
+            message,
+            exactPhraseHitsCount: exactPhraseHits.length,
+            keywordHitsCount: keywordHits.length
+          },
+          exactPhraseHits,
+          keywordHits,
+          fieldResults
+        };
+      }
+      /**
+       * =========================================================================
+       * TRADEMARK WORKFLOW V2 METHODS (USPTO Focus, 1-5 Grams, Multi-Round Loop)
+       * =========================================================================
+       */
+      /**
+       * V2 Term Extraction: 1-5 Grams + Full Quote, Stopword preservation in phrases
+       */
+      static extractTermsFromTextV2(params2) {
+        const stopWords = /* @__PURE__ */ new Set([
+          "the",
+          "a",
+          "an",
+          "and",
+          "or",
+          "to",
+          "of",
+          "in",
+          "for",
+          "with",
+          "on",
+          "at",
+          "by",
+          "from",
+          "up",
+          "about",
+          "into",
+          "over",
+          "after",
+          "is",
+          "are",
+          "was",
+          "were",
+          "be",
+          "been",
+          "being",
+          "this",
+          "that",
+          "your",
+          "my",
+          "its",
+          "their",
+          "our",
+          "all",
+          "any",
+          "each",
+          "shirt",
+          "tshirt",
+          "t-shirt"
+        ]);
+        const termToFieldsMap = {};
+        const addTerm = (term, field) => {
+          const clean = term.trim().toLowerCase();
+          if (clean.length < 2) return;
+          if (!termToFieldsMap[clean]) termToFieldsMap[clean] = /* @__PURE__ */ new Set();
+          termToFieldsMap[clean].add(field);
+        };
+        const fields = [
+          ["brand", params2.listing.brand],
+          ["title", params2.listing.title],
+          ["bullet1", params2.listing.bullet1],
+          ["bullet2", params2.listing.bullet2],
+          ["description", params2.listing.description],
+          ["quote", params2.quote]
+        ];
+        for (const [field, text2] of fields) {
+          if (!text2 || typeof text2 !== "string") continue;
+          const trimmed = text2.trim();
+          if (!trimmed) continue;
+          const rawTokens = trimmed.split(/[\s,.;:!?/()"\-+–—[\]{}#*~`^|\\]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter(Boolean);
+          if (field === "quote" && rawTokens.length > 0) {
+            addTerm(rawTokens.join(" "), "quote");
+          }
+          for (const w of rawTokens) {
+            if (w.length >= 3 && !stopWords.has(w)) {
+              addTerm(w, field);
+            }
+          }
+          for (let len = 2; len <= 5; len++) {
+            for (let i = 0; i <= rawTokens.length - len; i++) {
+              const nGramTokens = rawTokens.slice(i, i + len);
+              const hasSubstantialWord = nGramTokens.some((tok) => !stopWords.has(tok) && tok.length >= 3);
+              if (hasSubstantialWord) {
+                addTerm(nGramTokens.join(" "), field);
+              }
+            }
+          }
+        }
+        const result2 = {};
+        for (const [t, set] of Object.entries(termToFieldsMap)) {
+          result2[t] = Array.from(set);
+        }
+        return {
+          terms: Object.keys(result2),
+          termToFieldsMap: result2
+        };
+      }
+      /**
+       * Query USPTO batch endpoint (batching up to 50 terms per request)
+       */
+      static async queryUsptoBatch(terms) {
+        const settings = loadSettings();
+        const allResults = {};
+        if (terms.length === 0) return allResults;
+        const defaultHeaders = {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk",
+          "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
+        };
+        const chunkSize = 50;
+        for (let i = 0; i < terms.length; i += chunkSize) {
+          const chunk = terms.slice(i, i + chunkSize);
+          try {
+            const fd = new FormData();
+            fd.append("trademarks", JSON.stringify(chunk));
+            const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
+              method: "POST",
+              headers: defaultHeaders,
+              body: fd,
+              signal: AbortSignal.timeout(1e4)
+            });
+            if (res.ok) {
+              const data = await res.json();
+              for (const [k, v] of Object.entries(data)) {
+                if (Array.isArray(v) && v.length > 0) {
+                  allResults[k.toLowerCase()] = v;
+                }
+              }
+            }
+          } catch (err) {
+            console.warn("[TrademarkService] USPTO query error chunk:", err.message || err);
+          }
+        }
+        return allResults;
+      }
+      /**
+       * Deterministic Match Normalization & Classification before LLM
+       */
+      static normalizeAndClassifyMatches(rawHits, termToFieldsMap, quote5) {
+        const normalizedHits = [];
+        const cleanQuote = quote5 ? quote5.trim().toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, "") : "";
+        const seenKeys = /* @__PURE__ */ new Set();
+        for (const [term, records] of Object.entries(rawHits)) {
+          const termLower = term.toLowerCase().trim();
+          const fields = termToFieldsMap[termLower] || ["listing"];
+          for (const r of records) {
+            const rawStatus = r.status || r.status_code || "LIVE";
+            if (!this.isLiveStatus(rawStatus)) continue;
+            const registeredMark = String(r.mark_identification || r.trademark || r.MarkVerbalElementText || term).trim();
+            const regMarkClean = registeredMark.toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, "").trim();
+            const rawClasses = this.extractNiceClasses(r);
+            const classes = rawClasses.map((c) => parseInt(c, 10)).filter((n) => !isNaN(n));
+            const wordCount = regMarkClean.split(/\s+/).filter(Boolean).length;
+            let matchType = "FUZZY_OR_SIMILAR";
+            if (regMarkClean === termLower) {
+              if (cleanQuote && termLower === cleanQuote) {
+                matchType = "FULL_EXACT";
+              } else if (wordCount === 1) {
+                matchType = "SINGLE_WORD_EXACT";
+              } else {
+                matchType = "EXACT_NGRAM";
+              }
+            } else if (termLower.includes(regMarkClean)) {
+              matchType = "CONTAINS_REGISTERED_MARK";
+            } else if (regMarkClean.includes(termLower)) {
+              matchType = "QUERY_INSIDE_LONGER_MARK";
+            }
+            const isFullQuoteMatch = Boolean(cleanQuote && (regMarkClean === cleanQuote || matchType === "FULL_EXACT"));
+            const isKnownPhraseMatch = wordCount >= 2 && (matchType === "EXACT_NGRAM" || matchType === "FULL_EXACT" || matchType === "CONTAINS_REGISTERED_MARK");
+            const drawing = String(r.mark_drawing || r.MarkFeature || r.markFeature || "").toUpperCase();
+            let markFeature = "Word";
+            if (drawing.includes("DESIGN") || drawing.includes("COMBINED") || drawing.includes("BILD") || drawing.includes("FIGURATIVE")) {
+              markFeature = "Combined";
+            }
+            for (const f of fields) {
+              const uniqueKey = `USPTO-${registeredMark}-${classes.join(",")}-${termLower}-${f}`;
+              if (seenKeys.has(uniqueKey)) continue;
+              seenKeys.add(uniqueKey);
+              normalizedHits.push({
+                searchedTerm: termLower,
+                registeredMark,
+                field: f,
+                office: "USPTO",
+                status: "LIVE",
+                markFeature,
+                classes,
+                classNumber: classes.join(", ") || "N/A",
+                wordCount,
+                matchType,
+                isFullQuoteMatch,
+                isKnownPhraseMatch,
+                serialNumber: r.serial_number || r.ApplicationNumber || r.applicationNumber,
+                registrationNumber: r.registration_number || r.registration_date,
+                filingDate: r.filing_date || r.ApplicationDate,
+                registrationDate: r.registration_date || r.RegistrationDate
+              });
+            }
+          }
+        }
+        return normalizedHits;
+      }
+      /**
+       * Complete V2 Trademark Audit Orchestrator:
+       * Scan ➔ Match Normalization ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) with full re-scan ➔ Verifier ➔ Result
+       */
+      static async executeTrademarkAuditV2(params2) {
+        let currentListing = { ...params2.listing };
+        const forbiddenTermsForTask = [];
+        const rewriteIterations = [];
+        let initialTrademarkHits = [];
+        let finalRefereeResult = null;
+        let finalVerifierResult = null;
+        let blockedProducts = [];
+        let blockedNiceClasses = [];
+        const maxCycles = params2.maxRewriteCycles ?? 3;
+        for (let cycle = 0; cycle <= maxCycles; cycle++) {
+          console.log(`[TrademarkServiceV2] \u{1F50D} Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles})...`);
+          const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
+            listing: currentListing,
+            quote: params2.quote
+          });
+          const rawHits = await this.queryUsptoBatch(terms);
+          const normalizedHits = this.normalizeAndClassifyMatches(rawHits, termToFieldsMap, params2.quote);
+          if (cycle === 0) {
+            initialTrademarkHits = [...normalizedHits];
+          }
+          params2.onEvent?.({
+            type: "TM_SCAN_RESPONSE",
+            title: cycle === 0 ? `USPTO TM Scan abgeschlossen (${normalizedHits.length} Treffer)` : `USPTO TM Scan (Runde ${cycle}: ${normalizedHits.length} Treffer)`,
+            content: { cycle, totalHits: normalizedHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
+          });
+          const refereeRes = await LLMService.evaluateTrademarkReferee({
+            currentListing,
+            niche1: params2.niche1,
+            niche2: params2.niche2,
+            subniche: params2.subniche,
+            quote: params2.quote,
+            normalizedHits,
+            rewriteIteration: cycle,
+            forbiddenTermsForTask,
+            blockedProducts
+          });
+          finalRefereeResult = refereeRes;
+          if (Array.isArray(refereeRes.blockedProducts) && refereeRes.blockedProducts.length > 0) {
+            blockedProducts = Array.from(/* @__PURE__ */ new Set([...blockedProducts, ...refereeRes.blockedProducts]));
+          }
+          params2.onEvent?.({
+            type: "TM_REFEREE_RESPONSE",
+            title: `Trademark Referee: ${refereeRes.decision} (Zyklus ${cycle})`,
+            content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits }
+          });
+          if (refereeRes.decision === "ESCALATE" || refereeRes.canBeFixedByListingRewrite === false) {
+            console.warn(`[TrademarkServiceV2] \u{1F6A8} Eskalation ausgel\xF6st: ${refereeRes.reasonCode || "CORE_QUOTE_CLASS25_CONFLICT"}`);
+            return {
+              finalDecision: "ESCALATE",
+              isSafe: false,
+              canBeFixedByListingRewrite: false,
+              reasonCode: refereeRes.reasonCode || "CORE_QUOTE_CLASS25_CONFLICT",
+              recommendedAction: refereeRes.recommendedAction || "DO_NOT_SUBMIT",
+              initialTrademarkHits,
+              finalTrademarkHits: normalizedHits,
+              rewriteIterations,
+              refereeResult: refereeRes,
+              verifierResult: null,
+              forbiddenTermsForTask,
+              blockedProducts,
+              blockedNiceClasses,
+              finalListing: currentListing
+            };
+          }
+          if (refereeRes.decision === "APPROVE" || refereeRes.decision === "APPROVE_WITH_BLOCKED_PRODUCTS") {
+            console.log(`[TrademarkServiceV2] \u{1F6E1}\uFE0F Referee hat genehmigt (${refereeRes.decision}). Starte Verifier Pass...`);
+            const verifierRes = await LLMService.evaluateTrademarkVerifier({
+              currentListing,
+              niche1: params2.niche1,
+              niche2: params2.niche2,
+              subniche: params2.subniche,
+              quote: params2.quote,
+              normalizedHits,
+              refereeDecision: refereeRes.decision,
+              blockedProducts
+            });
+            finalVerifierResult = verifierRes;
+            params2.onEvent?.({
+              type: "TM_VERIFIER_RESPONSE",
+              title: `Amazon Rejection Verifier: ${verifierRes.verdict}`,
+              content: { verdict: verifierRes.verdict, recommendation: verifierRes.recommendation, risks: verifierRes.identifiedRisks }
+            });
+            if (verifierRes.verdict === "SAFE") {
+              console.log(`[TrademarkServiceV2] \u2705 Verifier best\xE4tigt SAFE. Listing endg\xFCltig freigegeben!`);
+              return {
+                finalDecision: refereeRes.decision,
+                isSafe: true,
+                canBeFixedByListingRewrite: true,
+                reasonCode: null,
+                recommendedAction: null,
+                initialTrademarkHits,
+                finalTrademarkHits: normalizedHits,
+                rewriteIterations,
+                refereeResult: refereeRes,
+                verifierResult: verifierRes,
+                forbiddenTermsForTask,
+                blockedProducts,
+                blockedNiceClasses,
+                finalListing: currentListing
+              };
+            }
+            console.warn(`[TrademarkServiceV2] \u26A0\uFE0F Verifier hat HIGH_RISK gemeldet (${verifierRes.identifiedRisks.length} Risiken).`);
+            if (!verifierRes.canBeFixedByListingRewrite) {
+              return {
+                finalDecision: "ESCALATE",
+                isSafe: false,
+                canBeFixedByListingRewrite: false,
+                reasonCode: "VERIFIER_UNFIXABLE_RISK",
+                recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+                initialTrademarkHits,
+                finalTrademarkHits: normalizedHits,
+                rewriteIterations,
+                refereeResult: refereeRes,
+                verifierResult: verifierRes,
+                forbiddenTermsForTask,
+                blockedProducts,
+                blockedNiceClasses,
+                finalListing: currentListing
+              };
+            }
+            if (cycle >= maxCycles) {
+              return {
+                finalDecision: "ESCALATE",
+                isSafe: false,
+                canBeFixedByListingRewrite: true,
+                reasonCode: "REWRITE_LIMIT_REACHED",
+                recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+                initialTrademarkHits,
+                finalTrademarkHits: normalizedHits,
+                rewriteIterations,
+                refereeResult: refereeRes,
+                verifierResult: verifierRes,
+                forbiddenTermsForTask,
+                blockedProducts,
+                blockedNiceClasses,
+                finalListing: currentListing
+              };
+            }
+            const verifierInstructions = verifierRes.identifiedRisks.map((r) => `Resolve ${r.riskType} in ${r.field}: "${r.term}" - ${r.explanation}`);
+            refereeRes.rewriteInstructions.push(...verifierInstructions);
+            verifierRes.identifiedRisks.forEach((r) => {
+              if (r.term && r.term.length > 2) forbiddenTermsForTask.push(r.term.toLowerCase());
+            });
+          }
+          if (cycle >= maxCycles) {
+            console.warn(`[TrademarkServiceV2] \u{1F6A8} Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
+            return {
+              finalDecision: "ESCALATE",
+              isSafe: false,
+              canBeFixedByListingRewrite: true,
+              reasonCode: "REWRITE_LIMIT_REACHED",
+              recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+              initialTrademarkHits,
+              finalTrademarkHits: normalizedHits,
+              rewriteIterations,
+              refereeResult: refereeRes,
+              verifierResult: finalVerifierResult,
+              forbiddenTermsForTask,
+              blockedProducts,
+              blockedNiceClasses,
+              finalListing: currentListing
+            };
+          }
+          for (const h of refereeRes.hits) {
+            if (h.decision === "REWRITE" || h.amazonRejectionRisk === "HIGH" || h.amazonRejectionRisk === "VERY_HIGH") {
+              if (h.searchedTerm) forbiddenTermsForTask.push(h.searchedTerm.toLowerCase());
+              if (h.registeredMark) forbiddenTermsForTask.push(h.registeredMark.toLowerCase());
+            }
+          }
+          console.log(`[TrademarkServiceV2] \u270D\uFE0F F\xFChre SEO-Rewrite durch (Runde ${cycle + 1}). Verbotene Begriffe: [${forbiddenTermsForTask.join(", ")}]`);
+          const rewriteRes = await LLMService.rewriteListingForTrademarkV2({
+            currentListing,
+            niche1: params2.niche1,
+            niche2: params2.niche2,
+            subniche: params2.subniche,
+            quote: params2.quote,
+            rewriteIteration: cycle + 1,
+            forbiddenTermsForTask: Array.from(new Set(forbiddenTermsForTask)),
+            rewriteInstructions: refereeRes.rewriteInstructions,
+            hitsToFix: refereeRes.hits
+          });
+          currentListing = rewriteRes.refinedListing;
+          rewriteIterations.push({
+            iteration: cycle + 1,
+            actionsTaken: rewriteRes.actionsTaken,
+            listing: { ...currentListing },
+            hitsFound: normalizedHits.length
+          });
+          params2.onEvent?.({
+            type: "TM_REWRITE_RESPONSE",
+            title: `SEO-Rewrite Runde ${cycle + 1} abgeschlossen`,
+            content: { iteration: cycle + 1, actionsTaken: rewriteRes.actionsTaken, listing: currentListing }
+          });
+        }
+        return {
+          finalDecision: "ESCALATE",
+          isSafe: false,
+          canBeFixedByListingRewrite: true,
+          reasonCode: "REWRITE_LIMIT_REACHED",
+          recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+          initialTrademarkHits,
+          finalTrademarkHits: [],
+          rewriteIterations,
+          refereeResult: finalRefereeResult,
+          verifierResult: finalVerifierResult,
+          forbiddenTermsForTask,
+          blockedProducts,
+          blockedNiceClasses,
+          finalListing: currentListing
+        };
       }
     };
   }
@@ -221537,12 +222302,13 @@ Bullets: ${oldBullets}`
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
         TaskLogService2.updateTaskStatus(taskId, { status: "CHECKING_TRADEMARKS", hasError: false });
-        const listing = task.listingResult?.en || {
-          brand: task.payload?.brand || "",
-          title: task.payload?.title || "",
-          bullet1: task.payload?.bullet1 || "",
-          bullet2: task.payload?.bullet2 || "",
-          description: task.payload?.description || ""
+        const rawListing = task.listingResult?.en || task.payload?.listing || {};
+        const listing = {
+          brand: rawListing.brand || task.payload?.brand || "",
+          title: rawListing.title || task.payload?.title || "",
+          bullet1: rawListing.bullet1 || task.payload?.bullet1 || "",
+          bullet2: rawListing.bullet2 || task.payload?.bullet2 || "",
+          description: rawListing.description || task.payload?.description || ""
         };
         const quote5 = task.payload?.quote || "";
         const niche1 = task.niche1 || task.customAnswers?.niche1 || "";
@@ -221551,74 +222317,93 @@ Bullets: ${oldBullets}`
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_CHECK_REQUEST",
-          title: "Trademark-Pr\xFCfung (USPTO, EUIPO, DPMA)",
-          content: { fields: listing, niche1, niche2, subniche },
-          metadata: { provider: "Productor TM API" }
+          title: "Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)",
+          content: { fields: listing, niche1, niche2, subniche, quote: quote5 },
+          metadata: { provider: "Productor USPTO / GPT-5.6 Sol" }
         });
-        const audit = await TrademarkService.auditListingAndMetadata({
+        const auditV2 = await TrademarkService.executeTrademarkAuditV2({
           listing,
           quote: quote5,
           niche1,
           niche2,
           subniche,
-          offices: ["USPTO", "EUIPO", "DPMA"]
+          maxRewriteCycles: 3,
+          onEvent: (ev) => {
+            TaskLogService2.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: ev.type,
+              title: ev.title,
+              content: ev.content
+            });
+          }
         });
-        if (audit.isHardReject) {
-          const reason = audit.hardRejectReason || "Klasse 25 Konflikt auf Quote oder Nische.";
+        if (auditV2.finalDecision === "ESCALATE" || !auditV2.isSafe) {
+          const reason = auditV2.reasonCode || "Trademark-Konflikt erfordert manuelle Freigabe.";
           TaskLogService2.updateTaskStatus(taskId, {
             status: "AWAITING_TM_REVIEW",
             checkpoint: "TM_REVIEW",
-            blockedNiceClasses: [25],
+            blockedNiceClasses: auditV2.blockedNiceClasses,
+            blockedProducts: auditV2.blockedProducts,
             trademarkCheckResult: {
-              totalHits: audit.allHits.length,
-              hasInfringementClass25: true,
-              blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
+              totalHits: auditV2.finalTrademarkHits.length,
+              hasInfringementClass25: auditV2.finalDecision === "ESCALATE",
+              blockedProducts: auditV2.blockedProducts,
               fieldSummaries: {}
             },
+            trademarkRefineResult: {
+              verdict: "REJECTED",
+              rejection_reason: reason,
+              actions_taken: auditV2.rewriteIterations.flatMap((i) => i.actionsTaken),
+              blockedProducts: auditV2.blockedProducts,
+              refined_listing: auditV2.finalListing
+            },
             hasError: false,
-            errorDetails: reason
+            errorDetails: reason,
+            ...{ tmAuditV2: auditV2 }
           });
           TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TM_REFINE_RESPONSE",
-            title: "Trademark-Pr\xFCfung: ABGELEHNT (Klasse 25 Konflikt)",
-            content: { reason, verdict: "REJECTED" }
+            type: "TASK_HANDOFF",
+            title: `\xDCbergeben an Tasks (Update TM Eskalation: ${reason})`,
+            content: {
+              checkpoint: "TM_REVIEW",
+              reason,
+              finalDecision: auditV2.finalDecision,
+              totalHits: auditV2.finalTrademarkHits.length,
+              forbiddenTerms: auditV2.forbiddenTermsForTask
+            }
           });
           return { success: false, error: reason };
         }
-        let refinedListing = listing;
-        if (audit.needsRewrite && !audit.isSafe) {
-          const rewriteRes = await LLMService.rewriteListingWithTrademarkFeedback({
-            currentListing: listing,
-            tmHits: audit.allHits,
-            niche1,
-            niche2,
-            subniche,
-            quote: quote5
-          });
-          refinedListing = rewriteRes.refined_listing;
-        }
         TaskLogService2.updateTaskStatus(taskId, {
           status: "UPDATE_TM_CHECKED",
-          listingResult: { en: refinedListing },
-          blockedNiceClasses: audit.blockedNiceClasses,
-          blockedProducts: audit.blockedProducts,
+          listingResult: { en: auditV2.finalListing },
+          blockedNiceClasses: auditV2.blockedNiceClasses,
+          blockedProducts: auditV2.blockedProducts,
           trademarkCheckResult: {
-            totalHits: audit.allHits.length,
+            totalHits: auditV2.finalTrademarkHits.length,
             hasInfringementClass25: false,
-            blockedProducts: audit.blockedProducts,
+            blockedProducts: auditV2.blockedProducts,
             fieldSummaries: {}
           },
-          hasError: false
+          trademarkRefineResult: {
+            verdict: "APPROVED",
+            rejection_reason: null,
+            actions_taken: auditV2.rewriteIterations.flatMap((i) => i.actionsTaken),
+            blockedProducts: auditV2.blockedProducts,
+            refined_listing: auditV2.finalListing
+          },
+          hasError: false,
+          ...{ tmAuditV2: auditV2 }
         });
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_CHECK_RESPONSE",
-          title: `Trademark-Pr\xFCfung abgeschlossen (${audit.allHits.length} Treffer, ${audit.blockedProducts.length} Produkte gesperrt)`,
-          content: { audit, refinedListing },
-          metadata: { provider: "Productor USPTO / EUIPO / DPMA" }
+          title: `Trademark Workflow V2 freigegeben (${auditV2.finalTrademarkHits.length} Treffer, ${auditV2.blockedProducts.length} Produkte gesperrt)`,
+          content: { auditV2, refinedListing: auditV2.finalListing },
+          metadata: { provider: "Productor USPTO / GPT-5.6 Sol" }
         });
-        return { success: true, tmResult: audit };
+        return { success: true, tmResult: auditV2 };
       }
       /**
        * Step U6: SEO Translation (DE, FR, ES, IT, JA) & Hard Sanitizer
@@ -223904,15 +224689,15 @@ Beantworte die Analysefragen streng als JSON!`;
         }
       }
       /**
-       * Automatically audit Trademarks across USPTO, EUIPO, DPMA with Nice Class awareness
-       * Handles Hard-Rejects (Class 25 on quote/niches), Brand rewriting, Product Blocking (Classes 9, 18, 20, 21, 16),
-       * and post-approval localization into DE, FR, ES, IT, JA.
+       * Automatically audit Trademarks via Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)
+       * Handles single common words, multi-word marks, core quote conflicts, up to 3 rewrite cycles with forbidden list,
+       * product blocking, and post-approval localization into DE, FR, ES, IT, JA.
        */
       static async auditListingTrademarks(taskId) {
         const task = this.getTaskLogById(taskId);
         if (!task || !task.listingResult) return;
         const enListing = task.listingResult.en || task.listingResult;
-        let currentFields = {
+        const initialFields = {
           brand: typeof enListing === "object" ? enListing.brand || "" : "",
           title: typeof enListing === "object" ? enListing.title || "" : "",
           bullet1: typeof enListing === "object" ? enListing.bullet1 || "" : "",
@@ -223923,245 +224708,144 @@ Beantworte die Analysefragen streng als JSON!`;
         const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || "";
         const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || "";
         const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || "";
-        const MAX_CHECKS = 4;
         try {
-          for (let checkRound = 1; checkRound <= MAX_CHECKS; checkRound++) {
-            const isInitial = checkRound === 1;
-            const isFinal = checkRound === MAX_CHECKS;
-            console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Markenrechts-Pr\xFCfung Runde ${checkRound}/${MAX_CHECKS} f\xFCr Task ${taskId}...`);
-            this.addEvent(taskId, {
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "TM_CHECK_REQUEST",
-              title: isInitial ? "Senden an Productor (USPTO, EUIPO, DPMA Pr\xFCfung)" : `Senden an Productor (Nachpr\xFCfung Runde ${checkRound})`,
-              content: {
-                round: checkRound,
-                maxRounds: MAX_CHECKS,
-                offices: ["USPTO", "EUIPO", "DPMA"],
-                quote: quote5,
-                niche1,
-                niche2,
-                subniche,
-                fields: { ...currentFields }
-              },
-              metadata: { provider: "Productor TM API" }
-            });
-            const start3 = Date.now();
-            const audit = await TrademarkService.auditListingAndMetadata({
-              listing: currentFields,
-              quote: quote5,
-              niche1,
-              niche2,
-              subniche,
-              offices: ["USPTO", "EUIPO", "DPMA"]
-            });
-            const latencyMs = Date.now() - start3;
-            this.addEvent(taskId, {
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "TM_CHECK_RESPONSE",
-              title: isInitial ? `Empfangen von Productor (${audit.allHits.length} Treffer)` : `Empfangen von Productor (Nachpr\xFCfung Runde ${checkRound}: ${audit.allHits.length} Treffer)`,
-              content: {
-                round: checkRound,
-                totalHits: audit.allHits.length,
-                isHardReject: audit.isHardReject,
-                hardRejectReason: audit.hardRejectReason,
-                isSafe: audit.isSafe,
-                needsRewrite: audit.needsRewrite,
-                brandConflict: audit.brandConflict,
-                titleConflict: audit.titleConflict,
-                blockedNiceClasses: audit.blockedNiceClasses,
-                blockedProducts: audit.blockedProducts,
-                hits: audit.allHits
-              },
-              metadata: { provider: "Productor TM API", latencyMs }
-            });
-            if (audit.isHardReject) {
-              const reason = audit.hardRejectReason || `Klasse 25 Markenrechtsverletzung auf Quote oder Nische.`;
-              this.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "TM_REFINE_RESPONSE",
-                title: "Empfangen von Trademark Auditor (HARD REJECT - Klasse 25 Konflikt)",
-                content: {
-                  verdict: "REJECTED",
-                  rejection_reason: reason,
-                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-                  actions_taken: ["Design verworfen zum Schutz des Merch-Accounts."]
-                }
-              });
-              this.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "TASK_HANDOFF",
-                title: "\xDCbergeben an Tasks (Abgelehnt - Class 25 Trademark)",
-                content: {
-                  checkpoint: "TM_REVIEW",
-                  reason,
-                  verdict: "REJECTED",
-                  round: checkRound,
-                  totalHits: audit.allHits.length
-                }
-              });
-              this.updateTaskStatus(taskId, {
-                status: "AWAITING_TM_REVIEW",
-                checkpoint: "TM_REVIEW",
-                trademarkCheckResult: {
-                  totalHits: audit.allHits.length,
-                  hasInfringementClass25: true,
-                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"],
-                  fieldSummaries: {}
-                },
-                trademarkRefineResult: {
-                  verdict: "REJECTED",
-                  rejection_reason: reason,
-                  blockedProducts: ["ALL_PRODUCTS_BLOCKED"]
-                },
-                hasError: false,
-                errorDetails: reason
-              });
-              return;
-            }
-            if (audit.isSafe || !audit.brandConflict && !audit.titleConflict) {
-              console.log(`[TaskLogService] \u{1F6E1}\uFE0F Master English Listing freigegeben f\xFCr Task ${taskId}! Starte \xDCbersetzung in DE, FR, ES, IT, JA...`);
-              this.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "TRANSLATION_REQUEST",
-                title: "Master English Listing freigegeben -> Starte Multi-Marketplace Lokalisierung",
-                content: {
-                  approvedEnglish: currentFields,
-                  blockedNiceClasses: audit.blockedNiceClasses,
-                  blockedProducts: audit.blockedProducts
-                }
-              });
-              this.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
-              const transStart = Date.now();
-              const translatedListings = await LLMService.translateApprovedListing({
-                englishListing: currentFields,
-                quote: quote5,
-                niche1,
-                subniche
-              });
-              const transLatencyMs = Date.now() - transStart;
-              const sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
-              this.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "TRANSLATION_RESPONSE",
-                title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
-                content: sanitizedListings,
-                metadata: { latencyMs: transLatencyMs }
-              });
-              this.updateTaskStatus(taskId, {
-                status: "CHECKING_TRADEMARKS",
-                listingResult: sanitizedListings,
-                blockedNiceClasses: audit.blockedNiceClasses,
-                blockedProducts: audit.blockedProducts,
-                trademarkCheckResult: {
-                  totalHits: audit.allHits.length,
-                  hasInfringementClass25: false,
-                  blockedProducts: audit.blockedProducts,
-                  fieldSummaries: {}
-                },
-                trademarkRefineResult: {
-                  verdict: "APPROVED",
-                  rejection_reason: null,
-                  actions_taken: ["Listing freigegeben, \xFCbersetzt und durch Hard-Sanitizer bereinigt."],
-                  blockedProducts: audit.blockedProducts,
-                  refined_listing: currentFields
-                },
-                hasError: false
-              });
-              if (task.source === "UPDATE" || task.suffix === "U") {
-                console.log(`[TaskLogService] \u2728 Update-Task ${taskId} Listing freigegeben -> Direkte \xDCbergabe an Queue (keine Vektorisierung n\xF6tig) \u2713`);
-                try {
-                  const { UpdatePipelineService: UpdatePipelineService2 } = (init_updatePipelineService(), __toCommonJS2(updatePipelineService_exports));
-                  UpdatePipelineService2.stepU7_Enqueue(taskId).catch((err) => {
-                    console.error(`[TaskLogService] Fehler bei Step U7 Enqueue f\xFCr ${taskId}:`, err);
-                  });
-                } catch (err) {
-                  console.error(`[TaskLogService] Konnte UpdatePipelineService nicht laden:`, err);
-                }
-                return;
-              }
-              console.log(`[TaskLogService] \u2728 Task ${taskId} Listing freigegeben und lokalisiert -> Starte Vektorisierung \u2713`);
-              this.vectorizeDesignTask(taskId).catch((err) => {
-                console.error(`[TaskLogService] Vektorisierung f\xFCr Task ${taskId} fehlgeschlagen:`, err);
-              });
-              return;
-            }
-            if (isFinal) {
-              const rejectionMsg = `Nach 4 Markenrechtspr\xFCfungen und 3 automatischen Korrekturl\xE4ufen konnten die Treffer in Klasse 25 nicht vollst\xE4ndig eliminiert werden.`;
-              this.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "TASK_HANDOFF",
-                title: "\xDCbergeben an Tasks (Manuelle Trademark-Optimierung)",
-                content: {
-                  checkpoint: "TM_REVIEW",
-                  reason: rejectionMsg,
-                  totalHits: audit.allHits.length
-                }
-              });
-              this.updateTaskStatus(taskId, {
-                status: "AWAITING_TM_REVIEW",
-                checkpoint: "TM_REVIEW",
-                blockedNiceClasses: audit.blockedNiceClasses,
-                blockedProducts: audit.blockedProducts,
-                trademarkCheckResult: {
-                  totalHits: audit.allHits.length,
-                  hasInfringementClass25: true,
-                  blockedProducts: audit.blockedProducts,
-                  fieldSummaries: {}
-                },
-                hasError: false,
-                errorDetails: rejectionMsg
-              });
-              return;
-            }
-            this.addEvent(taskId, {
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "TM_REFINE_REQUEST",
-              title: `Senden an OpenRouter (Trademark Auditor & Refiner - Runde ${checkRound})`,
-              content: {
-                round: checkRound,
-                brandConflict: audit.brandConflict,
-                titleConflict: audit.titleConflict,
-                hits: audit.allHits
-              }
-            });
-            const refineStart = Date.now();
-            const refinedResult = await LLMService.rewriteListingWithTrademarkFeedback({
-              currentListing: currentFields,
-              tmHits: audit.allHits,
-              niche1,
-              niche2,
-              subniche,
-              quote: quote5
-            });
-            const refineLatencyMs = Date.now() - refineStart;
-            this.addEvent(taskId, {
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "TM_REFINE_RESPONSE",
-              title: `Empfangen von OpenRouter (Trademark-Bewertung: ${refinedResult.verdict} in Runde ${checkRound})`,
-              content: refinedResult,
-              metadata: { latencyMs: refineLatencyMs }
-            });
-            if (refinedResult.verdict === "REJECTED") {
-              this.updateTaskStatus(taskId, {
-                status: "AWAITING_TM_REVIEW",
-                checkpoint: "TM_REVIEW",
-                trademarkRefineResult: refinedResult,
-                hasError: false,
-                errorDetails: refinedResult.rejection_reason || "Markenrechtsverletzung festgestellt."
-              });
-              return;
-            }
-            currentFields = { ...refinedResult.refined_listing };
-          }
-        } catch (err) {
-          console.error(`[TaskLogService] Unerwarteter Fehler beim TM Audit f\xFCr Task ${taskId}:`, err);
+          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Trademark Workflow V2 f\xFCr Task ${taskId}...`);
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "ERROR",
-            title: "Fehler beim Trademark Audit",
-            content: err.message || "Fehler bei der USPTO TM Pr\xFCfung"
+            type: "TM_CHECK_REQUEST",
+            title: "Starte Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)",
+            content: { quote: quote5, niche1, niche2, subniche, fields: initialFields }
           });
-          this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+          const auditV2 = await TrademarkService.executeTrademarkAuditV2({
+            listing: initialFields,
+            quote: quote5,
+            niche1,
+            niche2,
+            subniche,
+            maxRewriteCycles: 3,
+            onEvent: (ev) => {
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: ev.type,
+                title: ev.title,
+                content: ev.content
+              });
+            }
+          });
+          if (auditV2.finalDecision === "ESCALATE" || !auditV2.isSafe) {
+            const reason = auditV2.reasonCode || "Trademark-Konflikt erfordert manuelle Freigabe.";
+            console.warn(`[TaskLogService] \u{1F6A8} Task ${taskId} eskaliert zu AWAITING_TM_REVIEW (${reason})`);
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TASK_HANDOFF",
+              title: `\xDCbergeben an Tasks (Eskalation: ${reason})`,
+              content: {
+                checkpoint: "TM_REVIEW",
+                reason,
+                recommendedAction: auditV2.recommendedAction,
+                finalDecision: auditV2.finalDecision,
+                totalHits: auditV2.finalTrademarkHits.length,
+                forbiddenTerms: auditV2.forbiddenTermsForTask
+              }
+            });
+            this.updateTaskStatus(taskId, {
+              status: "AWAITING_TM_REVIEW",
+              checkpoint: "TM_REVIEW",
+              blockedNiceClasses: auditV2.blockedNiceClasses,
+              blockedProducts: auditV2.blockedProducts,
+              trademarkCheckResult: {
+                totalHits: auditV2.finalTrademarkHits.length,
+                hasInfringementClass25: auditV2.finalDecision === "ESCALATE",
+                blockedProducts: auditV2.blockedProducts,
+                fieldSummaries: {}
+              },
+              trademarkRefineResult: {
+                verdict: "REJECTED",
+                rejection_reason: reason,
+                actions_taken: auditV2.rewriteIterations.flatMap((i) => i.actionsTaken),
+                blockedProducts: auditV2.blockedProducts,
+                refined_listing: auditV2.finalListing
+              },
+              hasError: false,
+              errorDetails: reason,
+              ...{ tmAuditV2: auditV2 }
+            });
+            return;
+          }
+          console.log(`[TaskLogService] \u{1F6E1}\uFE0F Master English Listing durch V2 freigegeben (${auditV2.finalDecision})! Starte Lokalisierung...`);
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TRANSLATION_REQUEST",
+            title: "Master English Listing V2 freigegeben -> Starte Multi-Marketplace Lokalisierung",
+            content: {
+              approvedEnglish: auditV2.finalListing,
+              blockedNiceClasses: auditV2.blockedNiceClasses,
+              blockedProducts: auditV2.blockedProducts,
+              finalDecision: auditV2.finalDecision
+            }
+          });
+          this.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
+          const transStart = Date.now();
+          const translatedListings = await LLMService.translateApprovedListing({
+            englishListing: auditV2.finalListing,
+            quote: quote5,
+            niche1,
+            subniche
+          });
+          const transLatencyMs = Date.now() - transStart;
+          const sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TRANSLATION_RESPONSE",
+            title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
+            content: sanitizedListings,
+            metadata: { latencyMs: transLatencyMs }
+          });
+          this.updateTaskStatus(taskId, {
+            status: "CHECKING_TRADEMARKS",
+            listingResult: sanitizedListings,
+            blockedNiceClasses: auditV2.blockedNiceClasses,
+            blockedProducts: auditV2.blockedProducts,
+            trademarkCheckResult: {
+              totalHits: auditV2.finalTrademarkHits.length,
+              hasInfringementClass25: false,
+              blockedProducts: auditV2.blockedProducts,
+              fieldSummaries: {}
+            },
+            trademarkRefineResult: {
+              verdict: "APPROVED",
+              rejection_reason: null,
+              actions_taken: auditV2.rewriteIterations.flatMap((i) => i.actionsTaken),
+              blockedProducts: auditV2.blockedProducts,
+              refined_listing: auditV2.finalListing
+            },
+            hasError: false,
+            ...{ tmAuditV2: auditV2 }
+          });
+          if (task.source === "UPDATE" || task.suffix === "U") {
+            console.log(`[TaskLogService] \u2728 Update-Task ${taskId} Listing freigegeben -> Direkte \xDCbergabe an Queue \u2713`);
+            try {
+              const { UpdatePipelineService: UpdatePipelineService2 } = (init_updatePipelineService(), __toCommonJS2(updatePipelineService_exports));
+              UpdatePipelineService2.stepU7_Enqueue(taskId).catch((err) => {
+                console.error(`[TaskLogService] Fehler bei Step U7 Enqueue f\xFCr ${taskId}:`, err);
+              });
+            } catch (err) {
+              console.error(`[TaskLogService] Konnte UpdatePipelineService nicht laden:`, err);
+            }
+            return;
+          }
+          console.log(`[TaskLogService] \u2728 Task ${taskId} Listing freigegeben und lokalisiert -> Starte Vektorisierung \u2713`);
+          this.vectorizeDesignTask(taskId).catch((err) => {
+            console.error(`[TaskLogService] Vektorisierung f\xFCr Task ${taskId} fehlgeschlagen:`, err);
+          });
+        } catch (err) {
+          console.error(`[TaskLogService] \u274C Unerwarteter Fehler beim TM Audit V2 f\xFCr Task ${taskId}:`, err);
+          this.updateTaskStatus(taskId, {
+            status: "AWAITING_TM_REVIEW",
+            checkpoint: "TM_REVIEW",
+            hasError: false,
+            errorDetails: `Technischer Fehler bei TM-Pr\xFCfung: ${err.message}`
+          });
         }
       }
       static async vectorizeDesignTask(taskId) {
@@ -224845,24 +225529,30 @@ Beantworte die Analysefragen streng als JSON!`;
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
         if (params2.action === "RECHECK") {
-          const listingToCheck = params2.refinedListing || task.listingResult?.en || {};
-          const batchResult = await TrademarkService.checkBatchFields({
-            offices: ["USPTO"],
-            fields: {
-              brand: listingToCheck.brand || "",
-              title: listingToCheck.title || "",
-              bullet1: listingToCheck.bullet1 || "",
-              bullet2: listingToCheck.bullet2 || "",
-              description: listingToCheck.description || "",
-              quote: task.payload?.quote || ""
-            }
+          const listingToCheck = params2.refinedListing || task.listingResult?.en || {
+            brand: "",
+            title: "",
+            bullet1: "",
+            bullet2: "",
+            description: ""
+          };
+          const auditV2 = await TrademarkService.executeTrademarkAuditV2({
+            listing: listingToCheck,
+            quote: task.payload?.quote || "",
+            niche1: task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || "",
+            niche2: task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || "",
+            subniche: task.subniche || task.customAnswers?.subniche || task.payload?.subniche || "",
+            maxRewriteCycles: 0
+            // In manual check, just scan and evaluate the provided text
           });
           return {
             success: true,
-            totalHits: batchResult.summary?.totalHits ?? 0,
-            hasInfringementClass25: batchResult.hasInfringementClass25 || false,
-            blockedProducts: batchResult.blockedProducts || [],
-            fieldSummaries: batchResult.fieldResults || {}
+            auditV2,
+            totalHits: auditV2.finalTrademarkHits.length,
+            hasInfringementClass25: auditV2.finalDecision === "ESCALATE",
+            blockedProducts: auditV2.blockedProducts,
+            decision: auditV2.finalDecision,
+            reasonCode: auditV2.reasonCode
           };
         }
         if (params2.action === "APPROVE") {
@@ -224888,7 +225578,7 @@ Beantworte die Analysefragen streng als JSON!`;
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TM_REFINE_RESPONSE",
-            title: `Task manuell freigegeben (Human Loop) & Vektorisierung gestartet`,
+            title: `Task manuell freigegeben (Human Loop) & \xDCbersetzung/Vektorisierung gestartet`,
             content: {
               verdict: "APPROVED",
               refinedListing: params2.refinedListing,
@@ -224897,6 +225587,10 @@ Beantworte die Analysefragen streng als JSON!`;
           });
           this.saveLogs(this.loadLogs());
           this.emitUpdate(task);
+          const approvedEn = task.listingResult?.en || task.listingResult;
+          const quote5 = task.payload?.quote || "";
+          const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || "";
+          const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || "";
           if (task.source === "UPDATE" || task.suffix === "U" || task.id.endsWith("-U")) {
             console.log(`[TaskLogService] \u2728 Update-Task ${taskId} TM manuell freigegeben -> \xDCbersetzung (U6) und \xDCbergabe an Queue (U7) \u2713`);
             try {
@@ -224909,10 +225603,24 @@ Beantworte die Analysefragen streng als JSON!`;
             }
             return { success: true, message: "Update-Listing freigegeben! \xDCbersetzung & Queue-\xDCbergabe laufen." };
           }
-          this.vectorizeDesignTask(taskId).catch((err) => {
-            console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe f\xFCr Task ${taskId} fehlgeschlagen:`, err);
+          LLMService.translateApprovedListing({
+            englishListing: approvedEn,
+            quote: quote5,
+            niche1,
+            subniche
+          }).then((translatedListings) => {
+            const sanitized = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
+            task.listingResult = sanitized;
+            this.saveLogs(this.loadLogs());
+            this.emitUpdate(task);
+            this.vectorizeDesignTask(taskId).catch((err) => {
+              console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe f\xFCr Task ${taskId} fehlgeschlagen:`, err);
+            });
+          }).catch((err) => {
+            console.error(`[TaskLogService] Fehler bei \xDCbersetzung nach manueller TM-Freigabe f\xFCr Task ${taskId}:`, err);
+            this.vectorizeDesignTask(taskId).catch((vErr) => console.error(vErr));
           });
-          return { success: true, message: "Listing manuell freigegeben und Vektorisierung gestartet." };
+          return { success: true, message: "Listing manuell freigegeben! \xDCbersetzung und Vektorisierung gestartet." };
         }
         if (params2.action === "REJECT") {
           task.status = "REJECTED";

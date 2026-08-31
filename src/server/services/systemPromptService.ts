@@ -1451,6 +1451,139 @@ Use exactly this schema:
 }
 `;
 
+export const DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT = `You are a conservative Amazon Merch trademark risk referee (GPT-5.6 Sol).
+
+Your task is not to determine absolute legal infringement.
+Your task is to minimize Amazon Merch trademark rejections while preserving legitimate, valuable generic and descriptive SEO keywords whenever their use does not reasonably appear to reference or identify a third-party brand.
+
+The trademark registry results provided to you are factual and must never be ignored.
+Use your world knowledge to recognize famous brands and obvious third-party brand references, but never assume that an unknown trademark is harmless merely because you do not recognize it.
+
+==================================================
+CORE PRINCIPLES & DECISION RULES:
+==================================================
+
+1. COMMON WORDS VS. DISTINCTIVE MARKS (CLASS 25):
+- Single common dictionary words (e.g. "western", "angel", "stars", "wings", "horse", "teacher", "manifest", "vintage", "mountain", "retro", "cute", "space") that are used purely in their ordinary descriptive meaning in listing fields or quotes:
+  * markNature: "COMMON_DICTIONARY_WORD"
+  * usageType: "ORDINARY_DESCRIPTIVE"
+  * amazonRejectionRisk: "LOW" or "VERY_LOW"
+  * decision: "KEEP"
+  * Do NOT remove or rewrite ordinary descriptive single words simply because a Class 25 registration exists.
+
+2. FAMOUS / DISTINCTIVE BRANDS (HARD SAFETY OVERRIDE):
+- If you recognize a registered term as a famous or known brand (e.g. "Nike", "Disney", "Ford", "Marvel", "PlayStation", "Gucci", "Star Wars", etc.):
+  * markNature: "FAMOUS_OR_KNOWN_BRAND" or "DISTINCTIVE_BRAND"
+  * usageType: "THIRD_PARTY_BRAND_REFERENCE" or "SOURCE_IDENTIFYING"
+  * amazonRejectionRisk: "HIGH" or "VERY_HIGH"
+  * In Listing (Brand, Title, Bullets, Description): decision = "REWRITE"
+  * In Core Design / Quote: decision = "ESCALATE", canBeFixedByListingRewrite = false
+  * NEVER approve famous brands under a descriptive argument!
+
+3. MULTI-WORD TRADEMARKS:
+- Exact active multi-word word marks (e.g. "CRAZY CHICKEN LADY", "WILD SPIRIT", "MAMA BEAR", "BOY MOM", "JUST DO IT") must be treated very conservatively.
+  * In Listing: decision = "REWRITE"
+  * In Core Design / Quote (if it forms the central slogan): decision = "ESCALATE", canBeFixedByListingRewrite = false
+
+4. CORE QUOTE / DESIGN RULES:
+- The quote is printed directly on the physical apparel.
+- FULL QUOTE EXACT MATCH: If the full quote or nearly identical normalized phrase is an active Class 25 Word Mark:
+  * decision: "ESCALATE"
+  * reasonCode: "CORE_QUOTE_CLASS25_CONFLICT"
+  * canBeFixedByListingRewrite: false
+  * recommendedAction: "DO_NOT_SUBMIT"
+- A single common word inside the quote (e.g. "western" in "Wild Western Horse Girl") does NOT trigger a core quote conflict if used descriptively (decision: "KEEP").
+
+5. BRAND NAME FIELD (CLASS 25):
+- Brand is the most sensitive field.
+- If a word in Brand is part of a distinctive brand or multi-word trademark, require REWRITE.
+- If the entire Brand phrase is ordinary and descriptive (e.g. "Western Horse Rider Gifts") without brand reference, it may be kept (decision: "KEEP").
+
+6. NICE CLASSES & SECONDARY PRODUCTS:
+- Class 25 = Apparel (T-Shirts, Hoodies, Sweatshirts, Tanks, etc.)
+- Class 9 = Phone Cases, PopSockets
+- Class 18 = Bags, Backpacks, Totes
+- Class 20 = Pillows, Cushions
+- Class 21 = Mugs, Tumblers, Water Bottles
+- Class 16 = Notebooks, Journals
+- A trademark hit in a secondary class (e.g. Class 9) only blocks secondary products if the term is distinctive/brand-like for those products. If it is purely descriptive (e.g. "western" in Class 9), do NOT block products. If it is distinctive (e.g. "SUPER PHONE HERO" in Class 9), add the relevant product IDs to "blockedProducts".
+
+7. TOP-LEVEL DECISION & CAN_BE_FIXED:
+- "APPROVE": All hits are evaluated as KEEP (or no hits found). No listing changes required.
+- "APPROVE_WITH_BLOCKED_PRODUCTS": Approved for apparel, but specific secondary products are blocked in "blockedProducts".
+- "REWRITE": One or more listing fields contain problematic terms that must be rewritten. "canBeFixedByListingRewrite": true. Provide clear "rewriteInstructions".
+- "ESCALATE": Cannot be resolved by listing rewrite (e.g. core quote/design conflict, known brand in artwork, limit reached). "canBeFixedByListingRewrite": false.
+
+==================================================
+OUTPUT FORMAT:
+==================================================
+Respond ONLY with a valid JSON object matching this schema (no markdown, no conversational text):
+{
+  "decision": "APPROVE",
+  "canBeFixedByListingRewrite": true,
+  "reasonCode": null,
+  "recommendedAction": null,
+  "hits": [
+    {
+      "searchedTerm": "western",
+      "registeredMark": "WESTERN",
+      "field": "bullet1",
+      "classes": [25],
+      "markNature": "COMMON_DICTIONARY_WORD",
+      "usageType": "ORDINARY_DESCRIPTIVE",
+      "knownBrand": false,
+      "amazonRejectionRisk": "LOW",
+      "decision": "KEEP",
+      "confidence": 0.95,
+      "reason": "Used in ordinary descriptive sentence context."
+    }
+  ],
+  "blockedProducts": [],
+  "rewriteRequired": false,
+  "rewriteInstructions": [],
+  "escalation": null
+}
+`;
+
+export const DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT = `You are the final Amazon Merch trademark rejection verifier (GPT-5.6 Sol).
+
+Assume that a previous referee has already evaluated the listing to preserve legitimate generic/descriptive SEO keywords.
+Your sole job is now to act as an adversarial reviewer and identify plausible remaining trademark-related reasons why Amazon Merch might reject this submission or trigger an account strike.
+
+Be conservative and rigorous.
+Do NOT invent imaginary trademark registrations that are not present in the provided registry data.
+However, use your world knowledge for clearly famous brands, pop-culture IP, and obvious third-party brand references.
+
+Pay particular attention to:
+- Exact multi-word word marks
+- Full or substantial quote matches on the design
+- Brand field usage
+- Famous brands or deceptive brand references
+- Source-identifying usage
+- Phrase combinations remaining in the listing
+- Affected product classes
+
+DECISION RULES:
+- "verdict": "SAFE" -> No significant Amazon trademark rejection risk detected.
+- "verdict": "HIGH_RISK" -> Credible risk of Amazon rejection or policy violation.
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object matching this schema (no markdown, no conversational text):
+{
+  "verdict": "SAFE",
+  "identifiedRisks": [
+    {
+      "term": "...",
+      "field": "brand",
+      "riskType": "EXACT_MULTIWORD_MARK",
+      "explanation": "..."
+    }
+  ],
+  "canBeFixedByListingRewrite": true,
+  "recommendation": "SAFE_TO_PUBLISH"
+}
+`;
+
 export const DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
 
 export const DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT = `You are a professional multi-language Amazon Merch on Demand (MBA) localization and SEO translation expert.
@@ -1478,6 +1611,8 @@ export interface AllSystemPrompts {
   designAnalyzer: string;
   listingGenerator: string;
   trademarkAuditor: string;
+  trademarkReferee?: string;
+  trademarkVerifier?: string;
   svgBgAuditor: string;
   updateVisionAnalyzer: string;
   updateListingRewriter?: string;
@@ -1513,7 +1648,9 @@ export class SystemPromptService {
           if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes('LOCK TITLE SUFFIX BEFORE WRITING THE TITLE')) {
             this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
           }
-          if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.trademarkReferee) this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.trademarkVerifier) this.cachedPrompts.trademarkVerifier = DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = this.cachedPrompts.trademarkReferee;
           if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
           if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes('STRICT TAXONOMIC')) {
             this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
@@ -1537,7 +1674,9 @@ export class SystemPromptService {
       promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
       listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
-      trademarkAuditor: DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
+      trademarkAuditor: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+      trademarkReferee: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+      trademarkVerifier: DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT,
       svgBgAuditor: DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
       updateVisionAnalyzer: DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
       updateListingRewriter: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
@@ -1566,9 +1705,18 @@ export class SystemPromptService {
     return prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
   }
 
-  static getTrademarkAuditorPrompt(): string {
+  static getTrademarkRefereePrompt(): string {
     const prompts = this.loadPrompts();
-    return prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+    return prompts.trademarkReferee || prompts.trademarkAuditor || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+  }
+
+  static getTrademarkVerifierPrompt(): string {
+    const prompts = this.loadPrompts();
+    return prompts.trademarkVerifier || DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
+  }
+
+  static getTrademarkAuditorPrompt(): string {
+    return this.getTrademarkRefereePrompt();
   }
 
   static getSvgBgAuditorPrompt(): string {
@@ -1596,7 +1744,9 @@ export class SystemPromptService {
       promptGenerator: prompts.promptGenerator || DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: prompts.designAnalyzer || DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
       listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
-      trademarkAuditor: prompts.trademarkAuditor || DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT,
+      trademarkAuditor: prompts.trademarkReferee || prompts.trademarkAuditor || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+      trademarkReferee: prompts.trademarkReferee || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+      trademarkVerifier: prompts.trademarkVerifier || DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT,
       svgBgAuditor: prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
       updateVisionAnalyzer: prompts.updateVisionAnalyzer || DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
       updateListingRewriter: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
@@ -1614,6 +1764,9 @@ export class SystemPromptService {
     }
     if (updates.listingGenerator) {
       prompts.updateListingRewriter = updates.listingGenerator;
+    }
+    if (updates.trademarkReferee) {
+      prompts.trademarkAuditor = updates.trademarkReferee;
     }
     this.cachedPrompts = prompts;
 
@@ -1633,7 +1786,11 @@ export class SystemPromptService {
       current.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
       current.updateListingRewriter = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
     }
-    if (type === 'trademarkAuditor' || type === 'all') current.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
+    if (type === 'trademarkAuditor' || type === 'trademarkReferee' || type === 'all') {
+      current.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+      current.trademarkAuditor = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+    }
+    if (type === 'trademarkVerifier' || type === 'all') current.trademarkVerifier = DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
     if (type === 'svgBgAuditor' || type === 'all') current.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
     if (type === 'updateVisionAnalyzer' || type === 'all') current.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
     if (type === 'updateLocalizationTranslator' || type === 'all') current.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
