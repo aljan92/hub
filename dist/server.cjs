@@ -52896,7 +52896,7 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
           const content = data.choices?.[0]?.message?.content?.trim() || "{}";
           const parsed = this.extractJsonFromLlmResponse(content);
           const decision = parsed.decision || "APPROVE";
-          const canBeFixed = parsed.canBeFixedByListingRewrite !== void 0 ? Boolean(parsed.canBeFixedByListingRewrite) : decision === "REWRITE";
+          const canBeFixed = parsed.canBeFixedByListingRewrite !== void 0 ? Boolean(parsed.canBeFixedByListingRewrite) : decision !== "ESCALATE";
           return {
             decision: ["APPROVE", "REWRITE", "APPROVE_WITH_BLOCKED_PRODUCTS", "ESCALATE"].includes(decision) ? decision : "APPROVE",
             canBeFixedByListingRewrite: canBeFixed,
@@ -54153,13 +54153,14 @@ var init_trademarkService = __esm2({
             title: `Trademark Referee: ${refereeRes.decision} (Zyklus ${cycle})`,
             content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits }
           });
-          if (refereeRes.decision === "ESCALATE" || refereeRes.canBeFixedByListingRewrite === false) {
-            console.warn(`[TrademarkServiceV2] \u{1F6A8} Eskalation ausgel\xF6st: ${refereeRes.reasonCode || "CORE_QUOTE_CLASS25_CONFLICT"}`);
+          if (refereeRes.decision === "ESCALATE" || refereeRes.decision === "REWRITE" && refereeRes.canBeFixedByListingRewrite === false) {
+            const reasonCode = refereeRes.reasonCode || (refereeRes.decision === "ESCALATE" ? "CORE_QUOTE_CLASS25_CONFLICT" : "UNFIXABLE_TRADEMARK_CONFLICT");
+            console.warn(`[TrademarkServiceV2] \u{1F6A8} Eskalation ausgel\xF6st: ${reasonCode}`);
             return {
               finalDecision: "ESCALATE",
               isSafe: false,
               canBeFixedByListingRewrite: false,
-              reasonCode: refereeRes.reasonCode || "CORE_QUOTE_CLASS25_CONFLICT",
+              reasonCode,
               recommendedAction: refereeRes.recommendedAction || "DO_NOT_SUBMIT",
               initialTrademarkHits,
               finalTrademarkHits: normalizedHits,

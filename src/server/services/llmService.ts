@@ -589,7 +589,9 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
       const parsed = this.extractJsonFromLlmResponse(content);
 
       const decision = parsed.decision || 'APPROVE';
-      const canBeFixed = parsed.canBeFixedByListingRewrite !== undefined ? Boolean(parsed.canBeFixedByListingRewrite) : (decision === 'REWRITE');
+      const canBeFixed = parsed.canBeFixedByListingRewrite !== undefined 
+        ? Boolean(parsed.canBeFixedByListingRewrite) 
+        : (decision !== 'ESCALATE');
 
       return {
         decision: ['APPROVE', 'REWRITE', 'APPROVE_WITH_BLOCKED_PRODUCTS', 'ESCALATE'].includes(decision) ? decision : 'APPROVE',

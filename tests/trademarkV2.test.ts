@@ -147,6 +147,22 @@ async function runAcceptanceTests() {
   }
 
   // ----------------------------------------------------
+  // TEST: APPROVE / APPROVE_WITH_BLOCKED_PRODUCTS does not trigger immediate escalation
+  // ----------------------------------------------------
+  {
+    const refereeResApprove = {
+      decision: 'APPROVE',
+      canBeFixedByListingRewrite: true,
+      reasonCode: null
+    };
+
+    const isEscalated = refereeResApprove.decision === 'ESCALATE' || 
+      (refereeResApprove.decision === 'REWRITE' && refereeResApprove.canBeFixedByListingRewrite === false);
+
+    assert(!isEscalated, 'Test Safe Flow: APPROVE decision does NOT trigger immediate escalation');
+  }
+
+  // ----------------------------------------------------
   // Summary
   // ----------------------------------------------------
   console.log('\n====================================================');

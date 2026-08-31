@@ -1117,14 +1117,15 @@ export class TrademarkService {
         content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits }
       });
 
-      // A. Check for Immediate Escalation (Core design quote conflict / Unfixable / Famous Brand in artwork)
-      if (refereeRes.decision === 'ESCALATE' || refereeRes.canBeFixedByListingRewrite === false) {
-        console.warn(`[TrademarkServiceV2] 🚨 Eskalation ausgelöst: ${refereeRes.reasonCode || 'CORE_QUOTE_CLASS25_CONFLICT'}`);
+      // A. Check for Immediate Escalation (Only if decision is ESCALATE, or if REWRITE is unfixable due to core quote)
+      if (refereeRes.decision === 'ESCALATE' || (refereeRes.decision === 'REWRITE' && refereeRes.canBeFixedByListingRewrite === false)) {
+        const reasonCode = refereeRes.reasonCode || (refereeRes.decision === 'ESCALATE' ? 'CORE_QUOTE_CLASS25_CONFLICT' : 'UNFIXABLE_TRADEMARK_CONFLICT');
+        console.warn(`[TrademarkServiceV2] 🚨 Eskalation ausgelöst: ${reasonCode}`);
         return {
           finalDecision: 'ESCALATE',
           isSafe: false,
           canBeFixedByListingRewrite: false,
-          reasonCode: refereeRes.reasonCode || 'CORE_QUOTE_CLASS25_CONFLICT',
+          reasonCode,
           recommendedAction: refereeRes.recommendedAction || 'DO_NOT_SUBMIT',
           initialTrademarkHits,
           finalTrademarkHits: normalizedHits,
