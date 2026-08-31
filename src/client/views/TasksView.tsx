@@ -27,6 +27,7 @@ import {
 
 import { DesignTaskLog } from '../../types/tasks';
 import { SvgEditor } from '../components/SvgEditor';
+import { TaskStatusBadge } from '../components/TaskStatusBadge';
 
 // ---------------------------------------------------------------------------
 // Helper: Detailed Word-by-Word Trademark Hits Display per Field
@@ -806,27 +807,7 @@ export const TasksView: React.FC = () => {
                       <div className="space-y-1 overflow-hidden flex-1">
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-[11px] font-bold text-slate-100">{t.id}</span>
-                          {isPreFlight && (
-                            <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-amber-500/20 text-amber-300 rounded border border-amber-500/30">
-                              Quote TM
-                            </span>
-                          )}
-                          {isDesign && (
-                            <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/30">
-                              Design
-                            </span>
-                          )}
-                          {isTm && (
-                            <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
-                              Listing TM
-                            </span>
-                          )}
-                          {isSvg && (
-                            <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30 flex items-center space-x-1">
-                              <Palette className="w-2.5 h-2.5" />
-                              <span>SVG</span>
-                            </span>
-                          )}
+                          <TaskStatusBadge task={t} size="sm" />
                         </div>
 
                         <h4 className="font-semibold text-xs text-slate-200 truncate">
@@ -868,30 +849,7 @@ export const TasksView: React.FC = () => {
 
                   {/* Top Status Badge */}
                   <div>
-                    {activeTask.status === 'AWAITING_PRE_FLIGHT_REVIEW' && (
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Pre-Flight Quote Konflikt</span>
-                      </span>
-                    )}
-                    {(activeTask.status === 'AWAITING_DESIGN_REVIEW' || activeTask.status === 'UPDATE_ANALYZED') && (
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center space-x-1.5">
-                        <Eye className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Design-Prüfung</span>
-                      </span>
-                    )}
-                    {activeTask.status === 'AWAITING_TM_REVIEW' && (
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center space-x-1.5">
-                        <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
-                        <span>Trademark-Prüfung</span>
-                      </span>
-                    )}
-                    {activeTask.status === 'AWAITING_SVG_REVIEW' && (
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center space-x-1.5">
-                        <Palette className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>SVG Hintergrund &amp; Vektor-Prüfung</span>
-                      </span>
-                    )}
+                    <TaskStatusBadge task={activeTask} size="md" />
                   </div>
                 </div>
 

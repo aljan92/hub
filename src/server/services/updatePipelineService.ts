@@ -58,6 +58,8 @@ export class UpdatePipelineService {
       return { success: true, localUrl: task.imageUrl || `/api/v1/designs/image/${encodeURIComponent(taskId)}` };
     }
 
+    TaskLogService.updateTaskStatus(taskId, { status: 'UPDATE_DOWNLOADING_ARTWORK', hasError: false });
+
     const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
     if (!res.success) {
       TaskLogService.updateTaskStatus(taskId, {
@@ -96,7 +98,7 @@ export class UpdatePipelineService {
       return { success: false, error: err };
     }
 
-    TaskLogService.updateTaskStatus(taskId, { status: 'PROCESSING', hasError: false });
+    TaskLogService.updateTaskStatus(taskId, { status: 'ANALYZING_DESIGN', hasError: false });
 
     // Prepare high-contrast 2x2 grid image for vision analysis & UI preview
     let imageBase64: string | null = null;
@@ -247,9 +249,19 @@ export class UpdatePipelineService {
    * Step U4: Listing Rewriting (Master English First)
    */
   static async stepU4_RewriteListing(taskId: string): Promise<{ success: boolean; listingResult?: any; error?: string }> {
-    console.log(`[UpdatePipeline] ✍️ Starte Step U4 (Listing Rewriting) für Task ${taskId}...`);
+    console.log(`[UpdatePipeline] ✍️ Starte Step U4 (Master English Listing Rewrite) für Task ${taskId}...`);
     const task = this.getTask(taskId);
     if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+
+    const settings = loadSettings();
+    const apiKey = settings.openRouterApiKey;
+    if (!apiKey) {
+      const err = 'Kein OpenRouter API-Key in den Einstellungen hinterlegt.';
+      TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: err });
+      return { success: false, error: err };
+    }
+
+    TaskLogService.updateTaskStatus(taskId, { status: 'GENERATING_LISTING', hasError: false });
 
     // Check if rewrite is skipped
     if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
@@ -362,6 +374,8 @@ export class UpdatePipelineService {
     const task = this.getTask(taskId);
     if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
 
+    TaskLogService.updateTaskStatus(taskId, { status: 'CHECKING_TRADEMARKS', hasError: false });
+
     const listing = task.listingResult?.en || {
       brand: task.payload?.brand || '',
       title: task.payload?.title || '',
@@ -464,6 +478,8 @@ export class UpdatePipelineService {
     console.log(`[UpdatePipeline] 🌐 Starte Step U6 (SEO Translation & Sanitizer) für Task ${taskId}...`);
     const task = this.getTask(taskId);
     if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+
+    TaskLogService.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', hasError: false });
 
     const enListing = task.listingResult?.en || {
       brand: task.payload?.brand || '',

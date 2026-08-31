@@ -383,6 +383,20 @@ MBA HUB/
   - **Linke Spalte:** Ideogram Artwork Preview (Aspect-Ratio, 1s Hover-Zoom & Download) & editierbare Prompt-Card (Ideogram 3.0).
   - **Rechte Spalte:** 1. Quote-Prüfung (Soll vs Erkannt mit EXAKT/ABWEICHUNG Badge), 2. Zielgruppe (Fit Types mit Checkmarks), 3. Zu vermeidende Produktfarbe, 4. Hintergrund entfernen (Automatisch/Manuell mit Checkmarks), 5. Maximale Farbanzahl (1-12 Vektorisierung), 6. Nischen-Hierarchie & SEO-Keywords (Hermes vs LLM Direktvergleich, 3 Nischen-Felder, 1 SEO-Keywords-Feld).
 
+### 10.8 🏷️ Einheitliches Pipeline-Status-System & Farb-Mapping (`TaskStatusBadge.tsx`)
+- **Pipeline-sensitive Status-Auflösung:**
+  - Unterscheidet dynamisch zwischen Design-Creation (`-H`, `-T`, `-D`) und Update-Pipeline (`-U`).
+  - Zeigt in Review-Checkpoints zuverlässig `Wartet: Update-Review` bzw. `Wartet: Design-Review` anstelle irreführender Statustexte (`Design bereit`).
+- **Farbpalette der Step-Kategorien:**
+  - **System / Download:** Teal (`bg-teal-500/15 text-teal-300 border-teal-500/30`)
+  - **OpenRouter / Listing / Vision:** Sky / Cyan (`bg-sky-500/15 text-sky-300` / `bg-cyan-500/15 text-cyan-300`)
+  - **Ideogram:** Purple (`bg-purple-500/15 text-purple-300 border-purple-500/30`)
+  - **Trademark:** Amber / Purple (`bg-amber-500/15 text-amber-300` / `bg-purple-500/15 text-purple-300`)
+  - **Vectorizer / SVG:** Pink (`bg-pink-500/15 text-pink-300 border-pink-500/30`)
+  - **Queue / Completed:** Emerald (`bg-emerald-500/15 text-emerald-300 border-emerald-500/30`)
+  - **Error / Rejected:** Rose (`bg-rose-500/15 text-rose-300 border-rose-500/30`)
+- **Aktive Pulse-Animationen & Spinner:** Laufende API-Operationen (Download, Bildgenerierung, Vision-Audit, Listing-Rewrite, Trademark-Check, Übersetzung, Vektorisierung) pulsieren dezent mit rotierendem/animiertem Icon.
+
 
 
 

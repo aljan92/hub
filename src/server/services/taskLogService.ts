@@ -1173,6 +1173,8 @@ export class TaskLogService {
             }
           });
 
+          this.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', hasError: false });
+
           const transStart = Date.now();
           const translatedListings = await LLMService.translateApprovedListing({
             englishListing: currentFields,

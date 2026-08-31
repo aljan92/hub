@@ -43,6 +43,7 @@ import {
   RetryStepType,
   EventCategory 
 } from '../../types/tasks';
+import { TaskStatusBadge, getTaskStatusInfo } from '../components/TaskStatusBadge';
 
 // ---------------------------------------------------------------------------
 // Helper: Event Category & Color System
@@ -1048,65 +1049,7 @@ export const PromptLogView: React.FC = () => {
 
                   {/* Status row */}
                   <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-[10px]">
-                    {task.source === 'UPDATE' ? (
-                      isUpdateDownloading ? (
-                        <span className="text-amber-400 font-semibold animate-pulse flex items-center gap-1">
-                          <RefreshCw className="w-3 h-3 animate-spin" />
-                          Downloading Design...
-                        </span>
-                      ) : task.hasError ? (
-                        <span className="text-rose-400 font-semibold">Download Fehler</span>
-                      ) : (task.imageUrl || task.localImagePath) ? (
-                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                          <Check className="w-3 h-3" />
-                          Design bereit
-                        </span>
-                      ) : (
-                        <span className="text-teal-400 font-semibold">Rohdaten erfasst</span>
-                      )
-                    ) : (
-                      <>
-                        {task.status === 'PROCESSING' && (
-                          <span className="text-amber-400 font-semibold animate-pulse">OpenRouter Prompt...</span>
-                        )}
-                        {task.status === 'GENERATING_IMAGE' && (
-                          <span className="text-purple-400 font-semibold animate-pulse">Ideogram Bild...</span>
-                        )}
-                        {task.status === 'ANALYZING_DESIGN' && (
-                          <span className="text-cyan-400 font-semibold animate-pulse">Vision-Analyse...</span>
-                        )}
-                        {task.status === 'GENERATING_LISTING' && (
-                          <span className="text-emerald-400 font-semibold animate-pulse">MBA Listing...</span>
-                        )}
-                        {task.status === 'CHECKING_TRADEMARKS' && (
-                          <span className="text-amber-400 font-semibold animate-pulse">USPTO TM Check...</span>
-                        )}
-                        {task.status === 'AWAITING_PRE_FLIGHT_REVIEW' && (
-                          <span className="text-amber-400 font-semibold">Wartet: Quote TM</span>
-                        )}
-                        {task.status === 'AWAITING_DESIGN_REVIEW' && (
-                          <span className="text-cyan-300 font-semibold">Wartet: Design</span>
-                        )}
-                        {task.status === 'AWAITING_TM_REVIEW' && (
-                          <span className="text-purple-300 font-semibold">Wartet: TM Review</span>
-                        )}
-                        {task.status === 'VECTORIZING_DESIGN' && (
-                          <span className="text-emerald-400 font-semibold animate-pulse">Vektorisierung...</span>
-                        )}
-                        {task.status === 'AWAITING_SVG_REVIEW' && (
-                          <span className="text-emerald-300 font-semibold">Wartet: SVG Prüfung</span>
-                        )}
-                        {task.status === 'COMPLETED' && (
-                          <span className="text-emerald-400 font-semibold">Abgeschlossen</span>
-                        )}
-                        {task.status === 'REJECTED' && (
-                          <span className="text-rose-400 font-semibold">Abgelehnt</span>
-                        )}
-                        {task.hasError && (
-                          <span className="text-rose-400 font-semibold">Fehler</span>
-                        )}
-                      </>
-                    )}
+                    <TaskStatusBadge task={task} size="sm" />
 
                     <span className="text-slate-500 font-mono">
                       {task.events?.length || 1} Events
@@ -1124,7 +1067,7 @@ export const PromptLogView: React.FC = () => {
             <div className="space-y-5">
               {/* Task Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
-                <div className="flex items-center space-x-2.5">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-sm font-bold text-white bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
                     {selectedTask.id}
                   </span>
@@ -1132,6 +1075,7 @@ export const PromptLogView: React.FC = () => {
                     {getSourceIcon(selectedTask.source)}
                     <span>{selectedTask.source}</span>
                   </span>
+                  <TaskStatusBadge task={selectedTask} size="md" />
                 </div>
                 <div className="flex items-center space-x-3 text-xs text-slate-400 font-mono">
                   {selectedTask.clientIp && (

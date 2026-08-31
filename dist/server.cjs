@@ -220295,6 +220295,7 @@ var init_updatePipelineService = __esm2({
           console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Artwork bereits lokal vorhanden: ${task.localMbaPngPath}`);
           return { success: true, localUrl: task.imageUrl || `/api/v1/designs/image/${encodeURIComponent(taskId)}` };
         }
+        TaskLogService2.updateTaskStatus(taskId, { status: "UPDATE_DOWNLOADING_ARTWORK", hasError: false });
         const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
         if (!res.success) {
           TaskLogService2.updateTaskStatus(taskId, {
@@ -220328,7 +220329,7 @@ var init_updatePipelineService = __esm2({
           TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
-        TaskLogService2.updateTaskStatus(taskId, { status: "PROCESSING", hasError: false });
+        TaskLogService2.updateTaskStatus(taskId, { status: "ANALYZING_DESIGN", hasError: false });
         let imageBase64 = null;
         let gridPreviewUrl;
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -220468,9 +220469,17 @@ Bullets: ${oldBullets}`
        * Step U4: Listing Rewriting (Master English First)
        */
       static async stepU4_RewriteListing(taskId) {
-        console.log(`[UpdatePipeline] \u270D\uFE0F Starte Step U4 (Listing Rewriting) f\xFCr Task ${taskId}...`);
+        console.log(`[UpdatePipeline] \u270D\uFE0F Starte Step U4 (Master English Listing Rewrite) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const settings = loadSettings();
+        const apiKey = settings.openRouterApiKey;
+        if (!apiKey) {
+          const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
+          return { success: false, error: err };
+        }
+        TaskLogService2.updateTaskStatus(taskId, { status: "GENERATING_LISTING", hasError: false });
         if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
           console.log(`[UpdatePipeline] \u23ED\uFE0F Step U4 wird \xFCbersprungen (rewriteNeeded ist false). Verwende altes Listing.`);
           const raw2 = task.payload || {};
@@ -220564,6 +220573,7 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u2696\uFE0F Starte Step U5 (Trademark Check Loop) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        TaskLogService2.updateTaskStatus(taskId, { status: "CHECKING_TRADEMARKS", hasError: false });
         const listing = task.listingResult?.en || {
           brand: task.payload?.brand || "",
           title: task.payload?.title || "",
@@ -220654,6 +220664,7 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u{1F310} Starte Step U6 (SEO Translation & Sanitizer) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        TaskLogService2.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
         const enListing = task.listingResult?.en || {
           brand: task.payload?.brand || "",
           title: task.payload?.title || "",
@@ -222919,6 +222930,7 @@ Beantworte die Analysefragen streng als JSON!`;
                   blockedProducts: audit.blockedProducts
                 }
               });
+              this.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
               const transStart = Date.now();
               const translatedListings = await LLMService.translateApprovedListing({
                 englishListing: currentFields,
