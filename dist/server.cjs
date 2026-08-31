@@ -220167,7 +220167,7 @@ var init_amazonInspectService = __esm2({
           if (["JP", "8", "CO.JP", "AMAZON.CO.JP", "A1VC38T7YXB528"].includes(s)) return "JP";
           return s;
         };
-        const normalizeProductKey = (raw) => {
+        const normalizeProductKey2 = (raw) => {
           const s = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_");
           if (["STANDARD_TSHIRT", "STANDARD_T_SHIRT", "TSHIRT", "STANDARD"].includes(s)) return "STANDARD_TSHIRT";
           if (["VALUE_GRAPHIC_TSHIRT", "VALUE_GRAPHIC_T_SHIRT", "VALUE_TSHIRT", "VALUE_T_SHIRT"].includes(s)) return "VALUE_GRAPHIC_TSHIRT";
@@ -220195,7 +220195,7 @@ var init_amazonInspectService = __esm2({
         let totalConfiguredSlots = 0;
         const productSummary = {};
         for (const [pKey, pVal] of Object.entries(products)) {
-          const normalizedKey = normalizeProductKey(pKey);
+          const normalizedKey = normalizeProductKey2(pKey);
           productTypes.push(normalizedKey);
           const rawMarketplaces = Object.keys(pVal.marketplaceData || {});
           const normalizedMarketplaces = Array.from(new Set(rawMarketplaces.map(normalizeMarketplace)));
@@ -220329,7 +220329,72 @@ var init_amazonInspectService = __esm2({
           const session2 = await BrowserSessionService.getSession("sync");
           newTab = await session2.page.context().newPage();
           await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
-          await newTab.waitForSelector('img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img', { timeout: 25e3 }).catch(() => null);
+          const pageRejectionInfo = await newTab.evaluate(() => {
+            const alertElements = Array.from(document.querySelectorAll('.alert-danger, .alert-warning, .error-banner, .validation-error, [role="alert"]'));
+            const alertText = alertElements.map((a) => a.textContent?.trim() || "").filter(Boolean).join(" | ");
+            const bodyText = document.body.innerText || "";
+            const hasKeywords = /rejected|policy violation|content policy|copyright violation|trademark violation/i.test(bodyText);
+            return {
+              hasAlert: alertElements.length > 0 || hasKeywords,
+              alertText: alertText || (hasKeywords ? "Amazon Rejection / Policy Violation Text auf Seite erkannt" : "")
+            };
+          });
+          let domLiveSummary = {};
+          let totalLiveSlots = 0;
+          let rejectedOrDraftItems = [];
+          try {
+            const selectBtn = await newTab.$('#select-marketplace-button-original, button:has-text("Select Products")');
+            if (selectBtn) {
+              console.log(`[AmazonInspectService] \u{1F50D} \xD6ffne 'Select Products' Popup im DOM f\xFCr Task ${cleanTaskId}...`);
+              await selectBtn.click().catch(() => null);
+              await newTab.waitForSelector(".select-products-table, .modal-body table", { timeout: 1e4 }).catch(() => null);
+              const domResult = await newTab.evaluate(() => {
+                const pubMap = {};
+                let liveCount = 0;
+                const draftOrRej = [];
+                const checkboxes = Array.from(document.querySelectorAll('flowcheckbox[formcontrolname="shouldPublish"], flowcheckbox[class*="-"]'));
+                for (const cb of checkboxes) {
+                  const className = cb.className || "";
+                  const match = className.match(/([A-Z0-9_]+)-([A-Z]{2})/);
+                  if (!match) continue;
+                  const rawProd = match[1];
+                  const mp = match[2].toUpperCase();
+                  const isReadonly = Boolean(
+                    cb.querySelector("span.readonly") || cb.querySelector("input[readonly]") || cb.querySelector("i.sci-check-box") && cb.querySelector("span.readonly")
+                  );
+                  const isChecked = Boolean(cb.querySelector("i.sci-check-box"));
+                  if (isReadonly) {
+                    if (!pubMap[rawProd]) pubMap[rawProd] = [];
+                    if (!pubMap[rawProd].includes(mp)) {
+                      pubMap[rawProd].push(mp);
+                      liveCount++;
+                    }
+                  } else if (isChecked && !isReadonly) {
+                    draftOrRej.push(`${rawProd}-${mp}`);
+                  }
+                }
+                const closeBtn = document.querySelector("button.close, .modal-header button, #select-marketplace-cancel-button");
+                if (closeBtn) {
+                  closeBtn.click();
+                }
+                return { pubMap, liveCount, draftOrRej };
+              });
+              if (domResult && domResult.pubMap) {
+                for (const [rKey, mps] of Object.entries(domResult.pubMap)) {
+                  const normKey = normalizeProductKey(rKey);
+                  domLiveSummary[normKey] = mps;
+                  if (rKey !== normKey) {
+                    domLiveSummary[rKey] = mps;
+                  }
+                }
+                totalLiveSlots = domResult.liveCount;
+                rejectedOrDraftItems = domResult.draftOrRej || [];
+                console.log(`[AmazonInspectService] \u{1F3AF} DOM Live-Inspektion erfolgreich: ${totalLiveSlots} Live-Slots \xFCber ${Object.keys(domLiveSummary).length} Produkte. Rejections/Drafts: ${rejectedOrDraftItems.length}`);
+              }
+            }
+          } catch (domErr) {
+            console.warn(`[AmazonInspectService] \u26A0\uFE0F DOM-Inspektion f\xFCr Select Products fehlgeschlagen (Fallback auf API-Daten):`, domErr.message);
+          }
           const extractResult = await newTab.evaluate(() => {
             const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
             let targetImg = images.find((e) => e.getAttribute("alt") && e.getAttribute("alt").endsWith(".png"));
@@ -220377,27 +220442,45 @@ var init_amazonInspectService = __esm2({
           import_fs78.default.writeFileSync(filePath2, buffer);
           console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
+          const hasRejection = pageRejectionInfo.hasAlert || rejectedOrDraftItems.length > 0;
+          const rejectionReason = pageRejectionInfo.alertText || (rejectedOrDraftItems.length > 0 ? `Nicht publizierte/abgelehnte Produkte erkannt: ${rejectedOrDraftItems.join(", ")}` : null);
+          const currentTask = TaskLogService2.getTask(cleanTaskId);
+          const updatedPayload = {
+            ...currentTask?.payload || {},
+            hasRejection,
+            rejectionReason,
+            publishedCount: Object.keys(domLiveSummary).length > 0 ? totalLiveSlots : currentTask?.payload?.publishedCount ?? totalLiveSlots,
+            productSummary: Object.keys(domLiveSummary).length > 0 ? Object.fromEntries(Object.entries(domLiveSummary).map(([k, mps]) => [k, { marketplaces: mps }])) : currentTask?.payload?.productSummary || {},
+            liveProductSummary: Object.keys(domLiveSummary).length > 0 ? Object.fromEntries(Object.entries(domLiveSummary).map(([k, mps]) => [k, { marketplaces: mps }])) : currentTask?.payload?.liveProductSummary || {},
+            liveProductTypes: Object.keys(domLiveSummary).length > 0 ? Object.keys(domLiveSummary) : currentTask?.payload?.liveProductTypes || []
+          };
           TaskLogService2.updateTaskStatus(cleanTaskId, {
-            status: "RECEIVED",
+            status: hasRejection ? "AWAITING_DESIGN_REVIEW" : "RECEIVED",
             imageUrl: localUrl,
             localImagePath: localUrl,
             mbaPngUrl: localUrl,
             localMbaPngPath: filePath2,
+            payload: updatedPayload,
+            needsManualReview: hasRejection,
             hasError: false
           });
           TaskLogService2.addEvent(cleanTaskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ANALYSIS_RESPONSE",
-            title: "Original-Design heruntergeladen",
+            title: hasRejection ? "\u26A0\uFE0F Original-Design heruntergeladen & Amazon-Rejection erkannt" : "Original-Design heruntergeladen & Live-Produkte verifiziert",
             content: {
               localUrl,
               originalUrl: extractResult.fullResUrl,
               fileSizeBytes: buffer.length,
               fileSizeMb: (buffer.length / 1024 / 1024).toFixed(2) + " MB",
-              downloadedAt: (/* @__PURE__ */ new Date()).toISOString()
+              downloadedAt: (/* @__PURE__ */ new Date()).toISOString(),
+              domLiveSummary,
+              totalLiveSlots,
+              hasRejection,
+              rejectionReason
             }
           });
-          return { success: true, localUrl };
+          return { success: true, localUrl, hasRejection, rejectionReason };
         } catch (err) {
           console.error(`[AmazonInspectService] \u274C Fehler beim Artwork-Download f\xFCr Task ${cleanTaskId}:`, err);
           TaskLogService2.updateTaskStatus(cleanTaskId, {
@@ -221013,17 +221096,22 @@ Bullets: ${oldBullets}`
         const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
         const isDefective = u3.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || u3.analysisResult?.overall_verdict === "REJECTED";
         const qualityReason = u3.analysisResult?.design_quality?.quality_issues;
-        if (!autonomyUpdate || isDefective) {
-          const pauseReason = isDefective ? `\u26A0\uFE0F Mangelhafte Design-Qualit\xE4t erkannt (${qualityReason || "Kantenfehler/Halos/Artefakte"}). Autonomie pausiert zur manuellen Sichtpr\xFCfung.` : "Vision-Analyse abgeschlossen. Wartet auf manuelle Pr\xFCfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.";
-          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Pr\xFCfung) in Tasks: ${pauseReason}`);
+        const taskCurrent = this.getTask(taskId);
+        const hasRejection = Boolean(taskCurrent?.payload?.hasRejection);
+        const rejectionReason = taskCurrent?.payload?.rejectionReason;
+        if (!autonomyUpdate || isDefective || hasRejection) {
+          const pauseReason = hasRejection ? `\u26A0\uFE0F Amazon Rejection / Richtlinien-Hinweis auf Amazon festgestellt (${rejectionReason || "Mindestens ein Produkt/Marktplatz abgelehnt oder beanstandet"}). Autonomie gestoppt zur manuellen Freigabe in Tasks.` : isDefective ? `\u26A0\uFE0F Mangelhafte Design-Qualit\xE4t erkannt (${qualityReason || "Kantenfehler/Halos/Artefakte"}). Autonomie pausiert zur manuellen Sichtpr\xFCfung.` : "Vision-Analyse abgeschlossen. Wartet auf manuelle Pr\xFCfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.";
+          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} pausiert bei Checkpoint 2 (Design- & Rejection-Pr\xFCfung) in Tasks: ${pauseReason}`);
           TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
-            title: isDefective ? "\u26A0\uFE0F Qualit\xE4tswarnung: \xDCbergeben an Tasks" : "\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)",
+            title: hasRejection ? "\u26A0\uFE0F Amazon Rejection erkannt: \xDCbergeben an Tasks zur manuellen Freigabe" : isDefective ? "\u26A0\uFE0F Qualit\xE4tswarnung: \xDCbergeben an Tasks" : "\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)",
             content: {
               checkpoint: "DESIGN_REVIEW",
               reason: pauseReason,
-              isApproved: !isDefective,
+              hasRejection,
+              rejectionReason,
+              isApproved: !isDefective && !hasRejection,
               analysis: u3.analysisResult,
               isDefective,
               qualityIssues: qualityReason
@@ -221033,7 +221121,8 @@ Bullets: ${oldBullets}`
             status: "AWAITING_DESIGN_REVIEW",
             checkpoint: "DESIGN_REVIEW",
             analysisResult: u3.analysisResult,
-            hasError: isDefective
+            needsManualReview: true,
+            hasError: isDefective || hasRejection
           });
           return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: "DESIGN_REVIEW" };
         }

@@ -44,6 +44,18 @@ export const getTaskStatusInfo = (task: DesignTaskLog): TaskStatusInfo => {
     };
   }
 
+  // 1.5 Amazon Rejection Detected (Special priority for update tasks)
+  if (task.payload?.hasRejection && task.status !== 'COMPLETED' && task.status !== 'UPDATE_QUEUED') {
+    return {
+      label: '⚠️ Amazon Rejection',
+      badgeClass: 'bg-rose-500/20 text-rose-200 border-rose-500/50 font-bold shadow-sm animate-pulse',
+      dotBg: 'bg-rose-500',
+      category: 'ERROR',
+      icon: <AlertTriangle className="w-3 h-3 text-rose-400" />,
+      isAnimated: true
+    };
+  }
+
   // 2. Rejected state
   if (task.status === 'REJECTED') {
     return {

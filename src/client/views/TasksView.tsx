@@ -990,6 +990,19 @@ export const TasksView: React.FC = () => {
                             </div>
                           </div>
 
+                          {/* Amazon Rejection Alert Banner if detected on Amazon */}
+                          {Boolean(activeTask.payload?.hasRejection) && (
+                            <div className="bg-rose-950/40 p-3.5 rounded-xl border border-rose-500/60 ring-1 ring-rose-500/30 text-xs shadow-lg space-y-1.5 animate-pulse">
+                              <div className="flex items-center gap-2 text-rose-300 font-bold text-xs uppercase tracking-wider">
+                                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                                <span>⚠️ Amazon Rejection / Policy-Warnung</span>
+                              </div>
+                              <p className="text-rose-200/90 text-[11px] leading-relaxed">
+                                {activeTask.payload?.rejectionReason || 'Für dieses Design wurden auf Amazon abgelehnte Produkte oder Richtlinienhinweise festgestellt. Bitte vor dem Upload gründlich manuell prüfen!'}
+                              </p>
+                            </div>
+                          )}
+
                           {/* Original Amazon Listing Card: Brand, Title, Bullets, Description */}
                           {(() => {
                             const oldListing = extractOldAmazonListing(activeTask);

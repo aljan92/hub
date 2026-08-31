@@ -679,21 +679,30 @@ export class UpdatePipelineService {
     const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
     const isDefective = u3.analysisResult?.design_quality?.quality_verdict === 'DEFECTIVE' || u3.analysisResult?.overall_verdict === 'REJECTED';
     const qualityReason = u3.analysisResult?.design_quality?.quality_issues;
+    const taskCurrent = this.getTask(taskId);
+    const hasRejection = Boolean(taskCurrent?.payload?.hasRejection);
+    const rejectionReason = taskCurrent?.payload?.rejectionReason;
 
-    if (!autonomyUpdate || isDefective) {
-      const pauseReason = isDefective
-        ? `⚠️ Mangelhafte Design-Qualität erkannt (${qualityReason || 'Kantenfehler/Halos/Artefakte'}). Autonomie pausiert zur manuellen Sichtprüfung.`
-        : 'Vision-Analyse abgeschlossen. Wartet auf manuelle Prüfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.';
+    if (!autonomyUpdate || isDefective || hasRejection) {
+      const pauseReason = hasRejection
+        ? `⚠️ Amazon Rejection / Richtlinien-Hinweis auf Amazon festgestellt (${rejectionReason || 'Mindestens ein Produkt/Marktplatz abgelehnt oder beanstandet'}). Autonomie gestoppt zur manuellen Freigabe in Tasks.`
+        : isDefective
+          ? `⚠️ Mangelhafte Design-Qualität erkannt (${qualityReason || 'Kantenfehler/Halos/Artefakte'}). Autonomie pausiert zur manuellen Sichtprüfung.`
+          : 'Vision-Analyse abgeschlossen. Wartet auf manuelle Prüfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.';
 
-      console.log(`[UpdatePipeline] 🛑 Task ${taskId} pausiert bei Checkpoint 2 (Design- & Fragen-Prüfung) in Tasks: ${pauseReason}`);
+      console.log(`[UpdatePipeline] 🛑 Task ${taskId} pausiert bei Checkpoint 2 (Design- & Rejection-Prüfung) in Tasks: ${pauseReason}`);
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TASK_HANDOFF',
-        title: isDefective ? '⚠️ Qualitätswarnung: Übergeben an Tasks' : 'Übergeben an Tasks (Design- & Fragen-Prüfung)',
+        title: hasRejection 
+          ? '⚠️ Amazon Rejection erkannt: Übergeben an Tasks zur manuellen Freigabe'
+          : (isDefective ? '⚠️ Qualitätswarnung: Übergeben an Tasks' : 'Übergeben an Tasks (Design- & Fragen-Prüfung)'),
         content: {
           checkpoint: 'DESIGN_REVIEW',
           reason: pauseReason,
-          isApproved: !isDefective,
+          hasRejection,
+          rejectionReason,
+          isApproved: !isDefective && !hasRejection,
           analysis: u3.analysisResult,
           isDefective,
           qualityIssues: qualityReason
@@ -704,7 +713,8 @@ export class UpdatePipelineService {
         status: 'AWAITING_DESIGN_REVIEW',
         checkpoint: 'DESIGN_REVIEW',
         analysisResult: u3.analysisResult,
-        hasError: isDefective
+        needsManualReview: true,
+        hasError: isDefective || hasRejection
       });
 
       return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: 'DESIGN_REVIEW' };

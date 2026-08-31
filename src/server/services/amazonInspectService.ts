@@ -490,10 +490,91 @@ export class AmazonInspectService {
       // Navigate to edit page
       await newTab.goto(editUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
-      // Wait for the artwork image to render in DOM
-      await newTab.waitForSelector('img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img', { timeout: 25000 }).catch(() => null);
+      // 1. Check for page-level rejection banners or policy violations
+      const pageRejectionInfo = await newTab.evaluate(() => {
+        const alertElements = Array.from(document.querySelectorAll('.alert-danger, .alert-warning, .error-banner, .validation-error, [role="alert"]'));
+        const alertText = alertElements.map(a => a.textContent?.trim() || '').filter(Boolean).join(' | ');
+        const bodyText = document.body.innerText || '';
+        const hasKeywords = /rejected|policy violation|content policy|copyright violation|trademark violation/i.test(bodyText);
+        return {
+          hasAlert: alertElements.length > 0 || hasKeywords,
+          alertText: alertText || (hasKeywords ? 'Amazon Rejection / Policy Violation Text auf Seite erkannt' : '')
+        };
+      });
 
-      // Extract high-res image URL from DOM
+      // 2. Open "Select Products" modal to inspect exact live matrix from DOM
+      let domLiveSummary: Record<string, string[]> = {};
+      let totalLiveSlots = 0;
+      let rejectedOrDraftItems: string[] = [];
+
+      try {
+        const selectBtn = await newTab.$('#select-marketplace-button-original, button:has-text("Select Products")');
+        if (selectBtn) {
+          console.log(`[AmazonInspectService] 🔍 Öffne 'Select Products' Popup im DOM für Task ${cleanTaskId}...`);
+          await selectBtn.click().catch(() => null);
+          await newTab.waitForSelector('.select-products-table, .modal-body table', { timeout: 10000 }).catch(() => null);
+
+          const domResult = await newTab.evaluate(() => {
+            const pubMap: Record<string, string[]> = {};
+            let liveCount = 0;
+            const draftOrRej: string[] = [];
+
+            const checkboxes = Array.from(document.querySelectorAll('flowcheckbox[formcontrolname="shouldPublish"], flowcheckbox[class*="-"]'));
+            for (const cb of checkboxes) {
+              const className = cb.className || '';
+              const match = className.match(/([A-Z0-9_]+)-([A-Z]{2})/);
+              if (!match) continue;
+
+              const rawProd = match[1];
+              const mp = match[2].toUpperCase();
+
+              const isReadonly = Boolean(
+                cb.querySelector('span.readonly') ||
+                cb.querySelector('input[readonly]') ||
+                (cb.querySelector('i.sci-check-box') && cb.querySelector('span.readonly'))
+              );
+              const isChecked = Boolean(cb.querySelector('i.sci-check-box'));
+
+              if (isReadonly) {
+                if (!pubMap[rawProd]) pubMap[rawProd] = [];
+                if (!pubMap[rawProd].includes(mp)) {
+                  pubMap[rawProd].push(mp);
+                  liveCount++;
+                }
+              } else if (isChecked && !isReadonly) {
+                // Checked but not locked as readonly -> rejected item or unapproved draft
+                draftOrRej.push(`${rawProd}-${mp}`);
+              }
+            }
+
+            // Close modal cleanly
+            const closeBtn = document.querySelector('button.close, .modal-header button, #select-marketplace-cancel-button') as HTMLElement;
+            if (closeBtn) {
+              closeBtn.click();
+            }
+
+            return { pubMap, liveCount, draftOrRej };
+          });
+
+          if (domResult && domResult.pubMap) {
+            // Normalize product keys
+            for (const [rKey, mps] of Object.entries<string[]>(domResult.pubMap)) {
+              const normKey = normalizeProductKey(rKey);
+              domLiveSummary[normKey] = mps;
+              if (rKey !== normKey) {
+                domLiveSummary[rKey] = mps;
+              }
+            }
+            totalLiveSlots = domResult.liveCount;
+            rejectedOrDraftItems = domResult.draftOrRej || [];
+            console.log(`[AmazonInspectService] 🎯 DOM Live-Inspektion erfolgreich: ${totalLiveSlots} Live-Slots über ${Object.keys(domLiveSummary).length} Produkte. Rejections/Drafts: ${rejectedOrDraftItems.length}`);
+          }
+        }
+      } catch (domErr: any) {
+        console.warn(`[AmazonInspectService] ⚠️ DOM-Inspektion für Select Products fehlgeschlagen (Fallback auf API-Daten):`, domErr.message);
+      }
+
+      // 3. Extract high-res image URL from DOM
       const extractResult = await newTab.evaluate(() => {
         const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
         let targetImg = images.find(e => e.getAttribute('alt') && e.getAttribute('alt')!.endsWith('.png'));
@@ -557,30 +638,57 @@ export class AmazonInspectService {
 
       const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
 
-      // Update TaskLog with paths and status
+      // Determine rejection flag
+      const hasRejection = pageRejectionInfo.hasAlert || rejectedOrDraftItems.length > 0;
+      const rejectionReason = pageRejectionInfo.alertText || (rejectedOrDraftItems.length > 0 ? `Nicht publizierte/abgelehnte Produkte erkannt: ${rejectedOrDraftItems.join(', ')}` : null);
+
+      // Update Task in TaskLogService with true DOM-scanned product summary & rejection status
+      const currentTask = TaskLogService.getTask(cleanTaskId);
+      const updatedPayload = {
+        ...(currentTask?.payload || {}),
+        hasRejection,
+        rejectionReason,
+        publishedCount: Object.keys(domLiveSummary).length > 0 ? totalLiveSlots : (currentTask?.payload?.publishedCount ?? totalLiveSlots),
+        productSummary: Object.keys(domLiveSummary).length > 0 
+          ? Object.fromEntries(Object.entries(domLiveSummary).map(([k, mps]) => [k, { marketplaces: mps }]))
+          : (currentTask?.payload?.productSummary || {}),
+        liveProductSummary: Object.keys(domLiveSummary).length > 0 
+          ? Object.fromEntries(Object.entries(domLiveSummary).map(([k, mps]) => [k, { marketplaces: mps }]))
+          : (currentTask?.payload?.liveProductSummary || {}),
+        liveProductTypes: Object.keys(domLiveSummary).length > 0 ? Object.keys(domLiveSummary) : (currentTask?.payload?.liveProductTypes || [])
+      };
+
       TaskLogService.updateTaskStatus(cleanTaskId, {
-        status: 'RECEIVED',
+        status: hasRejection ? 'AWAITING_DESIGN_REVIEW' : 'RECEIVED',
         imageUrl: localUrl,
         localImagePath: localUrl,
         mbaPngUrl: localUrl,
         localMbaPngPath: filePath,
+        payload: updatedPayload,
+        needsManualReview: hasRejection,
         hasError: false
       });
 
       TaskLogService.addEvent(cleanTaskId, {
         timestamp: new Date().toISOString(),
         type: 'ANALYSIS_RESPONSE',
-        title: 'Original-Design heruntergeladen',
+        title: hasRejection 
+          ? '⚠️ Original-Design heruntergeladen & Amazon-Rejection erkannt'
+          : 'Original-Design heruntergeladen & Live-Produkte verifiziert',
         content: {
           localUrl,
           originalUrl: extractResult.fullResUrl,
           fileSizeBytes: buffer.length,
           fileSizeMb: (buffer.length / 1024 / 1024).toFixed(2) + ' MB',
-          downloadedAt: new Date().toISOString()
+          downloadedAt: new Date().toISOString(),
+          domLiveSummary,
+          totalLiveSlots,
+          hasRejection,
+          rejectionReason
         }
       });
 
-      return { success: true, localUrl };
+      return { success: true, localUrl, hasRejection, rejectionReason };
     } catch (err: any) {
       console.error(`[AmazonInspectService] ❌ Fehler beim Artwork-Download für Task ${cleanTaskId}:`, err);
       TaskLogService.updateTaskStatus(cleanTaskId, {

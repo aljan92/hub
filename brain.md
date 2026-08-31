@@ -437,11 +437,19 @@ MBA HUB/
   - **Schnellerer Cache:** Cache-TTL auf 10s verkürzt für maximale Aktualität.
   - **Manueller 1-Click Refresh:** In der Queue-Card (Tages-Uploads) befindet sich nun ein Refresh-Button (`POST /api/v1/queue/refresh-slots`), der sofort live die aktuellsten Slots von Amazon abruft.
 
-### 10.13 🎯 Granulare Marktplatz-Delta-Berechnung für Update-Tasks (`QueueService` & `AmazonInspectService`)
-- **Problemursache:**
-  - Zuvor wurde ein Produkt bei Update-Tasks binär als "bereits live" gewertet, wenn es auf mindestens einem Marktplatz (z. B. nur `US`) existierte. Dadurch wurden die fehlenden Marktplätze (`GB`, `DE`, `FR`, `IT`, `ES`) mit 0 Slots kalkuliert.
-- **Lösung & Delta-Matrix:**
-  - **API-Vorababfrage:** Über `AmazonInspectService.inspectProductConfig(designId)` (`/api/productconfiguration/get?id=...`) fragt der Bot vorab die genaue Amazon-Konfiguration mit `marketplaceData` für jedes Produkt ab.
-  - **Normalisierung der Marktplatz-Codes:** Codes wie `1`, `ATVPDKIKX0DER`, `com` werden sauber zu `US`, `GB`, `DE`, `FR`, `IT`, `ES`, `JP` standardisiert.
-  - **Marktplatz-Differenz (Delta):** Für jedes Katalogprodukt wird die Differenz zwischen Katalog-Marktplätzen und Live-Marktplätzen berechnet (`missingMps = catalogMps.filter(mp => !liveMps.includes(mp))`).
-  - **Exakter Slot-Bedarf:** `totalBaseSlots` und `activeProductsMap` reflektieren nun exakt die Anzahl und Ziel-Marktplätze der tatsächlich noch fehlenden Produkte/Marktplätze.
+### 10.14 🔍 DOM-basierte Live-Matrix-Inspektion & Rejection-Sicherheitsprüfung bei Update-Tasks
+- **Hintergrund & Problemstellung:**
+  - Die Amazon API `productconfiguration/get` liefert oft nur den Entwurfs- bzw. Preset-Zustand des Designs (z. B. Standard T-Shirt mit allen Marktplätzen vorgewählt), selbst wenn auf Amazon nur 3 Marktplätze publiziert wurden oder Produkte abgelehnt wurden.
+- **Lösung & DOM-Inspektion beim Artwork-Download:**
+  - **Ein kombinierter Aufruf:** Beim ohnehin stattfindenden Artwork-Download auf `merch.amazon.com/designs/{designId}/edit` öffnet der Bot via Playwright das Modal `#select-marketplace-button-original` („Select Products“).
+  - **100% deterministischer DOM-Scan:**
+    - Liest alle `<flowcheckbox formcontrolname="shouldPublish">` mit Klassen wie `STANDARD_TSHIRT-GB`.
+    - Ist `span.readonly` oder `input[readonly]` vorhanden, ist das Produkt auf diesem Marktplatz **garantiert live auf Amazon** (`liveProductSummary[prodKey] = [countries...]`).
+    - Ist eine Checkbox markiert (`sci-check-box`), aber **nicht** `readonly`, deutet dies auf ein unpubliziertes, beanstandetes oder abgelehntes Produkt hin.
+  - **Rejection-Sicherheitsprüfung & Task-Stopp:**
+    - Werden auf der Seite oder im Modal Rejection-Hinweise (z. B. Policy Violations, Error Banners, Rejections) festgestellt, setzt der Bot `hasRejection = true`.
+    - **Manueller Stopp:** Der Task wird zwingend in den **Manual Task Review** (`needsManualReview: true`, `status: 'AWAITING_DESIGN_REVIEW'`) geschoben – selbst wenn der Trademark-Check grün ist.
+    - Im Frontend wird ein gut sichtbares Warnbanner (`⚠️ Amazon Rejection / Policy-Warnung`) eingeblendet.
+- **Exakte zweifarbige Queue-Darstellung:**
+  - Die Queue nutzt diese reale DOM-Matrix: Bereits live-geschaltete Marktplätze werden dunkelgrau/grün mit Häkchen (`US ✓`, `DE ✓`, `GB ✓`) angezeigt (0 Slots), während neu zu uploadende Marktplätze lila hervorgehoben (`+ FR`, `+ IT`, `+ ES`) mit dem echten Mehrbedarf kalkuliert werden.
+
