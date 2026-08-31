@@ -221408,13 +221408,13 @@ var init_updateBackfillService = __esm2({
         const excludedIds = this.getExcludedDesignIds(extraExcludedIds);
         const maxActiveProducts = settings.queueUpdateMaxActiveProducts ?? 100;
         console.log(`[UpdateBackfillService] \u{1F50D} Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
-        const { data: candidates, error } = await supabase.from("mba_designs").select("design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status").eq("status", "PUBLISHED").not("published_products", "is", null).order("updated_date", { ascending: true, nullsFirst: true }).limit(300);
+        const { data: candidates, error } = await supabase.from("mba_designs").select("design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status, sales_total").eq("status", "PUBLISHED").not("published_products", "is", null).or("sales_total.eq.0,sales_total.is.null").order("updated_date", { ascending: true, nullsFirst: true }).limit(300);
         if (error) {
           console.error("[UpdateBackfillService] \u274C Supabase Abfrage-Fehler:", error.message);
           return null;
         }
         if (!candidates || candidates.length === 0) {
-          console.log('[UpdateBackfillService] \u2139\uFE0F Keine Designs mit status="PUBLISHED" und gef\xFCllter published_products Spalte in mba_designs gefunden.');
+          console.log('[UpdateBackfillService] \u2139\uFE0F Keine Designs mit status="PUBLISHED", 0 Sales und gef\xFCllter published_products Spalte in mba_designs gefunden.');
           return null;
         }
         for (const cand of candidates) {
@@ -221424,6 +221424,11 @@ var init_updateBackfillService = __esm2({
             continue;
           }
           if (excludedIds.has(dId)) {
+            continue;
+          }
+          const salesTotal = Number(cand.sales_total ?? 0);
+          if (salesTotal > 0) {
+            console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: ${salesTotal} Verk\xE4ufe vorhanden (nur Designs mit 0 Sales erlaubt).`);
             continue;
           }
           let activeCount = 0;
@@ -221441,7 +221446,7 @@ var init_updateBackfillService = __esm2({
             console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: Bereits ${activeCount} aktive Produkte (Limit: < ${maxActiveProducts}).`);
             continue;
           }
-          console.log(`[UpdateBackfillService] \u{1F3AF} Valider Kandidat gefunden: Design ${dId} (${activeCount} aktive Produkte in published_products, zuletzt geupdatet: ${cand.updated_date || "nie"}).`);
+          console.log(`[UpdateBackfillService] \u{1F3AF} Valider Kandidat gefunden: Design ${dId} (0 Sales, ${activeCount} aktive Produkte in published_products, zuletzt geupdatet: ${cand.updated_date || "nie"}).`);
           return {
             designId: dId,
             activeProductsCount: activeCount,
@@ -228077,6 +228082,22 @@ app.post("/api/v1/products/color-avoid-rule", (req, res) => {
       success: true,
       catalog,
       message: `Farbregel f\xFCr ${colorId} auf ${validRule} gesetzt.`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/products/nice-class", (req, res) => {
+  try {
+    const { productId, niceClass } = req.body;
+    if (!productId || typeof niceClass !== "number" || isNaN(niceClass)) {
+      return res.status(400).json({ success: false, error: "productId und niceClass (number) erforderlich" });
+    }
+    const catalog = ProductCatalogService.updateProductNiceClass(productId, niceClass);
+    res.json({
+      success: true,
+      catalog,
+      message: `Nizza-Klasse f\xFCr ${productId} auf Kl. ${niceClass} aktualisiert.`
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

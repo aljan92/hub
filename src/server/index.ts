@@ -1819,6 +1819,24 @@ app.post('/api/v1/products/color-avoid-rule', (req, res) => {
   }
 });
 
+// Update Nice Class for a product
+app.post('/api/v1/products/nice-class', (req, res) => {
+  try {
+    const { productId, niceClass } = req.body;
+    if (!productId || typeof niceClass !== 'number' || isNaN(niceClass)) {
+      return res.status(400).json({ success: false, error: 'productId und niceClass (number) erforderlich' });
+    }
+    const catalog = ProductCatalogService.updateProductNiceClass(productId, niceClass);
+    res.json({
+      success: true,
+      catalog,
+      message: `Nizza-Klasse für ${productId} auf Kl. ${niceClass} aktualisiert.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ==============================================================================
 // 12. Product Database & CDP Scanner API
 // ==============================================================================

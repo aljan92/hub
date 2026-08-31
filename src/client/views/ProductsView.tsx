@@ -277,6 +277,26 @@ export const ProductsView: React.FC = () => {
     }
   };
 
+  const handleUpdateNiceClass = async (productId: string, newClass: number) => {
+    const updatedProducts = products.map(p => {
+      if (p.id === productId) {
+        return { ...p, niceClass: newClass };
+      }
+      return p;
+    });
+    setProducts(updatedProducts);
+
+    try {
+      await fetch('/api/v1/products/nice-class', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, niceClass: newClass })
+      });
+    } catch (err) {
+      console.error('Nice class update error:', err);
+    }
+  };
+
   const handleCopyColor = (colorId: string) => {
     navigator.clipboard.writeText(colorId);
     setCopiedColor(colorId);
@@ -646,6 +666,46 @@ export const ProductsView: React.FC = () => {
                     <span className="px-3 py-1 rounded-xl text-xs font-bold font-mono bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30">
                       {selectedProduct.availableMarketplaces.length} Marktplatz-Slots
                     </span>
+                  </div>
+                </div>
+
+                {/* Nice Trademark Class Configuration Box */}
+                <div className="bg-slate-900/80 border border-indigo-500/30 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 shrink-0">
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-100 flex items-center gap-2">
+                          <span>Nizza-Klasse (Trademark Schutz)</span>
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                            Klasse {selectedProduct.niceClass || 25}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          Bestimmt, bei welchen Trademark-Klassenkonflikten dieses Produkt gezielt freigegeben oder gesperrt wird.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <select
+                        value={selectedProduct.niceClass || 25}
+                        onChange={(e) => handleUpdateNiceClass(selectedProduct.id, Number(e.target.value))}
+                        className="bg-slate-800 border border-indigo-500/40 rounded-xl px-3 py-1.5 text-xs text-indigo-200 font-bold focus:outline-none focus:border-indigo-400 shadow-inner cursor-pointer"
+                      >
+                        <option value={25}>Kl. 25 – Bekleidung &amp; Textilien (Shirts, Hoodies, Pullover, Tank Tops)</option>
+                        <option value={18}>Kl. 18 – Taschen, Rucksäcke &amp; Lederwaren (Tote Bag, Sport-Rucksack)</option>
+                        <option value={20}>Kl. 20 – Möbel, Kissen &amp; Wohnen (Throw Pillow)</option>
+                        <option value={21}>Kl. 21 – Trinkbehälter &amp; Haushaltswaren (Tumbler, Tassen, Flaschen)</option>
+                        <option value={9}>Kl. 9 – Elektronik &amp; Cases (iPhone &amp; Samsung Cases, PopSockets)</option>
+                        <option value={16}>Kl. 16 – Papier- &amp; Schreibwaren (Hardcover Journal)</option>
+                        <option value={14}>Kl. 14 – Schmuck &amp; Uhren</option>
+                        <option value={24}>Kl. 24 – Decken &amp; Heimtextilien</option>
+                        <option value={28}>Kl. 28 – Spiele &amp; Sportartikel</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 

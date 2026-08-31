@@ -102,12 +102,13 @@ export class UpdateBackfillService {
 
     console.log(`[UpdateBackfillService] 🔍 Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
 
-    // Fetch batch of oldest published designs with non-null published_products
+    // Fetch batch of oldest published designs with non-null published_products and 0 sales
     const { data: candidates, error } = await supabase
       .from('mba_designs')
-      .select('design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status')
+      .select('design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status, sales_total')
       .eq('status', 'PUBLISHED')
       .not('published_products', 'is', null)
+      .or('sales_total.eq.0,sales_total.is.null')
       .order('updated_date', { ascending: true, nullsFirst: true })
       .limit(300);
 
@@ -117,7 +118,7 @@ export class UpdateBackfillService {
     }
 
     if (!candidates || candidates.length === 0) {
-      console.log('[UpdateBackfillService] ℹ️ Keine Designs mit status="PUBLISHED" und gefüllter published_products Spalte in mba_designs gefunden.');
+      console.log('[UpdateBackfillService] ℹ️ Keine Designs mit status="PUBLISHED", 0 Sales und gefüllter published_products Spalte in mba_designs gefunden.');
       return null;
     }
 
@@ -135,7 +136,14 @@ export class UpdateBackfillService {
         continue;
       }
 
-      // Filter 2: Verify "published_products" cell is NOT empty
+      // Filter 2: Strictly verify 0 sales (protect bestsellers and selling designs)
+      const salesTotal = Number((cand as any).sales_total ?? 0);
+      if (salesTotal > 0) {
+        console.log(`[UpdateBackfillService] ⏭️ Design ${dId} übersprungen: ${salesTotal} Verkäufe vorhanden (nur Designs mit 0 Sales erlaubt).`);
+        continue;
+      }
+
+      // Filter 3: Verify "published_products" cell is NOT empty
       let activeCount = 0;
       if (Array.isArray(cand.published_products)) {
         activeCount = cand.published_products.length;
@@ -155,7 +163,7 @@ export class UpdateBackfillService {
         continue;
       }
 
-      console.log(`[UpdateBackfillService] 🎯 Valider Kandidat gefunden: Design ${dId} (${activeCount} aktive Produkte in published_products, zuletzt geupdatet: ${cand.updated_date || 'nie'}).`);
+      console.log(`[UpdateBackfillService] 🎯 Valider Kandidat gefunden: Design ${dId} (0 Sales, ${activeCount} aktive Produkte in published_products, zuletzt geupdatet: ${cand.updated_date || 'nie'}).`);
       return {
         designId: dId,
         activeProductsCount: activeCount,
