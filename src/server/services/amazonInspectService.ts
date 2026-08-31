@@ -571,11 +571,13 @@ export class AmazonInspectService {
       let rejectedOrDraftItems: string[] = [];
 
       try {
-        const selectBtn = await newTab.$('#select-marketplace-button-original, button:has-text("Select Products")');
+        const selectBtnSelector = '#select-marketplace-button-original, button:has-text("Select Products"), button:has-text("Produkte auswählen"), button.btn-outline-primary:has-text("Select"), [id*="select-marketplace"]';
+        await newTab.waitForSelector(selectBtnSelector, { timeout: 25000 }).catch(() => null);
+        const selectBtn = await newTab.$(selectBtnSelector);
         if (selectBtn) {
           console.log(`[AmazonInspectService] 🔍 Öffne 'Select Products' Popup im DOM für Task ${cleanTaskId}...`);
           await selectBtn.click().catch(() => null);
-          await newTab.waitForSelector('.select-products-table, .modal-body table', { timeout: 10000 }).catch(() => null);
+          await newTab.waitForSelector('.select-products-table, .modal-body table', { timeout: 15000 }).catch(() => null);
 
           const domResult = await newTab.evaluate(() => {
             const pubMap: Record<string, string[]> = {};
@@ -769,13 +771,15 @@ export class AmazonInspectService {
       });
 
       // 2. Open "Select Products" popup
-      const selectBtn = await newTab.$('#select-marketplace-button-original, button:has-text("Select Products")');
+      const selectBtnSelector = '#select-marketplace-button-original, button:has-text("Select Products"), button:has-text("Produkte auswählen"), button.btn-outline-primary:has-text("Select"), [id*="select-marketplace"]';
+      await newTab.waitForSelector(selectBtnSelector, { timeout: 30000 });
+      const selectBtn = await newTab.$(selectBtnSelector);
       if (!selectBtn) {
         throw new Error('Button "Select Products" (#select-marketplace-button-original) konnte im DOM nicht gefunden werden.');
       }
 
       await selectBtn.click();
-      await newTab.waitForSelector('.select-products-table, .modal-body table', { timeout: 12000 });
+      await newTab.waitForSelector('.select-products-table, .modal-body table', { timeout: 15000 });
 
       // 3. Evaluate table
       const domResult = await newTab.evaluate(() => {

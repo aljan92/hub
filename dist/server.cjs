@@ -220389,11 +220389,13 @@ var init_amazonInspectService = __esm2({
           let totalLiveSlots = 0;
           let rejectedOrDraftItems = [];
           try {
-            const selectBtn = await newTab.$('#select-marketplace-button-original, button:has-text("Select Products")');
+            const selectBtnSelector = '#select-marketplace-button-original, button:has-text("Select Products"), button:has-text("Produkte ausw\xE4hlen"), button.btn-outline-primary:has-text("Select"), [id*="select-marketplace"]';
+            await newTab.waitForSelector(selectBtnSelector, { timeout: 25e3 }).catch(() => null);
+            const selectBtn = await newTab.$(selectBtnSelector);
             if (selectBtn) {
               console.log(`[AmazonInspectService] \u{1F50D} \xD6ffne 'Select Products' Popup im DOM f\xFCr Task ${cleanTaskId}...`);
               await selectBtn.click().catch(() => null);
-              await newTab.waitForSelector(".select-products-table, .modal-body table", { timeout: 1e4 }).catch(() => null);
+              await newTab.waitForSelector(".select-products-table, .modal-body table", { timeout: 15e3 }).catch(() => null);
               const domResult = await newTab.evaluate(() => {
                 const pubMap = {};
                 let liveCount = 0;
@@ -220538,12 +220540,14 @@ var init_amazonInspectService = __esm2({
               alertText: alertText || (hasKeywords ? "Amazon Rejection / Policy Violation Text auf Seite erkannt" : "")
             };
           });
-          const selectBtn = await newTab.$('#select-marketplace-button-original, button:has-text("Select Products")');
+          const selectBtnSelector = '#select-marketplace-button-original, button:has-text("Select Products"), button:has-text("Produkte ausw\xE4hlen"), button.btn-outline-primary:has-text("Select"), [id*="select-marketplace"]';
+          await newTab.waitForSelector(selectBtnSelector, { timeout: 3e4 });
+          const selectBtn = await newTab.$(selectBtnSelector);
           if (!selectBtn) {
             throw new Error('Button "Select Products" (#select-marketplace-button-original) konnte im DOM nicht gefunden werden.');
           }
           await selectBtn.click();
-          await newTab.waitForSelector(".select-products-table, .modal-body table", { timeout: 12e3 });
+          await newTab.waitForSelector(".select-products-table, .modal-body table", { timeout: 15e3 });
           const domResult = await newTab.evaluate(() => {
             const liveMap = {};
             let liveCount = 0;
