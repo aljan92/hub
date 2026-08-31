@@ -222544,15 +222544,19 @@ ${JSON.stringify(task.payload, null, 2)}`;
         }
         const analyzerPrompt = SystemPromptService.getDesignAnalyzerPrompt();
         const quote5 = task.payload?.quote || "";
-        const niche = `${task.payload?.niche1 || ""} ${task.payload?.niche2 || ""}`.trim();
+        const niche1 = task.payload?.niche1 || task.payload?.niche || "";
+        const niche2 = task.payload?.niche2 || "";
+        const subniche = task.payload?.subniche || "";
         const ideogramPrompt = task.resultPrompt || "";
         const userPromptText = `Bitte analysiere das folgende generierte Design:
 
 - Original Quote aus Input: "${quote5}"
-- Original Nische: "${niche}"
+- Nische 1 (Hauptthema): "${niche1}"
+- Nische 2 (Cross-Nische): "${niche2 || "none"}"
+- Subnische: "${subniche || "none"}"
 - Verwendeter Ideogram-Prompt: "${ideogramPrompt}"
 
-Beantworte die 4 Kernfragen streng als JSON!`;
+Beantworte die Analysefragen streng als JSON!`;
         this.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "ANALYSIS_REQUEST",
@@ -222561,7 +222565,9 @@ Beantworte die 4 Kernfragen streng als JSON!`;
             systemPrompt: analyzerPrompt,
             userMessage: userPromptText,
             quote: quote5,
-            niche
+            niche1,
+            niche2,
+            subniche
           },
           metadata: {
             model: settings.llmModel || "anthropic/claude-3.5-sonnet",

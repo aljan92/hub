@@ -743,10 +743,12 @@ export class TaskLogService {
 
     const analyzerPrompt = SystemPromptService.getDesignAnalyzerPrompt();
     const quote = task.payload?.quote || '';
-    const niche = `${task.payload?.niche1 || ''} ${task.payload?.niche2 || ''}`.trim();
+    const niche1 = task.payload?.niche1 || task.payload?.niche || '';
+    const niche2 = task.payload?.niche2 || '';
+    const subniche = task.payload?.subniche || '';
     const ideogramPrompt = task.resultPrompt || '';
 
-    const userPromptText = `Bitte analysiere das folgende generierte Design:\n\n- Original Quote aus Input: "${quote}"\n- Original Nische: "${niche}"\n- Verwendeter Ideogram-Prompt: "${ideogramPrompt}"\n\nBeantworte die 4 Kernfragen streng als JSON!`;
+    const userPromptText = `Bitte analysiere das folgende generierte Design:\n\n- Original Quote aus Input: "${quote}"\n- Nische 1 (Hauptthema): "${niche1}"\n- Nische 2 (Cross-Nische): "${niche2 || 'none'}"\n- Subnische: "${subniche || 'none'}"\n- Verwendeter Ideogram-Prompt: "${ideogramPrompt}"\n\nBeantworte die Analysefragen streng als JSON!`;
 
     // 1. Log Event: Senden an OpenRouter (Vision)
     this.addEvent(taskId, {
@@ -757,7 +759,9 @@ export class TaskLogService {
         systemPrompt: analyzerPrompt,
         userMessage: userPromptText,
         quote,
-        niche
+        niche1,
+        niche2,
+        subniche
       },
       metadata: {
         model: settings.llmModel || 'anthropic/claude-3.5-sonnet',
