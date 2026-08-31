@@ -221725,7 +221725,8 @@ Bullets: ${oldBullets}`
             publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
             liveStats: task.payload?.liveStats || null,
             liveProductSummary: task.payload?.productSummary || null,
-            liveProductTypes: task.payload?.productTypes || null
+            liveProductTypes: task.payload?.productTypes || null,
+            tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
           });
           TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_QUEUED",
@@ -222322,6 +222323,13 @@ var init_queueService = __esm2({
                 item.customBackgroundColor = task.customAnswers.reuseBackground;
                 hasChanges = true;
               }
+              if ((!item.tmBlockedProductIds || item.tmBlockedProductIds.length === 0) && (task.blockedProducts || task.trademarkCheckResult?.blockedProducts)) {
+                const rawBlocked = task.blockedProducts || task.trademarkCheckResult?.blockedProducts || [];
+                if (Array.isArray(rawBlocked) && rawBlocked.length > 0) {
+                  item.tmBlockedProductIds = rawBlocked.map((p) => typeof p === "object" && p ? String(p.id || p.name || "") : String(p)).filter(Boolean);
+                  hasChanges = true;
+                }
+              }
             }
           }
           if (hasChanges) {
@@ -222482,6 +222490,10 @@ var init_queueService = __esm2({
           }
           return ["men", "women", "youth"];
         };
+        const normalizeTmBlocked = (val) => {
+          if (!Array.isArray(val)) return [];
+          return val.map((p) => typeof p === "object" && p ? String(p.id || p.name || p.productId || "") : String(p)).map((s) => s.trim()).filter(Boolean);
+        };
         const existing = this.items.find((i) => i.taskId === item.taskId);
         const isUpdate = item.source === "UPDATE" || item.type === "update" || item.taskId && item.taskId.endsWith("-U");
         if (existing) {
@@ -222495,6 +222507,7 @@ var init_queueService = __esm2({
           if (item.listings) existing.listings = item.listings;
           if (item.fitTypes !== void 0) existing.fitTypes = normalizeFitTypes(item.fitTypes);
           if (item.avoidColor !== void 0) existing.avoidColor = normalizeAvoidColor(item.avoidColor);
+          if (item.tmBlockedProductIds !== void 0) existing.tmBlockedProductIds = normalizeTmBlocked(item.tmBlockedProductIds);
           if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
           if (item.pngPath) existing.pngPath = item.pngPath;
           if (item.imagePath) existing.imagePath = item.imagePath;
@@ -222510,7 +222523,8 @@ var init_queueService = __esm2({
           return existing;
         }
         const catalog = ProductCatalogService.getCatalog();
-        const tmBlocked = new Set((item.tmBlockedProductIds || []).map((id) => id.toUpperCase()));
+        const cleanBlockedList = normalizeTmBlocked(item.tmBlockedProductIds);
+        const tmBlocked = new Set(cleanBlockedList.map((id) => id.toUpperCase()));
         const activeProductsMap = {};
         let totalBaseSlots = 0;
         const liveSummary = item.liveProductSummary || item.liveStats?.productSummary || {};
@@ -222577,7 +222591,7 @@ var init_queueService = __esm2({
           totalBaseSlots: netSlots,
           activeProductsMap,
           droppedSlotsMap: {},
-          tmBlockedProductIds: item.tmBlockedProductIds || [],
+          tmBlockedProductIds: cleanBlockedList,
           sortOrder: this.items.length,
           source: item.source || (isUpdate ? "UPDATE" : "NEW"),
           type: item.type || (isUpdate ? "update" : "new"),
@@ -223262,7 +223276,8 @@ var init_taskLogService = __esm2({
             avoidColor,
             customBackgroundColor,
             imagePath: task.localImagePath || "",
-            pngPath: task.localMbaPngPath || ""
+            pngPath: task.localMbaPngPath || "",
+            tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
           });
           this.addEvent(task.id, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -224860,6 +224875,12 @@ Beantworte die Analysefragen streng als JSON!`;
             } else if (typeof task.listingResult === "object") {
               task.listingResult = { ...task.listingResult, ...sanitizedRefined };
             }
+          }
+          if (params2.blockedProducts) {
+            task.blockedProducts = params2.blockedProducts;
+          }
+          if (params2.blockedNiceClasses) {
+            task.blockedNiceClasses = params2.blockedNiceClasses;
           }
           task.status = "CHECKING_TRADEMARKS";
           task.checkpoint = void 0;

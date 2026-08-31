@@ -493,7 +493,13 @@ MBA HUB/
 - **UI & Dashboard:**
   - `SystemPromptsView.tsx` führt 7 eindeutige Prompts (Shared Prompts sind unter Creation, Update und Alle sichtbar).
   - Reset auf Standard lädt deterministisch die neue 39-Punkte Mastervorlage.
-
-
-
-
+### 10.17 🛡️ TM Loop & Nebenklassen-Sperre (Exklusion in Queue & Uploader)
+- **Problem & Ursache:**
+  - Treffer in Nebenklassen (z. B. Klasse 9 PopSockets/Cases, Klasse 21 Mugs/Tumbler, Klasse 20 Kissen, Klasse 18 Taschen) wurden im TM-Audit zwar erkannt, aber beim Enqueue-Aufruf in `updatePipelineService.ts` und `taskLogService.ts` nicht an `QueueService` übergeben (`tmBlockedProductIds` war leer).
+  - Dadurch wurden die Produkte in der Queue wieder reaktiviert und für den Upload eingeplant.
+- **Lösung & Architektur:**
+  1. **Lückenloser Pipeline-Handoff:** Übergabe von `tmBlockedProductIds: task.blockedProducts || []` in `updatePipelineService.ts` (Step U7) und `taskLogService.ts` (`completeTaskAndEnqueue` & `submitTmReview`).
+  2. **Auto-Enrichment & Normalisierung:** `QueueService.loadQueue()` / `enrichListingsFromTasksLog()` pflegt fehlende `tmBlockedProductIds` automatisch aus `tasks_log.json` nach.
+  3. **Dynamische Nizza-Klassen:** `ProductCatalogService.getBlockedProductIdsForNiceClasses` sperrt Produkte dynamisch basierend auf der im Katalog hinterlegten `niceClass` jedes Produkts.
+  4. **Slot-Kalkulation & Balancing:** Geblockte Produkte werden aus `activeProductsMap` ausgeschlossen und verbrauchen 0 Slots (`allocatedSlots` spiegelt exakt die uploadbaren Produkte wider).
+  5. **UI & Uploader:** Die Queue-Tabelle zeigt gesperrte Produkte mit rotem Badge (`🚫 TM-Block (Kl. X) (0 Slots)`) und deaktivierten Chips. Der Playwright/CDP Upload-Bot erhält nur die bereinigte `activeProductsMap` und wählt gesperrte Produkte im Amazon-Modal nicht an.

@@ -1681,7 +1681,7 @@ export const QueueView: React.FC = () => {
                                           <span className="font-bold text-slate-200 truncate">{displayName}</span>
                                           {isTmBlocked ? (
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
-                                              TM-Block
+                                              🚫 TM-Block (Kl. {prodDef?.niceClass ?? 9}) (0 Slots)
                                             </span>
                                           ) : allLive ? (
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800">
@@ -1697,24 +1697,32 @@ export const QueueView: React.FC = () => {
                                             </span>
                                           )}
                                         </div>
-                                        <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
-                                          {catalogMps.map((mp, mIdx) => {
-                                            const isMpLive = liveMps.includes(mp.toUpperCase());
-                                            return (
-                                              <span 
-                                                key={`${mp}_${mIdx}`} 
-                                                className={`px-1.5 py-0.5 rounded border transition-all ${
-                                                  isMpLive
-                                                    ? 'bg-slate-800 text-slate-300 border-slate-700 font-medium'
-                                                    : 'bg-purple-900/70 text-purple-200 border-purple-500/60 font-bold'
-                                                }`}
-                                                title={isMpLive ? `${mp}: Bereits auf Amazon live (0 Slots)` : `${mp}: Wird durch Update neu hochgeladen (+1 Slot)`}
-                                              >
-                                                {isMpLive ? `${mp} ✓` : `+ ${mp}`}
-                                              </span>
-                                            );
-                                          })}
-                                        </div>
+                                        {isTmBlocked ? (
+                                          <div className="flex items-center gap-1 mt-1.5 font-mono text-[10px]">
+                                            <span className="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/60 font-semibold">
+                                              🚫 Gesperrt durch TM (0 Slots)
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
+                                            {catalogMps.map((mp, mIdx) => {
+                                              const isMpLive = liveMps.includes(mp.toUpperCase());
+                                              return (
+                                                <span 
+                                                  key={`${mp}_${mIdx}`} 
+                                                  className={`px-1.5 py-0.5 rounded border transition-all ${
+                                                    isMpLive
+                                                      ? 'bg-slate-800 text-slate-300 border-slate-700 font-medium'
+                                                      : 'bg-purple-900/70 text-purple-200 border-purple-500/60 font-bold'
+                                                  }`}
+                                                  title={isMpLive ? `${mp}: Bereits auf Amazon live (0 Slots)` : `${mp}: Wird durch Update neu hochgeladen (+1 Slot)`}
+                                                >
+                                                  {isMpLive ? `${mp} ✓` : `+ ${mp}`}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
                                       </div>
                                     );
                                   }
@@ -1741,7 +1749,7 @@ export const QueueView: React.FC = () => {
                                         <span className="font-bold text-slate-200 truncate">{displayName}</span>
                                         {isTmBlocked ? (
                                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
-                                            TM-Block
+                                            🚫 TM-Block (Kl. {prodDef?.niceClass ?? 9}) (0 Slots)
                                           </span>
                                         ) : isCompletelyDropped ? (
                                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -1757,22 +1765,30 @@ export const QueueView: React.FC = () => {
                                           </span>
                                         )}
                                       </div>
-                                      <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
-                                        {safeMps.map((mp, mIdx) => (
-                                          <span key={`${mp}_${mIdx}`} className={`px-1.5 py-0.2 rounded ${
-                                            mp.toUpperCase() === 'US' 
-                                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
-                                              : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
-                                          }`}>
-                                            {mp}
+                                      {isTmBlocked ? (
+                                        <div className="flex items-center gap-1 mt-1.5 font-mono text-[10px]">
+                                          <span className="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/60 font-semibold">
+                                            🚫 Gesperrt durch TM (0 Slots)
                                           </span>
-                                        ))}
-                                        {droppedMps.map((mp, mIdx) => (
-                                          <span key={`${mp}_${mIdx}`} className="px-1.5 py-0.2 rounded bg-rose-950/40 text-rose-400/80 border border-rose-900/60 line-through">
-                                            {mp}
-                                          </span>
-                                        ))}
-                                      </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
+                                          {safeMps.map((mp, mIdx) => (
+                                            <span key={`${mp}_${mIdx}`} className={`px-1.5 py-0.2 rounded ${
+                                              mp.toUpperCase() === 'US' 
+                                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
+                                                : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
+                                            }`}>
+                                              {mp}
+                                            </span>
+                                          ))}
+                                          {droppedMps.map((mp, mIdx) => (
+                                            <span key={`${mp}_${mIdx}`} className="px-1.5 py-0.2 rounded bg-rose-950/40 text-rose-400/80 border border-rose-900/60 line-through">
+                                              {mp}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 });
@@ -2392,23 +2408,12 @@ export const QueueView: React.FC = () => {
                                     const isPartiallyLive = liveMps.length > 0 && missingMps.length > 0;
 
                                     return (
-                                      <div 
-                                        key={cleanProdId} 
-                                        className={`p-2.5 rounded-xl border text-xs transition-all ${
-                                          isTmBlocked
-                                            ? 'bg-rose-950/20 border-rose-800/40 text-rose-300'
-                                            : isPartiallyLive
-                                              ? 'bg-slate-900/90 border-amber-500/50 ring-1 ring-amber-500/20 shadow-sm'
-                                              : allNew
-                                                ? 'bg-purple-950/40 border-purple-500/60 ring-1 ring-purple-500/30 shadow-sm shadow-purple-500/10'
-                                                : 'bg-slate-900/90 border-slate-800 text-slate-300'
-                                        }`}
-                                      >
+                                      <div key={cleanProdId} className={`p-2.5 rounded-xl border text-xs transition-all ${isTmBlocked ? 'bg-rose-950/20 border-rose-800/40 text-rose-300' : isPartiallyLive ? 'bg-slate-900/90 border-amber-500/50 ring-1 ring-amber-500/20 shadow-sm' : !liveMps.length ? 'bg-purple-950/40 border-purple-500/60 ring-1 ring-purple-500/30 shadow-sm shadow-purple-500/10' : 'bg-slate-900/90 border-slate-800 text-slate-300'}`}>
                                         <div className="flex items-center justify-between gap-1">
                                           <span className="font-bold text-slate-200 truncate">{displayName}</span>
                                           {isTmBlocked ? (
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
-                                              TM-Block
+                                              🚫 TM-Block (Kl. {prodDef?.niceClass ?? 9}) (0 Slots)
                                             </span>
                                           ) : allLive ? (
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800">
@@ -2424,29 +2429,36 @@ export const QueueView: React.FC = () => {
                                             </span>
                                           )}
                                         </div>
-                                        <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
-                                          {catalogMps.map((mp, mIdx) => {
-                                            const isMpLive = liveMps.includes(mp.toUpperCase());
-                                            return (
-                                              <span 
-                                                key={`${mp}_${mIdx}`} 
-                                                className={`px-1.5 py-0.5 rounded border transition-all ${
-                                                  isMpLive
-                                                    ? 'bg-slate-800 text-slate-300 border-slate-700 font-medium'
-                                                    : 'bg-purple-900/70 text-purple-200 border-purple-500/60 font-bold'
-                                                }`}
-                                                title={isMpLive ? `${mp}: Bereits auf Amazon live (0 Slots)` : `${mp}: Wird durch Update neu hochgeladen (+1 Slot)`}
-                                              >
-                                                {isMpLive ? `${mp} ✓` : `+ ${mp}`}
-                                              </span>
-                                            );
-                                          })}
-                                        </div>
+                                        {isTmBlocked ? (
+                                          <div className="flex items-center gap-1 mt-1.5 font-mono text-[10px]">
+                                            <span className="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/60 font-semibold">
+                                              🚫 Gesperrt durch TM (0 Slots)
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
+                                            {catalogMps.map((mp, mIdx) => {
+                                              const isMpLive = liveMps.includes(mp.toUpperCase());
+                                              return (
+                                                <span 
+                                                  key={`${mp}_${mIdx}`} 
+                                                  className={`px-1.5 py-0.5 rounded border transition-all ${
+                                                    isMpLive
+                                                      ? 'bg-slate-800 text-slate-300 border-slate-700 font-medium'
+                                                      : 'bg-purple-900/70 text-purple-200 border-purple-500/60 font-bold'
+                                                  }`}
+                                                  title={isMpLive ? `${mp}: Bereits auf Amazon live (0 Slots)` : `${mp}: Wird durch Update neu hochgeladen (+1 Slot)`}
+                                                >
+                                                  {isMpLive ? `${mp} ✓` : `+ ${mp}`}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
                                       </div>
                                     );
                                   }
 
-                                  // New design logic:
                                   const rawSafeMps = item.activeProductsMap?.[cleanProdId];
                                   const safeMps = Array.isArray(rawSafeMps) ? rawSafeMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).filter(Boolean) : [];
                                   const rawDroppedMps = item.droppedSlotsMap?.[cleanProdId];
@@ -2468,7 +2480,7 @@ export const QueueView: React.FC = () => {
                                         <span className="font-bold text-slate-200 truncate">{displayName}</span>
                                         {isTmBlocked ? (
                                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-800">
-                                            TM-Block
+                                            🚫 TM-Block (Kl. {prodDef?.niceClass ?? 9}) (0 Slots)
                                           </span>
                                         ) : isCompletelyDropped ? (
                                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-950/80 text-amber-300 border border-amber-800">
@@ -2480,22 +2492,30 @@ export const QueueView: React.FC = () => {
                                           </span>
                                         )}
                                       </div>
-                                      <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
-                                        {safeMps.map((mp, mIdx) => (
-                                          <span key={`${mp}_${mIdx}`} className={`px-1.5 py-0.2 rounded ${
-                                            mp.toUpperCase() === 'US' 
-                                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold' 
-                                              : 'bg-slate-800 text-slate-300 border border-slate-700'
-                                          }`}>
-                                            {mp}
+                                      {isTmBlocked ? (
+                                        <div className="flex items-center gap-1 mt-1.5 font-mono text-[10px]">
+                                          <span className="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/60 font-semibold">
+                                            🚫 Gesperrt durch TM (0 Slots)
                                           </span>
-                                        ))}
-                                        {droppedMps.map((mp, dIdx) => (
-                                          <span key={`drop_${mp}_${dIdx}`} className="px-1.5 py-0.2 rounded bg-amber-950/40 text-amber-400/80 border border-amber-800/40 line-through">
-                                            {mp}
-                                          </span>
-                                        ))}
-                                      </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center flex-wrap gap-1 mt-1.5 font-mono text-[10px]">
+                                          {safeMps.map((mp, mIdx) => (
+                                            <span key={`${mp}_${mIdx}`} className={`px-1.5 py-0.2 rounded ${
+                                              mp.toUpperCase() === 'US' 
+                                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold' 
+                                                : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
+                                            }`}>
+                                              {mp}
+                                            </span>
+                                          ))}
+                                          {droppedMps.map((mp, dIdx) => (
+                                            <span key={`drop_${mp}_${dIdx}`} className="px-1.5 py-0.2 rounded bg-rose-950/40 text-rose-400/80 border border-rose-900/60 line-through">
+                                              {mp}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 });

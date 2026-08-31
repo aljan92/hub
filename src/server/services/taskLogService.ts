@@ -318,7 +318,8 @@ export class TaskLogService {
         avoidColor,
         customBackgroundColor,
         imagePath: task.localImagePath || '',
-        pngPath: task.localMbaPngPath || ''
+        pngPath: task.localMbaPngPath || '',
+        tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
       });
 
       this.addEvent(task.id, {
@@ -2152,6 +2153,8 @@ export class TaskLogService {
   static async submitTmReview(taskId: string, params: {
     action: 'RECHECK' | 'APPROVE' | 'REJECT';
     refinedListing?: any;
+    blockedProducts?: string[];
+    blockedNiceClasses?: number[];
   }) {
     const task = this.getTaskLogById(taskId);
     if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
@@ -2189,6 +2192,13 @@ export class TaskLogService {
         } else if (typeof task.listingResult === 'object') {
           task.listingResult = { ...task.listingResult, ...sanitizedRefined };
         }
+      }
+
+      if (params.blockedProducts) {
+        task.blockedProducts = params.blockedProducts;
+      }
+      if (params.blockedNiceClasses) {
+        task.blockedNiceClasses = params.blockedNiceClasses;
       }
 
       task.status = 'CHECKING_TRADEMARKS';

@@ -278,6 +278,15 @@ export class QueueService {
             item.customBackgroundColor = task.customAnswers.reuseBackground;
             hasChanges = true;
           }
+
+          // Auto-enrich tmBlockedProductIds from task if missing in queue item
+          if ((!item.tmBlockedProductIds || item.tmBlockedProductIds.length === 0) && (task.blockedProducts || task.trademarkCheckResult?.blockedProducts)) {
+            const rawBlocked = task.blockedProducts || task.trademarkCheckResult?.blockedProducts || [];
+            if (Array.isArray(rawBlocked) && rawBlocked.length > 0) {
+              item.tmBlockedProductIds = rawBlocked.map(p => typeof p === 'object' && p ? String((p as any).id || (p as any).name || '') : String(p)).filter(Boolean);
+              hasChanges = true;
+            }
+          }
         }
       }
 
@@ -489,6 +498,15 @@ export class QueueService {
       return ['men', 'women', 'youth'];
     };
 
+    // Normalization helper for tmBlockedProductIds
+    const normalizeTmBlocked = (val: any): string[] => {
+      if (!Array.isArray(val)) return [];
+      return val
+        .map(p => typeof p === 'object' && p ? String((p as any).id || (p as any).name || (p as any).productId || '') : String(p))
+        .map(s => s.trim())
+        .filter(Boolean);
+    };
+
     // Check if task is already in queue
     const existing = this.items.find(i => i.taskId === item.taskId);
     const isUpdate = (item as any).source === 'UPDATE' || (item as any).type === 'update' || (item.taskId && item.taskId.endsWith('-U'));
@@ -504,6 +522,7 @@ export class QueueService {
       if (item.listings) existing.listings = item.listings;
       if (item.fitTypes !== undefined) existing.fitTypes = normalizeFitTypes(item.fitTypes);
       if (item.avoidColor !== undefined) existing.avoidColor = normalizeAvoidColor(item.avoidColor);
+      if (item.tmBlockedProductIds !== undefined) existing.tmBlockedProductIds = normalizeTmBlocked(item.tmBlockedProductIds);
       if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
       if (item.pngPath) existing.pngPath = item.pngPath;
       if (item.imagePath) existing.imagePath = item.imagePath;
@@ -521,7 +540,8 @@ export class QueueService {
     }
 
     const catalog = ProductCatalogService.getCatalog();
-    const tmBlocked = new Set((item.tmBlockedProductIds || []).map(id => id.toUpperCase()));
+    const cleanBlockedList = normalizeTmBlocked(item.tmBlockedProductIds);
+    const tmBlocked = new Set(cleanBlockedList.map(id => id.toUpperCase()));
     
     // Build initial activeProductsMap with non-blocked products and compute exact net slots
     const activeProductsMap: Record<string, string[]> = {};
@@ -600,7 +620,7 @@ export class QueueService {
       totalBaseSlots: netSlots,
       activeProductsMap,
       droppedSlotsMap: {},
-      tmBlockedProductIds: item.tmBlockedProductIds || [],
+      tmBlockedProductIds: cleanBlockedList,
       sortOrder: this.items.length,
       source: item.source || (isUpdate ? 'UPDATE' : 'NEW'),
       type: item.type || (isUpdate ? 'update' : 'new'),
