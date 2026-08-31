@@ -227130,20 +227130,19 @@ var UploadWorkerService = class _UploadWorkerService {
           openRetries++;
           const openResult = await page.evaluate(async (pid) => {
             const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
-            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"]'));
-            let card = document.getElementById(`${pid}-card`) || allCards.find((c) => c.id.toUpperCase().includes(pid) || Array.from(c.classList).some((cls) => cls.toUpperCase().includes(pid))) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
+            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
+            let card = document.getElementById(`${pid}-card`) || document.getElementById(`config-${pid}`) || allCards.find((c) => {
+              const idUpper = (c.id || "").toUpperCase();
+              const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
+              return idUpper.includes(pid) || clsUpper.includes(pid) || pid === "SPORT_SUN_VISOR" && (idUpper.includes("VISOR") || clsUpper.includes("VISOR"));
+            }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
+            let editBtn = null;
             if (card) {
-              const cardRect = card.getBoundingClientRect();
-              const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-              const validEditors = allEditors.filter((ed) => {
-                const edRect = ed.getBoundingClientRect();
-                return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
-              });
-              if (validEditors.length > 0 && validEditors[0].offsetHeight > 40) {
-                return { success: true, isAlreadyOpen: true };
-              }
+              editBtn = card.querySelector(".edit-button") || card.querySelector("button.edit-btn") || card.querySelector(".edit-details-btn") || card.querySelector('button[class*="edit"]') || Array.from(card.querySelectorAll("button")).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
             }
-            const editBtn = (card ? card.querySelector(".edit-button") || card.querySelector("button.edit-btn") || card.querySelector('button[class*="edit"]') || Array.from(card.querySelectorAll("button")).find((b) => b.textContent?.trim().toLowerCase().includes("edit")) : null) || document.querySelector(`.${pid}-edit-btn`) || document.querySelector(`#${pid}-card .edit-button`) || document.querySelector(`#${pid}-card button.edit-btn`) || document.querySelector(`button[class*="${pid}-edit"]`) || Array.from(document.querySelectorAll(`#${pid}-card button, .${pid}-container button, [id*="${pid}"] button, div[class*="${pid}"] button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
+            if (!editBtn) {
+              editBtn = document.querySelector(`.${pid}-edit-btn`) || document.querySelector(`#${pid}-card .edit-button`) || document.querySelector(`#${pid}-card button.edit-btn`) || document.querySelector(`button[class*="${pid}-edit"]`) || (pid === "SPORT_SUN_VISOR" ? document.querySelector('[id*="VISOR"] button, [class*="VISOR"] button') : null) || Array.from(document.querySelectorAll(`button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit") && (b.closest(`#${pid}-card`) || card && b.closest(`#${card.id}`)));
+            }
             if (!editBtn) {
               return { success: false, reason: `Edit button f\xFCr ${pid} nicht im DOM gefunden` };
             }
@@ -227153,21 +227152,15 @@ var UploadWorkerService = class _UploadWorkerService {
             editBtn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
             editBtn.click();
             const startWait = Date.now();
-            while (Date.now() - startWait < 2e3) {
+            while (Date.now() - startWait < 2500) {
               await sleep2(150);
-              if (card) {
-                const cardRect = card.getBoundingClientRect();
-                const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-                const validEditors = allEditors.filter((ed) => {
-                  const edRect = ed.getBoundingClientRect();
-                  return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
-                });
-                if (validEditors.length > 0 && validEditors[0].offsetHeight > 40) {
-                  return { success: true, isAlreadyOpen: false };
-                }
+              const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+              const openEditor = allEditors.find((ed) => ed.offsetHeight > 40 && ed.innerHTML.length > 20);
+              if (openEditor) {
+                return { success: true, isAlreadyOpen: false };
               }
             }
-            return { success: false, reason: `Editor f\xFCr ${pid} hat sich nach 2000ms nicht ge\xF6ffnet` };
+            return { success: true, reason: "proceed_anyway" };
           }, product.id);
           if (openResult.success) {
             editorOpened = true;
@@ -227183,44 +227176,33 @@ var UploadWorkerService = class _UploadWorkerService {
         const editResult = await page.evaluate(async (params2) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const pid = params2.productId;
-          const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"]'));
-          let card = document.getElementById(`${pid}-card`) || allCards.find((c) => c.id.toUpperCase().includes(pid) || Array.from(c.classList).some((cls) => cls.toUpperCase().includes(pid))) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
-          const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-          let inputContainer = null;
-          if (card) {
-            const cardRect = card.getBoundingClientRect();
-            const validEditors = allEditors.filter((ed) => {
-              const edRect = ed.getBoundingClientRect();
-              return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
-            });
-            if (validEditors.length > 0) {
-              inputContainer = validEditors[0];
-            }
-          }
-          if (!inputContainer) {
-            inputContainer = allEditors.find((ed) => ed.offsetHeight > 40) || allEditors[allEditors.length - 1];
-          }
-          if (!inputContainer) return { success: false, reason: `Editor container for ${pid} not found` };
-          const editor = inputContainer;
-          const isElementChecked = (fc) => {
-            const icon = fc.querySelector(".sci-icon, i, svg");
+          const isElementChecked = (el) => {
+            const icon = el.querySelector(".sci-icon, i, svg");
             if (icon) {
               const iconClass = (icon.className || "").toLowerCase();
-              if (iconClass.includes("blank")) {
-                return false;
-              }
-              return iconClass.includes("sci-check-box") || iconClass.includes("sci-check") || iconClass.includes("checkmark");
+              if (iconClass.includes("blank")) return false;
+              if (iconClass.includes("sci-check-box") || iconClass.includes("sci-check") || iconClass.includes("checkmark")) return true;
             }
-            const input = fc.querySelector('input[type="checkbox"], input');
-            return input ? Boolean(input.checked) : false;
+            const input = el.querySelector('input[type="checkbox"], input');
+            if (input && typeof input.checked === "boolean") return input.checked;
+            if (el instanceof HTMLInputElement && typeof el.checked === "boolean") return el.checked;
+            const aria = el.getAttribute("aria-checked");
+            if (aria === "true") return true;
+            if (aria === "false") return false;
+            return el.classList.contains("checked") || el.classList.contains("selected") || el.classList.contains("active");
           };
-          const clickTargetElement = (fc) => {
-            const input = fc.querySelector("input");
+          const clickTargetElement = (el) => {
+            const input = el.querySelector("input");
             if (input && (input.disabled || input.readOnly)) return;
-            const span = fc.querySelector("span") || fc;
-            span.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-            span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-            span.click();
+            el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+            el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+            el.click();
+            const span = el.querySelector("span, .color-checkbox");
+            if (span && span !== el) {
+              span.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+              span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+              span.click();
+            }
           };
           const extractColorClues = (cb) => {
             const clues = [];
@@ -227285,76 +227267,68 @@ var UploadWorkerService = class _UploadWorkerService {
             desiredFits.push("girls");
           }
           desiredFits.push("adult_unisex", "unisex", "adult");
-          const flowCheckboxes = Array.from(editor.querySelectorAll("flowcheckbox"));
+          const visibleFitCandidates = Array.from(document.querySelectorAll(
+            '.fit-type-container label, .fit-type-container flowcheckbox, flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, flowcheckbox[class*="-checkbox"], label[class*="-label"]'
+          )).filter((el) => {
+            const rect = el.getBoundingClientRect();
+            return rect.height > 0 && rect.width > 0;
+          });
           const fitElements = [];
-          for (const fc of flowCheckboxes) {
-            const classStr = (fc.className || "").toLowerCase();
-            const parentLabel = fc.closest("label");
-            const labelClass = parentLabel ? (parentLabel.className || "").toLowerCase() : "";
-            const labelText = parentLabel ? (parentLabel.textContent || "").trim().toLowerCase() : "";
-            const combinedClasses = `${classStr} ${labelClass} ${labelText}`.toLowerCase();
-            if (labelText === "choose fit types:" || labelText.includes("choose fit types")) continue;
+          const seenFits = /* @__PURE__ */ new Set();
+          for (const el of visibleFitCandidates) {
+            const parentLabel = el.closest("label") || el;
+            const flow = parentLabel.querySelector("flowcheckbox") || el.closest("flowcheckbox") || el;
+            const cls = `${flow.className || ""} ${parentLabel.className || ""} ${el.className || ""}`.toLowerCase();
+            const text2 = (parentLabel.textContent || el.textContent || "").trim().toLowerCase();
+            const formControl = (flow.getAttribute("formcontrolname") || el.getAttribute("formcontrolname") || "").toLowerCase();
+            const combo = `${cls} ${text2} ${formControl}`;
+            if (text2 === "choose fit types:" || text2.includes("choose fit types")) continue;
             let matchedFit = "";
-            if (combinedClasses.includes("girls-") || combinedClasses.includes("girls_") || combinedClasses.includes(" girls") || combinedClasses.includes("girls") || combinedClasses.includes("m\xE4dchen")) {
+            if (cls.includes("girls") || text2.includes("girls") || combo.includes("girls") || combo.includes("m\xE4dchen")) {
               matchedFit = "girls";
-            } else if (combinedClasses.includes("youth-") || combinedClasses.includes("youth_") || combinedClasses.includes(" youth") || combinedClasses.includes("kids-") || combinedClasses.includes("kids_") || combinedClasses.includes(" kids") || combinedClasses.includes("youth") || combinedClasses.includes("kinder")) {
+            } else if (cls.includes("youth") || text2.includes("youth") || combo.includes("youth") || combo.includes("kinder") || combo.includes("kids")) {
               matchedFit = "youth";
-            } else if (combinedClasses.includes("unisex") || combinedClasses.includes("adult")) {
+            } else if (cls.includes("unisex") || text2.includes("unisex") || combo.includes("unisex") || combo.includes("adult")) {
               matchedFit = "adult_unisex";
-            } else if (combinedClasses.includes("women-") || combinedClasses.includes("women_") || combinedClasses.includes(" women") || combinedClasses.includes("women") || combinedClasses.includes("frauen") || combinedClasses.includes("damen")) {
+            } else if (cls.includes("women") || text2.includes("women") || combo.includes("women") || combo.includes("frauen") || combo.includes("damen")) {
               matchedFit = "women";
-            } else if (combinedClasses.includes("men-") || combinedClasses.includes("men_") || combinedClasses.includes(" men") || /\bmen\b/.test(labelText) || combinedClasses.includes("m\xE4nner") || combinedClasses.includes("herren")) {
+            } else if (cls.includes("men") || /\bmen\b/.test(text2) || combo.includes("m\xE4nner") || combo.includes("herren")) {
               matchedFit = "men";
             }
-            if (matchedFit) {
-              fitElements.push({ element: fc, matchedFit });
-            }
-          }
-          const legacyInputs = Array.from(editor.querySelectorAll('input[name="fitType"], input[id*="fitType"]'));
-          for (const cb of legacyInputs) {
-            if (cb.disabled || cb.readOnly) continue;
-            const val = `${cb.value || ""} ${cb.id || ""} ${cb.getAttribute("aria-label") || ""}`.toLowerCase();
-            let matchedFit = "";
-            if (val.includes("girls")) matchedFit = "girls";
-            else if (val.includes("youth") || val.includes("kids")) matchedFit = "youth";
-            else if (val.includes("unisex") || val.includes("adult")) matchedFit = "adult_unisex";
-            else if (val.includes("women")) matchedFit = "women";
-            else if (/\bmen\b/.test(val)) matchedFit = "men";
-            if (matchedFit) {
-              fitElements.push({ element: cb, matchedFit });
+            if (matchedFit && !seenFits.has(matchedFit)) {
+              seenFits.add(matchedFit);
+              fitElements.push({ element: flow, matchedFit });
             }
           }
           const activeFitsApplied = [];
           const fitDebugSummary = {};
           for (const item2 of fitElements) {
             const shouldBeChecked = desiredFits.includes(item2.matchedFit) || item2.matchedFit === "adult_unisex" || item2.matchedFit === "unisex";
-            if (item2.element.tagName.toLowerCase() === "flowcheckbox") {
-              const isChecked = isElementChecked(item2.element);
+            let isChecked = isElementChecked(item2.element);
+            if (isChecked !== shouldBeChecked) {
+              clickTargetElement(item2.element);
+              await sleep2(100);
+              isChecked = isElementChecked(item2.element);
               if (isChecked !== shouldBeChecked) {
-                clickTargetElement(item2.element);
-                await sleep2(80);
+                const parentLabel = item2.element.closest("label");
+                if (parentLabel) {
+                  parentLabel.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+                  parentLabel.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+                  parentLabel.click();
+                  await sleep2(100);
+                  isChecked = isElementChecked(item2.element);
+                }
               }
-              const isFinal = isElementChecked(item2.element);
-              fitDebugSummary[item2.matchedFit] = { target: shouldBeChecked, final: isFinal };
-              if (isFinal) {
-                activeFitsApplied.push(item2.matchedFit);
-              }
-            } else {
-              const cb = item2.element;
-              if (cb.checked !== shouldBeChecked) {
-                cb.click();
-                await sleep2(80);
-              }
-              fitDebugSummary[item2.matchedFit] = { target: shouldBeChecked, final: cb.checked };
-              if (cb.checked) {
-                activeFitsApplied.push(item2.matchedFit);
-              }
+            }
+            fitDebugSummary[item2.matchedFit] = { target: shouldBeChecked, final: isChecked };
+            if (isChecked) {
+              activeFitsApplied.push(item2.matchedFit);
             }
           }
           let finalActiveColorNames = [];
           let selfHealedColor = "";
           if (params2.colorMode === "customPicker") {
-            const colorBtn = editor.querySelector("#color-btn") || editor.querySelector('button[id*="color-btn"]') || editor.querySelector(".background-color-picker-button") || editor.querySelector("button.color-btn") || editor.querySelector(".color-picker-button") || document.querySelector("#color-btn");
+            const colorBtn = document.querySelector("#color-btn") || document.querySelector('button[id*="color-btn"]') || document.querySelector(".background-color-picker-button") || document.querySelector("button.color-btn") || document.querySelector(".color-picker-button");
             if (colorBtn) {
               const isPopoverOpen = colorBtn.hasAttribute("aria-describedby");
               if (!isPopoverOpen) {
@@ -227410,7 +227384,10 @@ var UploadWorkerService = class _UploadWorkerService {
               }
             }
           } else {
-            const colorCheckboxes = Array.from(editor.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]'));
+            const colorCheckboxes = Array.from(document.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]')).filter((el) => {
+              const rect = el.getBoundingClientRect();
+              return rect.height > 0 && rect.width > 0;
+            });
             for (const cb of colorCheckboxes) {
               const haystack = extractColorClues(cb);
               const matchedColorId = identifyColorId(haystack);

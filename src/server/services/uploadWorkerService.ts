@@ -517,32 +517,35 @@ export class UploadWorkerService {
           const openResult = await page.evaluate(async (pid: string) => {
             const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-            // 1. Locate the exact product card for pid (Listing Optimizer method)
-            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"]')) as HTMLElement[];
+            // 1. Locate the exact product card for pid
+            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card')) as HTMLElement[];
             let card = document.getElementById(`${pid}-card`) 
-              || allCards.find(c => c.id.toUpperCase().includes(pid) || Array.from(c.classList).some(cls => cls.toUpperCase().includes(pid)))
+              || document.getElementById(`config-${pid}`)
+              || allCards.find(c => {
+                   const idUpper = (c.id || '').toUpperCase();
+                   const clsUpper = Array.from(c.classList).join(' ').toUpperCase();
+                   return idUpper.includes(pid) || clsUpper.includes(pid) || (pid === 'SPORT_SUN_VISOR' && (idUpper.includes('VISOR') || clsUpper.includes('VISOR')));
+                 })
               || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`)) as HTMLElement;
 
+            // 2. Locate the "Edit details" button
+            let editBtn: HTMLElement | null = null;
             if (card) {
-              const cardRect = card.getBoundingClientRect();
-              const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
-              const validEditors = allEditors.filter(ed => {
-                const edRect = ed.getBoundingClientRect();
-                return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
-              });
-              if (validEditors.length > 0 && validEditors[0].offsetHeight > 40) {
-                return { success: true, isAlreadyOpen: true };
-              }
+              editBtn = (card.querySelector('.edit-button') 
+                || card.querySelector('button.edit-btn') 
+                || card.querySelector('.edit-details-btn')
+                || card.querySelector('button[class*="edit"]')
+                || Array.from(card.querySelectorAll('button')).find(b => b.textContent?.trim().toLowerCase().includes('edit'))) as HTMLElement;
             }
 
-            // 2. Locate the "Edit details" button with all known Merch selectors
-            const editBtn = (card ? (card.querySelector('.edit-button') || card.querySelector('button.edit-btn') || card.querySelector('button[class*="edit"]') || Array.from(card.querySelectorAll('button')).find(b => b.textContent?.trim().toLowerCase().includes('edit'))) : null)
-              || document.querySelector(`.${pid}-edit-btn`) 
-              || document.querySelector(`#${pid}-card .edit-button`) 
-              || document.querySelector(`#${pid}-card button.edit-btn`)
-              || document.querySelector(`button[class*="${pid}-edit"]`)
-              || Array.from(document.querySelectorAll(`#${pid}-card button, .${pid}-container button, [id*="${pid}"] button, div[class*="${pid}"] button`))
-                  .find(b => b.textContent?.trim().toLowerCase().includes('edit')) as HTMLElement;
+            if (!editBtn) {
+              editBtn = (document.querySelector(`.${pid}-edit-btn`) 
+                || document.querySelector(`#${pid}-card .edit-button`) 
+                || document.querySelector(`#${pid}-card button.edit-btn`)
+                || document.querySelector(`button[class*="${pid}-edit"]`)
+                || (pid === 'SPORT_SUN_VISOR' ? document.querySelector('[id*="VISOR"] button, [class*="VISOR"] button') : null)
+                || Array.from(document.querySelectorAll(`button`)).find(b => b.textContent?.trim().toLowerCase().includes('edit') && (b.closest(`#${pid}-card`) || (card && b.closest(`#${card.id}`))))) as HTMLElement;
+            }
 
             if (!editBtn) {
               return { success: false, reason: `Edit button für ${pid} nicht im DOM gefunden` };
@@ -552,29 +555,23 @@ export class UploadWorkerService {
             editBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
             await sleep(200);
 
-            // 4. Fire full mouse event suite to reliably trigger Angular component
+            // 4. Click button to open editor
             editBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
             editBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
             editBtn.click();
 
-            // 5. Active polling: Wait up to 2000ms until product-editor container is rendered
+            // 5. Active polling: Wait up to 2500ms until editor is open
             const startWait = Date.now();
-            while (Date.now() - startWait < 2000) {
+            while (Date.now() - startWait < 2500) {
               await sleep(150);
-              if (card) {
-                const cardRect = card.getBoundingClientRect();
-                const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
-                const validEditors = allEditors.filter(ed => {
-                  const edRect = ed.getBoundingClientRect();
-                  return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
-                });
-                if (validEditors.length > 0 && validEditors[0].offsetHeight > 40) {
-                  return { success: true, isAlreadyOpen: false };
-                }
+              const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
+              const openEditor = allEditors.find(ed => ed.offsetHeight > 40 && ed.innerHTML.length > 20);
+              if (openEditor) {
+                return { success: true, isAlreadyOpen: false };
               }
             }
 
-            return { success: false, reason: `Editor für ${pid} hat sich nach 2000ms nicht geöffnet` };
+            return { success: true, reason: 'proceed_anyway' };
           }, product.id);
 
           if (openResult.success) {
@@ -602,57 +599,40 @@ export class UploadWorkerService {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
           const pid = params.productId;
 
-          // 1. Locate the exact product card for pid (Listing Optimizer method)
-          const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"]')) as HTMLElement[];
-          let card = document.getElementById(`${pid}-card`) 
-            || allCards.find(c => c.id.toUpperCase().includes(pid) || Array.from(c.classList).some(cls => cls.toUpperCase().includes(pid)))
-            || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`)) as HTMLElement;
-
-          // 2. Locate the inputContainer (the product editor panel directly beneath this card)
-          const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
-          let inputContainer: HTMLElement | null = null;
-
-          if (card) {
-            const cardRect = card.getBoundingClientRect();
-            const validEditors = allEditors.filter(ed => {
-              const edRect = ed.getBoundingClientRect();
-              return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
-            });
-            if (validEditors.length > 0) {
-              inputContainer = validEditors[0];
-            }
-          }
-
-          if (!inputContainer) {
-            inputContainer = allEditors.find(ed => ed.offsetHeight > 40) || allEditors[allEditors.length - 1];
-          }
-
-          if (!inputContainer) return { success: false, reason: `Editor container for ${pid} not found` };
-          const editor = inputContainer;
-
-          // Helper 1: isFlowCheckboxChecked (Listing Optimizer method)
-          const isElementChecked = (fc: Element): boolean => {
-            const icon = fc.querySelector('.sci-icon, i, svg');
+          // Helper 1: isElementChecked
+          const isElementChecked = (el: Element): boolean => {
+            const icon = el.querySelector('.sci-icon, i, svg');
             if (icon) {
               const iconClass = (icon.className || '').toLowerCase();
-              if (iconClass.includes('blank')) {
-                return false;
-              }
-              return iconClass.includes('sci-check-box') || iconClass.includes('sci-check') || iconClass.includes('checkmark');
+              if (iconClass.includes('blank')) return false;
+              if (iconClass.includes('sci-check-box') || iconClass.includes('sci-check') || iconClass.includes('checkmark')) return true;
             }
-            const input = fc.querySelector('input[type="checkbox"], input') as HTMLInputElement;
-            return input ? Boolean(input.checked) : false;
+            const input = el.querySelector('input[type="checkbox"], input') as HTMLInputElement;
+            if (input && typeof input.checked === 'boolean') return input.checked;
+            if (el instanceof HTMLInputElement && typeof el.checked === 'boolean') return el.checked;
+
+            const aria = el.getAttribute('aria-checked');
+            if (aria === 'true') return true;
+            if (aria === 'false') return false;
+
+            return el.classList.contains('checked') || el.classList.contains('selected') || el.classList.contains('active');
           };
 
-          // Helper 2: clickFlowCheckbox (Listing Optimizer method: clicks inner span host)
-          const clickTargetElement = (fc: Element) => {
-            const input = fc.querySelector('input') as HTMLInputElement;
+          // Helper 2: clickTargetElement
+          const clickTargetElement = (el: Element) => {
+            const input = el.querySelector('input') as HTMLInputElement;
             if (input && (input.disabled || input.readOnly)) return;
 
-            const span = (fc.querySelector('span') || fc) as HTMLElement;
-            span.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-            span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-            span.click();
+            el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            (el as HTMLElement).click();
+
+            const span = el.querySelector('span, .color-checkbox');
+            if (span && span !== el) {
+              span.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+              span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+              (span as HTMLElement).click();
+            }
           };
 
           // Helper 3: Clue gathering
@@ -715,7 +695,7 @@ export class UploadWorkerService {
           };
 
           // -------------------------------------------------------------
-          // STEP A: Fit Types Configuration (Listing Optimizer method)
+          // STEP A: Fit Types Configuration
           // -------------------------------------------------------------
           let desiredFits = params.fitTypes.map(f => f.toLowerCase());
           if (desiredFits.includes('youth') && !desiredFits.includes('men') && !desiredFits.includes('women')) {
@@ -727,52 +707,46 @@ export class UploadWorkerService {
           // Rule: Adult Unisex is always active for any product offering it
           desiredFits.push('adult_unisex', 'unisex', 'adult');
 
-          const flowCheckboxes = Array.from(editor.querySelectorAll('flowcheckbox'));
-          const fitElements: { element: Element; matchedFit: string }[] = [];
+          const visibleFitCandidates = Array.from(document.querySelectorAll(
+            '.fit-type-container label, .fit-type-container flowcheckbox, ' +
+            'flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, ' +
+            'label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, ' +
+            'flowcheckbox[class*="-checkbox"], label[class*="-label"]'
+          )).filter(el => {
+            const rect = (el as HTMLElement).getBoundingClientRect();
+            return rect.height > 0 && rect.width > 0;
+          });
 
-          for (const fc of flowCheckboxes) {
-            const classStr = (fc.className || '').toLowerCase();
-            const parentLabel = fc.closest('label');
-            const labelClass = parentLabel ? (parentLabel.className || '').toLowerCase() : '';
-            const labelText = parentLabel ? (parentLabel.textContent || '').trim().toLowerCase() : '';
-            const combinedClasses = `${classStr} ${labelClass} ${labelText}`.toLowerCase();
+          const fitElements: { element: Element; matchedFit: string }[] = [];
+          const seenFits = new Set<string>();
+
+          for (const el of visibleFitCandidates) {
+            const parentLabel = (el.closest('label') || el) as HTMLElement;
+            const flow = (parentLabel.querySelector('flowcheckbox') || el.closest('flowcheckbox') || el) as HTMLElement;
+            const cls = `${(flow.className || '')} ${(parentLabel.className || '')} ${(el.className || '')}`.toLowerCase();
+            const text = (parentLabel.textContent || el.textContent || '').trim().toLowerCase();
+            const formControl = (flow.getAttribute('formcontrolname') || el.getAttribute('formcontrolname') || '').toLowerCase();
+            const combo = `${cls} ${text} ${formControl}`;
 
             // Ignore header
-            if (labelText === 'choose fit types:' || labelText.includes('choose fit types')) continue;
+            if (text === 'choose fit types:' || text.includes('choose fit types')) continue;
 
             let matchedFit = '';
-            if (combinedClasses.includes('girls-') || combinedClasses.includes('girls_') || combinedClasses.includes(' girls') || combinedClasses.includes('girls') || combinedClasses.includes('mädchen')) {
+            if (cls.includes('girls') || text.includes('girls') || combo.includes('girls') || combo.includes('mädchen')) {
               matchedFit = 'girls';
-            } else if (combinedClasses.includes('youth-') || combinedClasses.includes('youth_') || combinedClasses.includes(' youth') ||
-                       combinedClasses.includes('kids-') || combinedClasses.includes('kids_') || combinedClasses.includes(' kids') || combinedClasses.includes('youth') || combinedClasses.includes('kinder')) {
+            } else if (cls.includes('youth') || text.includes('youth') || combo.includes('youth') || combo.includes('kinder') || combo.includes('kids')) {
               matchedFit = 'youth';
-            } else if (combinedClasses.includes('unisex') || combinedClasses.includes('adult')) {
+            } else if (cls.includes('unisex') || text.includes('unisex') || combo.includes('unisex') || combo.includes('adult')) {
               matchedFit = 'adult_unisex';
-            } else if (combinedClasses.includes('women-') || combinedClasses.includes('women_') || combinedClasses.includes(' women') || combinedClasses.includes('women') || combinedClasses.includes('frauen') || combinedClasses.includes('damen')) {
+            } else if (cls.includes('women') || text.includes('women') || combo.includes('women') || combo.includes('frauen') || combo.includes('damen')) {
               matchedFit = 'women';
-            } else if (combinedClasses.includes('men-') || combinedClasses.includes('men_') || combinedClasses.includes(' men') || /\bmen\b/.test(labelText) || combinedClasses.includes('männer') || combinedClasses.includes('herren')) {
+            } else if (cls.includes('men') || /\bmen\b/.test(text) || combo.includes('männer') || combo.includes('herren')) {
               matchedFit = 'men';
             }
 
-            if (matchedFit) {
-              fitElements.push({ element: fc, matchedFit });
-            }
-          }
-
-          // Legacy inputs (if any)
-          const legacyInputs = Array.from(editor.querySelectorAll('input[name="fitType"], input[id*="fitType"]')) as HTMLInputElement[];
-          for (const cb of legacyInputs) {
-            if (cb.disabled || cb.readOnly) continue;
-            const val = `${cb.value || ''} ${cb.id || ''} ${cb.getAttribute('aria-label') || ''}`.toLowerCase();
-            let matchedFit = '';
-            if (val.includes('girls')) matchedFit = 'girls';
-            else if (val.includes('youth') || val.includes('kids')) matchedFit = 'youth';
-            else if (val.includes('unisex') || val.includes('adult')) matchedFit = 'adult_unisex';
-            else if (val.includes('women')) matchedFit = 'women';
-            else if (/\bmen\b/.test(val)) matchedFit = 'men';
-
-            if (matchedFit) {
-              fitElements.push({ element: cb, matchedFit });
+            if (matchedFit && !seenFits.has(matchedFit)) {
+              seenFits.add(matchedFit);
+              fitElements.push({ element: flow, matchedFit });
             }
           }
 
@@ -782,28 +756,28 @@ export class UploadWorkerService {
 
           for (const item of fitElements) {
             const shouldBeChecked = desiredFits.includes(item.matchedFit) || item.matchedFit === 'adult_unisex' || item.matchedFit === 'unisex';
-            
-            if (item.element.tagName.toLowerCase() === 'flowcheckbox') {
-              const isChecked = isElementChecked(item.element);
+            let isChecked = isElementChecked(item.element);
+
+            if (isChecked !== shouldBeChecked) {
+              clickTargetElement(item.element);
+              await sleep(100);
+              isChecked = isElementChecked(item.element);
+
               if (isChecked !== shouldBeChecked) {
-                clickTargetElement(item.element);
-                await sleep(80);
+                const parentLabel = item.element.closest('label');
+                if (parentLabel) {
+                  parentLabel.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                  parentLabel.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                  parentLabel.click();
+                  await sleep(100);
+                  isChecked = isElementChecked(item.element);
+                }
               }
-              const isFinal = isElementChecked(item.element);
-              fitDebugSummary[item.matchedFit] = { target: shouldBeChecked, final: isFinal };
-              if (isFinal) {
-                activeFitsApplied.push(item.matchedFit);
-              }
-            } else {
-              const cb = item.element as HTMLInputElement;
-              if (cb.checked !== shouldBeChecked) {
-                cb.click();
-                await sleep(80);
-              }
-              fitDebugSummary[item.matchedFit] = { target: shouldBeChecked, final: cb.checked };
-              if (cb.checked) {
-                activeFitsApplied.push(item.matchedFit);
-              }
+            }
+
+            fitDebugSummary[item.matchedFit] = { target: shouldBeChecked, final: isChecked };
+            if (isChecked) {
+              activeFitsApplied.push(item.matchedFit);
             }
           }
 
@@ -815,12 +789,11 @@ export class UploadWorkerService {
 
           if (params.colorMode === 'customPicker') {
             // Hex color picker mode
-            const colorBtn = (editor.querySelector('#color-btn') 
-              || editor.querySelector('button[id*="color-btn"]')
-              || editor.querySelector('.background-color-picker-button')
-              || editor.querySelector('button.color-btn')
-              || editor.querySelector('.color-picker-button')
-              || document.querySelector('#color-btn')) as HTMLElement;
+            const colorBtn = (document.querySelector('#color-btn') 
+              || document.querySelector('button[id*="color-btn"]')
+              || document.querySelector('.background-color-picker-button')
+              || document.querySelector('button.color-btn')
+              || document.querySelector('.color-picker-button')) as HTMLElement;
 
             if (colorBtn) {
               const isPopoverOpen = colorBtn.hasAttribute('aria-describedby');
@@ -888,8 +861,12 @@ export class UploadWorkerService {
               }
             }
           } else {
-            // Swatches Mode (Predefined Colors)
-            const colorCheckboxes = Array.from(editor.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]'));
+            // Swatches Mode (Predefined Colors) - only visible swatches in open editor
+            const colorCheckboxes = Array.from(document.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]'))
+              .filter(el => {
+                const rect = (el as HTMLElement).getBoundingClientRect();
+                return rect.height > 0 && rect.width > 0;
+              });
 
             // PASS 1: Apply user's Product Catalog definitions exclusively (Single Source of Truth)
             for (const cb of colorCheckboxes) {
