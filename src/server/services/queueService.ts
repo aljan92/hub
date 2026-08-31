@@ -827,6 +827,82 @@ export class QueueService {
   }
 
   /**
+   * Knapsack / Subset-Sum Best-Fit Solver for Update Designs:
+   * Finds the optimal combination of update designs from the pool that maximizes
+   * utilized slots up to the available capacity without dropping products from any update design.
+   * 0-slot designs are ALWAYS included for free.
+   */
+  public static solveBestFitUpdateKnapsack(
+    candidates: QueueItem[], 
+    capacity: number
+  ): { selectedIds: Set<string>; usedSlots: number } {
+    const selectedIds = new Set<string>();
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      return { selectedIds, usedSlots: 0 };
+    }
+
+    // 1. Separate 0-slot updates (always included for free) from positive-slot updates
+    const zeroSlotItems: QueueItem[] = [];
+    const positiveSlotItems: QueueItem[] = [];
+
+    for (const item of candidates) {
+      const slots = item.totalBaseSlots ?? 0;
+      if (slots <= 0) {
+        zeroSlotItems.push(item);
+        selectedIds.add(item.id);
+      } else {
+        positiveSlotItems.push(item);
+      }
+    }
+
+    if (capacity <= 0 || positiveSlotItems.length === 0) {
+      return { selectedIds, usedSlots: 0 };
+    }
+
+    // 2. Dynamic Programming Subset-Sum (0/1 Knapsack)
+    // dp[w] stores array of items that sum to weight w
+    const dp: Array<QueueItem[] | null> = new Array(capacity + 1).fill(null);
+    dp[0] = [];
+
+    for (const item of positiveSlotItems) {
+      const itemWeight = item.totalBaseSlots;
+      if (itemWeight > capacity) continue;
+
+      for (let w = capacity; w >= itemWeight; w--) {
+        const prevCombination = dp[w - itemWeight];
+        if (prevCombination !== null) {
+          const newCombination = [...prevCombination, item];
+          const currentCombinationAtW = dp[w];
+
+          // If no combination yet at w, or if new combination has more items (tie-breaking: update more designs)
+          if (currentCombinationAtW === null || newCombination.length > currentCombinationAtW.length) {
+            dp[w] = newCombination;
+          }
+        }
+      }
+    }
+
+    // 3. Find the highest weight <= capacity that has a valid combination
+    let bestWeight = 0;
+    let bestCombination: QueueItem[] = [];
+
+    for (let w = capacity; w >= 0; w--) {
+      if (dp[w] !== null) {
+        bestWeight = w;
+        bestCombination = dp[w]!;
+        break;
+      }
+    }
+
+    // 4. Add best combination items to selectedIds
+    for (const item of bestCombination) {
+      selectedIds.add(item.id);
+    }
+
+    return { selectedIds, usedSlots: bestWeight };
+  }
+
+  /**
    * Core Smart Balancing Algorithm
    * Dynamically adjusts active product count & marketplace slots against daily limit.
    */
@@ -890,7 +966,7 @@ export class QueueService {
 
       for (const prod of catalog.products) {
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
-        const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ['US'];
+        const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
         activeMap[prod.id] = mps;
         baseSlots += mps.length;
       }
@@ -909,7 +985,7 @@ export class QueueService {
 
       for (const prod of catalog.products) {
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
-        const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ['US'];
+        const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
         activeMap[prod.id] = mps;
         baseCatalogSlots += mps.length;
       }
@@ -1017,7 +1093,7 @@ export class QueueService {
     } else if (isLiveMode) {
       // LIVE MODE: 
       // Prio 1: New Designs Live (consume daily slots)
-      // Prio 2: Fill remaining slots with Update Designs (consuming their netSlots)
+      // Prio 2: Fill remaining slots with Update Designs using Best-Fit Knapsack Optimization
 
       let accumulatedMinSlots = 0;
       const scheduledNewItems: QueueItem[] = [];
@@ -1075,26 +1151,27 @@ export class QueueService {
         item.allocatedSlots = 0;
       }
 
-      // Prio 2: Allocate remaining slots to Update Items
-      let remainingSlotsForUpdates = Math.max(0, availableSlotsForWaiting - usedSlotsByNew);
+      // Prio 2: Allocate remaining slots to Update Items using Best-Fit Knapsack
+      const remainingSlotsForUpdates = Math.max(0, availableSlotsForWaiting - usedSlotsByNew);
+      const knapsackResult = this.solveBestFitUpdateKnapsack(waitingUpdateItems, remainingSlotsForUpdates);
+
       for (const uItem of waitingUpdateItems) {
-        if (uItem.totalBaseSlots <= remainingSlotsForUpdates || uItem.totalBaseSlots === 0) {
+        if (knapsackResult.selectedIds.has(uItem.id)) {
           uItem.allocatedSlots = uItem.totalBaseSlots;
-          remainingSlotsForUpdates -= uItem.totalBaseSlots;
         } else {
           uItem.allocatedSlots = 0;
         }
       }
     } else if (isHybridMode) {
       // DRAFT-HYBRID MODE:
-      // Prio 1 (Live): Update Designs uploaded LIVE (utilizing daily slots)
+      // Prio 1 (Live): Update Designs uploaded LIVE (utilizing daily slots with Best-Fit Knapsack)
       // Prio 2 (Draft): New Designs uploaded as DRAFT (0 Amazon slots consumed)
 
-      let remainingLiveSlots = availableSlotsForWaiting;
+      const knapsackResult = this.solveBestFitUpdateKnapsack(waitingUpdateItems, availableSlotsForWaiting);
+
       for (const uItem of waitingUpdateItems) {
-        if (uItem.totalBaseSlots <= remainingLiveSlots || uItem.totalBaseSlots === 0) {
+        if (knapsackResult.selectedIds.has(uItem.id)) {
           uItem.allocatedSlots = uItem.totalBaseSlots;
-          remainingLiveSlots -= uItem.totalBaseSlots;
         } else {
           uItem.allocatedSlots = 0;
         }

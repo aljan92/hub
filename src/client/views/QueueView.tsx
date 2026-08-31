@@ -1372,7 +1372,9 @@ export const QueueView: React.FC = () => {
                                 : isPaused
                                   ? '⏸️ Pausiert'
                                   : isUpdate
-                                    ? `🟣 ${item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0)} Slots`
+                                    ? canUploadToday
+                                      ? `🟣 ${(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} Slots • Heute Live`
+                                      : `🟡 ${(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} Slots • Im Pool`
                                     : canUploadToday
                                       ? `🟢 ${item.allocatedSlots} Slots`
                                       : '🟡 Wartet auf freie Slots'}
@@ -2138,12 +2140,28 @@ export const QueueView: React.FC = () => {
                                 {item.title || item.designTitle}
                               </h4>
                               
-                              <span className="px-2.5 py-1 rounded-xl text-xs font-bold font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-sm shadow-purple-500/10">
-                                🟣 {(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} Slots
-                              </span>
-                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                                Update Bereit
-                              </span>
+                              {(() => {
+                                const isScheduledToday = !item.isPaused && ((item.allocatedSlots && item.allocatedSlots > 0) || item.totalBaseSlots === 0);
+                                const netSlotCount = (item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0));
+                                return (
+                                  <>
+                                    <span className={`px-2.5 py-1 rounded-xl text-xs font-bold font-mono border shadow-sm ${
+                                      isScheduledToday
+                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10'
+                                        : 'bg-purple-500/20 text-purple-300 border-purple-500/30 shadow-purple-500/10'
+                                    }`}>
+                                      {isScheduledToday ? `🟢 ${netSlotCount} Slots (Heute Live)` : `🟣 ${netSlotCount} Slots (Im Pool)`}
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                                      isScheduledToday
+                                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                                    }`}>
+                                      {isScheduledToday ? 'Eingeplant' : 'Im Pool bereit'}
+                                    </span>
+                                  </>
+                                );
+                              })()}
                               {item.fitTypes && item.fitTypes.length > 0 && (
                                 <span className="px-2 py-0.5 rounded text-[10px] font-mono text-purple-300 bg-purple-500/10 border border-purple-500/20">
                                   {item.fitTypes.join(', ')}

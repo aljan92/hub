@@ -223529,6 +223529,61 @@ var init_queueService = __esm2({
         this.rebalanceQueue();
       }
       /**
+       * Knapsack / Subset-Sum Best-Fit Solver for Update Designs:
+       * Finds the optimal combination of update designs from the pool that maximizes
+       * utilized slots up to the available capacity without dropping products from any update design.
+       * 0-slot designs are ALWAYS included for free.
+       */
+      static solveBestFitUpdateKnapsack(candidates, capacity) {
+        const selectedIds = /* @__PURE__ */ new Set();
+        if (!Array.isArray(candidates) || candidates.length === 0) {
+          return { selectedIds, usedSlots: 0 };
+        }
+        const zeroSlotItems = [];
+        const positiveSlotItems = [];
+        for (const item of candidates) {
+          const slots = item.totalBaseSlots ?? 0;
+          if (slots <= 0) {
+            zeroSlotItems.push(item);
+            selectedIds.add(item.id);
+          } else {
+            positiveSlotItems.push(item);
+          }
+        }
+        if (capacity <= 0 || positiveSlotItems.length === 0) {
+          return { selectedIds, usedSlots: 0 };
+        }
+        const dp = new Array(capacity + 1).fill(null);
+        dp[0] = [];
+        for (const item of positiveSlotItems) {
+          const itemWeight = item.totalBaseSlots;
+          if (itemWeight > capacity) continue;
+          for (let w = capacity; w >= itemWeight; w--) {
+            const prevCombination = dp[w - itemWeight];
+            if (prevCombination !== null) {
+              const newCombination = [...prevCombination, item];
+              const currentCombinationAtW = dp[w];
+              if (currentCombinationAtW === null || newCombination.length > currentCombinationAtW.length) {
+                dp[w] = newCombination;
+              }
+            }
+          }
+        }
+        let bestWeight = 0;
+        let bestCombination = [];
+        for (let w = capacity; w >= 0; w--) {
+          if (dp[w] !== null) {
+            bestWeight = w;
+            bestCombination = dp[w];
+            break;
+          }
+        }
+        for (const item of bestCombination) {
+          selectedIds.add(item.id);
+        }
+        return { selectedIds, usedSlots: bestWeight };
+      }
+      /**
        * Core Smart Balancing Algorithm
        * Dynamically adjusts active product count & marketplace slots against daily limit.
        */
@@ -223580,7 +223635,7 @@ var init_queueService = __esm2({
           let baseSlots = 0;
           for (const prod of catalog.products) {
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
-            const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ["US"];
+            const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
             activeMap[prod.id] = mps;
             baseSlots += mps.length;
           }
@@ -223595,7 +223650,7 @@ var init_queueService = __esm2({
           let baseCatalogSlots = 0;
           for (const prod of catalog.products) {
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
-            const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ["US"];
+            const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
             activeMap[prod.id] = mps;
             baseCatalogSlots += mps.length;
           }
@@ -223728,21 +223783,20 @@ var init_queueService = __esm2({
           for (const item of overflowNewItems) {
             item.allocatedSlots = 0;
           }
-          let remainingSlotsForUpdates = Math.max(0, availableSlotsForWaiting - usedSlotsByNew);
+          const remainingSlotsForUpdates = Math.max(0, availableSlotsForWaiting - usedSlotsByNew);
+          const knapsackResult = this.solveBestFitUpdateKnapsack(waitingUpdateItems, remainingSlotsForUpdates);
           for (const uItem of waitingUpdateItems) {
-            if (uItem.totalBaseSlots <= remainingSlotsForUpdates || uItem.totalBaseSlots === 0) {
+            if (knapsackResult.selectedIds.has(uItem.id)) {
               uItem.allocatedSlots = uItem.totalBaseSlots;
-              remainingSlotsForUpdates -= uItem.totalBaseSlots;
             } else {
               uItem.allocatedSlots = 0;
             }
           }
         } else if (isHybridMode) {
-          let remainingLiveSlots = availableSlotsForWaiting;
+          const knapsackResult = this.solveBestFitUpdateKnapsack(waitingUpdateItems, availableSlotsForWaiting);
           for (const uItem of waitingUpdateItems) {
-            if (uItem.totalBaseSlots <= remainingLiveSlots || uItem.totalBaseSlots === 0) {
+            if (knapsackResult.selectedIds.has(uItem.id)) {
               uItem.allocatedSlots = uItem.totalBaseSlots;
-              remainingLiveSlots -= uItem.totalBaseSlots;
             } else {
               uItem.allocatedSlots = 0;
             }

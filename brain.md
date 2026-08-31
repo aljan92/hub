@@ -527,4 +527,23 @@ MBA HUB/
   7. **UI & Checkpoint 3:**
      - `TasksView.tsx` visualisiert Treffer nach Match-Typ, Referee/Verifier Verdicts, verbotene Begriffe und bietet einen Live USPTO Recheck.
   8. **Unit & Acceptance Tests:**
-     - `tests/trademarkV2.test.ts` verifiziert alle 9 Tests (§41) mit 14/14 bestandenen Assertions.
+     - `tests/trademarkV2.test.ts` verifiziert alle 9 Tests (§41) mit 15/15 bestandenen Assertions.
+
+### 10.20 🎒 Best-Fit Knapsack Slot-Optimierer für Update-Queue
+- **Problem & Ursache:**
+  - Update-Designs haben feste Netto-Slot-Größen (z. B. 43, 35, 16, 12, 3, 0 Slots) und dürfen nicht beschnitten werden.
+  - Ein rein sequentielles Durchgehen (Greedy First-Fit) führt oft dazu, dass freie Rest-Slots am Tagesende (z. B. 94 Slots nach neuen Designs) nicht optimal genutzt werden, wenn ein großes Update an vorderer Stelle steht und blockiert.
+- **Lösung & Architektur:**
+  1. **Feste Slot-Größe für Updates:** `QueueService.dropOneSlotFromItem` wird ausschließlich für neue Designs angewendet. Updates behalten stets 100% ihrer berechneten `totalBaseSlots`.
+  2. **0-Slot Updates immer aktiv:** Designs mit 0 Netto-Slots (bereits alle Katalog-Produkte online) werden sofort ausgewählt und verbrauchen 0 Slots vom Tageslimit.
+  3. **Mathematischer 0/1 Knapsack / Subset-Sum Solver (`QueueService.solveBestFitUpdateKnapsack`):**
+     - Berechnet via Dynamic Programming in $< 1$ ms aus bis zu 50–100 Pool-Designs die perfekte Teilmenge, die die verbleibende Slot-Kapazität maximal auslastet.
+     - Tie-Breaking bevorzugt Kombinationen mit mehr aktualisierten Designs und ältere Pool-Designs.
+  4. **Integration in Queue-Modi:**
+     - **Live-Modus:** Füllt nach Abzug der neuen Designs die verbleibenden Rest-Slots punktgenau mit Pool-Updates auf.
+     - **Draft-Hybrid-Modus:** Ermittelt die optimale Kombination aus dem Update-Pool für die vollen 200 Tages-Slots.
+  5. **UI-Kennzeichnung (`QueueView.tsx`):**
+     - Update-Tab: `🟢 X Slots (Heute Live)` vs `🟣 X Slots (Im Pool)`.
+     - Warteschlange: `🟣 X Slots • Heute Live` vs `🟡 X Slots • Im Pool`.
+  6. **Unit-Tests:**
+     - `tests/knapsackOptimizer.test.ts` (16/16 Tests bestanden).
