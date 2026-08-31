@@ -227130,11 +227130,20 @@ var UploadWorkerService = class _UploadWorkerService {
           openRetries++;
           const openResult = await page.evaluate(async (pid) => {
             const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
-            const existingEditor = document.querySelector(`product-editor .${pid}-container`)?.closest("product-editor") || document.querySelector(`product-editor[id*="${pid}"]`) || document.querySelector(`product-editor .${pid}-editor`);
-            if (existingEditor && existingEditor.offsetHeight > 40) {
-              return { success: true, isAlreadyOpen: true };
+            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"]'));
+            let card = document.getElementById(`${pid}-card`) || allCards.find((c) => c.id.toUpperCase().includes(pid) || Array.from(c.classList).some((cls) => cls.toUpperCase().includes(pid))) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
+            if (card) {
+              const cardRect = card.getBoundingClientRect();
+              const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+              const validEditors = allEditors.filter((ed) => {
+                const edRect = ed.getBoundingClientRect();
+                return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
+              });
+              if (validEditors.length > 0 && validEditors[0].offsetHeight > 40) {
+                return { success: true, isAlreadyOpen: true };
+              }
             }
-            const editBtn = document.querySelector(`.${pid}-edit-btn`) || document.querySelector(`#${pid}-card .edit-button`) || document.querySelector(`#${pid}-card button.edit-btn`) || document.querySelector(`button[class*="${pid}-edit"]`) || Array.from(document.querySelectorAll(`#${pid}-card button, .${pid}-container button, [id*="${pid}"] button, div[class*="${pid}"] button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
+            const editBtn = (card ? card.querySelector(".edit-button") || card.querySelector("button.edit-btn") || card.querySelector('button[class*="edit"]') || Array.from(card.querySelectorAll("button")).find((b) => b.textContent?.trim().toLowerCase().includes("edit")) : null) || document.querySelector(`.${pid}-edit-btn`) || document.querySelector(`#${pid}-card .edit-button`) || document.querySelector(`#${pid}-card button.edit-btn`) || document.querySelector(`button[class*="${pid}-edit"]`) || Array.from(document.querySelectorAll(`#${pid}-card button, .${pid}-container button, [id*="${pid}"] button, div[class*="${pid}"] button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
             if (!editBtn) {
               return { success: false, reason: `Edit button f\xFCr ${pid} nicht im DOM gefunden` };
             }
@@ -227146,9 +227155,16 @@ var UploadWorkerService = class _UploadWorkerService {
             const startWait = Date.now();
             while (Date.now() - startWait < 2e3) {
               await sleep2(150);
-              const ed = document.querySelector(`product-editor .${pid}-container`)?.closest("product-editor") || document.querySelector(`product-editor[id*="${pid}"]`) || document.querySelector(`product-editor .${pid}-editor`) || document.querySelector("product-editor");
-              if (ed && ed.offsetHeight > 40) {
-                return { success: true, isAlreadyOpen: false };
+              if (card) {
+                const cardRect = card.getBoundingClientRect();
+                const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+                const validEditors = allEditors.filter((ed) => {
+                  const edRect = ed.getBoundingClientRect();
+                  return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
+                });
+                if (validEditors.length > 0 && validEditors[0].offsetHeight > 40) {
+                  return { success: true, isAlreadyOpen: false };
+                }
               }
             }
             return { success: false, reason: `Editor f\xFCr ${pid} hat sich nach 2000ms nicht ge\xF6ffnet` };
@@ -227167,37 +227183,44 @@ var UploadWorkerService = class _UploadWorkerService {
         const editResult = await page.evaluate(async (params2) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const pid = params2.productId;
-          const editor = document.querySelector(`product-editor .${pid}-container`)?.closest("product-editor") || document.querySelector(`product-editor[id*="${pid}"]`) || document.querySelector("product-editor");
-          if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
-          const isElementChecked = (el) => {
-            const container = el.closest("label") || el.closest("flowcheckbox") || el;
-            const icon = container.querySelector(".sci-icon, i, svg");
+          const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"]'));
+          let card = document.getElementById(`${pid}-card`) || allCards.find((c) => c.id.toUpperCase().includes(pid) || Array.from(c.classList).some((cls) => cls.toUpperCase().includes(pid))) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
+          const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+          let inputContainer = null;
+          if (card) {
+            const cardRect = card.getBoundingClientRect();
+            const validEditors = allEditors.filter((ed) => {
+              const edRect = ed.getBoundingClientRect();
+              return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
+            });
+            if (validEditors.length > 0) {
+              inputContainer = validEditors[0];
+            }
+          }
+          if (!inputContainer) {
+            inputContainer = allEditors.find((ed) => ed.offsetHeight > 40) || allEditors[allEditors.length - 1];
+          }
+          if (!inputContainer) return { success: false, reason: `Editor container for ${pid} not found` };
+          const editor = inputContainer;
+          const isElementChecked = (fc) => {
+            const icon = fc.querySelector(".sci-icon, i, svg");
             if (icon) {
               const iconClass = (icon.className || "").toLowerCase();
               if (iconClass.includes("blank")) {
                 return false;
               }
-              if (iconClass.includes("sci-check-box") || iconClass.includes("checkmark")) {
-                return true;
-              }
+              return iconClass.includes("sci-check-box") || iconClass.includes("sci-check") || iconClass.includes("checkmark");
             }
-            const input = container.querySelector('input[type="checkbox"], input');
-            if (input && typeof input.checked === "boolean") {
-              return input.checked;
-            }
-            if (container instanceof HTMLInputElement && typeof container.checked === "boolean") {
-              return container.checked;
-            }
-            const flow = el.closest("flowcheckbox") || el;
-            if (flow.getAttribute("aria-checked") === "true") return true;
-            if (flow.getAttribute("aria-checked") === "false") return false;
-            return flow.classList.contains("checked") || flow.classList.contains("selected") || flow.classList.contains("active");
+            const input = fc.querySelector('input[type="checkbox"], input');
+            return input ? Boolean(input.checked) : false;
           };
-          const clickTargetElement = (el) => {
-            const flow = el.tagName.toLowerCase() === "flowcheckbox" ? el : el.querySelector("flowcheckbox") || el.closest("flowcheckbox") || el;
-            flow.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-            flow.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-            flow.click();
+          const clickTargetElement = (fc) => {
+            const input = fc.querySelector("input");
+            if (input && (input.disabled || input.readOnly)) return;
+            const span = fc.querySelector("span") || fc;
+            span.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+            span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+            span.click();
           };
           const extractColorClues = (cb) => {
             const clues = [];
@@ -227262,72 +227285,70 @@ var UploadWorkerService = class _UploadWorkerService {
             desiredFits.push("girls");
           }
           desiredFits.push("adult_unisex", "unisex", "adult");
-          const allFitContainers = Array.from(document.querySelectorAll('.fit-type-container, .fit-types, [class*="fit-type"]'));
-          const visibleFitContainer = allFitContainers.find((c) => {
-            const rect = c.getBoundingClientRect();
-            return rect.height > 0 && rect.width > 0;
-          }) || editor.querySelector(".fit-type-container") || editor;
-          const fitCandidateLabels = Array.from(visibleFitContainer.querySelectorAll(
-            'label[class*="-label"], flowcheckbox[class*="-checkbox"], label, flowcheckbox'
-          ));
-          const fitControlsMap = /* @__PURE__ */ new Map();
-          for (const el of fitCandidateLabels) {
-            const parentLabel = el.closest("label") || el;
-            const flow = parentLabel.querySelector("flowcheckbox") || el.closest("flowcheckbox") || el;
-            const cls = `${flow.className || ""} ${parentLabel.className || ""} ${el.className || ""}`.toLowerCase();
-            const text2 = (parentLabel.textContent || el.textContent || "").trim().toLowerCase();
-            const formControl = (flow.getAttribute("formcontrolname") || el.getAttribute("formcontrolname") || "").toLowerCase();
-            const combo = `${cls} ${text2} ${formControl}`;
-            if (text2 === "choose fit types:" || text2.includes("choose fit types")) continue;
-            let fitKey = "";
-            if (cls.includes("girls") || text2.includes("girls") || combo.includes("girls") || combo.includes("m\xE4dchen")) {
-              fitKey = "girls";
-            } else if (cls.includes("youth") || text2.includes("youth") || combo.includes("youth") || combo.includes("kinder") || combo.includes("kids")) {
-              fitKey = "youth";
-            } else if (cls.includes("unisex") || text2.includes("unisex") || combo.includes("unisex") || combo.includes("adult") || cls.includes("adult")) {
-              fitKey = "adult_unisex";
-            } else if (cls.includes("women") || text2.includes("women") || combo.includes("women") || combo.includes("frauen") || combo.includes("damen")) {
-              fitKey = "women";
-            } else if (cls.includes("men") || /\bmen\b/.test(text2) || combo.includes("m\xE4nner") || combo.includes("herren")) {
-              fitKey = "men";
+          const flowCheckboxes = Array.from(editor.querySelectorAll("flowcheckbox"));
+          const fitElements = [];
+          for (const fc of flowCheckboxes) {
+            const classStr = (fc.className || "").toLowerCase();
+            const parentLabel = fc.closest("label");
+            const labelClass = parentLabel ? (parentLabel.className || "").toLowerCase() : "";
+            const labelText = parentLabel ? (parentLabel.textContent || "").trim().toLowerCase() : "";
+            const combinedClasses = `${classStr} ${labelClass} ${labelText}`.toLowerCase();
+            if (labelText === "choose fit types:" || labelText.includes("choose fit types")) continue;
+            let matchedFit = "";
+            if (combinedClasses.includes("girls-") || combinedClasses.includes("girls_") || combinedClasses.includes(" girls") || combinedClasses.includes("girls") || combinedClasses.includes("m\xE4dchen")) {
+              matchedFit = "girls";
+            } else if (combinedClasses.includes("youth-") || combinedClasses.includes("youth_") || combinedClasses.includes(" youth") || combinedClasses.includes("kids-") || combinedClasses.includes("kids_") || combinedClasses.includes(" kids") || combinedClasses.includes("youth") || combinedClasses.includes("kinder")) {
+              matchedFit = "youth";
+            } else if (combinedClasses.includes("unisex") || combinedClasses.includes("adult")) {
+              matchedFit = "adult_unisex";
+            } else if (combinedClasses.includes("women-") || combinedClasses.includes("women_") || combinedClasses.includes(" women") || combinedClasses.includes("women") || combinedClasses.includes("frauen") || combinedClasses.includes("damen")) {
+              matchedFit = "women";
+            } else if (combinedClasses.includes("men-") || combinedClasses.includes("men_") || combinedClasses.includes(" men") || /\bmen\b/.test(labelText) || combinedClasses.includes("m\xE4nner") || combinedClasses.includes("herren")) {
+              matchedFit = "men";
             }
-            if (fitKey && !fitControlsMap.has(fitKey)) {
-              fitControlsMap.set(fitKey, flow);
+            if (matchedFit) {
+              fitElements.push({ element: fc, matchedFit });
+            }
+          }
+          const legacyInputs = Array.from(editor.querySelectorAll('input[name="fitType"], input[id*="fitType"]'));
+          for (const cb of legacyInputs) {
+            if (cb.disabled || cb.readOnly) continue;
+            const val = `${cb.value || ""} ${cb.id || ""} ${cb.getAttribute("aria-label") || ""}`.toLowerCase();
+            let matchedFit = "";
+            if (val.includes("girls")) matchedFit = "girls";
+            else if (val.includes("youth") || val.includes("kids")) matchedFit = "youth";
+            else if (val.includes("unisex") || val.includes("adult")) matchedFit = "adult_unisex";
+            else if (val.includes("women")) matchedFit = "women";
+            else if (/\bmen\b/.test(val)) matchedFit = "men";
+            if (matchedFit) {
+              fitElements.push({ element: cb, matchedFit });
             }
           }
           const activeFitsApplied = [];
           const fitDebugSummary = {};
-          for (const [fitKey, flowEl] of fitControlsMap.entries()) {
-            const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === "adult_unisex" || fitKey === "unisex";
-            const initialChecked = isElementChecked(flowEl);
-            let isChecked = initialChecked;
-            if (isChecked !== shouldBeChecked) {
-              clickTargetElement(flowEl);
-              await sleep2(120);
-              isChecked = isElementChecked(flowEl);
+          for (const item2 of fitElements) {
+            const shouldBeChecked = desiredFits.includes(item2.matchedFit) || item2.matchedFit === "adult_unisex" || item2.matchedFit === "unisex";
+            if (item2.element.tagName.toLowerCase() === "flowcheckbox") {
+              const isChecked = isElementChecked(item2.element);
               if (isChecked !== shouldBeChecked) {
-                const parentLabel = flowEl.closest("label");
-                if (parentLabel) {
-                  parentLabel.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-                  parentLabel.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-                  parentLabel.click();
-                  await sleep2(120);
-                  isChecked = isElementChecked(flowEl);
-                }
+                clickTargetElement(item2.element);
+                await sleep2(80);
               }
-            }
-            fitDebugSummary[fitKey] = { initial: initialChecked, target: shouldBeChecked, final: isChecked };
-            if (isChecked) {
-              activeFitsApplied.push(fitKey);
-            }
-          }
-          if (fitControlsMap.size > 0 && activeFitsApplied.length === 0) {
-            const fallbackKey = fitControlsMap.has("men") ? "men" : fitControlsMap.keys().next().value;
-            if (fallbackKey) {
-              const fallbackEl = fitControlsMap.get(fallbackKey);
-              clickTargetElement(fallbackEl);
-              await sleep2(100);
-              activeFitsApplied.push(fallbackKey);
+              const isFinal = isElementChecked(item2.element);
+              fitDebugSummary[item2.matchedFit] = { target: shouldBeChecked, final: isFinal };
+              if (isFinal) {
+                activeFitsApplied.push(item2.matchedFit);
+              }
+            } else {
+              const cb = item2.element;
+              if (cb.checked !== shouldBeChecked) {
+                cb.click();
+                await sleep2(80);
+              }
+              fitDebugSummary[item2.matchedFit] = { target: shouldBeChecked, final: cb.checked };
+              if (cb.checked) {
+                activeFitsApplied.push(item2.matchedFit);
+              }
             }
           }
           let finalActiveColorNames = [];

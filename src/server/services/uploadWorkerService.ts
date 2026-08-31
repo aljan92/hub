@@ -517,22 +517,32 @@ export class UploadWorkerService {
           const openResult = await page.evaluate(async (pid: string) => {
             const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-            // 1. Check if editor for this product is already visible and open
-            const existingEditor = document.querySelector(`product-editor .${pid}-container`)?.closest('product-editor') 
-              || document.querySelector(`product-editor[id*="${pid}"]`)
-              || document.querySelector(`product-editor .${pid}-editor`) as HTMLElement;
+            // 1. Locate the exact product card for pid (Listing Optimizer method)
+            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"]')) as HTMLElement[];
+            let card = document.getElementById(`${pid}-card`) 
+              || allCards.find(c => c.id.toUpperCase().includes(pid) || Array.from(c.classList).some(cls => cls.toUpperCase().includes(pid)))
+              || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`)) as HTMLElement;
 
-            if (existingEditor && existingEditor.offsetHeight > 40) {
-              return { success: true, isAlreadyOpen: true };
+            if (card) {
+              const cardRect = card.getBoundingClientRect();
+              const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
+              const validEditors = allEditors.filter(ed => {
+                const edRect = ed.getBoundingClientRect();
+                return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
+              });
+              if (validEditors.length > 0 && validEditors[0].offsetHeight > 40) {
+                return { success: true, isAlreadyOpen: true };
+              }
             }
 
             // 2. Locate the "Edit details" button with all known Merch selectors
-            const editBtn = (document.querySelector(`.${pid}-edit-btn`) 
+            const editBtn = (card ? (card.querySelector('.edit-button') || card.querySelector('button.edit-btn') || card.querySelector('button[class*="edit"]') || Array.from(card.querySelectorAll('button')).find(b => b.textContent?.trim().toLowerCase().includes('edit'))) : null)
+              || document.querySelector(`.${pid}-edit-btn`) 
               || document.querySelector(`#${pid}-card .edit-button`) 
               || document.querySelector(`#${pid}-card button.edit-btn`)
               || document.querySelector(`button[class*="${pid}-edit"]`)
               || Array.from(document.querySelectorAll(`#${pid}-card button, .${pid}-container button, [id*="${pid}"] button, div[class*="${pid}"] button`))
-                  .find(b => b.textContent?.trim().toLowerCase().includes('edit'))) as HTMLElement;
+                  .find(b => b.textContent?.trim().toLowerCase().includes('edit')) as HTMLElement;
 
             if (!editBtn) {
               return { success: false, reason: `Edit button für ${pid} nicht im DOM gefunden` };
@@ -551,13 +561,16 @@ export class UploadWorkerService {
             const startWait = Date.now();
             while (Date.now() - startWait < 2000) {
               await sleep(150);
-              const ed = document.querySelector(`product-editor .${pid}-container`)?.closest('product-editor') 
-                || document.querySelector(`product-editor[id*="${pid}"]`)
-                || document.querySelector(`product-editor .${pid}-editor`)
-                || document.querySelector('product-editor') as HTMLElement;
-
-              if (ed && ed.offsetHeight > 40) {
-                return { success: true, isAlreadyOpen: false };
+              if (card) {
+                const cardRect = card.getBoundingClientRect();
+                const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
+                const validEditors = allEditors.filter(ed => {
+                  const edRect = ed.getBoundingClientRect();
+                  return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
+                });
+                if (validEditors.length > 0 && validEditors[0].offsetHeight > 40) {
+                  return { success: true, isAlreadyOpen: false };
+                }
               }
             }
 
@@ -589,56 +602,57 @@ export class UploadWorkerService {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
           const pid = params.productId;
 
-          const editor = document.querySelector(`product-editor .${pid}-container`)?.closest('product-editor') 
-            || document.querySelector(`product-editor[id*="${pid}"]`)
-            || document.querySelector('product-editor') as HTMLElement;
+          // 1. Locate the exact product card for pid (Listing Optimizer method)
+          const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"]')) as HTMLElement[];
+          let card = document.getElementById(`${pid}-card`) 
+            || allCards.find(c => c.id.toUpperCase().includes(pid) || Array.from(c.classList).some(cls => cls.toUpperCase().includes(pid)))
+            || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`)) as HTMLElement;
 
-          if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
+          // 2. Locate the inputContainer (the product editor panel directly beneath this card)
+          const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
+          let inputContainer: HTMLElement | null = null;
 
-          // Helper 1: Element checked state (checks true container/parent flowcheckbox)
-          const isElementChecked = (el: Element): boolean => {
-            const container = el.closest('label') || el.closest('flowcheckbox') || el;
+          if (card) {
+            const cardRect = card.getBoundingClientRect();
+            const validEditors = allEditors.filter(ed => {
+              const edRect = ed.getBoundingClientRect();
+              return edRect.top >= cardRect.bottom - 120 && ed.innerHTML.length > 20;
+            });
+            if (validEditors.length > 0) {
+              inputContainer = validEditors[0];
+            }
+          }
 
-            // 1. Angular SCI Icon check (The authoritative visual state on Merch by Amazon)
-            const icon = container.querySelector('.sci-icon, i, svg');
+          if (!inputContainer) {
+            inputContainer = allEditors.find(ed => ed.offsetHeight > 40) || allEditors[allEditors.length - 1];
+          }
+
+          if (!inputContainer) return { success: false, reason: `Editor container for ${pid} not found` };
+          const editor = inputContainer;
+
+          // Helper 1: isFlowCheckboxChecked (Listing Optimizer method)
+          const isElementChecked = (fc: Element): boolean => {
+            const icon = fc.querySelector('.sci-icon, i, svg');
             if (icon) {
               const iconClass = (icon.className || '').toLowerCase();
-              // In unchecked state: "sci-icon sci-check-box-outline-blank" or any class containing "blank"
               if (iconClass.includes('blank')) {
                 return false;
               }
-              // In checked state: "sci-icon sci-check-box"
-              if (iconClass.includes('sci-check-box') || iconClass.includes('checkmark')) {
-                return true;
-              }
+              return iconClass.includes('sci-check-box') || iconClass.includes('sci-check') || iconClass.includes('checkmark');
             }
-
-            // 2. Direct native input checkbox
-            const input = container.querySelector('input[type="checkbox"], input') as HTMLInputElement;
-            if (input && typeof input.checked === 'boolean') {
-              return input.checked;
-            }
-            if (container instanceof HTMLInputElement && typeof container.checked === 'boolean') {
-              return container.checked;
-            }
-
-            // 3. Aria attributes or classes
-            const flow = el.closest('flowcheckbox') || el;
-            if (flow.getAttribute('aria-checked') === 'true') return true;
-            if (flow.getAttribute('aria-checked') === 'false') return false;
-
-            return flow.classList.contains('checked') || flow.classList.contains('selected') || flow.classList.contains('active');
+            const input = fc.querySelector('input[type="checkbox"], input') as HTMLInputElement;
+            return input ? Boolean(input.checked) : false;
           };
 
-          // Helper 2: Click element (single host click to prevent double-toggle on label+flow)
-          const clickTargetElement = (el: Element) => {
-            const flow = (el.tagName.toLowerCase() === 'flowcheckbox' 
-              ? el 
-              : (el.querySelector('flowcheckbox') || el.closest('flowcheckbox') || el)) as HTMLElement;
+          // Helper 2: clickFlowCheckbox (Listing Optimizer method: clicks inner span host)
+          const clickTargetElement = (fc: Element) => {
+            const input = fc.querySelector('input') as HTMLInputElement;
+            if (input && (input.disabled || input.readOnly)) return;
 
-            flow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-            flow.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-            flow.click();
+            const span = (fc.querySelector('span') || fc) as HTMLElement;
+            span.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            span.click();
           };
 
           // Helper 3: Clue gathering
@@ -701,103 +715,95 @@ export class UploadWorkerService {
           };
 
           // -------------------------------------------------------------
-          // STEP A: Fit Types Configuration & Minimum-1 Fit Type Guarantee
+          // STEP A: Fit Types Configuration (Listing Optimizer method)
           // -------------------------------------------------------------
           let desiredFits = params.fitTypes.map(f => f.toLowerCase());
           if (desiredFits.includes('youth') && !desiredFits.includes('men') && !desiredFits.includes('women')) {
             desiredFits.push('men');
           }
-          // Rule: If youth is active, always select girls as well
           if (desiredFits.includes('youth') && !desiredFits.includes('girls')) {
             desiredFits.push('girls');
           }
           // Rule: Adult Unisex is always active for any product offering it
           desiredFits.push('adult_unisex', 'unisex', 'adult');
 
-          // Find the active, currently visible fit container
-          const allFitContainers = Array.from(document.querySelectorAll('.fit-type-container, .fit-types, [class*="fit-type"]'));
-          const visibleFitContainer = allFitContainers.find(c => {
-            const rect = (c as HTMLElement).getBoundingClientRect();
-            return rect.height > 0 && rect.width > 0;
-          }) || editor.querySelector('.fit-type-container') || editor;
+          const flowCheckboxes = Array.from(editor.querySelectorAll('flowcheckbox'));
+          const fitElements: { element: Element; matchedFit: string }[] = [];
 
-          const fitCandidateLabels = Array.from(visibleFitContainer.querySelectorAll(
-            'label[class*="-label"], flowcheckbox[class*="-checkbox"], label, flowcheckbox'
-          ));
+          for (const fc of flowCheckboxes) {
+            const classStr = (fc.className || '').toLowerCase();
+            const parentLabel = fc.closest('label');
+            const labelClass = parentLabel ? (parentLabel.className || '').toLowerCase() : '';
+            const labelText = parentLabel ? (parentLabel.textContent || '').trim().toLowerCase() : '';
+            const combinedClasses = `${classStr} ${labelClass} ${labelText}`.toLowerCase();
 
-          const fitControlsMap = new Map<string, HTMLElement>();
+            // Ignore header
+            if (labelText === 'choose fit types:' || labelText.includes('choose fit types')) continue;
 
-          for (const el of fitCandidateLabels) {
-            const parentLabel = (el.closest('label') || el) as HTMLElement;
-            const flow = (parentLabel.querySelector('flowcheckbox') || el.closest('flowcheckbox') || el) as HTMLElement;
-            const cls = `${(flow.className || '')} ${(parentLabel.className || '')} ${(el.className || '')}`.toLowerCase();
-            const text = (parentLabel.textContent || el.textContent || '').trim().toLowerCase();
-            const formControl = (flow.getAttribute('formcontrolname') || el.getAttribute('formcontrolname') || '').toLowerCase();
-            const combo = `${cls} ${text} ${formControl}`;
-
-            // Ignore container header (e.g. "Choose fit types:")
-            if (text === 'choose fit types:' || text.includes('choose fit types')) continue;
-
-            let fitKey = '';
-            if (cls.includes('girls') || text.includes('girls') || combo.includes('girls') || combo.includes('mädchen')) {
-              fitKey = 'girls';
-            } else if (cls.includes('youth') || text.includes('youth') || combo.includes('youth') || combo.includes('kinder') || combo.includes('kids')) {
-              fitKey = 'youth';
-            } else if (cls.includes('unisex') || text.includes('unisex') || combo.includes('unisex') || combo.includes('adult') || cls.includes('adult')) {
-              fitKey = 'adult_unisex';
-            } else if (cls.includes('women') || text.includes('women') || combo.includes('women') || combo.includes('frauen') || combo.includes('damen')) {
-              fitKey = 'women';
-            } else if (cls.includes('men') || /\bmen\b/.test(text) || combo.includes('männer') || combo.includes('herren')) {
-              fitKey = 'men';
+            let matchedFit = '';
+            if (combinedClasses.includes('girls-') || combinedClasses.includes('girls_') || combinedClasses.includes(' girls') || combinedClasses.includes('girls') || combinedClasses.includes('mädchen')) {
+              matchedFit = 'girls';
+            } else if (combinedClasses.includes('youth-') || combinedClasses.includes('youth_') || combinedClasses.includes(' youth') ||
+                       combinedClasses.includes('kids-') || combinedClasses.includes('kids_') || combinedClasses.includes(' kids') || combinedClasses.includes('youth') || combinedClasses.includes('kinder')) {
+              matchedFit = 'youth';
+            } else if (combinedClasses.includes('unisex') || combinedClasses.includes('adult')) {
+              matchedFit = 'adult_unisex';
+            } else if (combinedClasses.includes('women-') || combinedClasses.includes('women_') || combinedClasses.includes(' women') || combinedClasses.includes('women') || combinedClasses.includes('frauen') || combinedClasses.includes('damen')) {
+              matchedFit = 'women';
+            } else if (combinedClasses.includes('men-') || combinedClasses.includes('men_') || combinedClasses.includes(' men') || /\bmen\b/.test(labelText) || combinedClasses.includes('männer') || combinedClasses.includes('herren')) {
+              matchedFit = 'men';
             }
 
-            if (fitKey && !fitControlsMap.has(fitKey)) {
-              fitControlsMap.set(fitKey, flow);
+            if (matchedFit) {
+              fitElements.push({ element: fc, matchedFit });
             }
           }
 
-          // Apply fit selections: EXACTLY ONE check/click per distinct fitKey with active verification
+          // Legacy inputs (if any)
+          const legacyInputs = Array.from(editor.querySelectorAll('input[name="fitType"], input[id*="fitType"]')) as HTMLInputElement[];
+          for (const cb of legacyInputs) {
+            if (cb.disabled || cb.readOnly) continue;
+            const val = `${cb.value || ''} ${cb.id || ''} ${cb.getAttribute('aria-label') || ''}`.toLowerCase();
+            let matchedFit = '';
+            if (val.includes('girls')) matchedFit = 'girls';
+            else if (val.includes('youth') || val.includes('kids')) matchedFit = 'youth';
+            else if (val.includes('unisex') || val.includes('adult')) matchedFit = 'adult_unisex';
+            else if (val.includes('women')) matchedFit = 'women';
+            else if (/\bmen\b/.test(val)) matchedFit = 'men';
+
+            if (matchedFit) {
+              fitElements.push({ element: cb, matchedFit });
+            }
+          }
+
+          // Apply target selection status
           const activeFitsApplied: string[] = [];
-          const fitDebugSummary: Record<string, { initial: boolean; target: boolean; final: boolean }> = {};
+          const fitDebugSummary: Record<string, { target: boolean; final: boolean }> = {};
 
-          for (const [fitKey, flowEl] of fitControlsMap.entries()) {
-            const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === 'adult_unisex' || fitKey === 'unisex';
-            const initialChecked = isElementChecked(flowEl);
-            let isChecked = initialChecked;
-
-            if (isChecked !== shouldBeChecked) {
-              clickTargetElement(flowEl);
-              await sleep(120);
-              isChecked = isElementChecked(flowEl);
-
-              // If state didn't change after clicking flowcheckbox, try clicking the parent label
+          for (const item of fitElements) {
+            const shouldBeChecked = desiredFits.includes(item.matchedFit) || item.matchedFit === 'adult_unisex' || item.matchedFit === 'unisex';
+            
+            if (item.element.tagName.toLowerCase() === 'flowcheckbox') {
+              const isChecked = isElementChecked(item.element);
               if (isChecked !== shouldBeChecked) {
-                const parentLabel = flowEl.closest('label');
-                if (parentLabel) {
-                  parentLabel.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-                  parentLabel.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-                  parentLabel.click();
-                  await sleep(120);
-                  isChecked = isElementChecked(flowEl);
-                }
+                clickTargetElement(item.element);
+                await sleep(80);
               }
-            }
-
-            fitDebugSummary[fitKey] = { initial: initialChecked, target: shouldBeChecked, final: isChecked };
-
-            if (isChecked) {
-              activeFitsApplied.push(fitKey);
-            }
-          }
-
-          // Verification & Minimum-1 Self-Healing
-          if (fitControlsMap.size > 0 && activeFitsApplied.length === 0) {
-            const fallbackKey = fitControlsMap.has('men') ? 'men' : fitControlsMap.keys().next().value;
-            if (fallbackKey) {
-              const fallbackEl = fitControlsMap.get(fallbackKey)!;
-              clickTargetElement(fallbackEl);
-              await sleep(100);
-              activeFitsApplied.push(fallbackKey);
+              const isFinal = isElementChecked(item.element);
+              fitDebugSummary[item.matchedFit] = { target: shouldBeChecked, final: isFinal };
+              if (isFinal) {
+                activeFitsApplied.push(item.matchedFit);
+              }
+            } else {
+              const cb = item.element as HTMLInputElement;
+              if (cb.checked !== shouldBeChecked) {
+                cb.click();
+                await sleep(80);
+              }
+              fitDebugSummary[item.matchedFit] = { target: shouldBeChecked, final: cb.checked };
+              if (cb.checked) {
+                activeFitsApplied.push(item.matchedFit);
+              }
             }
           }
 
