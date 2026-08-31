@@ -450,6 +450,32 @@ export class QueueService {
         .trim();
     };
 
+    // Normalization helper for avoidColor
+    const normalizeAvoidColor = (val: any): 'white' | 'black' | 'none' => {
+      const raw = typeof val === 'object' && val ? String(val.avoid || val.color || 'none') : String(val || 'none');
+      const lower = raw.toLowerCase();
+      if (lower.includes('white') || lower.includes('weiß')) return 'white';
+      if (lower.includes('black') || lower.includes('schwarz')) return 'black';
+      return 'none';
+    };
+
+    // Normalization helper for fitTypes
+    const normalizeFitTypes = (val: any): string[] => {
+      if (Array.isArray(val)) {
+        const mapped = val.map(f => typeof f === 'object' && f ? String((f as any).id || (f as any).name || (f as any).label || '') : String(f)).map(s => s.trim().toLowerCase()).filter(Boolean);
+        return mapped.length > 0 ? mapped : ['men', 'women', 'youth'];
+      }
+      if (typeof val === 'string' && val.trim()) {
+        const fits: string[] = [];
+        const lower = val.toLowerCase();
+        if (lower.includes('men') || lower.includes('männer') || lower.includes('herren')) fits.push('men');
+        if (lower.includes('women') || lower.includes('frauen') || lower.includes('damen')) fits.push('women');
+        if (lower.includes('youth') || lower.includes('kids') || lower.includes('kinder') || lower.includes('jugend')) fits.push('youth');
+        return fits.length > 0 ? fits : ['men', 'women', 'youth'];
+      }
+      return ['men', 'women', 'youth'];
+    };
+
     // Check if task is already in queue
     const existing = this.items.find(i => i.taskId === item.taskId);
     const isUpdate = (item as any).source === 'UPDATE' || (item as any).type === 'update' || (item.taskId && item.taskId.endsWith('-U'));
@@ -463,8 +489,8 @@ export class QueueService {
       if (item.bullet2) existing.bullet2 = cleanStr(item.bullet2);
       if (item.description) existing.description = cleanStr(item.description);
       if (item.listings) existing.listings = item.listings;
-      if (item.fitTypes) existing.fitTypes = item.fitTypes;
-      if (item.avoidColor) existing.avoidColor = item.avoidColor;
+      if (item.fitTypes !== undefined) existing.fitTypes = normalizeFitTypes(item.fitTypes);
+      if (item.avoidColor !== undefined) existing.avoidColor = normalizeAvoidColor(item.avoidColor);
       if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
       if (item.pngPath) existing.pngPath = item.pngPath;
       if (item.imagePath) existing.imagePath = item.imagePath;
@@ -517,8 +543,8 @@ export class QueueService {
           description: cleanStr(item.description || '')
         }
       },
-      fitTypes: item.fitTypes || ['men', 'women', 'youth'],
-      avoidColor: item.avoidColor || 'none',
+      fitTypes: normalizeFitTypes(item.fitTypes),
+      avoidColor: normalizeAvoidColor(item.avoidColor),
       customBackgroundColor: item.customBackgroundColor,
       imagePath: item.imagePath,
       pngPath: item.pngPath,

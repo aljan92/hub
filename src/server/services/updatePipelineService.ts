@@ -548,6 +548,36 @@ export class UpdatePipelineService {
       bullet2: task.payload?.bullet2 || ''
     };
 
+    // Robust fitTypes resolution
+    let resolvedFitTypes: string[] = ['men', 'women', 'youth'];
+    const rawAudience = task.customAnswers?.audience || (Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(', ') : '');
+    if (rawAudience) {
+      const aud = String(rawAudience).toLowerCase();
+      const fits: string[] = [];
+      if (aud.includes('men') || aud.includes('männer') || aud.includes('herren')) fits.push('men');
+      if (aud.includes('women') || aud.includes('frauen') || aud.includes('damen')) fits.push('women');
+      if (aud.includes('youth') || aud.includes('kids') || aud.includes('kinder') || aud.includes('jugend')) fits.push('youth');
+      if (fits.length > 0) resolvedFitTypes = fits;
+    } else if (Array.isArray(task.analysisResult?.fitTypes)) {
+      resolvedFitTypes = task.analysisResult.fitTypes.map((s: string) => String(s).toLowerCase());
+    }
+
+    // Robust avoidColor resolution
+    let resolvedAvoidColor: 'white' | 'black' | 'none' = 'none';
+    const rawAvoid = String(
+      task.customAnswers?.avoidColor || 
+      task.analysisResult?.avoid_product_colors?.avoid || 
+      task.analysisResult?.avoidColor || 
+      task.payload?.avoidColor || 
+      'none'
+    ).toLowerCase();
+
+    if (rawAvoid.includes('white') || rawAvoid.includes('weiß')) {
+      resolvedAvoidColor = 'white';
+    } else if (rawAvoid.includes('black') || rawAvoid.includes('schwarz')) {
+      resolvedAvoidColor = 'black';
+    }
+
     try {
       const queueItem = QueueService.enqueueItem({
         taskId: task.id,
@@ -560,8 +590,8 @@ export class UpdatePipelineService {
         bullet2: listing.bullet2,
         description: listing.description || '',
         listings: task.listingResult ? (task.listingResult.en ? task.listingResult : { en: task.listingResult }) : { en: listing },
-        fitTypes: task.analysisResult?.fitTypes || ['men', 'women'],
-        avoidColor: task.analysisResult?.avoidColor || 'none',
+        fitTypes: resolvedFitTypes,
+        avoidColor: resolvedAvoidColor,
         imagePath: task.localImagePath || '',
         pngPath: task.localMbaPngPath || '',
         publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,

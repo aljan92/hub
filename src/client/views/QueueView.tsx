@@ -1425,9 +1425,9 @@ export const QueueView: React.FC = () => {
                               <Palette className="w-3.5 h-3.5 text-amber-400" />
                               <span className="font-semibold">Farbregel:</span>
                               <span className="font-mono text-slate-200">
-                                {String(item.avoidColor) === 'white' 
+                                {String(item.avoidColor).toLowerCase().includes('white') || String(item.avoidColor).toLowerCase().includes('weiß')
                                   ? 'Weiß vermieden (Raglan white_* ausgeschlossen)' 
-                                  : String(item.avoidColor) === 'black'
+                                  : String(item.avoidColor).toLowerCase().includes('black') || String(item.avoidColor).toLowerCase().includes('schwarz')
                                     ? 'Schwarz vermieden (Hex-Picker #FFFFFF)'
                                     : 'Standard (Alle Swatches / Hex #000000)'}
                               </span>
@@ -2084,9 +2084,9 @@ export const QueueView: React.FC = () => {
                                   {item.fitTypes.join(', ')}
                                 </span>
                               )}
-                              {item.avoidColor && item.avoidColor !== 'none' && (
+                              {item.avoidColor && String(item.avoidColor).toLowerCase() !== 'none' && (
                                 <span className="px-2 py-0.5 rounded text-[10px] font-mono text-cyan-300 bg-cyan-500/10 border border-cyan-500/20">
-                                  Kein {item.avoidColor}
+                                  Kein {String(item.avoidColor).toLowerCase().includes('white') || String(item.avoidColor).toLowerCase().includes('weiß') ? 'Weiß' : String(item.avoidColor).toLowerCase().includes('black') || String(item.avoidColor).toLowerCase().includes('schwarz') ? 'Schwarz' : item.avoidColor}
                                 </span>
                               )}
                             </div>
@@ -2150,9 +2150,9 @@ export const QueueView: React.FC = () => {
                               <Palette className="w-3.5 h-3.5 text-amber-400" />
                               <span className="font-semibold">Farbregel:</span>
                               <span className="font-mono text-slate-200">
-                                {String(item.avoidColor) === 'white' 
+                                {String(item.avoidColor).toLowerCase().includes('white') || String(item.avoidColor).toLowerCase().includes('weiß')
                                   ? 'Weiß vermieden (Raglan white_* ausgeschlossen)' 
-                                  : String(item.avoidColor) === 'black'
+                                  : String(item.avoidColor).toLowerCase().includes('black') || String(item.avoidColor).toLowerCase().includes('schwarz')
                                     ? 'Schwarz vermieden (Hex-Picker #FFFFFF)'
                                     : 'Standard (Alle Swatches / Hex #000000)'}
                               </span>

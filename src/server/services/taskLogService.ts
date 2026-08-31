@@ -2032,16 +2032,29 @@ export class TaskLogService {
             subniche: sub || 'none'
           };
           if (params.answers.audience) {
+            const rawAud = String(params.answers.audience).toLowerCase();
+            const fits: string[] = [];
+            if (rawAud.includes('men') || rawAud.includes('männer') || rawAud.includes('herren')) fits.push('men');
+            if (rawAud.includes('women') || rawAud.includes('frauen') || rawAud.includes('damen')) fits.push('women');
+            if (rawAud.includes('youth') || rawAud.includes('kids') || rawAud.includes('kinder') || rawAud.includes('jugend')) fits.push('youth');
+            const finalFits = fits.length > 0 ? fits : ['men', 'women', 'youth'];
+
             task.analysisResult.target_group = {
               selected: params.answers.audience.split(',').map(s => s.trim()),
               reason: 'Manuell in Tasks angepasst'
             };
+            task.analysisResult.fitTypes = finalFits;
+            task.fitTypes = finalFits;
           }
           if (params.answers.avoidColor) {
+            const raw = String(params.answers.avoidColor).toLowerCase();
+            const norm = raw.includes('white') || raw.includes('weiß') ? 'white' : (raw.includes('black') || raw.includes('schwarz') ? 'black' : 'none');
             task.analysisResult.avoid_product_colors = {
               avoid: params.answers.avoidColor,
               reason: 'Manuell in Tasks angepasst'
             };
+            task.analysisResult.avoidColor = norm;
+            task.avoidColor = norm;
           }
           if (params.answers.reuseBackground) {
             const isAuto = params.answers.reuseBackground === 'Automatisch' || params.answers.reuseBackground === 'AUTOMATIC' || params.answers.reuseBackground.includes('Nein') || params.answers.reuseBackground.includes('Auto');

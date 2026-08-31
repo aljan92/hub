@@ -220722,6 +220722,27 @@ Bullets: ${oldBullets}`
           bullet1: task.payload?.bullet1 || "",
           bullet2: task.payload?.bullet2 || ""
         };
+        let resolvedFitTypes = ["men", "women", "youth"];
+        const rawAudience = task.customAnswers?.audience || (Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "");
+        if (rawAudience) {
+          const aud = String(rawAudience).toLowerCase();
+          const fits = [];
+          if (aud.includes("men") || aud.includes("m\xE4nner") || aud.includes("herren")) fits.push("men");
+          if (aud.includes("women") || aud.includes("frauen") || aud.includes("damen")) fits.push("women");
+          if (aud.includes("youth") || aud.includes("kids") || aud.includes("kinder") || aud.includes("jugend")) fits.push("youth");
+          if (fits.length > 0) resolvedFitTypes = fits;
+        } else if (Array.isArray(task.analysisResult?.fitTypes)) {
+          resolvedFitTypes = task.analysisResult.fitTypes.map((s) => String(s).toLowerCase());
+        }
+        let resolvedAvoidColor = "none";
+        const rawAvoid = String(
+          task.customAnswers?.avoidColor || task.analysisResult?.avoid_product_colors?.avoid || task.analysisResult?.avoidColor || task.payload?.avoidColor || "none"
+        ).toLowerCase();
+        if (rawAvoid.includes("white") || rawAvoid.includes("wei\xDF")) {
+          resolvedAvoidColor = "white";
+        } else if (rawAvoid.includes("black") || rawAvoid.includes("schwarz")) {
+          resolvedAvoidColor = "black";
+        }
         try {
           const queueItem = QueueService.enqueueItem({
             taskId: task.id,
@@ -220734,8 +220755,8 @@ Bullets: ${oldBullets}`
             bullet2: listing.bullet2,
             description: listing.description || "",
             listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
-            fitTypes: task.analysisResult?.fitTypes || ["men", "women"],
-            avoidColor: task.analysisResult?.avoidColor || "none",
+            fitTypes: resolvedFitTypes,
+            avoidColor: resolvedAvoidColor,
             imagePath: task.localImagePath || "",
             pngPath: task.localMbaPngPath || "",
             publishedProductsCount: task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount ?? 0,
@@ -221453,6 +221474,28 @@ var init_queueService = __esm2({
           if (!txt) return "";
           return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
         };
+        const normalizeAvoidColor = (val) => {
+          const raw = typeof val === "object" && val ? String(val.avoid || val.color || "none") : String(val || "none");
+          const lower = raw.toLowerCase();
+          if (lower.includes("white") || lower.includes("wei\xDF")) return "white";
+          if (lower.includes("black") || lower.includes("schwarz")) return "black";
+          return "none";
+        };
+        const normalizeFitTypes = (val) => {
+          if (Array.isArray(val)) {
+            const mapped = val.map((f) => typeof f === "object" && f ? String(f.id || f.name || f.label || "") : String(f)).map((s) => s.trim().toLowerCase()).filter(Boolean);
+            return mapped.length > 0 ? mapped : ["men", "women", "youth"];
+          }
+          if (typeof val === "string" && val.trim()) {
+            const fits = [];
+            const lower = val.toLowerCase();
+            if (lower.includes("men") || lower.includes("m\xE4nner") || lower.includes("herren")) fits.push("men");
+            if (lower.includes("women") || lower.includes("frauen") || lower.includes("damen")) fits.push("women");
+            if (lower.includes("youth") || lower.includes("kids") || lower.includes("kinder") || lower.includes("jugend")) fits.push("youth");
+            return fits.length > 0 ? fits : ["men", "women", "youth"];
+          }
+          return ["men", "women", "youth"];
+        };
         const existing = this.items.find((i) => i.taskId === item.taskId);
         const isUpdate = item.source === "UPDATE" || item.type === "update" || item.taskId && item.taskId.endsWith("-U");
         if (existing) {
@@ -221464,8 +221507,8 @@ var init_queueService = __esm2({
           if (item.bullet2) existing.bullet2 = cleanStr(item.bullet2);
           if (item.description) existing.description = cleanStr(item.description);
           if (item.listings) existing.listings = item.listings;
-          if (item.fitTypes) existing.fitTypes = item.fitTypes;
-          if (item.avoidColor) existing.avoidColor = item.avoidColor;
+          if (item.fitTypes !== void 0) existing.fitTypes = normalizeFitTypes(item.fitTypes);
+          if (item.avoidColor !== void 0) existing.avoidColor = normalizeAvoidColor(item.avoidColor);
           if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
           if (item.pngPath) existing.pngPath = item.pngPath;
           if (item.imagePath) existing.imagePath = item.imagePath;
@@ -221511,8 +221554,8 @@ var init_queueService = __esm2({
               description: cleanStr(item.description || "")
             }
           },
-          fitTypes: item.fitTypes || ["men", "women", "youth"],
-          avoidColor: item.avoidColor || "none",
+          fitTypes: normalizeFitTypes(item.fitTypes),
+          avoidColor: normalizeAvoidColor(item.avoidColor),
           customBackgroundColor: item.customBackgroundColor,
           imagePath: item.imagePath,
           pngPath: item.pngPath,
@@ -223656,16 +223699,28 @@ Beantworte die Analysefragen streng als JSON!`;
                 subniche: sub || "none"
               };
               if (params2.answers.audience) {
+                const rawAud = String(params2.answers.audience).toLowerCase();
+                const fits = [];
+                if (rawAud.includes("men") || rawAud.includes("m\xE4nner") || rawAud.includes("herren")) fits.push("men");
+                if (rawAud.includes("women") || rawAud.includes("frauen") || rawAud.includes("damen")) fits.push("women");
+                if (rawAud.includes("youth") || rawAud.includes("kids") || rawAud.includes("kinder") || rawAud.includes("jugend")) fits.push("youth");
+                const finalFits = fits.length > 0 ? fits : ["men", "women", "youth"];
                 task.analysisResult.target_group = {
                   selected: params2.answers.audience.split(",").map((s) => s.trim()),
                   reason: "Manuell in Tasks angepasst"
                 };
+                task.analysisResult.fitTypes = finalFits;
+                task.fitTypes = finalFits;
               }
               if (params2.answers.avoidColor) {
+                const raw = String(params2.answers.avoidColor).toLowerCase();
+                const norm = raw.includes("white") || raw.includes("wei\xDF") ? "white" : raw.includes("black") || raw.includes("schwarz") ? "black" : "none";
                 task.analysisResult.avoid_product_colors = {
                   avoid: params2.answers.avoidColor,
                   reason: "Manuell in Tasks angepasst"
                 };
+                task.analysisResult.avoidColor = norm;
+                task.avoidColor = norm;
               }
               if (params2.answers.reuseBackground) {
                 const isAuto = params2.answers.reuseBackground === "Automatisch" || params2.answers.reuseBackground === "AUTOMATIC" || params2.answers.reuseBackground.includes("Nein") || params2.answers.reuseBackground.includes("Auto");
