@@ -836,48 +836,37 @@ export class UploadWorkerService {
             // Swatches Mode (Predefined Colors)
             const colorCheckboxes = Array.from(editor.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]'));
 
-            // PASS 1: Apply catalog and avoid rules
+            // PASS 1: Apply user's Product Catalog definitions exclusively (Single Source of Truth)
             for (const cb of colorCheckboxes) {
               const haystack = extractColorClues(cb);
               const matchedColorId = identifyColorId(haystack);
 
-              let isCatalogAllowed = true;
-              let colorAvoidRule: 'none' | 'white' | 'black' = 'none';
+              // 1. Find matching color definition from product catalog
+              let matchedConfig: { id: string; avoidRule?: 'none' | 'white' | 'black' } | undefined;
 
               if (params.catalogColors && params.catalogColors.length > 0) {
-                const matchedConfig = params.catalogColors.find((c: any) => 
+                matchedConfig = params.catalogColors.find((c: any) => 
                   (matchedColorId && c.id === matchedColorId) || 
                   haystack.includes(c.id) ||
                   (matchedColorId && c.id.includes(matchedColorId))
                 );
-
-                if (matchedConfig) {
-                  isCatalogAllowed = true;
-                  colorAvoidRule = matchedConfig.avoidRule || 'none';
-                } else {
-                  isCatalogAllowed = false;
-                }
               }
 
-              let shouldBeChecked = isCatalogAllowed;
+              // 2. Strict decision based solely on Product Catalog
+              let shouldBeChecked = false;
 
-              // Apply avoid color rules
-              if (params.avoidColor === 'white') {
-                if (colorAvoidRule === 'white') {
+              if (matchedConfig) {
+                const rule = matchedConfig.avoidRule || 'none';
+                if (params.avoidColor === 'white' && rule === 'white') {
                   shouldBeChecked = false;
-                } else if (colorAvoidRule === 'none') {
-                  shouldBeChecked = isCatalogAllowed;
-                } else if (matchedColorId === 'white' || haystack.includes('white') || haystack.includes('weiß') || haystack.includes('weiss')) {
+                } else if (params.avoidColor === 'black' && rule === 'black') {
                   shouldBeChecked = false;
+                } else {
+                  shouldBeChecked = true;
                 }
-              } else if (params.avoidColor === 'black') {
-                if (colorAvoidRule === 'black') {
-                  shouldBeChecked = false;
-                } else if (colorAvoidRule === 'none') {
-                  shouldBeChecked = isCatalogAllowed;
-                } else if (matchedColorId === 'black' || haystack.includes('black') || haystack.includes('schwarz')) {
-                  shouldBeChecked = false;
-                }
+              } else {
+                // Color not in catalog for this product -> do not select
+                shouldBeChecked = false;
               }
 
               const isChecked = isElementChecked(cb);
@@ -892,17 +881,27 @@ export class UploadWorkerService {
             await sleep(100);
             let activeSwatches = colorCheckboxes.filter(cb => isElementChecked(cb));
 
-            // PASS 3: SELBSTHEILUNG BEI 0 FARBEN (Safety Minimum-1 Guarantee)
+            // PASS 3: SELBSTHEILUNG BEI 0 FARBEN (Sicherheitsnetz falls 0 Farben übrig blieben)
             if (activeSwatches.length === 0 && colorCheckboxes.length > 0) {
-              // 1. Suche die beste Ausweichfarbe, die NICHT der avoidColor entspricht
+              // 1. Suche aus den im Katalog definierten Farben die erste Farbe, deren avoidRule !== params.avoidColor ist
               let fallbackSwatch = colorCheckboxes.find(cb => {
                 const h = extractColorClues(cb);
-                if (params.avoidColor === 'white' && (h.includes('white') || h.includes('weiß') || h.includes('weiss'))) return false;
-                if (params.avoidColor === 'black' && (h.includes('black') || h.includes('schwarz'))) return false;
-                return true;
+                const mid = identifyColorId(h);
+                const cfg = params.catalogColors?.find((c: any) => (mid && c.id === mid) || h.includes(c.id));
+                if (!cfg) return false;
+                return cfg.avoidRule !== params.avoidColor;
               });
 
-              // 2. Absolute Notfall-Garantie: Das erste verfügbare Swatch
+              // 2. Falls keine gefunden: Erstes verfügbares Katalog-Swatch
+              if (!fallbackSwatch) {
+                fallbackSwatch = colorCheckboxes.find(cb => {
+                  const h = extractColorClues(cb);
+                  const mid = identifyColorId(h);
+                  return params.catalogColors?.some((c: any) => (mid && c.id === mid) || h.includes(c.id));
+                });
+              }
+
+              // 3. Absolute Notfall-Garantie: Erstes verfügbares Swatch
               if (!fallbackSwatch) {
                 fallbackSwatch = colorCheckboxes[0];
               }

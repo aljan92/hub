@@ -225501,36 +225501,24 @@ var UploadWorkerService = class _UploadWorkerService {
             for (const cb of colorCheckboxes) {
               const haystack = extractColorClues(cb);
               const matchedColorId = identifyColorId(haystack);
-              let isCatalogAllowed = true;
-              let colorAvoidRule = "none";
+              let matchedConfig;
               if (params2.catalogColors && params2.catalogColors.length > 0) {
-                const matchedConfig = params2.catalogColors.find(
+                matchedConfig = params2.catalogColors.find(
                   (c) => matchedColorId && c.id === matchedColorId || haystack.includes(c.id) || matchedColorId && c.id.includes(matchedColorId)
                 );
-                if (matchedConfig) {
-                  isCatalogAllowed = true;
-                  colorAvoidRule = matchedConfig.avoidRule || "none";
-                } else {
-                  isCatalogAllowed = false;
-                }
               }
-              let shouldBeChecked = isCatalogAllowed;
-              if (params2.avoidColor === "white") {
-                if (colorAvoidRule === "white") {
+              let shouldBeChecked = false;
+              if (matchedConfig) {
+                const rule = matchedConfig.avoidRule || "none";
+                if (params2.avoidColor === "white" && rule === "white") {
                   shouldBeChecked = false;
-                } else if (colorAvoidRule === "none") {
-                  shouldBeChecked = isCatalogAllowed;
-                } else if (matchedColorId === "white" || haystack.includes("white") || haystack.includes("wei\xDF") || haystack.includes("weiss")) {
+                } else if (params2.avoidColor === "black" && rule === "black") {
                   shouldBeChecked = false;
+                } else {
+                  shouldBeChecked = true;
                 }
-              } else if (params2.avoidColor === "black") {
-                if (colorAvoidRule === "black") {
-                  shouldBeChecked = false;
-                } else if (colorAvoidRule === "none") {
-                  shouldBeChecked = isCatalogAllowed;
-                } else if (matchedColorId === "black" || haystack.includes("black") || haystack.includes("schwarz")) {
-                  shouldBeChecked = false;
-                }
+              } else {
+                shouldBeChecked = false;
               }
               const isChecked = isElementChecked(cb);
               if (isChecked !== shouldBeChecked) {
@@ -225543,10 +225531,18 @@ var UploadWorkerService = class _UploadWorkerService {
             if (activeSwatches.length === 0 && colorCheckboxes.length > 0) {
               let fallbackSwatch = colorCheckboxes.find((cb) => {
                 const h2 = extractColorClues(cb);
-                if (params2.avoidColor === "white" && (h2.includes("white") || h2.includes("wei\xDF") || h2.includes("weiss"))) return false;
-                if (params2.avoidColor === "black" && (h2.includes("black") || h2.includes("schwarz"))) return false;
-                return true;
+                const mid = identifyColorId(h2);
+                const cfg = params2.catalogColors?.find((c) => mid && c.id === mid || h2.includes(c.id));
+                if (!cfg) return false;
+                return cfg.avoidRule !== params2.avoidColor;
               });
+              if (!fallbackSwatch) {
+                fallbackSwatch = colorCheckboxes.find((cb) => {
+                  const h2 = extractColorClues(cb);
+                  const mid = identifyColorId(h2);
+                  return params2.catalogColors?.some((c) => mid && c.id === mid || h2.includes(c.id));
+                });
+              }
               if (!fallbackSwatch) {
                 fallbackSwatch = colorCheckboxes[0];
               }
