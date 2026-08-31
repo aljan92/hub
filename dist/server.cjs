@@ -223052,12 +223052,19 @@ Beantworte die Analysefragen streng als JSON!`;
           this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
         }
       }
-      /**
-       * Vectorize the approved design using Vectorizer.ai with settings & dynamic maxColors
-       */
       static async vectorizeDesignTask(taskId) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
+        if (task.source === "UPDATE" || task.suffix === "U" || task.id.endsWith("-U")) {
+          console.log(`[TaskLogService] \u2139\uFE0F Task ${taskId} ist ein Update-Task -> Vektorisierung wird \xFCbersprungen (Master-Artwork bereits fertig).`);
+          try {
+            const { UpdatePipelineService: UpdatePipelineService2 } = (init_updatePipelineService(), __toCommonJS2(updatePipelineService_exports));
+            await UpdatePipelineService2.stepU7_Enqueue(taskId);
+          } catch (e) {
+            console.error(`[TaskLogService] Fehler beim Enqueue von Update-Task ${taskId}:`, e);
+          }
+          return;
+        }
         const settings = loadSettings();
         const hasKey = Boolean(settings.vectorizerApiKey && settings.vectorizerApiKey.trim());
         const hasSecret = Boolean(settings.vectorizerApiSecret && settings.vectorizerApiSecret.trim());
@@ -223678,6 +223685,18 @@ Beantworte die Analysefragen streng als JSON!`;
           });
           this.saveLogs(this.loadLogs());
           this.emitUpdate(task);
+          if (task.source === "UPDATE" || task.suffix === "U" || task.id.endsWith("-U")) {
+            console.log(`[TaskLogService] \u2728 Update-Task ${taskId} TM manuell freigegeben -> \xDCbersetzung (U6) und \xDCbergabe an Queue (U7) \u2713`);
+            try {
+              const { UpdatePipelineService: UpdatePipelineService2 } = (init_updatePipelineService(), __toCommonJS2(updatePipelineService_exports));
+              UpdatePipelineService2.runFromStep(taskId, "U6").catch((err) => {
+                console.error(`[TaskLogService] Fehler bei Update Weiterf\xFChrung nach TM-Freigabe f\xFCr ${taskId}:`, err);
+              });
+            } catch (err) {
+              console.error(`[TaskLogService] Konnte UpdatePipelineService nicht laden:`, err);
+            }
+            return { success: true, message: "Update-Listing freigegeben! \xDCbersetzung & Queue-\xDCbergabe laufen." };
+          }
           this.vectorizeDesignTask(taskId).catch((err) => {
             console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe f\xFCr Task ${taskId} fehlgeschlagen:`, err);
           });

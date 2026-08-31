@@ -1322,12 +1322,21 @@ export class TaskLogService {
     }
   }
 
-  /**
-   * Vectorize the approved design using Vectorizer.ai with settings & dynamic maxColors
-   */
   static async vectorizeDesignTask(taskId: string): Promise<void> {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
+
+    // Safety Guard: Update tasks already have production-ready master PNGs -> Skip vectorization!
+    if (task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U')) {
+      console.log(`[TaskLogService] ℹ️ Task ${taskId} ist ein Update-Task -> Vektorisierung wird übersprungen (Master-Artwork bereits fertig).`);
+      try {
+        const { UpdatePipelineService } = require('./updatePipelineService');
+        await UpdatePipelineService.stepU7_Enqueue(taskId);
+      } catch (e) {
+        console.error(`[TaskLogService] Fehler beim Enqueue von Update-Task ${taskId}:`, e);
+      }
+      return;
+    }
 
     const settings = loadSettings();
     const hasKey = Boolean(settings.vectorizerApiKey && settings.vectorizerApiKey.trim());
@@ -2060,6 +2069,19 @@ export class TaskLogService {
 
       this.saveLogs(this.loadLogs());
       this.emitUpdate(task);
+
+      if (task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U')) {
+        console.log(`[TaskLogService] ✨ Update-Task ${taskId} TM manuell freigegeben -> Übersetzung (U6) und Übergabe an Queue (U7) ✓`);
+        try {
+          const { UpdatePipelineService } = require('./updatePipelineService');
+          UpdatePipelineService.runFromStep(taskId, 'U6').catch((err: any) => {
+            console.error(`[TaskLogService] Fehler bei Update Weiterführung nach TM-Freigabe für ${taskId}:`, err);
+          });
+        } catch (err) {
+          console.error(`[TaskLogService] Konnte UpdatePipelineService nicht laden:`, err);
+        }
+        return { success: true, message: 'Update-Listing freigegeben! Übersetzung & Queue-Übergabe laufen.' };
+      }
 
       this.vectorizeDesignTask(taskId).catch(err => {
         console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe für Task ${taskId} fehlgeschlagen:`, err);
