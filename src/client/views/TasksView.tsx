@@ -1358,154 +1358,324 @@ export const TasksView: React.FC = () => {
                       /* DESIGN CREATION WORKFLOW: IDEOGRAM PREVIEW, QUOTE CHECK, FIT-TYPES, AVOID-COLOR, BG & MAX-COLORS */
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
                         {/* Left: Image Preview & Prompt (5 cols) */}
-                        <div className="md:col-span-5 space-y-2.5">
-                          <div className="relative group rounded-xl overflow-hidden border border-slate-800 bg-slate-950 aspect-[10/16] max-h-[340px] flex items-center justify-center">
-                            {activeTask.imageUrl ? (
-                              <>
-                                <img
-                                  src={activeTask.imageUrl}
-                                  alt={activeTask.payload?.quote}
-                                  className="w-full h-full object-contain cursor-pointer"
-                                  onClick={() => setShowImageZoom(true)}
-                                />
-                                <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
+                        <div className="md:col-span-5 space-y-3">
+                          {/* Image Preview Card */}
+                          <div className="bg-slate-950 p-2.5 rounded-xl border border-cyan-500/40 space-y-2 shadow-sm">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
+                              <span className="flex items-center gap-1.5 text-cyan-400">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                Ideogram Artwork Preview
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-500">
+                                {activeTask.id}
+                              </span>
+                            </div>
+
+                            <div className="relative group rounded-lg overflow-hidden border border-slate-800 bg-slate-900 aspect-square max-h-[300px] flex items-center justify-center p-1.5">
+                              {activeTask.imageUrl ? (
+                                <>
+                                  <img
+                                    src={activeTask.imageUrl}
+                                    alt={activeTask.payload?.quote}
+                                    className="w-full h-full object-contain cursor-pointer rounded"
                                     onClick={() => setShowImageZoom(true)}
-                                    className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
-                                    title="Vergrößern"
-                                  >
-                                    <Maximize2 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <a
-                                    href={activeTask.imageUrl}
-                                    download={`design-${activeTask.id}.png`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
-                                    title="Download"
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                  </a>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="text-xs text-slate-500">Kein Bild vorhanden</div>
-                            )}
+                                  />
+                                  <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => setShowImageZoom(true)}
+                                      className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                      title="Vergrößern"
+                                    >
+                                      <Maximize2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <a
+                                      href={activeTask.imageUrl}
+                                      download={`design-${activeTask.id}.png`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                      title="Download"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                    </a>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-xs text-slate-500">Kein Bild vorhanden</div>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Editable Prompt */}
-                          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Prompt:</span>
+                          {/* Editable Prompt Card */}
+                          <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2 shadow-sm">
+                            <div className="flex items-center justify-between border-b border-slate-850 pb-1.5">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+                                Prompt (Ideogram 3.0)
+                              </span>
+                            </div>
                             <textarea
                               value={editablePrompt}
                               onChange={(e) => setEditablePrompt(e.target.value)}
                               rows={3}
-                              className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-cyan-500"
+                              className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-500 leading-relaxed"
+                              placeholder="Ideogram Prompt..."
                             />
                           </div>
                         </div>
 
                         {/* Right: Questions Matrix (7 cols) */}
-                        <div className="md:col-span-7 space-y-3">
-                          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center">
+                        <div className="md:col-span-7 space-y-3.5">
+                          <h4 className="text-xs font-semibold text-cyan-300 uppercase tracking-wider flex items-center">
                             <Sliders className="w-3.5 h-3.5 mr-1.5 text-cyan-400" />
-                            Vision-KI Analyse
+                            Vision-KI Analyse &amp; Fragen
                           </h4>
 
-                          {/* Question 1: Quote */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                          {/* 1. Quote-Prüfung */}
+                          {(() => {
+                            const isExact = Boolean(activeTask.analysisResult?.quote_check?.quote_matches);
+                            return (
+                              <div className={`p-3.5 rounded-xl border space-y-2 transition-all ${
+                                !isExact && activeTask.analysisResult?.quote_check 
+                                  ? 'bg-amber-950/20 border-amber-500/40' 
+                                  : 'bg-slate-900/90 border-slate-800'
+                              }`}>
+                                <div className="flex items-center justify-between text-xs">
+                                  <div className="flex items-center gap-1.5 font-semibold text-slate-200">
+                                    {isExact ? (
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                                    ) : (
+                                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                                    )}
+                                    <span>1. Quote-Prüfung</span>
+                                  </div>
+                                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded border font-mono ${
+                                    isExact
+                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  }`}>
+                                    KI: {isExact ? 'EXAKT' : 'ABWEICHUNG'}
+                                  </span>
+                                </div>
+
+                                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800/80 space-y-1 text-[11px] font-mono">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-slate-400 w-14 shrink-0">Soll:</span>
+                                    <span className="text-slate-100 font-semibold">"{activeTask.payload?.quote || '-'}"</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-cyan-400 w-14 shrink-0 font-semibold">Erkannt:</span>
+                                    <span className="text-cyan-200">"{activeTask.analysisResult?.quote_check?.detected_quote || activeTask.analysisResult?.quote_check?.detected_quote_text || '-'}"</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* 2. Zielgruppe (Fit Types) */}
+                          <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
                             <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">1. Quote-Prüfung</span>
-                              {activeTask.analysisResult?.quote_check?.quote_matches ? (
-                                <span className="text-[10px] font-semibold text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                                  <CheckCircle2 className="w-3 h-3 mr-1" /> Exakt
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-semibold text-amber-400 flex items-center bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                  <AlertTriangle className="w-3 h-3 mr-1" /> Abweichung
-                                </span>
-                              )}
+                              <span className="font-semibold text-slate-200">2. Zielgruppe (Fit Types)</span>
+                              <span className="text-[10px] text-cyan-400 font-mono font-semibold bg-cyan-500/10 px-2.5 py-0.5 rounded border border-cyan-500/20">
+                                KI: {getAiFitTypesDisplay(activeTask)}
+                              </span>
                             </div>
-                            <div className="text-[11px] font-mono text-slate-300 bg-slate-950 p-2 rounded border border-slate-800/80">
-                              <div>Soll: <span className="text-slate-200">"{activeTask.payload?.quote}"</span></div>
-                              <div>Erkannt: <span className="text-cyan-300">"{activeTask.analysisResult?.quote_check?.detected_quote || activeTask.analysisResult?.quote_check?.detected_quote_text || '-'}"</span></div>
+                            <div className="flex flex-wrap gap-2">
+                              {['Men', 'Women', 'Youth'].map((val) => {
+                                const isSelected = selectedAudiences.includes(val);
+                                return (
+                                  <button
+                                    key={val}
+                                    type="button"
+                                    onClick={() => toggleAudience(val)}
+                                    className={`px-4 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
+                                      isSelected 
+                                        ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow-sm'
+                                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                    }`}
+                                  >
+                                    {isSelected && <Check className="w-3.5 h-3.5 mr-0.5" />}
+                                    <span>{val}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {activeTask.analysisResult?.target_group?.reason && (
+                              <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
+                                💡 <strong className="text-cyan-300">Befund:</strong> {activeTask.analysisResult.target_group.reason}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* 3. Zu vermeidende Produktfarbe */}
+                          <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">3. Zu vermeidende Produktfarbe</span>
+                              <span className="text-[10px] text-cyan-400 font-mono font-semibold bg-cyan-500/10 px-2.5 py-0.5 rounded border border-cyan-500/20">
+                                KI: {getAiAvoidColorDisplay(activeTask)}
+                              </span>
+                            </div>
+                            <div className="flex gap-2">
+                              {['Black', 'White', 'None'].map((val) => {
+                                const isSelected = selectedAvoidColor === val;
+                                return (
+                                  <button
+                                    key={val}
+                                    type="button"
+                                    onClick={() => setSelectedAvoidColor(val)}
+                                    className={`px-4 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
+                                      isSelected 
+                                        ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow-sm'
+                                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                    }`}
+                                  >
+                                    {isSelected && <Check className="w-3.5 h-3.5 mr-0.5" />}
+                                    <span>{val}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {activeTask.analysisResult?.avoid_product_colors?.reason && (
+                              <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
+                                💡 <strong className="text-cyan-300">Befund:</strong> {activeTask.analysisResult.avoid_product_colors.reason}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* 4. Hintergrund entfernen */}
+                          <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">4. Hintergrund entfernen</span>
+                              <span className="text-[10px] text-cyan-400 font-mono font-semibold bg-cyan-500/10 px-2.5 py-0.5 rounded border border-cyan-500/20">
+                                KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' || activeTask.analysisResult?.background_analysis?.is_design_element === true ? 'Manuell' : 'Automatisch'}
+                              </span>
+                            </div>
+                            <div className="flex gap-2">
+                              {['Automatisch', 'Manuell'].map((val) => (
+                                <button
+                                  key={val}
+                                  type="button"
+                                  onClick={() => setSelectedBgMode(val)}
+                                  className={`px-4 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
+                                    selectedBgMode === val || 
+                                    (val === 'Automatisch' && (selectedBgMode === 'Nein (Auto Freistellen)' || selectedBgMode === 'AUTOMATIC')) ||
+                                    (val === 'Manuell' && (selectedBgMode === 'Ja (Hintergrund behalten)' || selectedBgMode === 'MANUAL'))
+                                      ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow-sm'
+                                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                  }`}
+                                >
+                                  {(selectedBgMode === val || 
+                                    (val === 'Automatisch' && (selectedBgMode === 'Nein (Auto Freistellen)' || selectedBgMode === 'AUTOMATIC')) ||
+                                    (val === 'Manuell' && (selectedBgMode === 'Ja (Hintergrund behalten)' || selectedBgMode === 'MANUAL'))) && (
+                                    <Check className="w-3.5 h-3.5 mr-0.5" />
+                                  )}
+                                  <span>{val}</span>
+                                </button>
+                              ))}
                             </div>
                           </div>
 
-                          {/* Niche Hierarchy & Keywords */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-2.5">
+                          {/* 5. Maximale Anzahl an Farben (Vektorisierung) */}
+                          <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
                             <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">Nischen-Hierarchie &amp; SEO-Keywords</span>
-                              <span className="text-[10px] text-cyan-400 font-mono font-semibold">Titel-Suffix Formel</span>
+                              <span className="font-semibold text-slate-200">5. Maximale Anzahl an Farben (Vektorisierung)</span>
+                              <span className="text-[10px] text-cyan-400 font-mono font-semibold bg-cyan-500/10 px-2.5 py-0.5 rounded border border-cyan-500/20">
+                                KI: {activeTask.analysisResult?.color_analysis?.color_count ? `${activeTask.analysisResult.color_analysis.color_count} Farben` : '2 Farben'}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 items-center">
+                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                                <button
+                                  key={num}
+                                  type="button"
+                                  onClick={() => setSelectedMaxColors(num)}
+                                  className={`w-8 h-7 text-xs rounded-lg font-mono border transition-all ${
+                                    selectedMaxColors === num
+                                      ? 'bg-cyan-600 text-white border-cyan-500 font-bold shadow-sm'
+                                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                  }`}
+                                >
+                                  {num}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              Wird als <code className="text-slate-400 font-mono">processing.max_colors</code> an Vectorizer.ai übergeben (max. 12).
+                            </div>
+                          </div>
+
+                          {/* 6. Nischen-Hierarchie & SEO-Keywords */}
+                          <div className="bg-slate-900/90 p-3.5 rounded-xl border border-cyan-500/30 space-y-3 shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-800 text-xs">
+                              <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                                <Bot className="w-3.5 h-3.5 text-cyan-400" />
+                                6. Nischen-Hierarchie &amp; SEO-Keywords
+                              </span>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
+                                    const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
+                                    const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
+                                    if (aiN1) setEditNiche1(aiN1);
+                                    if (aiN2 && aiN2.toLowerCase() !== 'none') setEditNiche2(aiN2); else if (!aiN2 || aiN2.toLowerCase() === 'none') setEditNiche2('');
+                                    if (aiSub && aiSub.toLowerCase() !== 'none') setEditSubniche(aiSub); else if (!aiSub || aiSub.toLowerCase() === 'none') setEditSubniche('');
+                                  }}
+                                  className="px-2.5 py-1 rounded text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 border border-cyan-500/30 transition-colors flex items-center gap-1"
+                                >
+                                  <Sparkles className="w-3 h-3" />
+                                  Von LLM übernehmen
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const hN1 = activeTask.payload?.niche1 || activeTask.payload?.niche || '';
+                                    const hN2 = activeTask.payload?.niche2 || '';
+                                    const hSub = activeTask.payload?.subniche || '';
+                                    const hKw = activeTask.payload?.keywords || activeTask.payload?.hermesKeywords || [];
+                                    if (hN1) setEditNiche1(hN1);
+                                    if (hN2 && hN2.toLowerCase() !== 'none') setEditNiche2(hN2); else if (!hN2 || hN2.toLowerCase() === 'none') setEditNiche2('');
+                                    if (hSub && hSub.toLowerCase() !== 'none') setEditSubniche(hSub); else if (!hSub || hSub.toLowerCase() === 'none') setEditSubniche('');
+                                    if (hKw.length > 0) setEditKeywords(Array.isArray(hKw) ? hKw.join(', ') : String(hKw));
+                                  }}
+                                  className="px-2.5 py-1 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors flex items-center gap-1"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  Von Hermes übernehmen
+                                </button>
+                              </div>
                             </div>
 
-                            {/* AI vs Hermes Comparison Card */}
-                            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                              <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-850 text-xs">
-                                <span className="font-semibold text-cyan-300 flex items-center gap-1.5 text-[11px]">
-                                  <Bot className="w-3.5 h-3.5 text-cyan-400" />
-                                  KI-Befund vs. Hermes-Payload
+                            {/* Comparison Cards: Hermes vs LLM Recognition */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
+                              {/* Hermes Payload */}
+                              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                                <span className="text-[10px] text-purple-400 font-bold flex items-center gap-1">
+                                  <Sparkles className="w-3 h-3" /> Hermes-Payload:
                                 </span>
-                                <div className="flex items-center space-x-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
-                                      const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
-                                      const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
-                                      if (aiN1) setEditNiche1(aiN1);
-                                      if (aiN2 && aiN2.toLowerCase() !== 'none') setEditNiche2(aiN2);
-                                      if (aiSub && aiSub.toLowerCase() !== 'none') setEditSubniche(aiSub);
-                                    }}
-                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 border border-cyan-500/30 transition-colors"
-                                  >
-                                    Von KI übernehmen
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const hN1 = activeTask.payload?.niche1 || activeTask.payload?.niche || '';
-                                      const hN2 = activeTask.payload?.niche2 || '';
-                                      const hSub = activeTask.payload?.subniche || '';
-                                      const hKw = activeTask.payload?.keywords || activeTask.payload?.hermesKeywords || [];
-                                      if (hN1) setEditNiche1(hN1);
-                                      if (hN2) setEditNiche2(hN2);
-                                      if (hSub) setEditSubniche(hSub);
-                                      if (hKw.length > 0) setEditKeywords(Array.isArray(hKw) ? hKw.join(', ') : String(hKw));
-                                    }}
-                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors"
-                                  >
-                                    Von Hermes übernehmen
-                                  </button>
+                                <div className="text-slate-300 space-y-0.5">
+                                  <div>N1: <span className="text-slate-200">{activeTask.payload?.niche1 || activeTask.payload?.niche || '-'}</span></div>
+                                  <div>Cross: <span className="text-slate-300">{activeTask.payload?.niche2 || 'none'}</span></div>
+                                  <div>Subnische: <span className="text-slate-300">{activeTask.payload?.subniche || 'none'}</span></div>
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
-                                <div className="p-2 rounded bg-slate-900/90 border border-slate-850 space-y-0.5">
-                                  <span className="text-[10px] text-cyan-400 font-bold flex items-center gap-1">
-                                    <Bot className="w-3 h-3" /> KI-Vision-Erkennung:
-                                  </span>
-                                  <div className="text-slate-300 space-y-0.5">
-                                    <div>N1: <strong className="text-slate-100">{activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '-'}</strong></div>
-                                    <div>Cross: <span className="text-slate-300">{activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || 'none'}</span></div>
-                                    <div>Subnische: <strong className="text-cyan-300">{activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || 'none'}</strong></div>
-                                  </div>
-                                </div>
-
-                                <div className="p-2 rounded bg-slate-900/90 border border-slate-850 space-y-0.5">
-                                  <span className="text-[10px] text-purple-400 font-bold flex items-center gap-1">
-                                    <Sparkles className="w-3 h-3" /> Hermes-Payload:
-                                  </span>
-                                  <div className="text-slate-300 space-y-0.5">
-                                    <div>N1: <span className="text-slate-200">{activeTask.payload?.niche1 || activeTask.payload?.niche || '-'}</span></div>
-                                    <div>Subnische: <span className="text-slate-300">{activeTask.payload?.subniche || 'none'}</span></div>
-                                    <div>Keywords: <span className="text-slate-400 truncate block">{Array.isArray(activeTask.payload?.keywords || activeTask.payload?.hermesKeywords) ? (activeTask.payload?.keywords || activeTask.payload?.hermesKeywords).join(', ') : '-'}</span></div>
-                                  </div>
+                              {/* KI / LLM Recognition */}
+                              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                                <span className="text-[10px] text-cyan-400 font-bold flex items-center gap-1">
+                                  <Bot className="w-3 h-3" /> LLM-Erkennung:
+                                </span>
+                                <div className="text-slate-300 space-y-0.5">
+                                  <div>N1: <strong className="text-slate-100">{activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '-'}</strong></div>
+                                  <div>Cross: <span className="text-slate-300">{activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || 'none'}</span></div>
+                                  <div>Subnische: <strong className="text-cyan-300">{activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || 'none'}</strong></div>
                                 </div>
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            {/* 3 Niche Input Fields */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                               <div>
                                 <label className="text-[10px] font-medium text-slate-400 block mb-1">Nische 1 (Hauptthema)</label>
                                 <input
@@ -1537,130 +1707,17 @@ export const TasksView: React.FC = () => {
                                 />
                               </div>
                             </div>
+
+                            {/* Keywords Input Field */}
                             <div>
-                              <label className="text-[10px] font-medium text-slate-400 block mb-1">Such-Keywords (Kommasepariert)</label>
+                              <label className="text-[10px] font-medium text-slate-400 block mb-1">Such-Keywords (SEO)</label>
                               <input
                                 type="text"
                                 value={editKeywords}
                                 onChange={(e) => setEditKeywords(e.target.value)}
                                 className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:border-cyan-500 focus:outline-none"
-                                placeholder="equestrian, pony rider, stable..."
+                                placeholder="z.B. equestrian, pony rider, stable, funny horse quote..."
                               />
-                            </div>
-                          </div>
-
-                          {/* Question 2: Target Group */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">2. Zielgruppe (Mehrfachauswahl)</span>
-                              <span className="text-[10px] text-cyan-400 font-mono">
-                                KI: {Array.isArray(activeTask.analysisResult?.target_group?.selected) ? activeTask.analysisResult.target_group.selected.join(', ') : (activeTask.analysisResult?.target_group?.selected || 'Men, Women, Youth')}
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {['Men', 'Women', 'Youth'].map((val) => {
-                                const isSelected = selectedAudiences.includes(val);
-                                return (
-                                  <button
-                                    key={val}
-                                    type="button"
-                                    onClick={() => toggleAudience(val)}
-                                    className={`px-3.5 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
-                                      isSelected 
-                                        ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
-                                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
-                                    }`}
-                                  >
-                                    <span>{val}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Question 3: Avoid Color */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">3. Zu vermeidende Produktfarbe</span>
-                              <span className="text-[10px] text-cyan-400 font-mono">
-                                KI: {activeTask.analysisResult?.avoid_product_colors?.avoid || 'None'}
-                              </span>
-                            </div>
-                            <div className="flex gap-2">
-                              {['Black', 'White', 'None'].map((val) => {
-                                const isSelected = selectedAvoidColor === val;
-                                return (
-                                  <button
-                                    key={val}
-                                    type="button"
-                                    onClick={() => setSelectedAvoidColor(val)}
-                                    className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
-                                      isSelected 
-                                        ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
-                                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
-                                    }`}
-                                  >
-                                    {val}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Question 4: Background */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">4. Hintergrund entfernen</span>
-                              <span className="text-[10px] text-cyan-400 font-mono">
-                                KI: {activeTask.analysisResult?.background_analysis?.removal_mode === 'MANUAL' || activeTask.analysisResult?.background_analysis?.is_design_element === true ? 'Manuell' : 'Automatisch'}
-                              </span>
-                            </div>
-                            <div className="flex gap-2">
-                              {['Automatisch', 'Manuell'].map((val) => (
-                                <button
-                                  key={val}
-                                  type="button"
-                                  onClick={() => setSelectedBgMode(val)}
-                                  className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
-                                    selectedBgMode === val || 
-                                    (val === 'Automatisch' && (selectedBgMode === 'Nein (Auto Freistellen)' || selectedBgMode === 'AUTOMATIC')) ||
-                                    (val === 'Manuell' && (selectedBgMode === 'Ja (Hintergrund behalten)' || selectedBgMode === 'MANUAL'))
-                                      ? 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow'
-                                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                                  }`}
-                                >
-                                  {val}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Question 5: Max Colors for Vectorization */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-2">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">5. Maximale Anzahl an Farben (Vektorisierung)</span>
-                              <span className="text-[10px] text-cyan-400 font-mono">
-                                KI: {activeTask.analysisResult?.color_analysis?.color_count ? `${activeTask.analysisResult.color_analysis.color_count} Farben` : '2 Farben'}
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 items-center">
-                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
-                                <button
-                                  key={num}
-                                  type="button"
-                                  onClick={() => setSelectedMaxColors(num)}
-                                  className={`w-8 h-7 text-xs rounded-lg font-mono border transition-all ${
-                                    selectedMaxColors === num
-                                      ? 'bg-cyan-600 text-white border-cyan-500 font-bold shadow'
-                                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                                  }`}
-                                >
-                                  {num}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="text-[10px] text-slate-500">
-                              Wird als <code className="text-slate-400 font-mono">processing.max_colors</code> an Vectorizer.ai übergeben (max. 12).
                             </div>
                           </div>
                         </div>

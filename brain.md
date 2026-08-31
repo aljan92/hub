@@ -375,20 +375,13 @@ MBA HUB/
 - **Design-Qualitätsaudit (`DEFAULT_UPDATE_VISION_SYSTEM_PROMPT`):** Die Vision-KI bewertet die visuelle Qualität mit `design_quality: { quality_verdict: "APPROVED" | "DEFECTIVE", quality_issues }`.
 - **Autonomie-Sicherheitsstopp bei Mängeln (`updatePipelineService.ts`, `TasksView.tsx`):** Ergibt der Qualitätsbefund `DEFECTIVE`, stoppt der Task zwingend in `Tasks & Review` mit roter Warnbox, selbst wenn die Update-Autonomie aktiv ist.
 - **Exklusive Task-Autonomie:** Die Autonomie-Schalter für Design- und Update-Pipeline befinden sich exklusiv im Header von `Tasks & Review`.
-### 10.7 📋 Strukturiertes Update-Audit & Fragen UI (`TasksView.tsx`)
-- **Linke Spalte (Artwork & bestehendes Amazon-Listing):**
-  - Oben: 2x2 Grid vs. Master-Artwork Preview (1024x1024 / 4500x5400px) mit 1s Hover-Zoom & Download.
-  - Unten: Vollständige und übersichtliche Darstellung des bestehenden Amazon-Listings (Brand, Title, Bullet 1, Bullet 2, Description).
-- **Rechte Spalte (5-Punkte Audit & Befunde):**
-  1. **1. Design Check:** Status-Badge `KI: APPROVED` / `KI: MANGELHAFT (DEFECTIVE)`, darunter Befund & ggf. erkannter Text auf dem Artwork.
-  2. **2. Listing-Rewrite Befund:** Status-Badge `KI: JA (Optimieren)` / `KI: NEIN (Beibehalten)`, darunter LLM-Schwächenanalyse.
-  3. **3. Zielgruppe (Fit Types):** Status-Badge `KI: Men, Women, Youth` (sauber aus Vision-QA übernommen, kein generisches 'Standard'), interaktive Multi-Select Toggles für Men/Women/Youth und Befund.
-  4. **4. Zu vermeidende Produktfarbe:** Status-Badge `KI: None / Black / White`, interaktive Auswahlschalter und Farbkontrast-Befund.
-  5. **5. Nischen-Hierarchie & SEO-Keywords:**
-     - Direktvergleich von Hermes-Nischen vs. LLM-Erkennung.
-     - 1-Click Übernahme-Buttons (*„Von LLM übernehmen“* / *„Von Hermes übernehmen“*).
-     - 3 editierbare Textfelder für Nische 1, Nische 2 (Cross) und Subnische (Titel-Ende).
-     - 1 editierbares Textfeld für Such-Keywords (SEO).
+### 10.7 📋 Einheitliches Question & Audit UI (`TasksView.tsx`)
+- **Update-Pipeline (`activeTask.source === 'UPDATE'`):**
+  - **Linke Spalte:** 2x2 Grid vs. Master-Artwork Preview (1024x1024 / 4500x5400px) & vollständige Darstellung des bestehenden Amazon-Listings (Brand, Title, Bullet 1, Bullet 2, Description).
+  - **Rechte Spalte:** 1. Design Check (Quality Verdict & Text), 2. Listing-Rewrite Befund, 3. Zielgruppe (Fit Types mit Checkmarks), 4. Zu vermeidende Produktfarbe, 5. Nischen-Hierarchie & SEO-Keywords (Hermes vs LLM Direktvergleich, 3 Nischen-Felder, 1 SEO-Keywords-Feld).
+- **Design-Creation-Pipeline (`activeTask.source !== 'UPDATE'`):**
+  - **Linke Spalte:** Ideogram Artwork Preview (Aspect-Ratio, 1s Hover-Zoom & Download) & editierbare Prompt-Card (Ideogram 3.0).
+  - **Rechte Spalte:** 1. Quote-Prüfung (Soll vs Erkannt mit EXAKT/ABWEICHUNG Badge), 2. Zielgruppe (Fit Types mit Checkmarks), 3. Zu vermeidende Produktfarbe, 4. Hintergrund entfernen (Automatisch/Manuell mit Checkmarks), 5. Maximale Farbanzahl (1-12 Vektorisierung), 6. Nischen-Hierarchie & SEO-Keywords (Hermes vs LLM Direktvergleich, 3 Nischen-Felder, 1 SEO-Keywords-Feld).
 
 
 
