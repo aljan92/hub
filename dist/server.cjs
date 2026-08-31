@@ -225389,47 +225389,99 @@ var UploadWorkerService = class _UploadWorkerService {
             const isRaglan = uPid.includes("RAGLAN");
             const isTrucker = uPid.includes("TRUCKER") || uPid.includes("HAT");
             const isVisor = uPid.includes("VISOR") || uPid.includes("SUN_VISOR");
+            const KNOWN_COLORS = [
+              { id: "black", matchers: ["black", "schwarz"] },
+              { id: "white", matchers: ["white", "wei\xDF", "weiss"] },
+              { id: "navy", matchers: ["navy", "dunkelblau"] },
+              { id: "asphalt", matchers: ["asphalt"] },
+              { id: "dark_heather", matchers: ["dark_heather", "dark-heather", "dark heather", "darkheather"] },
+              { id: "heather_grey", matchers: ["heather_grey", "heather-grey", "heather grey", "heathergrey", "heather gray", "heather_gray"] },
+              { id: "royal", matchers: ["royal", "royal_blue", "royal-blue", "royal blue", "royalblue"] },
+              { id: "red", matchers: ["red", "rot"] },
+              { id: "olive", matchers: ["olive"] },
+              { id: "kelly_green", matchers: ["kelly_green", "kelly-green", "kelly green", "kellygreen"] },
+              { id: "baby_blue", matchers: ["baby_blue", "baby-blue", "baby blue", "babyblue"] },
+              { id: "pink", matchers: ["pink", "rosa"] },
+              { id: "purple", matchers: ["purple", "lila"] },
+              { id: "orange", matchers: ["orange"] },
+              { id: "lemon", matchers: ["lemon", "yellow", "gelb"] },
+              { id: "cranberry", matchers: ["cranberry"] },
+              { id: "brown", matchers: ["brown", "braun"] },
+              { id: "silver", matchers: ["silver", "silber"] },
+              { id: "slate", matchers: ["slate"] },
+              { id: "sage_green", matchers: ["sage_green", "sage-green", "sage green", "sagegreen", "sage"] },
+              { id: "tan", matchers: ["tan"] },
+              { id: "heather_blue", matchers: ["heather_blue", "heather-blue", "heather blue", "heatherblue"] },
+              { id: "black_white", matchers: ["black_white", "black-white", "black white"] },
+              { id: "navy_white", matchers: ["navy_white", "navy-white", "navy white"] },
+              { id: "red_white", matchers: ["red_white", "red-white", "red white"] },
+              { id: "royal_blue_white", matchers: ["royal_blue_white", "royal-white", "royal_white", "royal white"] },
+              { id: "dark_heather_white", matchers: ["dark_heather_white", "dark_heather-white", "dark heather white"] },
+              { id: "white_black", matchers: ["white_black", "white-black", "white black"] },
+              { id: "white_white", matchers: ["white_white", "white-white", "white white"] },
+              { id: "black_black", matchers: ["black_black", "black-black", "black black"] }
+            ];
+            let selectedCount = 0;
             for (const cb of colorCheckboxes) {
-              const colorClass = Array.from(cb.classList).find((c) => c.endsWith("-checkbox")) || cb.className || "";
-              const rawName = colorClass.replace("-checkbox", "").toLowerCase().replace(/[\s_]+/g, "");
-              const attrName = (cb.getAttribute("name") || cb.getAttribute("id") || cb.getAttribute("aria-label") || cb.getAttribute("title") || "").toLowerCase().replace(/[\s_]+/g, "");
-              const colorName = rawName || attrName;
+              const clues = [];
+              if (cb.className) clues.push(String(cb.className));
+              ["name", "id", "aria-label", "title", "data-color", "data-name"].forEach((attr) => {
+                const val = cb.getAttribute(attr);
+                if (val) clues.push(String(val));
+              });
+              cb.querySelectorAll("*").forEach((el) => {
+                if (el.className) clues.push(String(el.className));
+                if (el.getAttribute("title")) clues.push(String(el.getAttribute("title")));
+                if (el.getAttribute("aria-label")) clues.push(String(el.getAttribute("aria-label")));
+                if (el.getAttribute("name")) clues.push(String(el.getAttribute("name")));
+                if (el.getAttribute("id")) clues.push(String(el.getAttribute("id")));
+              });
+              if (cb.textContent) clues.push(cb.textContent.trim());
+              const haystack = clues.join(" ").toLowerCase();
+              let matchedColorId = "";
+              for (const col of KNOWN_COLORS) {
+                if (col.matchers.some((m) => haystack.includes(m))) {
+                  matchedColorId = col.id;
+                  break;
+                }
+              }
               let isCatalogAllowed = true;
               if (params2.catalogColors && params2.catalogColors.length > 0) {
-                isCatalogAllowed = params2.catalogColors.some((ac) => {
-                  const cleanAc = ac.replace(/[\s_]+/g, "");
-                  return colorName === cleanAc || colorName.includes(cleanAc) || cleanAc.includes(colorName);
-                });
+                if (matchedColorId) {
+                  isCatalogAllowed = params2.catalogColors.includes(matchedColorId) || params2.catalogColors.some((ac) => haystack.includes(ac));
+                } else {
+                  isCatalogAllowed = params2.catalogColors.some((ac) => haystack.includes(ac));
+                }
               }
               let shouldBeChecked = isCatalogAllowed;
               if (params2.avoidColor === "white") {
-                if (colorName === "white" || colorName.includes("white") || colorClass.includes("white") || attrName.includes("white")) {
+                if (matchedColorId === "white" || haystack.includes("white") || haystack.includes("wei\xDF") || haystack.includes("weiss")) {
                   shouldBeChecked = false;
-                } else if (isSoccer || isBasketball || isRaglan || isTrucker || isVisor) {
-                  if (colorName.includes("white") || colorClass.includes("white")) {
-                    shouldBeChecked = false;
-                  }
                 }
               } else if (params2.avoidColor === "black") {
-                if (colorName === "black" || colorName.includes("black") || colorClass.includes("black") || attrName.includes("black")) {
+                if (matchedColorId === "black" || haystack.includes("black") || haystack.includes("schwarz")) {
                   shouldBeChecked = false;
-                } else if (isSoccer || isBasketball || isTrucker || isVisor) {
-                  if (colorName.includes("black") || colorClass.includes("black")) {
-                    shouldBeChecked = false;
-                  }
                 }
               }
-              const icon = cb.querySelector(".sci-icon, i.sci-icon, i.sci-check, i");
+              if (shouldBeChecked) {
+                if (selectedCount >= 10) {
+                  shouldBeChecked = false;
+                } else {
+                  selectedCount++;
+                }
+              }
+              const hasSelectedClass = cb.classList.contains("selected") || cb.classList.contains("checked") || cb.classList.contains("active") || cb.querySelector(".selected, .checked, .active") !== null;
+              const hasAriaChecked = cb.getAttribute("aria-checked") === "true" || cb.querySelector('[aria-checked="true"]') !== null;
+              const icon = cb.querySelector(".sci-icon, i.sci-icon, i.sci-check, i, svg");
               const hasCheckIcon = Boolean(
                 icon && (icon.classList.contains("sci-check") || icon.classList.contains("sci-check-box") || icon.classList.contains("checkmark") || typeof icon.className === "string" && icon.className.includes("check")) && !icon.classList.contains("sci-check-box-blank")
               );
-              const isChecked = Boolean(
-                cb.classList.contains("selected") || cb.classList.contains("checked") || cb.getAttribute("aria-checked") === "true" || cb.querySelector('.selected, .checked, [aria-checked="true"]') !== null || hasCheckIcon || cb.querySelector("input")?.checked
-              );
+              const hasCheckedInput = Boolean(cb.querySelector('input[type="checkbox"], input')?.checked);
+              const isChecked = Boolean(hasSelectedClass || hasAriaChecked || hasCheckIcon || hasCheckedInput);
               if (isChecked !== shouldBeChecked) {
                 const clickTarget = cb.querySelector(".color-checkbox") || cb.querySelector("input") || cb.querySelector(".sci-icon") || cb;
                 clickTarget.click();
-                await sleep2(50);
+                await sleep2(75);
               }
             }
           }
@@ -225440,7 +225492,7 @@ var UploadWorkerService = class _UploadWorkerService {
           fitTypes,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
-          catalogColors: Array.isArray(product.colors) ? product.colors.map((c) => c.id.toLowerCase().replace(/[\s_]+/g, "")) : []
+          catalogColors: Array.isArray(product.colors) ? product.colors.map((c) => c.id.toLowerCase()) : []
         });
         if (!editResult.success) {
           this.log(`\u26A0\uFE0F Hinweis zu ${product.displayName}: ${editResult.reason}`);
