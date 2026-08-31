@@ -91,6 +91,47 @@ export function normalizeMarketplaceCode(raw: string): string {
   return s;
 }
 
+// Helper to normalize Amazon product keys to exact catalog product IDs
+export function normalizeCatalogProductId(raw: string): string {
+  const s = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
+  if (['STANDARD_TSHIRT', 'STANDARD_T_SHIRT', 'TSHIRT', 'STANDARD'].includes(s)) return 'STANDARD_TSHIRT';
+  if (['VALUE_GRAPHIC_TSHIRT', 'VALUE_GRAPHIC_T_SHIRT', 'VALUE_TSHIRT', 'VALUE_T_SHIRT'].includes(s)) return 'VALUE_GRAPHIC_TSHIRT';
+  if (['PREMIUM_TSHIRT', 'PREMIUM_T_SHIRT', 'PREMIUM'].includes(s)) return 'PREMIUM_TSHIRT';
+  if (['COMFORT_COLORS_HEAVYWEIGHT_TSHIRT', 'COMFORT_COLORS', 'HEAVYWEIGHT_TSHIRT', 'COMFORT_COLORS_TSHIRT'].includes(s)) return 'COMFORT_COLORS_HEAVYWEIGHT_TSHIRT';
+  if (['VNECK_TSHIRT', 'VNECK', 'V_NECK', 'V_NECK_TSHIRT', 'V_NECK_T_SHIRT'].includes(s)) return 'VNECK_TSHIRT';
+  if (['TANK_TOP', 'TANKTOP', 'TANK'].includes(s)) return 'TANK_TOP';
+  if (['STANDARD_LONG_SLEEVE', 'LONG_SLEEVE_TSHIRT', 'LONG_SLEEVE_T_SHIRT', 'LONGSLEEVE', 'LONG_SLEEVE', 'STANDARD_LONG_SLEEVE_TSHIRT'].includes(s)) return 'LONG_SLEEVE_TSHIRT';
+  if (['RAGLAN', 'BASEBALL_TEE', 'RAGLAN_TSHIRT'].includes(s)) return 'RAGLAN';
+  if (['SOCCER_JERSEY', 'SOCCER'].includes(s)) return 'SOCCER_JERSEY';
+  if (['BASKETBALL_JERSEY', 'BASKETBALL'].includes(s)) return 'BASKETBALL_JERSEY';
+  if (['BASEBALL_JERSEY', 'BASEBALL'].includes(s)) return 'BASEBALL_JERSEY';
+  if (['STANDARD_SWEATSHIRT', 'SWEATSHIRT', 'SWEAT_SHIRT'].includes(s)) return 'SWEATSHIRT';
+  if (['STANDARD_PULLOVER_HOODIE', 'PULLOVER_HOODIE', 'HOODIE', 'PULLOVER'].includes(s)) return 'PULLOVER_HOODIE';
+  if (['ZIP_HOODIE', 'ZIPHOODIE', 'ZIPPER_HOODIE'].includes(s)) return 'ZIP_HOODIE';
+  if (['POP_SOCKET', 'POPSOCKET', 'POPSOCKETS', 'POP_SOCKETS'].includes(s)) return 'POPSOCKETS';
+  if (['PHONE_CASE_APPLE_IPHONE', 'IPHONE_CASE', 'IPHONE_CASES', 'IPHONE'].includes(s)) return 'IPHONE_CASES';
+  if (['PHONE_CASE_SAMSUNG_GALAXY', 'SAMSUNG_GALAXY_CASE', 'SAMSUNG_CASE', 'SAMSUNG', 'SAMSUNG_GALAXY_CASES'].includes(s)) return 'SAMSUNG_GALAXY_CASE';
+  if (['TOTE_BAG', 'TOTE_BAGS', 'TOTEBAG', 'TOTEBAGS', 'BAG'].includes(s)) return 'TOTE_BAG';
+  if (['THROW_PILLOW', 'THROW_PILLOWS', 'PILLOW', 'PILLOWS'].includes(s)) return 'THROW_PILLOWS';
+  if (['TUMBLER', 'TUMBLERS'].includes(s)) return 'TUMBLER';
+  if (['OVERSIZED_TSHIRT', 'OVERSIZED_T_SHIRT', 'OVERSIZED'].includes(s)) return 'OVERSIZED_TSHIRT';
+  if (['COMFORT_COLORS_SWEATSHIRT'].includes(s)) return 'COMFORT_COLORS_SWEATSHIRT';
+  if (['COMFORT_COLORS_CROP_SWEATSHIRT'].includes(s)) return 'COMFORT_COLORS_CROP_SWEATSHIRT';
+  if (['CROP_TOP', 'CROPTOP'].includes(s)) return 'CROP_TOP';
+  if (['PERFORMANCE_HOODIE'].includes(s)) return 'PERFORMANCE_HOODIE';
+  if (['PERFORMANCE_TSHIRT', 'PERFORMANCE_T_SHIRT'].includes(s)) return 'PERFORMANCE_TSHIRT';
+  if (['POLO', 'PERFORMANCE_POLO'].includes(s)) return 'PERFORMANCE_POLO';
+  if (['QUARTER_ZIP', 'QUARTERZIP', 'PERFORMANCE_QUARTER_ZIP'].includes(s)) return 'PERFORMANCE_QUARTER_ZIP';
+  if (['PRINTED_BASEBALL_HAT', 'BASEBALL_HAT'].includes(s)) return 'BASEBALL_HAT';
+  if (['PRINTED_TRUCKER_HAT', 'TRUCKER_HAT'].includes(s)) return 'TRUCKER_HAT';
+  if (['SPORT_SUN_VISOR', 'SUN_VISOR', 'VISOR'].includes(s)) return 'SPORT_SUN_VISOR';
+  if (['SPORT_BACKPACK', 'BACKPACK'].includes(s)) return 'SPORT_BACKPACK';
+  if (['MUG', 'MUGS', 'CERAMIC_MUG'].includes(s)) return 'CERAMIC_MUG';
+  if (['WATER_BOTTLE', 'WATER_BOTTLES'].includes(s)) return 'WATER_BOTTLE';
+  if (['HARDCOVER_JOURNAL', 'JOURNAL'].includes(s)) return 'HARDCOVER_JOURNAL';
+  return s;
+}
+
 export class QueueService {
   private static queueFilePath = path.resolve(process.cwd(), 'data', 'upload_queue.json');
   private static tasksLogPath = path.resolve(process.cwd(), 'data', 'tasks_log.json');
@@ -556,10 +597,10 @@ export class QueueService {
         const prodId = prod.id;
         const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
 
-        // Find live summary for this product
+        // Find live summary for this product using canonical normalization
+        const normProdId = normalizeCatalogProductId(prodId);
         const matchedSummaryKey = Object.keys(liveSummary).find(k => 
-          k.toUpperCase() === prodId.toUpperCase() || 
-          k.toUpperCase().replace(/_/g, '') === prodId.toUpperCase().replace(/_/g, '')
+          normalizeCatalogProductId(k) === normProdId
         );
         const liveProductInfo = matchedSummaryKey ? liveSummary[matchedSummaryKey] : null;
 
@@ -1024,10 +1065,10 @@ export class QueueService {
           const prodId = prod.id;
           const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
 
-          // 1. Find live summary for this product
+          // 1. Find live summary for this product using canonical normalization
+          const normProdId = normalizeCatalogProductId(prodId);
           const matchedSummaryKey = Object.keys(liveSummary).find(k => 
-            k.toUpperCase() === prodId.toUpperCase() || 
-            k.toUpperCase().replace(/_/g, '') === prodId.toUpperCase().replace(/_/g, '')
+            normalizeCatalogProductId(k) === normProdId
           );
           const liveProductInfo = matchedSummaryKey ? liveSummary[matchedSummaryKey] : null;
 

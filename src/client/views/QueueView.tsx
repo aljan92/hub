@@ -571,12 +571,57 @@ export const QueueView: React.FC = () => {
   const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')) || (i.taskId && String(i.taskId).endsWith('-U')));
   const isNewItem = (i: any) => !isUpdateItem(i);
 
-  // Exact live products/slots count derived directly from DOM liveProductSummary
+  // Helper to normalize Amazon product keys to exact catalog product IDs
+  const normalizeCatalogProductId = (raw: string): string => {
+    const s = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
+    if (['STANDARD_TSHIRT', 'STANDARD_T_SHIRT', 'TSHIRT', 'STANDARD'].includes(s)) return 'STANDARD_TSHIRT';
+    if (['VALUE_GRAPHIC_TSHIRT', 'VALUE_GRAPHIC_T_SHIRT', 'VALUE_TSHIRT', 'VALUE_T_SHIRT'].includes(s)) return 'VALUE_GRAPHIC_TSHIRT';
+    if (['PREMIUM_TSHIRT', 'PREMIUM_T_SHIRT', 'PREMIUM'].includes(s)) return 'PREMIUM_TSHIRT';
+    if (['COMFORT_COLORS_HEAVYWEIGHT_TSHIRT', 'COMFORT_COLORS', 'HEAVYWEIGHT_TSHIRT', 'COMFORT_COLORS_TSHIRT'].includes(s)) return 'COMFORT_COLORS_HEAVYWEIGHT_TSHIRT';
+    if (['VNECK_TSHIRT', 'VNECK', 'V_NECK', 'V_NECK_TSHIRT', 'V_NECK_T_SHIRT'].includes(s)) return 'VNECK_TSHIRT';
+    if (['TANK_TOP', 'TANKTOP', 'TANK'].includes(s)) return 'TANK_TOP';
+    if (['STANDARD_LONG_SLEEVE', 'LONG_SLEEVE_TSHIRT', 'LONG_SLEEVE_T_SHIRT', 'LONGSLEEVE', 'LONG_SLEEVE', 'STANDARD_LONG_SLEEVE_TSHIRT'].includes(s)) return 'LONG_SLEEVE_TSHIRT';
+    if (['RAGLAN', 'BASEBALL_TEE', 'RAGLAN_TSHIRT'].includes(s)) return 'RAGLAN';
+    if (['SOCCER_JERSEY', 'SOCCER'].includes(s)) return 'SOCCER_JERSEY';
+    if (['BASKETBALL_JERSEY', 'BASKETBALL'].includes(s)) return 'BASKETBALL_JERSEY';
+    if (['BASEBALL_JERSEY', 'BASEBALL'].includes(s)) return 'BASEBALL_JERSEY';
+    if (['STANDARD_SWEATSHIRT', 'SWEATSHIRT', 'SWEAT_SHIRT'].includes(s)) return 'SWEATSHIRT';
+    if (['STANDARD_PULLOVER_HOODIE', 'PULLOVER_HOODIE', 'HOODIE', 'PULLOVER'].includes(s)) return 'PULLOVER_HOODIE';
+    if (['ZIP_HOODIE', 'ZIPHOODIE', 'ZIPPER_HOODIE'].includes(s)) return 'ZIP_HOODIE';
+    if (['POP_SOCKET', 'POPSOCKET', 'POPSOCKETS', 'POP_SOCKETS'].includes(s)) return 'POPSOCKETS';
+    if (['PHONE_CASE_APPLE_IPHONE', 'IPHONE_CASE', 'IPHONE_CASES', 'IPHONE'].includes(s)) return 'IPHONE_CASES';
+    if (['PHONE_CASE_SAMSUNG_GALAXY', 'SAMSUNG_GALAXY_CASE', 'SAMSUNG_CASE', 'SAMSUNG', 'SAMSUNG_GALAXY_CASES'].includes(s)) return 'SAMSUNG_GALAXY_CASE';
+    if (['TOTE_BAG', 'TOTE_BAGS', 'TOTEBAG', 'TOTEBAGS', 'BAG'].includes(s)) return 'TOTE_BAG';
+    if (['THROW_PILLOW', 'THROW_PILLOWS', 'PILLOW', 'PILLOWS'].includes(s)) return 'THROW_PILLOWS';
+    if (['TUMBLER', 'TUMBLERS'].includes(s)) return 'TUMBLER';
+    if (['OVERSIZED_TSHIRT', 'OVERSIZED_T_SHIRT', 'OVERSIZED'].includes(s)) return 'OVERSIZED_TSHIRT';
+    if (['COMFORT_COLORS_SWEATSHIRT'].includes(s)) return 'COMFORT_COLORS_SWEATSHIRT';
+    if (['COMFORT_COLORS_CROP_SWEATSHIRT'].includes(s)) return 'COMFORT_COLORS_CROP_SWEATSHIRT';
+    if (['CROP_TOP', 'CROPTOP'].includes(s)) return 'CROP_TOP';
+    if (['PERFORMANCE_HOODIE'].includes(s)) return 'PERFORMANCE_HOODIE';
+    if (['PERFORMANCE_TSHIRT', 'PERFORMANCE_T_SHIRT'].includes(s)) return 'PERFORMANCE_TSHIRT';
+    if (['POLO', 'PERFORMANCE_POLO'].includes(s)) return 'PERFORMANCE_POLO';
+    if (['QUARTER_ZIP', 'QUARTERZIP', 'PERFORMANCE_QUARTER_ZIP'].includes(s)) return 'PERFORMANCE_QUARTER_ZIP';
+    if (['PRINTED_BASEBALL_HAT', 'BASEBALL_HAT'].includes(s)) return 'BASEBALL_HAT';
+    if (['PRINTED_TRUCKER_HAT', 'TRUCKER_HAT'].includes(s)) return 'TRUCKER_HAT';
+    if (['SPORT_SUN_VISOR', 'SUN_VISOR', 'VISOR'].includes(s)) return 'SPORT_SUN_VISOR';
+    if (['SPORT_BACKPACK', 'BACKPACK'].includes(s)) return 'SPORT_BACKPACK';
+    if (['MUG', 'MUGS', 'CERAMIC_MUG'].includes(s)) return 'CERAMIC_MUG';
+    if (['WATER_BOTTLE', 'WATER_BOTTLES'].includes(s)) return 'WATER_BOTTLE';
+    if (['HARDCOVER_JOURNAL', 'JOURNAL'].includes(s)) return 'HARDCOVER_JOURNAL';
+    return s;
+  };
+
+  // Exact live products/slots count derived directly from DOM liveProductSummary with deduplication
   const getLiveProductsCount = (item: any): number => {
     const liveSummary = item.liveProductSummary || item.liveStats?.productSummary;
     if (liveSummary && typeof liveSummary === 'object' && Object.keys(liveSummary).length > 0) {
       let count = 0;
-      for (const [_, info] of Object.entries<any>(liveSummary)) {
+      const seenKeys = new Set<string>();
+      for (const [key, info] of Object.entries<any>(liveSummary)) {
+        const normKey = normalizeCatalogProductId(key);
+        if (seenKeys.has(normKey)) continue;
+        seenKeys.add(normKey);
         if (Array.isArray(info?.marketplaces)) {
           count += info.marketplaces.length;
         } else if (Array.isArray(info)) {
@@ -1634,19 +1679,21 @@ export const QueueView: React.FC = () => {
                                     // Update design logic: check exact live vs missing marketplaces
                                     const catalogMps = Array.isArray(prodDef?.availableMarketplaces) ? prodDef.availableMarketplaces : ['US'];
                                     
-                                    // Find live summary for this product (case-insensitive & underscore-insensitive)
-                                    const liveSummary = item.liveProductSummary || {};
+                                    // Find live summary for this product using canonical normalization
+                                    const normProdId = normalizeCatalogProductId(cleanProdId);
+                                    const liveSummary = item.liveProductSummary || item.liveStats?.productSummary || {};
                                     const matchedKey = Object.keys(liveSummary).find(k => 
-                                      k.toUpperCase() === cleanProdId.toUpperCase() || 
-                                      k.toUpperCase().replace(/_/g, '') === cleanProdId.toUpperCase().replace(/_/g, '')
+                                      normalizeCatalogProductId(k) === normProdId
                                     );
                                     const liveInfo = matchedKey ? liveSummary[matchedKey] : null;
 
                                     let rawLiveMps: string[] = [];
-                                    if (liveInfo && Array.isArray(liveInfo.marketplaces)) {
-                                      rawLiveMps = liveInfo.marketplaces;
-                                    } else if (Array.isArray(item.liveProductTypes) && item.liveProductTypes.some(t => String(t).toUpperCase() === cleanProdId.toUpperCase())) {
-                                      rawLiveMps = ['US'];
+                                    if (liveInfo) {
+                                      if (Array.isArray(liveInfo.marketplaces)) {
+                                        rawLiveMps = liveInfo.marketplaces;
+                                      } else if (Array.isArray(liveInfo)) {
+                                        rawLiveMps = liveInfo;
+                                      }
                                     }
 
                                     const liveMps = rawLiveMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).map(m => m.trim().toUpperCase());
@@ -2391,19 +2438,21 @@ export const QueueView: React.FC = () => {
                                     // Update design logic: check exact live vs missing marketplaces
                                     const catalogMps = Array.isArray(prodDef?.availableMarketplaces) ? prodDef.availableMarketplaces : ['US'];
                                     
-                                    // Find live summary for this product (case-insensitive & underscore-insensitive)
-                                    const liveSummary = item.liveProductSummary || {};
+                                    // Find live summary for this product using canonical normalization
+                                    const normProdId = normalizeCatalogProductId(cleanProdId);
+                                    const liveSummary = item.liveProductSummary || item.liveStats?.productSummary || {};
                                     const matchedKey = Object.keys(liveSummary).find(k => 
-                                      k.toUpperCase() === cleanProdId.toUpperCase() || 
-                                      k.toUpperCase().replace(/_/g, '') === cleanProdId.toUpperCase().replace(/_/g, '')
+                                      normalizeCatalogProductId(k) === normProdId
                                     );
                                     const liveInfo = matchedKey ? liveSummary[matchedKey] : null;
 
                                     let rawLiveMps: string[] = [];
-                                    if (liveInfo && Array.isArray(liveInfo.marketplaces)) {
-                                      rawLiveMps = liveInfo.marketplaces;
-                                    } else if (Array.isArray(item.liveProductTypes) && item.liveProductTypes.some(t => String(t).toUpperCase() === cleanProdId.toUpperCase())) {
-                                      rawLiveMps = ['US'];
+                                    if (liveInfo) {
+                                      if (Array.isArray(liveInfo.marketplaces)) {
+                                        rawLiveMps = liveInfo.marketplaces;
+                                      } else if (Array.isArray(liveInfo)) {
+                                        rawLiveMps = liveInfo;
+                                      }
                                     }
 
                                     const liveMps = rawLiveMps.map(m => typeof m === 'object' && m ? String((m as any).id || (m as any).code || (m as any).name || '') : String(m)).map(m => m.trim().toUpperCase());

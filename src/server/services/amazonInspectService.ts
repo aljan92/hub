@@ -292,11 +292,11 @@ export class AmazonInspectService {
     if (['STANDARD_SWEATSHIRT', 'SWEATSHIRT', 'SWEAT_SHIRT'].includes(s)) return 'SWEATSHIRT';
     if (['STANDARD_PULLOVER_HOODIE', 'PULLOVER_HOODIE', 'HOODIE', 'PULLOVER'].includes(s)) return 'PULLOVER_HOODIE';
     if (['ZIP_HOODIE', 'ZIPHOODIE', 'ZIPPER_HOODIE'].includes(s)) return 'ZIP_HOODIE';
-    if (['POP_SOCKET', 'POPSOCKET', 'POPSOCKETS', 'POP_SOCKETS'].includes(s)) return 'POPSOCKET';
-    if (['PHONE_CASE_APPLE_IPHONE', 'IPHONE_CASE', 'IPHONE_CASES', 'IPHONE'].includes(s)) return 'IPHONE_CASE';
+    if (['POP_SOCKET', 'POPSOCKET', 'POPSOCKETS', 'POP_SOCKETS'].includes(s)) return 'POPSOCKETS';
+    if (['PHONE_CASE_APPLE_IPHONE', 'IPHONE_CASE', 'IPHONE_CASES', 'IPHONE'].includes(s)) return 'IPHONE_CASES';
     if (['PHONE_CASE_SAMSUNG_GALAXY', 'SAMSUNG_GALAXY_CASE', 'SAMSUNG_CASE', 'SAMSUNG', 'SAMSUNG_GALAXY_CASES'].includes(s)) return 'SAMSUNG_GALAXY_CASE';
     if (['TOTE_BAG', 'TOTE_BAGS', 'TOTEBAG', 'TOTEBAGS', 'BAG'].includes(s)) return 'TOTE_BAG';
-    if (['THROW_PILLOW', 'THROW_PILLOWS', 'PILLOW', 'PILLOWS'].includes(s)) return 'THROW_PILLOW';
+    if (['THROW_PILLOW', 'THROW_PILLOWS', 'PILLOW', 'PILLOWS'].includes(s)) return 'THROW_PILLOWS';
     if (['TUMBLER', 'TUMBLERS'].includes(s)) return 'TUMBLER';
     if (['OVERSIZED_TSHIRT', 'OVERSIZED_T_SHIRT', 'OVERSIZED'].includes(s)) return 'OVERSIZED_TSHIRT';
     if (['COMFORT_COLORS_SWEATSHIRT'].includes(s)) return 'COMFORT_COLORS_SWEATSHIRT';
@@ -304,13 +304,13 @@ export class AmazonInspectService {
     if (['CROP_TOP', 'CROPTOP'].includes(s)) return 'CROP_TOP';
     if (['PERFORMANCE_HOODIE'].includes(s)) return 'PERFORMANCE_HOODIE';
     if (['PERFORMANCE_TSHIRT', 'PERFORMANCE_T_SHIRT'].includes(s)) return 'PERFORMANCE_TSHIRT';
-    if (['POLO'].includes(s)) return 'POLO';
-    if (['QUARTER_ZIP', 'QUARTERZIP'].includes(s)) return 'QUARTER_ZIP';
-    if (['PRINTED_BASEBALL_HAT'].includes(s)) return 'PRINTED_BASEBALL_HAT';
-    if (['PRINTED_TRUCKER_HAT'].includes(s)) return 'PRINTED_TRUCKER_HAT';
-    if (['SPORT_SUN_VISOR'].includes(s)) return 'SPORT_SUN_VISOR';
-    if (['SPORT_BACKPACK'].includes(s)) return 'SPORT_BACKPACK';
-    if (['MUG', 'MUGS'].includes(s)) return 'MUG';
+    if (['POLO', 'PERFORMANCE_POLO'].includes(s)) return 'PERFORMANCE_POLO';
+    if (['QUARTER_ZIP', 'QUARTERZIP', 'PERFORMANCE_QUARTER_ZIP'].includes(s)) return 'PERFORMANCE_QUARTER_ZIP';
+    if (['PRINTED_BASEBALL_HAT', 'BASEBALL_HAT'].includes(s)) return 'BASEBALL_HAT';
+    if (['PRINTED_TRUCKER_HAT', 'TRUCKER_HAT'].includes(s)) return 'TRUCKER_HAT';
+    if (['SPORT_SUN_VISOR', 'SUN_VISOR', 'VISOR'].includes(s)) return 'SPORT_SUN_VISOR';
+    if (['SPORT_BACKPACK', 'BACKPACK'].includes(s)) return 'SPORT_BACKPACK';
+    if (['MUG', 'MUGS', 'CERAMIC_MUG'].includes(s)) return 'CERAMIC_MUG';
     if (['WATER_BOTTLE', 'WATER_BOTTLES'].includes(s)) return 'WATER_BOTTLE';
     if (['HARDCOVER_JOURNAL', 'JOURNAL'].includes(s)) return 'HARDCOVER_JOURNAL';
     return s;
@@ -638,13 +638,10 @@ export class AmazonInspectService {
           });
 
           if (domResult && domResult.pubMap) {
-            // Normalize product keys
+            // Normalize product keys into single canonical catalog IDs (no duplicate keys!)
             for (const [rKey, mps] of Object.entries<string[]>(domResult.pubMap)) {
               const normKey = AmazonInspectService.normalizeProductKey(rKey);
               domLiveSummary[normKey] = mps;
-              if (rKey !== normKey) {
-                domLiveSummary[rKey] = mps;
-              }
             }
             totalLiveSlots = domResult.liveCount;
             rejectedOrDraftItems = domResult.draftOrRej || [];
