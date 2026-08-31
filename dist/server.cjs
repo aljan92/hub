@@ -220329,6 +220329,54 @@ var init_amazonInspectService = __esm2({
           const session2 = await BrowserSessionService.getSession("sync");
           newTab = await session2.page.context().newPage();
           await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
+          await newTab.waitForSelector('img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img', { timeout: 25e3 }).catch(() => null);
+          const extractResult = await newTab.evaluate(() => {
+            const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
+            let targetImg = images.find((e) => e.getAttribute("alt") && e.getAttribute("alt").endsWith(".png"));
+            if (!targetImg) {
+              targetImg = images.find((e) => e.getAttribute("alt") === "null");
+            }
+            if (!targetImg) {
+              targetImg = document.querySelector("img.artwork.ng-star-inserted") || document.querySelector(".artwork") || document.querySelector("#global-uploader-container img") || document.querySelector(".global-uploader img");
+            }
+            if (!targetImg || !targetImg.src) {
+              return { ok: false, error: "Kein Artwork Bild-Element auf der Amazon Edit-Seite gefunden." };
+            }
+            const rawSrc = targetImg.src;
+            const fullResUrl = rawSrc.replace(/\._[^_]+_\.(png|jpg|jpeg)$/i, ".$1");
+            return { ok: true, rawSrc, fullResUrl };
+          });
+          if (!extractResult.ok || !extractResult.fullResUrl) {
+            throw new Error(extractResult.error || "Konnte Original-Bild-URL im DOM nicht ermitteln.");
+          }
+          console.log(`[AmazonInspectService] \u{1F50D} Full-Res URL gefunden: ${extractResult.fullResUrl}`);
+          const base64Data = await newTab.evaluate(async (imgUrl) => {
+            try {
+              const resp = await fetch(imgUrl, { credentials: "include" });
+              if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+              const blob = await resp.blob();
+              return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error("FileReader Fehler"));
+                reader.readAsDataURL(blob);
+              });
+            } catch (fetchErr) {
+              throw new Error(`Browser fetch failed: ${fetchErr.message}`);
+            }
+          }, extractResult.fullResUrl);
+          const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
+          const buffer = Buffer.from(base64Clean, "base64");
+          const designsDir2 = import_path73.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs78.default.existsSync(designsDir2)) {
+            import_fs78.default.mkdirSync(designsDir2, { recursive: true });
+          }
+          const safeId2 = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const filename2 = `${safeId2}.png`;
+          const filePath2 = import_path73.default.join(designsDir2, filename2);
+          import_fs78.default.writeFileSync(filePath2, buffer);
+          console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+          const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
           const pageRejectionInfo = await newTab.evaluate(() => {
             const alertElements = Array.from(document.querySelectorAll('.alert-danger, .alert-warning, .error-banner, .validation-error, [role="alert"]'));
             const alertText = alertElements.map((a) => a.textContent?.trim() || "").filter(Boolean).join(" | ");
@@ -220395,53 +220443,6 @@ var init_amazonInspectService = __esm2({
           } catch (domErr) {
             console.warn(`[AmazonInspectService] \u26A0\uFE0F DOM-Inspektion f\xFCr Select Products fehlgeschlagen (Fallback auf API-Daten):`, domErr.message);
           }
-          const extractResult = await newTab.evaluate(() => {
-            const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
-            let targetImg = images.find((e) => e.getAttribute("alt") && e.getAttribute("alt").endsWith(".png"));
-            if (!targetImg) {
-              targetImg = images.find((e) => e.getAttribute("alt") === "null");
-            }
-            if (!targetImg) {
-              targetImg = document.querySelector("img.artwork.ng-star-inserted") || document.querySelector(".artwork") || document.querySelector("#global-uploader-container img") || document.querySelector(".global-uploader img");
-            }
-            if (!targetImg || !targetImg.src) {
-              return { ok: false, error: "Kein Artwork Bild-Element auf der Amazon Edit-Seite gefunden." };
-            }
-            const rawSrc = targetImg.src;
-            const fullResUrl = rawSrc.replace(/\._[^_]+_\.(png|jpg|jpeg)$/i, ".$1");
-            return { ok: true, rawSrc, fullResUrl };
-          });
-          if (!extractResult.ok || !extractResult.fullResUrl) {
-            throw new Error(extractResult.error || "Konnte Original-Bild-URL im DOM nicht ermitteln.");
-          }
-          console.log(`[AmazonInspectService] \u{1F50D} Full-Res URL gefunden: ${extractResult.fullResUrl}`);
-          const base64Data = await newTab.evaluate(async (imgUrl) => {
-            try {
-              const resp = await fetch(imgUrl, { credentials: "include" });
-              if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
-              const blob = await resp.blob();
-              return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = () => reject(new Error("FileReader Fehler"));
-                reader.readAsDataURL(blob);
-              });
-            } catch (fetchErr) {
-              throw new Error(`Browser fetch failed: ${fetchErr.message}`);
-            }
-          }, extractResult.fullResUrl);
-          const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
-          const buffer = Buffer.from(base64Clean, "base64");
-          const designsDir2 = import_path73.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs78.default.existsSync(designsDir2)) {
-            import_fs78.default.mkdirSync(designsDir2, { recursive: true });
-          }
-          const safeId2 = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-          const filename2 = `${safeId2}.png`;
-          const filePath2 = import_path73.default.join(designsDir2, filename2);
-          import_fs78.default.writeFileSync(filePath2, buffer);
-          console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
-          const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
           const hasRejection = pageRejectionInfo.hasAlert || rejectedOrDraftItems.length > 0;
           const rejectionReason = pageRejectionInfo.alertText || (rejectedOrDraftItems.length > 0 ? `Nicht publizierte/abgelehnte Produkte erkannt: ${rejectedOrDraftItems.join(", ")}` : null);
           const currentTask = TaskLogService2.getTask(cleanTaskId);
