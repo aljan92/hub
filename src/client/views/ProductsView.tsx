@@ -837,23 +837,23 @@ export const ProductsView: React.FC = () => {
                                 </div>
                               </div>
 
-                              {/* 3-State Avoid Rule Badge */}
-                              <div className="shrink-0 ml-2">
+                              {/* 3-State Avoid Rule Icon (Compact, Icon-only) */}
+                              <div className="shrink-0 ml-1.5">
                                 {isAvoidWhite ? (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-white/20 text-white border border-white/40 flex items-center space-x-1">
-                                    <span>⚪</span>
-                                    <span>Weiß meiden</span>
+                                  <span
+                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs bg-white/20 border border-white/40 shadow-sm"
+                                    title="⚪ Bei Weiß meiden"
+                                  >
+                                    ⚪
                                   </span>
                                 ) : isAvoidBlack ? (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1">
-                                    <span>⚫</span>
-                                    <span>Schwarz meiden</span>
+                                  <span
+                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs bg-amber-500/20 border border-amber-500/40 shadow-sm"
+                                    title="⚫ Bei Schwarz meiden"
+                                  >
+                                    ⚫
                                   </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-800/80 border border-slate-700/60 group-hover:text-slate-200">
-                                    Immer aktiv
-                                  </span>
-                                )}
+                                ) : null}
                               </div>
                             </div>
                           );
