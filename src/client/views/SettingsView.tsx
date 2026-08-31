@@ -48,6 +48,8 @@ export const SettingsView: React.FC = () => {
   const [openRouterApiKey, setOpenRouterApiKey] = useState<string>(initialSettings.openRouterApiKey || '');
   const [llmProvider, setLlmProvider] = useState<'openrouter' | 'openai'>(initialSettings.llmProvider || 'openrouter');
   const [llmModel, setLlmModel] = useState<string>(initialSettings.llmModel || 'anthropic/claude-3.5-sonnet');
+  const [llmTemperature, setLlmTemperature] = useState<number>(initialSettings.llmTemperature ?? 0.35);
+  const [llmMaxTokens, setLlmMaxTokens] = useState<number>(initialSettings.llmMaxTokens ?? 3000);
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string; promptPrice?: string; completionPrice?: string }[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
@@ -131,6 +133,8 @@ export const SettingsView: React.FC = () => {
           setOpenRouterApiKey(s.openRouterApiKey || '');
           setLlmProvider(s.llmProvider || 'openrouter');
           setLlmModel(s.llmModel || 'anthropic/claude-3.5-sonnet');
+          setLlmTemperature(s.llmTemperature ?? 0.35);
+          setLlmMaxTokens(s.llmMaxTokens ?? 3000);
           setIdeogramApiKey(s.ideogramApiKey || '');
           setIdeogramModel(s.ideogramModel || 'V_3');
           setIdeogramRenderingSpeed(s.ideogramRenderingSpeed || 'DEFAULT');
@@ -239,6 +243,8 @@ export const SettingsView: React.FC = () => {
         openRouterApiKey,
         llmProvider,
         llmModel,
+        llmTemperature: Number(llmTemperature),
+        llmMaxTokens: Number(llmMaxTokens),
         ideogramApiKey,
         ideogramModel,
         ideogramRenderingSpeed,
@@ -434,6 +440,43 @@ export const SettingsView: React.FC = () => {
             </select>
             <div className="text-[10px] text-slate-500 font-mono">
               Aktuell gewählt: <strong>{llmModel}</strong>
+            </div>
+
+            {/* LLM Parameters: Temperature & Max Tokens */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Temperature</span>
+                  <span className="font-mono text-cyan-400 font-bold">{llmTemperature}</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0.0"
+                  max="1.0"
+                  value={llmTemperature}
+                  onChange={(e) => setLlmTemperature(parseFloat(e.target.value) || 0.35)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">0.2–0.5 empfohlen für SEO Listings</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Max Tokens</span>
+                  <span className="font-mono text-cyan-400 font-bold">{llmMaxTokens}</span>
+                </label>
+                <input
+                  type="number"
+                  step="250"
+                  min="500"
+                  max="8000"
+                  value={llmMaxTokens}
+                  onChange={(e) => setLlmMaxTokens(parseInt(e.target.value, 10) || 3000)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">2500–4000 für vollständige Listings</span>
+              </div>
             </div>
           </div>
         </div>

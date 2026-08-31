@@ -53,13 +53,32 @@ export class UpdateBackfillService {
   }
 
   /**
-   * Clears in-flight design memory locks
+   * Clears in-flight design memory locks and cancels any hanging/stale update tasks
    */
-  public static resetInFlightLocks(): { success: boolean; releasedCount: number } {
+  public static resetInFlightLocks(): { success: boolean; releasedCount: number; activeCount: number; message: string } {
     const count = this.inFlightDesigns.size;
     this.inFlightDesigns.clear();
-    console.log(`[UpdateBackfillService] 🔄 In-Flight Locks zurückgesetzt (${count} freigegeben).`);
-    return { success: true, releasedCount: count };
+
+    const allLogs = TaskLogService.loadLogs();
+    let cancelledCount = 0;
+    for (const t of allLogs) {
+      if ((t.source === 'UPDATE' || t.suffix === 'U') && !['COMPLETED', 'REJECTED', 'CANCELLED'].includes(t.status)) {
+        t.status = 'CANCELLED';
+        cancelledCount++;
+      }
+    }
+    if (cancelledCount > 0) {
+      TaskLogService.saveLogs(allLogs);
+    }
+
+    const counts = this.getActiveUpdateCount();
+    console.log(`[UpdateBackfillService] 🔄 In-Flight Locks (${count}) & ${cancelledCount} offene Update-Tasks zurückgesetzt. Neuer Ist-Bestand: ${counts.currentCount}`);
+    return {
+      success: true,
+      releasedCount: count + cancelledCount,
+      activeCount: counts.currentCount,
+      message: `In-Flight Locks und ${cancelledCount} offene Update-Tasks zurückgesetzt (Aktueller Ist-Bestand: ${counts.currentCount}).`
+    };
   }
 
   /**

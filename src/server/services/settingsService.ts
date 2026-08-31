@@ -8,6 +8,8 @@ export interface AppSettings {
   openRouterApiKey: string;
   llmProvider: 'openrouter' | 'openai';
   llmModel: string;
+  llmTemperature: number;
+  llmMaxTokens: number;
   ideogramApiKey: string;
   ideogramModel: string;
   ideogramRenderingSpeed: string;
@@ -60,6 +62,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
   llmProvider: (process.env.LLM_PROVIDER as 'openrouter' | 'openai') || 'openrouter',
   llmModel: process.env.LLM_MODEL || 'anthropic/claude-3-5-sonnet',
+  llmTemperature: 0.35,
+  llmMaxTokens: 3000,
   ideogramApiKey: process.env.IDEOGRAM_API_KEY || '',
   ideogramModel: process.env.IDEOGRAM_MODEL || 'V_3',
   ideogramRenderingSpeed: 'DEFAULT',

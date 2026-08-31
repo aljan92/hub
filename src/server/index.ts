@@ -1178,9 +1178,25 @@ app.get('/api/v1/designs/image/:taskId', (req, res) => {
   }
 
   const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (task?.localImagePath && fs.existsSync(task.localImagePath)) {
+    res.setHeader('Content-Type', 'image/png');
+    return fs.createReadStream(task.localImagePath).pipe(res);
+  }
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
   }
+
+  const queueItems = QueueService.loadQueue();
+  const qItem = queueItems.find(q => q.id === req.params.taskId || q.taskId === req.params.taskId || q.designId === req.params.taskId);
+  if (qItem?.pngPath && fs.existsSync(qItem.pngPath)) {
+    res.setHeader('Content-Type', 'image/png');
+    return fs.createReadStream(qItem.pngPath).pipe(res);
+  }
+  if (qItem?.imagePath && fs.existsSync(qItem.imagePath)) {
+    res.setHeader('Content-Type', 'image/png');
+    return fs.createReadStream(qItem.imagePath).pipe(res);
+  }
+
   res.status(404).send('Design image not found');
 });
 

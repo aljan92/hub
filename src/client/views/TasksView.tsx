@@ -985,6 +985,123 @@ export const TasksView: React.FC = () => {
                               })}
                             </div>
                           </div>
+
+                          {/* Question 4: Niche Hierarchy & Keywords for Update */}
+                          <div className="bg-slate-900/90 p-3 rounded-xl border border-teal-500/30 space-y-2.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-200">4. Nischen-Hierarchie &amp; SEO-Keywords</span>
+                              <span className="text-[10px] text-teal-400 font-mono font-semibold">Titel-Suffix Formel</span>
+                            </div>
+
+                            {/* AI vs Hermes Comparison Card */}
+                            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-850 text-xs">
+                                <span className="font-semibold text-teal-300 flex items-center gap-1.5 text-[11px]">
+                                  <Bot className="w-3.5 h-3.5 text-teal-400" />
+                                  KI-Befund vs. Amazon-Listing
+                                </span>
+                                <div className="flex items-center space-x-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
+                                      const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
+                                      const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
+                                      if (aiN1) setEditNiche1(aiN1);
+                                      if (aiN2 && aiN2.toLowerCase() !== 'none') setEditNiche2(aiN2);
+                                      if (aiSub && aiSub.toLowerCase() !== 'none') setEditSubniche(aiSub);
+                                    }}
+                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-teal-500/10 text-teal-300 hover:bg-teal-500/20 border border-teal-500/30 transition-colors"
+                                  >
+                                    Von KI übernehmen
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const hN1 = activeTask.payload?.niche1 || activeTask.payload?.niche || '';
+                                      const hN2 = activeTask.payload?.niche2 || '';
+                                      const hSub = activeTask.payload?.subniche || '';
+                                      const hKw = activeTask.payload?.keywords || activeTask.payload?.hermesKeywords || [];
+                                      if (hN1) setEditNiche1(hN1);
+                                      if (hN2) setEditNiche2(hN2);
+                                      if (hSub) setEditSubniche(hSub);
+                                      if (hKw.length > 0) setEditKeywords(Array.isArray(hKw) ? hKw.join(', ') : String(hKw));
+                                    }}
+                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors"
+                                  >
+                                    Von Listing/Hermes
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
+                                <div className="p-2 rounded bg-slate-900/90 border border-slate-850 space-y-0.5">
+                                  <span className="text-[10px] text-teal-400 font-bold flex items-center gap-1">
+                                    <Bot className="w-3 h-3" /> KI-Vision-Erkennung:
+                                  </span>
+                                  <div className="text-slate-300 space-y-0.5">
+                                    <div>N1: <strong className="text-slate-100">{activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '-'}</strong></div>
+                                    <div>Cross: <span className="text-slate-300">{activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || 'none'}</span></div>
+                                    <div>Subnische: <strong className="text-teal-300">{activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || 'none'}</strong></div>
+                                  </div>
+                                </div>
+
+                                <div className="p-2 rounded bg-slate-900/90 border border-slate-850 space-y-0.5">
+                                  <span className="text-[10px] text-purple-400 font-bold flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3" /> Bestehendes Listing:
+                                  </span>
+                                  <div className="text-slate-300 space-y-0.5">
+                                    <div>Titel: <span className="text-slate-200 truncate block">{activeTask.payload?.title || '-'}</span></div>
+                                    <div>Brand: <span className="text-slate-300 truncate block">{activeTask.payload?.brand || '-'}</span></div>
+                                    <div>Nische: <span className="text-slate-400">{activeTask.payload?.niche1 || activeTask.payload?.niche || '-'}</span></div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <div>
+                                <label className="text-[10px] font-medium text-slate-400 block mb-1">Nische 1 (Hauptthema)</label>
+                                <input
+                                  type="text"
+                                  value={editNiche1}
+                                  onChange={(e) => setEditNiche1(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-teal-500 focus:outline-none"
+                                  placeholder="z.B. Horse"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-medium text-slate-400 block mb-1">Nische 2 (Cross-Nische)</label>
+                                <input
+                                  type="text"
+                                  value={editNiche2}
+                                  onChange={(e) => setEditNiche2(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-teal-500 focus:outline-none"
+                                  placeholder="z.B. Coffee"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-medium text-teal-400 block mb-1">Subnische (Titel-Ende)</label>
+                                <input
+                                  type="text"
+                                  value={editSubniche}
+                                  onChange={(e) => setEditSubniche(e.target.value)}
+                                  className="w-full bg-slate-950 border border-teal-500/40 rounded px-2.5 py-1.5 text-xs text-teal-300 font-bold font-mono focus:border-teal-500 focus:outline-none"
+                                  placeholder="z.B. Shetland Pony"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-medium text-slate-400 block mb-1">Such-Keywords (Kommasepariert)</label>
+                              <input
+                                type="text"
+                                value={editKeywords}
+                                onChange={(e) => setEditKeywords(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:border-teal-500 focus:outline-none"
+                                placeholder="equestrian, pony rider, stable..."
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ) : (

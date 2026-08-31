@@ -326,16 +326,18 @@ export const QueueView: React.FC = () => {
   };
 
   const getQueueItemImageUrl = (item: any) => {
-    if (item.pngPath && (item.pngPath.startsWith('/') || item.pngPath.startsWith('http'))) {
-      return item.pngPath;
-    }
-    if (item.taskId) {
-      return `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`;
-    }
-    if (item.imagePath && (item.imagePath.startsWith('/') || item.imagePath.startsWith('http'))) {
+    if (!item) return '';
+    if (typeof item.imagePath === 'string' && (item.imagePath.startsWith('/api/') || item.imagePath.startsWith('http://') || item.imagePath.startsWith('https://'))) {
       return item.imagePath;
     }
-    return `/api/v1/designs/image/${encodeURIComponent(item.id)}`;
+    if (typeof item.pngPath === 'string' && (item.pngPath.startsWith('/api/') || item.pngPath.startsWith('http://') || item.pngPath.startsWith('https://'))) {
+      return item.pngPath;
+    }
+    const targetId = item.taskId || item.designId || item.id;
+    if (targetId) {
+      return `/api/v1/designs/image/${encodeURIComponent(targetId)}`;
+    }
+    return '';
   };
 
   const handleToggleLock = async (itemId: string) => {
@@ -2356,9 +2358,9 @@ export const QueueView: React.FC = () => {
                         backgroundColor: '#090d16'
                       }}
                     >
-                      {item.imagePath ? (
+                      {item.imagePath || item.pngPath || item.taskId ? (
                         <img 
-                          src={item.imagePath.startsWith('/') ? item.imagePath : `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`} 
+                          src={getQueueItemImageUrl(item)} 
                           alt={item.designTitle}
                           className="w-full h-full object-contain p-0.5"
                         />
@@ -2461,9 +2463,9 @@ export const QueueView: React.FC = () => {
                           backgroundColor: '#090d16'
                         }}
                       >
-                        {item.imagePath ? (
+                        {item.imagePath || item.pngPath || item.taskId ? (
                           <img 
-                            src={item.imagePath.startsWith('/') ? item.imagePath : `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`} 
+                            src={getQueueItemImageUrl(item)} 
                             alt={item.designTitle}
                             className="w-full h-full object-contain p-0.5"
                           />
@@ -2628,7 +2630,7 @@ export const QueueView: React.FC = () => {
             }}
           >
             <img 
-              src={hoveredItem.imagePath && hoveredItem.imagePath.startsWith('/') ? hoveredItem.imagePath : `/api/v1/designs/image/${encodeURIComponent(hoveredItem.taskId)}`}
+              src={getQueueItemImageUrl(hoveredItem)}
               alt={hoveredItem.designTitle}
               className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]"
             />

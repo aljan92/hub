@@ -1774,19 +1774,28 @@ export const PromptLogView: React.FC = () => {
                               </div>
                             )}
 
-                            {event.content?.rawResponse && (
-                              <details className="text-[11px] text-slate-400 group">
-                                <summary className="cursor-pointer font-semibold text-slate-400 hover:text-cyan-400 flex items-center justify-between py-1">
-                                  <span>🔍 Raw LLM Antwort</span>
-                                  <CopyButton text={typeof event.content.rawResponse === 'string' ? event.content.rawResponse : JSON.stringify(event.content.rawResponse, null, 2)} label="Raw Kopieren" />
-                                </summary>
-                                <pre className="mt-1.5 p-2.5 bg-slate-900 rounded-lg text-slate-300 font-mono text-[11px] border border-slate-800 overflow-x-auto max-h-56 custom-scrollbar whitespace-pre-wrap">
-                                  {typeof event.content.rawResponse === 'string' ? event.content.rawResponse : JSON.stringify(event.content.rawResponse, null, 2)}
-                                </pre>
-                              </details>
-                            )}
+                            {(() => {
+                              const rawContent = event.content?.rawResponse || event.content?._rawResponse || event.content?.raw_response || (event.content?.en?._rawResponse);
+                              const displayText = typeof rawContent === 'string' && rawContent.trim().length > 0 
+                                ? rawContent 
+                                : JSON.stringify(event.content, null, 2);
+                              return (
+                                <details className="text-[11px] text-slate-400 group" open={!!rawContent}>
+                                  <summary className="cursor-pointer font-semibold text-slate-400 hover:text-cyan-400 flex items-center justify-between py-1 bg-slate-900/60 px-2.5 rounded-lg border border-slate-800">
+                                    <span className="flex items-center gap-1.5 text-cyan-300">
+                                      <span>🔍 Raw LLM Antwort</span>
+                                      {rawContent ? <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">Echt</span> : null}
+                                    </span>
+                                    <CopyButton text={displayText} label="Raw Kopieren" />
+                                  </summary>
+                                  <pre className="mt-1.5 p-2.5 bg-slate-900 rounded-lg text-slate-300 font-mono text-[11px] border border-slate-800 overflow-x-auto max-h-64 custom-scrollbar whitespace-pre-wrap">
+                                    {displayText}
+                                  </pre>
+                                </details>
+                              );
+                            })()}
 
-                            <JsonDetails title="Vollständiges Listing-JSON" data={event.content} />
+                            <JsonDetails title="Strukturiertes Listing-Objekt" data={event.content} />
                           </div>
                         );
                       })()}

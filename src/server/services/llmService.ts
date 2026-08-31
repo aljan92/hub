@@ -420,14 +420,15 @@ Style Preset: ${stylePreset}`;
 
     userMessage += `\n\nGenerate the optimized 100% English Amazon Merch on Demand listing now. Ensure Title ends strictly with subniche/niche without trailing punctuation!`;
 
+    const settings = loadSettings();
     const requestPayload = {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
-      temperature: 0.4,
-      max_tokens: 1000
+      temperature: settings.llmTemperature ?? 0.35,
+      max_tokens: settings.llmMaxTokens || 3000
     };
 
     try {
@@ -523,14 +524,15 @@ ${hitSummary || 'None flagged directly.'}
 
 Please audit the listing against trademark rules. If a Brand word is Class 25, replace with an alternative niche keyword. If a non-fair-use term is in Title/Bullets, rewrite. Return valid JSON.`;
 
+    const settings = loadSettings();
     const requestPayload = {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
-      temperature: 0.2,
-      max_tokens: 1000
+      temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
+      max_tokens: settings.llmMaxTokens || 3000
     };
 
     try {
@@ -615,14 +617,15 @@ Subniche: "${params.subniche || ''}"
 
 Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with the translated Niche/Subniche noun without trailing punctuation!`;
 
+    const settings = loadSettings();
     const requestPayload = {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
-      temperature: 0.3,
-      max_tokens: 2000
+      temperature: Math.min(settings.llmTemperature ?? 0.35, 0.3),
+      max_tokens: Math.max(settings.llmMaxTokens || 3000, 2500)
     };
 
     try {

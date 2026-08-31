@@ -361,6 +361,11 @@ MBA HUB/
 ### 10.4 Update-Pipeline & Queue Optimierung
 - **Überspringen der Vektorisierung:** Update-Tasks (#xxx-U) überspringen nach Freigabe des Listings automatisch die Vektorisierung und wandern direkt in die Upload-Queue (Step U7).
 - **Transparente Master-PNG Thumbnails:** Alle Thumbnails in der Queue nutzen die echte, freigestellte `_mba.png`.
-- **Pool-Reset & In-Flight Bereinigung:** Button *„Pool zurücksetzen“* im Header der Queue zur sofortigen Freigabe von In-Memory Locks.
+- **Pool-Reset & In-Flight Bereinigung:** Button *„Pool zurücksetzen“* im Header der Queue zur sofortigen Freigabe von In-Memory Locks und Bereinigung offener Tasks.
+
+### 10.5 ⚙️ Konfigurierbare LLM-Parameter & 25-Punkte Meister-SEO-Prompt
+- **LLM Settings (`SettingsView.tsx`, `settingsService.ts`):** `Temperature` (Standard: 0.35) und `Max Tokens` (Standard: 3000) sind nun direkt in den Einstellungen unter *OpenRouter / OpenAI LLM* einstellbar.
+- **25-Punkte MBA Master-Prompt (`systemPromptService.ts`):** Standard-Listing-Prompt für beide Pipelines (Neu & Update) mit interner Nischen-Recherche, Insider-Terminologie, Cross-Field Deduplikation, Quote-Fallback in Bullet 1 bei Platzmangel und strikter Subnischen-Suffix-Titelformel (50–60 Zeichen).
+
 
 
