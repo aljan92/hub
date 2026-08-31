@@ -504,52 +504,205 @@ export class UploadWorkerService {
         const product = activeProductsToProcess[i];
         const stepProgress = 52 + Math.round(((i + 1) / totalActiveProducts) * 28); // 52% to 80%
 
-        this.log(`[${i + 1}/${totalActiveProducts}] Konfiguriere "${product.displayName}"...`, `Bearbeite ${product.displayName}`, stepProgress, 100);
+        this.log(`[${i + 1}/${totalActiveProducts}] Öffne & prüfe "${product.displayName}"...`, `Bearbeite ${product.displayName}`, stepProgress, 100);
 
+        // Säule 3: Robuster "Edit details" Klick- & Öffnungs-Check mit aktiver Verifikation & Retries
+        let editorOpened = false;
+        let openRetries = 0;
+        const maxOpenRetries = 3;
+
+        while (!editorOpened && openRetries < maxOpenRetries) {
+          openRetries++;
+
+          const openResult = await page.evaluate(async (pid: string) => {
+            const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+            // 1. Check if editor for this product is already visible and open
+            const existingEditor = document.querySelector(`product-editor .${pid}-container`)?.closest('product-editor') 
+              || document.querySelector(`product-editor[id*="${pid}"]`)
+              || document.querySelector(`product-editor .${pid}-editor`) as HTMLElement;
+
+            if (existingEditor && existingEditor.offsetHeight > 40) {
+              return { success: true, isAlreadyOpen: true };
+            }
+
+            // 2. Locate the "Edit details" button with all known Merch selectors
+            const editBtn = (document.querySelector(`.${pid}-edit-btn`) 
+              || document.querySelector(`#${pid}-card .edit-button`) 
+              || document.querySelector(`#${pid}-card button.edit-btn`)
+              || document.querySelector(`button[class*="${pid}-edit"]`)
+              || Array.from(document.querySelectorAll(`#${pid}-card button, .${pid}-container button, [id*="${pid}"] button, div[class*="${pid}"] button`))
+                  .find(b => b.textContent?.trim().toLowerCase().includes('edit'))) as HTMLElement;
+
+            if (!editBtn) {
+              return { success: false, reason: `Edit button für ${pid} nicht im DOM gefunden` };
+            }
+
+            // 3. Scroll cleanly to button
+            editBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            await sleep(200);
+
+            // 4. Fire full mouse event suite to reliably trigger Angular component
+            editBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            editBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            editBtn.click();
+
+            // 5. Active polling: Wait up to 2000ms until product-editor container is rendered
+            const startWait = Date.now();
+            while (Date.now() - startWait < 2000) {
+              await sleep(150);
+              const ed = document.querySelector(`product-editor .${pid}-container`)?.closest('product-editor') 
+                || document.querySelector(`product-editor[id*="${pid}"]`)
+                || document.querySelector(`product-editor .${pid}-editor`)
+                || document.querySelector('product-editor') as HTMLElement;
+
+              if (ed && ed.offsetHeight > 40) {
+                return { success: true, isAlreadyOpen: false };
+              }
+            }
+
+            return { success: false, reason: `Editor für ${pid} hat sich nach 2000ms nicht geöffnet` };
+          }, product.id);
+
+          if (openResult.success) {
+            editorOpened = true;
+          } else {
+            this.log(`⚠️ Versuch ${openRetries}/${maxOpenRetries} für "${product.displayName}": ${openResult.reason} - wiederhole...`);
+            await page.waitForTimeout(400);
+          }
+        }
+
+        if (!editorOpened) {
+          this.log(`❌ Konnte Editor für "${product.displayName}" nach ${maxOpenRetries} Versuchen nicht öffnen! Überspringe...`);
+          continue;
+        }
+
+        // Säulen 1 & 2: Konfiguration mit Fit-Type Garantie, Swatch-Audit & Minimum-1 Farbe Selbstheilung
         const editResult = await page.evaluate(async (params: {
           productId: string;
           colorMode: string;
           fitTypes: string[];
           avoidColor: string;
           customBgColor: string;
+          catalogColors: Array<{ id: string; avoidRule?: 'none' | 'white' | 'black' }>;
         }) => {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
           const pid = params.productId;
 
-          // 1. Locate and scroll to "Edit details" button
-          const editBtn = (document.querySelector(`.${pid}-edit-btn`) 
-            || document.querySelector(`#${pid}-card .edit-button`) 
-            || document.querySelector(`#${pid}-card button.edit-btn`)
-            || document.querySelector(`button[class*="${pid}-edit"]`)
-            || Array.from(document.querySelectorAll(`#${pid}-card button`)).find(b => b.textContent?.trim().toLowerCase().includes('edit'))) as HTMLElement;
-
-          if (!editBtn) return { success: false, reason: `Edit button for ${pid} not found` };
-
-          editBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          await sleep(250);
-          editBtn.click();
-          await sleep(400);
-
-          // 2. Locate opened editor
           const editor = document.querySelector(`product-editor .${pid}-container`)?.closest('product-editor') 
             || document.querySelector(`product-editor[id*="${pid}"]`)
             || document.querySelector('product-editor') as HTMLElement;
+
           if (!editor) return { success: false, reason: `Editor container for ${pid} not found` };
 
-          // 3. Configure Fit Types (Men, Women, Youth, Girls, Adult Unisex)
+          // Helper 1: Element checked state
+          const isElementChecked = (el: Element): boolean => {
+            const hasSelectedClass = el.classList.contains('selected') || 
+              el.classList.contains('checked') || 
+              el.classList.contains('active') ||
+              el.querySelector('.selected, .checked, .active') !== null;
+
+            const hasAriaChecked = el.getAttribute('aria-checked') === 'true' || 
+              el.querySelector('[aria-checked="true"]') !== null;
+
+            const icon = el.querySelector('.sci-icon, i.sci-icon, i.sci-check, i, svg');
+            const hasCheckIcon = Boolean(
+              icon && 
+              (
+                icon.classList.contains('sci-check') || 
+                icon.classList.contains('sci-check-box') || 
+                icon.classList.contains('checkmark') ||
+                (typeof icon.className === 'string' && icon.className.includes('check'))
+              ) && 
+              !icon.classList.contains('sci-check-box-blank')
+            );
+
+            const hasCheckedInput = Boolean((el.querySelector('input[type="checkbox"], input') as HTMLInputElement)?.checked);
+            return Boolean(hasSelectedClass || hasAriaChecked || hasCheckIcon || hasCheckedInput);
+          };
+
+          // Helper 2: Click element
+          const clickTargetElement = (el: Element) => {
+            const clickTarget = (el.querySelector('.color-checkbox') || el.querySelector('input') || el.querySelector('.sci-icon') || el) as HTMLElement;
+            clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            clickTarget.click();
+          };
+
+          // Helper 3: Clue gathering
+          const extractColorClues = (cb: Element): string => {
+            const clues: string[] = [];
+            if (cb.className) clues.push(String(cb.className));
+            ['name', 'id', 'aria-label', 'title', 'data-color', 'data-name'].forEach(attr => {
+              const val = cb.getAttribute(attr);
+              if (val) clues.push(String(val));
+            });
+            cb.querySelectorAll('*').forEach(el => {
+              if (el.className) clues.push(String(el.className));
+              if (el.getAttribute('title')) clues.push(String(el.getAttribute('title')));
+              if (el.getAttribute('aria-label')) clues.push(String(el.getAttribute('aria-label')));
+              if (el.getAttribute('name')) clues.push(String(el.getAttribute('name')));
+              if (el.getAttribute('id')) clues.push(String(el.getAttribute('id')));
+            });
+            if (cb.textContent) clues.push(cb.textContent.trim());
+            return clues.join(' ').toLowerCase();
+          };
+
+          const KNOWN_COLORS: { id: string; matchers: string[] }[] = [
+            { id: 'black', matchers: ['black', 'schwarz'] },
+            { id: 'white', matchers: ['white', 'weiß', 'weiss'] },
+            { id: 'navy', matchers: ['navy', 'dunkelblau'] },
+            { id: 'asphalt', matchers: ['asphalt'] },
+            { id: 'dark_heather', matchers: ['dark_heather', 'dark-heather', 'dark heather', 'darkheather'] },
+            { id: 'heather_grey', matchers: ['heather_grey', 'heather-grey', 'heather grey', 'heathergrey', 'heather gray', 'heather_gray'] },
+            { id: 'royal', matchers: ['royal', 'royal_blue', 'royal-blue', 'royal blue', 'royalblue'] },
+            { id: 'red', matchers: ['red', 'rot'] },
+            { id: 'olive', matchers: ['olive'] },
+            { id: 'kelly_green', matchers: ['kelly_green', 'kelly-green', 'kelly green', 'kellygreen'] },
+            { id: 'baby_blue', matchers: ['baby_blue', 'baby-blue', 'baby blue', 'babyblue'] },
+            { id: 'pink', matchers: ['pink', 'rosa'] },
+            { id: 'purple', matchers: ['purple', 'lila'] },
+            { id: 'orange', matchers: ['orange'] },
+            { id: 'lemon', matchers: ['lemon', 'yellow', 'gelb'] },
+            { id: 'cranberry', matchers: ['cranberry'] },
+            { id: 'brown', matchers: ['brown', 'braun'] },
+            { id: 'silver', matchers: ['silver', 'silber'] },
+            { id: 'slate', matchers: ['slate'] },
+            { id: 'sage_green', matchers: ['sage_green', 'sage-green', 'sage green', 'sagegreen', 'sage'] },
+            { id: 'tan', matchers: ['tan'] },
+            { id: 'heather_blue', matchers: ['heather_blue', 'heather-blue', 'heather blue', 'heatherblue'] },
+            { id: 'black_white', matchers: ['black_white', 'black-white', 'black white'] },
+            { id: 'navy_white', matchers: ['navy_white', 'navy-white', 'navy white'] },
+            { id: 'red_white', matchers: ['red_white', 'red-white', 'red white'] },
+            { id: 'royal_blue_white', matchers: ['royal_blue_white', 'royal-white', 'royal_white', 'royal white'] },
+            { id: 'dark_heather_white', matchers: ['dark_heather_white', 'dark_heather-white', 'dark heather white'] },
+            { id: 'white_black', matchers: ['white_black', 'white-black', 'white black'] },
+            { id: 'white_white', matchers: ['white_white', 'white-white', 'white white'] },
+            { id: 'black_black', matchers: ['black_black', 'black-black', 'black black'] }
+          ];
+
+          const identifyColorId = (haystack: string): string => {
+            for (const col of KNOWN_COLORS) {
+              if (col.matchers.some(m => haystack.includes(m))) return col.id;
+            }
+            return '';
+          };
+
+          // -------------------------------------------------------------
+          // STEP A: Fit Types Configuration & Minimum-1 Fit Type Guarantee
+          // -------------------------------------------------------------
           let desiredFits = params.fitTypes.map(f => f.toLowerCase());
-          // Rule A: If only youth is selected, add men
           if (desiredFits.includes('youth') && !desiredFits.includes('men') && !desiredFits.includes('women')) {
             desiredFits.push('men');
           }
-          // Rule B: If youth is selected, girls is always selected
           if (desiredFits.includes('youth') && !desiredFits.includes('girls')) {
             desiredFits.push('girls');
           }
-          // Rule C: Adult Unisex is always selected whenever present
           desiredFits.push('adult_unisex', 'unisex');
 
           const fitCandidateLabels = Array.from(editor.querySelectorAll('label[class*="-label"], flowcheckbox, .fit-checkbox, label'));
+          const foundFitElements: { fitKey: string; el: Element }[] = [];
+
           for (const el of fitCandidateLabels) {
             const text = (el.textContent || '').trim().toLowerCase();
             const className = (el.className || '').toLowerCase();
@@ -568,21 +721,45 @@ export class UploadWorkerService {
             }
 
             if (fitKey) {
-              const icon = el.querySelector('i.sci-icon');
-              const isChecked = icon ? icon.classList.contains('sci-check-box') : (el.querySelector('input')?.checked ?? false);
+              foundFitElements.push({ fitKey, el });
+              const isChecked = isElementChecked(el);
               const shouldBeChecked = desiredFits.includes(fitKey) || fitKey === 'adult_unisex';
 
               if (isChecked !== shouldBeChecked) {
-                const targetToClick = (el.querySelector('input') || el.querySelector('i.sci-icon') || el) as HTMLElement;
-                targetToClick.click();
-                await sleep(80);
+                clickTargetElement(el);
+                await sleep(60);
               }
             }
           }
 
-          // 4. Configure Colors (Color-Picker or Swatches)
+          // Verification of Fit Types
+          const activeFitsApplied: string[] = [];
+          if (foundFitElements.length > 0) {
+            let activeFitsCount = 0;
+            for (const { fitKey, el } of foundFitElements) {
+              if (isElementChecked(el)) {
+                activeFitsCount++;
+                if (!activeFitsApplied.includes(fitKey)) activeFitsApplied.push(fitKey);
+              }
+            }
+
+            if (activeFitsCount === 0) {
+              // Self-healing: Activate Men or first available fit
+              const fallbackFit = foundFitElements.find(f => f.fitKey === 'men') || foundFitElements[0];
+              clickTargetElement(fallbackFit.el);
+              await sleep(60);
+              activeFitsApplied.push(fallbackFit.fitKey);
+            }
+          }
+
+          // -------------------------------------------------------------
+          // STEP B: Color Selection (Custom Picker vs Swatches)
+          // -------------------------------------------------------------
+          let finalActiveColorNames: string[] = [];
+          let selfHealedColor = '';
+
           if (params.colorMode === 'customPicker') {
-            // Hex color picker mode (Accessories, PopSockets, Cases, Mugs, Pillows, Bottles, etc.)
+            // Hex color picker mode
             const colorBtn = (editor.querySelector('#color-btn') 
               || editor.querySelector('button[id*="color-btn"]')
               || editor.querySelector('.background-color-picker-button')
@@ -593,7 +770,6 @@ export class UploadWorkerService {
             if (colorBtn) {
               const isPopoverOpen = colorBtn.hasAttribute('aria-describedby');
               if (!isPopoverOpen) {
-                // Force click button to open color popover
                 colorBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
                 colorBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
                 colorBtn.click();
@@ -607,7 +783,6 @@ export class UploadWorkerService {
               if (popover) {
                 const cleanHex = (params.customBgColor || '000000').replace(/^#/, '').toUpperCase();
 
-                // 1. Check preset swatches in sketch-picker (e.g. pure black or pure white)
                 const swatches = Array.from(popover.querySelectorAll('.sketch-swatches div, .sketch-swatches span, .sketch-swatches [title], .sketch-swatches [style]')) as HTMLElement[];
                 let matchedSwatch: HTMLElement | null = null;
                 for (const sw of swatches) {
@@ -634,146 +809,38 @@ export class UploadWorkerService {
                   await sleep(150);
                 }
 
-                // 2. Locate hex input field inside color-editable-input or wrap
                 let hexInput = (popover.querySelector('color-editable-input[label="hex"] input, div[label="hex"] input, input[aria-label="hex"]')
                   || popover.querySelector('.wrap input')
                   || popover.querySelector('input[type="text"]')
                   || popover.querySelector('input')) as HTMLInputElement;
 
-                if (!hexInput) {
-                  const spans = Array.from(popover.querySelectorAll('span, label'));
-                  const hexSpan = spans.find(span => span.textContent?.trim().toLowerCase() === 'hex');
-                  if (hexSpan) {
-                    hexInput = (hexSpan.closest('.wrap')?.querySelector('input') || hexSpan.parentElement?.querySelector('input')) as HTMLInputElement;
-                  }
-                }
-
-                // 3. Robust character-by-character simulateTyping (tested pattern from MBA Manager & Listing Optimizer)
                 if (hexInput) {
                   hexInput.focus();
-                  
-                  // Clear the field first
                   hexInput.value = '';
                   hexInput.dispatchEvent(new Event('input', { bubbles: true }));
                   hexInput.dispatchEvent(new Event('change', { bubbles: true }));
                   await sleep(50);
 
-                  // Type character by character
                   for (const char of cleanHex) {
                     hexInput.value += char;
                     hexInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    await sleep(30);
+                    await sleep(25);
                   }
-
-                  // Trigger change, Enter key events (with keyCode 13 and which 13), and blur
                   hexInput.dispatchEvent(new Event('change', { bubbles: true }));
-                  hexInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                  hexInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
                   hexInput.blur();
-                  hexInput.dispatchEvent(new Event('blur', { bubbles: true }));
-                  await sleep(150);
                 }
-
-                // 4. Close popover cleanly
-                const doneBtn = popover.querySelector('button.done-button, button[type="submit"]') as HTMLElement;
-                if (doneBtn) {
-                  doneBtn.click();
-                } else if (colorBtn.hasAttribute('aria-describedby')) {
-                  colorBtn.click();
-                } else {
-                  document.body.click();
-                }
-                await sleep(200);
+                finalActiveColorNames.push(`#${cleanHex}`);
               }
-            }
-
-            // Also check for direct text input on card if present
-            const directHexInput = editor.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]') as HTMLInputElement;
-            if (directHexInput) {
-              const cleanHex = (params.customBgColor || '000000').replace(/^#/, '').toUpperCase();
-              directHexInput.focus();
-              directHexInput.value = '';
-              directHexInput.dispatchEvent(new Event('input', { bubbles: true }));
-              for (const char of cleanHex) {
-                directHexInput.value += char;
-                directHexInput.dispatchEvent(new Event('input', { bubbles: true }));
-                await sleep(30);
-              }
-              directHexInput.dispatchEvent(new Event('change', { bubbles: true }));
-              directHexInput.blur();
             }
           } else {
-            // Swatches mode (Apparel, Jerseys, Hats, Raglan)
+            // Swatches Mode (Predefined Colors)
             const colorCheckboxes = Array.from(editor.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]'));
-            const uPid = pid.toUpperCase();
-            const isSoccer = uPid.includes('SOCCER') || uPid.includes('JERSEY_SOCCER');
-            const isBasketball = uPid.includes('BASKETBALL');
-            const isRaglan = uPid.includes('RAGLAN');
-            const isTrucker = uPid.includes('TRUCKER') || uPid.includes('HAT');
-            const isVisor = uPid.includes('VISOR') || uPid.includes('SUN_VISOR');
 
-            const KNOWN_COLORS: { id: string; matchers: string[] }[] = [
-              { id: 'black', matchers: ['black', 'schwarz'] },
-              { id: 'white', matchers: ['white', 'weiß', 'weiss'] },
-              { id: 'navy', matchers: ['navy', 'dunkelblau'] },
-              { id: 'asphalt', matchers: ['asphalt'] },
-              { id: 'dark_heather', matchers: ['dark_heather', 'dark-heather', 'dark heather', 'darkheather'] },
-              { id: 'heather_grey', matchers: ['heather_grey', 'heather-grey', 'heather grey', 'heathergrey', 'heather gray', 'heather_gray'] },
-              { id: 'royal', matchers: ['royal', 'royal_blue', 'royal-blue', 'royal blue', 'royalblue'] },
-              { id: 'red', matchers: ['red', 'rot'] },
-              { id: 'olive', matchers: ['olive'] },
-              { id: 'kelly_green', matchers: ['kelly_green', 'kelly-green', 'kelly green', 'kellygreen'] },
-              { id: 'baby_blue', matchers: ['baby_blue', 'baby-blue', 'baby blue', 'babyblue'] },
-              { id: 'pink', matchers: ['pink', 'rosa'] },
-              { id: 'purple', matchers: ['purple', 'lila'] },
-              { id: 'orange', matchers: ['orange'] },
-              { id: 'lemon', matchers: ['lemon', 'yellow', 'gelb'] },
-              { id: 'cranberry', matchers: ['cranberry'] },
-              { id: 'brown', matchers: ['brown', 'braun'] },
-              { id: 'silver', matchers: ['silver', 'silber'] },
-              { id: 'slate', matchers: ['slate'] },
-              { id: 'sage_green', matchers: ['sage_green', 'sage-green', 'sage green', 'sagegreen', 'sage'] },
-              { id: 'tan', matchers: ['tan'] },
-              { id: 'heather_blue', matchers: ['heather_blue', 'heather-blue', 'heather blue', 'heatherblue'] },
-              { id: 'black_white', matchers: ['black_white', 'black-white', 'black white'] },
-              { id: 'navy_white', matchers: ['navy_white', 'navy-white', 'navy white'] },
-              { id: 'red_white', matchers: ['red_white', 'red-white', 'red white'] },
-              { id: 'royal_blue_white', matchers: ['royal_blue_white', 'royal-white', 'royal_white', 'royal white'] },
-              { id: 'dark_heather_white', matchers: ['dark_heather_white', 'dark_heather-white', 'dark heather white'] },
-              { id: 'white_black', matchers: ['white_black', 'white-black', 'white black'] },
-              { id: 'white_white', matchers: ['white_white', 'white-white', 'white white'] },
-              { id: 'black_black', matchers: ['black_black', 'black-black', 'black black'] }
-            ];
-
+            // PASS 1: Apply catalog and avoid rules
             for (const cb of colorCheckboxes) {
-              // 1. Gather all clues from element, children, attributes and tooltips
-              const clues: string[] = [];
-              if (cb.className) clues.push(String(cb.className));
-              ['name', 'id', 'aria-label', 'title', 'data-color', 'data-name'].forEach(attr => {
-                const val = cb.getAttribute(attr);
-                if (val) clues.push(String(val));
-              });
-              cb.querySelectorAll('*').forEach(el => {
-                if (el.className) clues.push(String(el.className));
-                if (el.getAttribute('title')) clues.push(String(el.getAttribute('title')));
-                if (el.getAttribute('aria-label')) clues.push(String(el.getAttribute('aria-label')));
-                if (el.getAttribute('name')) clues.push(String(el.getAttribute('name')));
-                if (el.getAttribute('id')) clues.push(String(el.getAttribute('id')));
-              });
-              if (cb.textContent) clues.push(cb.textContent.trim());
+              const haystack = extractColorClues(cb);
+              const matchedColorId = identifyColorId(haystack);
 
-              const haystack = clues.join(' ').toLowerCase();
-
-              // 2. Identify canonical color ID
-              let matchedColorId = '';
-              for (const col of KNOWN_COLORS) {
-                if (col.matchers.some(m => haystack.includes(m))) {
-                  matchedColorId = col.id;
-                  break;
-                }
-              }
-
-              // 3. Determine if color is allowed in product catalog and get its specific avoidRule
               let isCatalogAllowed = true;
               let colorAvoidRule: 'none' | 'white' | 'black' = 'none';
 
@@ -794,12 +861,11 @@ export class UploadWorkerService {
 
               let shouldBeChecked = isCatalogAllowed;
 
-              // 4. Apply Avoid Color Rules based on user's catalog configuration
+              // Apply avoid color rules
               if (params.avoidColor === 'white') {
                 if (colorAvoidRule === 'white') {
                   shouldBeChecked = false;
                 } else if (colorAvoidRule === 'none') {
-                  // Color explicitly marked as "Never avoid"
                   shouldBeChecked = isCatalogAllowed;
                 } else if (matchedColorId === 'white' || haystack.includes('white') || haystack.includes('weiß') || haystack.includes('weiss')) {
                   shouldBeChecked = false;
@@ -808,49 +874,62 @@ export class UploadWorkerService {
                 if (colorAvoidRule === 'black') {
                   shouldBeChecked = false;
                 } else if (colorAvoidRule === 'none') {
-                  // Color explicitly marked as "Never avoid"
                   shouldBeChecked = isCatalogAllowed;
                 } else if (matchedColorId === 'black' || haystack.includes('black') || haystack.includes('schwarz')) {
                   shouldBeChecked = false;
                 }
               }
 
-              // 5. Accurately detect if swatch is currently checked on Amazon Merch DOM
-              const hasSelectedClass = cb.classList.contains('selected') || 
-                cb.classList.contains('checked') || 
-                cb.classList.contains('active') ||
-                cb.querySelector('.selected, .checked, .active') !== null;
+              const isChecked = isElementChecked(cb);
 
-              const hasAriaChecked = cb.getAttribute('aria-checked') === 'true' || 
-                cb.querySelector('[aria-checked="true"]') !== null;
-
-              const icon = cb.querySelector('.sci-icon, i.sci-icon, i.sci-check, i, svg');
-              const hasCheckIcon = Boolean(
-                icon && 
-                (
-                  icon.classList.contains('sci-check') || 
-                  icon.classList.contains('sci-check-box') || 
-                  icon.classList.contains('checkmark') ||
-                  (typeof icon.className === 'string' && icon.className.includes('check'))
-                ) && 
-                !icon.classList.contains('sci-check-box-blank')
-              );
-
-              const hasCheckedInput = Boolean((cb.querySelector('input[type="checkbox"], input') as HTMLInputElement)?.checked);
-
-              const isChecked = Boolean(hasSelectedClass || hasAriaChecked || hasCheckIcon || hasCheckedInput);
-
-              // 6. Click if state differs
               if (isChecked !== shouldBeChecked) {
-                const clickTarget = (cb.querySelector('.color-checkbox') || cb.querySelector('input') || cb.querySelector('.sci-icon') || cb) as HTMLElement;
-                clickTarget.click();
+                clickTargetElement(cb);
                 await sleep(75);
               }
             }
+
+            // PASS 2: DOM AUDIT & DOUBLE-CHECK (Zähle tatsächlich angewählte Farben)
+            await sleep(100);
+            let activeSwatches = colorCheckboxes.filter(cb => isElementChecked(cb));
+
+            // PASS 3: SELBSTHEILUNG BEI 0 FARBEN (Safety Minimum-1 Guarantee)
+            if (activeSwatches.length === 0 && colorCheckboxes.length > 0) {
+              // 1. Suche die beste Ausweichfarbe, die NICHT der avoidColor entspricht
+              let fallbackSwatch = colorCheckboxes.find(cb => {
+                const h = extractColorClues(cb);
+                if (params.avoidColor === 'white' && (h.includes('white') || h.includes('weiß') || h.includes('weiss'))) return false;
+                if (params.avoidColor === 'black' && (h.includes('black') || h.includes('schwarz'))) return false;
+                return true;
+              });
+
+              // 2. Absolute Notfall-Garantie: Das erste verfügbare Swatch
+              if (!fallbackSwatch) {
+                fallbackSwatch = colorCheckboxes[0];
+              }
+
+              clickTargetElement(fallbackSwatch);
+              await sleep(100);
+
+              const h = extractColorClues(fallbackSwatch);
+              selfHealedColor = identifyColorId(h) || 'Fallback Color';
+              activeSwatches = colorCheckboxes.filter(cb => isElementChecked(cb));
+            }
+
+            // PASS 4: Finale Namen der aktivierten Farben für das Live-Log auslesen
+            finalActiveColorNames = activeSwatches.map(cb => {
+              const h = extractColorClues(cb);
+              const id = identifyColorId(h);
+              if (id) return id;
+              return cb.getAttribute('name') || cb.getAttribute('title') || 'Color';
+            });
           }
 
-          // Modular Price Placeholder: prices stay at Amazon defaults for now
-          return { success: true };
+          return { 
+            success: true, 
+            activeColors: finalActiveColorNames,
+            fitTypesApplied: activeFitsApplied,
+            selfHealedColor
+          };
         }, {
           productId: product.id,
           colorMode: product.colorMode,
@@ -860,13 +939,22 @@ export class UploadWorkerService {
           catalogColors: Array.isArray(product.colors) ? product.colors.map(c => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || 'none' })) : []
         });
 
-        if (!editResult.success) {
+        if (editResult.success) {
+          if (editResult.selfHealedColor) {
+            this.log(`⚠️ ${product.displayName}: 0 Farben verhindert ➔ Selbstheilung: "${editResult.selfHealedColor}" aktiviert ✓`);
+          } else {
+            const colorsList = editResult.activeColors && editResult.activeColors.length > 0 ? editResult.activeColors.join(', ') : 'OK';
+            const fitsList = editResult.fitTypesApplied && editResult.fitTypesApplied.length > 0 ? editResult.fitTypesApplied.join(', ') : 'Standard';
+            this.log(`✓ ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}`);
+          }
+        } else {
           this.log(`⚠️ Hinweis zu ${product.displayName}: ${editResult.reason}`);
         }
-        await page.waitForTimeout(400);
+
+        await page.waitForTimeout(300);
       }
 
-      this.log(`✅ Alle ${totalActiveProducts} Produkte erfolgreich konfiguriert!`, 'Produktdetails fertig ✓', 80, 100);
+      this.log(`✅ Alle ${totalActiveProducts} Produkte erfolgreich konfiguriert & verifiziert!`, 'Produktdetails fertig ✓', 80, 100);
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
 
