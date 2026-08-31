@@ -618,21 +618,15 @@ export class UploadWorkerService {
             return el.classList.contains('checked') || el.classList.contains('selected') || el.classList.contains('active');
           };
 
-          // Helper 2: clickTargetElement
+          // Helper 2: clickTargetElement (Single target click - strictly avoids double-toggling)
           const clickTargetElement = (el: Element) => {
             const input = el.querySelector('input') as HTMLInputElement;
             if (input && (input.disabled || input.readOnly)) return;
 
-            el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-            el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-            (el as HTMLElement).click();
-
-            const span = el.querySelector('span, .color-checkbox');
-            if (span && span !== el) {
-              span.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-              span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-              (span as HTMLElement).click();
-            }
+            const target = (el.querySelector('span.color-checkbox') || el.querySelector('span') || el) as HTMLElement;
+            target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+            target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+            target.click();
           };
 
           // Helper 3: Clue gathering
@@ -760,16 +754,14 @@ export class UploadWorkerService {
 
             if (isChecked !== shouldBeChecked) {
               clickTargetElement(item.element);
-              await sleep(100);
+              await sleep(120);
               isChecked = isElementChecked(item.element);
 
               if (isChecked !== shouldBeChecked) {
-                const parentLabel = item.element.closest('label');
-                if (parentLabel) {
-                  parentLabel.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-                  parentLabel.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-                  parentLabel.click();
-                  await sleep(100);
+                const input = item.element.querySelector('input[type="checkbox"], input') as HTMLInputElement;
+                if (input) {
+                  input.click();
+                  await sleep(120);
                   isChecked = isElementChecked(item.element);
                 }
               }
