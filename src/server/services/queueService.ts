@@ -554,7 +554,7 @@ export class QueueService {
       for (const prod of catalog.products) {
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const prodId = prod.id;
-        const catalogMps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US'];
+        const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
 
         // Find live summary for this product
         const matchedSummaryKey = Object.keys(liveSummary).find(k => 
@@ -580,7 +580,7 @@ export class QueueService {
     } else {
       for (const prod of catalog.products) {
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
-        const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ['US'];
+        const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
         activeProductsMap[prod.id] = mps;
         totalBaseSlots += mps.length;
       }
@@ -946,7 +946,7 @@ export class QueueService {
         for (const prod of catalog.products) {
           if (tmBlocked.has(prod.id.toUpperCase())) continue;
           const prodId = prod.id;
-          const catalogMps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US'];
+          const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
 
           // 1. Find live summary for this product
           const matchedSummaryKey = Object.keys(liveSummary).find(k => 
@@ -974,7 +974,7 @@ export class QueueService {
         netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
         for (const prod of catalog.products) {
           if (tmBlocked.has(prod.id.toUpperCase())) continue;
-          calculatedActiveMap[prod.id] = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US'];
+          calculatedActiveMap[prod.id] = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
         }
       }
 

@@ -635,8 +635,8 @@ export class UpdatePipelineService {
           queueId: queueItem.id,
           status: queueItem.status,
           designId: task.payload?.designId,
-          allocatedSlots: 0,
-          message: 'Design erfolgreich in den Tab Update der Queue eingereiht (0 Slots Verbrauch).'
+          allocatedSlots: queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0,
+          message: `Design erfolgreich in den Tab Update der Queue eingereiht (${queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0} neue Slots werden ergänzt).`
         }
       });
 

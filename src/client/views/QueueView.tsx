@@ -1372,7 +1372,7 @@ export const QueueView: React.FC = () => {
                                 : isPaused
                                   ? '⏸️ Pausiert'
                                   : isUpdate
-                                    ? `🟣 ${item.allocatedSlots ?? 0} Slots`
+                                    ? `🟣 ${item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0)} Slots`
                                     : canUploadToday
                                       ? `🟢 ${item.allocatedSlots} Slots`
                                       : '🟡 Wartet auf freie Slots'}
@@ -1595,7 +1595,7 @@ export const QueueView: React.FC = () => {
                                     ✓ {item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 106} Produkte Live auf Amazon
                                   </span>
                                   <span className="text-purple-300 font-bold">
-                                    • {item.allocatedSlots ?? 0} neue Slots werden ergänzt
+                                    • {(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} neue Slots werden ergänzt
                                   </span>
                                 </div>
                               ) : (
@@ -2139,7 +2139,7 @@ export const QueueView: React.FC = () => {
                               </h4>
                               
                               <span className="px-2.5 py-1 rounded-xl text-xs font-bold font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-sm shadow-purple-500/10">
-                                🟣 {item.allocatedSlots ?? 0} Slots
+                                🟣 {(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} Slots
                               </span>
                               <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                                 Update Bereit
@@ -2350,7 +2350,7 @@ export const QueueView: React.FC = () => {
                                   ✓ {item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 106} Produkte Live auf Amazon
                                 </span>
                                 <span className="text-purple-300 font-bold">
-                                  • {item.allocatedSlots ?? 0} neue Slots werden ergänzt
+                                  • {(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} neue Slots werden ergänzt
                                 </span>
                               </div>
                             </div>

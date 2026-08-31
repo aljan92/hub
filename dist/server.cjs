@@ -222526,8 +222526,8 @@ Bullets: ${oldBullets}`
               queueId: queueItem.id,
               status: queueItem.status,
               designId: task.payload?.designId,
-              allocatedSlots: 0,
-              message: "Design erfolgreich in den Tab Update der Queue eingereiht (0 Slots Verbrauch)."
+              allocatedSlots: queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0,
+              message: `Design erfolgreich in den Tab Update der Queue eingereiht (${queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0} neue Slots werden erg\xE4nzt).`
             }
           });
           return { success: true, queueItem };
@@ -223319,7 +223319,7 @@ var init_queueService = __esm2({
           for (const prod of catalog.products) {
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
             const prodId = prod.id;
-            const catalogMps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"];
+            const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
             const matchedSummaryKey = Object.keys(liveSummary).find(
               (k) => k.toUpperCase() === prodId.toUpperCase() || k.toUpperCase().replace(/_/g, "") === prodId.toUpperCase().replace(/_/g, "")
             );
@@ -223339,7 +223339,7 @@ var init_queueService = __esm2({
         } else {
           for (const prod of catalog.products) {
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
-            const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ["US"];
+            const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
             activeProductsMap[prod.id] = mps;
             totalBaseSlots += mps.length;
           }
@@ -223626,7 +223626,7 @@ var init_queueService = __esm2({
             for (const prod of catalog.products) {
               if (tmBlocked.has(prod.id.toUpperCase())) continue;
               const prodId = prod.id;
-              const catalogMps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"];
+              const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
               const matchedSummaryKey = Object.keys(liveSummary).find(
                 (k) => k.toUpperCase() === prodId.toUpperCase() || k.toUpperCase().replace(/_/g, "") === prodId.toUpperCase().replace(/_/g, "")
               );
@@ -223647,7 +223647,7 @@ var init_queueService = __esm2({
             netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
             for (const prod of catalog.products) {
               if (tmBlocked.has(prod.id.toUpperCase())) continue;
-              calculatedActiveMap[prod.id] = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"];
+              calculatedActiveMap[prod.id] = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
             }
           }
           uItem.activeProductsMap = calculatedActiveMap;
