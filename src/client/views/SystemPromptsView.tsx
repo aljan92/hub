@@ -27,13 +27,12 @@ export type PromptKey =
   | 'trademarkAuditor'
   | 'svgBgAuditor'
   | 'updateVisionAnalyzer'
-  | 'updateListingRewriter'
   | 'updateLocalizationTranslator';
 
 interface PromptDefinition {
   key: PromptKey;
   stepCode: string;
-  category: 'DESIGN' | 'UPDATE';
+  category: 'DESIGN' | 'UPDATE' | 'SHARED';
   title: string;
   shortDesc: string;
   colorClass: string;
@@ -90,29 +89,31 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
   },
   {
     key: 'listingGenerator',
-    stepCode: 'D5',
-    category: 'DESIGN',
-    title: 'Master English Listing Generator',
-    shortDesc: 'Erstellt konvertierende 100% englische Master-Listings mit striktem Subnischen-Titel-Suffix, Brand-Keywords und ohne Geschenkwörter.',
+    stepCode: 'D5 / U4',
+    category: 'SHARED',
+    title: 'Master English Listing Generator (Beide Pipelines)',
+    shortDesc: '39-Punkte Master-Listing Generator mit striktem Subnischen/Nischen-Suffix Lock, Prioritäten-Hierarchie & Keyword-Portfolio für Neu- & Update-Designs.',
     colorClass: 'text-indigo-300',
     badgeBg: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',
     borderClass: 'border-indigo-500/40',
     icon: FileText,
     variables: [
-      { name: '{niche1}', desc: 'Hauptthema (z. B. Horse)' },
-      { name: '{niche2}', desc: 'Cross-Thema (z. B. Coffee)' },
-      { name: '{subniche}', desc: 'Subnische für Titel-Ende (z. B. Shetland Pony)' },
+      { name: '{niche1}', desc: 'Hauptnische / Primary Niche (z. B. Christmas, Dog)' },
+      { name: '{niche2}', desc: 'Cross-Nische / Secondary Niche (z. B. Truck, Baking)' },
+      { name: '{subniche}', desc: 'Subnische für Locked Title Suffix (z. B. Christmas Cookies)' },
       { name: '{keywords}', desc: 'SEO-Suchbegriffe von Hermes / Question Phase' },
       { name: '{quote}', desc: 'Zitat auf der Grafik' },
       { name: '{audience}', desc: 'Zielgruppe (Men, Women, Youth)' },
       { name: '{brand}', desc: 'Brand Name (40-50 Zeichen, hohe Keyword-Dichte)' },
-      { name: '{title}', desc: 'Titel (50-60 Zeichen, endet auf Subnische/Nische)' }
+      { name: '{title}', desc: 'Titel (50-60 Zeichen, endet exakt auf Subnische/Nische)' },
+      { name: '{bullet1}', desc: 'Bullet 1 (Zielgruppe & Passion, 230-256 Zeichen)' },
+      { name: '{bullet2}', desc: 'Bullet 2 (Anlässe & Trageorte, 230-256 Zeichen)' }
     ]
   },
   {
     key: 'trademarkAuditor',
     stepCode: 'D6 / U5',
-    category: 'DESIGN',
+    category: 'SHARED',
     title: 'Trademark Auditor & Refiner (Beide Pipelines)',
     shortDesc: 'Nizza-Klassen TM-Prüfung (USPTO, EUIPO, DPMA). Kl. 25 Hard-Reject auf Quote/Nische; Nebenklassen (9, 18, 20, 21, 16) sperren gezielt Produkte.',
     colorClass: 'text-amber-300',
@@ -167,28 +168,9 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     ]
   },
   {
-    key: 'updateListingRewriter',
-    stepCode: 'U4',
-    category: 'UPDATE',
-    title: 'Update Listing Rewriter (Master EN)',
-    shortDesc: 'Optimiert veraltete englische Listings basierend auf Nischen-Hierarchie & Keywords zu hochkonvertierenden MBA-Texten mit Subnischen-Suffix.',
-    colorClass: 'text-teal-300',
-    badgeBg: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
-    borderClass: 'border-teal-500/40',
-    icon: FileText,
-    variables: [
-      { name: '{niche1}', desc: 'Hauptnische' },
-      { name: '{subniche}', desc: 'Subnische für Titel-Endung' },
-      { name: '{brand}', desc: 'Brand Name (40-50 Zeichen)' },
-      { name: '{title}', desc: 'Titel (50-60 Zeichen, endet auf Subnische/Nische)' },
-      { name: '{bullet1}', desc: 'Bullet 1 (Zielgruppe & Passion, max 256)' },
-      { name: '{bullet2}', desc: 'Bullet 2 (Anlässe & Trageorte, max 256)' }
-    ]
-  },
-  {
     key: 'updateLocalizationTranslator',
     stepCode: 'U6 / D6',
-    category: 'UPDATE',
+    category: 'SHARED',
     title: 'SEO Translation & Localization (Beide Pipelines)',
     shortDesc: 'Lokalisiert das freigegebene englische Master-Listing nach DE, FR, ES, IT, JA. Titel enden im Nominativ auf der Nische/Subnische.',
     colorClass: 'text-purple-300',
@@ -206,7 +188,7 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
 ];
 
 export const SystemPromptsView: React.FC = () => {
-  const [selectedCategory, setSelectedCategory] = useState<'ALL' | 'DESIGN' | 'UPDATE'>('ALL');
+  const [selectedCategory, setSelectedCategory] = useState<'ALL' | 'DESIGN' | 'UPDATE' | 'SHARED'>('ALL');
   const [activePromptKey, setActivePromptKey] = useState<PromptKey>('promptGenerator');
   const [searchQuery, setSearchQuery] = useState<string>('');
   
@@ -217,7 +199,6 @@ export const SystemPromptsView: React.FC = () => {
     trademarkAuditor: '',
     svgBgAuditor: '',
     updateVisionAnalyzer: '',
-    updateListingRewriter: '',
     updateLocalizationTranslator: ''
   });
   
@@ -243,7 +224,6 @@ export const SystemPromptsView: React.FC = () => {
             trademarkAuditor: data.trademarkAuditor || '',
             svgBgAuditor: data.svgBgAuditor || '',
             updateVisionAnalyzer: data.updateVisionAnalyzer || '',
-            updateListingRewriter: data.updateListingRewriter || '',
             updateLocalizationTranslator: data.updateLocalizationTranslator || ''
           });
         }
@@ -331,7 +311,7 @@ export const SystemPromptsView: React.FC = () => {
 
   // 4. Reset all prompts to default
   const handleResetAll = async () => {
-    if (!confirm('Möchtest du wirklich ALLE 8 Systemprompts auf ihre Standardvorlagen zurücksetzen?')) return;
+    if (!confirm('Möchtest du wirklich ALLE 7 Systemprompts auf ihre Standardvorlagen zurücksetzen?')) return;
     setSaving(true);
     try {
       const res = await fetch('/api/v1/systemprompts/reset', { 
@@ -348,7 +328,6 @@ export const SystemPromptsView: React.FC = () => {
           trademarkAuditor: data.trademarkAuditor || '',
           svgBgAuditor: data.svgBgAuditor || '',
           updateVisionAnalyzer: data.updateVisionAnalyzer || '',
-          updateListingRewriter: data.updateListingRewriter || '',
           updateLocalizationTranslator: data.updateLocalizationTranslator || ''
         });
         setSavedStatus('SAVED');
@@ -371,7 +350,7 @@ export const SystemPromptsView: React.FC = () => {
   // Filtered prompt list
   const filteredPrompts = useMemo(() => {
     return PROMPT_DEFINITIONS.filter(p => {
-      const matchesCategory = selectedCategory === 'ALL' || p.category === selectedCategory;
+      const matchesCategory = selectedCategory === 'ALL' || p.category === selectedCategory || p.category === 'SHARED';
       const matchesSearch = searchQuery === '' || 
         p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
         p.stepCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -384,6 +363,9 @@ export const SystemPromptsView: React.FC = () => {
   const currentText = promptsState[activePromptKey] || '';
   const charCount = currentText.length;
   const estimatedTokens = Math.ceil(charCount / 4);
+
+  const creationCount = PROMPT_DEFINITIONS.filter(p => p.category === 'DESIGN' || p.category === 'SHARED').length;
+  const updateCount = PROMPT_DEFINITIONS.filter(p => p.category === 'UPDATE' || p.category === 'SHARED').length;
 
   return (
     <div className="space-y-6">
@@ -441,7 +423,7 @@ export const SystemPromptsView: React.FC = () => {
                   selectedCategory === 'ALL' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Alle (8)
+                Alle ({PROMPT_DEFINITIONS.length})
               </button>
               <button
                 onClick={() => setSelectedCategory('DESIGN')}
@@ -449,7 +431,7 @@ export const SystemPromptsView: React.FC = () => {
                   selectedCategory === 'DESIGN' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                🎨 Creation (5)
+                🎨 Creation ({creationCount})
               </button>
               <button
                 onClick={() => setSelectedCategory('UPDATE')}
@@ -457,7 +439,7 @@ export const SystemPromptsView: React.FC = () => {
                   selectedCategory === 'UPDATE' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                🔄 Update (3)
+                🔄 Update ({updateCount})
               </button>
             </div>
 

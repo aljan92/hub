@@ -480,5 +480,20 @@ MBA HUB/
     - Beide Audit-Sektionen in `TasksView.tsx` zeigen die Keywords im Vergleich an.
     - Der Button **„Von LLM übernehmen“** befüllt automatisch auch das Feld `editKeywords`.
 
+### 10.16 📜 39-Punkte MBA Master-Listing-Generator (Single Source of Truth)
+- **Hintergrund & Architektur-Bereinigung:**
+  - Zuvor existierten im System Prompts unter zwei getrennten Bezeichnungen (`listingGenerator` für Step D5 und `updateListingRewriter` für Step U4), obwohl beide Pipelines dieselbe Listing-Generierungs-Engine (`LLMService.generateMasterEnglishListing`) nutzen.
+  - Das System wurde vollständig bereinigt: Es existiert nur noch ein zentraler Master-Prompt (`listingGenerator`), der als `SHARED` (Step D5 / U4) geführt wird.
+- **39-Punkte Master-Prompt Architektur:**
+  1. **Priority Hierarchy (Hard Constraints First):** Exakte Zeichenlimits, Locked Title Suffix, dynamische Banned Words, Nizza-Klassen-Compliance, valides JSON vor Stilistik.
+  2. **Locked Title Suffix:** `TITLE_SUFFIX` wird vor der Titel-Generierung unveränderlich fest arretiert (`Subniche` falls vorhanden > sonst `Niche 2` > sonst `Niche 1`). Der Titel endet zwingend buchstabengetreu darauf (ermöglicht Amazon automatisches "T-Shirt" Suffix als Long-Tail Keyphrase).
+  3. **Space Reservation:** Zeichenplatz (`MAX_PREFIX_LENGTH = 60 - length(" " + TITLE_SUFFIX)`) wird vorab reserviert; optimiert wird ausschließlich das Prefix.
+  4. **Two-Stage Keyword Allocation & Relevance Tiers (Tier A, B, C):** Stärkste Tier A Nischen- und Buyer-Terms wandern zuerst in Brand (40-50 Zeichen) und Title-Prefix (50-60 Zeichen), verbleibende in Bullets 1 & 2 (230-256 Zeichen) und Description (300-600 Zeichen).
+  5. **Dynamic Blacklist Injection:** Banned Words werden dynamisch am Ende des Prompts angehängt und strikt erzwungen.
+- **UI & Dashboard:**
+  - `SystemPromptsView.tsx` führt 7 eindeutige Prompts (Shared Prompts sind unter Creation, Update und Alle sichtbar).
+  - Reset auf Standard lädt deterministisch die neue 39-Punkte Mastervorlage.
+
+
 
 
