@@ -547,3 +547,13 @@ MBA HUB/
      - Warteschlange: `🟣 X Slots • Heute Live` vs `🟡 X Slots • Im Pool`.
   6. **Unit-Tests:**
      - `tests/knapsackOptimizer.test.ts` (16/16 Tests bestanden).
+
+### 10.21 👕 Dynamischer Fit-Type & Color Upload-Worker (Produktiv-Validiert)
+- **Problem & Ursache:**
+  - In früheren Upload-Durchläufen wurden Checkboxen (`<flowcheckbox>`) fälschlicherweise zweifach getriggert (sowohl der Host als auch der innere `<span>` wurden im selben Schritt geklickt). Dies führte zu einem sofortigen Ein- und Ausschalten (`outline-blank`).
+  - Neue und spezielle Produkte wie Soccer Jerseys, Baseball Jerseys, Basketball Jerseys oder Sport Sun Visors nutzen `Adult Unisex` + `Youth` anstelle klassischer `Men/Women`-Labels.
+- **Lösung & Architektur:**
+  1. **Single-Target Klick (`uploadWorkerService.ts`):** `clickTargetElement` dispatchet Events (`mousedown`, `mouseup`, `click`) exakt einmal auf das primäre Klickziel (`span` wenn vorhanden, sonst das Host-Element) analog zur bewährten Listing-Optimizer-Logik.
+  2. **Vollständige Fit-Type Palette:** Unterstützt bedingungslos `Men`, `Women`, `Youth`, `Girls` (Standard T-Shirt) sowie `Adult Unisex` + `Youth` (Jerseys, Visor). `Adult Unisex` ist standardmäßig immer aktiv.
+  3. **Generische DOM-Filterung (`rect.height > 0 && rect.width > 0`):** Der Upload-Worker agiert 100% dynamisch auf sichtbare DOM-Elemente des gerade geöffneten Produkt-Editors und unterstützt zukünftige neue Amazon-Produkte ohne Code-Anpassung.
+  4. **4-Pass Farb-Engine:** Farbvermeidungsregeln (`avoidColor: white/black`) mit Minimum-1-Farbe-Garantie und 10-Farben-Limit laufen zuverlässig durch.
