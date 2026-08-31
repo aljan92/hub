@@ -385,6 +385,7 @@ Style Preset: ${stylePreset}`;
     audience?: string;
     avoidColor?: string;
     oldListing?: any;
+    imageSource?: string;
   }): Promise<EnglishListing & { _rawRequest?: any; _rawResponse?: any }> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
@@ -420,12 +421,23 @@ Style Preset: ${stylePreset}`;
 
     userMessage += `\n\nGenerate the optimized 100% English Amazon Merch on Demand listing now. Ensure Title ends strictly with subniche/niche without trailing punctuation!`;
 
+    const userContent: any[] = [
+      { type: 'text', text: userMessage }
+    ];
+
+    if (params.imageSource) {
+      userContent.push({
+        type: 'image_url',
+        image_url: { url: params.imageSource }
+      });
+    }
+
     const settings = loadSettings();
     const requestPayload = {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage }
+        { role: 'user', content: userContent }
       ],
       temperature: settings.llmTemperature ?? 0.35,
       max_tokens: settings.llmMaxTokens || 3000

@@ -33,7 +33,7 @@ export class VisionOptimizationService {
    * - Bottom-Left: Red / Cranberry (#c53030) - checks color clashes & vibrancy
    * - Bottom-Right: Asphalt (#383E42) - checks midtone legibility & subtle artifacts
    */
-  public static async prepareVisionImage(input: string | Buffer): Promise<{ base64DataUrl: string; is4Panel: boolean }> {
+  public static async prepareVisionImage(input: string | Buffer, outputPath?: string): Promise<{ base64DataUrl: string; is4Panel: boolean; savedPath?: string }> {
     try {
       let dataUri: string;
       if (typeof input === 'string') {
@@ -136,9 +136,21 @@ export class VisionOptimizationService {
         await page.setContent(html);
         await page.waitForTimeout(30);
         const screenshotBuf = await page.screenshot({ type: 'jpeg', quality: 88 });
+
+        if (outputPath) {
+          try {
+            const dir = path.dirname(outputPath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(outputPath, screenshotBuf);
+          } catch (e: any) {
+            console.warn('[VisionOptimizationService] Failed to save preview file:', e.message);
+          }
+        }
+
         return {
           base64DataUrl: `data:image/jpeg;base64,${screenshotBuf.toString('base64')}`,
-          is4Panel: true
+          is4Panel: true,
+          savedPath: outputPath && fs.existsSync(outputPath) ? outputPath : undefined
         };
       } finally {
         await context.close().catch(() => {});

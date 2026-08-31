@@ -164,6 +164,7 @@ export const TasksView: React.FC = () => {
   const [selectedMaxColors, setSelectedMaxColors] = useState<number>(2);
   const [editablePrompt, setEditablePrompt] = useState('');
   const [showImageZoom, setShowImageZoom] = useState(false);
+  const [viewModeGrid, setViewModeGrid] = useState(true);
   const [editNiche1, setEditNiche1] = useState('');
   const [editNiche2, setEditNiche2] = useState('');
   const [editSubniche, setEditSubniche] = useState('');
@@ -906,40 +907,74 @@ export const TasksView: React.FC = () => {
                     {activeTask.source === 'UPDATE' ? (
                       /* UPDATE WORKFLOW: VISION AUDIT, FIT-TYPES & AVOID-COLOR */
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-                        {/* Left: Master Artwork Preview & Original Listing (5 cols) */}
+                        {/* Left: 2x2 Grid / Master Artwork Preview & Original Listing (5 cols) */}
                         <div className="md:col-span-5 space-y-2.5">
-                          <div className="relative group rounded-xl overflow-hidden border border-teal-500/40 bg-slate-950 aspect-square max-h-[320px] flex items-center justify-center p-2">
-                            {activeTask.localImagePath || activeTask.imageUrl ? (
-                              <>
-                                <img
-                                  src={activeTask.localImagePath || activeTask.imageUrl || `/api/v1/designs/image/${encodeURIComponent(activeTask.id)}`}
-                                  alt={activeTask.payload?.title || 'Master Design'}
-                                  className="w-full h-full object-contain cursor-pointer"
-                                  onClick={() => setShowImageZoom(true)}
-                                />
-                                <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
+                          {/* Image Preview Card with Grid Toggle */}
+                          <div className="bg-slate-950 p-2.5 rounded-xl border border-teal-500/40 space-y-2">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
+                              <span className="flex items-center gap-1.5 text-teal-400">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                {viewModeGrid ? '2x2 Grid (4 Textilfarben)' : 'Master-Artwork'}
+                              </span>
+                              <div className="flex bg-slate-900 rounded-lg p-0.5 border border-slate-800">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewModeGrid(true)}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                                    viewModeGrid ? 'bg-teal-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                                  }`}
+                                >
+                                  2x2 Grid
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setViewModeGrid(false)}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                                    !viewModeGrid ? 'bg-teal-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                                  }`}
+                                >
+                                  Master PNG
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="relative group rounded-lg overflow-hidden border border-slate-800 bg-slate-900 aspect-square max-h-[300px] flex items-center justify-center p-1.5">
+                              {activeTask.localImagePath || activeTask.imageUrl || activeTask.id ? (
+                                <>
+                                  <img
+                                    src={viewModeGrid 
+                                      ? `/api/v1/designs/grid2x2/${encodeURIComponent(activeTask.id)}` 
+                                      : (activeTask.localImagePath || activeTask.imageUrl || `/api/v1/designs/image/${encodeURIComponent(activeTask.id)}`)}
+                                    alt={activeTask.payload?.title || 'Design Preview'}
+                                    className="w-full h-full object-contain cursor-pointer rounded"
                                     onClick={() => setShowImageZoom(true)}
-                                    className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
-                                    title="Vergrößern"
-                                  >
-                                    <Maximize2 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <a
-                                    href={activeTask.localImagePath || activeTask.imageUrl || `/api/v1/designs/image/${encodeURIComponent(activeTask.id)}`}
-                                    download={`${activeTask.id}-master.png`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
-                                    title="Download"
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                  </a>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="text-xs text-slate-500">Master-Grafik wird geladen...</div>
-                            )}
+                                  />
+                                  <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => setShowImageZoom(true)}
+                                      className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                      title="Vergrößern"
+                                    >
+                                      <Maximize2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <a
+                                      href={viewModeGrid 
+                                        ? `/api/v1/designs/grid2x2/${encodeURIComponent(activeTask.id)}` 
+                                        : (activeTask.localImagePath || activeTask.imageUrl || `/api/v1/designs/image/${encodeURIComponent(activeTask.id)}`)}
+                                      download={`${activeTask.id}-${viewModeGrid ? 'grid2x2.jpg' : 'master.png'}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 border border-slate-700 shadow"
+                                      title="Download"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                    </a>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-xs text-slate-500">Master-Grafik wird geladen...</div>
+                              )}
+                            </div>
                           </div>
 
                           {/* Original Amazon Listing Card */}
@@ -998,15 +1033,15 @@ export const TasksView: React.FC = () => {
                             <div className="flex items-center justify-between text-xs">
                               <span className="font-semibold text-slate-200">1. Listing-Rewrite Befund</span>
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                                activeTask.analysisResult?.rewriteNeeded 
-                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
-                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                (activeTask.analysisResult?.listing_audit?.rewrite_recommended ?? activeTask.analysisResult?.rewriteNeeded ?? true)
+                                  ? 'bg-teal-500/20 text-teal-300 border-teal-500/40' 
+                                  : 'bg-slate-500/20 text-slate-300 border-slate-500/40'
                               }`}>
-                                {activeTask.analysisResult?.rewriteNeeded ? 'JA (Optimieren)' : 'NEIN (Beibehalten)'}
+                                {(activeTask.analysisResult?.listing_audit?.rewrite_recommended ?? activeTask.analysisResult?.rewriteNeeded ?? true) ? 'JA (Optimieren)' : 'NEIN (Beibehalten)'}
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
-                              {activeTask.analysisResult?.reasoning || 'Keine Begründung angegeben.'}
+                              {activeTask.analysisResult?.listing_audit?.current_weaknesses || activeTask.analysisResult?.reasoning || 'Das bestehende Amazon-Listing wird auf die neue 25-Punkte SEO-Meisterformel aktualisiert.'}
                             </p>
                           </div>
 
@@ -1851,14 +1886,16 @@ export const TasksView: React.FC = () => {
       )}
 
       {/* Image Zoom Modal */}
-      {showImageZoom && activeTask?.imageUrl && (
+      {showImageZoom && activeTask && (
         <div 
           className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 cursor-zoom-out"
           onClick={() => setShowImageZoom(false)}
         >
           <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
             <img
-              src={activeTask.imageUrl}
+              src={viewModeGrid && activeTask.source === 'UPDATE'
+                ? `/api/v1/designs/grid2x2/${encodeURIComponent(activeTask.id)}`
+                : (activeTask.localImagePath || activeTask.imageUrl || `/api/v1/designs/image/${encodeURIComponent(activeTask.id)}`)}
               alt="Zoomed Design"
               className="max-w-full max-h-[85vh] object-contain rounded-2xl border border-slate-700 shadow-2xl"
             />

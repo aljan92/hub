@@ -1200,6 +1200,23 @@ app.get('/api/v1/designs/image/:taskId', (req, res) => {
   res.status(404).send('Design image not found');
 });
 
+// 8.3b Design 2x2 Grid Image Serving Endpoint
+app.get('/api/v1/designs/grid2x2/:taskId', (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const gridFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_grid2x2.jpg`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  if (fs.existsSync(gridFilePath)) {
+    res.setHeader('Content-Type', 'image/jpeg');
+    return fs.createReadStream(gridFilePath).pipe(res);
+  }
+
+  // Fallback to regular design image if grid doesn't exist
+  res.redirect(`/api/v1/designs/image/${encodeURIComponent(req.params.taskId)}`);
+});
+
 // 8.4 Design SVG Serving Endpoints
 app.get('/api/v1/designs/svg/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');

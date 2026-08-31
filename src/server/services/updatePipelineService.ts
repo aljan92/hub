@@ -98,8 +98,9 @@ export class UpdatePipelineService {
 
     TaskLogService.updateTaskStatus(taskId, { status: 'PROCESSING', hasError: false });
 
-    // Prepare high-contrast dual-panel image for vision analysis
+    // Prepare high-contrast 2x2 grid image for vision analysis & UI preview
     let imageBase64: string | null = null;
+    let gridPreviewUrl: string | undefined;
     const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
     const mbaPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
     const rawPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
@@ -107,10 +108,15 @@ export class UpdatePipelineService {
       ? task.localMbaPngPath
       : fs.existsSync(mbaPath) ? mbaPath : fs.existsSync(rawPath) ? rawPath : null;
 
+    const gridOutputPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_grid2x2.jpg`);
+
     if (targetPath) {
       try {
-        const { base64DataUrl } = await VisionOptimizationService.prepareVisionImage(targetPath);
+        const { base64DataUrl, savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridOutputPath);
         imageBase64 = base64DataUrl;
+        if (savedPath || fs.existsSync(gridOutputPath)) {
+          gridPreviewUrl = `/api/v1/designs/grid2x2/${encodeURIComponent(taskId)}`;
+        }
       } catch (err) {
         console.warn(`[UpdatePipeline] Konnte Bild für Vision nicht optimieren:`, err);
       }
@@ -176,23 +182,41 @@ export class UpdatePipelineService {
       const contentStr = json.choices?.[0]?.message?.content || '{}';
       const parsed = JSON.parse(contentStr.replace(/```json/g, '').replace(/```/g, '').trim());
 
-      const niche1 = parsed.niche1 || 'Graphic Art';
-      const niche2 = parsed.niche2 || 'none';
-      const subniche = parsed.subniche || 'none';
+      const niche1 = parsed.niche_analysis?.niche1 || parsed.niche1 || 'Graphic Art';
+      const niche2 = parsed.niche_analysis?.niche2 || parsed.niche2 || 'none';
+      const subniche = parsed.niche_analysis?.subniche || parsed.subniche || 'none';
+      const avoidColor = parsed.avoid_product_colors?.avoid || parsed.avoidColor || 'none';
+      const fitTypes = parsed.target_group?.selected || (Array.isArray(parsed.fitTypes) ? parsed.fitTypes : ['Men', 'Women', 'Youth']);
+      const detectedQuote = parsed.quote_check?.detected_quote || parsed.detected_quote || rawPayload.quote || '';
+      const rewriteNeeded = parsed.listing_audit?.rewrite_recommended ?? parsed.rewriteNeeded ?? true;
+      const reasoning = parsed.listing_audit?.current_weaknesses || parsed.reasoning || '';
 
       TaskLogService.updateTaskStatus(taskId, {
         status: 'UPDATE_ANALYZED',
         niche1,
         niche2,
         subniche,
-        analysisResult: parsed,
+        previewUrl: gridPreviewUrl || task.previewUrl,
+        grid2x2Url: gridPreviewUrl,
+        analysisResult: {
+          ...parsed,
+          niche1,
+          niche2,
+          subniche,
+          avoidColor,
+          fitTypes,
+          rewriteNeeded,
+          reasoning,
+          detectedQuote,
+          grid2x2Url: gridPreviewUrl
+        },
         customAnswers: {
           niche1,
           niche2,
           subniche,
-          audience: Array.isArray(parsed.fitTypes) ? parsed.fitTypes.join(', ') : 'men, women, youth',
-          avoidColor: parsed.avoidColor || 'none',
-          notes: parsed.reasoning || ''
+          audience: Array.isArray(fitTypes) ? fitTypes.join(', ') : 'Men, Women, Youth',
+          avoidColor,
+          notes: reasoning
         },
         hasError: false
       });
@@ -200,7 +224,7 @@ export class UpdatePipelineService {
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'ANALYSIS_RESPONSE',
-        title: `Vision-Befund: Rewrite ${parsed.rewriteNeeded ? 'empfohlen' : 'nicht nötig'} (Nische: ${niche1})`,
+        title: `Vision-Befund: Rewrite ${rewriteNeeded ? 'empfohlen' : 'nicht nötig'} (Nische: ${niche1})`,
         content: parsed,
         metadata: { model, provider: 'OpenRouter' }
       });
@@ -272,15 +296,33 @@ export class UpdatePipelineService {
       metadata: { provider: 'OpenRouter' }
     });
 
+    let originalImageBase64: string | undefined;
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const mbaPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+    const rawPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+    const targetPath = (task.localMbaPngPath && fs.existsSync(task.localMbaPngPath))
+      ? task.localMbaPngPath
+      : fs.existsSync(mbaPath) ? mbaPath : fs.existsSync(rawPath) ? rawPath : null;
+
+    if (targetPath && fs.existsSync(targetPath)) {
+      try {
+        const buf = fs.readFileSync(targetPath);
+        originalImageBase64 = `data:image/png;base64,${buf.toString('base64')}`;
+      } catch (e) {
+        console.warn(`[UpdatePipeline] Konnte Original-PNG für Listing-LLM nicht einlesen:`, e);
+      }
+    }
+
     try {
       const enListing = await LLMService.generateMasterEnglishListing({
         niche1,
         niche2,
         subniche,
         keywords,
-        quote: raw.quote || '',
+        quote: raw.quote || task.analysisResult?.quote_check?.detected_quote || '',
         audience,
         avoidColor,
+        imageSource: originalImageBase64,
         oldListing: {
           brand: raw.brand,
           title: raw.title,

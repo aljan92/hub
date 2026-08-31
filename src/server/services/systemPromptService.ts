@@ -130,6 +130,15 @@ Inspect the artwork for quality defects:
 - If severe visual flaws / halos / low-res flaws exist: "quality_verdict": "DEFECTIVE", "quality_issues": "<Concise description of defect>", "recommendation": "MANUAL_INSPECTION_REQUIRED", "overall_verdict": "REJECTED".
 
 ==================================================
+7. LISTING AUDIT & REWRITE ASSESSMENT:
+==================================================
+Evaluate the provided existing listing against modern Amazon Merch SEO best practices:
+- Does the old listing contain keyword stuffing, empty bullets, grammatical errors, or lacks proper niche endings?
+- "rewrite_recommended": true (almost always true for older listings to apply modern 25-point master SEO).
+- "current_weaknesses": "<Concise explanation of weaknesses in the old title/brand/bullets>".
+- "reasoning": "<Summary of findings>".
+
+==================================================
 OUTPUT FORMAT:
 ==================================================
 Respond ONLY with a valid JSON object strictly matching this schema:
@@ -159,6 +168,12 @@ Respond ONLY with a valid JSON object strictly matching this schema:
     "quality_issues": null,
     "recommendation": "PROCEED"
   },
+  "listing_audit": {
+    "rewrite_recommended": true,
+    "current_weaknesses": "Brand and title suffer from keyword stuffing; bullets lack emotional niche connection and strategic subniche ending."
+  },
+  "rewriteNeeded": true,
+  "reasoning": "Brand and title suffer from keyword stuffing; bullets lack emotional niche connection and strategic subniche ending.",
   "overall_verdict": "APPROVED"
 }`;
 
