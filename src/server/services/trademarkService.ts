@@ -1,5 +1,6 @@
 import { loadSettings } from './settingsService';
 import { ProductCatalogService } from './productCatalogService';
+import { TrademarkWhitelistService } from './trademarkWhitelistService';
 
 export type TrademarkOffice = 'USPTO' | 'EUIPO' | 'DPMA';
 
@@ -407,9 +408,22 @@ export class TrademarkService {
     const blockedClassesSet = new Set<number>();
     let totalHits = 0;
 
-    for (const [, records] of Object.entries(hitsRecord)) {
+    for (const [term, records] of Object.entries(hitsRecord)) {
       for (const rec of records) {
         if (!this.isLiveStatus(rec.status)) continue;
+
+        const hitTerm = rec.term || term || '';
+        const hitMark = rec.trademark || '';
+        const source = rec.source || 'GLOBAL';
+
+        // Filter out whitelisted terms/trademarks
+        if (
+          TrademarkWhitelistService.isWhitelisted(hitTerm, source) ||
+          TrademarkWhitelistService.isWhitelisted(hitMark, source)
+        ) {
+          continue;
+        }
+
         totalHits++;
 
         const classes = (rec.classes && rec.classes.length > 0)

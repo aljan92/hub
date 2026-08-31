@@ -305,28 +305,32 @@ export const TasksView: React.FC = () => {
       // Design Review fields
       const pred = activeTask.analysisResult;
       
-      // 2. Audience multi-selection (Men, Women, Youth)
-      let audiences: string[] = ['Men', 'Women', 'Youth'];
+      // 2. Audience multi-selection (Men, Women, Youth) - Case Insensitive Normalization
+      let rawAudList: string[] = [];
       if (activeTask.customAnswers?.audience) {
-        if (Array.isArray(activeTask.customAnswers.audience)) {
-          audiences = activeTask.customAnswers.audience;
-        } else if (typeof activeTask.customAnswers.audience === 'string') {
-          audiences = activeTask.customAnswers.audience.split(',').map((s: string) => s.trim()).filter(Boolean);
-        }
+        rawAudList = Array.isArray(activeTask.customAnswers.audience)
+          ? activeTask.customAnswers.audience
+          : String(activeTask.customAnswers.audience).split(',');
       } else if (pred?.fitTypes) {
-        if (Array.isArray(pred.fitTypes)) {
-          audiences = pred.fitTypes.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase());
-        } else if (typeof pred.fitTypes === 'string') {
-          audiences = pred.fitTypes.split(',').map((s: string) => s.trim()).map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase());
-        }
+        rawAudList = Array.isArray(pred.fitTypes)
+          ? pred.fitTypes
+          : String(pred.fitTypes).split(',');
       } else if (pred?.target_group?.selected) {
-        if (Array.isArray(pred.target_group.selected)) {
-          audiences = pred.target_group.selected.map((s: string) => s.trim()).filter(Boolean);
-        } else if (typeof pred.target_group.selected === 'string') {
-          audiences = pred.target_group.selected.split(',').map((s: string) => s.trim()).filter(Boolean);
-        }
+        rawAudList = Array.isArray(pred.target_group.selected)
+          ? pred.target_group.selected
+          : String(pred.target_group.selected).split(',');
       }
-      setSelectedAudiences(audiences.length > 0 ? audiences : ['Men', 'Women', 'Youth']);
+
+      const normalizeAudienceName = (raw: string) => {
+        const low = raw.trim().toLowerCase();
+        if (low === 'men' || low === 'männer' || low === 'herren') return 'Men';
+        if (low === 'women' || low === 'frauen' || low === 'damen') return 'Women';
+        if (low === 'youth' || low === 'kinder' || low === 'kids' || low === 'jugend') return 'Youth';
+        return raw.trim().charAt(0).toUpperCase() + raw.trim().slice(1);
+      };
+
+      const audiences = rawAudList.map(s => normalizeAudienceName(s)).filter(Boolean);
+      setSelectedAudiences(audiences.length > 0 ? Array.from(new Set(audiences)) : ['Men', 'Women', 'Youth']);
 
       // 3. Avoid Color (Black, White, None)
       const rawAvoid = (activeTask.customAnswers?.avoidColor || pred?.avoidColor || pred?.avoid_product_colors?.avoid || 'None').trim();
@@ -347,11 +351,15 @@ export const TasksView: React.FC = () => {
       setSelectedMaxColors(activeTask.customAnswers?.maxColors ?? pred?.color_analysis?.color_count ?? 2);
       setEditablePrompt(activeTask.resultPrompt || activeTask.payload?.quote || '');
 
-      // Niche Hierarchy & Keywords
-      const n1 = activeTask.niche1 || activeTask.customAnswers?.niche1 || activeTask.payload?.niche1 || activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
-      const n2 = activeTask.niche2 || activeTask.customAnswers?.niche2 || activeTask.payload?.niche2 || activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
-      const sub = activeTask.subniche || activeTask.customAnswers?.subniche || activeTask.payload?.subniche || activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
-      const kw = activeTask.keywords || activeTask.customAnswers?.keywords || activeTask.payload?.keywords || [];
+      // Niche Hierarchy & Keywords: Prioritize AI Vision QA findings so user sees AI prediction!
+      const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
+      const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
+      const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
+
+      const n1 = activeTask.niche1 || activeTask.customAnswers?.niche1 || aiN1 || activeTask.payload?.niche1 || '';
+      const n2 = activeTask.niche2 || activeTask.customAnswers?.niche2 || aiN2 || activeTask.payload?.niche2 || '';
+      const sub = activeTask.subniche || activeTask.customAnswers?.subniche || aiSub || activeTask.payload?.subniche || '';
+      const kw = activeTask.keywords || activeTask.customAnswers?.keywords || activeTask.payload?.keywords || activeTask.payload?.hermesKeywords || [];
 
       setEditNiche1(n1);
       setEditNiche2(n2 && n2.toLowerCase() !== 'none' ? n2 : '');
@@ -531,14 +539,14 @@ export const TasksView: React.FC = () => {
   // Filter Tasks
   const filteredTasks = tasks.filter(t => {
     if (filter === 'PRE_FLIGHT') return t.status === 'AWAITING_PRE_FLIGHT_REVIEW';
-    if (filter === 'DESIGN') return t.status === 'AWAITING_DESIGN_REVIEW';
+    if (filter === 'DESIGN') return t.status === 'AWAITING_DESIGN_REVIEW' || t.status === 'UPDATE_ANALYZED';
     if (filter === 'TRADEMARK') return t.status === 'AWAITING_TM_REVIEW';
     if (filter === 'SVG') return t.status === 'AWAITING_SVG_REVIEW';
     return true;
   });
 
   const preFlightCount = tasks.filter(t => t.status === 'AWAITING_PRE_FLIGHT_REVIEW').length;
-  const designCount = tasks.filter(t => t.status === 'AWAITING_DESIGN_REVIEW').length;
+  const designCount = tasks.filter(t => t.status === 'AWAITING_DESIGN_REVIEW' || t.status === 'UPDATE_ANALYZED').length;
   const tmCount = tasks.filter(t => t.status === 'AWAITING_TM_REVIEW').length;
   const svgCount = tasks.filter(t => t.status === 'AWAITING_SVG_REVIEW').length;
 
@@ -764,7 +772,7 @@ export const TasksView: React.FC = () => {
                         <span>Pre-Flight Quote Konflikt</span>
                       </span>
                     )}
-                    {activeTask.status === 'AWAITING_DESIGN_REVIEW' && (
+                    {(activeTask.status === 'AWAITING_DESIGN_REVIEW' || activeTask.status === 'UPDATE_ANALYZED') && (
                       <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center space-x-1.5">
                         <Eye className="w-3.5 h-3.5 text-cyan-400" />
                         <span>Design-Prüfung</span>
@@ -847,7 +855,7 @@ export const TasksView: React.FC = () => {
                 {/* ========================================================================= */}
                 {/* CHECKPOINT 2: DESIGN- & FRAGEN-PRÜFUNG                                    */}
                 {/* ========================================================================= */}
-                {activeTask.status === 'AWAITING_DESIGN_REVIEW' && (
+                {(activeTask.status === 'AWAITING_DESIGN_REVIEW' || activeTask.status === 'UPDATE_ANALYZED') && (
                   <div className="space-y-5">
                     {activeTask.source === 'UPDATE' ? (
                       /* UPDATE WORKFLOW: VISION AUDIT, FIT-TYPES & AVOID-COLOR */
@@ -1063,6 +1071,73 @@ export const TasksView: React.FC = () => {
                               <span className="font-semibold text-slate-200">Nischen-Hierarchie &amp; SEO-Keywords</span>
                               <span className="text-[10px] text-cyan-400 font-mono font-semibold">Titel-Suffix Formel</span>
                             </div>
+
+                            {/* AI vs Hermes Comparison Card */}
+                            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-850 text-xs">
+                                <span className="font-semibold text-cyan-300 flex items-center gap-1.5 text-[11px]">
+                                  <Bot className="w-3.5 h-3.5 text-cyan-400" />
+                                  KI-Befund vs. Hermes-Payload
+                                </span>
+                                <div className="flex items-center space-x-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
+                                      const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
+                                      const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
+                                      if (aiN1) setEditNiche1(aiN1);
+                                      if (aiN2 && aiN2.toLowerCase() !== 'none') setEditNiche2(aiN2);
+                                      if (aiSub && aiSub.toLowerCase() !== 'none') setEditSubniche(aiSub);
+                                    }}
+                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 border border-cyan-500/30 transition-colors"
+                                  >
+                                    Von KI übernehmen
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const hN1 = activeTask.payload?.niche1 || activeTask.payload?.niche || '';
+                                      const hN2 = activeTask.payload?.niche2 || '';
+                                      const hSub = activeTask.payload?.subniche || '';
+                                      const hKw = activeTask.payload?.keywords || activeTask.payload?.hermesKeywords || [];
+                                      if (hN1) setEditNiche1(hN1);
+                                      if (hN2) setEditNiche2(hN2);
+                                      if (hSub) setEditSubniche(hSub);
+                                      if (hKw.length > 0) setEditKeywords(Array.isArray(hKw) ? hKw.join(', ') : String(hKw));
+                                    }}
+                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors"
+                                  >
+                                    Von Hermes übernehmen
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
+                                <div className="p-2 rounded bg-slate-900/90 border border-slate-850 space-y-0.5">
+                                  <span className="text-[10px] text-cyan-400 font-bold flex items-center gap-1">
+                                    <Bot className="w-3 h-3" /> KI-Vision-Erkennung:
+                                  </span>
+                                  <div className="text-slate-300 space-y-0.5">
+                                    <div>N1: <strong className="text-slate-100">{activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '-'}</strong></div>
+                                    <div>Cross: <span className="text-slate-300">{activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || 'none'}</span></div>
+                                    <div>Subnische: <strong className="text-cyan-300">{activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || 'none'}</strong></div>
+                                  </div>
+                                </div>
+
+                                <div className="p-2 rounded bg-slate-900/90 border border-slate-850 space-y-0.5">
+                                  <span className="text-[10px] text-purple-400 font-bold flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3" /> Hermes-Payload:
+                                  </span>
+                                  <div className="text-slate-300 space-y-0.5">
+                                    <div>N1: <span className="text-slate-200">{activeTask.payload?.niche1 || activeTask.payload?.niche || '-'}</span></div>
+                                    <div>Subnische: <span className="text-slate-300">{activeTask.payload?.subniche || 'none'}</span></div>
+                                    <div>Keywords: <span className="text-slate-400 truncate block">{Array.isArray(activeTask.payload?.keywords || activeTask.payload?.hermesKeywords) ? (activeTask.payload?.keywords || activeTask.payload?.hermesKeywords).join(', ') : '-'}</span></div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                               <div>
                                 <label className="text-[10px] font-medium text-slate-400 block mb-1">Nische 1 (Hauptthema)</label>

@@ -927,24 +927,6 @@ export class TaskLogService {
       : 'Men, Women, Youth';
     const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || 'None';
 
-    // 1. Log Event: Senden an OpenRouter (Master English Listing)
-    this.addEvent(taskId, {
-      timestamp: new Date().toISOString(),
-      type: 'LISTING_REQUEST',
-      title: `Senden an OpenRouter (Master English Listing Generator)`,
-      content: {
-        niche1,
-        niche2,
-        subniche,
-        quote,
-        keywords,
-        hermesKeywords,
-        targetAudience: targetGroup,
-        avoidColors
-      },
-      metadata: { provider: 'OpenRouter' }
-    });
-
     const start = Date.now();
     try {
       const enListing = await LLMService.generateMasterEnglishListing({
@@ -961,13 +943,42 @@ export class TaskLogService {
 
       const latencyMs = Date.now() - start;
 
-      // 2. Log Event: Empfangen von OpenRouter (Listing)
+      // 1. Log Event: Senden an OpenRouter (Master English Listing) with FULL raw request
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'LISTING_REQUEST',
+        title: `Senden an OpenRouter (Master English Listing Generator)`,
+        content: {
+          niche1,
+          niche2,
+          subniche,
+          quote,
+          keywords,
+          hermesKeywords,
+          targetAudience: targetGroup,
+          avoidColors,
+          rawRequest: enListing._rawRequest || null
+        },
+        metadata: {
+          provider: 'OpenRouter',
+          model: enListing._rawRequest?.model || settings.llmModel || 'anthropic/claude-3-5-sonnet'
+        }
+      });
+
+      // 2. Log Event: Empfangen von OpenRouter (Listing) with FULL raw response
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'LISTING_RESPONSE',
         title: `Empfangen von OpenRouter (Master English Listing)`,
         content: {
-          en: enListing
+          en: {
+            brand: enListing.brand,
+            title: enListing.title,
+            bullet1: enListing.bullet1,
+            bullet2: enListing.bullet2,
+            description: enListing.description
+          },
+          rawResponse: enListing._rawResponse || null
         },
         metadata: {
           latencyMs
@@ -976,7 +987,15 @@ export class TaskLogService {
 
       this.updateTaskStatus(taskId, {
         status: 'CHECKING_TRADEMARKS',
-        listingResult: { en: enListing },
+        listingResult: {
+          en: {
+            brand: enListing.brand,
+            title: enListing.title,
+            bullet1: enListing.bullet1,
+            bullet2: enListing.bullet2,
+            description: enListing.description
+          }
+        },
         niche1,
         niche2,
         subniche,
@@ -1188,6 +1207,19 @@ export class TaskLogService {
             },
             hasError: false
           });
+
+          if (task.source === 'UPDATE' || task.suffix === 'U') {
+            console.log(`[TaskLogService] ✨ Update-Task ${taskId} Listing freigegeben -> Direkte Übergabe an Queue (keine Vektorisierung nötig) ✓`);
+            try {
+              const { UpdatePipelineService } = require('./updatePipelineService');
+              UpdatePipelineService.stepU7_Enqueue(taskId).catch((err: any) => {
+                console.error(`[TaskLogService] Fehler bei Step U7 Enqueue für ${taskId}:`, err);
+              });
+            } catch (err) {
+              console.error(`[TaskLogService] Konnte UpdatePipelineService nicht laden:`, err);
+            }
+            return;
+          }
 
           console.log(`[TaskLogService] ✨ Task ${taskId} Listing freigegeben und lokalisiert -> Starte Vektorisierung ✓`);
           this.vectorizeDesignTask(taskId).catch(err => {

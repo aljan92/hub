@@ -27,6 +27,8 @@ import { CostTrackingService } from './services/costTrackingService';
 import { AmazonInspectService } from './services/amazonInspectService';
 import { UpdatePipelineService } from './services/updatePipelineService';
 import { DesignPipelineService } from './services/designPipelineService';
+import { TrademarkWhitelistService } from './services/trademarkWhitelistService';
+import { UpdateBackfillService } from './services/updateBackfillService';
 
 dotenv.config();
 
@@ -842,6 +844,69 @@ app.post('/api/v1/trademark/check', async (req, res) => {
 
     const checkResult = await TrademarkService.checkTrademarks(termsToCheck, locale);
     res.json({ success: true, ...checkResult });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4.1 Trademark Whitelist Management Endpoints
+app.get('/api/v1/trademark/whitelist', (req, res) => {
+  try {
+    const whitelist = TrademarkWhitelistService.getWhitelist();
+    res.json({ success: true, whitelist });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/trademark/whitelist', (req, res) => {
+  try {
+    const { office = 'GLOBAL', term } = req.body;
+    if (!term) return res.status(400).json({ success: false, error: 'Term required' });
+    const whitelist = TrademarkWhitelistService.addTerm(office, term);
+    res.json({ success: true, whitelist });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/trademark/whitelist/batch', (req, res) => {
+  try {
+    const { office = 'GLOBAL', terms = [] } = req.body;
+    const whitelist = TrademarkWhitelistService.addTermsBatch(office, terms);
+    res.json({ success: true, whitelist });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/v1/trademark/whitelist', (req, res) => {
+  try {
+    const { office = 'GLOBAL', term } = req.body;
+    if (!term) return res.status(400).json({ success: false, error: 'Term required' });
+    const whitelist = TrademarkWhitelistService.removeTerm(office, term);
+    res.json({ success: true, whitelist });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4.2 Trademark Batch Check Endpoint (Sandbox)
+app.post('/api/v1/trademark/batch-check', async (req, res) => {
+  try {
+    const { offices, fields } = req.body;
+    const result = await TrademarkService.checkBatchFields({ offices, fields });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4.3 Update Backfill In-Flight Reset Endpoint
+app.post('/api/v1/update/backfill/reset', (req, res) => {
+  try {
+    const result = UpdateBackfillService.resetInFlightLocks();
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

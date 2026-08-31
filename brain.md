@@ -341,3 +341,26 @@ MBA HUB/
    - Entfernt trailing Satzzeichen (`.`, `-`, `,`) am Ende des Titels.
    - Letzter Pass zur sicheren Entfernung versehentlicher MBA-Sperrwörter.
 
+---
+
+## 10. 🛡️ Trademark Whitelist Manager, Raw Prompt Logging & Pipeline Streamlining
+
+### 10.1 Multi-Marketplace Trademark Whitelist (`/trademark`, `trademarkWhitelistService.ts`)
+- **Dedizierte Trademark-Ansicht:** Registerkarten für **Global**, **USPTO (US)**, **EUIPO (EU)** und **DPMA (DE)**.
+- **Automatischer Filter-Bypass:** Wörter wie *"girl"*, *"boys"*, *"queen"*, *"mama"* lösen bei Productor-Hits in Klasse 25 keine Blockierung mehr aus, wenn sie auf der Whitelist stehen.
+- **Live-Sandbox Quick-Tester:** Ermöglicht das Testen beliebiger Phrasen gegen alle Ämter in Echtzeit.
+
+### 10.2 Vollständige Raw Prompt Transparenz (`PromptLogView.tsx`)
+- **Raw Request & Response Inspektor:** Zeigt die exakten an OpenRouter gesendeten System-Prompts, User-Messages sowie die Rohantworten an.
+- **1-Click Kopieren:** Schnelles Kopieren von JSON, Prompt-Texten und Listings.
+
+### 10.3 Question Phase: KI-Vision vs. Hermes-Payload Abgleich (`TasksView.tsx`)
+- **Automatische Vorausfüllung:** `niche1`, `niche2`, `subniche` und Zielgruppen werden aus der KI-Vision-QA vorausgefüllt.
+- **Vergleichs-Box mit 1-Click Übernahme:** Gegenüberstellung von Hermes-Payload vs. KI-Erkennung mit Buttons *„Von KI übernehmen“* und *„Von Hermes übernehmen“*.
+
+### 10.4 Update-Pipeline & Queue Optimierung
+- **Überspringen der Vektorisierung:** Update-Tasks (#xxx-U) überspringen nach Freigabe des Listings automatisch die Vektorisierung und wandern direkt in die Upload-Queue (Step U7).
+- **Transparente Master-PNG Thumbnails:** Alle Thumbnails in der Queue nutzen die echte, freigestellte `_mba.png`.
+- **Pool-Reset & In-Flight Bereinigung:** Button *„Pool zurücksetzen“* im Header der Queue zur sofortigen Freigabe von In-Memory Locks.
+
+

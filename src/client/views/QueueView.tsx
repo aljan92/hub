@@ -310,6 +310,34 @@ export const QueueView: React.FC = () => {
     }
   };
 
+  const handleResetUpdatePool = async () => {
+    try {
+      const res = await fetch('/api/v1/update/backfill/reset', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setBackfillToast({ message: `In-Flight Locks zurückgesetzt (${data.releasedCount} freigegeben).`, success: true });
+        fetchQueue();
+      }
+    } catch (err: any) {
+      setBackfillToast({ message: `Fehler: ${err.message}`, success: false });
+    } finally {
+      setTimeout(() => setBackfillToast(null), 4000);
+    }
+  };
+
+  const getQueueItemImageUrl = (item: any) => {
+    if (item.pngPath && (item.pngPath.startsWith('/') || item.pngPath.startsWith('http'))) {
+      return item.pngPath;
+    }
+    if (item.taskId) {
+      return `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`;
+    }
+    if (item.imagePath && (item.imagePath.startsWith('/') || item.imagePath.startsWith('http'))) {
+      return item.imagePath;
+    }
+    return `/api/v1/designs/image/${encodeURIComponent(item.id)}`;
+  };
+
   const handleToggleLock = async (itemId: string) => {
     try {
       const res = await fetch(`/api/v1/queue/item/${itemId}/lock`, { method: 'POST' });
@@ -1192,17 +1220,11 @@ export const QueueView: React.FC = () => {
                               backgroundColor: '#090d16'
                             }}
                           >
-                            {item.imagePath ? (
-                              <img 
-                                src={item.imagePath.startsWith('/') ? item.imagePath : `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`} 
-                                alt={item.designTitle}
-                                className="w-full h-full object-contain p-0.5"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-slate-600">
-                                <Layers className="w-6 h-6" />
-                              </div>
-                            )}
+                            <img 
+                              src={getQueueItemImageUrl(item)} 
+                              alt={item.designTitle}
+                              className="w-full h-full object-contain p-0.5"
+                            />
                           </div>
 
                           {/* Title & Task ID */}
@@ -1688,17 +1710,11 @@ export const QueueView: React.FC = () => {
                           backgroundColor: '#090d16'
                         }}
                       >
-                        {item.imagePath ? (
-                          <img 
-                            src={item.imagePath.startsWith('/') ? item.imagePath : `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`} 
-                            alt={item.designTitle}
-                            className="w-full h-full object-contain p-0.5"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-600">
-                            <Layers className="w-6 h-6" />
-                          </div>
-                        )}
+                        <img 
+                          src={getQueueItemImageUrl(item)} 
+                          alt={item.designTitle}
+                          className="w-full h-full object-contain p-0.5"
+                        />
                       </div>
 
                       <div>
@@ -1846,6 +1862,14 @@ export const QueueView: React.FC = () => {
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                         </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={handleResetUpdatePool}
+                        className="ml-1.5 p-1 rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
+                        title="In-Flight Locks & Zähler zurücksetzen"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
                     </div>
                   );
                 })()}

@@ -342,6 +342,36 @@ Style Preset: ${stylePreset}`;
   }
 
   /**
+   * Helper: Robustly extract and parse JSON object from LLM response
+   */
+  public static extractJsonFromLlmResponse(content: string): any {
+    if (!content || typeof content !== 'string') return {};
+    let clean = content.trim();
+    // Strip markdown code fences if present
+    if (clean.includes('```')) {
+      clean = clean.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+    }
+    // Extract first {...} block
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (match) {
+      clean = match[0];
+    }
+    try {
+      return JSON.parse(clean);
+    } catch (e) {
+      console.warn('[LLMService] Direct JSON parse failed, trying sanitized parse:', e);
+      try {
+        // Remove trailing commas before closing braces
+        const sanitized = clean.replace(/,\s*([\}\]])/g, '$1');
+        return JSON.parse(sanitized);
+      } catch (e2) {
+        console.error('[LLMService] Failed to parse JSON from LLM response:', clean.slice(0, 200));
+        return {};
+      }
+    }
+  }
+
+  /**
    * 1. Generate Master English Listing (100% English First, Suffix SEO Formula, Keyword-Dense Brand)
    */
   static async generateMasterEnglishListing(params: {
@@ -355,7 +385,7 @@ Style Preset: ${stylePreset}`;
     audience?: string;
     avoidColor?: string;
     oldListing?: any;
-  }): Promise<EnglishListing> {
+  }): Promise<EnglishListing & { _rawRequest?: any; _rawResponse?: any }> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
     const basePrompt = SystemPromptService.getListingGeneratorPrompt();
@@ -390,49 +420,63 @@ Style Preset: ${stylePreset}`;
 
     userMessage += `\n\nGenerate the optimized 100% English Amazon Merch on Demand listing now. Ensure Title ends strictly with subniche/niche without trailing punctuation!`;
 
+    const requestPayload = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: 0.4,
+      max_tokens: 1000
+    };
+
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage }
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.4,
-          max_tokens: 800,
-        }),
-        signal: AbortSignal.timeout(25000)
+        body: JSON.stringify(requestPayload),
+        signal: AbortSignal.timeout(30000)
       });
 
       if (!res.ok) throw new Error(`LLM Listing error: ${res.status} ${res.statusText}`);
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content?.trim() || '{}';
-      const parsed = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());
+      const parsedRaw = this.extractJsonFromLlmResponse(content);
+      const parsed = parsedRaw.listing || parsedRaw.en || parsedRaw.english_listing || parsedRaw;
+
+      // Extract with robust key variant handling
+      const rawBrand = parsed.brand || parsed.Brand || parsed.brand_name || parsed.brandName;
+      const rawTitle = parsed.title || parsed.Title || parsed.product_title || parsed.productTitle;
+      const rawBullet1 = parsed.bullet1 || parsed.Bullet1 || parsed.bullet_1 || parsed.bulletPoint1 || parsed.bullet_point_1;
+      const rawBullet2 = parsed.bullet2 || parsed.Bullet2 || parsed.bullet_2 || parsed.bulletPoint2 || parsed.bullet_point_2;
+      const rawDesc = parsed.description || parsed.Description || parsed.product_description;
 
       // Clean Title: ensure no trailing punctuation
-      let cleanTitle = (parsed.title || '').trim();
+      let cleanTitle = (rawTitle || '').trim();
       cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, '').trim();
 
+      const targetEnd = sub || n1;
+
       return {
-        brand: (parsed.brand || `${n1} ${sub || 'Apparel'}`).trim(),
-        title: cleanTitle || `${n1} ${quote ? quote + ' ' : ''}${sub || n1}`.trim(),
-        bullet1: (parsed.bullet1 || `Featuring unique ${n1} artwork for enthusiasts and collectors.`).trim(),
-        bullet2: (parsed.bullet2 || `Great to wear during casual outings, weekend gatherings, and hobby events.`).trim(),
-        description: (parsed.description || `Stylish ${n1} graphic design for passionate fans.`).trim()
+        brand: (rawBrand || `${n1} ${sub ? sub + ' ' : ''}Apparel Collection`).trim().slice(0, 50),
+        title: cleanTitle || `${n1} ${quote ? quote + ' ' : ''}${targetEnd}`.trim().slice(0, 60),
+        bullet1: (rawBullet1 || `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`).trim().slice(0, 256),
+        bullet2: (rawBullet2 || `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`).trim().slice(0, 256),
+        description: (rawDesc || `High quality ${n1} graphic design celebrating authentic vintage aesthetics and community passion.`).trim().slice(0, 600),
+        _rawRequest: requestPayload,
+        _rawResponse: content
       };
     } catch (err: any) {
       console.error('[LLMService] Error generating master English listing:', err);
-      // Fallback
       const targetEnd = sub || n1;
       return {
-        brand: `${n1} ${sub ? sub + ' ' : ''}Apparel Accessories`.trim().slice(0, 50),
+        brand: `${n1} ${sub ? sub + ' ' : ''}Apparel Collection`.trim().slice(0, 50),
         title: `Vintage Retro ${quote ? quote + ' ' : ''}${targetEnd}`.trim().slice(0, 60),
         bullet1: `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`,
         bullet2: `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`,
-        description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`
+        description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`,
+        _rawRequest: requestPayload,
+        _rawResponse: err.message
       };
     }
   }
@@ -453,6 +497,8 @@ Style Preset: ${stylePreset}`;
     blocked_classes?: number[];
     actions_taken?: string[];
     refined_listing: EnglishListing;
+    _rawRequest?: any;
+    _rawResponse?: any;
   }> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
@@ -477,44 +523,47 @@ ${hitSummary || 'None flagged directly.'}
 
 Please audit the listing against trademark rules. If a Brand word is Class 25, replace with an alternative niche keyword. If a non-fair-use term is in Title/Bullets, rewrite. Return valid JSON.`;
 
+    const requestPayload = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: 0.2,
+      max_tokens: 1000
+    };
+
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage }
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.2,
-          max_tokens: 800,
-        }),
-        signal: AbortSignal.timeout(25000)
+        body: JSON.stringify(requestPayload),
+        signal: AbortSignal.timeout(30000)
       });
 
       if (!res.ok) throw new Error(`LLM TM Refine error: ${res.status} ${res.statusText}`);
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content?.trim() || '{}';
-      const parsed = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());
+      const parsed = this.extractJsonFromLlmResponse(content);
 
-      const refined = parsed.refined_listing || params.currentListing;
+      const refined = parsed.refined_listing || parsed.refinedListing || parsed.listing || params.currentListing;
       let cleanTitle = (refined.title || params.currentListing.title).trim();
       cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, '').trim();
 
       return {
         verdict: parsed.verdict === 'REJECTED' ? 'REJECTED' : 'APPROVED',
-        rejection_reason: parsed.rejection_reason || null,
-        blocked_classes: Array.isArray(parsed.blocked_classes) ? parsed.blocked_classes : [],
-        actions_taken: Array.isArray(parsed.actions_taken) ? parsed.actions_taken : [],
+        rejection_reason: parsed.rejection_reason || parsed.rejectionReason || null,
+        blocked_classes: Array.isArray(parsed.blocked_classes) ? parsed.blocked_classes : (Array.isArray(parsed.blockedClasses) ? parsed.blockedClasses : []),
+        actions_taken: Array.isArray(parsed.actions_taken) ? parsed.actions_taken : (Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : []),
         refined_listing: {
-          brand: (refined.brand || params.currentListing.brand).trim(),
-          title: cleanTitle,
-          bullet1: (refined.bullet1 || params.currentListing.bullet1).trim(),
-          bullet2: (refined.bullet2 || params.currentListing.bullet2).trim(),
-          description: (refined.description || params.currentListing.description).trim()
-        }
+          brand: (refined.brand || params.currentListing.brand).trim().slice(0, 50),
+          title: cleanTitle.slice(0, 60),
+          bullet1: (refined.bullet1 || params.currentListing.bullet1).trim().slice(0, 256),
+          bullet2: (refined.bullet2 || params.currentListing.bullet2).trim().slice(0, 256),
+          description: (refined.description || params.currentListing.description).trim().slice(0, 600)
+        },
+        _rawRequest: requestPayload,
+        _rawResponse: content
       };
     } catch (err: any) {
       console.error('[LLMService] Error refining listing with TM feedback:', err);
@@ -523,7 +572,9 @@ Please audit the listing against trademark rules. If a Brand word is Class 25, r
         rejection_reason: null,
         blocked_classes: [],
         actions_taken: ['Fallback: unchanged due to network timeout'],
-        refined_listing: params.currentListing
+        refined_listing: params.currentListing,
+        _rawRequest: requestPayload,
+        _rawResponse: err.message
       };
     }
   }
@@ -544,6 +595,8 @@ Please audit the listing against trademark rules. If a Brand word is Class 25, r
     es: EnglishListing;
     it: EnglishListing;
     ja: EnglishListing;
+    _rawRequest?: any;
+    _rawResponse?: any;
   }> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
@@ -562,27 +615,28 @@ Subniche: "${params.subniche || ''}"
 
 Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with the translated Niche/Subniche noun without trailing punctuation!`;
 
+    const requestPayload = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: 0.3,
+      max_tokens: 2000
+    };
+
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage }
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.3,
-          max_tokens: 1500,
-        }),
-        signal: AbortSignal.timeout(30000)
+        body: JSON.stringify(requestPayload),
+        signal: AbortSignal.timeout(35000)
       });
 
       if (!res.ok) throw new Error(`LLM Translation error: ${res.status} ${res.statusText}`);
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content?.trim() || '{}';
-      const parsed = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());
+      const parsed = this.extractJsonFromLlmResponse(content);
 
       const cleanListing = (item: any, fallback: EnglishListing): EnglishListing => {
         if (!item || typeof item !== 'object') return fallback;
@@ -599,22 +653,25 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
 
       return {
         en: params.englishListing,
-        de: cleanListing(parsed.de, params.englishListing),
-        fr: cleanListing(parsed.fr, params.englishListing),
-        es: cleanListing(parsed.es, params.englishListing),
-        it: cleanListing(parsed.it, params.englishListing),
-        ja: cleanListing(parsed.ja, params.englishListing)
+        de: cleanListing(parsed.de || parsed.DE || parsed.german, params.englishListing),
+        fr: cleanListing(parsed.fr || parsed.FR || parsed.french, params.englishListing),
+        es: cleanListing(parsed.es || parsed.ES || parsed.spanish, params.englishListing),
+        it: cleanListing(parsed.it || parsed.IT || parsed.italian, params.englishListing),
+        ja: cleanListing(parsed.ja || parsed.JA || parsed.japanese, params.englishListing),
+        _rawRequest: requestPayload,
+        _rawResponse: content
       };
     } catch (err: any) {
       console.error('[LLMService] Error translating listing:', err);
-      // Fallback: reuse English listing for all
       return {
         en: params.englishListing,
-        de: { ...params.englishListing },
-        fr: { ...params.englishListing },
-        es: { ...params.englishListing },
-        it: { ...params.englishListing },
-        ja: { ...params.englishListing }
+        de: params.englishListing,
+        fr: params.englishListing,
+        es: params.englishListing,
+        it: params.englishListing,
+        ja: params.englishListing,
+        _rawRequest: requestPayload,
+        _rawResponse: err.message
       };
     }
   }

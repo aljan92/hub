@@ -11,6 +11,7 @@ import { LogsView } from './views/LogsView';
 import { SettingsView } from './views/SettingsView';
 import { PromptLogView } from './views/PromptLogView';
 import { SystemPromptsView } from './views/SystemPromptsView';
+import { TrademarkView } from './views/TrademarkView';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -64,6 +65,7 @@ export const App: React.FC = () => {
               {activeTab === 'systemprompts' && <SystemPromptsView />}
               {activeTab === 'designer' && <DesignerView />}
               {activeTab === 'tasks' && <TasksView />}
+              {activeTab === 'trademark' && <TrademarkView />}
               {activeTab === 'queue' && <QueueView />}
               {activeTab === 'products' && <ProductsView />}
               {activeTab === 'database' && <DatabaseView />}

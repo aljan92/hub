@@ -1634,11 +1634,66 @@ export const PromptLogView: React.FC = () => {
                       })()}
 
                       {event.type === 'LISTING_REQUEST' && (
-                        <div className="bg-slate-950 rounded-xl p-3 border border-emerald-500/30 space-y-2">
-                          {event.content?.systemPrompt ? (
-                            <JsonDetails title="Listing System Prompt (Klick zum Aufklappen)" data={event.content.systemPrompt} />
+                        <div className="bg-slate-950 rounded-xl p-3.5 border border-emerald-500/30 space-y-3">
+                          <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-800">
+                            <span className="font-semibold text-emerald-300 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                              Listing Prompt Request
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                              {event.metadata?.model || 'OpenRouter'}
+                            </span>
+                          </div>
+
+                          {/* Quick Parameters Overview */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
+                            <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                              <span className="text-slate-500 block text-[9px] uppercase">Nische 1</span>
+                              <span className="text-slate-200 font-bold">{event.content?.niche1 || '-'}</span>
+                            </div>
+                            <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                              <span className="text-slate-500 block text-[9px] uppercase">Cross-Nische</span>
+                              <span className="text-slate-200 font-bold">{event.content?.niche2 || 'none'}</span>
+                            </div>
+                            <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                              <span className="text-slate-500 block text-[9px] uppercase">Subnische</span>
+                              <span className="text-cyan-300 font-bold">{event.content?.subniche || 'none'}</span>
+                            </div>
+                            <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                              <span className="text-slate-500 block text-[9px] uppercase">Keywords</span>
+                              <span className="text-slate-200 font-bold truncate block" title={Array.isArray(event.content?.keywords) ? event.content.keywords.join(', ') : '-'}>
+                                {Array.isArray(event.content?.keywords) ? event.content.keywords.join(', ') : '-'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Full Raw Request (System Prompt + User Message) */}
+                          {event.content?.rawRequest ? (
+                            <div className="space-y-2 pt-1">
+                              <details className="text-[11px] text-slate-400 group" open={false}>
+                                <summary className="cursor-pointer font-semibold text-emerald-400 hover:text-emerald-300 flex items-center justify-between py-1 px-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/20">
+                                  <span>🔍 Vollständigen Raw Request anzeigen (System Prompt + User Message)</span>
+                                  <CopyButton text={JSON.stringify(event.content.rawRequest, null, 2)} label="Request Kopieren" />
+                                </summary>
+                                <div className="mt-2 space-y-2">
+                                  {event.content.rawRequest.messages?.map((m: any, idx: number) => (
+                                    <div key={idx} className="p-2.5 bg-slate-900 rounded-lg border border-slate-800 space-y-1">
+                                      <div className="flex items-center justify-between">
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold bg-slate-800 text-cyan-300">
+                                          Role: {m.role}
+                                        </span>
+                                        <CopyButton text={typeof m.content === 'string' ? m.content : JSON.stringify(m.content, null, 2)} label="Text kopieren" />
+                                      </div>
+                                      <pre className="text-slate-200 font-mono text-[11px] whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar">
+                                        {typeof m.content === 'string' ? m.content : JSON.stringify(m.content, null, 2)}
+                                      </pre>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            </div>
                           ) : (
-                            <JsonDetails title="Listing Request Details" data={event.content} />
+                            <JsonDetails title="Listing Request Parameter" data={event.content} />
                           )}
                         </div>
                       )}
@@ -1717,6 +1772,18 @@ export const PromptLogView: React.FC = () => {
                                   <p className="font-mono text-slate-300">{langListing.bullet2 || '-'}</p>
                                 </div>
                               </div>
+                            )}
+
+                            {event.content?.rawResponse && (
+                              <details className="text-[11px] text-slate-400 group">
+                                <summary className="cursor-pointer font-semibold text-slate-400 hover:text-cyan-400 flex items-center justify-between py-1">
+                                  <span>🔍 Raw LLM Antwort</span>
+                                  <CopyButton text={typeof event.content.rawResponse === 'string' ? event.content.rawResponse : JSON.stringify(event.content.rawResponse, null, 2)} label="Raw Kopieren" />
+                                </summary>
+                                <pre className="mt-1.5 p-2.5 bg-slate-900 rounded-lg text-slate-300 font-mono text-[11px] border border-slate-800 overflow-x-auto max-h-56 custom-scrollbar whitespace-pre-wrap">
+                                  {typeof event.content.rawResponse === 'string' ? event.content.rawResponse : JSON.stringify(event.content.rawResponse, null, 2)}
+                                </pre>
+                              </details>
                             )}
 
                             <JsonDetails title="Vollständiges Listing-JSON" data={event.content} />

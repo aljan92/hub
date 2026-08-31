@@ -38,10 +38,10 @@ export class UpdateBackfillService {
       }
     }
 
-    // 4. All non-rejected tasks in TaskLogService
+    // 4. All non-rejected and active tasks in TaskLogService
     const tasks = TaskLogService.loadLogs();
     for (const task of tasks) {
-      if (task.status === 'REJECTED') continue;
+      if (['REJECTED', 'CANCELLED', 'ERROR'].includes(task.status) || task.hasError) continue;
       if (task.payload?.designId) excluded.add(task.payload.designId.trim());
       if (task.id) {
         const cleanTask = task.id.replace(/^#/, '').replace(/-U$/, '').trim();
@@ -50,6 +50,16 @@ export class UpdateBackfillService {
     }
 
     return excluded;
+  }
+
+  /**
+   * Clears in-flight design memory locks
+   */
+  public static resetInFlightLocks(): { success: boolean; releasedCount: number } {
+    const count = this.inFlightDesigns.size;
+    this.inFlightDesigns.clear();
+    console.log(`[UpdateBackfillService] 🔄 In-Flight Locks zurückgesetzt (${count} freigegeben).`);
+    return { success: true, releasedCount: count };
   }
 
   /**
@@ -150,7 +160,7 @@ export class UpdateBackfillService {
     const activeTasks = TaskLogService.loadLogs();
     const activeTasksReview = activeTasks.filter(t => {
       if (t.source !== 'UPDATE') return false;
-      if (['COMPLETED', 'REJECTED', 'CANCELLED'].includes(t.status)) return false;
+      if (['COMPLETED', 'REJECTED', 'CANCELLED', 'ERROR'].includes(t.status) || t.hasError) return false;
       return true;
     });
 

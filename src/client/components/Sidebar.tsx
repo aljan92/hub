@@ -9,10 +9,11 @@ import {
   Settings as SettingsIcon,
   Bot,
   Sliders,
-  Shirt
+  Shirt,
+  ShieldCheck
 } from 'lucide-react';
 
-export type ActiveTab = 'dashboard' | 'promptlog' | 'systemprompts' | 'designer' | 'tasks' | 'queue' | 'products' | 'database' | 'logs' | 'settings';
+export type ActiveTab = 'dashboard' | 'promptlog' | 'systemprompts' | 'designer' | 'tasks' | 'trademark' | 'queue' | 'products' | 'database' | 'logs' | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -59,6 +60,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: taskCount > 0 ? taskCount : undefined,
       badgeColor: 'bg-primary-500 text-white',
       description: 'Human-in-the-Loop',
+    },
+    {
+      id: 'trademark' as ActiveTab,
+      label: 'Trademark',
+      icon: ShieldCheck,
+      description: 'Whitelist & Ausnahmen',
     },
     {
       id: 'queue' as ActiveTab,
