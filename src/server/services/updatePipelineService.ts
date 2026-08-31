@@ -52,12 +52,6 @@ export class UpdatePipelineService {
     const designId = task.payload?.designId;
     if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
 
-    // If artwork is already downloaded and present on disk, reuse it
-    if (task.localMbaPngPath && fs.existsSync(task.localMbaPngPath)) {
-      console.log(`[UpdatePipeline] 🖼️ Artwork bereits lokal vorhanden: ${task.localMbaPngPath}`);
-      return { success: true, localUrl: task.imageUrl || `/api/v1/designs/image/${encodeURIComponent(taskId)}` };
-    }
-
     TaskLogService.updateTaskStatus(taskId, { status: 'UPDATE_DOWNLOADING_ARTWORK', hasError: false });
 
     const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);

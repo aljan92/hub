@@ -220271,7 +220271,7 @@ var init_amazonInspectService = __esm2({
         });
         TaskLogService2.addEvent(taskLog.id, {
           type: "TASK_HANDOFF",
-          title: `Amazon Rohdaten erfasst (${publishedCount} Varianten live)`,
+          title: `Amazon Rohdaten erfasst (${publishedCount} Varianten konfiguriert)`,
           content: {
             designId: cleanId,
             editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
@@ -220288,11 +220288,18 @@ var init_amazonInspectService = __esm2({
             statusSummary
           }
         });
-        return taskLog;
+        try {
+          console.log(`[AmazonInspectService] \u{1F50D} F\xFChre sofortige DOM-Live-Inspektion & Artwork-Download f\xFCr neuen Task ${taskLog.id} aus...`);
+          await this.downloadDesignArtwork(taskLog.id, cleanId);
+        } catch (dErr) {
+          console.warn(`[AmazonInspectService] \u26A0\uFE0F Initiale DOM-Inspektion f\xFCr ${taskLog.id} fehlgeschlagen:`, dErr.message);
+        }
+        return TaskLogService2.getTask(taskLog.id) || taskLog;
       }
       /**
        * Download the master design artwork (4500x5400 px PNG) from merch.amazon.com/designs/{designId}/edit
        * using an isolated background tab in Session 1 to prevent collisions with sync operations.
+       * Also performs deterministic DOM inspection of the 'Select Products' table for 100% true live matrix.
        */
       static async downloadDesignArtwork(taskId, designId) {
         const cleanDesignId = (designId || "").trim();
@@ -220307,19 +220314,8 @@ var init_amazonInspectService = __esm2({
         const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const filename = `${safeId}.png`;
         const filePath = import_path73.default.join(designsDir, filename);
-        if (import_fs78.default.existsSync(filePath)) {
-          try {
-            const stats2 = import_fs78.default.statSync(filePath);
-            if (stats2.size > 5e3) {
-              console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Design bereits lokal vorhanden: ${filePath} (${(stats2.size / 1024 / 1024).toFixed(2)} MB)`);
-              const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
-              return { success: true, localUrl };
-            }
-          } catch (e) {
-          }
-        }
         const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
-        console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
+        console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download & DOM-Live-Inspektion f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
         TaskLogService2.updateTaskStatus(cleanTaskId, {
           status: "PROCESSING",
           hasError: false
@@ -220561,10 +220557,6 @@ var init_updatePipelineService = __esm2({
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
         const designId = task.payload?.designId;
         if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
-        if (task.localMbaPngPath && import_fs79.default.existsSync(task.localMbaPngPath)) {
-          console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Artwork bereits lokal vorhanden: ${task.localMbaPngPath}`);
-          return { success: true, localUrl: task.imageUrl || `/api/v1/designs/image/${encodeURIComponent(taskId)}` };
-        }
         TaskLogService2.updateTaskStatus(taskId, { status: "UPDATE_DOWNLOADING_ARTWORK", hasError: false });
         const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
         if (!res.success) {

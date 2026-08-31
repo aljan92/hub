@@ -420,7 +420,7 @@ export class AmazonInspectService {
     // 4. Add structured event detailing the fetched data
     TaskLogService.addEvent(taskLog.id, {
       type: 'TASK_HANDOFF',
-      title: `Amazon Rohdaten erfasst (${publishedCount} Varianten live)`,
+      title: `Amazon Rohdaten erfasst (${publishedCount} Varianten konfiguriert)`,
       content: {
         designId: cleanId,
         editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
@@ -438,14 +438,23 @@ export class AmazonInspectService {
       }
     });
 
-    return taskLog;
+    // 5. Automatically trigger DOM inspection & Master Artwork Download to get 100% true live matrix & rejection check
+    try {
+      console.log(`[AmazonInspectService] 🔍 Führe sofortige DOM-Live-Inspektion & Artwork-Download für neuen Task ${taskLog.id} aus...`);
+      await this.downloadDesignArtwork(taskLog.id, cleanId);
+    } catch (dErr: any) {
+      console.warn(`[AmazonInspectService] ⚠️ Initiale DOM-Inspektion für ${taskLog.id} fehlgeschlagen:`, dErr.message);
+    }
+
+    return TaskLogService.getTask(taskLog.id) || taskLog;
   }
 
   /**
    * Download the master design artwork (4500x5400 px PNG) from merch.amazon.com/designs/{designId}/edit
    * using an isolated background tab in Session 1 to prevent collisions with sync operations.
+   * Also performs deterministic DOM inspection of the 'Select Products' table for 100% true live matrix.
    */
-  public static async downloadDesignArtwork(taskId: string, designId: string): Promise<{ success: boolean; localUrl?: string; error?: string }> {
+  public static async downloadDesignArtwork(taskId: string, designId: string): Promise<{ success: boolean; localUrl?: string; error?: string; hasRejection?: boolean; rejectionReason?: string | null }> {
     const cleanDesignId = (designId || '').trim();
     const cleanTaskId = (taskId || '').trim();
     if (!cleanDesignId || !cleanTaskId) {
@@ -461,20 +470,8 @@ export class AmazonInspectService {
     const filename = `${safeId}.png`;
     const filePath = path.join(designsDir, filename);
 
-    // Fast-path: if already downloaded, return cached localUrl
-    if (fs.existsSync(filePath)) {
-      try {
-        const stats = fs.statSync(filePath);
-        if (stats.size > 5000) {
-          console.log(`[AmazonInspectService] 🖼️ Design bereits lokal vorhanden: ${filePath} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
-          const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
-          return { success: true, localUrl };
-        }
-      } catch (e) {}
-    }
-
     const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
-    console.log(`[AmazonInspectService] 🖼️ Starte Artwork-Download für Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
+    console.log(`[AmazonInspectService] 🖼️ Starte Artwork-Download & DOM-Live-Inspektion für Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
 
     // Set task to PROCESSING state so UI immediately shows downloading badge
     TaskLogService.updateTaskStatus(cleanTaskId, {
