@@ -156,7 +156,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
             <span className="text-2xl sm:text-3xl font-extrabold text-white font-mono">
               {statsData?.liveDesignsCount !== undefined ? statsData.liveDesignsCount.toLocaleString('de-DE') : (statsData?.designsCount ? statsData.designsCount.toLocaleString('de-DE') : '0')}
             </span>
+            {statsData?.tier && (
+              <span className="text-xs text-slate-400 font-mono">
+                von {statsData.tier.toLocaleString('de-DE')}
+              </span>
+            )}
           </div>
+          {statsData?.freeDesignsCount !== undefined && (
+            <div className="text-[11px] text-emerald-400 font-medium">
+              <span>{statsData.freeDesignsCount} freie Design-Slots (Tier {statsData.tier || '2000'})</span>
+            </div>
+          )}
         </div>
 
         {/* Upload Queue Count Card */}

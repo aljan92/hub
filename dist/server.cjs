@@ -219216,6 +219216,8 @@ var init_syncEngine = __esm2({
         try {
           const p = page || await this.getAmazonPage();
           const result2 = await p.evaluate(async () => {
+            let liveDesigns = null;
+            let freeDesigns = null;
             try {
               const res = await fetch("/api/ratelimiter/metadata", {
                 credentials: "include",
@@ -219223,8 +219225,22 @@ var init_syncEngine = __esm2({
               });
               if (res.ok) {
                 const data = await res.json();
-                if (data && (data.dailyProduct || data.dailyDesign || data.tier)) {
-                  return { type: "api", data };
+                if (data && (data.dailyProduct || data.dailyDesign || data.tier || data.overallDesign || data.overallProduct)) {
+                  const overall = data.overallDesign || data.overallProduct || data.totalDesign || data.totalProduct;
+                  if (overall) {
+                    if (typeof overall.count === "number") liveDesigns = overall.count;
+                    if (typeof overall.limit === "number" && liveDesigns !== null) {
+                      freeDesigns = Math.max(0, overall.limit - liveDesigns);
+                    }
+                  }
+                  return {
+                    type: "api",
+                    data: {
+                      ...data,
+                      liveDesigns,
+                      freeDesigns
+                    }
+                  };
                 }
               }
             } catch (e) {
@@ -219243,6 +219259,27 @@ var init_syncEngine = __esm2({
                   if (match) {
                     used = parseInt(match[1], 10);
                     total = parseInt(match[2], 10);
+                  }
+                }
+              }
+              const designsHeader = allElements.find((el) => {
+                const t = (el.textContent || "").trim().toLowerCase();
+                return t === "designs" || t === "live designs";
+              });
+              if (designsHeader) {
+                const container = designsHeader.closest(".media-body") || designsHeader.closest(".media") || designsHeader.parentElement;
+                if (container) {
+                  const countEl = container.querySelector("h1, h2, h3, h4, .font-weight-bold, .my-0") || container;
+                  if (countEl && countEl.textContent) {
+                    const match = countEl.textContent.match(/([0-9,.]+)/);
+                    if (match) {
+                      liveDesigns = parseInt(match[1].replace(/[,.]/g, ""), 10);
+                    }
+                  }
+                  const containerText = container.textContent || "";
+                  const freeMatch = containerText.match(/Free\s*:?\s*([0-9,.]+)/i) || containerText.match(/Frei\s*:?\s*([0-9,.]+)/i);
+                  if (freeMatch) {
+                    freeDesigns = parseInt(freeMatch[1].replace(/[,.]/g, ""), 10);
                   }
                 }
               }
@@ -219280,11 +219317,19 @@ var init_syncEngine = __esm2({
                   }
                 }
               }
+              if (liveDesigns === null) {
+                const dMatch = pageText.match(/Live\s*Designs\s*[:\n\r\s]*([0-9,.]+)/i) || pageText.match(/Designs\s*[:\n\r\s]*([0-9,.]+)/i) || pageText.match(/([0-9,.]+)\s*Live\s*Designs/i);
+                if (dMatch) {
+                  liveDesigns = parseInt(dMatch[1].replace(/[,.]/g, ""), 10);
+                }
+              }
               const tierMatch = pageText.match(/Tier\s*:?\s*([0-9,.]+)/i) || pageText.match(/T\s*([0-9]{3,6})/i);
               if (tierMatch) {
                 tier = parseInt(tierMatch[1].replace(/[,.]/g, ""), 10);
+              } else if (liveDesigns !== null && freeDesigns !== null) {
+                tier = liveDesigns + freeDesigns;
               }
-              if (used !== null || total !== null || tier !== null) {
+              if (used !== null || total !== null || tier !== null || liveDesigns !== null) {
                 return {
                   type: "dom",
                   data: {
@@ -219292,6 +219337,8 @@ var init_syncEngine = __esm2({
                       count: used ?? 0,
                       limit: total ?? 200
                     },
+                    liveDesigns,
+                    freeDesigns,
                     tier
                   }
                 };
@@ -219305,14 +219352,21 @@ var init_syncEngine = __esm2({
             const used = d.dailyProduct?.count ?? d.dailyDesign?.count ?? 0;
             const total = d.dailyProduct?.limit ?? d.dailyDesign?.limit ?? 200;
             const tier = d.overallDesign?.limit ?? d.overallProduct?.limit ?? d.tier ?? d.maxProducts ?? d.totalProduct?.limit ?? d.tierLevel ?? null;
+            const liveDesigns = d.liveDesigns ?? d.overallDesign?.count ?? d.overallProduct?.count ?? null;
+            const freeDesigns = d.freeDesigns ?? (tier && liveDesigns ? Math.max(0, tier - liveDesigns) : null);
             const payload = {
               tier: typeof tier === "number" ? tier : tier ? parseInt(String(tier).replace(/[,.]/g, ""), 10) : void 0,
               slots: {
                 used: Number(used) || 0,
                 total: Number(total) || 200,
                 free: Math.max(0, (Number(total) || 200) - (Number(used) || 0))
-              }
+              },
+              liveDesignsCount: typeof liveDesigns === "number" && !isNaN(liveDesigns) ? liveDesigns : void 0,
+              freeDesignsCount: typeof freeDesigns === "number" && !isNaN(freeDesigns) ? freeDesigns : void 0
             };
+            if (payload.liveDesignsCount !== void 0) {
+              this.state.liveDesignsCount = payload.liveDesignsCount;
+            }
             this.cachedRatelimiter = {
               data: payload,
               timestamp: now
@@ -226337,13 +226391,15 @@ async function refreshStatsInBackground() {
       dailySlotStats = liveSlots;
       QueueService.setDailySlots(liveSlots.free, liveSlots.used, liveSlots.total);
     }
+    const liveDesignsCount = ratelimiter?.liveDesignsCount !== void 0 && ratelimiter.liveDesignsCount !== null ? ratelimiter.liveDesignsCount : supabaseStats.liveDesigns > 0 ? supabaseStats.liveDesigns : cachedStats.liveDesignsCount;
     cachedStats = {
       tasksCount: TaskLogService2.getAwaitingTasks().length,
       queueCount: QueueService.getActiveQueueCount(),
       slots: liveSlots,
       tier: lastKnownTier,
       designsCount: supabaseStats.totalDesigns,
-      liveDesignsCount: supabaseStats.liveDesigns,
+      liveDesignsCount,
+      freeDesignsCount: ratelimiter?.freeDesignsCount,
       unresolvedAsinsCount: supabaseStats.unresolvedAsins,
       sales30d: supabaseStats.sales30d,
       royalties30dEur: supabaseStats.royalties30dEur,

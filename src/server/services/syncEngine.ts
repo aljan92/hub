@@ -1207,6 +1207,8 @@ export class SyncEngine {
   public static async fetchDashboardRatelimiter(page?: any, forceRefresh = false): Promise<{
     tier?: number;
     slots: { used: number; total: number; free: number };
+    liveDesignsCount?: number;
+    freeDesignsCount?: number;
   } | null> {
     const now = Date.now();
     // Cache TTL 10 seconds for live responsiveness
@@ -1219,6 +1221,9 @@ export class SyncEngine {
       const p = page || await this.getAmazonPage();
 
       const result = await p.evaluate(async () => {
+        let liveDesigns: number | null = null;
+        let freeDesigns: number | null = null;
+
         // Method 1: Amazon Native Ratelimiter JSON API
         try {
           const res = await fetch('/api/ratelimiter/metadata', {
@@ -1227,8 +1232,22 @@ export class SyncEngine {
           });
           if (res.ok) {
             const data = await res.json();
-            if (data && (data.dailyProduct || data.dailyDesign || data.tier)) {
-              return { type: 'api', data };
+            if (data && (data.dailyProduct || data.dailyDesign || data.tier || data.overallDesign || data.overallProduct)) {
+              const overall = data.overallDesign || data.overallProduct || data.totalDesign || data.totalProduct;
+              if (overall) {
+                if (typeof overall.count === 'number') liveDesigns = overall.count;
+                if (typeof overall.limit === 'number' && liveDesigns !== null) {
+                  freeDesigns = Math.max(0, overall.limit - liveDesigns);
+                }
+              }
+              return { 
+                type: 'api', 
+                data: {
+                  ...data,
+                  liveDesigns,
+                  freeDesigns
+                } 
+              };
             }
           }
         } catch (e) {}
@@ -1239,8 +1258,9 @@ export class SyncEngine {
           let total: number | null = null;
           let tier: number | null = null;
 
-          // 2A: Check Productor DOM (e.g. <div class="text-sm mb-1">Uploaded</div> ... <div class="font-weight-bold">80 / 200</div>)
           const allElements = Array.from(document.querySelectorAll('*'));
+
+          // 2A: Check Productor "Uploaded" Card (<div class="text-sm mb-1">Uploaded</div> ... <div class="font-weight-bold">80 / 200</div>)
           const uploadedHeader = allElements.find(el => (el.textContent || '').trim().toLowerCase() === 'uploaded');
           if (uploadedHeader) {
             const container = uploadedHeader.closest('.media-body') || uploadedHeader.closest('.media') || uploadedHeader.parentElement;
@@ -1254,7 +1274,31 @@ export class SyncEngine {
             }
           }
 
-          // 2B: Check Productor progress bar
+          // 2B: Check Productor "Designs" Card (<div><div class="text-sm mb-1">Designs</div><h3 class="my-0">1.987</h3><div class="text-sm text-muted">Free: <br>13</div></div>)
+          const designsHeader = allElements.find(el => {
+            const t = (el.textContent || '').trim().toLowerCase();
+            return t === 'designs' || t === 'live designs';
+          });
+          if (designsHeader) {
+            const container = designsHeader.closest('.media-body') || designsHeader.closest('.media') || designsHeader.parentElement;
+            if (container) {
+              const countEl = container.querySelector('h1, h2, h3, h4, .font-weight-bold, .my-0') || container;
+              if (countEl && countEl.textContent) {
+                const match = countEl.textContent.match(/([0-9,.]+)/);
+                if (match) {
+                  liveDesigns = parseInt(match[1].replace(/[,.]/g, ''), 10);
+                }
+              }
+
+              const containerText = container.textContent || '';
+              const freeMatch = containerText.match(/Free\s*:?\s*([0-9,.]+)/i) || containerText.match(/Frei\s*:?\s*([0-9,.]+)/i);
+              if (freeMatch) {
+                freeDesigns = parseInt(freeMatch[1].replace(/[,.]/g, ''), 10);
+              }
+            }
+          }
+
+          // 2C: Check Productor progress bar for uploaded slots
           if (used === null || total === null) {
             const progressBar = document.querySelector('.progress-bar.bg-productor, .progress-bar[aria-valuemax]') as HTMLElement;
             if (progressBar) {
@@ -1262,7 +1306,6 @@ export class SyncEngine {
               const nowVal = progressBar.getAttribute('aria-valuenow');
               if (max && nowVal) {
                 total = parseInt(max, 10);
-                // aria-valuenow is often a ratio or percentage
                 const ratio = parseFloat(nowVal);
                 if (ratio <= 1.0) {
                   used = Math.round(ratio * total);
@@ -1273,7 +1316,7 @@ export class SyncEngine {
             }
           }
 
-          // 2C: Full page regex text fallback (Productor & Native Dashboard)
+          // 2D: Full page regex text fallback (Productor & Native Dashboard)
           const pageText = document.body.innerText || '';
 
           if (used === null || total === null) {
@@ -1295,13 +1338,24 @@ export class SyncEngine {
             }
           }
 
-          // 2D: Tier match
+          if (liveDesigns === null) {
+            const dMatch = pageText.match(/Live\s*Designs\s*[:\n\r\s]*([0-9,.]+)/i) 
+              || pageText.match(/Designs\s*[:\n\r\s]*([0-9,.]+)/i)
+              || pageText.match(/([0-9,.]+)\s*Live\s*Designs/i);
+            if (dMatch) {
+              liveDesigns = parseInt(dMatch[1].replace(/[,.]/g, ''), 10);
+            }
+          }
+
+          // 2E: Tier match
           const tierMatch = pageText.match(/Tier\s*:?\s*([0-9,.]+)/i) || pageText.match(/T\s*([0-9]{3,6})/i);
           if (tierMatch) {
             tier = parseInt(tierMatch[1].replace(/[,.]/g, ''), 10);
+          } else if (liveDesigns !== null && freeDesigns !== null) {
+            tier = liveDesigns + freeDesigns;
           }
 
-          if (used !== null || total !== null || tier !== null) {
+          if (used !== null || total !== null || tier !== null || liveDesigns !== null) {
             return {
               type: 'dom',
               data: {
@@ -1309,6 +1363,8 @@ export class SyncEngine {
                   count: used ?? 0,
                   limit: total ?? 200
                 },
+                liveDesigns,
+                freeDesigns,
                 tier
               }
             };
@@ -1323,6 +1379,8 @@ export class SyncEngine {
         const used = d.dailyProduct?.count ?? d.dailyDesign?.count ?? 0;
         const total = d.dailyProduct?.limit ?? d.dailyDesign?.limit ?? 200;
         const tier = d.overallDesign?.limit ?? d.overallProduct?.limit ?? d.tier ?? d.maxProducts ?? d.totalProduct?.limit ?? d.tierLevel ?? null;
+        const liveDesigns = d.liveDesigns ?? d.overallDesign?.count ?? d.overallProduct?.count ?? null;
+        const freeDesigns = d.freeDesigns ?? (tier && liveDesigns ? Math.max(0, tier - liveDesigns) : null);
 
         const payload = {
           tier: typeof tier === 'number' ? tier : (tier ? parseInt(String(tier).replace(/[,.]/g, ''), 10) : undefined),
@@ -1330,8 +1388,14 @@ export class SyncEngine {
             used: Number(used) || 0,
             total: Number(total) || 200,
             free: Math.max(0, (Number(total) || 200) - (Number(used) || 0))
-          }
+          },
+          liveDesignsCount: typeof liveDesigns === 'number' && !isNaN(liveDesigns) ? liveDesigns : undefined,
+          freeDesignsCount: typeof freeDesigns === 'number' && !isNaN(freeDesigns) ? freeDesigns : undefined
         };
+
+        if (payload.liveDesignsCount !== undefined) {
+          this.state.liveDesignsCount = payload.liveDesignsCount;
+        }
 
         this.cachedRatelimiter = {
           data: payload,

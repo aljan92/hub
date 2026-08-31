@@ -197,13 +197,18 @@ async function refreshStatsInBackground() {
       QueueService.setDailySlots(liveSlots.free, liveSlots.used, liveSlots.total);
     }
 
+    const liveDesignsCount = (ratelimiter?.liveDesignsCount !== undefined && ratelimiter.liveDesignsCount !== null)
+      ? ratelimiter.liveDesignsCount
+      : (supabaseStats.liveDesigns > 0 ? supabaseStats.liveDesigns : cachedStats.liveDesignsCount);
+
     cachedStats = {
       tasksCount: TaskLogService.getAwaitingTasks().length,
       queueCount: QueueService.getActiveQueueCount(),
       slots: liveSlots,
       tier: lastKnownTier,
       designsCount: supabaseStats.totalDesigns,
-      liveDesignsCount: supabaseStats.liveDesigns,
+      liveDesignsCount,
+      freeDesignsCount: ratelimiter?.freeDesignsCount,
       unresolvedAsinsCount: supabaseStats.unresolvedAsins,
       sales30d: supabaseStats.sales30d,
       royalties30dEur: supabaseStats.royalties30dEur,
