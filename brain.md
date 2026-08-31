@@ -436,3 +436,12 @@ MBA HUB/
   - **Erweiterter Productor- & DOM-Parser:** Erkennt sowohl native Amazon Dashboard-Werte als auch Productor-Strukturen (`.media`, `.progress-bar.bg-productor`, `Uploaded 80 / 200`, `Published`, `Tier`).
   - **Schnellerer Cache:** Cache-TTL auf 10s verkürzt für maximale Aktualität.
   - **Manueller 1-Click Refresh:** In der Queue-Card (Tages-Uploads) befindet sich nun ein Refresh-Button (`POST /api/v1/queue/refresh-slots`), der sofort live die aktuellsten Slots von Amazon abruft.
+
+### 10.13 🎯 Granulare Marktplatz-Delta-Berechnung für Update-Tasks (`QueueService` & `AmazonInspectService`)
+- **Problemursache:**
+  - Zuvor wurde ein Produkt bei Update-Tasks binär als "bereits live" gewertet, wenn es auf mindestens einem Marktplatz (z. B. nur `US`) existierte. Dadurch wurden die fehlenden Marktplätze (`GB`, `DE`, `FR`, `IT`, `ES`) mit 0 Slots kalkuliert.
+- **Lösung & Delta-Matrix:**
+  - **API-Vorababfrage:** Über `AmazonInspectService.inspectProductConfig(designId)` (`/api/productconfiguration/get?id=...`) fragt der Bot vorab die genaue Amazon-Konfiguration mit `marketplaceData` für jedes Produkt ab.
+  - **Normalisierung der Marktplatz-Codes:** Codes wie `1`, `ATVPDKIKX0DER`, `com` werden sauber zu `US`, `GB`, `DE`, `FR`, `IT`, `ES`, `JP` standardisiert.
+  - **Marktplatz-Differenz (Delta):** Für jedes Katalogprodukt wird die Differenz zwischen Katalog-Marktplätzen und Live-Marktplätzen berechnet (`missingMps = catalogMps.filter(mp => !liveMps.includes(mp))`).
+  - **Exakter Slot-Bedarf:** `totalBaseSlots` und `activeProductsMap` reflektieren nun exakt die Anzahl und Ziel-Marktplätze der tatsächlich noch fehlenden Produkte/Marktplätze.

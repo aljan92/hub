@@ -285,18 +285,32 @@ export class AmazonInspectService {
     const bullets = masterListing.bullets || [];
     const description = masterListing.description || '';
 
+    // Helper to normalize Amazon marketplace codes to standard 2-letter country codes
+    const normalizeMarketplace = (raw: string): string => {
+      const s = String(raw).trim().toUpperCase();
+      if (['US', '1', 'COM', 'AMAZON.COM', 'ATVPDKIKX0DER'].includes(s)) return 'US';
+      if (['GB', 'UK', '3', 'CO.UK', 'AMAZON.CO.UK', 'A1F83G8C2ARO7P'].includes(s)) return 'GB';
+      if (['DE', '4', 'AMAZON.DE', 'A1PA6795UKMFR9'].includes(s)) return 'DE';
+      if (['FR', '5', 'AMAZON.FR', 'A13V1IB3VIYZZH'].includes(s)) return 'FR';
+      if (['IT', '6', 'AMAZON.IT', 'APJ6JRA9NG5V4'].includes(s)) return 'IT';
+      if (['ES', '7', 'AMAZON.ES', 'A1RKKUPIHCS9HS'].includes(s)) return 'ES';
+      if (['JP', '8', 'CO.JP', 'AMAZON.CO.JP', 'A1VC38T7YXB528'].includes(s)) return 'JP';
+      return s;
+    };
+
     // Collect products summary & calculate configured slots
     const products = configData.products || {};
     const productTypes = Object.keys(products);
     let totalConfiguredSlots = 0;
     const productSummary: Record<string, any> = {};
     for (const [pKey, pVal] of Object.entries<any>(products)) {
-      const marketplaces = Object.keys(pVal.marketplaceData || {});
-      totalConfiguredSlots += Math.max(1, marketplaces.length);
+      const rawMarketplaces = Object.keys(pVal.marketplaceData || {});
+      const normalizedMarketplaces = Array.from(new Set(rawMarketplaces.map(normalizeMarketplace)));
+      totalConfiguredSlots += Math.max(1, normalizedMarketplaces.length);
       productSummary[pKey] = {
         fits: pVal.dimensions?.FIT || [],
         colors: pVal.dimensions?.COLOR || [],
-        marketplaces,
+        marketplaces: normalizedMarketplaces,
         artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
       };
     }

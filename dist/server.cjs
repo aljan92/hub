@@ -220156,17 +220156,29 @@ var init_amazonInspectService = __esm2({
         const brand = masterListing.brandName || "";
         const bullets = masterListing.bullets || [];
         const description = masterListing.description || "";
+        const normalizeMarketplace = (raw) => {
+          const s = String(raw).trim().toUpperCase();
+          if (["US", "1", "COM", "AMAZON.COM", "ATVPDKIKX0DER"].includes(s)) return "US";
+          if (["GB", "UK", "3", "CO.UK", "AMAZON.CO.UK", "A1F83G8C2ARO7P"].includes(s)) return "GB";
+          if (["DE", "4", "AMAZON.DE", "A1PA6795UKMFR9"].includes(s)) return "DE";
+          if (["FR", "5", "AMAZON.FR", "A13V1IB3VIYZZH"].includes(s)) return "FR";
+          if (["IT", "6", "AMAZON.IT", "APJ6JRA9NG5V4"].includes(s)) return "IT";
+          if (["ES", "7", "AMAZON.ES", "A1RKKUPIHCS9HS"].includes(s)) return "ES";
+          if (["JP", "8", "CO.JP", "AMAZON.CO.JP", "A1VC38T7YXB528"].includes(s)) return "JP";
+          return s;
+        };
         const products = configData.products || {};
         const productTypes = Object.keys(products);
         let totalConfiguredSlots = 0;
         const productSummary = {};
         for (const [pKey, pVal] of Object.entries(products)) {
-          const marketplaces = Object.keys(pVal.marketplaceData || {});
-          totalConfiguredSlots += Math.max(1, marketplaces.length);
+          const rawMarketplaces = Object.keys(pVal.marketplaceData || {});
+          const normalizedMarketplaces = Array.from(new Set(rawMarketplaces.map(normalizeMarketplace)));
+          totalConfiguredSlots += Math.max(1, normalizedMarketplaces.length);
           productSummary[pKey] = {
             fits: pVal.dimensions?.FIT || [],
             colors: pVal.dimensions?.COLOR || [],
-            marketplaces,
+            marketplaces: normalizedMarketplaces,
             artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
           };
         }
@@ -221314,8 +221326,20 @@ var init_updateBackfillService = __esm2({
 // src/server/services/queueService.ts
 var queueService_exports = {};
 __export2(queueService_exports, {
-  QueueService: () => QueueService
+  QueueService: () => QueueService,
+  normalizeMarketplaceCode: () => normalizeMarketplaceCode
 });
+function normalizeMarketplaceCode(raw) {
+  const s = String(raw).trim().toUpperCase();
+  if (["US", "1", "COM", "AMAZON.COM", "ATVPDKIKX0DER"].includes(s)) return "US";
+  if (["GB", "UK", "3", "CO.UK", "AMAZON.CO.UK", "A1F83G8C2ARO7P"].includes(s)) return "GB";
+  if (["DE", "4", "AMAZON.DE", "A1PA6795UKMFR9"].includes(s)) return "DE";
+  if (["FR", "5", "AMAZON.FR", "A13V1IB3VIYZZH"].includes(s)) return "FR";
+  if (["IT", "6", "AMAZON.IT", "APJ6JRA9NG5V4"].includes(s)) return "IT";
+  if (["ES", "7", "AMAZON.ES", "A1RKKUPIHCS9HS"].includes(s)) return "ES";
+  if (["JP", "8", "CO.JP", "AMAZON.CO.JP", "A1VC38T7YXB528"].includes(s)) return "JP";
+  return s;
+}
 var import_fs80, import_path75, NON_US_DROP_ORDER, QueueService;
 var init_queueService = __esm2({
   "src/server/services/queueService.ts"() {
@@ -221672,14 +221696,38 @@ var init_queueService = __esm2({
         const tmBlocked = new Set((item.tmBlockedProductIds || []).map((id) => id.toUpperCase()));
         const activeProductsMap = {};
         let totalBaseSlots = 0;
-        for (const prod of catalog.products) {
-          if (tmBlocked.has(prod.id.toUpperCase())) continue;
-          const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ["US"];
-          activeProductsMap[prod.id] = mps;
-          totalBaseSlots += mps.length;
+        const liveSummary = item.liveProductSummary || item.liveStats?.productSummary || {};
+        const liveTypes = new Set((item.liveProductTypes || item.liveStats?.productTypes || []).map((t) => String(t).toUpperCase()));
+        const hasLiveDetail = Object.keys(liveSummary).length > 0 || liveTypes.size > 0;
+        if (isUpdate && hasLiveDetail) {
+          for (const prod of catalog.products) {
+            if (tmBlocked.has(prod.id.toUpperCase())) continue;
+            const prodId = prod.id;
+            const catalogMps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"];
+            const matchedSummaryKey = Object.keys(liveSummary).find(
+              (k) => k.toUpperCase() === prodId.toUpperCase() || k.toUpperCase().replace(/_/g, "") === prodId.toUpperCase().replace(/_/g, "")
+            );
+            const liveProductInfo = matchedSummaryKey ? liveSummary[matchedSummaryKey] : null;
+            let liveMps = [];
+            if (liveProductInfo && Array.isArray(liveProductInfo.marketplaces)) {
+              liveMps = liveProductInfo.marketplaces.map(normalizeMarketplaceCode);
+            } else if (liveTypes.has(prodId.toUpperCase())) {
+              liveMps = ["US"];
+            }
+            const missingMps = catalogMps.filter((mp) => !liveMps.includes(mp));
+            activeProductsMap[prod.id] = missingMps;
+            totalBaseSlots += missingMps.length;
+          }
+        } else {
+          for (const prod of catalog.products) {
+            if (tmBlocked.has(prod.id.toUpperCase())) continue;
+            const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ["US"];
+            activeProductsMap[prod.id] = mps;
+            totalBaseSlots += mps.length;
+          }
         }
         const alreadyPublished = item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 0;
-        const netSlots = isUpdate ? Math.max(0, totalBaseSlots - alreadyPublished) : totalBaseSlots;
+        const netSlots = isUpdate && !hasLiveDetail ? Math.max(0, totalBaseSlots - alreadyPublished) : totalBaseSlots;
         const newItem = {
           id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           taskId: item.taskId,
@@ -221956,19 +222004,34 @@ var init_queueService = __esm2({
           const liveTypes = new Set((uItem.liveProductTypes || []).map((t) => String(t).toUpperCase()));
           const hasLiveDetail = Object.keys(liveSummary).length > 0 || liveTypes.size > 0;
           let netSlots = 0;
+          const calculatedActiveMap = {};
           if (hasLiveDetail) {
             for (const prod of catalog.products) {
               if (tmBlocked.has(prod.id.toUpperCase())) continue;
               const prodId = prod.id;
-              const isLive = Boolean(liveSummary[prodId]) || liveTypes.has(prodId.toUpperCase());
-              if (!isLive) {
-                const mps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"];
-                netSlots += mps.length;
+              const catalogMps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"];
+              const matchedSummaryKey = Object.keys(liveSummary).find(
+                (k) => k.toUpperCase() === prodId.toUpperCase() || k.toUpperCase().replace(/_/g, "") === prodId.toUpperCase().replace(/_/g, "")
+              );
+              const liveProductInfo = matchedSummaryKey ? liveSummary[matchedSummaryKey] : null;
+              let liveMps = [];
+              if (liveProductInfo && Array.isArray(liveProductInfo.marketplaces)) {
+                liveMps = liveProductInfo.marketplaces.map(normalizeMarketplaceCode);
+              } else if (liveTypes.has(prodId.toUpperCase())) {
+                liveMps = ["US"];
               }
+              const missingMps = catalogMps.filter((mp) => !liveMps.includes(mp));
+              calculatedActiveMap[prod.id] = missingMps;
+              netSlots += missingMps.length;
             }
           } else {
             netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
+            for (const prod of catalog.products) {
+              if (tmBlocked.has(prod.id.toUpperCase())) continue;
+              calculatedActiveMap[prod.id] = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"];
+            }
           }
+          uItem.activeProductsMap = calculatedActiveMap;
           uItem.totalBaseSlots = netSlots;
           uItem.allocatedSlots = netSlots;
         }

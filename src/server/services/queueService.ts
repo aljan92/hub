@@ -78,6 +78,19 @@ export interface QueueState {
 // Strict drop sequence for non-US marketplaces within a droppable product
 const NON_US_DROP_ORDER = ['JP', 'ES', 'IT', 'FR', 'DE', 'GB'];
 
+// Helper to normalize marketplace codes across Amazon variants
+export function normalizeMarketplaceCode(raw: string): string {
+  const s = String(raw).trim().toUpperCase();
+  if (['US', '1', 'COM', 'AMAZON.COM', 'ATVPDKIKX0DER'].includes(s)) return 'US';
+  if (['GB', 'UK', '3', 'CO.UK', 'AMAZON.CO.UK', 'A1F83G8C2ARO7P'].includes(s)) return 'GB';
+  if (['DE', '4', 'AMAZON.DE', 'A1PA6795UKMFR9'].includes(s)) return 'DE';
+  if (['FR', '5', 'AMAZON.FR', 'A13V1IB3VIYZZH'].includes(s)) return 'FR';
+  if (['IT', '6', 'AMAZON.IT', 'APJ6JRA9NG5V4'].includes(s)) return 'IT';
+  if (['ES', '7', 'AMAZON.ES', 'A1RKKUPIHCS9HS'].includes(s)) return 'ES';
+  if (['JP', '8', 'CO.JP', 'AMAZON.CO.JP', 'A1VC38T7YXB528'].includes(s)) return 'JP';
+  return s;
+}
+
 export class QueueService {
   private static queueFilePath = path.resolve(process.cwd(), 'data', 'upload_queue.json');
   private static tasksLogPath = path.resolve(process.cwd(), 'data', 'tasks_log.json');
@@ -510,19 +523,50 @@ export class QueueService {
     const catalog = ProductCatalogService.getCatalog();
     const tmBlocked = new Set((item.tmBlockedProductIds || []).map(id => id.toUpperCase()));
     
-    // Build initial activeProductsMap with all non-blocked products
+    // Build initial activeProductsMap with non-blocked products and compute exact net slots
     const activeProductsMap: Record<string, string[]> = {};
     let totalBaseSlots = 0;
 
-    for (const prod of catalog.products) {
-      if (tmBlocked.has(prod.id.toUpperCase())) continue;
-      const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ['US'];
-      activeProductsMap[prod.id] = mps;
-      totalBaseSlots += mps.length;
+    const liveSummary = item.liveProductSummary || item.liveStats?.productSummary || {};
+    const liveTypes = new Set((item.liveProductTypes || item.liveStats?.productTypes || []).map((t: any) => String(t).toUpperCase()));
+    const hasLiveDetail = Object.keys(liveSummary).length > 0 || liveTypes.size > 0;
+
+    if (isUpdate && hasLiveDetail) {
+      for (const prod of catalog.products) {
+        if (tmBlocked.has(prod.id.toUpperCase())) continue;
+        const prodId = prod.id;
+        const catalogMps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US'];
+
+        // Find live summary for this product
+        const matchedSummaryKey = Object.keys(liveSummary).find(k => 
+          k.toUpperCase() === prodId.toUpperCase() || 
+          k.toUpperCase().replace(/_/g, '') === prodId.toUpperCase().replace(/_/g, '')
+        );
+        const liveProductInfo = matchedSummaryKey ? liveSummary[matchedSummaryKey] : null;
+
+        let liveMps: string[] = [];
+        if (liveProductInfo && Array.isArray(liveProductInfo.marketplaces)) {
+          liveMps = liveProductInfo.marketplaces.map(normalizeMarketplaceCode);
+        } else if (liveTypes.has(prodId.toUpperCase())) {
+          liveMps = ['US'];
+        }
+
+        // Exact delta of missing marketplaces to be published
+        const missingMps = catalogMps.filter(mp => !liveMps.includes(mp));
+        activeProductsMap[prod.id] = missingMps;
+        totalBaseSlots += missingMps.length;
+      }
+    } else {
+      for (const prod of catalog.products) {
+        if (tmBlocked.has(prod.id.toUpperCase())) continue;
+        const mps = Array.isArray(prod.availableMarketplaces) ? [...prod.availableMarketplaces] : ['US'];
+        activeProductsMap[prod.id] = mps;
+        totalBaseSlots += mps.length;
+      }
     }
 
     const alreadyPublished = item.publishedProductsCount ?? item.liveStats?.publishedCount ?? 0;
-    const netSlots = isUpdate ? Math.max(0, totalBaseSlots - alreadyPublished) : totalBaseSlots;
+    const netSlots = (isUpdate && !hasLiveDetail) ? Math.max(0, totalBaseSlots - alreadyPublished) : totalBaseSlots;
 
     const newItem: QueueItem = {
       id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -876,20 +920,44 @@ export class QueueService {
       const hasLiveDetail = Object.keys(liveSummary).length > 0 || liveTypes.size > 0;
 
       let netSlots = 0;
+      const calculatedActiveMap: Record<string, string[]> = {};
+
       if (hasLiveDetail) {
         for (const prod of catalog.products) {
           if (tmBlocked.has(prod.id.toUpperCase())) continue;
           const prodId = prod.id;
-          const isLive = Boolean(liveSummary[prodId]) || liveTypes.has(prodId.toUpperCase());
-          if (!isLive) {
-            const mps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US'];
-            netSlots += mps.length;
+          const catalogMps = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US'];
+
+          // 1. Find live summary for this product
+          const matchedSummaryKey = Object.keys(liveSummary).find(k => 
+            k.toUpperCase() === prodId.toUpperCase() || 
+            k.toUpperCase().replace(/_/g, '') === prodId.toUpperCase().replace(/_/g, '')
+          );
+          const liveProductInfo = matchedSummaryKey ? liveSummary[matchedSummaryKey] : null;
+
+          let liveMps: string[] = [];
+          if (liveProductInfo && Array.isArray(liveProductInfo.marketplaces)) {
+            liveMps = liveProductInfo.marketplaces.map(normalizeMarketplaceCode);
+          } else if (liveTypes.has(prodId.toUpperCase())) {
+            // Product is live but no marketplace breakdown -> assume only existing marketplaces are live
+            liveMps = ['US'];
           }
+
+          // 2. Exact delta of missing marketplaces that need to be newly uploaded/added
+          const missingMps = catalogMps.filter(mp => !liveMps.includes(mp));
+
+          calculatedActiveMap[prod.id] = missingMps;
+          netSlots += missingMps.length;
         }
       } else {
         netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
+        for (const prod of catalog.products) {
+          if (tmBlocked.has(prod.id.toUpperCase())) continue;
+          calculatedActiveMap[prod.id] = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US'];
+        }
       }
 
+      uItem.activeProductsMap = calculatedActiveMap;
       uItem.totalBaseSlots = netSlots;
       uItem.allocatedSlots = netSlots;
     }
