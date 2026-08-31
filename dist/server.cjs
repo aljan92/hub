@@ -51929,12 +51929,22 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
             if (this.cachedPrompts) {
               if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
               if (!this.cachedPrompts.designAnalyzer) this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
-              if (!this.cachedPrompts.listingGenerator) this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes("INTERNAL SEO RESEARCH")) {
+                this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+              }
               if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
               if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-              if (!this.cachedPrompts.updateVisionAnalyzer) this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
-              if (!this.cachedPrompts.updateListingRewriter) this.cachedPrompts.updateListingRewriter = DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes("listing_audit") || !this.cachedPrompts.updateVisionAnalyzer.includes("2x2 COLOR GRID")) {
+                this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
+              }
+              if (!this.cachedPrompts.updateListingRewriter || !this.cachedPrompts.updateListingRewriter.includes("INTERNAL SEO RESEARCH")) {
+                this.cachedPrompts.updateListingRewriter = DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+              }
               if (!this.cachedPrompts.updateLocalizationTranslator) this.cachedPrompts.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
+              try {
+                import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
+              } catch (e) {
+              }
               return this.cachedPrompts;
             }
           } catch (e) {
@@ -220322,8 +220332,8 @@ var init_updatePipelineService = __esm2({
         let gridPreviewUrl;
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const mbaPath = import_path73.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath = import_path73.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs79.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs79.default.existsSync(mbaPath) ? mbaPath : import_fs79.default.existsSync(rawPath) ? rawPath : null;
+        const rawPath2 = import_path73.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const targetPath = task.localMbaPngPath && import_fs79.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs79.default.existsSync(mbaPath) ? mbaPath : import_fs79.default.existsSync(rawPath2) ? rawPath2 : null;
         const gridOutputPath = import_path73.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
         if (targetPath) {
           try {
@@ -220499,8 +220509,8 @@ Bullets: ${oldBullets}`
         let originalImageBase64;
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const mbaPath = import_path73.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath = import_path73.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs79.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs79.default.existsSync(mbaPath) ? mbaPath : import_fs79.default.existsSync(rawPath) ? rawPath : null;
+        const rawPath2 = import_path73.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const targetPath = task.localMbaPngPath && import_fs79.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs79.default.existsSync(mbaPath) ? mbaPath : import_fs79.default.existsSync(rawPath2) ? rawPath2 : null;
         if (targetPath && import_fs79.default.existsSync(targetPath)) {
           try {
             const buf = import_fs79.default.readFileSync(targetPath);
@@ -225784,6 +225794,7 @@ var DesignPipelineService = class {
 // src/server/index.ts
 init_trademarkWhitelistService();
 init_updateBackfillService();
+init_visionOptimizationService();
 var import_meta = {};
 import_dotenv.default.config();
 var currentDir = typeof __dirname !== "undefined" ? __dirname : import_path78.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
@@ -226767,15 +226778,37 @@ app.get("/api/v1/designs/image/:taskId", (req, res) => {
   }
   res.status(404).send("Design image not found");
 });
-app.get("/api/v1/designs/grid2x2/:taskId", (req, res) => {
+app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const gridFilePath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   if (import_fs84.default.existsSync(gridFilePath)) {
-    res.setHeader("Content-Type", "image/jpeg");
-    return import_fs84.default.createReadStream(gridFilePath).pipe(res);
+    try {
+      const stats2 = import_fs84.default.statSync(gridFilePath);
+      if (stats2.size > 1e3) {
+        res.setHeader("Content-Type", "image/jpeg");
+        return import_fs84.default.createReadStream(gridFilePath).pipe(res);
+      }
+    } catch (e) {
+    }
+  }
+  const mbaFilePath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const task = TaskLogService2.getTaskLogById(req.params.taskId);
+  const targetPath = task?.localMbaPngPath && import_fs84.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs84.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs84.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs84.default.existsSync(rawPath) ? rawPath : null;
+  if (targetPath) {
+    try {
+      console.log(`[API] Erzeuge 2x2 Grid f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
+      const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
+      if (savedPath && import_fs84.default.existsSync(savedPath)) {
+        res.setHeader("Content-Type", "image/jpeg");
+        return import_fs84.default.createReadStream(savedPath).pipe(res);
+      }
+    } catch (e) {
+      console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
+    }
   }
   res.redirect(`/api/v1/designs/image/${encodeURIComponent(req.params.taskId)}`);
 });

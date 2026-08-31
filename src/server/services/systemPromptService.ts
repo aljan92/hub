@@ -960,12 +960,23 @@ export class SystemPromptService {
         if (this.cachedPrompts) {
           if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
           if (!this.cachedPrompts.designAnalyzer) this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
-          if (!this.cachedPrompts.listingGenerator) this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes('INTERNAL SEO RESEARCH')) {
+            this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+          }
           if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_AUDITOR_SYSTEM_PROMPT;
           if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-          if (!this.cachedPrompts.updateVisionAnalyzer) this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
-          if (!this.cachedPrompts.updateListingRewriter) this.cachedPrompts.updateListingRewriter = DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes('listing_audit') || !this.cachedPrompts.updateVisionAnalyzer.includes('2x2 COLOR GRID')) {
+            this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
+          }
+          if (!this.cachedPrompts.updateListingRewriter || !this.cachedPrompts.updateListingRewriter.includes('INTERNAL SEO RESEARCH')) {
+            this.cachedPrompts.updateListingRewriter = DEFAULT_UPDATE_REWRITE_SYSTEM_PROMPT;
+          }
           if (!this.cachedPrompts.updateLocalizationTranslator) this.cachedPrompts.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
+
+          try {
+            fs.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), 'utf-8');
+          } catch (e) {}
+
           return this.cachedPrompts;
         }
       } catch (e) {

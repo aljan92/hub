@@ -29,6 +29,7 @@ import { UpdatePipelineService } from './services/updatePipelineService';
 import { DesignPipelineService } from './services/designPipelineService';
 import { TrademarkWhitelistService } from './services/trademarkWhitelistService';
 import { UpdateBackfillService } from './services/updateBackfillService';
+import { VisionOptimizationService } from './services/visionOptimizationService';
 
 dotenv.config();
 
@@ -1200,8 +1201,8 @@ app.get('/api/v1/designs/image/:taskId', (req, res) => {
   res.status(404).send('Design image not found');
 });
 
-// 8.3b Design 2x2 Grid Image Serving Endpoint
-app.get('/api/v1/designs/grid2x2/:taskId', (req, res) => {
+// 8.3b Design 2x2 Grid Image Serving Endpoint (with automatic on-demand generation)
+app.get('/api/v1/designs/grid2x2/:taskId', async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const gridFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_grid2x2.jpg`);
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
@@ -1209,11 +1210,39 @@ app.get('/api/v1/designs/grid2x2/:taskId', (req, res) => {
   res.setHeader('Expires', '0');
 
   if (fs.existsSync(gridFilePath)) {
-    res.setHeader('Content-Type', 'image/jpeg');
-    return fs.createReadStream(gridFilePath).pipe(res);
+    try {
+      const stats = fs.statSync(gridFilePath);
+      if (stats.size > 1000) {
+        res.setHeader('Content-Type', 'image/jpeg');
+        return fs.createReadStream(gridFilePath).pipe(res);
+      }
+    } catch (e) {}
   }
 
-  // Fallback to regular design image if grid doesn't exist
+  // Look for source master PNG to generate 2x2 grid on demand
+  const mbaFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+  const rawFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  const targetPath = (task?.localMbaPngPath && fs.existsSync(task.localMbaPngPath))
+    ? task.localMbaPngPath
+    : (task?.localImagePath && fs.existsSync(task.localImagePath))
+    ? task.localImagePath
+    : fs.existsSync(mbaFilePath) ? mbaFilePath : fs.existsSync(rawPath) ? rawPath : null;
+
+  if (targetPath) {
+    try {
+      console.log(`[API] Erzeuge 2x2 Grid für Task ${cleanId} on-demand aus ${targetPath}...`);
+      const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
+      if (savedPath && fs.existsSync(savedPath)) {
+        res.setHeader('Content-Type', 'image/jpeg');
+        return fs.createReadStream(savedPath).pipe(res);
+      }
+    } catch (e: any) {
+      console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen für ${cleanId}:`, e.message);
+    }
+  }
+
+  // Fallback to regular design image if master PNG not found
   res.redirect(`/api/v1/designs/image/${encodeURIComponent(req.params.taskId)}`);
 });
 

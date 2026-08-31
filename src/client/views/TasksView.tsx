@@ -1041,7 +1041,7 @@ export const TasksView: React.FC = () => {
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
-                              {activeTask.analysisResult?.listing_audit?.current_weaknesses || activeTask.analysisResult?.reasoning || 'Das bestehende Amazon-Listing wird auf die neue 25-Punkte SEO-Meisterformel aktualisiert.'}
+                              {activeTask.analysisResult?.listing_audit?.current_weaknesses || activeTask.analysisResult?.reasoning || activeTask.analysisResult?.target_group?.reason || 'Wird analysiert...'}
                             </p>
                           </div>
 
