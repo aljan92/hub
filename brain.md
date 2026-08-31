@@ -428,8 +428,11 @@ MBA HUB/
 - **Upload Worker Integration:**
   - Der Upload-Bot gleicht jedes Farbfeld im Amazon-DOM mit der `avoidRule` der entsprechenden Farbe im Produktkatalog ab. Ist z. B. `avoidColor === 'white'` und die Farbe hat `avoidRule: 'white'`, wird sie gezielt abgewählt, während alle anderen Farben aktiv bleiben.
 
-
-
-
-
-
+### 10.12 ⚡ Single Source of Truth & Live-Synchronisation für Amazon Upload Slots
+- **Hintergrund & Problemstellung:**
+  - Auf dem Dashboard und in der Queue wurden zuvor unterschiedliche Slot-Zahlen angezeigt, da `QueueService` nicht bei jedem Hintergrund-Sync mit den Live-Daten aus dem Amazon Ratelimiter/Dashboard synchronisiert wurde.
+- **Lösung & Architektur:**
+  - **Single Source of Truth:** `SyncEngine.fetchDashboardRatelimiter` aktualisiert bei jedem Durchlauf sowohl `dailySlotStats` als auch `QueueService.setDailySlots(free, used, total)` und löst sofort ein automatisches Rebalancing der Queue aus.
+  - **Erweiterter Productor- & DOM-Parser:** Erkennt sowohl native Amazon Dashboard-Werte als auch Productor-Strukturen (`.media`, `.progress-bar.bg-productor`, `Uploaded 80 / 200`, `Published`, `Tier`).
+  - **Schnellerer Cache:** Cache-TTL auf 10s verkürzt für maximale Aktualität.
+  - **Manueller 1-Click Refresh:** In der Queue-Card (Tages-Uploads) befindet sich nun ein Refresh-Button (`POST /api/v1/queue/refresh-slots`), der sofort live die aktuellsten Slots von Amazon abruft.

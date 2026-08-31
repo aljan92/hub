@@ -219205,33 +219205,100 @@ var init_syncEngine = __esm2({
       /**
        * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard in Session 1
        */
+      /**
+       * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard in Session 1
+       */
       static async fetchDashboardRatelimiter(page, forceRefresh = false) {
         const now = Date.now();
-        if (!forceRefresh && this.cachedRatelimiter && now - this.cachedRatelimiter.timestamp < 45e3) {
+        if (!forceRefresh && this.cachedRatelimiter && now - this.cachedRatelimiter.timestamp < 1e4) {
           return this.cachedRatelimiter.data;
         }
         try {
           const p = page || await this.getAmazonPage();
           const result2 = await p.evaluate(async () => {
             try {
-              const res = await fetch("https://merch.amazon.com/api/ratelimiter/metadata", {
+              const res = await fetch("/api/ratelimiter/metadata", {
                 credentials: "include",
                 headers: { "Accept": "application/json" }
               });
               if (res.ok) {
                 const data = await res.json();
-                return { type: "api", data };
+                if (data && (data.dailyProduct || data.dailyDesign || data.tier)) {
+                  return { type: "api", data };
+                }
               }
             } catch (e) {
             }
             try {
-              const text2 = document.body.innerText || "";
-              const tierMatch = text2.match(/Tier\s*:?\s*([0-9,.]+)/i);
-              const tier = tierMatch ? parseInt(tierMatch[1].replace(/[,.]/g, ""), 10) : null;
-              return { type: "dom", data: { tier } };
+              let used = null;
+              let total = null;
+              let tier = null;
+              const allElements = Array.from(document.querySelectorAll("*"));
+              const uploadedHeader = allElements.find((el) => (el.textContent || "").trim().toLowerCase() === "uploaded");
+              if (uploadedHeader) {
+                const container = uploadedHeader.closest(".media-body") || uploadedHeader.closest(".media") || uploadedHeader.parentElement;
+                if (container) {
+                  const text2 = container.textContent || "";
+                  const match = text2.match(/(\d+)\s*\/\s*(\d+)/);
+                  if (match) {
+                    used = parseInt(match[1], 10);
+                    total = parseInt(match[2], 10);
+                  }
+                }
+              }
+              if (used === null || total === null) {
+                const progressBar = document.querySelector(".progress-bar.bg-productor, .progress-bar[aria-valuemax]");
+                if (progressBar) {
+                  const max = progressBar.getAttribute("aria-valuemax");
+                  const nowVal = progressBar.getAttribute("aria-valuenow");
+                  if (max && nowVal) {
+                    total = parseInt(max, 10);
+                    const ratio = parseFloat(nowVal);
+                    if (ratio <= 1) {
+                      used = Math.round(ratio * total);
+                    } else {
+                      used = Math.round(ratio);
+                    }
+                  }
+                }
+              }
+              const pageText = document.body.innerText || "";
+              if (used === null || total === null) {
+                const slotMatches = [
+                  /Uploaded\s*[:\n\r\s]*(\d+)\s*\/\s*(\d+)/i,
+                  /Published\s*[:\n\r\s]*(\d+)\s*\/\s*(\d+)/i,
+                  /Daily\s*Upload\s*Limit\s*[:\n\r\s]*(\d+)\s*\/\s*(\d+)/i,
+                  /(\d+)\s*\/\s*(\d+)\s*(?:Uploaded|Published|Uploads)/i,
+                  /(\d+)\s*von\s*(\d+)\s*(?:verwendet|hochgeladen)/i
+                ];
+                for (const rgx of slotMatches) {
+                  const m = pageText.match(rgx);
+                  if (m) {
+                    used = parseInt(m[1], 10);
+                    total = parseInt(m[2], 10);
+                    break;
+                  }
+                }
+              }
+              const tierMatch = pageText.match(/Tier\s*:?\s*([0-9,.]+)/i) || pageText.match(/T\s*([0-9]{3,6})/i);
+              if (tierMatch) {
+                tier = parseInt(tierMatch[1].replace(/[,.]/g, ""), 10);
+              }
+              if (used !== null || total !== null || tier !== null) {
+                return {
+                  type: "dom",
+                  data: {
+                    dailyProduct: {
+                      count: used ?? 0,
+                      limit: total ?? 200
+                    },
+                    tier
+                  }
+                };
+              }
             } catch (e) {
-              return null;
             }
+            return null;
           });
           if (result2?.data) {
             const d = result2.data;
@@ -226266,6 +226333,10 @@ async function refreshStatsInBackground() {
       lastKnownTier = ratelimiter.tier;
     }
     const liveSlots = ratelimiter?.slots || dailySlotStats;
+    if (liveSlots) {
+      dailySlotStats = liveSlots;
+      QueueService.setDailySlots(liveSlots.free, liveSlots.used, liveSlots.total);
+    }
     cachedStats = {
       tasksCount: TaskLogService2.getAwaitingTasks().length,
       queueCount: QueueService.getActiveQueueCount(),
@@ -227562,6 +227633,20 @@ app.delete("/api/v1/queue", (req, res) => {
     QueueService.clearQueue(onlyCompleted);
     const state = QueueService.getState();
     res.json({ success: true, state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/queue/refresh-slots", async (req, res) => {
+  try {
+    const ratelimiter = await SyncEngine.fetchDashboardRatelimiter(void 0, true);
+    if (ratelimiter?.slots) {
+      dailySlotStats = ratelimiter.slots;
+      QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
+    }
+    const queueState = QueueService.getState();
+    const stats2 = { ...cachedStats, slots: ratelimiter?.slots || dailySlotStats };
+    res.json({ success: true, slots: ratelimiter?.slots || dailySlotStats, queueState, stats: stats2 });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

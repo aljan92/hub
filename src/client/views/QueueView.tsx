@@ -157,6 +157,22 @@ export const QueueView: React.FC = () => {
   const [globalMode, setGlobalMode] = useState<'live' | 'draft' | 'hybrid'>('draft');
   const [isScreencastOpen, setIsScreencastOpen] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
+  const [isRefreshingSlots, setIsRefreshingSlots] = useState<boolean>(false);
+
+  const handleRefreshSlots = async () => {
+    setIsRefreshingSlots(true);
+    try {
+      const res = await fetch('/api/v1/queue/refresh-slots', { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.queueState) {
+        setQueueState(data.queueState);
+      }
+    } catch (err) {
+      console.warn('[Queue] Refresh slots error:', err);
+    } finally {
+      setIsRefreshingSlots(false);
+    }
+  };
 
   // Pause Before Publish Toggle (Inspection Mode for Updates & Live Uploads)
   const [pauseBeforePublish, setPauseBeforePublish] = useState<boolean>(() => {
@@ -922,7 +938,17 @@ export const QueueView: React.FC = () => {
             <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
                 <span className="font-medium">Tages-Uploads (Amazon)</span>
-                <Layers className="w-4 h-4 text-accent-cyan" />
+                <div className="flex items-center space-x-1.5">
+                  <button
+                    onClick={handleRefreshSlots}
+                    disabled={isRefreshingSlots}
+                    className={`p-1 rounded-md hover:bg-slate-800 text-slate-400 hover:text-accent-cyan transition-all ${isRefreshingSlots ? 'animate-spin text-accent-cyan' : ''}`}
+                    title="Live-Slots von Amazon Merch aktualisieren"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                  <Layers className="w-4 h-4 text-accent-cyan" />
+                </div>
               </div>
               <div className="flex items-baseline space-x-2">
                 <span className="text-2xl font-bold text-slate-100 font-mono">

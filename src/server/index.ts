@@ -191,6 +191,12 @@ async function refreshStatsInBackground() {
     }
     const liveSlots = ratelimiter?.slots || dailySlotStats;
 
+    // Synchronize QueueService and dailySlotStats with live slots from Amazon
+    if (liveSlots) {
+      dailySlotStats = liveSlots;
+      QueueService.setDailySlots(liveSlots.free, liveSlots.used, liveSlots.total);
+    }
+
     cachedStats = {
       tasksCount: TaskLogService.getAwaitingTasks().length,
       queueCount: QueueService.getActiveQueueCount(),
@@ -1726,6 +1732,22 @@ app.delete('/api/v1/queue', (req, res) => {
     QueueService.clearQueue(onlyCompleted);
     const state = QueueService.getState();
     res.json({ success: true, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Force Refresh Daily Slots from Amazon Merch in Session 1
+app.post('/api/v1/queue/refresh-slots', async (req, res) => {
+  try {
+    const ratelimiter = await SyncEngine.fetchDashboardRatelimiter(undefined, true);
+    if (ratelimiter?.slots) {
+      dailySlotStats = ratelimiter.slots;
+      QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
+    }
+    const queueState = QueueService.getState();
+    const stats = { ...cachedStats, slots: ratelimiter?.slots || dailySlotStats };
+    res.json({ success: true, slots: ratelimiter?.slots || dailySlotStats, queueState, stats });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

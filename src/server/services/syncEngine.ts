@@ -1201,12 +1201,16 @@ export class SyncEngine {
   /**
    * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard in Session 1
    */
+  /**
+   * 10. Fetch Live Tier & Daily Upload Slots from Amazon Merch Ratelimiter API / Dashboard in Session 1
+   */
   public static async fetchDashboardRatelimiter(page?: any, forceRefresh = false): Promise<{
     tier?: number;
     slots: { used: number; total: number; free: number };
   } | null> {
     const now = Date.now();
-    if (!forceRefresh && this.cachedRatelimiter && (now - this.cachedRatelimiter.timestamp) < 45000) {
+    // Cache TTL 10 seconds for live responsiveness
+    if (!forceRefresh && this.cachedRatelimiter && (now - this.cachedRatelimiter.timestamp) < 10000) {
       return this.cachedRatelimiter.data;
     }
 
@@ -1215,26 +1219,103 @@ export class SyncEngine {
       const p = page || await this.getAmazonPage();
 
       const result = await p.evaluate(async () => {
+        // Method 1: Amazon Native Ratelimiter JSON API
         try {
-          const res = await fetch('https://merch.amazon.com/api/ratelimiter/metadata', {
+          const res = await fetch('/api/ratelimiter/metadata', {
             credentials: 'include',
             headers: { 'Accept': 'application/json' }
           });
           if (res.ok) {
             const data = await res.json();
-            return { type: 'api', data };
+            if (data && (data.dailyProduct || data.dailyDesign || data.tier)) {
+              return { type: 'api', data };
+            }
           }
         } catch (e) {}
 
-        // Fallback: Parse from Amazon Dashboard DOM
+        // Method 2: Parse Productor or Amazon Dashboard DOM Elements
         try {
-          const text = document.body.innerText || '';
-          const tierMatch = text.match(/Tier\s*:?\s*([0-9,.]+)/i);
-          const tier = tierMatch ? parseInt(tierMatch[1].replace(/[,.]/g, ''), 10) : null;
-          return { type: 'dom', data: { tier } };
-        } catch (e) {
-          return null;
-        }
+          let used: number | null = null;
+          let total: number | null = null;
+          let tier: number | null = null;
+
+          // 2A: Check Productor DOM (e.g. <div class="text-sm mb-1">Uploaded</div> ... <div class="font-weight-bold">80 / 200</div>)
+          const allElements = Array.from(document.querySelectorAll('*'));
+          const uploadedHeader = allElements.find(el => (el.textContent || '').trim().toLowerCase() === 'uploaded');
+          if (uploadedHeader) {
+            const container = uploadedHeader.closest('.media-body') || uploadedHeader.closest('.media') || uploadedHeader.parentElement;
+            if (container) {
+              const text = container.textContent || '';
+              const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+              if (match) {
+                used = parseInt(match[1], 10);
+                total = parseInt(match[2], 10);
+              }
+            }
+          }
+
+          // 2B: Check Productor progress bar
+          if (used === null || total === null) {
+            const progressBar = document.querySelector('.progress-bar.bg-productor, .progress-bar[aria-valuemax]') as HTMLElement;
+            if (progressBar) {
+              const max = progressBar.getAttribute('aria-valuemax');
+              const nowVal = progressBar.getAttribute('aria-valuenow');
+              if (max && nowVal) {
+                total = parseInt(max, 10);
+                // aria-valuenow is often a ratio or percentage
+                const ratio = parseFloat(nowVal);
+                if (ratio <= 1.0) {
+                  used = Math.round(ratio * total);
+                } else {
+                  used = Math.round(ratio);
+                }
+              }
+            }
+          }
+
+          // 2C: Full page regex text fallback (Productor & Native Dashboard)
+          const pageText = document.body.innerText || '';
+
+          if (used === null || total === null) {
+            const slotMatches = [
+              /Uploaded\s*[:\n\r\s]*(\d+)\s*\/\s*(\d+)/i,
+              /Published\s*[:\n\r\s]*(\d+)\s*\/\s*(\d+)/i,
+              /Daily\s*Upload\s*Limit\s*[:\n\r\s]*(\d+)\s*\/\s*(\d+)/i,
+              /(\d+)\s*\/\s*(\d+)\s*(?:Uploaded|Published|Uploads)/i,
+              /(\d+)\s*von\s*(\d+)\s*(?:verwendet|hochgeladen)/i
+            ];
+
+            for (const rgx of slotMatches) {
+              const m = pageText.match(rgx);
+              if (m) {
+                used = parseInt(m[1], 10);
+                total = parseInt(m[2], 10);
+                break;
+              }
+            }
+          }
+
+          // 2D: Tier match
+          const tierMatch = pageText.match(/Tier\s*:?\s*([0-9,.]+)/i) || pageText.match(/T\s*([0-9]{3,6})/i);
+          if (tierMatch) {
+            tier = parseInt(tierMatch[1].replace(/[,.]/g, ''), 10);
+          }
+
+          if (used !== null || total !== null || tier !== null) {
+            return {
+              type: 'dom',
+              data: {
+                dailyProduct: {
+                  count: used ?? 0,
+                  limit: total ?? 200
+                },
+                tier
+              }
+            };
+          }
+        } catch (e) {}
+
+        return null;
       });
 
       if (result?.data) {
