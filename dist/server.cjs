@@ -223851,6 +223851,9 @@ Beantworte die Analysefragen streng als JSON!`;
       static getTaskById(id) {
         return this.getTaskLogById(id);
       }
+      static getTask(id) {
+        return this.getTaskLogById(id);
+      }
       static clearTaskLogs() {
         this.inMemoryLogs = [];
         this.saveLogs([]);

@@ -1809,6 +1809,10 @@ export class TaskLogService {
     return this.getTaskLogById(id);
   }
 
+  static getTask(id: string): DesignTaskLog | undefined {
+    return this.getTaskLogById(id);
+  }
+
   static clearTaskLogs() {
     this.inMemoryLogs = [];
     this.saveLogs([]);
