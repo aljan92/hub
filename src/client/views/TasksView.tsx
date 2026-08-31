@@ -234,6 +234,61 @@ export const TasksView: React.FC = () => {
     return { brand, title, bullet1, bullet2, description };
   };
 
+  // Helper to extract old Amazon listing safely for UPDATE tasks
+  const extractOldAmazonListing = (task?: DesignTaskLog) => {
+    if (!task || !task.payload) return { brand: '-', title: '-', bullet1: '-', bullet2: '-', description: '-' };
+    const p = task.payload;
+    const ml = p.masterListing || (p.textData ? (p.textData.en || p.textData.de || Object.values(p.textData)[0]) : {}) || {};
+
+    const brand = ml.brandName || ml.brand || p.brand || '-';
+    const title = ml.title || p.title || '-';
+    
+    let b1 = '';
+    let b2 = '';
+    if (Array.isArray(ml.bullets) && ml.bullets.length > 0) {
+      b1 = ml.bullets[0] || '';
+      b2 = ml.bullets[1] || '';
+    } else if (Array.isArray(p.bullets) && p.bullets.length > 0) {
+      b1 = p.bullets[0] || '';
+      b2 = p.bullets[1] || '';
+    } else {
+      b1 = p.bullet1 || ml.bullet1 || '';
+      b2 = p.bullet2 || ml.bullet2 || '';
+    }
+
+    const description = ml.description || p.description || '-';
+
+    return {
+      brand: brand || '-',
+      title: title || '-',
+      bullet1: b1 || '-',
+      bullet2: b2 || '-',
+      description: description || '-'
+    };
+  };
+
+  // Helper to format AI Fit Types for display
+  const getAiFitTypesDisplay = (task?: DesignTaskLog) => {
+    if (!task) return 'Men, Women, Youth';
+    const tg = task.analysisResult?.target_group?.selected;
+    if (Array.isArray(tg) && tg.length > 0) return tg.join(', ');
+    if (typeof tg === 'string' && tg.trim()) return tg;
+    const ft = task.analysisResult?.fitTypes;
+    if (Array.isArray(ft) && ft.length > 0) return ft.join(', ');
+    if (typeof ft === 'string' && ft.trim() && ft !== 'Standard') return ft;
+    return 'Men, Women, Youth';
+  };
+
+  // Helper to format AI Avoid Color for display
+  const getAiAvoidColorDisplay = (task?: DesignTaskLog) => {
+    if (!task) return 'None';
+    const av = task.analysisResult?.avoid_product_colors?.avoid || task.analysisResult?.avoidColor;
+    if (av && av.toLowerCase() !== 'none') {
+      return av.charAt(0).toUpperCase() + av.slice(1).toLowerCase();
+    }
+    return 'None';
+  };
+
   // Fetch Tasks
   const fetchTasks = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
@@ -325,18 +380,18 @@ export const TasksView: React.FC = () => {
       
       // 2. Audience multi-selection (Men, Women, Youth) - Case Insensitive Normalization
       let rawAudList: string[] = [];
-      if (activeTask.customAnswers?.audience) {
+      if (activeTask.customAnswers?.audience && activeTask.customAnswers.audience !== 'Standard') {
         rawAudList = Array.isArray(activeTask.customAnswers.audience)
           ? activeTask.customAnswers.audience
           : String(activeTask.customAnswers.audience).split(',');
-      } else if (pred?.fitTypes) {
-        rawAudList = Array.isArray(pred.fitTypes)
-          ? pred.fitTypes
-          : String(pred.fitTypes).split(',');
       } else if (pred?.target_group?.selected) {
         rawAudList = Array.isArray(pred.target_group.selected)
           ? pred.target_group.selected
           : String(pred.target_group.selected).split(',');
+      } else if (pred?.fitTypes && pred.fitTypes !== 'Standard') {
+        rawAudList = Array.isArray(pred.fitTypes)
+          ? pred.fitTypes
+          : String(pred.fitTypes).split(',');
       }
 
       const normalizeAudienceName = (raw: string) => {
@@ -344,10 +399,10 @@ export const TasksView: React.FC = () => {
         if (low === 'men' || low === 'männer' || low === 'herren') return 'Men';
         if (low === 'women' || low === 'frauen' || low === 'damen') return 'Women';
         if (low === 'youth' || low === 'kinder' || low === 'kids' || low === 'jugend') return 'Youth';
-        return raw.trim().charAt(0).toUpperCase() + raw.trim().slice(1);
+        return null;
       };
 
-      const audiences = rawAudList.map(s => normalizeAudienceName(s)).filter(Boolean);
+      const audiences = rawAudList.map(s => normalizeAudienceName(s)).filter((s): s is string => Boolean(s));
       setSelectedAudiences(audiences.length > 0 ? Array.from(new Set(audiences)) : ['Men', 'Women', 'Youth']);
 
       // 3. Avoid Color (Black, White, None)
@@ -907,10 +962,10 @@ export const TasksView: React.FC = () => {
                     {activeTask.source === 'UPDATE' ? (
                       /* UPDATE WORKFLOW: VISION AUDIT, FIT-TYPES & AVOID-COLOR */
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-                        {/* Left: 2x2 Grid / Master Artwork Preview & Original Listing (5 cols) */}
-                        <div className="md:col-span-5 space-y-2.5">
+                        {/* Left: 2x2 Grid / Master Artwork Preview & Original Amazon Listing (5 cols) */}
+                        <div className="md:col-span-5 space-y-3">
                           {/* Image Preview Card with Grid Toggle */}
-                          <div className="bg-slate-950 p-2.5 rounded-xl border border-teal-500/40 space-y-2">
+                          <div className="bg-slate-950 p-2.5 rounded-xl border border-teal-500/40 space-y-2 shadow-sm">
                             <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
                               <span className="flex items-center gap-1.5 text-teal-400">
                                 <Sparkles className="w-3.5 h-3.5" />
@@ -920,7 +975,7 @@ export const TasksView: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => setViewModeGrid(true)}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                                  className={`px-2.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
                                     viewModeGrid ? 'bg-teal-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
                                   }`}
                                 >
@@ -929,7 +984,7 @@ export const TasksView: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => setViewModeGrid(false)}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                                  className={`px-2.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
                                     !viewModeGrid ? 'bg-teal-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
                                   }`}
                                 >
@@ -977,80 +1032,146 @@ export const TasksView: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Original Amazon Listing Card */}
-                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5 text-xs">
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Bestehendes Amazon-Listing:</span>
-                            <div className="font-semibold text-slate-200">{activeTask.payload?.title || '-'}</div>
-                            <div className="text-[11px] text-slate-400">Brand: {activeTask.payload?.brand || '-'}</div>
-                          </div>
+                          {/* Original Amazon Listing Card: Brand, Title, Bullets, Description */}
+                          {(() => {
+                            const oldListing = extractOldAmazonListing(activeTask);
+                            return (
+                              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2.5 text-xs shadow-sm">
+                                <div className="flex items-center justify-between border-b border-slate-850 pb-1.5">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <FileText className="w-3.5 h-3.5 text-teal-400" />
+                                    Bestehendes Amazon-Listing
+                                  </span>
+                                  <span className="text-[10px] font-mono text-slate-500">
+                                    {activeTask.payload?.designId ? `#${activeTask.payload.designId}` : ''}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <div>
+                                    <span className="text-[10px] font-medium text-slate-400 block mb-0.5">Brand / Marke:</span>
+                                    <div className="font-mono text-slate-200 bg-slate-900/90 px-2.5 py-1.5 rounded border border-slate-800 break-words text-xs">
+                                      {oldListing.brand}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <span className="text-[10px] font-medium text-slate-400 block mb-0.5">Title / Produkttitel:</span>
+                                    <div className="font-mono text-slate-100 bg-slate-900/90 px-2.5 py-1.5 rounded border border-slate-800 break-words leading-relaxed font-semibold text-xs">
+                                      {oldListing.title}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <span className="text-[10px] font-medium text-slate-400 block mb-0.5">Bullet 1:</span>
+                                    <div className="font-mono text-slate-300 bg-slate-900/90 px-2.5 py-1.5 rounded border border-slate-800 break-words leading-relaxed text-[11px]">
+                                      {oldListing.bullet1}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <span className="text-[10px] font-medium text-slate-400 block mb-0.5">Bullet 2:</span>
+                                    <div className="font-mono text-slate-300 bg-slate-900/90 px-2.5 py-1.5 rounded border border-slate-800 break-words leading-relaxed text-[11px]">
+                                      {oldListing.bullet2}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <span className="text-[10px] font-medium text-slate-400 block mb-0.5">Description / Beschreibung:</span>
+                                    <div className="font-mono text-slate-300 bg-slate-900/90 px-2.5 py-1.5 rounded border border-slate-800 break-words leading-relaxed text-[11px] max-h-24 overflow-y-auto">
+                                      {oldListing.description}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         {/* Right: Update Questions Matrix (7 cols) */}
-                        <div className="md:col-span-7 space-y-3">
+                        <div className="md:col-span-7 space-y-3.5">
                           <h4 className="text-xs font-semibold text-teal-300 uppercase tracking-wider flex items-center">
                             <Sliders className="w-3.5 h-3.5 mr-1.5 text-teal-400" />
                             Update-Audit &amp; Fragen
                           </h4>
 
-                          {/* Quality Check Card */}
-                          {activeTask.analysisResult?.design_quality && (
-                            <div className={`p-3 rounded-xl border space-y-1.5 ${
-                              activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE'
-                                ? 'bg-rose-500/10 border-rose-500/30'
-                                : 'bg-emerald-500/10 border-emerald-500/20'
-                            }`}>
-                              <div className="flex items-center justify-between text-xs">
-                                <span className={`font-semibold flex items-center gap-1.5 ${
-                                  activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE'
-                                    ? 'text-rose-300'
-                                    : 'text-emerald-300'
-                                }`}>
-                                  {activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE' ? (
-                                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                                  ) : (
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                                  )}
-                                  Design-Qualitätsprüfung (2x2 Grid)
-                                </span>
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                                  activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE'
-                                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                }`}>
-                                  {activeTask.analysisResult.design_quality.quality_verdict === 'DEFECTIVE' ? 'MANGELHAFT (DEFECTIVE)' : 'SAUBER (APPROVED)'}
-                                </span>
-                              </div>
-                              {activeTask.analysisResult.design_quality.quality_issues && (
-                                <p className="text-[11px] text-rose-200 leading-relaxed bg-slate-950/80 p-2 rounded-lg border border-rose-500/20 font-mono">
-                                  {activeTask.analysisResult.design_quality.quality_issues}
-                                </p>
-                              )}
-                            </div>
-                          )}
+                          {/* 1. Design Check */}
+                          {(() => {
+                            const qVerdict = activeTask.analysisResult?.design_quality?.quality_verdict;
+                            const isDefective = qVerdict === 'DEFECTIVE';
+                            const verdictLabel = isDefective ? 'MANGELHAFT (DEFECTIVE)' : 'APPROVED';
 
-                          {/* Question 1: Rewrite Needed & Reasoning */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">1. Listing-Rewrite Befund</span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                                (activeTask.analysisResult?.listing_audit?.rewrite_recommended ?? activeTask.analysisResult?.rewriteNeeded ?? true)
-                                  ? 'bg-teal-500/20 text-teal-300 border-teal-500/40' 
-                                  : 'bg-slate-500/20 text-slate-300 border-slate-500/40'
+                            return (
+                              <div className={`p-3.5 rounded-xl border space-y-2 transition-all ${
+                                isDefective ? 'bg-rose-950/20 border-rose-500/40' : 'bg-slate-900/90 border-slate-800'
                               }`}>
-                                {(activeTask.analysisResult?.listing_audit?.rewrite_recommended ?? activeTask.analysisResult?.rewriteNeeded ?? true) ? 'JA (Optimieren)' : 'NEIN (Beibehalten)'}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
-                              {activeTask.analysisResult?.listing_audit?.current_weaknesses || activeTask.analysisResult?.reasoning || activeTask.analysisResult?.target_group?.reason || 'Wird analysiert...'}
-                            </p>
-                          </div>
+                                <div className="flex items-center justify-between text-xs">
+                                  <div className="flex items-center gap-1.5 font-semibold text-slate-200">
+                                    {isDefective ? (
+                                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                                    ) : (
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                                    )}
+                                    <span>1. Design Check</span>
+                                  </div>
+                                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded border font-mono ${
+                                    isDefective
+                                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  }`}>
+                                    KI: {verdictLabel}
+                                  </span>
+                                </div>
 
-                          {/* Question 2: Target Group */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800/80 space-y-1.5 text-[11px]">
+                                  {isDefective && activeTask.analysisResult?.design_quality?.quality_issues ? (
+                                    <p className="text-rose-200 leading-relaxed font-mono">
+                                      {activeTask.analysisResult.design_quality.quality_issues}
+                                    </p>
+                                  ) : (
+                                    <p className="text-slate-300 leading-relaxed">
+                                      {activeTask.analysisResult?.design_quality?.quality_issues || 'Keine Schnittfehler, Kanten-Halos oder Bildartefakte auf den 4 Textilfarben erkannt. Motiv ist druckreif.'}
+                                    </p>
+                                  )}
+                                  {activeTask.analysisResult?.quote_check?.detected_quote && (
+                                    <div className="text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-850 flex items-center gap-1.5">
+                                      <span className="text-teal-400 font-semibold">Erkannter Text:</span>
+                                      <span className="text-slate-200 font-medium">"{activeTask.analysisResult.quote_check.detected_quote}"</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* 2. Listing-Rewrite Befund */}
+                          {(() => {
+                            const rewriteRecommended = activeTask.analysisResult?.listing_audit?.rewrite_recommended ?? activeTask.analysisResult?.rewriteNeeded ?? true;
+                            return (
+                              <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="font-semibold text-slate-200">2. Listing-Rewrite Befund</span>
+                                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded border font-mono ${
+                                    rewriteRecommended 
+                                      ? 'bg-teal-500/20 text-teal-300 border-teal-500/40' 
+                                      : 'bg-slate-500/20 text-slate-300 border-slate-500/40'
+                                  }`}>
+                                    KI: {rewriteRecommended ? 'JA (Optimieren)' : 'NEIN (Beibehalten)'}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2.5 rounded-lg border border-slate-800/80">
+                                  {activeTask.analysisResult?.listing_audit?.current_weaknesses || activeTask.analysisResult?.reasoning || 'Bestehendes Listing wird nach aktuellem MBA Master-SEO analysiert.'}
+                                </p>
+                              </div>
+                            );
+                          })()}
+
+                          {/* 3. Zielgruppe (Fit Types) */}
+                          <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
                             <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">2. Zielgruppe (Fit Types)</span>
-                              <span className="text-[10px] text-teal-400 font-mono">
-                                KI: {Array.isArray(activeTask.analysisResult?.fitTypes) ? activeTask.analysisResult.fitTypes.join(', ') : (activeTask.analysisResult?.fitTypes || 'Standard')}
+                              <span className="font-semibold text-slate-200">3. Zielgruppe (Fit Types)</span>
+                              <span className="text-[10px] text-teal-400 font-mono font-semibold bg-teal-500/10 px-2.5 py-0.5 rounded border border-teal-500/20">
+                                KI: {getAiFitTypesDisplay(activeTask)}
                               </span>
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -1061,12 +1182,13 @@ export const TasksView: React.FC = () => {
                                     key={val}
                                     type="button"
                                     onClick={() => toggleAudience(val)}
-                                    className={`px-3.5 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
+                                    className={`px-4 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
                                       isSelected 
-                                        ? 'bg-teal-600 text-white border-teal-500 font-semibold shadow'
+                                        ? 'bg-teal-600 text-white border-teal-500 font-semibold shadow-sm'
                                         : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
                                     }`}
                                   >
+                                    {isSelected && <Check className="w-3.5 h-3.5 mr-0.5" />}
                                     <span>{val}</span>
                                   </button>
                                 );
@@ -1074,17 +1196,17 @@ export const TasksView: React.FC = () => {
                             </div>
                             {activeTask.analysisResult?.target_group?.reason && (
                               <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
-                                💡 <strong className="text-teal-300">KI-Befund:</strong> {activeTask.analysisResult.target_group.reason}
+                                💡 <strong className="text-teal-300">Befund:</strong> {activeTask.analysisResult.target_group.reason}
                               </p>
                             )}
                           </div>
 
-                          {/* Question 3: Avoid Color */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                          {/* 4. Zu vermeidende Produktfarbe */}
+                          <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
                             <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">3. Zu vermeidende Produktfarbe</span>
-                              <span className="text-[10px] text-teal-400 font-mono">
-                                KI: {activeTask.analysisResult?.avoidColor || 'None'}
+                              <span className="font-semibold text-slate-200">4. Zu vermeidende Produktfarbe</span>
+                              <span className="text-[10px] text-teal-400 font-mono font-semibold bg-teal-500/10 px-2.5 py-0.5 rounded border border-teal-500/20">
+                                KI: {getAiAvoidColorDisplay(activeTask)}
                               </span>
                             </div>
                             <div className="flex gap-2">
@@ -1095,116 +1217,97 @@ export const TasksView: React.FC = () => {
                                     key={val}
                                     type="button"
                                     onClick={() => setSelectedAvoidColor(val)}
-                                    className={`px-4 py-1.5 text-xs rounded-lg border transition-all ${
+                                    className={`px-4 py-1.5 text-xs rounded-lg border transition-all flex items-center space-x-1.5 ${
                                       isSelected 
-                                        ? 'bg-teal-600 text-white border-teal-500 font-semibold shadow'
+                                        ? 'bg-teal-600 text-white border-teal-500 font-semibold shadow-sm'
                                         : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
                                     }`}
                                   >
-                                    {val}
+                                    {isSelected && <Check className="w-3.5 h-3.5 mr-0.5" />}
+                                    <span>{val}</span>
                                   </button>
                                 );
                               })}
                             </div>
                             {activeTask.analysisResult?.avoid_product_colors?.reason && (
                               <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
-                                💡 <strong className="text-teal-300">KI-Befund:</strong> {activeTask.analysisResult.avoid_product_colors.reason}
+                                💡 <strong className="text-teal-300">Befund:</strong> {activeTask.analysisResult.avoid_product_colors.reason}
                               </p>
                             )}
                           </div>
 
-                          {/* Question 4: Niche Hierarchy & Keywords for Update */}
-                          <div className="bg-slate-900/90 p-3 rounded-xl border border-teal-500/30 space-y-2.5">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-200">4. Nischen-Hierarchie &amp; SEO-Keywords</span>
-                              <span className="text-[10px] text-teal-400 font-mono font-semibold">Titel-Suffix Formel</span>
+                          {/* 5. Nischen-Hierarchie & SEO-Keywords */}
+                          <div className="bg-slate-900/90 p-3.5 rounded-xl border border-teal-500/30 space-y-3 shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-800 text-xs">
+                              <span className="font-semibold text-teal-300 flex items-center gap-1.5">
+                                <Bot className="w-3.5 h-3.5 text-teal-400" />
+                                5. Nischen-Hierarchie &amp; SEO-Keywords
+                              </span>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
+                                    const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
+                                    const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
+                                    if (aiN1) setEditNiche1(aiN1);
+                                    if (aiN2 && aiN2.toLowerCase() !== 'none') setEditNiche2(aiN2); else if (!aiN2 || aiN2.toLowerCase() === 'none') setEditNiche2('');
+                                    if (aiSub && aiSub.toLowerCase() !== 'none') setEditSubniche(aiSub); else if (!aiSub || aiSub.toLowerCase() === 'none') setEditSubniche('');
+                                  }}
+                                  className="px-2.5 py-1 rounded text-[10px] font-semibold bg-teal-500/10 text-teal-300 hover:bg-teal-500/20 border border-teal-500/30 transition-colors flex items-center gap-1"
+                                >
+                                  <Sparkles className="w-3 h-3" />
+                                  Von LLM übernehmen
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const hN1 = activeTask.payload?.niche1 || activeTask.payload?.niche || '';
+                                    const hN2 = activeTask.payload?.niche2 || '';
+                                    const hSub = activeTask.payload?.subniche || '';
+                                    const hKw = activeTask.payload?.keywords || activeTask.payload?.hermesKeywords || [];
+                                    if (hN1) setEditNiche1(hN1);
+                                    if (hN2 && hN2.toLowerCase() !== 'none') setEditNiche2(hN2); else if (!hN2 || hN2.toLowerCase() === 'none') setEditNiche2('');
+                                    if (hSub && hSub.toLowerCase() !== 'none') setEditSubniche(hSub); else if (!hSub || hSub.toLowerCase() === 'none') setEditSubniche('');
+                                    if (hKw.length > 0) setEditKeywords(Array.isArray(hKw) ? hKw.join(', ') : String(hKw));
+                                  }}
+                                  className="px-2.5 py-1 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors flex items-center gap-1"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  Von Hermes übernehmen
+                                </button>
+                              </div>
                             </div>
 
-                            {/* Quote check info if available */}
-                            {activeTask.analysisResult?.quote_check && (
-                              <div className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80 flex flex-wrap items-center justify-between gap-1 font-mono">
-                                <div>
-                                  🔍 <strong className="text-teal-300">Erkannter Text:</strong> "{activeTask.analysisResult.quote_check.detected_quote || activeTask.analysisResult.quote_check.requested_quote || '-'}"
-                                </div>
-                                {activeTask.analysisResult.quote_check.quote_matches !== undefined && (
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                                    activeTask.analysisResult.quote_check.quote_matches 
-                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
-                                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                  }`}>
-                                    {activeTask.analysisResult.quote_check.quote_matches ? 'Text exakt übereinstimmend' : 'Textabweichung'}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* AI vs Hermes Comparison Card */}
-                            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                              <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-850 text-xs">
-                                <span className="font-semibold text-teal-300 flex items-center gap-1.5 text-[11px]">
-                                  <Bot className="w-3.5 h-3.5 text-teal-400" />
-                                  KI-Befund vs. Amazon-Listing
+                            {/* Comparison Cards: Hermes (if present) vs LLM Recognition */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
+                              {/* Hermes / Original Nischen */}
+                              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                                <span className="text-[10px] text-purple-400 font-bold flex items-center gap-1">
+                                  <Sparkles className="w-3 h-3" /> Hermes-Nischen:
                                 </span>
-                                <div className="flex items-center space-x-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
-                                      const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
-                                      const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
-                                      if (aiN1) setEditNiche1(aiN1);
-                                      if (aiN2 && aiN2.toLowerCase() !== 'none') setEditNiche2(aiN2);
-                                      if (aiSub && aiSub.toLowerCase() !== 'none') setEditSubniche(aiSub);
-                                    }}
-                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-teal-500/10 text-teal-300 hover:bg-teal-500/20 border border-teal-500/30 transition-colors"
-                                  >
-                                    Von KI übernehmen
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const hN1 = activeTask.payload?.niche1 || activeTask.payload?.niche || '';
-                                      const hN2 = activeTask.payload?.niche2 || '';
-                                      const hSub = activeTask.payload?.subniche || '';
-                                      const hKw = activeTask.payload?.keywords || activeTask.payload?.hermesKeywords || [];
-                                      if (hN1) setEditNiche1(hN1);
-                                      if (hN2) setEditNiche2(hN2);
-                                      if (hSub) setEditSubniche(hSub);
-                                      if (hKw.length > 0) setEditKeywords(Array.isArray(hKw) ? hKw.join(', ') : String(hKw));
-                                    }}
-                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors"
-                                  >
-                                    Von Listing/Hermes
-                                  </button>
+                                <div className="text-slate-300 space-y-0.5">
+                                  <div>N1: <span className="text-slate-200">{activeTask.payload?.niche1 || activeTask.payload?.niche || '-'}</span></div>
+                                  <div>Cross: <span className="text-slate-300">{activeTask.payload?.niche2 || 'none'}</span></div>
+                                  <div>Subnische: <span className="text-slate-300">{activeTask.payload?.subniche || 'none'}</span></div>
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
-                                <div className="p-2 rounded bg-slate-900/90 border border-slate-850 space-y-0.5">
-                                  <span className="text-[10px] text-teal-400 font-bold flex items-center gap-1">
-                                    <Bot className="w-3 h-3" /> KI-Vision-Erkennung:
-                                  </span>
-                                  <div className="text-slate-300 space-y-0.5">
-                                    <div>N1: <strong className="text-slate-100">{activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '-'}</strong></div>
-                                    <div>Cross: <span className="text-slate-300">{activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || 'none'}</span></div>
-                                    <div>Subnische: <strong className="text-teal-300">{activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || 'none'}</strong></div>
-                                  </div>
-                                </div>
-
-                                <div className="p-2 rounded bg-slate-900/90 border border-slate-850 space-y-0.5">
-                                  <span className="text-[10px] text-purple-400 font-bold flex items-center gap-1">
-                                    <Sparkles className="w-3 h-3" /> Bestehendes Listing:
-                                  </span>
-                                  <div className="text-slate-300 space-y-0.5">
-                                    <div>Titel: <span className="text-slate-200 truncate block">{activeTask.payload?.title || '-'}</span></div>
-                                    <div>Brand: <span className="text-slate-300 truncate block">{activeTask.payload?.brand || '-'}</span></div>
-                                    <div>Nische: <span className="text-slate-400">{activeTask.payload?.niche1 || activeTask.payload?.niche || '-'}</span></div>
-                                  </div>
+                              {/* KI / LLM Recognition */}
+                              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                                <span className="text-[10px] text-teal-400 font-bold flex items-center gap-1">
+                                  <Bot className="w-3 h-3" /> LLM-Erkennung:
+                                </span>
+                                <div className="text-slate-300 space-y-0.5">
+                                  <div>N1: <strong className="text-slate-100">{activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '-'}</strong></div>
+                                  <div>Cross: <span className="text-slate-300">{activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || 'none'}</span></div>
+                                  <div>Subnische: <strong className="text-teal-300">{activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || 'none'}</strong></div>
                                 </div>
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            {/* 3 Niche Input Fields */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                               <div>
                                 <label className="text-[10px] font-medium text-slate-400 block mb-1">Nische 1 (Hauptthema)</label>
                                 <input
@@ -1236,14 +1339,16 @@ export const TasksView: React.FC = () => {
                                 />
                               </div>
                             </div>
+
+                            {/* Keywords Input Field */}
                             <div>
-                              <label className="text-[10px] font-medium text-slate-400 block mb-1">Such-Keywords (Kommasepariert)</label>
+                              <label className="text-[10px] font-medium text-slate-400 block mb-1">Such-Keywords (SEO)</label>
                               <input
                                 type="text"
                                 value={editKeywords}
                                 onChange={(e) => setEditKeywords(e.target.value)}
                                 className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:border-teal-500 focus:outline-none"
-                                placeholder="equestrian, pony rider, stable..."
+                                placeholder="z.B. equestrian, pony rider, stable, funny horse quote..."
                               />
                             </div>
                           </div>
