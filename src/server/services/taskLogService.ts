@@ -1152,6 +1152,24 @@ export class TaskLogService {
 
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
+        type: 'TM_CHECK_RESPONSE',
+        title: `Trademark Workflow V2 freigegeben (${auditV2.finalTrademarkHits.length} Treffer, ${auditV2.blockedProducts.length} Produkte gesperrt)`,
+        content: {
+          auditV2,
+          refinedListing: auditV2.finalListing,
+          totalHits: auditV2.finalTrademarkHits.length,
+          hasInfringementClass25: false,
+          blockedProducts: auditV2.blockedProducts,
+          finalDecision: auditV2.finalDecision
+        },
+        metadata: {
+          provider: `Productor USPTO / ${currentSettings.llmModel || 'GPT-5.6 Sol'}`,
+          model: currentSettings.llmModel
+        }
+      });
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
         type: 'TRANSLATION_REQUEST',
         title: 'Master English Listing V2 freigegeben -> Starte Multi-Marketplace Lokalisierung',
         content: {
@@ -1675,6 +1693,18 @@ export class TaskLogService {
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
       this.saveLogs(logs);
+
+      if (currentTask.source === 'UPDATE' || currentTask.suffix === 'U') {
+        try {
+          const { UpdatePipelineService } = require('./updatePipelineService');
+          UpdatePipelineService.stepU5_TrademarkCheck(taskId).catch((err: any) => {
+            console.error(`[TaskLogService] Retry Update Step U5 failed:`, err);
+          });
+          return { success: true, message: 'Update Step U5 (Trademark Check) neu gestartet.' };
+        } catch (e) {
+          console.error(`[TaskLogService] Fehler beim Laden von UpdatePipelineService:`, e);
+        }
+      }
 
       this.auditListingTrademarks(taskId).catch(err => {
         console.error(`[TaskLogService] Retry Listing TM Check failed for task ${taskId}:`, err);

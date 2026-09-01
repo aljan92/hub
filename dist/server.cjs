@@ -223236,12 +223236,23 @@ Bullets: ${oldBullets}`
           hasError: false,
           ...{ tmAuditV2: auditV2 }
         });
+        const currentSettings = loadSettings();
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_CHECK_RESPONSE",
           title: `Trademark Workflow V2 freigegeben (${auditV2.finalTrademarkHits.length} Treffer, ${auditV2.blockedProducts.length} Produkte gesperrt)`,
-          content: { auditV2, refinedListing: auditV2.finalListing },
-          metadata: { provider: "Productor USPTO / GPT-5.6 Sol" }
+          content: {
+            auditV2,
+            refinedListing: auditV2.finalListing,
+            totalHits: auditV2.finalTrademarkHits.length,
+            hasInfringementClass25: false,
+            blockedProducts: auditV2.blockedProducts,
+            finalDecision: auditV2.finalDecision
+          },
+          metadata: {
+            provider: `Productor USPTO / ${currentSettings.llmModel || "GPT-5.6 Sol"}`,
+            model: currentSettings.llmModel
+          }
         });
         return { success: true, tmResult: auditV2 };
       }
@@ -225812,6 +225823,23 @@ Beantworte die Analysefragen streng als JSON!`;
           console.log(`[TaskLogService] \u{1F6E1}\uFE0F Master English Listing durch V2 freigegeben (${auditV2.finalDecision})! Starte Lokalisierung...`);
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TM_CHECK_RESPONSE",
+            title: `Trademark Workflow V2 freigegeben (${auditV2.finalTrademarkHits.length} Treffer, ${auditV2.blockedProducts.length} Produkte gesperrt)`,
+            content: {
+              auditV2,
+              refinedListing: auditV2.finalListing,
+              totalHits: auditV2.finalTrademarkHits.length,
+              hasInfringementClass25: false,
+              blockedProducts: auditV2.blockedProducts,
+              finalDecision: auditV2.finalDecision
+            },
+            metadata: {
+              provider: `Productor USPTO / ${currentSettings.llmModel || "GPT-5.6 Sol"}`,
+              model: currentSettings.llmModel
+            }
+          });
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TRANSLATION_REQUEST",
             title: "Master English Listing V2 freigegeben -> Starte Multi-Marketplace Lokalisierung",
             content: {
@@ -226267,6 +226295,17 @@ Beantworte die Analysefragen streng als JSON!`;
           currentTask.hasError = false;
           currentTask.errorDetails = void 0;
           this.saveLogs(logs);
+          if (currentTask.source === "UPDATE" || currentTask.suffix === "U") {
+            try {
+              const { UpdatePipelineService: UpdatePipelineService2 } = (init_updatePipelineService(), __toCommonJS2(updatePipelineService_exports));
+              UpdatePipelineService2.stepU5_TrademarkCheck(taskId).catch((err) => {
+                console.error(`[TaskLogService] Retry Update Step U5 failed:`, err);
+              });
+              return { success: true, message: "Update Step U5 (Trademark Check) neu gestartet." };
+            } catch (e) {
+              console.error(`[TaskLogService] Fehler beim Laden von UpdatePipelineService:`, e);
+            }
+          }
           this.auditListingTrademarks(taskId).catch((err) => {
             console.error(`[TaskLogService] Retry Listing TM Check failed for task ${taskId}:`, err);
           });

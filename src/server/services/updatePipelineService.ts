@@ -483,12 +483,23 @@ export class UpdatePipelineService {
       ...( { tmAuditV2: auditV2 } as any )
     });
 
+    const currentSettings = loadSettings();
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'TM_CHECK_RESPONSE',
       title: `Trademark Workflow V2 freigegeben (${auditV2.finalTrademarkHits.length} Treffer, ${auditV2.blockedProducts.length} Produkte gesperrt)`,
-      content: { auditV2, refinedListing: auditV2.finalListing },
-      metadata: { provider: 'Productor USPTO / GPT-5.6 Sol' }
+      content: {
+        auditV2,
+        refinedListing: auditV2.finalListing,
+        totalHits: auditV2.finalTrademarkHits.length,
+        hasInfringementClass25: false,
+        blockedProducts: auditV2.blockedProducts,
+        finalDecision: auditV2.finalDecision
+      },
+      metadata: {
+        provider: `Productor USPTO / ${currentSettings.llmModel || 'GPT-5.6 Sol'}`,
+        model: currentSettings.llmModel
+      }
     });
 
     return { success: true, tmResult: auditV2 };
