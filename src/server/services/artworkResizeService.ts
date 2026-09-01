@@ -599,8 +599,8 @@ export class ArtworkResizeService {
         const drinkwareStandardDataUri = drinkwareCanvas.toDataURL('image/png');
 
         // Generation 5: Drinkware Brush (3000x1400 with Black Brush contour for Travel Tumbler)
-        const drinkwareBrushSource = await applyBlackBrush(drinkwareScaled, brushImg);
-        const drinkwareBrushScaled = scaleDesignForProduct(drinkwareBrushSource, 1400, 1400, 0);
+        // Nutzt exakt das gleiche organische brushCanvas wie der Mug mit 7.5% Margins (kein massiver Vollschwarz-Hintergrund)
+        const drinkwareBrushScaled = scaleDesignForProduct(brushCanvas, 1400, 1400, 0.075);
         const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
         const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL('image/png');
 

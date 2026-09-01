@@ -221781,8 +221781,7 @@ var init_artworkResizeService = __esm2({
             const drinkwareScaled = scaleDesignForProduct(trimmedCanvas, 1400, 1400, 0.075);
             const drinkwareCanvas = createDrinkwareCanvas(drinkwareScaled);
             const drinkwareStandardDataUri = drinkwareCanvas.toDataURL("image/png");
-            const drinkwareBrushSource = await applyBlackBrush(drinkwareScaled, brushImg);
-            const drinkwareBrushScaled = scaleDesignForProduct(drinkwareBrushSource, 1400, 1400, 0);
+            const drinkwareBrushScaled = scaleDesignForProduct(brushCanvas, 1400, 1400, 0.075);
             const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
             const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL("image/png");
             return {
@@ -228316,7 +228315,7 @@ var UploadWorkerService = class _UploadWorkerService {
           }
           if (targetArtworkPath && import_fs83.default.existsSync(targetArtworkPath)) {
             this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit Two-Sided ${isBrushApplied ? "Black Brush " : ""}Variante...`);
-            const prepUpload = await page.evaluate((pid) => {
+            const deleteResult = await page.evaluate(async (pid) => {
               const getAliases = (p) => {
                 const u = p.toUpperCase();
                 if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
@@ -228339,8 +228338,8 @@ var UploadWorkerService = class _UploadWorkerService {
                   return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
                 }) || null;
               }
-              let inputContainer = card;
               const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+              let inputContainer = card;
               if (card) {
                 const cardRect = card.getBoundingClientRect();
                 const validEditors = allEditors.filter((ed) => {
@@ -228364,50 +228363,89 @@ var UploadWorkerService = class _UploadWorkerService {
                 }
               }
               if (deleteButton) {
+                deleteButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+                deleteButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
                 deleteButton.click();
                 clickedDelete = true;
               }
-              let uploadLabel = null;
-              for (const a of aliases2) {
-                uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || inputContainer?.querySelector(`label.file-upload-input[for*="${a}"]`) || card?.querySelector(`label.file-upload-input[for*="${a}"]`);
-                if (uploadLabel) break;
-              }
-              if (!uploadLabel) {
-                uploadLabel = inputContainer?.querySelector("label.file-upload-input") || card?.querySelector("label.file-upload-input") || inputContainer?.querySelector('label[for*="DESIGN"]') || card?.querySelector('label[for*="DESIGN"]');
-              }
-              let inputId = "";
-              if (uploadLabel) {
-                const forAttr = uploadLabel.getAttribute("for");
-                if (forAttr && document.getElementById(forAttr)) {
-                  inputId = forAttr;
-                }
-              }
-              if (!inputId) {
+              return { clickedDelete, aliases: aliases2 };
+            }, product.id);
+            if (deleteResult.clickedDelete) {
+              this.log(`\u23F3 ${product.displayName}: Altes Artwork gel\xF6scht, warte auf Bereitstellung des Dropzone-Felds...`);
+              await page.waitForTimeout(800);
+            }
+            const locateInputResult = await page.evaluate(async (params2) => {
+              const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
+              const { pid, aliases: aliases2 } = params2;
+              let foundInput = null;
+              let retries = 0;
+              while (!foundInput && retries < 15) {
+                let uploadLabel = null;
                 for (const a of aliases2) {
-                  const directInput = document.getElementById(`${a}-DESIGN-wizzy`) || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`);
-                  if (directInput) {
-                    if (!directInput.id) directInput.id = `mba-upload-input-${a}`;
-                    inputId = directInput.id;
-                    break;
+                  uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for*="${a}"]`) || document.querySelector(`label[for*="${a}-DESIGN"]`);
+                  if (uploadLabel) break;
+                }
+                if (!uploadLabel) {
+                  uploadLabel = document.querySelector(".product-editor label.file-upload-input") || document.querySelector("label.file-upload-input") || document.querySelector('label[for*="DESIGN"]');
+                }
+                if (uploadLabel) {
+                  const forAttr = uploadLabel.getAttribute("for");
+                  if (forAttr) {
+                    const el = document.getElementById(forAttr);
+                    if (el instanceof HTMLInputElement && el.type === "file") {
+                      foundInput = el;
+                    } else if (el) {
+                      foundInput = el.querySelector('input[type="file"]');
+                    }
                   }
                 }
-              }
-              if (!inputId) {
-                const genericInput = inputContainer?.querySelector('.dropzone-container input[type="file"]') || card?.querySelector('.dropzone-container input[type="file"]') || inputContainer?.querySelector('input[type="file"]') || card?.querySelector('input[type="file"]');
-                if (genericInput) {
-                  if (!genericInput.id) genericInput.id = `mba-upload-input-${pid}`;
-                  inputId = genericInput.id;
+                if (!foundInput) {
+                  for (const a of aliases2) {
+                    const directInput = document.getElementById(`${a}-DESIGN-wizzy`) || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`) || document.querySelector(`#${a}-card input[type="file"]`) || document.querySelector(`#${a.toLowerCase()}-card input[type="file"]`) || document.querySelector(`[id*="${a}"] input[type="file"]`);
+                    if (directInput && directInput.tagName === "INPUT" && directInput.type === "file") {
+                      foundInput = directInput;
+                      break;
+                    }
+                  }
+                }
+                if (!foundInput) {
+                  const dropzoneInput = document.querySelector('.product-editor .dropzone-container input[type="file"]') || document.querySelector('.product-editor input[type="file"]') || document.querySelector('.dropzone-container input[type="file"]') || document.querySelector('input[type="file"].file-upload-input');
+                  if (dropzoneInput) {
+                    foundInput = dropzoneInput;
+                  }
+                }
+                if (!foundInput) {
+                  await sleep2(200);
+                  retries++;
                 }
               }
-              return { clickedDelete, inputId, aliases: aliases2 };
-            }, product.id);
-            if (prepUpload.clickedDelete) {
-              await page.waitForTimeout(500);
+              if (foundInput) {
+                const uniqueId = `mba-upload-input-${pid.toLowerCase()}-${Date.now()}`;
+                foundInput.id = uniqueId;
+                return { success: true, inputId: uniqueId, aliases: aliases2 };
+              }
+              return { success: false, inputId: "", aliases: aliases2 };
+            }, { pid: product.id, aliases: deleteResult.aliases });
+            let finalInputLocator = locateInputResult.inputId ? page.locator(`#${locateInputResult.inputId}`) : null;
+            if (!finalInputLocator || await finalInputLocator.count() === 0) {
+              const fallbackSelector = `#${product.id.replace("CERAMIC_", "")}-card input[type="file"], #${product.id}-card input[type="file"], .product-editor input[type="file"], .dropzone-container input[type="file"], input[type="file"].file-upload-input`;
+              const fb = page.locator(fallbackSelector).first();
+              if (await fb.count() > 0) {
+                finalInputLocator = fb;
+              }
             }
-            if (prepUpload.inputId) {
+            if (finalInputLocator && await finalInputLocator.count() > 0) {
               try {
-                const fileInputLocator = page.locator(`#${prepUpload.inputId}`);
-                await fileInputLocator.setInputFiles(targetArtworkPath);
+                await finalInputLocator.setInputFiles(targetArtworkPath);
+                if (locateInputResult.inputId) {
+                  await page.evaluate((id) => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                      el.dispatchEvent(new Event("input", { bubbles: true }));
+                      el.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                  }, locateInputResult.inputId);
+                }
                 this.log(`\u23F3 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork zugewiesen (${import_path78.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
                 let uploadDone = false;
                 const pollStart = Date.now();
@@ -228436,7 +228474,7 @@ var UploadWorkerService = class _UploadWorkerService {
                       return true;
                     }
                     return false;
-                  }, prepUpload.aliases);
+                  }, locateInputResult.aliases);
                   if (isFinished) {
                     uploadDone = true;
                     break;

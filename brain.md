@@ -632,3 +632,22 @@ MBA HUB/
      - Klick auf das Badge erzwingt einen Live-Abruf (`?forceFresh=true`), wodurch nach dem Aufladen die Sperre sofort ohne 30s-Wartezeit aufgehoben wird.
   5. **Unit-Tests:**
      - `tests/circuitBreaker.test.ts` (11/11 Tests bestanden, 100%).
+
+### 10.26 🎨 Drinkware Brush Kontur-Fix & Asynchroner Ceramic Mug Upload-Fix
+- **Problem 1 (Travel Tumbler Brush Effekt):**
+  - Beim Travel Tumbler sah das Bild aus wie ein massiver schwarzer Kasten statt eines organischen Brush-Effekts um das Design.
+  - *Ursache:* `ArtworkResizeService` wandte fälschlicherweise `applyBlackBrush` auf ein bereits auf 1400x1400 vor-skaliertes Canvas an und skalierte das Ergebnis anschließend mit `margin = 0`. Dadurch wurde der Brush-Stempel über die gesamte 1400x1400 Begrenzung ausgedehnt und füllte den Raum vollständig mit Schwarz.
+  - *Lösung:* Verwendet nun exakt das gleiche organische `brushCanvas` (welches direkt aus `trimmedCanvas` berechnet wird) wie der Mug und skaliert es mit standardmäßigen 7.5% Margins in den 1400x1400 Drinkware-Bereich. Das Ergebnis ist ein sauberer, konturierter Brush-Effekt mit transparentem Rand ohne abgeschnittene Kanten.
+- **Problem 2 (Ceramic Mug Upload):**
+  - Beim Ceramic Mug wurde das Two-Sided Brush Artwork nicht hochgeladen.
+  - *Ursache (durch Referenzprüfung im Listing Optimizer identifiziert):* Wenn ein Produkt bereits ein geerbtes Design hat, muss der `.delete-button` geklickt werden. Im vorherigen Code wurde im selben synchronen Aufruf direkt nach dem Delete-Klick nach dem Upload-Feld gesucht. Da Amazon/Angular bis zu 500–1000ms benötigt, um das alte Bild zu entfernen und die Dropzone neu zu rendern, war `inputId` noch leer.
+  - *Lösung (analog Listing Optimizer `fix_bugs.js`):*
+    1. Trennung in zwei asynchrone Phasen: Erst Delete-Klick mit nativen Mouse-Events (`mousedown`, `mouseup`, `click`), danach 800ms Pause.
+    2. Aktives Polling (bis zu 15 Retries alle 200ms) nach dem `label.file-upload-input` oder `<input type="file">`.
+    3. Zuweisung einer eindeutigen ID auf das reale `HTMLInputElement`, Setzen der Datei via Playwright `setInputFiles` und anschließendes Dispatchen von `input` und `change` Events im Browserkontext.
+    4. Schnelles Polling (max 10s) bis der Upload von Amazon bestätigt ist.
+- **Unit-Tests & Validierung:**
+  - `tests/resizeService.test.ts` (20/20 bestanden).
+  - `tests/circuitBreaker.test.ts` (11/11 bestanden).
+  - Gesamtsuite: 64/64 Tests grün (100%).
+

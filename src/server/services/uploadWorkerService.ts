@@ -1132,8 +1132,8 @@ export class UploadWorkerService {
           if (targetArtworkPath && fs.existsSync(targetArtworkPath)) {
             this.log(`🎨 Ersetze Artwork für ${product.displayName} mit Two-Sided ${isBrushApplied ? 'Black Brush ' : ''}Variante...`);
             
-            // 1. Altes Artwork löschen & Upload-Input lokalisieren (exakt nach Listing Optimizer Logik)
-            const prepUpload = await page.evaluate((pid: string) => {
+            // 1. Altes Artwork löschen falls delete-button vorhanden (mit mousedown/mouseup/click)
+            const deleteResult = await page.evaluate(async (pid: string) => {
               const getAliases = (p: string): string[] => {
                 const u = p.toUpperCase();
                 if (u === 'CERAMIC_MUG') return ['MUG', 'CERAMIC_MUG'];
@@ -1162,9 +1162,8 @@ export class UploadWorkerService {
                 }) || null;
               }
 
-              // 2. Locate container
-              let inputContainer: HTMLElement | null = card;
               const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
+              let inputContainer: HTMLElement | null = card;
               if (card) {
                 const cardRect = card.getBoundingClientRect();
                 const validEditors = allEditors.filter(ed => {
@@ -1180,7 +1179,6 @@ export class UploadWorkerService {
                 inputContainer = allEditors[allEditors.length - 1];
               }
 
-              // Step 1: Delete existing artwork (Listing Optimizer Zeile 3534)
               let clickedDelete = false;
               let deleteButton = (card?.querySelector('.delete-button, .sci-icon.sci-delete-forever')
                 || inputContainer?.querySelector('.delete-button, .sci-icon.sci-delete-forever')) as HTMLElement;
@@ -1193,71 +1191,128 @@ export class UploadWorkerService {
               }
 
               if (deleteButton) {
+                deleteButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                deleteButton.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
                 deleteButton.click();
                 clickedDelete = true;
               }
 
-              // Step 2: Locate upload input using Listing Optimizer pattern (Zeilen 3543-3568)
-              let uploadLabel: HTMLElement | null = null;
-              for (const a of aliases) {
-                uploadLabel = (document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`)
-                  || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`)
-                  || inputContainer?.querySelector(`label.file-upload-input[for*="${a}"]`)
-                  || card?.querySelector(`label.file-upload-input[for*="${a}"]`)) as HTMLElement;
-                if (uploadLabel) break;
-              }
-              if (!uploadLabel) {
-                uploadLabel = (inputContainer?.querySelector('label.file-upload-input') 
-                  || card?.querySelector('label.file-upload-input')
-                  || inputContainer?.querySelector('label[for*="DESIGN"]')
-                  || card?.querySelector('label[for*="DESIGN"]')) as HTMLElement;
-              }
-
-              let inputId = '';
-              if (uploadLabel) {
-                const forAttr = uploadLabel.getAttribute('for');
-                if (forAttr && document.getElementById(forAttr)) {
-                  inputId = forAttr;
-                }
-              }
-
-              if (!inputId) {
-                for (const a of aliases) {
-                  const directInput = (document.getElementById(`${a}-DESIGN-wizzy`)
-                    || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`)) as HTMLInputElement;
-                  if (directInput) {
-                    if (!directInput.id) directInput.id = `mba-upload-input-${a}`;
-                    inputId = directInput.id;
-                    break;
-                  }
-                }
-              }
-
-              if (!inputId) {
-                const genericInput = (inputContainer?.querySelector('.dropzone-container input[type="file"]')
-                  || card?.querySelector('.dropzone-container input[type="file"]')
-                  || inputContainer?.querySelector('input[type="file"]')
-                  || card?.querySelector('input[type="file"]')) as HTMLInputElement;
-                if (genericInput) {
-                  if (!genericInput.id) genericInput.id = `mba-upload-input-${pid}`;
-                  inputId = genericInput.id;
-                }
-              }
-
-              return { clickedDelete, inputId, aliases };
+              return { clickedDelete, aliases };
             }, product.id);
 
-            if (prepUpload.clickedDelete) {
-              await page.waitForTimeout(500);
+            // WICHTIG: Wenn Delete geklickt wurde, warten bis Amazon die Dropzone neu mountet!
+            if (deleteResult.clickedDelete) {
+              this.log(`⏳ ${product.displayName}: Altes Artwork gelöscht, warte auf Bereitstellung des Dropzone-Felds...`);
+              await page.waitForTimeout(800);
             }
 
-            if (prepUpload.inputId) {
+            // 2. File-Input mit aktivem Polling lokalisieren (genau wie in Listing Optimizer fix_bugs.js)
+            const locateInputResult = await page.evaluate(async (params: { pid: string; aliases: string[] }) => {
+              const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+              const { pid, aliases } = params;
+
+              let foundInput: HTMLInputElement | null = null;
+              let retries = 0;
+
+              while (!foundInput && retries < 15) {
+                // 1. Suche nach label.file-upload-input[for="..."]
+                let uploadLabel: HTMLElement | null = null;
+                for (const a of aliases) {
+                  uploadLabel = (document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`)
+                    || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`)
+                    || document.querySelector(`label.file-upload-input[for*="${a}"]`)
+                    || document.querySelector(`label[for*="${a}-DESIGN"]`)) as HTMLElement;
+                  if (uploadLabel) break;
+                }
+
+                if (!uploadLabel) {
+                  uploadLabel = (document.querySelector('.product-editor label.file-upload-input')
+                    || document.querySelector('label.file-upload-input')
+                    || document.querySelector('label[for*="DESIGN"]')) as HTMLElement;
+                }
+
+                if (uploadLabel) {
+                  const forAttr = uploadLabel.getAttribute('for');
+                  if (forAttr) {
+                    const el = document.getElementById(forAttr);
+                    if (el instanceof HTMLInputElement && el.type === 'file') {
+                      foundInput = el;
+                    } else if (el) {
+                      foundInput = el.querySelector('input[type="file"]') as HTMLInputElement;
+                    }
+                  }
+                }
+
+                // 2. Suche direkt nach input[type="file"] auf der Card oder nach ID
+                if (!foundInput) {
+                  for (const a of aliases) {
+                    const directInput = (document.getElementById(`${a}-DESIGN-wizzy`)
+                      || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`)
+                      || document.querySelector(`#${a}-card input[type="file"]`)
+                      || document.querySelector(`#${a.toLowerCase()}-card input[type="file"]`)
+                      || document.querySelector(`[id*="${a}"] input[type="file"]`)) as HTMLInputElement;
+                    if (directInput && directInput.tagName === 'INPUT' && directInput.type === 'file') {
+                      foundInput = directInput;
+                      break;
+                    }
+                  }
+                }
+
+                // 3. Suche in Dropzone-Container
+                if (!foundInput) {
+                  const dropzoneInput = (document.querySelector('.product-editor .dropzone-container input[type="file"]')
+                    || document.querySelector('.product-editor input[type="file"]')
+                    || document.querySelector('.dropzone-container input[type="file"]')
+                    || document.querySelector('input[type="file"].file-upload-input')) as HTMLInputElement;
+                  if (dropzoneInput) {
+                    foundInput = dropzoneInput;
+                  }
+                }
+
+                if (!foundInput) {
+                  await sleep(200);
+                  retries++;
+                }
+              }
+
+              if (foundInput) {
+                const uniqueId = `mba-upload-input-${pid.toLowerCase()}-${Date.now()}`;
+                foundInput.id = uniqueId;
+                return { success: true, inputId: uniqueId, aliases };
+              }
+
+              return { success: false, inputId: '', aliases };
+            }, { pid: product.id, aliases: deleteResult.aliases });
+
+            let finalInputLocator = locateInputResult.inputId ? page.locator(`#${locateInputResult.inputId}`) : null;
+
+            // Fallback Playwright Locator wenn im Evaluate nichts gelabelt werden konnte
+            if (!finalInputLocator || (await finalInputLocator.count()) === 0) {
+              const fallbackSelector = `#${product.id.replace('CERAMIC_', '')}-card input[type="file"], #${product.id}-card input[type="file"], .product-editor input[type="file"], .dropzone-container input[type="file"], input[type="file"].file-upload-input`;
+              const fb = page.locator(fallbackSelector).first();
+              if ((await fb.count()) > 0) {
+                finalInputLocator = fb;
+              }
+            }
+
+            if (finalInputLocator && (await finalInputLocator.count()) > 0) {
               try {
-                const fileInputLocator = page.locator(`#${prepUpload.inputId}`);
-                await fileInputLocator.setInputFiles(targetArtworkPath);
+                await finalInputLocator.setInputFiles(targetArtworkPath);
+
+                // Event trigger in Page Context für Angular (change, input)
+                if (locateInputResult.inputId) {
+                  await page.evaluate((id: string) => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                      el.dispatchEvent(new Event('input', { bubbles: true }));
+                      el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                  }, locateInputResult.inputId);
+                }
+
                 this.log(`⏳ ${product.displayName}: Two-Sided ${isBrushApplied ? 'Brush ' : ''}Artwork zugewiesen (${path.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
 
-                // Aktives schnelles Polling (max 10s statt 35s Timeout): Prüft Delete-Button & Upload-Fortschritt
+                // Aktives schnelles Polling (max 10s): Prüft Delete-Button & Upload-Fortschritt
                 let uploadDone = false;
                 const pollStart = Date.now();
                 while (Date.now() - pollStart < 10000) {
@@ -1295,7 +1350,7 @@ export class UploadWorkerService {
                     }
 
                     return false;
-                  }, prepUpload.aliases);
+                  }, locateInputResult.aliases);
 
                   if (isFinished) {
                     uploadDone = true;
@@ -1304,7 +1359,7 @@ export class UploadWorkerService {
                 }
 
                 if (uploadDone) {
-                  await page.waitForTimeout(500); // Schneller 500ms Puffer
+                  await page.waitForTimeout(500);
                   this.log(`✓ ${product.displayName}: Two-Sided ${isBrushApplied ? 'Brush ' : ''}Artwork erfolgreich hochgeladen & bestätigt ✓`);
                 } else {
                   this.log(`ℹ️ ${product.displayName}: Upload angestoßen, fahre fort...`);
