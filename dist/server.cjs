@@ -52997,7 +52997,7 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
        * Semantic risk analysis, distinction between common descriptive words vs distinctive/famous marks
        */
       static async evaluateTrademarkReferee(params2) {
-        const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
         const systemPrompt = SystemPromptService.getTrademarkRefereePrompt();
         const hitsData = params2.compactHits || params2.normalizedHits || [];
         const userMessage = `Current English Listing:
@@ -53023,10 +53023,6 @@ Rewrite Context:
 
 Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/descriptive words are implicitly KEEP and must NOT be output in problematicHits. Return valid JSON only.`;
         const settings = loadSettings();
-        const headers = { ...baseHeaders };
-        if (params2.sessionId) {
-          headers["X-Session-Id"] = params2.sessionId;
-        }
         const requestPayload = {
           model,
           messages: [
@@ -53101,7 +53097,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
        * V2 Amazon Rejection Verifier (GPT-5.6 Sol - Adversarial Reviewer)
        */
       static async evaluateTrademarkVerifier(params2) {
-        const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
         const systemPrompt = SystemPromptService.getTrademarkVerifierPrompt();
         const hitsData = params2.compactHits || params2.normalizedHits || [];
         const userMessage = `Candidate English Listing for Amazon Merch Submission:
@@ -53125,10 +53121,6 @@ Blocked Products: ${JSON.stringify(params2.blockedProducts || [])}
 
 Act as the final adversarial Amazon Merch reviewer. Do you see any plausible trademark, brand, or policy reasons why Amazon Merch might reject this submission or penalize the account? Return valid JSON.`;
         const settings = loadSettings();
-        const headers = { ...baseHeaders };
-        if (params2.sessionId) {
-          headers["X-Session-Id"] = params2.sessionId;
-        }
         const requestPayload = {
           model,
           messages: [
@@ -53179,7 +53171,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
        * V2 SEO-Preserving Rewrite for Trademark Issues
        */
       static async rewriteListingForTrademarkV2(params2) {
-        const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
+        const { url, headers, model } = this.getBaseUrlAndHeaders();
         const systemPrompt = SystemPromptService.getTrademarkRewritePrompt();
         const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params2.rewriteIteration} of 3).
 
@@ -53221,10 +53213,6 @@ Return ONLY valid JSON:
   "actions_taken": ["Replaced term X with Y in Brand", "Rewrote Bullet 1 to remove phrase Z"]
 }`;
         const settings = loadSettings();
-        const headers = { ...baseHeaders };
-        if (params2.sessionId) {
-          headers["X-Session-Id"] = params2.sessionId;
-        }
         const requestPayload = {
           model,
           messages: [
@@ -54376,9 +54364,10 @@ var init_trademarkService = __esm2({
         const rewriteIterations = [];
         const tmSessionId = params2.sessionId || (params2.taskId ? `tm:${params2.taskId}` : `tm:${Date.now()}`);
         const approvedHitContexts = /* @__PURE__ */ new Set();
-        const getHitContextKey = (mark, classes, matchType, field, text2) => {
+        const getHitContextKey = (mark, markFeature, classes, matchType, field, text2) => {
           const normText = (text2 || "").trim().toLowerCase().replace(/\s+/g, " ");
-          return `${mark.toLowerCase()}|${classes.slice().sort((a, b) => a - b).join(",")}|${matchType}|${field}|${normText}`;
+          const normFeature = (markFeature || "word").trim().toLowerCase();
+          return `${mark.toLowerCase()}|${normFeature}|${classes.slice().sort((a, b) => a - b).join(",")}|${matchType}|${field}|${normText}`;
         };
         let initialTrademarkHits = [];
         let finalRefereeResult = null;
@@ -54404,7 +54393,7 @@ var init_trademarkService = __esm2({
             content: { cycle, totalHits: normalizedHits.length, compactHitsCount: compactHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
           });
           const hitsToReview = cycle === 0 ? compactHits : compactHits.filter((h) => {
-            return h.occurrences.some((occ) => !approvedHitContexts.has(getHitContextKey(h.mark, h.classes, h.matchType, occ.field, occ.text)));
+            return h.occurrences.some((occ) => !approvedHitContexts.has(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, occ.text)));
           });
           let refereeRes;
           if (cycle > 0 && hitsToReview.length === 0) {
@@ -54441,7 +54430,7 @@ var init_trademarkService = __esm2({
           for (const h of hitsToReview) {
             if (!problematicMarks.has(h.mark.trim().toLowerCase())) {
               for (const occ of h.occurrences) {
-                approvedHitContexts.add(getHitContextKey(h.mark, h.classes, h.matchType, occ.field, occ.text));
+                approvedHitContexts.add(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, occ.text));
               }
             }
           }

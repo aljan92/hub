@@ -623,7 +623,7 @@ Style Preset: ${stylePreset}`;
     _rawRequest?: any;
     _rawResponse?: any;
   }> {
-    const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
     const systemPrompt = SystemPromptService.getTrademarkRefereePrompt();
     const hitsData = params.compactHits || params.normalizedHits || [];
 
@@ -651,11 +651,6 @@ Rewrite Context:
 Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/descriptive words are implicitly KEEP and must NOT be output in problematicHits. Return valid JSON only.`;
 
     const settings = loadSettings();
-    const headers = { ...baseHeaders };
-    if (params.sessionId) {
-      headers['X-Session-Id'] = params.sessionId;
-    }
-
     const requestPayload: any = {
       model,
       messages: [
@@ -765,7 +760,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
     _rawRequest?: any;
     _rawResponse?: any;
   }> {
-    const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
     const systemPrompt = SystemPromptService.getTrademarkVerifierPrompt();
     const hitsData = params.compactHits || params.normalizedHits || [];
 
@@ -791,11 +786,6 @@ Blocked Products: ${JSON.stringify(params.blockedProducts || [])}
 Act as the final adversarial Amazon Merch reviewer. Do you see any plausible trademark, brand, or policy reasons why Amazon Merch might reject this submission or penalize the account? Return valid JSON.`;
 
     const settings = loadSettings();
-    const headers = { ...baseHeaders };
-    if (params.sessionId) {
-      headers['X-Session-Id'] = params.sessionId;
-    }
-
     const requestPayload: any = {
       model,
       messages: [
@@ -868,7 +858,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
     _rawRequest?: any;
     _rawResponse?: any;
   }> {
-    const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
     const systemPrompt = SystemPromptService.getTrademarkRewritePrompt();
 
     const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params.rewriteIteration} of 3).
@@ -912,11 +902,6 @@ Return ONLY valid JSON:
 }`;
 
     const settings = loadSettings();
-    const headers = { ...baseHeaders };
-    if (params.sessionId) {
-      headers['X-Session-Id'] = params.sessionId;
-    }
-
     const requestPayload: any = {
       model,
       messages: [

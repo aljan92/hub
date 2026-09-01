@@ -1184,9 +1184,10 @@ export class TrademarkService {
     const tmSessionId = params.sessionId || (params.taskId ? `tm:${params.taskId}` : `tm:${Date.now()}`);
     const approvedHitContexts = new Set<string>();
 
-    const getHitContextKey = (mark: string, classes: number[], matchType: string, field: string, text: string) => {
+    const getHitContextKey = (mark: string, markFeature: string, classes: number[], matchType: string, field: string, text: string) => {
       const normText = (text || '').trim().toLowerCase().replace(/\s+/g, ' ');
-      return `${mark.toLowerCase()}|${classes.slice().sort((a, b) => a - b).join(',')}|${matchType}|${field}|${normText}`;
+      const normFeature = (markFeature || 'word').trim().toLowerCase();
+      return `${mark.toLowerCase()}|${normFeature}|${classes.slice().sort((a, b) => a - b).join(',')}|${matchType}|${field}|${normText}`;
     };
 
     let initialTrademarkHits: TrademarkHitV2[] = [];
@@ -1226,7 +1227,7 @@ export class TrademarkService {
 
       // Check which hits are genuinely new or in a modified context (Hit-Re-Use optimization)
       const hitsToReview = cycle === 0 ? compactHits : compactHits.filter(h => {
-        return h.occurrences.some(occ => !approvedHitContexts.has(getHitContextKey(h.mark, h.classes, h.matchType, occ.field, occ.text)));
+        return h.occurrences.some(occ => !approvedHitContexts.has(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, occ.text)));
       });
 
       let refereeRes: any;
@@ -1271,7 +1272,7 @@ export class TrademarkService {
       for (const h of hitsToReview) {
         if (!problematicMarks.has(h.mark.trim().toLowerCase())) {
           for (const occ of h.occurrences) {
-            approvedHitContexts.add(getHitContextKey(h.mark, h.classes, h.matchType, occ.field, occ.text));
+            approvedHitContexts.add(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, occ.text));
           }
         }
       }

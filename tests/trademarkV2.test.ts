@@ -294,6 +294,25 @@ async function runAcceptanceTests() {
   }
 
   // ----------------------------------------------------
+  // TEST M: approvedHitContexts Fingerprint includes markFeature
+  // ----------------------------------------------------
+  {
+    const getHitContextKey = (mark: string, markFeature: string, classes: number[], matchType: string, field: string, text: string) => {
+      const normText = (text || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const normFeature = (markFeature || 'word').trim().toLowerCase();
+      return `${mark.toLowerCase()}|${normFeature}|${classes.slice().sort((a, b) => a - b).join(',')}|${matchType}|${field}|${normText}`;
+    };
+
+    const wordKey = getHitContextKey('western', 'Word', [25], 'SINGLE_WORD_EXACT', 'bullet1', 'rustic western horse artwork');
+    const combinedKey = getHitContextKey('western', 'Combined', [25], 'SINGLE_WORD_EXACT', 'bullet1', 'rustic western horse artwork');
+    const brandKey = getHitContextKey('western', 'Word', [25], 'SINGLE_WORD_EXACT', 'brand', 'western apparel co');
+
+    assert(wordKey === 'western|word|25|SINGLE_WORD_EXACT|bullet1|rustic western horse artwork', 'Test M1: Correctly formatted fingerprint with markFeature');
+    assert(wordKey !== combinedKey, 'Test M2: Word mark key differs from Combined mark key (no cross-contamination)');
+    assert(wordKey !== brandKey, 'Test M3: bullet1 key differs from brand key');
+  }
+
+  // ----------------------------------------------------
   // Summary
   // ----------------------------------------------------
   console.log('\n====================================================');
