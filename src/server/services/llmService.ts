@@ -33,21 +33,46 @@ export interface OpenRouterModelItem {
 }
 
 let cachedModels: OpenRouterModelItem[] = [
-  { id: 'anthropic/claude-3.5-sonnet', name: 'Anthropic: Claude 3.5 Sonnet' },
-  { id: 'anthropic/claude-3.5-sonnet:beta', name: 'Anthropic: Claude 3.5 Sonnet (Beta)' },
+  { id: 'openai/gpt-5.6-sol', name: 'OpenAI: GPT-5.6 Sol' },
+  { id: 'deepseek/deepseek-v4-pro', name: 'DeepSeek: DeepSeek V4 Pro' },
+  { id: 'google/gemini-2.5-flash', name: 'Google: Gemini 2.5 Flash' },
+  { id: 'anthropic/claude-sonnet-4', name: 'Anthropic: Claude Sonnet 4' },
   { id: 'openai/gpt-4o', name: 'OpenAI: GPT-4o' },
-  { id: 'openai/gpt-4o-mini', name: 'OpenAI: GPT-4o Mini' },
-  { id: 'google/gemini-2.0-flash-001', name: 'Google: Gemini 2.0 Flash' },
   { id: 'meta-llama/llama-3.2-11b-vision-instruct', name: 'Meta: Llama 3.2 11B Vision' },
 ];
 let lastModelsFetch = 0;
 
 export class LLMService {
   public static normalizeModelId(model: string): string {
-    const trimmed = model.trim();
-    if (trimmed === 'anthropic/claude-3.5-sonnet') return 'anthropic/claude-3-5-sonnet';
-    if (trimmed === 'anthropic/claude-3.5-sonnet-20241022') return 'anthropic/claude-3-5-sonnet-20241022';
+    if (!model) return 'openai/gpt-5.6-sol';
+    let trimmed = model.trim();
+
+    // Map deprecated / retired Claude 3.5 Sonnet to current valid OpenRouter model
+    if (
+      trimmed === 'anthropic/claude-3.5-sonnet' ||
+      trimmed === 'anthropic/claude-3-5-sonnet' ||
+      trimmed === 'anthropic/claude-3.5-sonnet-20241022' ||
+      trimmed === 'anthropic/claude-3-5-sonnet-20241022'
+    ) {
+      return 'anthropic/claude-sonnet-4';
+    }
+
     return trimmed;
+  }
+
+  public static async parseHttpError(res: Response, prefix: string = 'OpenRouter'): Promise<string> {
+    let detail = '';
+    try {
+      const json = await res.json();
+      detail = json?.error?.message || (json?.error ? JSON.stringify(json.error) : JSON.stringify(json));
+    } catch {
+      try {
+        detail = await res.text();
+      } catch {
+        detail = res.statusText;
+      }
+    }
+    return `${prefix} HTTP ${res.status}: ${detail || res.statusText}`;
   }
 
   private static getBaseUrlAndHeaders(): { url: string; headers: Record<string, string>; model: string } {
@@ -674,7 +699,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
         signal: AbortSignal.timeout(timeoutMs)
       });
 
-      if (!res.ok) throw new Error(`LLM TM Referee error: ${res.status} ${res.statusText}`);
+      if (!res.ok) throw new Error(await LLMService.parseHttpError(res, 'LLM TM Referee'));
       const data = await res.json();
       const finishReason = data.choices?.[0]?.finish_reason;
       const isTruncated = finishReason === 'length';
@@ -837,7 +862,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
         signal: AbortSignal.timeout(timeoutMs)
       });
 
-      if (!res.ok) throw new Error(`LLM TM Verifier error: ${res.status} ${res.statusText}`);
+      if (!res.ok) throw new Error(await LLMService.parseHttpError(res, 'LLM TM Verifier'));
       const data = await res.json();
       const finishReason = data.choices?.[0]?.finish_reason;
       const isTruncated = finishReason === 'length';
@@ -1002,7 +1027,7 @@ Return ONLY valid JSON:
         signal: AbortSignal.timeout(timeoutMs)
       });
 
-      if (!res.ok) throw new Error(`LLM TM Rewrite V2 error: ${res.status} ${res.statusText}`);
+      if (!res.ok) throw new Error(await LLMService.parseHttpError(res, 'LLM TM Rewrite V2'));
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content?.trim() || '{}';
       const parsed = this.extractJsonFromLlmResponse(content);

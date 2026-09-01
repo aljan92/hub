@@ -142,7 +142,7 @@ export class UpdatePipelineService {
       });
     }
 
-    const model = settings.llmModel || 'google/gemini-2.5-flash';
+    const model = LLMService.normalizeModelId(settings.llmModel || 'google/gemini-2.5-flash');
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
@@ -172,7 +172,7 @@ export class UpdatePipelineService {
       });
 
       if (!resp.ok) {
-        throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+        throw new Error(await LLMService.parseHttpError(resp, 'OpenRouter'));
       }
 
       const json = await resp.json();

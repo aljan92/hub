@@ -52550,20 +52550,36 @@ var init_llmService = __esm2({
     init_systemPromptService();
     init_bannedWordsService();
     cachedModels = [
-      { id: "anthropic/claude-3.5-sonnet", name: "Anthropic: Claude 3.5 Sonnet" },
-      { id: "anthropic/claude-3.5-sonnet:beta", name: "Anthropic: Claude 3.5 Sonnet (Beta)" },
+      { id: "openai/gpt-5.6-sol", name: "OpenAI: GPT-5.6 Sol" },
+      { id: "deepseek/deepseek-v4-pro", name: "DeepSeek: DeepSeek V4 Pro" },
+      { id: "google/gemini-2.5-flash", name: "Google: Gemini 2.5 Flash" },
+      { id: "anthropic/claude-sonnet-4", name: "Anthropic: Claude Sonnet 4" },
       { id: "openai/gpt-4o", name: "OpenAI: GPT-4o" },
-      { id: "openai/gpt-4o-mini", name: "OpenAI: GPT-4o Mini" },
-      { id: "google/gemini-2.0-flash-001", name: "Google: Gemini 2.0 Flash" },
       { id: "meta-llama/llama-3.2-11b-vision-instruct", name: "Meta: Llama 3.2 11B Vision" }
     ];
     lastModelsFetch = 0;
-    LLMService = class {
+    LLMService = class _LLMService {
       static normalizeModelId(model) {
-        const trimmed = model.trim();
-        if (trimmed === "anthropic/claude-3.5-sonnet") return "anthropic/claude-3-5-sonnet";
-        if (trimmed === "anthropic/claude-3.5-sonnet-20241022") return "anthropic/claude-3-5-sonnet-20241022";
+        if (!model) return "openai/gpt-5.6-sol";
+        let trimmed = model.trim();
+        if (trimmed === "anthropic/claude-3.5-sonnet" || trimmed === "anthropic/claude-3-5-sonnet" || trimmed === "anthropic/claude-3.5-sonnet-20241022" || trimmed === "anthropic/claude-3-5-sonnet-20241022") {
+          return "anthropic/claude-sonnet-4";
+        }
         return trimmed;
+      }
+      static async parseHttpError(res, prefix = "OpenRouter") {
+        let detail = "";
+        try {
+          const json = await res.json();
+          detail = json?.error?.message || (json?.error ? JSON.stringify(json.error) : JSON.stringify(json));
+        } catch {
+          try {
+            detail = await res.text();
+          } catch {
+            detail = res.statusText;
+          }
+        }
+        return `${prefix} HTTP ${res.status}: ${detail || res.statusText}`;
       }
       static getBaseUrlAndHeaders() {
         const settings2 = loadSettings();
@@ -53045,7 +53061,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
             body: JSON.stringify(requestPayload),
             signal: AbortSignal.timeout(timeoutMs)
           });
-          if (!res.ok) throw new Error(`LLM TM Referee error: ${res.status} ${res.statusText}`);
+          if (!res.ok) throw new Error(await _LLMService.parseHttpError(res, "LLM TM Referee"));
           const data = await res.json();
           const finishReason = data.choices?.[0]?.finish_reason;
           const isTruncated = finishReason === "length";
@@ -53165,7 +53181,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
             body: JSON.stringify(requestPayload),
             signal: AbortSignal.timeout(timeoutMs)
           });
-          if (!res.ok) throw new Error(`LLM TM Verifier error: ${res.status} ${res.statusText}`);
+          if (!res.ok) throw new Error(await _LLMService.parseHttpError(res, "LLM TM Verifier"));
           const data = await res.json();
           const finishReason = data.choices?.[0]?.finish_reason;
           const isTruncated = finishReason === "length";
@@ -53288,7 +53304,7 @@ Return ONLY valid JSON:
             body: JSON.stringify(requestPayload),
             signal: AbortSignal.timeout(timeoutMs)
           });
-          if (!res.ok) throw new Error(`LLM TM Rewrite V2 error: ${res.status} ${res.statusText}`);
+          if (!res.ok) throw new Error(await _LLMService.parseHttpError(res, "LLM TM Rewrite V2"));
           const data = await res.json();
           const content = data.choices?.[0]?.message?.content?.trim() || "{}";
           const parsed = this.extractJsonFromLlmResponse(content);
@@ -222991,7 +223007,7 @@ Bullets: ${oldBullets}`
             image_url: { url: imageBase64 }
           });
         }
-        const model = settings2.llmModel || "google/gemini-2.5-flash";
+        const model = LLMService.normalizeModelId(settings2.llmModel || "google/gemini-2.5-flash");
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "ANALYSIS_REQUEST",
@@ -223018,7 +223034,7 @@ Bullets: ${oldBullets}`
             })
           });
           if (!resp.ok) {
-            throw new Error(`OpenRouter HTTP ${resp.status}: ${await resp.text()}`);
+            throw new Error(await LLMService.parseHttpError(resp, "OpenRouter"));
           }
           const json = await resp.json();
           const contentStr = json.choices?.[0]?.message?.content || "{}";
@@ -225591,8 +225607,7 @@ Beantworte die Analysefragen streng als JSON!`;
           });
           const latencyMs = Date.now() - start3;
           if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`OpenRouter Vision Fehler (${res.status}): ${errText}`);
+            throw new Error(await LLMService.parseHttpError(res, "OpenRouter Vision"));
           }
           const data = await res.json();
           const answer = data?.choices?.[0]?.message?.content || "";

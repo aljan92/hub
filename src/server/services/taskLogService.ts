@@ -815,8 +815,7 @@ export class TaskLogService {
       const latencyMs = Date.now() - start;
 
       if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`OpenRouter Vision Fehler (${res.status}): ${errText}`);
+        throw new Error(await LLMService.parseHttpError(res, 'OpenRouter Vision'));
       }
 
       const data = await res.json();
