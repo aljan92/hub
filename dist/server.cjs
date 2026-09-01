@@ -223015,8 +223015,9 @@ Bullets: ${oldBullets}`
           content: { model, oldTitle, oldBrand, hasImage: !!imageBase64 },
           metadata: { model, provider: "OpenRouter" }
         });
+        let activeModel = model;
         try {
-          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          let resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${apiKey}`,
@@ -223025,7 +223026,7 @@ Bullets: ${oldBullets}`
               "X-Title": "MBA HUB Update Pipeline"
             },
             body: JSON.stringify({
-              model,
+              model: activeModel,
               messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userContent }
@@ -223034,7 +223035,31 @@ Bullets: ${oldBullets}`
             })
           });
           if (!resp.ok) {
-            throw new Error(await LLMService.parseHttpError(resp, "OpenRouter"));
+            const errDetail = await LLMService.parseHttpError(resp, "OpenRouter");
+            if (errDetail.includes("support image input") || errDetail.includes("No endpoints found")) {
+              console.warn(`[UpdatePipeline] Modell "${activeModel}" unterst\xFCtzt keine Bildeingabe. Wiederhole Vision-Analyse mit "google/gemini-2.5-flash"...`);
+              activeModel = "google/gemini-2.5-flash";
+              resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${apiKey}`,
+                  "Content-Type": "application/json",
+                  "HTTP-Referer": "https://mba-hub.local",
+                  "X-Title": "MBA HUB Update Pipeline"
+                },
+                body: JSON.stringify({
+                  model: activeModel,
+                  messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userContent }
+                  ],
+                  response_format: { type: "json_object" }
+                })
+              });
+            }
+            if (!resp.ok) {
+              throw new Error(await LLMService.parseHttpError(resp, "OpenRouter"));
+            }
           }
           const json = await resp.json();
           const contentStr = json.choices?.[0]?.message?.content || "{}";
@@ -225578,10 +225603,11 @@ Beantworte die Analysefragen streng als JSON!`;
           } catch (e) {
           }
         }
-        const model = settings2.llmModel || "anthropic/claude-3.5-sonnet";
+        const model = LLMService.normalizeModelId(settings2.llmModel || "anthropic/claude-sonnet-4");
+        let activeModel = model;
         const start3 = Date.now();
         try {
-          const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          let res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${apiKey.trim()}`,
@@ -225590,7 +225616,7 @@ Beantworte die Analysefragen streng als JSON!`;
               "X-Title": "MBA Hub Quality Assurance"
             },
             body: JSON.stringify({
-              model,
+              model: activeModel,
               messages: [
                 { role: "system", content: analyzerPrompt },
                 {
@@ -225607,7 +225633,38 @@ Beantworte die Analysefragen streng als JSON!`;
           });
           const latencyMs = Date.now() - start3;
           if (!res.ok) {
-            throw new Error(await LLMService.parseHttpError(res, "OpenRouter Vision"));
+            const errDetail = await LLMService.parseHttpError(res, "OpenRouter Vision");
+            if (errDetail.includes("support image input") || errDetail.includes("No endpoints found")) {
+              console.warn(`[TaskLogService] Modell "${activeModel}" unterst\xFCtzt keine Bildeingabe f\xFCr QA-Vision. Wiederhole mit "google/gemini-2.5-flash"...`);
+              activeModel = "google/gemini-2.5-flash";
+              res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${apiKey.trim()}`,
+                  "Content-Type": "application/json",
+                  "HTTP-Referer": "https://mba-hub.local",
+                  "X-Title": "MBA Hub Quality Assurance"
+                },
+                body: JSON.stringify({
+                  model: activeModel,
+                  messages: [
+                    { role: "system", content: analyzerPrompt },
+                    {
+                      role: "user",
+                      content: [
+                        { type: "text", text: userPromptText },
+                        { type: "image_url", image_url: { url: imageSource } }
+                      ]
+                    }
+                  ],
+                  temperature: 0.1
+                }),
+                signal: AbortSignal.timeout(9e4)
+              });
+            }
+            if (!res.ok) {
+              throw new Error(await LLMService.parseHttpError(res, "OpenRouter Vision"));
+            }
           }
           const data = await res.json();
           const answer = data?.choices?.[0]?.message?.content || "";

@@ -152,8 +152,9 @@ export class UpdatePipelineService {
       metadata: { model, provider: 'OpenRouter' }
     });
 
+    let activeModel = model;
     try {
-      const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      let resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -162,7 +163,7 @@ export class UpdatePipelineService {
           'X-Title': 'MBA HUB Update Pipeline'
         },
         body: JSON.stringify({
-          model,
+          model: activeModel,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userContent }
@@ -172,7 +173,32 @@ export class UpdatePipelineService {
       });
 
       if (!resp.ok) {
-        throw new Error(await LLMService.parseHttpError(resp, 'OpenRouter'));
+        const errDetail = await LLMService.parseHttpError(resp, 'OpenRouter');
+        if (errDetail.includes('support image input') || errDetail.includes('No endpoints found')) {
+          console.warn(`[UpdatePipeline] Modell "${activeModel}" unterstützt keine Bildeingabe. Wiederhole Vision-Analyse mit "google/gemini-2.5-flash"...`);
+          activeModel = 'google/gemini-2.5-flash';
+          resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': 'https://mba-hub.local',
+              'X-Title': 'MBA HUB Update Pipeline'
+            },
+            body: JSON.stringify({
+              model: activeModel,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userContent }
+              ],
+              response_format: { type: 'json_object' }
+            })
+          });
+        }
+
+        if (!resp.ok) {
+          throw new Error(await LLMService.parseHttpError(resp, 'OpenRouter'));
+        }
       }
 
       const json = await resp.json();

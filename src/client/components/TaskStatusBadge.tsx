@@ -34,8 +34,10 @@ export const getTaskStatusInfo = (task: DesignTaskLog): TaskStatusInfo => {
 
   // 1. Error state
   if (task.hasError || task.status === 'ERROR') {
+    const raw = (task.errorDetails || '').replace(/^OpenRouter HTTP \d+:\s*/, '');
+    const cleanErr = raw.length > 40 ? `${raw.slice(0, 40)}...` : raw;
     return {
-      label: task.errorDetails ? `Fehler: ${task.errorDetails.slice(0, 24)}...` : 'Fehler aufgetreten',
+      label: cleanErr ? `Fehler: ${cleanErr}` : 'Fehler aufgetreten',
       badgeClass: 'bg-rose-500/15 text-rose-300 border-rose-500/30 font-semibold',
       dotBg: 'bg-rose-500',
       category: 'ERROR',
@@ -315,7 +317,7 @@ export const TaskStatusBadge: React.FC<TaskStatusBadgeProps> = ({
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-lg border font-mono tracking-tight transition-all ${sizeClasses} ${info.badgeClass} ${className}`}
-      title={`Task Status: ${task.status}${task.checkpoint ? ` (Checkpoint: ${task.checkpoint})` : ''}`}
+      title={task.errorDetails ? `Fehler: ${task.errorDetails}` : `Task Status: ${task.status}${task.checkpoint ? ` (Checkpoint: ${task.checkpoint})` : ''}`}
     >
       {showIcon && info.icon}
       <span>{info.label}</span>

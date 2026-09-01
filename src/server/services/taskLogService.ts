@@ -783,11 +783,12 @@ export class TaskLogService {
       } catch (e) {}
     }
 
-    const model = settings.llmModel || 'anthropic/claude-3.5-sonnet';
+    const model = LLMService.normalizeModelId(settings.llmModel || 'anthropic/claude-sonnet-4');
+    let activeModel = model;
     const start = Date.now();
 
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      let res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey.trim()}`,
@@ -796,7 +797,7 @@ export class TaskLogService {
           'X-Title': 'MBA Hub Quality Assurance'
         },
         body: JSON.stringify({
-          model,
+          model: activeModel,
           messages: [
             { role: 'system', content: analyzerPrompt },
             {
@@ -815,7 +816,39 @@ export class TaskLogService {
       const latencyMs = Date.now() - start;
 
       if (!res.ok) {
-        throw new Error(await LLMService.parseHttpError(res, 'OpenRouter Vision'));
+        const errDetail = await LLMService.parseHttpError(res, 'OpenRouter Vision');
+        if (errDetail.includes('support image input') || errDetail.includes('No endpoints found')) {
+          console.warn(`[TaskLogService] Modell "${activeModel}" unterstützt keine Bildeingabe für QA-Vision. Wiederhole mit "google/gemini-2.5-flash"...`);
+          activeModel = 'google/gemini-2.5-flash';
+          res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey.trim()}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': 'https://mba-hub.local',
+              'X-Title': 'MBA Hub Quality Assurance'
+            },
+            body: JSON.stringify({
+              model: activeModel,
+              messages: [
+                { role: 'system', content: analyzerPrompt },
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: userPromptText },
+                    { type: 'image_url', image_url: { url: imageSource } }
+                  ]
+                }
+              ],
+              temperature: 0.1
+            }),
+            signal: AbortSignal.timeout(90000)
+          });
+        }
+
+        if (!res.ok) {
+          throw new Error(await LLMService.parseHttpError(res, 'OpenRouter Vision'));
+        }
       }
 
       const data = await res.json();
