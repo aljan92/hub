@@ -50392,7 +50392,7 @@ var init_trademarkWhitelistService = __esm2({
 });
 
 // src/server/services/systemPromptService.ts
-var import_fs74, import_path69, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
+var import_fs74, import_path69, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
 var init_systemPromptService = __esm2({
   "src/server/services/systemPromptService.ts"() {
     "use strict";
@@ -51911,24 +51911,24 @@ CORE PRINCIPLES & DECISION RULES:
 OUTPUT FORMAT:
 ==================================================
 Respond ONLY with a valid JSON object matching this schema (no markdown, no conversational text):
+
+IMPORTANT: Normal, unproblematic generic or descriptive terms are implicitly considered KEEP!
+Do NOT list unproblematic KEEP hits in "problematicHits". Return "problematicHits" as [] if all terms are acceptable.
+Only list hits that require action ("REWRITE", "BLOCK_PRODUCTS", or "ESCALATE").
+
+Schema:
 {
   "decision": "APPROVE",
   "canBeFixedByListingRewrite": true,
   "reasonCode": null,
   "recommendedAction": null,
-  "hits": [
+  "problematicHits": [
     {
-      "searchedTerm": "western",
-      "registeredMark": "WESTERN",
+      "id": "tm_1",
+      "mark": "WILD SPIRIT",
       "field": "bullet1",
-      "classes": [25],
-      "markNature": "COMMON_DICTIONARY_WORD",
-      "usageType": "ORDINARY_DESCRIPTIVE",
-      "knownBrand": false,
-      "amazonRejectionRisk": "LOW",
-      "decision": "KEEP",
-      "confidence": 0.95,
-      "reason": "Used in ordinary descriptive sentence context."
+      "action": "REWRITE",
+      "reasonCode": "EXACT_MULTIWORD_CLASS25"
     }
   ],
   "blockedProducts": [],
@@ -51936,7 +51936,73 @@ Respond ONLY with a valid JSON object matching this schema (no markdown, no conv
   "rewriteInstructions": [],
   "escalation": null
 }
+
+If decision is "ESCALATE", include concise details in "escalation":
+{
+  "reasonCode": "CORE_QUOTE_CLASS25_CONFLICT",
+  "recommendedAction": "DO_NOT_SUBMIT",
+  "reason": "Exact active Class 25 word-mark match against the core design quote."
+}
 `;
+    DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT = `You are a specialized Amazon Merch on Demand (MBA) Trademark Rewrite Expert.
+
+Your task is to repair an ALREADY GENERATED English listing by resolving identified trademark issues with MINIMAL INVASIVENESS.
+
+==================================================
+CORE DIRECTIVE: MINIMAL INVASIVENESS & SEO PRESERVATION
+==================================================
+1. Repair ONLY the fields and terms affected by the identified trademark conflicts.
+2. PRESERVE all unaffected fields, high-performing niche keywords, phrasing, and structure.
+3. DO NOT rewrite an unaffected field merely for stylistic variety or generic polishing.
+4. DO NOT regenerate the listing from scratch.
+5. PRESERVE the original buyer-search intention, tone, and emotional connection.
+6. The printed design quote / slogan on the physical shirt CANNOT be altered by a listing rewrite. Never change the quote.
+
+==================================================
+MANDATORY MBA LISTING CONSTRAINTS:
+==================================================
+1. BRAND (40-50 characters, max 50):
+   - High keyword density around the primary niche/theme (e.g. "Equestrian Apparel", "Rodeo Collection").
+   - NO third-party brand names or trademarks.
+   - NO empty fluff words like "Studio", "Co", "Designs", "Inc".
+
+2. TITLE (50-60 characters, max 60):
+   - LOCKED TITLE SUFFIX: The title MUST end literally with the provided locked TITLE_SUFFIX (Subniche > Niche 2 > Niche 1).
+   - If resolving a trademark issue in the Title, modify ONLY the prefix before the suffix. The locked suffix must remain 100% intact.
+   - NO trailing punctuation (no periods, commas, dashes, colons at the end). Amazon automatically appends "T-Shirt".
+
+3. BULLET 1 (230-256 characters):
+   - Target audience, lifestyle, passion, and emotional connection to the graphic/theme.
+   - Natural, engaging English sentences. No spammy comma-separated keyword lists.
+   - ZERO PERCENT gift/present language: Strictly NO "gift", "present", "birthday", "christmas gift", etc.
+
+4. BULLET 2 (230-256 characters):
+   - Occasions, activities, gatherings, and settings where the apparel is worn.
+   - Natural, engaging English sentences.
+   - ZERO PERCENT gift/present language.
+
+5. DESCRIPTION (300-600 characters):
+   - Atmospheric, evocative summary of the design and theme.
+
+==================================================
+COMPLIANCE & FORBIDDEN TERMS:
+==================================================
+1. Strictly avoid all terms in "forbiddenTermsForTask" and any close phonetic or typographical variants.
+2. Never replace a flagged trademark with another known brand or protected multi-word phrase.
+3. Replace flagged terms with compliant, high-performing generic niche vocabulary.
+
+==================================================
+OUTPUT FORMAT:
+==================================================
+Return ONLY valid JSON matching this schema (no markdown fences, no conversational text, no explanations):
+{
+  "brand": "...",
+  "title": "...",
+  "bullet1": "...",
+  "bullet2": "...",
+  "description": "...",
+  "actions_taken": ["Concise note on what term was replaced in which field"]
+}`;
     DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT = `You are the final Amazon Merch trademark rejection verifier (GPT-5.6 Sol).
 
 Assume that a previous referee has already evaluated the listing to preserve legitimate generic/descriptive SEO keywords.
@@ -52020,7 +52086,12 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
               if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes("LOCK TITLE SUFFIX BEFORE WRITING THE TITLE")) {
                 this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
               }
-              if (!this.cachedPrompts.trademarkReferee) this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+              if (!this.cachedPrompts.trademarkReferee || !this.cachedPrompts.trademarkReferee.includes("problematicHits")) {
+                this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+              }
+              if (!this.cachedPrompts.trademarkRewrite) {
+                this.cachedPrompts.trademarkRewrite = DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT;
+              }
               if (!this.cachedPrompts.trademarkVerifier) this.cachedPrompts.trademarkVerifier = DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
               if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = this.cachedPrompts.trademarkReferee;
               if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
@@ -52045,6 +52116,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
           listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
           trademarkAuditor: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
           trademarkReferee: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+          trademarkRewrite: DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT,
           trademarkVerifier: DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT,
           svgBgAuditor: DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
           updateVisionAnalyzer: DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
@@ -52072,6 +52144,10 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
       static getTrademarkRefereePrompt() {
         const prompts = this.loadPrompts();
         return prompts.trademarkReferee || prompts.trademarkAuditor || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+      }
+      static getTrademarkRewritePrompt() {
+        const prompts = this.loadPrompts();
+        return prompts.trademarkRewrite || DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT;
       }
       static getTrademarkVerifierPrompt() {
         const prompts = this.loadPrompts();
@@ -52103,6 +52179,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
           listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
           trademarkAuditor: prompts.trademarkReferee || prompts.trademarkAuditor || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
           trademarkReferee: prompts.trademarkReferee || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+          trademarkRewrite: prompts.trademarkRewrite || DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT,
           trademarkVerifier: prompts.trademarkVerifier || DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT,
           svgBgAuditor: prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
           updateVisionAnalyzer: prompts.updateVisionAnalyzer || DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
@@ -52920,8 +52997,9 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
        * Semantic risk analysis, distinction between common descriptive words vs distinctive/famous marks
        */
       static async evaluateTrademarkReferee(params2) {
-        const { url, headers, model } = this.getBaseUrlAndHeaders();
+        const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
         const systemPrompt = SystemPromptService.getTrademarkRefereePrompt();
+        const hitsData = params2.compactHits || params2.normalizedHits || [];
         const userMessage = `Current English Listing:
 - Brand: "${params2.currentListing.brand}"
 - Title: "${params2.currentListing.title}"
@@ -52935,16 +53013,20 @@ Design Metadata:
 - Subniche: ${params2.subniche || "none"}
 - Printed Design Quote / Slogan: "${params2.quote || "none"}"
 
-Normalized Trademark Hits from USPTO:
-${JSON.stringify(params2.normalizedHits, null, 2)}
+Compact Trademark Hits:
+${JSON.stringify(hitsData)}
 
 Rewrite Context:
 - Rewrite Iteration: ${params2.rewriteIteration || 0} / 3
 - Forbidden Terms for Task: ${JSON.stringify(params2.forbiddenTermsForTask || [])}
 - Currently Blocked Products: ${JSON.stringify(params2.blockedProducts || [])}
 
-Please evaluate all hits against Amazon Merch risk rules. Classify each hit, determine if normal descriptive words can be KEPT, and decide whether REWRITE, APPROVE, APPROVE_WITH_BLOCKED_PRODUCTS or ESCALATE is required. Return valid JSON only.`;
+Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/descriptive words are implicitly KEEP and must NOT be output in problematicHits. Return valid JSON only.`;
         const settings = loadSettings();
+        const headers = { ...baseHeaders };
+        if (params2.sessionId) {
+          headers["X-Session-Id"] = params2.sessionId;
+        }
         const requestPayload = {
           model,
           messages: [
@@ -52952,8 +53034,11 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
             { role: "user", content: userMessage }
           ],
           temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-          max_tokens: settings.llmMaxTokens || 3500
+          max_tokens: settings.llmMaxTokens || 2500
         };
+        if (params2.sessionId) {
+          requestPayload.session_id = params2.sessionId;
+        }
         try {
           const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
           const res = await this.executeFetch(url, {
@@ -52968,12 +53053,26 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
           const parsed = this.extractJsonFromLlmResponse(content);
           const decision = parsed.decision || "APPROVE";
           const canBeFixed = parsed.canBeFixedByListingRewrite !== void 0 ? Boolean(parsed.canBeFixedByListingRewrite) : decision !== "ESCALATE";
+          const rawProblematic = Array.isArray(parsed.problematicHits) ? parsed.problematicHits : Array.isArray(parsed.hits) ? parsed.hits : [];
+          const mappedHits = rawProblematic.map((h) => ({
+            id: h.id,
+            searchedTerm: h.term || h.searchedTerm || h.mark || "",
+            registeredMark: h.mark || h.registeredMark || "",
+            field: h.field || (Array.isArray(h.occurrences) && h.occurrences.length > 0 ? h.occurrences[0].field : "all"),
+            classes: h.classes || [],
+            markNature: h.markNature || "DISTINCTIVE_OR_BRAND",
+            usageType: h.usageType || "POTENTIAL_RISK",
+            amazonRejectionRisk: h.amazonRejectionRisk || (h.action === "REWRITE" ? "HIGH" : "LOW"),
+            decision: h.action || h.decision || "REWRITE",
+            reasonCode: h.reasonCode || h.reason_code || null,
+            reason: h.reason || h.explanation || "Identified trademark risk"
+          }));
           return {
             decision: ["APPROVE", "REWRITE", "APPROVE_WITH_BLOCKED_PRODUCTS", "ESCALATE"].includes(decision) ? decision : "APPROVE",
             canBeFixedByListingRewrite: canBeFixed,
-            reasonCode: parsed.reasonCode || parsed.reason_code || null,
-            recommendedAction: parsed.recommendedAction || parsed.recommended_action || null,
-            hits: Array.isArray(parsed.hits) ? parsed.hits : [],
+            reasonCode: parsed.reasonCode || parsed.reason_code || (parsed.escalation?.reasonCode ?? null),
+            recommendedAction: parsed.recommendedAction || parsed.recommended_action || (parsed.escalation?.recommendedAction ?? null),
+            hits: mappedHits,
             blockedProducts: Array.isArray(parsed.blockedProducts) ? parsed.blockedProducts : Array.isArray(parsed.blocked_products) ? parsed.blocked_products : params2.blockedProducts || [],
             rewriteRequired: parsed.rewriteRequired !== void 0 ? Boolean(parsed.rewriteRequired) : decision === "REWRITE",
             rewriteInstructions: Array.isArray(parsed.rewriteInstructions) ? parsed.rewriteInstructions : Array.isArray(parsed.rewrite_instructions) ? parsed.rewrite_instructions : [],
@@ -53002,8 +53101,9 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
        * V2 Amazon Rejection Verifier (GPT-5.6 Sol - Adversarial Reviewer)
        */
       static async evaluateTrademarkVerifier(params2) {
-        const { url, headers, model } = this.getBaseUrlAndHeaders();
+        const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
         const systemPrompt = SystemPromptService.getTrademarkVerifierPrompt();
+        const hitsData = params2.compactHits || params2.normalizedHits || [];
         const userMessage = `Candidate English Listing for Amazon Merch Submission:
 - Brand: "${params2.currentListing.brand}"
 - Title: "${params2.currentListing.title}"
@@ -53017,14 +53117,18 @@ Design Metadata:
 - Subniche: ${params2.subniche || "none"}
 - Printed Design Quote / Slogan: "${params2.quote || "none"}"
 
-USPTO Trademark Hits Data:
-${JSON.stringify(params2.normalizedHits, null, 2)}
+Compact Trademark Hits Data:
+${JSON.stringify(hitsData)}
 
 Previous Referee Verdict: "${params2.refereeDecision || "APPROVE"}"
 Blocked Products: ${JSON.stringify(params2.blockedProducts || [])}
 
 Act as the final adversarial Amazon Merch reviewer. Do you see any plausible trademark, brand, or policy reasons why Amazon Merch might reject this submission or penalize the account? Return valid JSON.`;
         const settings = loadSettings();
+        const headers = { ...baseHeaders };
+        if (params2.sessionId) {
+          headers["X-Session-Id"] = params2.sessionId;
+        }
         const requestPayload = {
           model,
           messages: [
@@ -53034,6 +53138,9 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
           temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
           max_tokens: settings.llmMaxTokens || 2500
         };
+        if (params2.sessionId) {
+          requestPayload.session_id = params2.sessionId;
+        }
         try {
           const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
           const res = await this.executeFetch(url, {
@@ -53072,8 +53179,8 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
        * V2 SEO-Preserving Rewrite for Trademark Issues
        */
       static async rewriteListingForTrademarkV2(params2) {
-        const { url, headers, model } = this.getBaseUrlAndHeaders();
-        const systemPrompt = SystemPromptService.getListingGeneratorPrompt();
+        const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
+        const systemPrompt = SystemPromptService.getTrademarkRewritePrompt();
         const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params2.rewriteIteration} of 3).
 
 Current Listing:
@@ -53102,9 +53209,9 @@ CRITICAL CONSTRAINTS:
    - Bullet 1: 230-256 chars
    - Bullet 2: 230-256 chars
    - Description: 300-600 chars
-4. PRESERVE SEO DEPTH: Replace only the problematic terms with high-performing niche terms. Keep legitimate keywords intact.
+4. MINIMAL INVASIVENESS: Repair only the fields and terms affected by trademark issues. Keep all unaffected keywords, structures, and phrasing completely intact.
 
-Return ONLY valid JSON matching this schema:
+Return ONLY valid JSON:
 {
   "brand": "...",
   "title": "...",
@@ -53114,6 +53221,10 @@ Return ONLY valid JSON matching this schema:
   "actions_taken": ["Replaced term X with Y in Brand", "Rewrote Bullet 1 to remove phrase Z"]
 }`;
         const settings = loadSettings();
+        const headers = { ...baseHeaders };
+        if (params2.sessionId) {
+          headers["X-Session-Id"] = params2.sessionId;
+        }
         const requestPayload = {
           model,
           messages: [
@@ -53121,8 +53232,11 @@ Return ONLY valid JSON matching this schema:
             { role: "user", content: userMessage }
           ],
           temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
-          max_tokens: settings.llmMaxTokens || 3500
+          max_tokens: settings.llmMaxTokens || 2500
         };
+        if (params2.sessionId) {
+          requestPayload.session_id = params2.sessionId;
+        }
         try {
           const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
           const res = await this.executeFetch(url, {
@@ -54175,13 +54289,97 @@ var init_trademarkService = __esm2({
         return normalizedHits;
       }
       /**
+       * Compact, deduplicated representation of trademark hits specifically tailored for LLM evaluation.
+       * Strips internal registration numbers, dates, and duplicate entries, aggregating by registered mark.
+       */
+      static buildCompactTrademarkHits(normalizedHits, listing, quote5) {
+        const markMap = /* @__PURE__ */ new Map();
+        for (const h of normalizedHits) {
+          const cleanMark = (h.registeredMark || h.searchedTerm || "").trim().toUpperCase();
+          if (!cleanMark) continue;
+          let entry = markMap.get(cleanMark);
+          if (!entry) {
+            entry = {
+              mark: cleanMark,
+              status: h.status || "ACTIVE",
+              features: /* @__PURE__ */ new Set(),
+              classes: /* @__PURE__ */ new Set(),
+              offices: /* @__PURE__ */ new Set(),
+              matchTypes: /* @__PURE__ */ new Set(),
+              fullQuoteMatch: false,
+              fields: /* @__PURE__ */ new Set()
+            };
+            markMap.set(cleanMark, entry);
+          }
+          if (h.markFeature) entry.features.add(h.markFeature);
+          if (Array.isArray(h.classes)) {
+            h.classes.forEach((c) => entry.classes.add(c));
+          }
+          if (h.office) entry.offices.add(h.office);
+          if (h.matchType) entry.matchTypes.add(h.matchType);
+          if (h.isFullQuoteMatch) entry.fullQuoteMatch = true;
+          if (h.field) entry.fields.add(h.field);
+        }
+        const matchTypePriority = [
+          "FULL_EXACT",
+          "EXACT_NGRAM",
+          "SINGLE_WORD_EXACT",
+          "CONTAINS_REGISTERED_MARK",
+          "QUERY_INSIDE_LONGER_MARK",
+          "FUZZY_OR_SIMILAR"
+        ];
+        const getFieldText = (f) => {
+          if (f === "brand") return listing.brand || "";
+          if (f === "title") return listing.title || "";
+          if (f === "bullet1") return listing.bullet1 || "";
+          if (f === "bullet2") return listing.bullet2 || "";
+          if (f === "description") return listing.description || "";
+          if (f === "quote") return quote5 || "";
+          return "";
+        };
+        const compactList = [];
+        let idx = 1;
+        for (const [_, entry] of markMap.entries()) {
+          let bestMatchType = "FUZZY_OR_SIMILAR";
+          for (const p of matchTypePriority) {
+            if (entry.matchTypes.has(p)) {
+              bestMatchType = p;
+              break;
+            }
+          }
+          const feature = entry.features.has("Combined") ? "Combined" : entry.features.values().next().value || "Word";
+          const occurrences = Array.from(entry.fields).map((f) => ({
+            field: f,
+            text: getFieldText(f)
+          }));
+          compactList.push({
+            id: `tm_${idx++}`,
+            mark: entry.mark,
+            status: entry.status,
+            feature,
+            classes: Array.from(entry.classes).sort((a, b) => a - b),
+            offices: Array.from(entry.offices).sort(),
+            matchType: bestMatchType,
+            fullQuoteMatch: entry.fullQuoteMatch,
+            occurrences
+          });
+        }
+        return compactList;
+      }
+      /**
        * Complete V2 Trademark Audit Orchestrator:
-       * Scan ➔ Match Normalization ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) with full re-scan ➔ Verifier ➔ Result
+       * Scan ➔ Match Normalization ➔ Compact LLM Payload ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) ➔ Final Verifier Gate
        */
       static async executeTrademarkAuditV2(params2) {
         let currentListing = { ...params2.listing };
         const forbiddenTermsForTask = [];
         const rewriteIterations = [];
+        const tmSessionId = params2.sessionId || (params2.taskId ? `tm:${params2.taskId}` : `tm:${Date.now()}`);
+        const approvedHitContexts = /* @__PURE__ */ new Set();
+        const getHitContextKey = (mark, classes, matchType, field, text2) => {
+          const normText = (text2 || "").trim().toLowerCase().replace(/\s+/g, " ");
+          return `${mark.toLowerCase()}|${classes.slice().sort((a, b) => a - b).join(",")}|${matchType}|${field}|${normText}`;
+        };
         let initialTrademarkHits = [];
         let finalRefereeResult = null;
         let finalVerifierResult = null;
@@ -54189,7 +54387,7 @@ var init_trademarkService = __esm2({
         let blockedNiceClasses = [];
         const maxCycles = params2.maxRewriteCycles ?? 3;
         for (let cycle = 0; cycle <= maxCycles; cycle++) {
-          console.log(`[TrademarkServiceV2] \u{1F50D} Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles})...`);
+          console.log(`[TrademarkServiceV2] \u{1F50D} Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles}, Session: ${tmSessionId})...`);
           const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
             listing: currentListing,
             quote: params2.quote
@@ -54199,23 +54397,54 @@ var init_trademarkService = __esm2({
           if (cycle === 0) {
             initialTrademarkHits = [...normalizedHits];
           }
+          const compactHits = this.buildCompactTrademarkHits(normalizedHits, currentListing, params2.quote);
           params2.onEvent?.({
             type: "TM_SCAN_RESPONSE",
-            title: cycle === 0 ? `USPTO TM Scan abgeschlossen (${normalizedHits.length} Treffer)` : `USPTO TM Scan (Runde ${cycle}: ${normalizedHits.length} Treffer)`,
-            content: { cycle, totalHits: normalizedHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
+            title: cycle === 0 ? `USPTO TM Scan abgeschlossen (${normalizedHits.length} Treffer, ${compactHits.length} kompakt)` : `USPTO TM Scan (Runde ${cycle}: ${normalizedHits.length} Treffer, ${compactHits.length} kompakt)`,
+            content: { cycle, totalHits: normalizedHits.length, compactHitsCount: compactHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
           });
-          const refereeRes = await LLMService.evaluateTrademarkReferee({
-            currentListing,
-            niche1: params2.niche1,
-            niche2: params2.niche2,
-            subniche: params2.subniche,
-            quote: params2.quote,
-            normalizedHits,
-            rewriteIteration: cycle,
-            forbiddenTermsForTask,
-            blockedProducts
+          const hitsToReview = cycle === 0 ? compactHits : compactHits.filter((h) => {
+            return h.occurrences.some((occ) => !approvedHitContexts.has(getHitContextKey(h.mark, h.classes, h.matchType, occ.field, occ.text)));
           });
+          let refereeRes;
+          if (cycle > 0 && hitsToReview.length === 0) {
+            console.log(`[TrademarkServiceV2] \u26A1 Alle ${compactHits.length} Treffer wurden in diesem Task bereits als KEEP gepr\xFCft und sind im Kontext unver\xE4ndert. \xDCberspringe erneuten Referee-Call.`);
+            refereeRes = {
+              decision: "APPROVE",
+              canBeFixedByListingRewrite: true,
+              reasonCode: null,
+              recommendedAction: null,
+              hits: [],
+              blockedProducts,
+              rewriteRequired: false,
+              rewriteInstructions: []
+            };
+          } else {
+            refereeRes = await LLMService.evaluateTrademarkReferee({
+              currentListing,
+              niche1: params2.niche1,
+              niche2: params2.niche2,
+              subniche: params2.subniche,
+              quote: params2.quote,
+              compactHits: hitsToReview,
+              normalizedHits,
+              rewriteIteration: cycle,
+              forbiddenTermsForTask,
+              blockedProducts,
+              sessionId: tmSessionId
+            });
+          }
           finalRefereeResult = refereeRes;
+          const problematicMarks = new Set(
+            (refereeRes.hits || []).filter((h) => h.decision === "REWRITE" || h.action === "REWRITE" || h.decision === "ESCALATE" || h.action === "ESCALATE").map((h) => (h.registeredMark || h.mark || h.searchedTerm || "").trim().toLowerCase())
+          );
+          for (const h of hitsToReview) {
+            if (!problematicMarks.has(h.mark.trim().toLowerCase())) {
+              for (const occ of h.occurrences) {
+                approvedHitContexts.add(getHitContextKey(h.mark, h.classes, h.matchType, occ.field, occ.text));
+              }
+            }
+          }
           if (Array.isArray(refereeRes.blockedProducts) && refereeRes.blockedProducts.length > 0) {
             blockedProducts = Array.from(/* @__PURE__ */ new Set([...blockedProducts, ...refereeRes.blockedProducts]));
           }
@@ -54245,16 +54474,19 @@ var init_trademarkService = __esm2({
             };
           }
           if (refereeRes.decision === "APPROVE" || refereeRes.decision === "APPROVE_WITH_BLOCKED_PRODUCTS") {
-            console.log(`[TrademarkServiceV2] \u{1F6E1}\uFE0F Referee hat genehmigt (${refereeRes.decision}). Starte Verifier Pass...`);
+            console.log(`[TrademarkServiceV2] \u{1F6E1}\uFE0F Referee hat genehmigt (${refereeRes.decision}). Starte Verifier als Final Gate...`);
             const verifierRes = await LLMService.evaluateTrademarkVerifier({
               currentListing,
               niche1: params2.niche1,
               niche2: params2.niche2,
               subniche: params2.subniche,
               quote: params2.quote,
+              compactHits,
+              // Final Verifier receives the FULL compact hits of the candidate
               normalizedHits,
               refereeDecision: refereeRes.decision,
-              blockedProducts
+              blockedProducts,
+              sessionId: tmSessionId
             });
             finalVerifierResult = verifierRes;
             params2.onEvent?.({
@@ -54318,6 +54550,7 @@ var init_trademarkService = __esm2({
                 finalListing: currentListing
               };
             }
+            if (!refereeRes.rewriteInstructions) refereeRes.rewriteInstructions = [];
             const verifierInstructions = verifierRes.identifiedRisks.map((r) => `Resolve ${r.riskType} in ${r.field}: "${r.term}" - ${r.explanation}`);
             refereeRes.rewriteInstructions.push(...verifierInstructions);
             verifierRes.identifiedRisks.forEach((r) => {
@@ -54344,7 +54577,7 @@ var init_trademarkService = __esm2({
             };
           }
           for (const h of refereeRes.hits) {
-            if (h.decision === "REWRITE" || h.amazonRejectionRisk === "HIGH" || h.amazonRejectionRisk === "VERY_HIGH") {
+            if (h.decision === "REWRITE" || h.action === "REWRITE" || h.amazonRejectionRisk === "HIGH" || h.amazonRejectionRisk === "VERY_HIGH") {
               if (h.searchedTerm) forbiddenTermsForTask.push(h.searchedTerm.toLowerCase());
               if (h.registeredMark) forbiddenTermsForTask.push(h.registeredMark.toLowerCase());
             }
@@ -54358,8 +54591,9 @@ var init_trademarkService = __esm2({
             quote: params2.quote,
             rewriteIteration: cycle + 1,
             forbiddenTermsForTask: Array.from(new Set(forbiddenTermsForTask)),
-            rewriteInstructions: refereeRes.rewriteInstructions,
-            hitsToFix: refereeRes.hits
+            rewriteInstructions: refereeRes.rewriteInstructions || [],
+            hitsToFix: refereeRes.hits,
+            sessionId: tmSessionId
           });
           currentListing = rewriteRes.refinedListing;
           rewriteIterations.push({
@@ -222939,6 +223173,7 @@ Bullets: ${oldBullets}`
           niche2,
           subniche,
           maxRewriteCycles: 3,
+          taskId,
           onEvent: (ev) => {
             TaskLogService2.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -225510,6 +225745,7 @@ Beantworte die Analysefragen streng als JSON!`;
             niche2,
             subniche,
             maxRewriteCycles: 3,
+            taskId,
             onEvent: (ev) => {
               this.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -226348,8 +226584,9 @@ Beantworte die Analysefragen streng als JSON!`;
             niche1: task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || "",
             niche2: task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || "",
             subniche: task.subniche || task.customAnswers?.subniche || task.payload?.subniche || "",
-            maxRewriteCycles: 0
+            maxRewriteCycles: 0,
             // In manual check, just scan and evaluate the provided text
+            taskId
           });
           return {
             success: true,

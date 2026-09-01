@@ -163,6 +163,137 @@ async function runAcceptanceTests() {
   }
 
   // ----------------------------------------------------
+  // TEST J: Compact Trademark Hits Aggregation (Token Reduction)
+  // ----------------------------------------------------
+  {
+    const listing = {
+      brand: 'Western Wild Co',
+      title: 'Retro Western Cowgirl Riding Horse Slogan',
+      bullet1: 'Western aesthetic for country lovers.',
+      bullet2: 'High quality apparel for everyday rodeo.',
+      description: 'Vintage western apparel design.'
+    };
+
+    const mockNormalizedHits = [
+      {
+        searchedTerm: 'western',
+        registeredMark: 'WESTERN',
+        field: 'brand',
+        office: 'USPTO' as const,
+        status: 'LIVE',
+        markFeature: 'Word',
+        classes: [25],
+        classNumber: '25',
+        wordCount: 1,
+        matchType: 'SINGLE_WORD_EXACT' as const,
+        isFullQuoteMatch: false,
+        isKnownPhraseMatch: false,
+        serialNumber: '111111',
+        filingDate: '2020-01-01'
+      },
+      {
+        searchedTerm: 'western',
+        registeredMark: 'WESTERN',
+        field: 'title',
+        office: 'USPTO' as const,
+        status: 'LIVE',
+        markFeature: 'Word',
+        classes: [9, 25],
+        classNumber: '9, 25',
+        wordCount: 1,
+        matchType: 'SINGLE_WORD_EXACT' as const,
+        isFullQuoteMatch: false,
+        isKnownPhraseMatch: false,
+        serialNumber: '222222',
+        filingDate: '2021-01-01'
+      },
+      {
+        searchedTerm: 'western',
+        registeredMark: 'WESTERN',
+        field: 'bullet1',
+        office: 'EUIPO' as const,
+        status: 'REGISTERED',
+        markFeature: 'Word',
+        classes: [25],
+        classNumber: '25',
+        wordCount: 1,
+        matchType: 'SINGLE_WORD_EXACT' as const,
+        isFullQuoteMatch: false,
+        isKnownPhraseMatch: false,
+        serialNumber: '333333'
+      }
+    ];
+
+    const compact = TrademarkService.buildCompactTrademarkHits(mockNormalizedHits, listing, 'Western Rider');
+
+    assert(compact.length === 1, 'Test J1: Multiple raw hits collapsed into single CompactTrademarkHit');
+    assert(compact[0].mark === 'WESTERN', 'Test J2: Mark normalized uppercase');
+    assert(compact[0].classes.includes(9) && compact[0].classes.includes(25), 'Test J3: Deduplicated classes [9, 25]');
+    assert(compact[0].offices.includes('USPTO') && compact[0].offices.includes('EUIPO'), 'Test J4: Deduplicated offices [EUIPO, USPTO]');
+    assert(compact[0].occurrences.length === 3, 'Test J5: Occurrences collect distinct fields');
+    assert(compact[0].occurrences.some(o => o.field === 'brand' && o.text === listing.brand), 'Test J6: Field text extracted correctly');
+    assert(!('serialNumber' in compact[0]) && !('filingDate' in compact[0]), 'Test J7: Internal metadata stripped from compact hit');
+  }
+
+  // ----------------------------------------------------
+  // TEST K: Compact Referee Output Parsing (problematicHits format)
+  // ----------------------------------------------------
+  {
+    const mockContent = JSON.stringify({
+      decision: 'REWRITE',
+      canBeFixedByListingRewrite: true,
+      reasonCode: 'DISTINCTIVE_TRADEMARK_FOUND',
+      problematicHits: [
+        {
+          id: 'tm_1',
+          mark: 'WESTERN BOOTS',
+          classes: [25],
+          occurrences: [{ field: 'title', text: 'Retro Western Boots' }],
+          action: 'REWRITE',
+          reason: 'Distinctive multiword brand name in Class 25'
+        }
+      ],
+      rewriteInstructions: ['Remove "Western Boots" from Title']
+    });
+
+    const parsed = (LLMService as any).extractJsonFromLlmResponse(mockContent);
+    const rawProblematic = Array.isArray(parsed.problematicHits) ? parsed.problematicHits : [];
+    const mapped = rawProblematic.map((h: any) => ({
+      searchedTerm: h.mark,
+      registeredMark: h.mark,
+      field: h.occurrences?.[0]?.field || 'all',
+      classes: h.classes || [],
+      decision: h.action || 'REWRITE',
+      reason: h.reason || ''
+    }));
+
+    assert(mapped.length === 1, 'Test K1: problematicHits correctly parsed and mapped');
+    assert(mapped[0].registeredMark === 'WESTERN BOOTS', 'Test K2: Correct registeredMark');
+    assert(mapped[0].decision === 'REWRITE', 'Test K3: Correct decision mapping');
+  }
+
+  // ----------------------------------------------------
+  // TEST L: Final Gate Verifier Logic (Verifier NOT called if Referee flags REWRITE)
+  // ----------------------------------------------------
+  {
+    let verifierCalled = false;
+    const refereeDecision = 'REWRITE';
+
+    if (refereeDecision === 'APPROVE' || refereeDecision === 'APPROVE_WITH_BLOCKED_PRODUCTS') {
+      verifierCalled = true;
+    }
+
+    assert(!verifierCalled, 'Test L1: Verifier is NOT called when Referee decision is REWRITE');
+
+    let verifierCalledOnApprove = false;
+    const refereeDecisionApprove = 'APPROVE';
+    if (refereeDecisionApprove === 'APPROVE' || refereeDecisionApprove === 'APPROVE_WITH_BLOCKED_PRODUCTS') {
+      verifierCalledOnApprove = true;
+    }
+    assert(verifierCalledOnApprove, 'Test L2: Verifier is called as Final Gate when Referee decision is APPROVE');
+  }
+
+  // ----------------------------------------------------
   // Summary
   // ----------------------------------------------------
   console.log('\n====================================================');

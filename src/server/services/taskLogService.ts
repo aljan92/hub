@@ -1089,6 +1089,7 @@ export class TaskLogService {
         niche2,
         subniche,
         maxRewriteCycles: 3,
+        taskId,
         onEvent: (ev) => {
           this.addEvent(taskId, {
             timestamp: new Date().toISOString(),
@@ -2082,7 +2083,8 @@ export class TaskLogService {
         niche1: task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || '',
         niche2: task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || '',
         subniche: task.subniche || task.customAnswers?.subniche || task.payload?.subniche || '',
-        maxRewriteCycles: 0 // In manual check, just scan and evaluate the provided text
+        maxRewriteCycles: 0, // In manual check, just scan and evaluate the provided text
+        taskId
       });
 
       return {

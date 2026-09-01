@@ -591,16 +591,19 @@ Style Preset: ${stylePreset}`;
     niche2?: string;
     subniche?: string;
     quote?: string;
-    normalizedHits: any[];
+    compactHits?: any[];
+    normalizedHits?: any[];
     rewriteIteration?: number;
     forbiddenTermsForTask?: string[];
     blockedProducts?: string[];
+    sessionId?: string;
   }): Promise<{
     decision: 'APPROVE' | 'REWRITE' | 'APPROVE_WITH_BLOCKED_PRODUCTS' | 'ESCALATE';
     canBeFixedByListingRewrite: boolean;
     reasonCode?: string | null;
     recommendedAction?: string | null;
     hits: Array<{
+      id?: string;
       searchedTerm: string;
       registeredMark: string;
       field?: string;
@@ -620,8 +623,9 @@ Style Preset: ${stylePreset}`;
     _rawRequest?: any;
     _rawResponse?: any;
   }> {
-    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
     const systemPrompt = SystemPromptService.getTrademarkRefereePrompt();
+    const hitsData = params.compactHits || params.normalizedHits || [];
 
     const userMessage = `Current English Listing:
 - Brand: "${params.currentListing.brand}"
@@ -636,26 +640,35 @@ Design Metadata:
 - Subniche: ${params.subniche || 'none'}
 - Printed Design Quote / Slogan: "${params.quote || 'none'}"
 
-Normalized Trademark Hits from USPTO:
-${JSON.stringify(params.normalizedHits, null, 2)}
+Compact Trademark Hits:
+${JSON.stringify(hitsData)}
 
 Rewrite Context:
 - Rewrite Iteration: ${params.rewriteIteration || 0} / 3
 - Forbidden Terms for Task: ${JSON.stringify(params.forbiddenTermsForTask || [])}
 - Currently Blocked Products: ${JSON.stringify(params.blockedProducts || [])}
 
-Please evaluate all hits against Amazon Merch risk rules. Classify each hit, determine if normal descriptive words can be KEPT, and decide whether REWRITE, APPROVE, APPROVE_WITH_BLOCKED_PRODUCTS or ESCALATE is required. Return valid JSON only.`;
+Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/descriptive words are implicitly KEEP and must NOT be output in problematicHits. Return valid JSON only.`;
 
     const settings = loadSettings();
-    const requestPayload = {
+    const headers = { ...baseHeaders };
+    if (params.sessionId) {
+      headers['X-Session-Id'] = params.sessionId;
+    }
+
+    const requestPayload: any = {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
       temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-      max_tokens: settings.llmMaxTokens || 3500
+      max_tokens: settings.llmMaxTokens || 2500
     };
+
+    if (params.sessionId) {
+      requestPayload.session_id = params.sessionId;
+    }
 
     try {
       const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
@@ -676,12 +689,30 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
         ? Boolean(parsed.canBeFixedByListingRewrite) 
         : (decision !== 'ESCALATE');
 
+      const rawProblematic = Array.isArray(parsed.problematicHits)
+        ? parsed.problematicHits
+        : (Array.isArray(parsed.hits) ? parsed.hits : []);
+
+      const mappedHits = rawProblematic.map((h: any) => ({
+        id: h.id,
+        searchedTerm: h.term || h.searchedTerm || h.mark || '',
+        registeredMark: h.mark || h.registeredMark || '',
+        field: h.field || (Array.isArray(h.occurrences) && h.occurrences.length > 0 ? h.occurrences[0].field : 'all'),
+        classes: h.classes || [],
+        markNature: h.markNature || 'DISTINCTIVE_OR_BRAND',
+        usageType: h.usageType || 'POTENTIAL_RISK',
+        amazonRejectionRisk: h.amazonRejectionRisk || (h.action === 'REWRITE' ? 'HIGH' : 'LOW'),
+        decision: h.action || h.decision || 'REWRITE',
+        reasonCode: h.reasonCode || h.reason_code || null,
+        reason: h.reason || h.explanation || 'Identified trademark risk'
+      }));
+
       return {
         decision: ['APPROVE', 'REWRITE', 'APPROVE_WITH_BLOCKED_PRODUCTS', 'ESCALATE'].includes(decision) ? decision : 'APPROVE',
         canBeFixedByListingRewrite: canBeFixed,
-        reasonCode: parsed.reasonCode || parsed.reason_code || null,
-        recommendedAction: parsed.recommendedAction || parsed.recommended_action || null,
-        hits: Array.isArray(parsed.hits) ? parsed.hits : [],
+        reasonCode: parsed.reasonCode || parsed.reason_code || (parsed.escalation?.reasonCode ?? null),
+        recommendedAction: parsed.recommendedAction || parsed.recommended_action || (parsed.escalation?.recommendedAction ?? null),
+        hits: mappedHits,
         blockedProducts: Array.isArray(parsed.blockedProducts) ? parsed.blockedProducts : (Array.isArray(parsed.blocked_products) ? parsed.blocked_products : (params.blockedProducts || [])),
         rewriteRequired: parsed.rewriteRequired !== undefined ? Boolean(parsed.rewriteRequired) : (decision === 'REWRITE'),
         rewriteInstructions: Array.isArray(parsed.rewriteInstructions) ? parsed.rewriteInstructions : (Array.isArray(parsed.rewrite_instructions) ? parsed.rewrite_instructions : []),
@@ -716,9 +747,11 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
     niche2?: string;
     subniche?: string;
     quote?: string;
-    normalizedHits: any[];
+    compactHits?: any[];
+    normalizedHits?: any[];
     refereeDecision?: string;
     blockedProducts?: string[];
+    sessionId?: string;
   }): Promise<{
     verdict: 'SAFE' | 'HIGH_RISK';
     identifiedRisks: Array<{
@@ -732,8 +765,9 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
     _rawRequest?: any;
     _rawResponse?: any;
   }> {
-    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
     const systemPrompt = SystemPromptService.getTrademarkVerifierPrompt();
+    const hitsData = params.compactHits || params.normalizedHits || [];
 
     const userMessage = `Candidate English Listing for Amazon Merch Submission:
 - Brand: "${params.currentListing.brand}"
@@ -748,8 +782,8 @@ Design Metadata:
 - Subniche: ${params.subniche || 'none'}
 - Printed Design Quote / Slogan: "${params.quote || 'none'}"
 
-USPTO Trademark Hits Data:
-${JSON.stringify(params.normalizedHits, null, 2)}
+Compact Trademark Hits Data:
+${JSON.stringify(hitsData)}
 
 Previous Referee Verdict: "${params.refereeDecision || 'APPROVE'}"
 Blocked Products: ${JSON.stringify(params.blockedProducts || [])}
@@ -757,7 +791,12 @@ Blocked Products: ${JSON.stringify(params.blockedProducts || [])}
 Act as the final adversarial Amazon Merch reviewer. Do you see any plausible trademark, brand, or policy reasons why Amazon Merch might reject this submission or penalize the account? Return valid JSON.`;
 
     const settings = loadSettings();
-    const requestPayload = {
+    const headers = { ...baseHeaders };
+    if (params.sessionId) {
+      headers['X-Session-Id'] = params.sessionId;
+    }
+
+    const requestPayload: any = {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -766,6 +805,10 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
       temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
       max_tokens: settings.llmMaxTokens || 2500
     };
+
+    if (params.sessionId) {
+      requestPayload.session_id = params.sessionId;
+    }
 
     try {
       const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
@@ -818,14 +861,15 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
     forbiddenTermsForTask: string[];
     rewriteInstructions: string[];
     hitsToFix?: any[];
+    sessionId?: string;
   }): Promise<{
     refinedListing: EnglishListing;
     actionsTaken: string[];
     _rawRequest?: any;
     _rawResponse?: any;
   }> {
-    const { url, headers, model } = this.getBaseUrlAndHeaders();
-    const systemPrompt = SystemPromptService.getListingGeneratorPrompt();
+    const { url, headers: baseHeaders, model } = this.getBaseUrlAndHeaders();
+    const systemPrompt = SystemPromptService.getTrademarkRewritePrompt();
 
     const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params.rewriteIteration} of 3).
 
@@ -855,9 +899,9 @@ CRITICAL CONSTRAINTS:
    - Bullet 1: 230-256 chars
    - Bullet 2: 230-256 chars
    - Description: 300-600 chars
-4. PRESERVE SEO DEPTH: Replace only the problematic terms with high-performing niche terms. Keep legitimate keywords intact.
+4. MINIMAL INVASIVENESS: Repair only the fields and terms affected by trademark issues. Keep all unaffected keywords, structures, and phrasing completely intact.
 
-Return ONLY valid JSON matching this schema:
+Return ONLY valid JSON:
 {
   "brand": "...",
   "title": "...",
@@ -868,15 +912,24 @@ Return ONLY valid JSON matching this schema:
 }`;
 
     const settings = loadSettings();
-    const requestPayload = {
+    const headers = { ...baseHeaders };
+    if (params.sessionId) {
+      headers['X-Session-Id'] = params.sessionId;
+    }
+
+    const requestPayload: any = {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
       temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
-      max_tokens: settings.llmMaxTokens || 3500
+      max_tokens: settings.llmMaxTokens || 2500
     };
+
+    if (params.sessionId) {
+      requestPayload.session_id = params.sessionId;
+    }
 
     try {
       const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;

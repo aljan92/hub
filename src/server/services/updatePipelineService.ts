@@ -409,6 +409,7 @@ export class UpdatePipelineService {
       niche2,
       subniche,
       maxRewriteCycles: 3,
+      taskId,
       onEvent: (ev) => {
         TaskLogService.addEvent(taskId, {
           timestamp: new Date().toISOString(),

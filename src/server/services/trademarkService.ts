@@ -33,6 +33,23 @@ export interface TrademarkHitV2 {
   registrationDate?: string;
 }
 
+export interface CompactOccurrence {
+  field: string;
+  text: string;
+}
+
+export interface CompactTrademarkHit {
+  id: string;
+  mark: string;
+  status: string;
+  feature: string;
+  classes: number[];
+  offices: string[];
+  matchType: MatchTypeV2;
+  fullQuoteMatch: boolean;
+  occurrences: CompactOccurrence[];
+}
+
 export interface TrademarkAuditResultV2 {
   finalDecision: 'APPROVED' | 'APPROVE_WITH_BLOCKED_PRODUCTS' | 'REWRITE' | 'ESCALATE';
   isSafe: boolean;
@@ -1038,8 +1055,111 @@ export class TrademarkService {
   }
 
   /**
+   * Compact, deduplicated representation of trademark hits specifically tailored for LLM evaluation.
+   * Strips internal registration numbers, dates, and duplicate entries, aggregating by registered mark.
+   */
+  static buildCompactTrademarkHits(
+    normalizedHits: TrademarkHitV2[],
+    listing: EnglishListing,
+    quote?: string
+  ): CompactTrademarkHit[] {
+    const markMap = new Map<string, {
+      mark: string;
+      status: string;
+      features: Set<string>;
+      classes: Set<number>;
+      offices: Set<string>;
+      matchTypes: Set<MatchTypeV2>;
+      fullQuoteMatch: boolean;
+      fields: Set<string>;
+    }>();
+
+    for (const h of normalizedHits) {
+      const cleanMark = (h.registeredMark || h.searchedTerm || '').trim().toUpperCase();
+      if (!cleanMark) continue;
+
+      let entry = markMap.get(cleanMark);
+      if (!entry) {
+        entry = {
+          mark: cleanMark,
+          status: h.status || 'ACTIVE',
+          features: new Set(),
+          classes: new Set(),
+          offices: new Set(),
+          matchTypes: new Set(),
+          fullQuoteMatch: false,
+          fields: new Set()
+        };
+        markMap.set(cleanMark, entry);
+      }
+
+      if (h.markFeature) entry.features.add(h.markFeature);
+      if (Array.isArray(h.classes)) {
+        h.classes.forEach(c => entry!.classes.add(c));
+      }
+      if (h.office) entry.offices.add(h.office);
+      if (h.matchType) entry.matchTypes.add(h.matchType);
+      if (h.isFullQuoteMatch) entry.fullQuoteMatch = true;
+      if (h.field) entry.fields.add(h.field);
+    }
+
+    const matchTypePriority: MatchTypeV2[] = [
+      'FULL_EXACT',
+      'EXACT_NGRAM',
+      'SINGLE_WORD_EXACT',
+      'CONTAINS_REGISTERED_MARK',
+      'QUERY_INSIDE_LONGER_MARK',
+      'FUZZY_OR_SIMILAR'
+    ];
+
+    const getFieldText = (f: string): string => {
+      if (f === 'brand') return listing.brand || '';
+      if (f === 'title') return listing.title || '';
+      if (f === 'bullet1') return listing.bullet1 || '';
+      if (f === 'bullet2') return listing.bullet2 || '';
+      if (f === 'description') return listing.description || '';
+      if (f === 'quote') return quote || '';
+      return '';
+    };
+
+    const compactList: CompactTrademarkHit[] = [];
+    let idx = 1;
+
+    for (const [_, entry] of markMap.entries()) {
+      let bestMatchType: MatchTypeV2 = 'FUZZY_OR_SIMILAR';
+      for (const p of matchTypePriority) {
+        if (entry.matchTypes.has(p)) {
+          bestMatchType = p;
+          break;
+        }
+      }
+
+      const feature = entry.features.has('Combined') ? 'Combined' : (entry.features.values().next().value || 'Word');
+
+      const occurrences: CompactOccurrence[] = Array.from(entry.fields).map(f => ({
+        field: f,
+        text: getFieldText(f)
+      }));
+
+      compactList.push({
+        id: `tm_${idx++}`,
+        mark: entry.mark,
+        status: entry.status,
+        feature,
+        classes: Array.from(entry.classes).sort((a, b) => a - b),
+        offices: Array.from(entry.offices).sort(),
+        matchType: bestMatchType,
+        fullQuoteMatch: entry.fullQuoteMatch,
+        occurrences
+      });
+    }
+
+    return compactList;
+  }
+
+  /**
    * Complete V2 Trademark Audit Orchestrator:
-   * Scan ➔ Match Normalization ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) with full re-scan ➔ Verifier ➔ Result
+   * Scan ➔ Match Normalization ➔ Compact LLM Payload ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) ➔ Final Verifier Gate
    */
   static async executeTrademarkAuditV2(params: {
     listing: EnglishListing;
@@ -1048,6 +1168,8 @@ export class TrademarkService {
     niche2?: string;
     subniche?: string;
     maxRewriteCycles?: number;
+    taskId?: string;
+    sessionId?: string;
     onEvent?: (event: { type: string; title: string; content: any }) => void;
   }): Promise<TrademarkAuditResultV2> {
     let currentListing: EnglishListing = { ...params.listing };
@@ -1059,6 +1181,14 @@ export class TrademarkService {
       hitsFound: number;
     }> = [];
 
+    const tmSessionId = params.sessionId || (params.taskId ? `tm:${params.taskId}` : `tm:${Date.now()}`);
+    const approvedHitContexts = new Set<string>();
+
+    const getHitContextKey = (mark: string, classes: number[], matchType: string, field: string, text: string) => {
+      const normText = (text || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      return `${mark.toLowerCase()}|${classes.slice().sort((a, b) => a - b).join(',')}|${matchType}|${field}|${normText}`;
+    };
+
     let initialTrademarkHits: TrademarkHitV2[] = [];
     let finalRefereeResult: any = null;
     let finalVerifierResult: any = null;
@@ -1067,7 +1197,7 @@ export class TrademarkService {
     const maxCycles = params.maxRewriteCycles ?? 3;
 
     for (let cycle = 0; cycle <= maxCycles; cycle++) {
-      console.log(`[TrademarkServiceV2] 🔍 Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles})...`);
+      console.log(`[TrademarkServiceV2] 🔍 Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles}, Session: ${tmSessionId})...`);
 
       // 1. Term extraction V2
       const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
@@ -1078,33 +1208,73 @@ export class TrademarkService {
       // 2. USPTO Live query
       const rawHits = await this.queryUsptoBatch(terms);
 
-      // 3. Match classification
+      // 3. Match classification (Full internal details preserved for audit & UI)
       const normalizedHits = this.normalizeAndClassifyMatches(rawHits, termToFieldsMap, params.quote);
 
       if (cycle === 0) {
         initialTrademarkHits = [...normalizedHits];
       }
 
+      // Compact representation for LLM evaluation
+      const compactHits = this.buildCompactTrademarkHits(normalizedHits, currentListing, params.quote);
+
       params.onEvent?.({
         type: 'TM_SCAN_RESPONSE',
-        title: cycle === 0 ? `USPTO TM Scan abgeschlossen (${normalizedHits.length} Treffer)` : `USPTO TM Scan (Runde ${cycle}: ${normalizedHits.length} Treffer)`,
-        content: { cycle, totalHits: normalizedHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
+        title: cycle === 0 ? `USPTO TM Scan abgeschlossen (${normalizedHits.length} Treffer, ${compactHits.length} kompakt)` : `USPTO TM Scan (Runde ${cycle}: ${normalizedHits.length} Treffer, ${compactHits.length} kompakt)`,
+        content: { cycle, totalHits: normalizedHits.length, compactHitsCount: compactHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
       });
 
-      // 4. GPT-5.6 Sol Trademark Referee Pass
-      const refereeRes = await LLMService.evaluateTrademarkReferee({
-        currentListing,
-        niche1: params.niche1,
-        niche2: params.niche2,
-        subniche: params.subniche,
-        quote: params.quote,
-        normalizedHits,
-        rewriteIteration: cycle,
-        forbiddenTermsForTask,
-        blockedProducts
+      // Check which hits are genuinely new or in a modified context (Hit-Re-Use optimization)
+      const hitsToReview = cycle === 0 ? compactHits : compactHits.filter(h => {
+        return h.occurrences.some(occ => !approvedHitContexts.has(getHitContextKey(h.mark, h.classes, h.matchType, occ.field, occ.text)));
       });
+
+      let refereeRes: any;
+
+      if (cycle > 0 && hitsToReview.length === 0) {
+        console.log(`[TrademarkServiceV2] ⚡ Alle ${compactHits.length} Treffer wurden in diesem Task bereits als KEEP geprüft und sind im Kontext unverändert. Überspringe erneuten Referee-Call.`);
+        refereeRes = {
+          decision: 'APPROVE',
+          canBeFixedByListingRewrite: true,
+          reasonCode: null,
+          recommendedAction: null,
+          hits: [],
+          blockedProducts,
+          rewriteRequired: false,
+          rewriteInstructions: []
+        };
+      } else {
+        // 4. GPT-5.6 Sol Trademark Referee Pass (with compact hits & stable session_id)
+        refereeRes = await LLMService.evaluateTrademarkReferee({
+          currentListing,
+          niche1: params.niche1,
+          niche2: params.niche2,
+          subniche: params.subniche,
+          quote: params.quote,
+          compactHits: hitsToReview,
+          normalizedHits,
+          rewriteIteration: cycle,
+          forbiddenTermsForTask,
+          blockedProducts,
+          sessionId: tmSessionId
+        });
+      }
 
       finalRefereeResult = refereeRes;
+
+      // Update approvedHitContexts with hits from this round that were not flagged as problematic
+      const problematicMarks = new Set(
+        (refereeRes.hits || [])
+          .filter((h: any) => h.decision === 'REWRITE' || h.action === 'REWRITE' || h.decision === 'ESCALATE' || h.action === 'ESCALATE')
+          .map((h: any) => (h.registeredMark || h.mark || h.searchedTerm || '').trim().toLowerCase())
+      );
+      for (const h of hitsToReview) {
+        if (!problematicMarks.has(h.mark.trim().toLowerCase())) {
+          for (const occ of h.occurrences) {
+            approvedHitContexts.add(getHitContextKey(h.mark, h.classes, h.matchType, occ.field, occ.text));
+          }
+        }
+      }
 
       // Accumulate blocked products from referee
       if (Array.isArray(refereeRes.blockedProducts) && refereeRes.blockedProducts.length > 0) {
@@ -1139,9 +1309,9 @@ export class TrademarkService {
         };
       }
 
-      // B. If Referee approves (APPROVE or APPROVE_WITH_BLOCKED_PRODUCTS) ➔ Run Adversarial Verifier Pass!
+      // B. If Referee approves (APPROVE or APPROVE_WITH_BLOCKED_PRODUCTS) ➔ Run Adversarial Verifier Pass as FINAL GATE!
       if (refereeRes.decision === 'APPROVE' || refereeRes.decision === 'APPROVE_WITH_BLOCKED_PRODUCTS') {
-        console.log(`[TrademarkServiceV2] 🛡️ Referee hat genehmigt (${refereeRes.decision}). Starte Verifier Pass...`);
+        console.log(`[TrademarkServiceV2] 🛡️ Referee hat genehmigt (${refereeRes.decision}). Starte Verifier als Final Gate...`);
         
         const verifierRes = await LLMService.evaluateTrademarkVerifier({
           currentListing,
@@ -1149,9 +1319,11 @@ export class TrademarkService {
           niche2: params.niche2,
           subniche: params.subniche,
           quote: params.quote,
+          compactHits, // Final Verifier receives the FULL compact hits of the candidate
           normalizedHits,
           refereeDecision: refereeRes.decision,
-          blockedProducts
+          blockedProducts,
+          sessionId: tmSessionId
         });
 
         finalVerifierResult = verifierRes;
@@ -1223,14 +1395,15 @@ export class TrademarkService {
         }
 
         // Add verifier risks to rewrite instructions and continue loop
-        const verifierInstructions = verifierRes.identifiedRisks.map(r => `Resolve ${r.riskType} in ${r.field}: "${r.term}" - ${r.explanation}`);
+        if (!refereeRes.rewriteInstructions) refereeRes.rewriteInstructions = [];
+        const verifierInstructions = verifierRes.identifiedRisks.map((r: any) => `Resolve ${r.riskType} in ${r.field}: "${r.term}" - ${r.explanation}`);
         refereeRes.rewriteInstructions.push(...verifierInstructions);
-        verifierRes.identifiedRisks.forEach(r => {
+        verifierRes.identifiedRisks.forEach((r: any) => {
           if (r.term && r.term.length > 2) forbiddenTermsForTask.push(r.term.toLowerCase());
         });
       }
 
-      // C. If Rewrite is required:
+      // C. If Rewrite is required (either from Referee or Verifier):
       if (cycle >= maxCycles) {
         console.warn(`[TrademarkServiceV2] 🚨 Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
         return {
@@ -1253,7 +1426,7 @@ export class TrademarkService {
 
       // Collect terms that need fixing into forbidden list
       for (const h of refereeRes.hits) {
-        if (h.decision === 'REWRITE' || h.amazonRejectionRisk === 'HIGH' || h.amazonRejectionRisk === 'VERY_HIGH') {
+        if (h.decision === 'REWRITE' || h.action === 'REWRITE' || h.amazonRejectionRisk === 'HIGH' || h.amazonRejectionRisk === 'VERY_HIGH') {
           if (h.searchedTerm) forbiddenTermsForTask.push(h.searchedTerm.toLowerCase());
           if (h.registeredMark) forbiddenTermsForTask.push(h.registeredMark.toLowerCase());
         }
@@ -1269,8 +1442,9 @@ export class TrademarkService {
         quote: params.quote,
         rewriteIteration: cycle + 1,
         forbiddenTermsForTask: Array.from(new Set(forbiddenTermsForTask)),
-        rewriteInstructions: refereeRes.rewriteInstructions,
-        hitsToFix: refereeRes.hits
+        rewriteInstructions: refereeRes.rewriteInstructions || [],
+        hitsToFix: refereeRes.hits,
+        sessionId: tmSessionId
       });
 
       currentListing = rewriteRes.refinedListing;

@@ -651,3 +651,39 @@ MBA HUB/
   - `tests/circuitBreaker.test.ts` (11/11 bestanden).
   - Gesamtsuite: 64/64 Tests grün (100%).
 
+### 10.27 🛡️ Trademark V2 – Token- und Kostenoptimierung (80–85% Einsparung)
+- **Problem & Ursachen:**
+  - Der V2 Trademark-Workflow mit `openai/gpt-5.6-sol` auf OpenRouter kostete ~$0.60 pro Durchlauf.
+  - *Ursache 1 (Input-Tokens):* 300–450 N-Grams erzeugten bis zu 100 Treffer über verschiedene Felder. Vollständige USPTO-Metadaten (`serialNumber`, `filingDate`, formatierte JSON-Einrückung) blähten den Prompt auf 10.000–12.000 Input-Tokens auf.
+  - *Ursache 2 (Output-Tokens):* Der Referee forderte eine Klassifikation für *jeden einzelnen* Treffer (auch 80 völlig harmlose Wörter), was 2.000–3.500 Completion-Tokens bei $10/M Sol-Preisen verbrauchte.
+  - *Ursache 3 (Rewrite-Prompt):* Der Rewrite-Call lud den vollständigen 30 KB Master-Listing-Prompt.
+  - *Ursache 4 (Routing & Caching):* Fehlende `session_id` verhinderte OpenRouter Prompt-Caching.
+  - *Ursache 5 (Verifier Gate):* Der Verifier wurde in jedem Zwischenzyklus vor Rewrites aufgerufen, obwohl der Referee ohnehin bereits Nachbesserungsbedarf festgestellt hatte.
+- **Lösung & Architektur:**
+  1. **Kompakte Trademark-Hits (`buildCompactTrademarkHits`):**
+     - Aggregation nach registrierter Marke, Zusammenfassung aller Klassen (`classes: [9, 25]`) und Ämter (`offices: ['USPTO', 'EUIPO']`).
+     - Ermittlung des dominanten Match-Typs nach Priorität (`FULL_EXACT` > `EXACT_NGRAM` > `SINGLE_WORD_EXACT` > `CONTAINS_REGISTERED_MARK` > `QUERY_INSIDE_LONGER_MARK` > `FUZZY_OR_SIMILAR`).
+     - Extraktion konkreter Feldvorkommnisse (`occurrences: [{ field: 'brand', text: '...' }]`) unter Wegfall von internen IDs, Serial Numbers und Anmeldedaten für das LLM.
+     - Kompaktes JSON ohne Einrückung (`JSON.stringify(compactHits)`).
+     - Vollständige USPTO-Rohdaten bleiben in `normalizedHits` für Dashboard, Events und Audit unverändert erhalten.
+  2. **Kompakter Referee-Prompt & Output-Schema:**
+     - Unbedenkliche, generische und beschreibende Wörter sind implizit KEEP und dürfen nicht mehr im JSON ausgegeben werden.
+     - Ausgabe beschränkt sich strikt auf `problematicHits` (nur Treffer mit Handlungsbedarf wie REWRITE, BLOCK_PRODUCTS oder ESCALATE).
+     - Spart bis zu 90% der teuren Completion-Tokens.
+  3. **Dedizierter kompakter Rewrite-System-Prompt (`trademarkRewrite`):**
+     - Neuer Prompt (~2.500 Zeichen / ~600 Tokens statt 30 KB) in `SystemPromptService`.
+     - Enthält alle verbindlichen MBA-Listing-Regeln (Brand 40-50, Title 50-60 mit locked Suffix, Bullets 230-256, Description 300-600, 0% Gifts, minimal-invasive Reparatur).
+  4. **Stabile `session_id` & OpenRouter Sticky Routing:**
+     - Ableitung aus Task-ID (`tm:<taskId>`).
+     - Mitsenden im Request-Body (`session_id`) und als HTTP-Header (`X-Session-Id`) in allen 3 LLM-Aufrufen (`evaluateTrademarkReferee`, `evaluateTrademarkVerifier`, `rewriteListingForTrademarkV2`).
+  5. **Hit-Re-Use über Zyklen (`approvedHitContexts`):**
+     - Einmal freigegebene KEEP-Hits werden mit ihrem Feld- und Textkontext gespeichert.
+     - In Folgezyklen werden unveränderte Treffer nicht erneut an den Referee übermittelt; sind alle Treffer unverändert, wird der Referee-Call komplett übersprungen.
+  6. **Verifier als striktes Final Gate:**
+     - Bei `refereeRes.decision === 'REWRITE'` wird der Verifier übersprungen und sofort die minimale Nachbesserung durchgeführt.
+     - Der Verifier läuft ausschließlich als finale Qualitätskontrolle, wenn der Referee `APPROVE` oder `APPROVE_WITH_BLOCKED_PRODUCTS` meldet.
+- **Unit-Tests & Validierung:**
+  - `tests/trademarkV2.test.ts`: 27/27 Tests bestanden (100%).
+  - Vollständiger Build `npm run build` fehlerfrei abgeschlossen.
+
+

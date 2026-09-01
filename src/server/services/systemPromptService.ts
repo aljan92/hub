@@ -1518,24 +1518,24 @@ CORE PRINCIPLES & DECISION RULES:
 OUTPUT FORMAT:
 ==================================================
 Respond ONLY with a valid JSON object matching this schema (no markdown, no conversational text):
+
+IMPORTANT: Normal, unproblematic generic or descriptive terms are implicitly considered KEEP!
+Do NOT list unproblematic KEEP hits in "problematicHits". Return "problematicHits" as [] if all terms are acceptable.
+Only list hits that require action ("REWRITE", "BLOCK_PRODUCTS", or "ESCALATE").
+
+Schema:
 {
   "decision": "APPROVE",
   "canBeFixedByListingRewrite": true,
   "reasonCode": null,
   "recommendedAction": null,
-  "hits": [
+  "problematicHits": [
     {
-      "searchedTerm": "western",
-      "registeredMark": "WESTERN",
+      "id": "tm_1",
+      "mark": "WILD SPIRIT",
       "field": "bullet1",
-      "classes": [25],
-      "markNature": "COMMON_DICTIONARY_WORD",
-      "usageType": "ORDINARY_DESCRIPTIVE",
-      "knownBrand": false,
-      "amazonRejectionRisk": "LOW",
-      "decision": "KEEP",
-      "confidence": 0.95,
-      "reason": "Used in ordinary descriptive sentence context."
+      "action": "REWRITE",
+      "reasonCode": "EXACT_MULTIWORD_CLASS25"
     }
   ],
   "blockedProducts": [],
@@ -1543,7 +1543,74 @@ Respond ONLY with a valid JSON object matching this schema (no markdown, no conv
   "rewriteInstructions": [],
   "escalation": null
 }
+
+If decision is "ESCALATE", include concise details in "escalation":
+{
+  "reasonCode": "CORE_QUOTE_CLASS25_CONFLICT",
+  "recommendedAction": "DO_NOT_SUBMIT",
+  "reason": "Exact active Class 25 word-mark match against the core design quote."
+}
 `;
+
+export const DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT = `You are a specialized Amazon Merch on Demand (MBA) Trademark Rewrite Expert.
+
+Your task is to repair an ALREADY GENERATED English listing by resolving identified trademark issues with MINIMAL INVASIVENESS.
+
+==================================================
+CORE DIRECTIVE: MINIMAL INVASIVENESS & SEO PRESERVATION
+==================================================
+1. Repair ONLY the fields and terms affected by the identified trademark conflicts.
+2. PRESERVE all unaffected fields, high-performing niche keywords, phrasing, and structure.
+3. DO NOT rewrite an unaffected field merely for stylistic variety or generic polishing.
+4. DO NOT regenerate the listing from scratch.
+5. PRESERVE the original buyer-search intention, tone, and emotional connection.
+6. The printed design quote / slogan on the physical shirt CANNOT be altered by a listing rewrite. Never change the quote.
+
+==================================================
+MANDATORY MBA LISTING CONSTRAINTS:
+==================================================
+1. BRAND (40-50 characters, max 50):
+   - High keyword density around the primary niche/theme (e.g. "Equestrian Apparel", "Rodeo Collection").
+   - NO third-party brand names or trademarks.
+   - NO empty fluff words like "Studio", "Co", "Designs", "Inc".
+
+2. TITLE (50-60 characters, max 60):
+   - LOCKED TITLE SUFFIX: The title MUST end literally with the provided locked TITLE_SUFFIX (Subniche > Niche 2 > Niche 1).
+   - If resolving a trademark issue in the Title, modify ONLY the prefix before the suffix. The locked suffix must remain 100% intact.
+   - NO trailing punctuation (no periods, commas, dashes, colons at the end). Amazon automatically appends "T-Shirt".
+
+3. BULLET 1 (230-256 characters):
+   - Target audience, lifestyle, passion, and emotional connection to the graphic/theme.
+   - Natural, engaging English sentences. No spammy comma-separated keyword lists.
+   - ZERO PERCENT gift/present language: Strictly NO "gift", "present", "birthday", "christmas gift", etc.
+
+4. BULLET 2 (230-256 characters):
+   - Occasions, activities, gatherings, and settings where the apparel is worn.
+   - Natural, engaging English sentences.
+   - ZERO PERCENT gift/present language.
+
+5. DESCRIPTION (300-600 characters):
+   - Atmospheric, evocative summary of the design and theme.
+
+==================================================
+COMPLIANCE & FORBIDDEN TERMS:
+==================================================
+1. Strictly avoid all terms in "forbiddenTermsForTask" and any close phonetic or typographical variants.
+2. Never replace a flagged trademark with another known brand or protected multi-word phrase.
+3. Replace flagged terms with compliant, high-performing generic niche vocabulary.
+
+==================================================
+OUTPUT FORMAT:
+==================================================
+Return ONLY valid JSON matching this schema (no markdown fences, no conversational text, no explanations):
+{
+  "brand": "...",
+  "title": "...",
+  "bullet1": "...",
+  "bullet2": "...",
+  "description": "...",
+  "actions_taken": ["Concise note on what term was replaced in which field"]
+}`;
 
 export const DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT = `You are the final Amazon Merch trademark rejection verifier (GPT-5.6 Sol).
 
@@ -1612,6 +1679,7 @@ export interface AllSystemPrompts {
   listingGenerator: string;
   trademarkAuditor: string;
   trademarkReferee?: string;
+  trademarkRewrite?: string;
   trademarkVerifier?: string;
   svgBgAuditor: string;
   updateVisionAnalyzer: string;
@@ -1648,7 +1716,12 @@ export class SystemPromptService {
           if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes('LOCK TITLE SUFFIX BEFORE WRITING THE TITLE')) {
             this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
           }
-          if (!this.cachedPrompts.trademarkReferee) this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+          if (!this.cachedPrompts.trademarkReferee || !this.cachedPrompts.trademarkReferee.includes('problematicHits')) {
+            this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+          }
+          if (!this.cachedPrompts.trademarkRewrite) {
+            this.cachedPrompts.trademarkRewrite = DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT;
+          }
           if (!this.cachedPrompts.trademarkVerifier) this.cachedPrompts.trademarkVerifier = DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
           if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = this.cachedPrompts.trademarkReferee;
           if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
@@ -1676,11 +1749,12 @@ export class SystemPromptService {
       listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
       trademarkAuditor: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
       trademarkReferee: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+      trademarkRewrite: DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT,
       trademarkVerifier: DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT,
       svgBgAuditor: DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
       updateVisionAnalyzer: DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
       updateListingRewriter: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
-      updateLocalizationTranslator: DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT,
+      updateLocalizationTranslator: DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT
     };
 
     try {
@@ -1708,6 +1782,11 @@ export class SystemPromptService {
   static getTrademarkRefereePrompt(): string {
     const prompts = this.loadPrompts();
     return prompts.trademarkReferee || prompts.trademarkAuditor || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+  }
+
+  static getTrademarkRewritePrompt(): string {
+    const prompts = this.loadPrompts();
+    return prompts.trademarkRewrite || DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT;
   }
 
   static getTrademarkVerifierPrompt(): string {
@@ -1746,6 +1825,7 @@ export class SystemPromptService {
       listingGenerator: prompts.listingGenerator || DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
       trademarkAuditor: prompts.trademarkReferee || prompts.trademarkAuditor || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
       trademarkReferee: prompts.trademarkReferee || DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
+      trademarkRewrite: prompts.trademarkRewrite || DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT,
       trademarkVerifier: prompts.trademarkVerifier || DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT,
       svgBgAuditor: prompts.svgBgAuditor || DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
       updateVisionAnalyzer: prompts.updateVisionAnalyzer || DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
