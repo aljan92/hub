@@ -55,6 +55,7 @@ export const SettingsView: React.FC = () => {
   const [llmTemperature, setLlmTemperature] = useState<number>(initialSettings.llmTemperature ?? 0.35);
   const [llmMaxTokens, setLlmMaxTokens] = useState<number>(initialSettings.llmMaxTokens ?? 3000);
   const [llmTimeoutSeconds, setLlmTimeoutSeconds] = useState<number>(initialSettings.llmTimeoutSeconds ?? 90);
+  const [openRouterMinBalanceThreshold, setOpenRouterMinBalanceThreshold] = useState<number>(initialSettings.openRouterMinBalanceThreshold ?? 1.00);
   const [aiAutonomyDesignEnabled, setAiAutonomyDesignEnabled] = useState<boolean>(initialSettings.aiAutonomyDesignEnabled ?? false);
   const [aiAutonomyUpdateEnabled, setAiAutonomyUpdateEnabled] = useState<boolean>(initialSettings.aiAutonomyUpdateEnabled ?? false);
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string; promptPrice?: string; completionPrice?: string }[]>([]);
@@ -149,6 +150,7 @@ export const SettingsView: React.FC = () => {
           setLlmTemperature(s.llmTemperature ?? 0.35);
           setLlmMaxTokens(s.llmMaxTokens ?? 3000);
           setLlmTimeoutSeconds(s.llmTimeoutSeconds ?? 90);
+          setOpenRouterMinBalanceThreshold(s.openRouterMinBalanceThreshold ?? 1.00);
           setAiAutonomyDesignEnabled(s.aiAutonomyDesignEnabled ?? s.aiAutonomyEnabled ?? false);
           setAiAutonomyUpdateEnabled(s.aiAutonomyUpdateEnabled ?? s.aiAutonomyEnabled ?? false);
           setIdeogramApiKey(s.ideogramApiKey || '');
@@ -302,6 +304,7 @@ export const SettingsView: React.FC = () => {
         llmTemperature: Number(llmTemperature),
         llmMaxTokens: Number(llmMaxTokens),
         llmTimeoutSeconds: Number(llmTimeoutSeconds),
+        openRouterMinBalanceThreshold: Number(openRouterMinBalanceThreshold),
         aiAutonomyDesignEnabled: Boolean(aiAutonomyDesignEnabled),
         aiAutonomyUpdateEnabled: Boolean(aiAutonomyUpdateEnabled),
         ideogramApiKey,
@@ -501,8 +504,8 @@ export const SettingsView: React.FC = () => {
               Aktuell gewählt: <strong>{llmModel}</strong>
             </div>
 
-            {/* LLM Parameters: Temperature, Max Tokens & Timeout */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80">
+            {/* LLM Parameters: Temperature, Max Tokens, Timeout & Min. Guthaben Threshold */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-800/80">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
                   <span>Temperature</span>
@@ -551,7 +554,24 @@ export const SettingsView: React.FC = () => {
                   onChange={(e) => setLlmTimeoutSeconds(parseInt(e.target.value, 10) || 90)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
                 />
-                <span className="text-[10px] text-slate-500 mt-0.5 block">60–120s für Claude/Gemini</span>
+                <span className="text-[10px] text-slate-500 mt-0.5 block">60–120s für Claude</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Min. Guthaben</span>
+                  <span className="font-mono text-cyan-400 font-bold">${Number(openRouterMinBalanceThreshold).toFixed(2)}</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.25"
+                  min="0.10"
+                  max="50.00"
+                  value={openRouterMinBalanceThreshold}
+                  onChange={(e) => setOpenRouterMinBalanceThreshold(parseFloat(e.target.value) || 1.00)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">Pausiert Automatik &lt; $</span>
               </div>
             </div>
           </div>

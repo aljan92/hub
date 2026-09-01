@@ -55,6 +55,7 @@ export interface AppSettings {
   costPerVectorization: number;    // e.g. 0.05 ($ / vectorization)
   costStatsResetTimestamp?: string;// e.g. ISO string for stats reset
   costStatsBaselineOpenRouterUsage?: number; // e.g. OpenRouter baseline usage at reset
+  openRouterMinBalanceThreshold: number;     // e.g. 1.00 ($ min balance to allow auto tasks)
 }
 
 export function generateApiKey(): string {
@@ -110,6 +111,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   queueUpdateMaxActiveProducts: 100,
   costPerImage: 0.08,
   costPerVectorization: 0.05,
+  openRouterMinBalanceThreshold: 1.00,
 };
 
 function getSettingsFilePath(): string {

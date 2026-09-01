@@ -123,6 +123,89 @@ export class LLMService {
     return cachedModels;
   }
 
+  // --- CIRCUIT BREAKER & LOW BALANCE GUARD ---
+  private static circuitBroken = false;
+  private static circuitBreakReason = '';
+  private static circuitBreakTimestamp = 0;
+  private static balanceCache: { balance: number; timestamp: number } | null = null;
+  private static readonly BALANCE_CACHE_TTL_MS = 60000; // 60s Cache
+
+  public static tripCircuitBreaker(reason: string) {
+    this.circuitBroken = true;
+    this.circuitBreakReason = reason;
+    this.circuitBreakTimestamp = Date.now();
+    console.warn(`[LLMService] 🛑 CIRCUIT BREAKER AUSGELÖST: ${reason}`);
+  }
+
+  public static resetCircuitBreaker() {
+    this.circuitBroken = false;
+    this.circuitBreakReason = '';
+    this.circuitBreakTimestamp = 0;
+    this.balanceCache = null; // Fresh check erzwingen
+    console.log('[LLMService] 🟢 Circuit Breaker zurückgesetzt.');
+  }
+
+  public static isCircuitBroken(): { broken: boolean; reason?: string; timestamp?: number } {
+    return {
+      broken: this.circuitBroken,
+      reason: this.circuitBreakReason || undefined,
+      timestamp: this.circuitBreakTimestamp || undefined
+    };
+  }
+
+  public static async getAvailableBalance(forceFresh = false): Promise<number | null> {
+    const settings = loadSettings();
+    if (settings.llmProvider !== 'openrouter') {
+      return 999;
+    }
+
+    const now = Date.now();
+    if (!forceFresh && this.balanceCache && (now - this.balanceCache.timestamp < this.BALANCE_CACHE_TTL_MS)) {
+      return this.balanceCache.balance;
+    }
+
+    try {
+      const credits = await this.getCredits();
+      if (credits.balanceRemaining !== undefined && credits.balanceRemaining !== null) {
+        this.balanceCache = { balance: credits.balanceRemaining, timestamp: now };
+        const threshold = settings.openRouterMinBalanceThreshold ?? 1.00;
+
+        if (credits.balanceRemaining < threshold) {
+          if (!this.circuitBroken) {
+            this.tripCircuitBreaker(`OpenRouter Guthaben ($${credits.balanceRemaining.toFixed(2)}) liegt unter Schwellenwert ($${threshold.toFixed(2)})`);
+          }
+        } else if (this.circuitBroken) {
+          // Auto-resume if balance is above threshold!
+          this.resetCircuitBreaker();
+        }
+        return credits.balanceRemaining;
+      }
+    } catch (err) {
+      console.warn('[LLMService] ⚠️ Fehler bei getAvailableBalance:', err);
+    }
+
+    return this.balanceCache?.balance ?? null;
+  }
+
+  /**
+   * Central fetch wrapper: Checks Circuit Breaker before call and catches HTTP 402
+   */
+  private static async executeFetch(url: string, init: RequestInit): Promise<Response> {
+    const circuit = this.isCircuitBroken();
+    if (circuit.broken) {
+      throw new Error(`[LLMService] Circuit Breaker aktiv (${circuit.reason}). Anfrage abgebrochen.`);
+    }
+
+    const res = await fetch(url, init);
+
+    if (res.status === 402) {
+      this.tripCircuitBreaker('OpenRouter meldet 402 Payment Required: Guthaben aufgebraucht.');
+      throw new Error('OpenRouter Fehler 402: Unzureichendes Guthaben (Insufficient Credits). Workflows pausiert.');
+    }
+
+    return res;
+  }
+
   /**
    * Check OpenRouter credit balance & usage
    */
@@ -314,7 +397,7 @@ Quote / Text: "${quote}"
 Style Preset: ${stylePreset}`;
 
     try {
-      const res = await fetch(url, {
+      const res = await this.executeFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -445,7 +528,7 @@ Style Preset: ${stylePreset}`;
 
     try {
       const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
-      const res = await fetch(url, {
+      const res = await this.executeFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
@@ -576,7 +659,7 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
 
     try {
       const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
-      const res = await fetch(url, {
+      const res = await this.executeFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
@@ -686,7 +769,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
 
     try {
       const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
-      const res = await fetch(url, {
+      const res = await this.executeFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
@@ -797,7 +880,7 @@ Return ONLY valid JSON matching this schema:
 
     try {
       const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
-      const res = await fetch(url, {
+      const res = await this.executeFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
@@ -929,7 +1012,7 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
 
     try {
       const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1000;
-      const res = await fetch(url, {
+      const res = await this.executeFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestPayload),
@@ -1010,7 +1093,7 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
 
     const start = Date.now();
     try {
-      const res = await fetch(url, {
+      const res = await this.executeFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({

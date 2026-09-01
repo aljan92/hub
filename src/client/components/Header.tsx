@@ -30,7 +30,18 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const [credits, setCredits] = useState<{
-    openrouter?: { usage?: number; limitRemaining?: number; balanceRemaining?: number; totalCredits?: number; limit?: number; hasKey?: boolean };
+    openrouter?: { 
+      usage?: number; 
+      limitRemaining?: number; 
+      balanceRemaining?: number; 
+      totalCredits?: number; 
+      limit?: number; 
+      hasKey?: boolean;
+      isCircuitBroken?: boolean;
+      circuitBreakReason?: string;
+      minBalanceThreshold?: number;
+      isLowBalance?: boolean;
+    };
     vectorizer?: { credits?: number; details?: string; hasKey?: boolean };
   } | null>(() => {
     try {
@@ -74,8 +85,8 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
-  const fetchCreditsAndCosts = () => {
-    fetch('/api/v1/credits')
+  const fetchCreditsAndCosts = (forceFresh = false) => {
+    fetch(`/api/v1/credits${forceFresh ? '?forceFresh=true' : ''}`)
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -112,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
     return () => clearInterval(interval);
   }, []);
 
-  // Format OpenRouter string: Verfügbares Guthaben & Verbrauch
+  // Format OpenRouter string: Verfügbares Guthaben & Verbrauch & Pausiert-Status
   const getOpenRouterText = () => {
     if (!credits?.openrouter) return 'Aktiv';
     const available = credits.openrouter.balanceRemaining !== undefined && credits.openrouter.balanceRemaining !== null
@@ -124,6 +135,11 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
     const usage = credits.openrouter.usage !== undefined 
       ? `$${Number(credits.openrouter.usage).toFixed(2)}` 
       : null;
+
+    const isPaused = credits.openrouter.isCircuitBroken || credits.openrouter.isLowBalance;
+    if (isPaused) {
+      return `${available || '$0.00'} • ⏸️ PAUSIERT`;
+    }
 
     if (available !== null && usage !== null) {
       return `${available} frei • ${usage} used`;
@@ -215,14 +231,29 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
             </div>
           )}
 
-          {/* OpenRouter Credits (Rest & Used) */}
-          {credits?.openrouter?.hasKey && (
-            <div className="flex items-center space-x-1.5 bg-slate-900/90 border border-accent-amber/30 px-3 py-1.5 rounded-xl text-xs font-mono">
-              <Cpu className="w-3.5 h-3.5 text-accent-amber shrink-0" />
-              <span className="text-slate-400 text-[11px]">OR:</span>
-              <span className="font-bold text-accent-amber">{getOpenRouterText()}</span>
-            </div>
-          )}
+          {/* OpenRouter Credits (Rest & Used & Low Balance Warning) */}
+          {credits?.openrouter?.hasKey && (() => {
+            const isPaused = Boolean(credits.openrouter.isCircuitBroken || credits.openrouter.isLowBalance);
+            const borderCls = isPaused 
+              ? 'border-red-500/60 bg-red-950/40 text-red-300 animate-pulse hover:bg-red-900/50' 
+              : 'border-accent-amber/30 bg-slate-900/90 text-accent-amber hover:bg-slate-800/90';
+            const iconCls = isPaused ? 'text-red-400' : 'text-accent-amber';
+            const textCls = isPaused ? 'text-red-400 font-extrabold' : 'text-accent-amber font-bold';
+
+            return (
+              <div 
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-mono border cursor-pointer transition-all shadow-sm active:scale-95 ${borderCls}`}
+                onClick={() => fetchCreditsAndCosts(true)}
+                title={isPaused 
+                  ? `⚠️ OpenRouter Guthaben niedrig oder aufgebraucht!\n${credits.openrouter.circuitBreakReason || 'Guthaben unter Min-Schwellenwert.'}\nUpdate-Automatik & KI-Pipelines pausiert.\nKlicken zum Aktualisieren nach Aufladung.` 
+                  : 'OpenRouter Guthaben & Verbrauch (Klicken zum Aktualisieren)'}
+              >
+                <Cpu className={`w-3.5 h-3.5 shrink-0 ${iconCls}`} />
+                <span className="text-slate-400 text-[11px]">OR:</span>
+                <span className={textCls}>{getOpenRouterText()}</span>
+              </div>
+            );
+          })()}
 
           {/* Vectorizer.ai Credits */}
           {credits?.vectorizer?.hasKey && (

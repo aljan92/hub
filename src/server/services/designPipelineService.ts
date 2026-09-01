@@ -63,6 +63,19 @@ export class DesignPipelineService {
    */
   static async stepD2_GeneratePrompt(taskId: string): Promise<{ success: boolean; prompt?: string; error?: string }> {
     console.log(`[DesignPipeline] 🧠 Starte Step D2 (Ideogram Prompt Generation) für Task ${taskId}...`);
+    
+    // Pre-Flight Check: OpenRouter Guthaben & Circuit Breaker
+    const circuit = LLMService.isCircuitBroken();
+    if (circuit.broken) {
+      return { success: false, error: `Design-Pipeline pausiert: ${circuit.reason}` };
+    }
+    const balance = await LLMService.getAvailableBalance();
+    const settings = loadSettings();
+    const threshold = settings.openRouterMinBalanceThreshold ?? 1.00;
+    if (balance !== null && balance < threshold) {
+      return { success: false, error: `Design-Pipeline pausiert: OpenRouter Guthaben ($${balance.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})` };
+    }
+
     try {
       await TaskLogService.generatePromptWithOpenRouter(taskId);
       const updated = this.getTask(taskId);

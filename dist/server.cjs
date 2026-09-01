@@ -49914,7 +49914,8 @@ var init_settingsService = __esm2({
       queueUpdateAutoBackfillEnabled: false,
       queueUpdateMaxActiveProducts: 100,
       costPerImage: 0.08,
-      costPerVectorization: 0.05
+      costPerVectorization: 0.05,
+      openRouterMinBalanceThreshold: 1
     };
     cachedSettings = null;
   }
@@ -52543,6 +52544,76 @@ var init_llmService = __esm2({
         });
         return cachedModels;
       }
+      // --- CIRCUIT BREAKER & LOW BALANCE GUARD ---
+      static circuitBroken = false;
+      static circuitBreakReason = "";
+      static circuitBreakTimestamp = 0;
+      static balanceCache = null;
+      static BALANCE_CACHE_TTL_MS = 6e4;
+      // 60s Cache
+      static tripCircuitBreaker(reason) {
+        this.circuitBroken = true;
+        this.circuitBreakReason = reason;
+        this.circuitBreakTimestamp = Date.now();
+        console.warn(`[LLMService] \u{1F6D1} CIRCUIT BREAKER AUSGEL\xD6ST: ${reason}`);
+      }
+      static resetCircuitBreaker() {
+        this.circuitBroken = false;
+        this.circuitBreakReason = "";
+        this.circuitBreakTimestamp = 0;
+        this.balanceCache = null;
+        console.log("[LLMService] \u{1F7E2} Circuit Breaker zur\xFCckgesetzt.");
+      }
+      static isCircuitBroken() {
+        return {
+          broken: this.circuitBroken,
+          reason: this.circuitBreakReason || void 0,
+          timestamp: this.circuitBreakTimestamp || void 0
+        };
+      }
+      static async getAvailableBalance(forceFresh = false) {
+        const settings = loadSettings();
+        if (settings.llmProvider !== "openrouter") {
+          return 999;
+        }
+        const now = Date.now();
+        if (!forceFresh && this.balanceCache && now - this.balanceCache.timestamp < this.BALANCE_CACHE_TTL_MS) {
+          return this.balanceCache.balance;
+        }
+        try {
+          const credits = await this.getCredits();
+          if (credits.balanceRemaining !== void 0 && credits.balanceRemaining !== null) {
+            this.balanceCache = { balance: credits.balanceRemaining, timestamp: now };
+            const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+            if (credits.balanceRemaining < threshold) {
+              if (!this.circuitBroken) {
+                this.tripCircuitBreaker(`OpenRouter Guthaben ($${credits.balanceRemaining.toFixed(2)}) liegt unter Schwellenwert ($${threshold.toFixed(2)})`);
+              }
+            } else if (this.circuitBroken) {
+              this.resetCircuitBreaker();
+            }
+            return credits.balanceRemaining;
+          }
+        } catch (err) {
+          console.warn("[LLMService] \u26A0\uFE0F Fehler bei getAvailableBalance:", err);
+        }
+        return this.balanceCache?.balance ?? null;
+      }
+      /**
+       * Central fetch wrapper: Checks Circuit Breaker before call and catches HTTP 402
+       */
+      static async executeFetch(url, init) {
+        const circuit = this.isCircuitBroken();
+        if (circuit.broken) {
+          throw new Error(`[LLMService] Circuit Breaker aktiv (${circuit.reason}). Anfrage abgebrochen.`);
+        }
+        const res = await fetch(url, init);
+        if (res.status === 402) {
+          this.tripCircuitBreaker("OpenRouter meldet 402 Payment Required: Guthaben aufgebraucht.");
+          throw new Error("OpenRouter Fehler 402: Unzureichendes Guthaben (Insufficient Credits). Workflows pausiert.");
+        }
+        return res;
+      }
       /**
        * Check OpenRouter credit balance & usage
        */
@@ -52690,7 +52761,7 @@ Niche 2: ${niche2}
 Quote / Text: "${quote5}"
 Style Preset: ${stylePreset}`;
         try {
-          const res = await fetch(url, {
+          const res = await this.executeFetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify({
@@ -52799,7 +52870,7 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
         };
         try {
           const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
-          const res = await fetch(url, {
+          const res = await this.executeFetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify(requestPayload),
@@ -52885,7 +52956,7 @@ Please evaluate all hits against Amazon Merch risk rules. Classify each hit, det
         };
         try {
           const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
-          const res = await fetch(url, {
+          const res = await this.executeFetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify(requestPayload),
@@ -52965,7 +53036,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
         };
         try {
           const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
-          const res = await fetch(url, {
+          const res = await this.executeFetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify(requestPayload),
@@ -53054,7 +53125,7 @@ Return ONLY valid JSON matching this schema:
         };
         try {
           const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
-          const res = await fetch(url, {
+          const res = await this.executeFetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify(requestPayload),
@@ -53145,7 +53216,7 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
         };
         try {
           const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
-          const res = await fetch(url, {
+          const res = await this.executeFetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify(requestPayload),
@@ -53208,7 +53279,7 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
         }
         const start3 = Date.now();
         try {
-          const res = await fetch(url, {
+          const res = await this.executeFetch(url, {
             method: "POST",
             headers,
             body: JSON.stringify({
@@ -223256,10 +223327,14 @@ var init_updateBackfillService = __esm2({
     init_queueService();
     init_taskLogService();
     init_updatePipelineService();
+    init_llmService();
     UpdateBackfillService = class {
       static inFlightDesigns = /* @__PURE__ */ new Set();
       static isRunningLoop = false;
       static intervalId = null;
+      static lastWarningTime = 0;
+      static WARNING_THROTTLE_MS = 5 * 60 * 1e3;
+      // 5 Minuten Drosselung
       /**
        * Collect all design IDs that must NOT be pulled again
        * (Already in Queue, active in Tasks, or currently in flight)
@@ -223438,10 +223513,22 @@ var init_updateBackfillService = __esm2({
         if (!forceSingle && counts.currentCount >= targetCount) {
           return { success: false, message: `Update-Pool ist bereits voll (${counts.currentCount}/${targetCount} aktive Designs im Pool).` };
         }
+        const circuit = LLMService.isCircuitBroken();
+        const balance = await LLMService.getAvailableBalance();
+        const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+        if (circuit.broken || balance !== null && balance < threshold) {
+          const reason = circuit.reason || `OpenRouter Guthaben ($${balance?.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})`;
+          console.warn(`[UpdateBackfillService] \u23F8\uFE0F runBackfillCycle \xFCbersprungen: ${reason}`);
+          return { success: false, message: `Update-Automatik pausiert: ${reason}.` };
+        }
         let lastError = "Kein passendes Design mit aktiven Produkten in Supabase gefunden.";
         const maxAttempts = 30;
         const cycleFailedIds = /* @__PURE__ */ new Set();
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          if (LLMService.isCircuitBroken().broken) {
+            console.warn("[UpdateBackfillService] \u{1F6D1} Circuit Breaker aktiv! Breche Schleife sofort ab.");
+            return { success: false, message: "Update-Automatik pausiert (Circuit Breaker ausgel\xF6st)." };
+          }
           const candidate = await this.fetchNextCandidateFromSupabase(cycleFailedIds);
           if (!candidate) {
             return { success: false, message: lastError };
@@ -223461,11 +223548,19 @@ var init_updateBackfillService = __esm2({
               lastError = result2.error || "Fehler beim Abruf der Merch-Daten";
               console.warn(`[UpdateBackfillService] \u26A0\uFE0F Design ${designId} auf Amazon nicht abrufbar (${lastError}). \xDCberspringe und teste n\xE4chsten Kandidaten...`);
               cycleFailedIds.add(designId);
+              if (LLMService.isCircuitBroken().broken || lastError.includes("402") || lastError.includes("Circuit Breaker")) {
+                console.warn("[UpdateBackfillService] \u{1F6D1} Abbruch der Kandidatenschleife wegen fehlendem OpenRouter-Guthaben.");
+                return { success: false, message: "Update-Automatik pausiert wegen fehlendem OpenRouter-Guthaben." };
+              }
             }
           } catch (err) {
             lastError = err.message || "Unbekannter Fehler";
             console.error(`[UpdateBackfillService] \u274C Fehler beim Verarbeiten von Design ${designId}:`, err);
             cycleFailedIds.add(designId);
+            if (LLMService.isCircuitBroken().broken || lastError.includes("402") || lastError.includes("Circuit Breaker")) {
+              console.warn("[UpdateBackfillService] \u{1F6D1} Abbruch der Kandidatenschleife wegen fehlendem OpenRouter-Guthaben.");
+              return { success: false, message: "Update-Automatik pausiert wegen fehlendem OpenRouter-Guthaben." };
+            }
           } finally {
             this.inFlightDesigns.delete(designId);
           }
@@ -223482,6 +223577,18 @@ var init_updateBackfillService = __esm2({
           try {
             const settings = loadSettings();
             if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
+              const circuit = LLMService.isCircuitBroken();
+              const balance = await LLMService.getAvailableBalance();
+              const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+              if (circuit.broken || balance !== null && balance < threshold) {
+                const now = Date.now();
+                if (now - this.lastWarningTime > this.WARNING_THROTTLE_MS) {
+                  const reason = circuit.reason || `Guthaben ($${balance?.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})`;
+                  console.warn(`[UpdateBackfillService] \u23F8\uFE0F Update-Automatik pausiert: ${reason}. Bitte OpenRouter aufladen.`);
+                  this.lastWarningTime = now;
+                }
+                return;
+              }
               const counts = this.getActiveUpdateCount();
               const target = settings.queueUpdateTargetCount ?? 10;
               if (counts.currentCount < target) {
@@ -228696,7 +228803,9 @@ init_updatePipelineService();
 
 // src/server/services/designPipelineService.ts
 init_taskLogService();
+init_settingsService();
 init_trademarkService();
+init_llmService();
 init_artworkResizeService();
 var DesignPipelineService = class {
   /**
@@ -228742,6 +228851,16 @@ var DesignPipelineService = class {
    */
   static async stepD2_GeneratePrompt(taskId) {
     console.log(`[DesignPipeline] \u{1F9E0} Starte Step D2 (Ideogram Prompt Generation) f\xFCr Task ${taskId}...`);
+    const circuit = LLMService.isCircuitBroken();
+    if (circuit.broken) {
+      return { success: false, error: `Design-Pipeline pausiert: ${circuit.reason}` };
+    }
+    const balance = await LLMService.getAvailableBalance();
+    const settings = loadSettings();
+    const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+    if (balance !== null && balance < threshold) {
+      return { success: false, error: `Design-Pipeline pausiert: OpenRouter Guthaben ($${balance.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})` };
+    }
     try {
       await TaskLogService2.generatePromptWithOpenRouter(taskId);
       const updated = this.getTask(taskId);
@@ -229316,14 +229435,22 @@ async function refreshCreditsInBackground() {
       hasVectorizerKey ? VectorizerService.testConnection() : Promise.resolve({ success: false }),
       hasIdeogramKey ? IdeogramService.testConnection() : Promise.resolve({ success: false })
     ]);
+    const circuit = LLMService.isCircuitBroken();
+    const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+    const balance = openrouter.balanceRemaining ?? lastKnownCredits.openrouter?.balanceRemaining;
+    const isLowBalance = balance !== void 0 && balance !== null && balance < threshold;
     const orData = {
       usage: openrouter.usage ?? lastKnownCredits.openrouter?.usage,
       limit: openrouter.limit ?? lastKnownCredits.openrouter?.limit,
       limitRemaining: openrouter.limitRemaining ?? lastKnownCredits.openrouter?.limitRemaining,
-      balanceRemaining: openrouter.balanceRemaining ?? lastKnownCredits.openrouter?.balanceRemaining,
+      balanceRemaining: balance,
       totalCredits: openrouter.totalCredits ?? lastKnownCredits.openrouter?.totalCredits,
       isFreeTier: openrouter.isFreeTier ?? lastKnownCredits.openrouter?.isFreeTier,
-      hasKey: hasOpenRouterKey
+      hasKey: hasOpenRouterKey,
+      isCircuitBroken: circuit.broken,
+      circuitBreakReason: circuit.reason,
+      minBalanceThreshold: threshold,
+      isLowBalance
     };
     const vecData = {
       credits: vectorizer.creditsRemaining ?? vectorizer.credits ?? lastKnownCredits.vectorizer?.credits,
@@ -229344,7 +229471,10 @@ async function refreshCreditsInBackground() {
 }
 refreshCreditsInBackground();
 setInterval(refreshCreditsInBackground, 3e4);
-app.get("/api/v1/credits", (req, res) => {
+app.get("/api/v1/credits", async (req, res) => {
+  if (req.query.forceFresh === "true") {
+    await refreshCreditsInBackground();
+  }
   res.json({
     success: true,
     ...lastKnownCredits

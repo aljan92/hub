@@ -495,14 +495,23 @@ async function refreshCreditsInBackground() {
       hasIdeogramKey ? IdeogramService.testConnection() : Promise.resolve({ success: false })
     ]);
 
+    const circuit = LLMService.isCircuitBroken();
+    const threshold = settings.openRouterMinBalanceThreshold ?? 1.00;
+    const balance = (openrouter as any).balanceRemaining ?? lastKnownCredits.openrouter?.balanceRemaining;
+    const isLowBalance = balance !== undefined && balance !== null && balance < threshold;
+
     const orData = {
       usage: (openrouter as any).usage ?? lastKnownCredits.openrouter?.usage,
       limit: (openrouter as any).limit ?? lastKnownCredits.openrouter?.limit,
       limitRemaining: (openrouter as any).limitRemaining ?? lastKnownCredits.openrouter?.limitRemaining,
-      balanceRemaining: (openrouter as any).balanceRemaining ?? lastKnownCredits.openrouter?.balanceRemaining,
+      balanceRemaining: balance,
       totalCredits: (openrouter as any).totalCredits ?? lastKnownCredits.openrouter?.totalCredits,
       isFreeTier: (openrouter as any).isFreeTier ?? lastKnownCredits.openrouter?.isFreeTier,
-      hasKey: hasOpenRouterKey
+      hasKey: hasOpenRouterKey,
+      isCircuitBroken: circuit.broken,
+      circuitBreakReason: circuit.reason,
+      minBalanceThreshold: threshold,
+      isLowBalance
     };
 
     const vecData = {
@@ -530,7 +539,10 @@ async function refreshCreditsInBackground() {
 refreshCreditsInBackground();
 setInterval(refreshCreditsInBackground, 30000);
 
-app.get('/api/v1/credits', (req, res) => {
+app.get('/api/v1/credits', async (req, res) => {
+  if (req.query.forceFresh === 'true') {
+    await refreshCreditsInBackground();
+  }
   res.json({
     success: true,
     ...lastKnownCredits

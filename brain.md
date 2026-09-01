@@ -609,3 +609,26 @@ MBA HUB/
   4. **Entkopplung von `isLocked`:** Die Sperrenprüfung bezieht sich ausschließlich auf `.locked-container` für die Farbauswahl. Die Two-Sided Artwork-Ersetzung prüft eigenständig auf `.delete-button` und führt den Upload beim Ceramic Mug zuverlässig aus.
   5. **Unit-Tests:**
      - `tests/resizeService.test.ts` (20/20 Tests bestanden).
+
+### 10.25 🛑 OpenRouter Circuit Breaker & Low-Balance Schutz (Option B: Komfort-Schutz)
+- **Problem & Ursache:**
+  - Bei aufgebrauchtem OpenRouter-Guthaben beantwortete die OpenRouter-API Anfragen mit `402 Payment Required`.
+  - Die Update-Automatik (`UpdateBackfillService`) geriet in eine Endlosschleife: Sie versuchte nacheinander bis zu 30 Kandidaten-Designs von Supabase abzurufen und auf Amazon zu scrapen, scheiterte jedes Mal bei der LLM-Übersetzung mit 402 und wiederholte diesen Zyklus alle 10 Sekunden.
+- **Lösung & Architektur:**
+  1. **Konfigurierbarer Schwellenwert (`openRouterMinBalanceThreshold`):**
+     - In `AppSettings` hinterlegt mit Standardwert `$1.00`.
+     - Über `SettingsView.tsx` im OpenRouter-Parameterblock intuitiv einstellbar (`$0.10` bis `$50.00`).
+  2. **In-Memory Circuit Breaker & Cached Balance Guard (`LLMService`):**
+     - `executeFetch(url, init)`: Fängt zentral HTTP 402 ab und löst unverzüglich den Circuit Breaker aus (`tripCircuitBreaker`). Alle nachfolgenden LLM-Anfragen werden sofort an der Pforte abgewiesen.
+     - `getAvailableBalance(forceFresh)`: Prüft das Restguthaben mit 60-Sekunden-Cache. Fällt das Guthaben unter den Schwellenwert, wird der Circuit Breaker aktiviert.
+     - **Auto-Resume:** Sobald das Guthaben wieder aufgeladen ist ($\ge \text{Schwellenwert}$), entriegelt sich das System vollautomatisch (`resetCircuitBreaker`).
+  3. **Pre-Flight Guard in Update-Automatik & Pipelines:**
+     - `UpdateBackfillService.startScheduler()` & `runBackfillCycle()`: Prüfen vor dem Supabase-Abruf und vor dem Start des Amazon-Scrapes, ob Circuit Breaker oder Low Balance aktiv sind. Falls ja, wird der Zyklus sofort ohne Amazon-Aufrufe übersprungen (Warnung gedrosselt auf max. 1x alle 5 Minuten).
+     - Bricht die 30-Kandidaten-Schleife beim ersten Auftreten eines 402/Circuit-Breaker-Events sofort ab.
+     - `DesignPipelineService`: Blockiert Step D2 (Ideogram Prompt Generation) vorab, um teure Bildgenerierungen bei fehlendem LLM-Guthaben zu verhindern.
+  4. **Live UI-Transparenz & Instant Reload (`Header.tsx`):**
+     - Zeigt im Header bei niedrigem/erschöpftem Guthaben ein rot pulsierendes Warn-Badge: `OR: $0.xx • ⏸️ PAUSIERT`.
+     - Tooltip erklärt präzise den Grund und die Pausierung der Update-Automatik.
+     - Klick auf das Badge erzwingt einen Live-Abruf (`?forceFresh=true`), wodurch nach dem Aufladen die Sperre sofort ohne 30s-Wartezeit aufgehoben wird.
+  5. **Unit-Tests:**
+     - `tests/circuitBreaker.test.ts` (11/11 Tests bestanden, 100%).

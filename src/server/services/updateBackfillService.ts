@@ -3,11 +3,14 @@ import { loadSettings, saveSettings } from './settingsService';
 import { QueueService } from './queueService';
 import { TaskLogService } from './taskLogService';
 import { UpdatePipelineService } from './updatePipelineService';
+import { LLMService } from './llmService';
 
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
   private static isRunningLoop = false;
   private static intervalId: NodeJS.Timeout | null = null;
+  private static lastWarningTime = 0;
+  private static readonly WARNING_THROTTLE_MS = 5 * 60 * 1000; // 5 Minuten Drosselung
 
   /**
    * Collect all design IDs that must NOT be pulled again
@@ -242,11 +245,28 @@ export class UpdateBackfillService {
       return { success: false, message: `Update-Pool ist bereits voll (${counts.currentCount}/${targetCount} aktive Designs im Pool).` };
     }
 
+    // Pre-Flight Guard: OpenRouter Guthaben & Circuit Breaker
+    const circuit = LLMService.isCircuitBroken();
+    const balance = await LLMService.getAvailableBalance();
+    const threshold = settings.openRouterMinBalanceThreshold ?? 1.00;
+
+    if (circuit.broken || (balance !== null && balance < threshold)) {
+      const reason = circuit.reason || `OpenRouter Guthaben ($${balance?.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})`;
+      console.warn(`[UpdateBackfillService] ⏸️ runBackfillCycle übersprungen: ${reason}`);
+      return { success: false, message: `Update-Automatik pausiert: ${reason}.` };
+    }
+
     let lastError = 'Kein passendes Design mit aktiven Produkten in Supabase gefunden.';
     const maxAttempts = 30;
     const cycleFailedIds = new Set<string>();
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Check circuit breaker before each attempt in case it tripped during this cycle
+      if (LLMService.isCircuitBroken().broken) {
+        console.warn('[UpdateBackfillService] 🛑 Circuit Breaker aktiv! Breche Schleife sofort ab.');
+        return { success: false, message: 'Update-Automatik pausiert (Circuit Breaker ausgelöst).' };
+      }
+
       const candidate = await this.fetchNextCandidateFromSupabase(cycleFailedIds);
       if (!candidate) {
         return { success: false, message: lastError };
@@ -271,11 +291,22 @@ export class UpdateBackfillService {
           lastError = result.error || 'Fehler beim Abruf der Merch-Daten';
           console.warn(`[UpdateBackfillService] ⚠️ Design ${designId} auf Amazon nicht abrufbar (${lastError}). Überspringe und teste nächsten Kandidaten...`);
           cycleFailedIds.add(designId);
+
+          // If result failed due to circuit breaker or 402, abort loop immediately
+          if (LLMService.isCircuitBroken().broken || lastError.includes('402') || lastError.includes('Circuit Breaker')) {
+            console.warn('[UpdateBackfillService] 🛑 Abbruch der Kandidatenschleife wegen fehlendem OpenRouter-Guthaben.');
+            return { success: false, message: 'Update-Automatik pausiert wegen fehlendem OpenRouter-Guthaben.' };
+          }
         }
       } catch (err: any) {
         lastError = err.message || 'Unbekannter Fehler';
         console.error(`[UpdateBackfillService] ❌ Fehler beim Verarbeiten von Design ${designId}:`, err);
         cycleFailedIds.add(designId);
+
+        if (LLMService.isCircuitBroken().broken || lastError.includes('402') || lastError.includes('Circuit Breaker')) {
+          console.warn('[UpdateBackfillService] 🛑 Abbruch der Kandidatenschleife wegen fehlendem OpenRouter-Guthaben.');
+          return { success: false, message: 'Update-Automatik pausiert wegen fehlendem OpenRouter-Guthaben.' };
+        }
       } finally {
         this.inFlightDesigns.delete(designId);
       }
@@ -295,6 +326,21 @@ export class UpdateBackfillService {
       try {
         const settings = loadSettings();
         if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
+          // Pre-Flight Check: OpenRouter Guthaben & Circuit Breaker
+          const circuit = LLMService.isCircuitBroken();
+          const balance = await LLMService.getAvailableBalance();
+          const threshold = settings.openRouterMinBalanceThreshold ?? 1.00;
+
+          if (circuit.broken || (balance !== null && balance < threshold)) {
+            const now = Date.now();
+            if (now - this.lastWarningTime > this.WARNING_THROTTLE_MS) {
+              const reason = circuit.reason || `Guthaben ($${balance?.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})`;
+              console.warn(`[UpdateBackfillService] ⏸️ Update-Automatik pausiert: ${reason}. Bitte OpenRouter aufladen.`);
+              this.lastWarningTime = now;
+            }
+            return;
+          }
+
           const counts = this.getActiveUpdateCount();
           const target = settings.queueUpdateTargetCount ?? 10;
           if (counts.currentCount < target) {
