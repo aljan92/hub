@@ -587,6 +587,95 @@ export class UploadWorkerService {
           continue;
         }
 
+        // Prüfe auf dediziertes Resized Artwork (Two-Sided Mug/Drinkware & Black Brush)
+        const isDrinkwareResize = ['CERAMIC_MUG', 'TUMBLER', 'WATER_BOTTLE'].includes(product.id);
+        if (isDrinkwareResize) {
+          const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+          const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+          
+          let targetArtworkPath: string | undefined;
+          let isBrushApplied = false;
+
+          if (product.id === 'CERAMIC_MUG') {
+            if (avoidColor === 'white') {
+              targetArtworkPath = item.resizedAssets?.mugBrushPath 
+                || path.join(designsDir, `${cleanTaskId}_two_sided_mug_brush.png`);
+              isBrushApplied = true;
+            } else {
+              targetArtworkPath = item.resizedAssets?.mugStandardPath 
+                || path.join(designsDir, `${cleanTaskId}_two_sided_mug_standard.png`);
+            }
+          } else {
+            // TUMBLER or WATER_BOTTLE
+            targetArtworkPath = item.resizedAssets?.drinkwareStandardPath 
+              || path.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
+          }
+
+          if (targetArtworkPath && fs.existsSync(targetArtworkPath)) {
+            this.log(`🎨 Ersetze Artwork für ${product.displayName} mit Two-Sided ${isBrushApplied ? 'Black Brush ' : ''}Variante...`);
+            
+            // 1. Delete standard artwork if delete-button exists
+            const deleteClicked = await page.evaluate((pid: string) => {
+              const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card')) as HTMLElement[];
+              const card = document.getElementById(`${pid}-card`) 
+                || document.getElementById(`config-${pid}`)
+                || allCards.find(c => {
+                     const idUpper = (c.id || '').toUpperCase();
+                     const clsUpper = Array.from(c.classList).join(' ').toUpperCase();
+                     return idUpper.includes(pid) || clsUpper.includes(pid) || (pid === 'CERAMIC_MUG' && (idUpper.includes('MUG') || clsUpper.includes('MUG')));
+                   });
+              
+              const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
+              const cardRect = card ? card.getBoundingClientRect() : null;
+              const inputContainer = allEditors.find(ed => cardRect && ed.getBoundingClientRect().top >= cardRect.bottom - 100 && ed.innerHTML.length > 20) || allEditors[allEditors.length - 1] || card;
+
+              const delBtn = (inputContainer?.querySelector('.delete-button, button.delete-button, [aria-label*="delete"], [title*="delete"]')
+                || card?.querySelector('.delete-button, button.delete-button')) as HTMLElement;
+              
+              if (delBtn) {
+                delBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                delBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                delBtn.click();
+                return true;
+              }
+              return false;
+            }, product.id);
+
+            if (deleteClicked) {
+              await page.waitForTimeout(500);
+            }
+
+            // 2. Set input files on product-specific file input
+            try {
+              const shortPid = product.id.replace('CERAMIC_', '');
+              const fileInputSelector = `#${product.id}-card input[type="file"], #${shortPid}-card input[type="file"], #config-${product.id} input[type="file"], input#${product.id}-DESIGN-wizzy, input#${shortPid}-DESIGN-wizzy, label[for*="${product.id}"] + input[type="file"], label[for*="${shortPid}"] + input[type="file"]`;
+              
+              let inputFound = false;
+              const inputLocator = page.locator(fileInputSelector).first();
+              if (await inputLocator.count() > 0) {
+                await inputLocator.setInputFiles(targetArtworkPath);
+                inputFound = true;
+              } else {
+                // Fallback: look inside the currently open product-editor
+                const genericInput = page.locator('.product-editor input[type="file"], product-editor input[type="file"], .product-config-panel input[type="file"]').first();
+                if (await genericInput.count() > 0) {
+                  await genericInput.setInputFiles(targetArtworkPath);
+                  inputFound = true;
+                }
+              }
+
+              if (inputFound) {
+                await page.waitForTimeout(800);
+                this.log(`✓ ${product.displayName}: Two-Sided ${isBrushApplied ? 'Brush ' : ''}Artwork hochgeladen (${path.basename(targetArtworkPath)}) ✓`);
+              } else {
+                this.log(`⚠️ ${product.displayName}: Kein Upload-Feld für Resized Artwork gefunden, behalte Standard.`);
+              }
+            } catch (upErr: any) {
+              this.log(`⚠️ Fehler beim Hochladen des Resized Artworks für ${product.displayName}: ${upErr.message}`);
+            }
+          }
+        }
+
         // Säulen 1 & 2: Konfiguration mit Fit-Type Garantie, Swatch-Audit & Minimum-1 Farbe Selbstheilung
         const editResult = await page.evaluate(async (params: {
           productId: string;

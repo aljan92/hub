@@ -9,6 +9,7 @@ import { SystemPromptService } from './systemPromptService';
 import { LLMService, EnglishListing } from './llmService';
 import { TrademarkService } from './trademarkService';
 import { VisionOptimizationService } from './visionOptimizationService';
+import { ArtworkResizeService } from './artworkResizeService';
 
 export class UpdatePipelineService {
   /**
@@ -555,6 +556,45 @@ export class UpdatePipelineService {
   }
 
   /**
+   * Step U6.5: Generate Resized Artworks (Trimmed, Mug Standard & Brush, Drinkware Standard)
+   */
+  static async stepU6_5_ResizeArtworks(taskId: string): Promise<{ success: boolean; resizedAssets?: any; error?: string }> {
+    console.log(`[UpdatePipeline] 📐 Starte Step U6.5 (Resize Artworks) für Task ${taskId}...`);
+    const task = this.getTask(taskId);
+    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+
+    const mbaPngPath = task.localMbaPngPath || task.localImagePath;
+    if (!mbaPngPath || !fs.existsSync(mbaPngPath)) {
+      console.warn(`[UpdatePipeline] ⚠️ Kein lokales Master-Artwork für Resize bei Task ${taskId} vorhanden.`);
+      return { success: false, error: 'Kein Master-Artwork vorhanden' };
+    }
+
+    try {
+      const resized = await ArtworkResizeService.generateResizedArtworks(taskId, mbaPngPath);
+      task.resizedAssets = resized;
+      TaskLogService.updateTaskStatus(taskId, { resizedAssets: resized });
+
+      TaskLogService.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'RESIZE_RESPONSE',
+        title: `📐 Two-Sided & Brush Varianten generiert ✓`,
+        content: {
+          trimmedPath: resized.trimmedPath,
+          mugStandardPath: resized.mugStandardPath,
+          mugBrushPath: resized.mugBrushPath,
+          drinkwareStandardPath: resized.drinkwareStandardPath,
+          message: 'Two-Sided Varianten für Ceramic Mug (Standard & Brush) und Drinkware (Tumbler & Water Bottle) erfolgreich erstellt.'
+        }
+      });
+
+      return { success: true, resizedAssets: resized };
+    } catch (err: any) {
+      console.error(`[UpdatePipeline] ❌ Fehler in Step U6.5:`, err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
    * Step U7: Enqueue into Update Tab in Queue
    */
   static async stepU7_Enqueue(taskId: string): Promise<{ success: boolean; queueItem?: any; error?: string }> {
@@ -615,6 +655,7 @@ export class UpdatePipelineService {
         avoidColor: resolvedAvoidColor,
         imagePath: task.localImagePath || '',
         pngPath: task.localMbaPngPath || '',
+        resizedAssets: task.resizedAssets,
         publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
         liveStats: task.payload?.liveStats || null,
         liveProductSummary: task.payload?.productSummary || task.payload?.liveProductSummary || null,
@@ -651,7 +692,7 @@ export class UpdatePipelineService {
   /**
    * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval)
    */
-  static async runFromStep(taskId: string, startStep: 'U4' | 'U5' | 'U6' | 'U7' = 'U4'): Promise<{ success: boolean; task?: DesignTaskLog; error?: string }> {
+  static async runFromStep(taskId: string, startStep: 'U4' | 'U5' | 'U6' | 'U6_5' | 'U7' = 'U4'): Promise<{ success: boolean; task?: DesignTaskLog; error?: string }> {
     console.log(`[UpdatePipeline] 🚀 Führe Pipeline ab Step ${startStep} für Task ${taskId} aus...`);
 
     if (startStep === 'U4') {
@@ -669,7 +710,11 @@ export class UpdatePipelineService {
       if (!u6.success) return { success: false, error: u6.error };
     }
 
-    if (startStep === 'U4' || startStep === 'U5' || startStep === 'U6' || startStep === 'U7') {
+    if (startStep === 'U4' || startStep === 'U5' || startStep === 'U6' || startStep === 'U6_5') {
+      await this.stepU6_5_ResizeArtworks(taskId);
+    }
+
+    if (startStep === 'U4' || startStep === 'U5' || startStep === 'U6' || startStep === 'U6_5' || startStep === 'U7') {
       const u7 = await this.stepU7_Enqueue(taskId);
       if (!u7.success) return { success: false, error: u7.error };
     }
@@ -784,6 +829,10 @@ export class UpdatePipelineService {
       case 'U4': return await this.stepU4_RewriteListing(taskId);
       case 'U5': return await this.stepU5_TrademarkCheck(taskId);
       case 'U6': return await this.stepU6_TranslateListing(taskId);
+      case 'U6_5':
+      case 'RESIZE':
+      case 'UPDATE_U6_5_RESIZE':
+        return await this.stepU6_5_ResizeArtworks(taskId);
       case 'U7': return await this.stepU7_Enqueue(taskId);
       case 'RESUME':
       case 'CONTINUE':

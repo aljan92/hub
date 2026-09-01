@@ -1,19 +1,13 @@
 # 🧠 MBA HUB — Master-Architektur & Projekt-Brain
 
-> **Status:** Phase 1 bis Phase 6 vollständig implementiert, verifiziert & im Produktivbetrieb 🚀  
-> **Projekt:** MBA Hub (Merch By Amazon Automation & Hub Platform)  
-> **Ziel-Umgebung:** TerraMaster NAS (TOS 6.0) unter Docker / Port `3000`  
-> **Repository:** `https://github.com/aljan92/hub.git` (Branch: `main`)  
-> **Deployment & Update:** Live-Betrieb auf dem NAS. Updates werden nach jedem Schritt automatisch per `git push origin main` auf GitHub veröffentlicht. 1-Click Update im Web-Dashboard (automatischer Tarball-Download & 10s Server-Neustart).  
-> **Workflow-Regel:** Nach jedem Feature/Fix führt der AI-Agent **automatisch** `npm run build` und `git push origin main` aus!  
-> **Projekt-Gedächtnis:** Diese `brain.md` dient als zentraler Master-Notizzettel und wird bei jedem Schritt fortlaufend > **Status:** Phase 1 bis Phase 7 vollständig implementiert, verifiziert & im Produktivbetrieb 🚀  
+> **Status:** Phase 1 bis Phase 8 vollständig implementiert, verifiziert & im Produktivbetrieb 🚀  
 > **Projekt:** MBA Hub (Merch By Amazon Automation & Hub Platform)  
 > **Ziel-Umgebung:** TerraMaster NAS (TOS 6.0) unter Docker / Port `3000`  
 > **Repository:** `https://github.com/aljan92/hub.git` (Branch: `main`)  
 > **Deployment & Update:** Live-Betrieb auf dem NAS. Updates werden nach jedem Schritt automatisch per `git push origin main` auf GitHub veröffentlicht. 1-Click Update im Web-Dashboard (automatischer Tarball-Download & 10s Server-Neustart).  
 > **Workflow-Regel:** Nach jedem Feature/Fix führt der AI-Agent **automatisch** `npm run build` und `git push origin main` aus!  
 > **Projekt-Gedächtnis:** Diese `brain.md` dient als zentraler Master-Notizzettel und wird bei jedem Schritt fortlaufend gepflegt.  
-> **Letzte Aktualisierung:** 30. August 2026  
+> **Letzte Aktualisierung:** 1. September 2026  
 
 ---
 
@@ -200,23 +194,33 @@ graph TD
   * Eindeutige ID-Menge (`Set<string>`) verhindert Zwischensprünge während der Bearbeitung.
   * Hintergrund-Scheduler (10s Intervall) füllt den Pool bei `IST < SOLL` automatisch auf.
 
+
+### ✅ Phase 8: Resize Step & Two-Sided Mug/Drinkware Engine mit Black Brush (`ArtworkResizeService.ts`)
+* **Modularer 2-Stufen Resize-Prozess:**
+  * **Stufe 1 (Trimmen):** Aus dem 4500x5400px Master-PNG (`_mba.png`) wird die exakte Motiv-Bounding-Box ermittelt und als `${taskId}_trimmed.png` (300 DPI) gespeichert als universelle Basis für alle aktuellen und zukünftigen Resizes.
+  * **Stufe 2 (Produktspezifische Optimierung):**
+    * **Ceramic Mug (`CERAMIC_MUG`):**
+      * `${taskId}_two_sided_mug_standard.png`: 2700 × 1050 px, 300 DPI (7.5 % Margin, zentriert auf Vorder- und Rückseite bei x=59 und x=1591).
+      * `${taskId}_two_sided_mug_brush.png`: 2700 × 1050 px, 300 DPI mit organischem Black Brush Konturstempel (`brush_tip.png`) und solidem schwarzem Silhouette-Backdrop für dunkle Tassen.
+    * **Drinkware (`TUMBLER`, `WATER_BOTTLE`):**
+      * `${taskId}_two_sided_drinkware_standard.png`: 3000 × 1400 px, 300 DPI (7.5 % Margin, zentriert bei x=31 und x=1566.67).
+* **Headless Chromium Rendering (Playwright):** 100% C++ Addon-freie Ausführung auf dem TerraMaster NAS Docker-Container mit nativer 300 DPI PNG `pHYs`-Chunk Injection.
+* **Workflow & Pipeline Integration:**
+  * **Design-Pipeline:** Step D7.5 (nach Vektorisierung & 4-Panel Audit, vor Übergabe an die Queue D8).
+  * **Update-Pipeline:** Step U6.5 (nach Übersetzung, vor Enqueue U7).
+  * Timeline Event: `📐 Two-Sided & Brush Varianten generiert ✓`.
+* **Playwright Upload Worker Integration (`uploadWorkerService.ts`):**
+  * Erkennt `CERAMIC_MUG`, `TUMBLER` und `WATER_BOTTLE` in der sequenziellen Produktschleife.
+  * Wählt bei `avoidColor === 'white'` automatisch die Brush-Variante für den Mug, sonst Standard.
+  * Klickt im Produkt-Editor auf `.delete-button` zur Entfernung des Standard-Artworks und lädt das optimierte Two-Sided PNG via nativem Playwright `setInputFiles` hoch.
+* **Automated Tests:** 16/16 Unit- & Integrationstests in `tests/resizeService.test.ts` bestanden.
+
 ---
 
 ## 4. 🗺️ Nächste Roadmap-Phasen
 
-### 🔜 Phase 7.5: System-Prompts & Vision-Optimierung (Alex Todo.md #6 & #7)
-* Verfeinerung der System-Prompts für Vision-Analyse, Listing-Rewrite und TM-Scans.
-* Feinjustierung der Kriterien für `rewriteNeeded` und Farbausschlüsse.
-
-### 🔜 Phase 8: Canvas Mug Brush & Multi-Produkt-Resize Engine
-* PopSockets (`1200 × 1200 px`), Phone Cases (`1800 × 3200 px`), Throw Pillows & Tote Bags (`2925 × 2925 px`), Black Ceramic Mug (`brush_tip.png` Layering).
-
----
-
-## 5. 🛠️ Build-, Git- & Deployment-Workflowsaus bestehender MBA-Datenbank
-* Zieht bei verbleibenden freien Slots am Tagesende bestehende Live-Designs aus der Supabase-Datenbank und publiziert ungenutzte Produkte/Marktplätze bis zu 100% Auslastung.
-
----
+### 🔜 Phase 9: Multi-Produkt-Resize Erweiterung
+* PopSockets (`1200 × 1200 px`), Phone Cases (`1800 × 3200 px`), Throw Pillows & Tote Bags (`2925 × 2925 px`) auf Basis von `${taskId}_trimmed.png`.
 
 ## 5. 🛠️ Build-, Git- & Deployment-Workflows
 
@@ -557,3 +561,25 @@ MBA HUB/
   2. **Vollständige Fit-Type Palette:** Unterstützt bedingungslos `Men`, `Women`, `Youth`, `Girls` (Standard T-Shirt) sowie `Adult Unisex` + `Youth` (Jerseys, Visor). `Adult Unisex` ist standardmäßig immer aktiv.
   3. **Generische DOM-Filterung (`rect.height > 0 && rect.width > 0`):** Der Upload-Worker agiert 100% dynamisch auf sichtbare DOM-Elemente des gerade geöffneten Produkt-Editors und unterstützt zukünftige neue Amazon-Produkte ohne Code-Anpassung.
   4. **4-Pass Farb-Engine:** Farbvermeidungsregeln (`avoidColor: white/black`) mit Minimum-1-Farbe-Garantie und 10-Farben-Limit laufen zuverlässig durch.
+
+### 10.22 📐 Two-Sided Mug/Drinkware Engine & Black Brush Layering
+- **Problem & Motivation:**
+  - Standard-Uploads verwenden das 4500x5400px Master-PNG, das für T-Shirts optimiert ist.
+  - Auf Tassen (`CERAMIC_MUG`), Tumblern (`TUMBLER`) und Trinkflaschen (`WATER_BOTTLE`) führt dies zu einer einseitigen, suboptimal platzierten Darstellung.
+  - Auf schwarzen Tassen (`avoidColor: white`) gehen dunkle Kanten und Motive im schwarzen Hintergrund unter, weshalb aus dem *Listing Optimizer* der organische Pinsel-Backdrop-Effekt ("Black Brush") benötigt wird.
+- **Lösung & Architektur:**
+  1. **2-Stufen Resize-Prozess:**
+     - **Stufe 1 (Trimmen):** Aus dem Master-PNG (`_mba.png`) wird die exakte Motiv-Bounding-Box ohne transparenten Rand errechnet und als `${taskId}_trimmed.png` (300 DPI) gespeichert. Dies dient als universelle Basis für alle Resizes.
+     - **Stufe 2 (Produktspezifisch):**
+       - **Ceramic Mug (`CERAMIC_MUG`):** Standard (2700 × 1050 px, zentriert auf Vorder- und Rückseite bei x=59 und x=1591) und Brush (organischer Black-Brush Konturstempel aus `brush_tip.png` mit 10-Pass Dilation und solidem schwarzem Kern).
+       - **Drinkware (`TUMBLER`, `WATER_BOTTLE`):** Standard (3000 × 1400 px, zentriert bei x=31 und x=1566.67).
+  2. **100% Native Playwright Chromium Engine (`ArtworkResizeService.ts`):** Keine nativen C++ Dependencies (`sharp`/`node-canvas`), daher reibungsloser Betrieb im Docker-Container auf TerraMaster NAS.
+  3. **Native 300 DPI PNG Injektion:** Robuster `pHYs`-Chunk Builder (11811 Pixel pro Meter = 300 DPI) mit standardkonformem CRC32-Header.
+  4. **Workflow-Hooks:** Automatische Generierung in der Design-Pipeline (Step D7.5) und in der Update-Pipeline (Step U6.5 vor Enqueue).
+  5. **Upload-Worker Artwork-Ersetzung:**
+     - Erkennt `CERAMIC_MUG`, `TUMBLER` und `WATER_BOTTLE` in der sequenziellen Produktschleife.
+     - Löscht das vererbte Standard-Design per Klick auf `.delete-button`.
+     - Weist das optimierte Two-Sided PNG via nativem Playwright `fileInput.setInputFiles` zu (Brush-Variante bei `avoidColor === 'white'`, sonst Standard).
+  6. **Unit- & Integrationstests:**
+     - `tests/resizeService.test.ts` (16/16 Tests bestanden).
+

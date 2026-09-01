@@ -56,6 +56,8 @@ export type EventType =
   | 'SVG_EDIT_RESPONSE'
   | 'SVG_AUDIT_REQUEST'
   | 'SVG_AUDIT_RESPONSE'
+  | 'RESIZE_REQUEST'
+  | 'RESIZE_RESPONSE'
   | 'ERROR';
 
 export interface EventMetadata {
@@ -123,6 +125,12 @@ export interface DesignTaskLog {
   listingResult?: any;
   trademarkCheckResult?: any;
   trademarkRefineResult?: any;
+  resizedAssets?: {
+    trimmedPath?: string;
+    mugStandardPath?: string;
+    mugBrushPath?: string;
+    drinkwareStandardPath?: string;
+  };
   hasError?: boolean;
   errorDetails?: string;
 }
@@ -132,12 +140,13 @@ export type RetryStepType =
   | 'IDEOGRAM_REQUEST' 
   | 'ANALYSIS_REQUEST' 
   | 'LISTING_REQUEST' 
-  | 'PREFLIGHT_TM_REQUEST'
+  | 'PREFLIGHT_TM_REQUEST' 
   | 'TM_CHECK_REQUEST' 
   | 'TM_REFINE_REQUEST'
   | 'TRANSLATION_REQUEST'
   | 'VECTORIZE_REQUEST'
   | 'SVG_AUDIT_REQUEST'
+  | 'RESIZE_REQUEST'
   | 'SVG_REVIEW'
   | 'UPDATE_U1_EXTRACT'
   | 'UPDATE_U2_ARTWORK'
@@ -145,4 +154,5 @@ export type RetryStepType =
   | 'UPDATE_U4_REWRITE'
   | 'UPDATE_U5_TM_CHECK'
   | 'UPDATE_U6_TRANSLATE'
+  | 'UPDATE_U6_5_RESIZE'
   | 'UPDATE_U7_ENQUEUE';

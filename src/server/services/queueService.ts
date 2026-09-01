@@ -29,6 +29,12 @@ export interface QueueItem {
   customBackgroundColor?: string;                    // e.g. '#000000'
   imagePath: string;
   pngPath: string;
+  resizedAssets?: {
+    trimmedPath?: string;
+    mugStandardPath?: string;
+    mugBrushPath?: string;
+    drinkwareStandardPath?: string;
+  };
   addedAt: string;
   status: QueueItemStatus;
   isLocked: boolean; // Hero-Design Lock: protects from dynamic slot dropping
@@ -489,6 +495,12 @@ export class QueueService {
     customBackgroundColor?: string;
     imagePath: string;
     pngPath: string;
+    resizedAssets?: {
+      trimmedPath?: string;
+      mugStandardPath?: string;
+      mugBrushPath?: string;
+      drinkwareStandardPath?: string;
+    };
     tmBlockedProductIds?: string[];
     source?: string;
     type?: 'new' | 'update';
@@ -654,6 +666,7 @@ export class QueueService {
       customBackgroundColor: item.customBackgroundColor,
       imagePath: item.imagePath,
       pngPath: item.pngPath,
+      resizedAssets: item.resizedAssets,
       addedAt: new Date().toISOString(),
       status: 'WAITING',
       isLocked: false,
@@ -694,6 +707,12 @@ export class QueueService {
     customBackgroundColor?: string;
     imagePath: string;
     pngPath: string;
+    resizedAssets?: {
+      trimmedPath?: string;
+      mugStandardPath?: string;
+      mugBrushPath?: string;
+      drinkwareStandardPath?: string;
+    };
     tmBlockedProductIds?: string[];
     source?: string;
     type?: 'new' | 'update';
