@@ -594,7 +594,18 @@ MBA HUB/
   2. **Multi-Target Delete-Button Polling:** Prüft synchron `card.querySelector('.delete-button')`, `#${alias}-card .delete-button` und den Container mit sichtbarem Offset. Sobald der Upload verarbeitet ist (1-2s), geht es nach 1000ms Puffer sofort weiter.
   3. **Vollständiges Alias-Mapping:** `CERAMIC_MUG` mappt im DOM auf `MUG`, `SPORT_SUN_VISOR` auf `VISOR`, `TRAVEL_TUMBLER` auf `TRAVEL_TUMBLER`/`TRAVEL-TUMBLER`/`TRAVEL_MUG`.
   4. **Travel Tumbler Support:** `TRAVEL_TUMBLER` in `product_catalog.json` (Klasse 21) und in `uploadWorkerService.ts` integriert.
+### 10.24 📐 Drinkware Brush (Travel Tumbler) & Schnelles Upload-Polling
+- **Problem & Ursachen:**
+  1. **Travel Tumbler Format:** Der `TRAVEL_TUMBLER` benötigt bei `avoidColor === 'white'` eine Brush-Variante, jedoch im Drinkware-Format (3000x1400 px, Two-Sided), da das Mug-Format (2700x1050 px) zu schmal ist.
+  2. **Pause nach Tumbler:** Nach dem Artwork-Upload von Tumbler wartete der Worker bis zu 35 Sekunden in einem passiven `waitForFunction`, weil der Delete-Button bzw. dessen SVG/Icon-Kindelemente teilweise `offsetParent === null` zurückgaben.
+  3. **Mug Upload übersprungen:** Durch die vorherige Prüfung auf `.sci-lock` (welches Amazon standardmäßig auch an deaktivierten Fit-Type Labels Men/Women/Youth rendert) wurde `isLocked: true` gesetzt und die Artwork-Ersetzung für den Mug irrtümlich übersprungen.
+- **Lösung & Architektur:**
+  1. **5. Resize-Variante (`drinkwareBrushPath`):** `ArtworkResizeService` generiert nun automatisch `${cleanId}_two_sided_drinkware_brush.png` (3000x1400 px, 300 DPI, Black Brush Kontur) in der Design- und Update-Pipeline.
+  2. **Präzise Artwork-Zuweisung:**
+     - `CERAMIC_MUG`: Brush (2700x1050) bei `avoidColor === 'white'`, sonst Standard Mug (2700x1050).
+     - `TRAVEL_TUMBLER`: Drinkware Brush (3000x1400) bei `avoidColor === 'white'`, sonst Standard Drinkware (3000x1400).
+     - `TUMBLER` & `WATER_BOTTLE`: Standard Drinkware (3000x1400).
+  3. **Aktives, schnelles Polling (max 10s):** Pollt alle 500ms unter Prüfung von `getBoundingClientRect().width > 0` (SVG-sicher) und Ladebalken-Abschluss. Schließt sofort nach Amazon-Verarbeitung (typisch 1.5–2.5s) ohne Verzögerung ab.
+  4. **Entkopplung von `isLocked`:** Die Sperrenprüfung bezieht sich ausschließlich auf `.locked-container` für die Farbauswahl. Die Two-Sided Artwork-Ersetzung prüft eigenständig auf `.delete-button` und führt den Upload beim Ceramic Mug zuverlässig aus.
   5. **Unit-Tests:**
-     - `tests/domLiveNormalization.test.ts` (17/17 Tests bestanden, inkl. TRAVEL_TUMBLER).
-     - `tests/knapsackOptimizer.test.ts` (16/16 Tests bestanden).
-     - `tests/resizeService.test.ts` (16/16 Tests bestanden).
+     - `tests/resizeService.test.ts` (20/20 Tests bestanden).

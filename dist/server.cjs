@@ -221315,6 +221315,7 @@ var init_artworkResizeService = __esm2({
        * 2. ${cleanId}_two_sided_mug_standard.png - 2700x1050 px, 300 DPI, centered on front/back
        * 3. ${cleanId}_two_sided_mug_brush.png - 2700x1050 px, 300 DPI with black brush contour
        * 4. ${cleanId}_two_sided_drinkware_standard.png - 3000x1400 px, 300 DPI for Tumbler & Water Bottle
+       * 5. ${cleanId}_two_sided_drinkware_brush.png - 3000x1400 px, 300 DPI with black brush contour for Travel Tumbler
        */
       static async generateResizedArtworks(taskId, mbaPngPath) {
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -221329,6 +221330,7 @@ var init_artworkResizeService = __esm2({
         const mugStandardFilePath = import_path73.default.join(designsDir, `${cleanId}_two_sided_mug_standard.png`);
         const mugBrushFilePath = import_path73.default.join(designsDir, `${cleanId}_two_sided_mug_brush.png`);
         const drinkwareStandardFilePath = import_path73.default.join(designsDir, `${cleanId}_two_sided_drinkware_standard.png`);
+        const drinkwareBrushFilePath = import_path73.default.join(designsDir, `${cleanId}_two_sided_drinkware_brush.png`);
         if (!import_fs78.default.existsSync(mbaPngPath)) {
           throw new Error(`Master MBA PNG not found at path: ${mbaPngPath}`);
         }
@@ -221708,11 +221710,16 @@ var init_artworkResizeService = __esm2({
             const drinkwareScaled = scaleDesignForProduct(trimmedCanvas, 1400, 1400, 0.075);
             const drinkwareCanvas = createDrinkwareCanvas(drinkwareScaled);
             const drinkwareStandardDataUri = drinkwareCanvas.toDataURL("image/png");
+            const drinkwareBrushSource = await applyBlackBrush(drinkwareScaled, brushImg);
+            const drinkwareBrushScaled = scaleDesignForProduct(drinkwareBrushSource, 1400, 1400, 0);
+            const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
+            const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL("image/png");
             return {
               trimmedDataUri,
               mugStandardDataUri,
               mugBrushDataUri,
-              drinkwareStandardDataUri
+              drinkwareStandardDataUri,
+              drinkwareBrushDataUri
             };
           }, {
             masterUri: masterPngDataUri,
@@ -221726,12 +221733,15 @@ var init_artworkResizeService = __esm2({
           import_fs78.default.writeFileSync(mugBrushFilePath, mugBrushBuf);
           const drinkwareBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareStandardDataUri.split(",")[1], "base64"));
           import_fs78.default.writeFileSync(drinkwareStandardFilePath, drinkwareBuf);
-          console.log(`[ArtworkResizeService] \u2705 Alle 4 Resized Varianten f\xFCr Task #${taskId} erfolgreich gespeichert \u2713`);
+          const drinkwareBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareBrushDataUri.split(",")[1], "base64"));
+          import_fs78.default.writeFileSync(drinkwareBrushFilePath, drinkwareBrushBuf);
+          console.log(`[ArtworkResizeService] \u2705 Alle 5 Resized Varianten f\xFCr Task #${taskId} erfolgreich gespeichert \u2713`);
           return {
             trimmedPath: trimmedFilePath,
             mugStandardPath: mugStandardFilePath,
             mugBrushPath: mugBrushFilePath,
-            drinkwareStandardPath: drinkwareStandardFilePath
+            drinkwareStandardPath: drinkwareStandardFilePath,
+            drinkwareBrushPath: drinkwareBrushFilePath
           };
         } finally {
           await context2.close();
@@ -223013,7 +223023,8 @@ Bullets: ${oldBullets}`
               mugStandardPath: resized.mugStandardPath,
               mugBrushPath: resized.mugBrushPath,
               drinkwareStandardPath: resized.drinkwareStandardPath,
-              message: "Two-Sided Varianten f\xFCr Ceramic Mug (Standard & Brush) und Drinkware (Tumbler & Water Bottle) erfolgreich erstellt."
+              drinkwareBrushPath: resized.drinkwareBrushPath,
+              message: "Two-Sided Varianten f\xFCr Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt."
             }
           });
           return { success: true, resizedAssets: resized };
@@ -225698,7 +225709,8 @@ Beantworte die Analysefragen streng als JSON!`;
                     mugStandardPath: resized.mugStandardPath,
                     mugBrushPath: resized.mugBrushPath,
                     drinkwareStandardPath: resized.drinkwareStandardPath,
-                    message: "Two-Sided Varianten f\xFCr Ceramic Mug (Standard & Brush) und Drinkware (Tumbler & Water Bottle) erfolgreich erstellt."
+                    drinkwareBrushPath: resized.drinkwareBrushPath,
+                    message: "Two-Sided Varianten f\xFCr Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt."
                   }
                 });
               } catch (resizeErr) {
@@ -226474,7 +226486,8 @@ Beantworte die Analysefragen streng als JSON!`;
                   mugStandardPath: resized.mugStandardPath,
                   mugBrushPath: resized.mugBrushPath,
                   drinkwareStandardPath: resized.drinkwareStandardPath,
-                  message: "Two-Sided Varianten f\xFCr Ceramic Mug (Standard & Brush) und Drinkware (Tumbler & Water Bottle) erfolgreich erstellt."
+                  drinkwareBrushPath: resized.drinkwareBrushPath,
+                  message: "Two-Sided Varianten f\xFCr Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt."
                 }
               });
             } catch (resizeErr) {
@@ -227983,10 +227996,7 @@ var UploadWorkerService = class _UploadWorkerService {
           let finalActiveColorNames = [];
           let selfHealedColor = "";
           if (params2.colorMode === "customPicker") {
-            const lockedContainer = inputContainer?.querySelector('.locked-container, [class*="locked-container"], .sci-lock') || card?.querySelector('.locked-container, [class*="locked-container"], .sci-lock') || Array.from(document.querySelectorAll(".locked-container, .sci-lock")).find((el) => {
-              const text2 = (el.textContent || "").toLowerCase();
-              return text2.includes("locked") && (card && el.closest(`#${card.id}`) || inputContainer && el.closest(".product-editor"));
-            });
+            const lockedContainer = inputContainer?.querySelector('.locked-container, [class*="locked-container"]') || card?.querySelector('.locked-container, [class*="locked-container"]');
             const isLocked = Boolean(lockedContainer || inputContainer?.innerText?.toLowerCase().includes("locked on published products"));
             if (isLocked) {
               return {
@@ -228176,143 +228186,166 @@ var UploadWorkerService = class _UploadWorkerService {
         }
         const isDrinkwareResize = ["CERAMIC_MUG", "TUMBLER", "WATER_BOTTLE", "TRAVEL_TUMBLER"].includes(product.id);
         if (isDrinkwareResize) {
-          if (editResult.isLocked) {
-            this.log(`\u2139\uFE0F ${product.displayName}: \xDCberspringe Two-Sided Artwork-Ersetzung, da Artwork auf Amazon gesperrt ist.`);
-          } else {
-            const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-            const designsDir = import_path78.default.resolve(process.cwd(), "data", "designs");
-            let targetArtworkPath;
-            let isBrushApplied = false;
-            if (product.id === "CERAMIC_MUG" || product.id === "TRAVEL_TUMBLER") {
-              if (avoidColor === "white") {
-                targetArtworkPath = item.resizedAssets?.mugBrushPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_brush.png`);
-                isBrushApplied = true;
-              } else {
-                targetArtworkPath = item.resizedAssets?.mugStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_standard.png`);
-              }
+          const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const designsDir = import_path78.default.resolve(process.cwd(), "data", "designs");
+          let targetArtworkPath;
+          let isBrushApplied = false;
+          if (product.id === "CERAMIC_MUG") {
+            if (avoidColor === "white") {
+              targetArtworkPath = item.resizedAssets?.mugBrushPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_brush.png`);
+              isBrushApplied = true;
+            } else {
+              targetArtworkPath = item.resizedAssets?.mugStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_standard.png`);
+            }
+          } else if (product.id === "TRAVEL_TUMBLER") {
+            if (avoidColor === "white") {
+              targetArtworkPath = item.resizedAssets?.drinkwareBrushPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_drinkware_brush.png`);
+              isBrushApplied = true;
             } else {
               targetArtworkPath = item.resizedAssets?.drinkwareStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
             }
-            if (targetArtworkPath && import_fs83.default.existsSync(targetArtworkPath)) {
-              this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit Two-Sided ${isBrushApplied ? "Black Brush " : ""}Variante...`);
-              const prepUpload = await page.evaluate((pid) => {
-                const getAliases = (p) => {
-                  const u = p.toUpperCase();
-                  if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
-                  if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
-                  if (u === "TUMBLER") return ["TUMBLER"];
-                  if (u === "WATER_BOTTLE") return ["WATER_BOTTLE", "WATER-BOTTLE"];
-                  return [u];
-                };
-                const aliases2 = getAliases(pid);
-                let card = null;
-                for (const a of aliases2) {
-                  card = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
-                  if (card) break;
-                }
-                if (!card) {
-                  const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
-                  card = allCards.find((c) => {
-                    const idUpper = (c.id || "").toUpperCase();
-                    const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-                    return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
-                  }) || null;
-                }
-                let inputContainer = card;
-                const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-                if (card) {
-                  const cardRect = card.getBoundingClientRect();
-                  const validEditors = allEditors.filter((ed) => {
-                    const edRect = ed.getBoundingClientRect();
-                    return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
-                  });
-                  if (validEditors.length > 0) {
-                    inputContainer = validEditors[0];
-                  } else if (allEditors.length > 0) {
-                    inputContainer = allEditors[allEditors.length - 1];
-                  }
+          } else {
+            targetArtworkPath = item.resizedAssets?.drinkwareStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
+          }
+          if (targetArtworkPath && import_fs83.default.existsSync(targetArtworkPath)) {
+            this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit Two-Sided ${isBrushApplied ? "Black Brush " : ""}Variante...`);
+            const prepUpload = await page.evaluate((pid) => {
+              const getAliases = (p) => {
+                const u = p.toUpperCase();
+                if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
+                if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
+                if (u === "TUMBLER") return ["TUMBLER"];
+                if (u === "WATER_BOTTLE") return ["WATER_BOTTLE", "WATER-BOTTLE"];
+                return [u];
+              };
+              const aliases2 = getAliases(pid);
+              let card = null;
+              for (const a of aliases2) {
+                card = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
+                if (card) break;
+              }
+              if (!card) {
+                const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
+                card = allCards.find((c) => {
+                  const idUpper = (c.id || "").toUpperCase();
+                  const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
+                  return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
+                }) || null;
+              }
+              let inputContainer = card;
+              const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+              if (card) {
+                const cardRect = card.getBoundingClientRect();
+                const validEditors = allEditors.filter((ed) => {
+                  const edRect = ed.getBoundingClientRect();
+                  return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
+                });
+                if (validEditors.length > 0) {
+                  inputContainer = validEditors[0];
                 } else if (allEditors.length > 0) {
                   inputContainer = allEditors[allEditors.length - 1];
                 }
-                let clickedDelete = false;
-                let deleteButton = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-                if (!deleteButton) {
-                  for (const a of aliases2) {
-                    deleteButton = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button`);
-                    if (deleteButton) break;
-                  }
-                }
-                if (deleteButton) {
-                  deleteButton.click();
-                  clickedDelete = true;
-                }
-                let uploadLabel = null;
-                for (const a of aliases2) {
-                  uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || inputContainer?.querySelector(`label.file-upload-input[for*="${a}"]`) || card?.querySelector(`label.file-upload-input[for*="${a}"]`);
-                  if (uploadLabel) break;
-                }
-                if (!uploadLabel) {
-                  uploadLabel = inputContainer?.querySelector("label.file-upload-input") || card?.querySelector("label.file-upload-input") || inputContainer?.querySelector('label[for*="DESIGN"]') || card?.querySelector('label[for*="DESIGN"]');
-                }
-                let inputId = "";
-                if (uploadLabel) {
-                  const forAttr = uploadLabel.getAttribute("for");
-                  if (forAttr && document.getElementById(forAttr)) {
-                    inputId = forAttr;
-                  }
-                }
-                if (!inputId) {
-                  for (const a of aliases2) {
-                    const directInput = document.getElementById(`${a}-DESIGN-wizzy`) || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`);
-                    if (directInput) {
-                      if (!directInput.id) directInput.id = `mba-upload-input-${a}`;
-                      inputId = directInput.id;
-                      break;
-                    }
-                  }
-                }
-                if (!inputId) {
-                  const genericInput = inputContainer?.querySelector('.dropzone-container input[type="file"]') || card?.querySelector('.dropzone-container input[type="file"]') || inputContainer?.querySelector('input[type="file"]') || card?.querySelector('input[type="file"]');
-                  if (genericInput) {
-                    if (!genericInput.id) genericInput.id = `mba-upload-input-${pid}`;
-                    inputId = genericInput.id;
-                  }
-                }
-                return { clickedDelete, inputId, aliases: aliases2 };
-              }, product.id);
-              if (prepUpload.clickedDelete) {
-                await page.waitForTimeout(500);
+              } else if (allEditors.length > 0) {
+                inputContainer = allEditors[allEditors.length - 1];
               }
-              if (prepUpload.inputId) {
-                try {
-                  const fileInputLocator = page.locator(`#${prepUpload.inputId}`);
-                  await fileInputLocator.setInputFiles(targetArtworkPath);
-                  this.log(`\u23F3 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork zugewiesen (${import_path78.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
-                  const uploadDone = await page.waitForFunction((aliases2) => {
+              let clickedDelete = false;
+              let deleteButton = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+              if (!deleteButton) {
+                for (const a of aliases2) {
+                  deleteButton = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button`);
+                  if (deleteButton) break;
+                }
+              }
+              if (deleteButton) {
+                deleteButton.click();
+                clickedDelete = true;
+              }
+              let uploadLabel = null;
+              for (const a of aliases2) {
+                uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || inputContainer?.querySelector(`label.file-upload-input[for*="${a}"]`) || card?.querySelector(`label.file-upload-input[for*="${a}"]`);
+                if (uploadLabel) break;
+              }
+              if (!uploadLabel) {
+                uploadLabel = inputContainer?.querySelector("label.file-upload-input") || card?.querySelector("label.file-upload-input") || inputContainer?.querySelector('label[for*="DESIGN"]') || card?.querySelector('label[for*="DESIGN"]');
+              }
+              let inputId = "";
+              if (uploadLabel) {
+                const forAttr = uploadLabel.getAttribute("for");
+                if (forAttr && document.getElementById(forAttr)) {
+                  inputId = forAttr;
+                }
+              }
+              if (!inputId) {
+                for (const a of aliases2) {
+                  const directInput = document.getElementById(`${a}-DESIGN-wizzy`) || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`);
+                  if (directInput) {
+                    if (!directInput.id) directInput.id = `mba-upload-input-${a}`;
+                    inputId = directInput.id;
+                    break;
+                  }
+                }
+              }
+              if (!inputId) {
+                const genericInput = inputContainer?.querySelector('.dropzone-container input[type="file"]') || card?.querySelector('.dropzone-container input[type="file"]') || inputContainer?.querySelector('input[type="file"]') || card?.querySelector('input[type="file"]');
+                if (genericInput) {
+                  if (!genericInput.id) genericInput.id = `mba-upload-input-${pid}`;
+                  inputId = genericInput.id;
+                }
+              }
+              return { clickedDelete, inputId, aliases: aliases2 };
+            }, product.id);
+            if (prepUpload.clickedDelete) {
+              await page.waitForTimeout(500);
+            }
+            if (prepUpload.inputId) {
+              try {
+                const fileInputLocator = page.locator(`#${prepUpload.inputId}`);
+                await fileInputLocator.setInputFiles(targetArtworkPath);
+                this.log(`\u23F3 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork zugewiesen (${import_path78.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
+                let uploadDone = false;
+                const pollStart = Date.now();
+                while (Date.now() - pollStart < 1e4) {
+                  await page.waitForTimeout(500);
+                  const isFinished = await page.evaluate((aliases2) => {
                     for (const a of aliases2) {
-                      const card = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`);
+                      const card = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
                       const delOnCard = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-                      if (delOnCard && delOnCard.offsetParent !== null) return true;
+                      if (delOnCard && (delOnCard.offsetParent !== null || delOnCard.getBoundingClientRect().width > 0)) {
+                        return true;
+                      }
                       const delInDoc = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button, [id*="${a}"] .delete-button`);
-                      if (delInDoc && delInDoc.offsetParent !== null) return true;
+                      if (delInDoc && (delInDoc.offsetParent !== null || delInDoc.getBoundingClientRect().width > 0)) {
+                        return true;
+                      }
                     }
                     const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
                     const container = allEditors[allEditors.length - 1];
                     const delBtn = container?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-                    return Boolean(delBtn && delBtn.offsetParent !== null);
-                  }, prepUpload.aliases, { timeout: 35e3 }).then(() => true).catch(() => false);
-                  if (uploadDone) {
-                    await page.waitForTimeout(1e3);
-                    this.log(`\u2713 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork erfolgreich hochgeladen & best\xE4tigt \u2713`);
-                  } else {
-                    this.log(`\u26A0\uFE0F ${product.displayName}: Upload-Best\xE4tigung nach 35s nicht erkannt, fahre fort...`);
+                    if (delBtn && (delBtn.offsetParent !== null || delBtn.getBoundingClientRect().width > 0)) {
+                      return true;
+                    }
+                    const hasProgress = Boolean(document.querySelector(".upload-progress, .progress-bar, flowprogressbar, .loading-spinner"));
+                    if (!hasProgress && container?.querySelector('.asset img, img[class*="design"], canvas.design-canvas') !== null) {
+                      return true;
+                    }
+                    return false;
+                  }, prepUpload.aliases);
+                  if (isFinished) {
+                    uploadDone = true;
+                    break;
                   }
-                } catch (upErr) {
-                  this.log(`\u26A0\uFE0F Fehler beim Hochladen des Resized Artworks f\xFCr ${product.displayName}: ${upErr.message}`);
                 }
-              } else {
-                this.log(`\u26A0\uFE0F ${product.displayName}: Kein Upload-Feld im DOM gefunden, behalte Standard-Artwork.`);
+                if (uploadDone) {
+                  await page.waitForTimeout(500);
+                  this.log(`\u2713 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork erfolgreich hochgeladen & best\xE4tigt \u2713`);
+                } else {
+                  this.log(`\u2139\uFE0F ${product.displayName}: Upload angesto\xDFen, fahre fort...`);
+                }
+              } catch (upErr) {
+                this.log(`\u26A0\uFE0F Fehler beim Hochladen des Resized Artworks f\xFCr ${product.displayName}: ${upErr.message}`);
               }
+            } else {
+              this.log(`\u26A0\uFE0F ${product.displayName}: Kein Upload-Feld im DOM gefunden, behalte Standard-Artwork.`);
             }
           }
         }

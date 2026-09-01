@@ -1443,7 +1443,8 @@ export class TaskLogService {
                 mugStandardPath: resized.mugStandardPath,
                 mugBrushPath: resized.mugBrushPath,
                 drinkwareStandardPath: resized.drinkwareStandardPath,
-                message: 'Two-Sided Varianten für Ceramic Mug (Standard & Brush) und Drinkware (Tumbler & Water Bottle) erfolgreich erstellt.'
+                drinkwareBrushPath: resized.drinkwareBrushPath,
+                message: 'Two-Sided Varianten für Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt.'
               }
             });
           } catch (resizeErr: any) {
@@ -2376,7 +2377,8 @@ export class TaskLogService {
               mugStandardPath: resized.mugStandardPath,
               mugBrushPath: resized.mugBrushPath,
               drinkwareStandardPath: resized.drinkwareStandardPath,
-              message: 'Two-Sided Varianten für Ceramic Mug (Standard & Brush) und Drinkware (Tumbler & Water Bottle) erfolgreich erstellt.'
+              drinkwareBrushPath: resized.drinkwareBrushPath,
+              message: 'Two-Sided Varianten für Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt.'
             }
           });
         } catch (resizeErr: any) {

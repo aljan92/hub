@@ -130,6 +130,7 @@ export interface DesignTaskLog {
     mugStandardPath?: string;
     mugBrushPath?: string;
     drinkwareStandardPath?: string;
+    drinkwareBrushPath?: string;
   };
   hasError?: boolean;
   errorDetails?: string;

@@ -34,6 +34,7 @@ export interface QueueItem {
     mugStandardPath?: string;
     mugBrushPath?: string;
     drinkwareStandardPath?: string;
+    drinkwareBrushPath?: string;
   };
   addedAt: string;
   status: QueueItemStatus;
@@ -496,6 +497,7 @@ export class QueueService {
       mugStandardPath?: string;
       mugBrushPath?: string;
       drinkwareStandardPath?: string;
+      drinkwareBrushPath?: string;
     };
     tmBlockedProductIds?: string[];
     source?: string;
@@ -708,6 +710,7 @@ export class QueueService {
       mugStandardPath?: string;
       mugBrushPath?: string;
       drinkwareStandardPath?: string;
+      drinkwareBrushPath?: string;
     };
     tmBlockedProductIds?: string[];
     source?: string;

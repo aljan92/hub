@@ -89,6 +89,7 @@ export interface ResizedArtworksResult {
   mugStandardPath: string;
   mugBrushPath: string;
   drinkwareStandardPath: string;
+  drinkwareBrushPath: string;
 }
 
 export class ArtworkResizeService {
@@ -118,6 +119,7 @@ export class ArtworkResizeService {
    * 2. ${cleanId}_two_sided_mug_standard.png - 2700x1050 px, 300 DPI, centered on front/back
    * 3. ${cleanId}_two_sided_mug_brush.png - 2700x1050 px, 300 DPI with black brush contour
    * 4. ${cleanId}_two_sided_drinkware_standard.png - 3000x1400 px, 300 DPI for Tumbler & Water Bottle
+   * 5. ${cleanId}_two_sided_drinkware_brush.png - 3000x1400 px, 300 DPI with black brush contour for Travel Tumbler
    */
   public static async generateResizedArtworks(taskId: string, mbaPngPath: string): Promise<ResizedArtworksResult> {
     const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -130,6 +132,7 @@ export class ArtworkResizeService {
     const mugStandardFilePath = path.join(designsDir, `${cleanId}_two_sided_mug_standard.png`);
     const mugBrushFilePath = path.join(designsDir, `${cleanId}_two_sided_mug_brush.png`);
     const drinkwareStandardFilePath = path.join(designsDir, `${cleanId}_two_sided_drinkware_standard.png`);
+    const drinkwareBrushFilePath = path.join(designsDir, `${cleanId}_two_sided_drinkware_brush.png`);
 
     if (!fs.existsSync(mbaPngPath)) {
       throw new Error(`Master MBA PNG not found at path: ${mbaPngPath}`);
@@ -595,11 +598,18 @@ export class ArtworkResizeService {
         const drinkwareCanvas = createDrinkwareCanvas(drinkwareScaled);
         const drinkwareStandardDataUri = drinkwareCanvas.toDataURL('image/png');
 
+        // Generation 5: Drinkware Brush (3000x1400 with Black Brush contour for Travel Tumbler)
+        const drinkwareBrushSource = await applyBlackBrush(drinkwareScaled, brushImg);
+        const drinkwareBrushScaled = scaleDesignForProduct(drinkwareBrushSource, 1400, 1400, 0);
+        const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
+        const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL('image/png');
+
         return {
           trimmedDataUri,
           mugStandardDataUri,
           mugBrushDataUri,
-          drinkwareStandardDataUri
+          drinkwareStandardDataUri,
+          drinkwareBrushDataUri
         };
       }, {
         masterUri: masterPngDataUri,
@@ -622,13 +632,18 @@ export class ArtworkResizeService {
       const drinkwareBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareStandardDataUri.split(',')[1], 'base64'));
       fs.writeFileSync(drinkwareStandardFilePath, drinkwareBuf);
 
-      console.log(`[ArtworkResizeService] ✅ Alle 4 Resized Varianten für Task #${taskId} erfolgreich gespeichert ✓`);
+      // Write Drinkware Brush PNG (with 300 DPI)
+      const drinkwareBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareBrushDataUri.split(',')[1], 'base64'));
+      fs.writeFileSync(drinkwareBrushFilePath, drinkwareBrushBuf);
+
+      console.log(`[ArtworkResizeService] ✅ Alle 5 Resized Varianten für Task #${taskId} erfolgreich gespeichert ✓`);
 
       return {
         trimmedPath: trimmedFilePath,
         mugStandardPath: mugStandardFilePath,
         mugBrushPath: mugBrushFilePath,
-        drinkwareStandardPath: drinkwareStandardFilePath
+        drinkwareStandardPath: drinkwareStandardFilePath,
+        drinkwareBrushPath: drinkwareBrushFilePath
       };
     } finally {
       await context.close();

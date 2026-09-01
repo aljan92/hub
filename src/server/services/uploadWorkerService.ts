@@ -851,13 +851,9 @@ export class UploadWorkerService {
           let selfHealedColor = '';
 
           if (params.colorMode === 'customPicker') {
-            // Prüfen ob Produkt auf Amazon bereits veröffentlicht und damit für Farb-/Artwork-Änderungen gesperrt ist
-            const lockedContainer = (inputContainer?.querySelector('.locked-container, [class*="locked-container"], .sci-lock')
-              || card?.querySelector('.locked-container, [class*="locked-container"], .sci-lock')
-              || Array.from(document.querySelectorAll('.locked-container, .sci-lock')).find(el => {
-                   const text = (el.textContent || '').toLowerCase();
-                   return text.includes('locked') && (card && el.closest(`#${card.id}`) || inputContainer && el.closest('.product-editor'));
-                 })) as HTMLElement;
+            // Prüfen ob Farbauswahl für das Produkt gesperrt ist (.locked-container)
+            const lockedContainer = (inputContainer?.querySelector('.locked-container, [class*="locked-container"]')
+              || card?.querySelector('.locked-container, [class*="locked-container"]')) as HTMLElement;
 
             const isLocked = Boolean(lockedContainer || inputContainer?.innerText?.toLowerCase().includes('locked on published products'));
 
@@ -1103,16 +1099,13 @@ export class UploadWorkerService {
         // Resize Step für Produkte mit spezifischem Two-Sided Artwork (Mug, Tumbler, Water Bottle, Travel Tumbler)
         const isDrinkwareResize = ['CERAMIC_MUG', 'TUMBLER', 'WATER_BOTTLE', 'TRAVEL_TUMBLER'].includes(product.id);
         if (isDrinkwareResize) {
-          if (editResult.isLocked) {
-            this.log(`ℹ️ ${product.displayName}: Überspringe Two-Sided Artwork-Ersetzung, da Artwork auf Amazon gesperrt ist.`);
-          } else {
-            const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+          const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
           const designsDir = path.resolve(process.cwd(), 'data', 'designs');
           
           let targetArtworkPath: string | undefined;
           let isBrushApplied = false;
 
-          if (product.id === 'CERAMIC_MUG' || product.id === 'TRAVEL_TUMBLER') {
+          if (product.id === 'CERAMIC_MUG') {
             if (avoidColor === 'white') {
               targetArtworkPath = item.resizedAssets?.mugBrushPath 
                 || path.join(designsDir, `${cleanTaskId}_two_sided_mug_brush.png`);
@@ -1120,6 +1113,15 @@ export class UploadWorkerService {
             } else {
               targetArtworkPath = item.resizedAssets?.mugStandardPath 
                 || path.join(designsDir, `${cleanTaskId}_two_sided_mug_standard.png`);
+            }
+          } else if (product.id === 'TRAVEL_TUMBLER') {
+            if (avoidColor === 'white') {
+              targetArtworkPath = item.resizedAssets?.drinkwareBrushPath 
+                || path.join(designsDir, `${cleanTaskId}_two_sided_drinkware_brush.png`);
+              isBrushApplied = true;
+            } else {
+              targetArtworkPath = item.resizedAssets?.drinkwareStandardPath 
+                || path.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
             }
           } else {
             // TUMBLER or WATER_BOTTLE
@@ -1255,28 +1257,57 @@ export class UploadWorkerService {
                 await fileInputLocator.setInputFiles(targetArtworkPath);
                 this.log(`⏳ ${product.displayName}: Two-Sided ${isBrushApplied ? 'Brush ' : ''}Artwork zugewiesen (${path.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
 
-                // Wait for upload to complete: Polling until delete-button reappears (exakt wie Listing Optimizer Zeilen 3598-3610)
-                const uploadDone = await page.waitForFunction((aliases: string[]) => {
-                  for (const a of aliases) {
-                    const card = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`);
-                    const delOnCard = card?.querySelector('.delete-button, .sci-icon.sci-delete-forever') as HTMLElement;
-                    if (delOnCard && delOnCard.offsetParent !== null) return true;
+                // Aktives schnelles Polling (max 10s statt 35s Timeout): Prüft Delete-Button & Upload-Fortschritt
+                let uploadDone = false;
+                const pollStart = Date.now();
+                while (Date.now() - pollStart < 10000) {
+                  await page.waitForTimeout(500);
+                  const isFinished = await page.evaluate((aliases: string[]) => {
+                    // 1. Delete-Button auf Card oder im Dokument prüfen
+                    for (const a of aliases) {
+                      const card = document.getElementById(`${a.toLowerCase()}-card`) 
+                        || document.getElementById(`${a.toUpperCase()}-card`)
+                        || document.getElementById(`config-${a.toLowerCase()}`)
+                        || document.getElementById(`config-${a.toUpperCase()}`);
+                      const delOnCard = card?.querySelector('.delete-button, .sci-icon.sci-delete-forever') as HTMLElement;
+                      if (delOnCard && (delOnCard.offsetParent !== null || delOnCard.getBoundingClientRect().width > 0)) {
+                        return true;
+                      }
 
-                    const delInDoc = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button, [id*="${a}"] .delete-button`) as HTMLElement;
-                    if (delInDoc && delInDoc.offsetParent !== null) return true;
+                      const delInDoc = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button, [id*="${a}"] .delete-button`) as HTMLElement;
+                      if (delInDoc && (delInDoc.offsetParent !== null || delInDoc.getBoundingClientRect().width > 0)) {
+                        return true;
+                      }
+                    }
+
+                    // 2. Delete-Button im geöffneten Editor prüfen
+                    const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
+                    const container = allEditors[allEditors.length - 1];
+                    const delBtn = container?.querySelector('.delete-button, .sci-icon.sci-delete-forever') as HTMLElement;
+                    if (delBtn && (delBtn.offsetParent !== null || delBtn.getBoundingClientRect().width > 0)) {
+                      return true;
+                    }
+
+                    // 3. Wenn nach 2 Sekunden kein Ladebalken/Spinner mehr da ist und ein Design-Image existiert
+                    const hasProgress = Boolean(document.querySelector('.upload-progress, .progress-bar, flowprogressbar, .loading-spinner'));
+                    if (!hasProgress && (container?.querySelector('.asset img, img[class*="design"], canvas.design-canvas') !== null)) {
+                      return true;
+                    }
+
+                    return false;
+                  }, prepUpload.aliases);
+
+                  if (isFinished) {
+                    uploadDone = true;
+                    break;
                   }
-
-                  const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
-                  const container = allEditors[allEditors.length - 1];
-                  const delBtn = container?.querySelector('.delete-button, .sci-icon.sci-delete-forever') as HTMLElement;
-                  return Boolean(delBtn && delBtn.offsetParent !== null);
-                }, prepUpload.aliases, { timeout: 35000 }).then(() => true).catch(() => false);
+                }
 
                 if (uploadDone) {
-                  await page.waitForTimeout(1000); // 1s Buffer nach Upload wie im Listing Optimizer
+                  await page.waitForTimeout(500); // Schneller 500ms Puffer
                   this.log(`✓ ${product.displayName}: Two-Sided ${isBrushApplied ? 'Brush ' : ''}Artwork erfolgreich hochgeladen & bestätigt ✓`);
                 } else {
-                  this.log(`⚠️ ${product.displayName}: Upload-Bestätigung nach 35s nicht erkannt, fahre fort...`);
+                  this.log(`ℹ️ ${product.displayName}: Upload angestoßen, fahre fort...`);
                 }
               } catch (upErr: any) {
                 this.log(`⚠️ Fehler beim Hochladen des Resized Artworks für ${product.displayName}: ${upErr.message}`);
@@ -1286,7 +1317,6 @@ export class UploadWorkerService {
             }
           }
         }
-      }
 
         await page.waitForTimeout(300);
       }
