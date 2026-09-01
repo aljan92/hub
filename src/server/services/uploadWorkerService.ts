@@ -620,6 +620,56 @@ export class UploadWorkerService {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
           const pid = params.productId;
 
+          const getAliases = (p: string): string[] => {
+            const u = p.toUpperCase();
+            if (u === 'CERAMIC_MUG') return ['MUG', 'CERAMIC_MUG'];
+            if (u === 'SPORT_SUN_VISOR') return ['VISOR', 'SPORT_SUN_VISOR'];
+            if (u === 'TRAVEL_TUMBLER') return ['TRAVEL_TUMBLER', 'TRAVEL-TUMBLER', 'TRAVEL_MUG', 'TRAVEL'];
+            if (u === 'POPSOCKETS') return ['POPSOCKET', 'POP_SOCKET', 'POPSOCKETS'];
+            if (u === 'THROW_PILLOWS') return ['THROW_PILLOW', 'THROW_PILLOWS'];
+            if (u === 'IPHONE_CASES') return ['IPHONE_CASES', 'PHONE_CASE_APPLE_IPHONE', 'PHONE_CASE'];
+            if (u === 'STANDARD_PULLOVER_HOODIE') return ['PULLOVER_HOODIE', 'STANDARD_PULLOVER_HOODIE'];
+            if (u === 'STANDARD_SWEATSHIRT') return ['SWEATSHIRT', 'STANDARD_SWEATSHIRT'];
+            if (u === 'STANDARD_LONG_SLEEVE') return ['LONG_SLEEVE_TSHIRT', 'STANDARD_LONG_SLEEVE'];
+            if (u === 'VALUE_TSHIRT') return ['VALUE_GRAPHIC_TSHIRT', 'VALUE_TSHIRT'];
+            if (u === 'VNECK') return ['VNECK_TSHIRT', 'VNECK'];
+            return [u];
+          };
+
+          const aliases = getAliases(pid);
+
+          // 1. Locate the exact product card for pid across aliases
+          let card: HTMLElement | null = null;
+          for (const a of aliases) {
+            card = document.getElementById(`${a}-card`) 
+              || document.getElementById(`${a.toLowerCase()}-card`)
+              || document.getElementById(`config-${a}`)
+              || document.getElementById(`config-${a.toLowerCase()}`);
+            if (card) break;
+          }
+
+          if (!card) {
+            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card')) as HTMLElement[];
+            card = allCards.find(c => {
+              const idUpper = (c.id || '').toUpperCase();
+              const clsUpper = Array.from(c.classList).join(' ').toUpperCase();
+              return aliases.some(a => idUpper.includes(a) || clsUpper.includes(a));
+            }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`)) as HTMLElement;
+          }
+
+          const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
+          let inputContainer: HTMLElement = (card || (allEditors[allEditors.length - 1] as HTMLElement) || document.body) as HTMLElement;
+          if (card) {
+            const cardRect = card.getBoundingClientRect();
+            const validEditors = allEditors.filter(ed => {
+              const edRect = ed.getBoundingClientRect();
+              return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
+            });
+            if (validEditors.length > 0) {
+              inputContainer = validEditors[0];
+            }
+          }
+
           // Helper 1: isElementChecked
           const isElementChecked = (el: Element): boolean => {
             const icon = el.querySelector('.sci-icon, i, svg');
@@ -801,8 +851,6 @@ export class UploadWorkerService {
           let selfHealedColor = '';
 
           if (params.colorMode === 'customPicker') {
-            const inputContainer = (card ? (validEditors[0] || card) : document) as HTMLElement;
-
             // Prüfen ob Produkt auf Amazon bereits veröffentlicht und damit für Farb-/Artwork-Änderungen gesperrt ist
             const lockedContainer = (inputContainer?.querySelector('.locked-container, [class*="locked-container"], .sci-lock')
               || card?.querySelector('.locked-container, [class*="locked-container"], .sci-lock')

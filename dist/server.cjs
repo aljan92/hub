@@ -227192,12 +227192,12 @@ var ProductScannerService = class {
           let inputContainer = configSection;
           const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
           const cardRect = configSection.getBoundingClientRect();
-          const validEditors2 = allEditors.filter((ed) => {
+          const validEditors = allEditors.filter((ed) => {
             const edRect = ed.getBoundingClientRect();
             return edRect.top >= cardRect.bottom - 50 && ed.innerHTML.length > 20;
           });
-          if (validEditors2.length > 0) {
-            inputContainer = validEditors2[0];
+          if (validEditors.length > 0) {
+            inputContainer = validEditors[0];
           } else if (allEditors.length > 0) {
             inputContainer = allEditors[allEditors.length - 1];
           }
@@ -227742,25 +227742,25 @@ var UploadWorkerService = class _UploadWorkerService {
             };
             const aliases2 = getAliases(pid);
             const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
-            let card2 = null;
+            let card = null;
             for (const a of aliases2) {
-              card2 = document.getElementById(`${a}-card`) || document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`config-${a}`) || document.getElementById(`config-${a.toLowerCase()}`);
-              if (card2) break;
+              card = document.getElementById(`${a}-card`) || document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`config-${a}`) || document.getElementById(`config-${a.toLowerCase()}`);
+              if (card) break;
             }
-            if (!card2) {
-              card2 = allCards.find((c) => {
+            if (!card) {
+              card = allCards.find((c) => {
                 const idUpper = (c.id || "").toUpperCase();
                 const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
                 return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
               }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
             }
             let editBtn = null;
-            if (card2) {
-              editBtn = card2.querySelector(".edit-button") || card2.querySelector("button.edit-btn") || card2.querySelector(".edit-details-btn") || card2.querySelector('button[class*="edit"]') || Array.from(card2.querySelectorAll("button")).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
+            if (card) {
+              editBtn = card.querySelector(".edit-button") || card.querySelector("button.edit-btn") || card.querySelector(".edit-details-btn") || card.querySelector('button[class*="edit"]') || Array.from(card.querySelectorAll("button")).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
             }
             if (!editBtn) {
               for (const a of aliases2) {
-                editBtn = document.querySelector(`.${a}-edit-btn`) || document.querySelector(`.${a.toLowerCase()}-edit-btn`) || document.querySelector(`#${a}-card .edit-button`) || document.querySelector(`#${a}-card button.edit-btn`) || document.querySelector(`button[class*="${a}-edit"]`) || document.querySelector(`[id*="${a}"] button, [class*="${a}"] button`) || Array.from(document.querySelectorAll(`button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit") && (b.closest(`#${a}-card`) || card2 && b.closest(`#${card2.id}`)));
+                editBtn = document.querySelector(`.${a}-edit-btn`) || document.querySelector(`.${a.toLowerCase()}-edit-btn`) || document.querySelector(`#${a}-card .edit-button`) || document.querySelector(`#${a}-card button.edit-btn`) || document.querySelector(`button[class*="${a}-edit"]`) || document.querySelector(`[id*="${a}"] button, [class*="${a}"] button`) || Array.from(document.querySelectorAll(`button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit") && (b.closest(`#${a}-card`) || card && b.closest(`#${card.id}`)));
                 if (editBtn) break;
               }
             }
@@ -227797,6 +227797,47 @@ var UploadWorkerService = class _UploadWorkerService {
         const editResult = await page.evaluate(async (params2) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const pid = params2.productId;
+          const getAliases = (p) => {
+            const u = p.toUpperCase();
+            if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
+            if (u === "SPORT_SUN_VISOR") return ["VISOR", "SPORT_SUN_VISOR"];
+            if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
+            if (u === "POPSOCKETS") return ["POPSOCKET", "POP_SOCKET", "POPSOCKETS"];
+            if (u === "THROW_PILLOWS") return ["THROW_PILLOW", "THROW_PILLOWS"];
+            if (u === "IPHONE_CASES") return ["IPHONE_CASES", "PHONE_CASE_APPLE_IPHONE", "PHONE_CASE"];
+            if (u === "STANDARD_PULLOVER_HOODIE") return ["PULLOVER_HOODIE", "STANDARD_PULLOVER_HOODIE"];
+            if (u === "STANDARD_SWEATSHIRT") return ["SWEATSHIRT", "STANDARD_SWEATSHIRT"];
+            if (u === "STANDARD_LONG_SLEEVE") return ["LONG_SLEEVE_TSHIRT", "STANDARD_LONG_SLEEVE"];
+            if (u === "VALUE_TSHIRT") return ["VALUE_GRAPHIC_TSHIRT", "VALUE_TSHIRT"];
+            if (u === "VNECK") return ["VNECK_TSHIRT", "VNECK"];
+            return [u];
+          };
+          const aliases2 = getAliases(pid);
+          let card = null;
+          for (const a of aliases2) {
+            card = document.getElementById(`${a}-card`) || document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`config-${a}`) || document.getElementById(`config-${a.toLowerCase()}`);
+            if (card) break;
+          }
+          if (!card) {
+            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
+            card = allCards.find((c) => {
+              const idUpper = (c.id || "").toUpperCase();
+              const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
+              return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
+            }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
+          }
+          const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+          let inputContainer = card || allEditors[allEditors.length - 1] || document.body;
+          if (card) {
+            const cardRect = card.getBoundingClientRect();
+            const validEditors = allEditors.filter((ed) => {
+              const edRect = ed.getBoundingClientRect();
+              return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
+            });
+            if (validEditors.length > 0) {
+              inputContainer = validEditors[0];
+            }
+          }
           const isElementChecked = (el) => {
             const icon = el.querySelector(".sci-icon, i, svg");
             if (icon) {
@@ -227942,7 +227983,6 @@ var UploadWorkerService = class _UploadWorkerService {
           let finalActiveColorNames = [];
           let selfHealedColor = "";
           if (params2.colorMode === "customPicker") {
-            const inputContainer = card ? validEditors[0] || card : document;
             const lockedContainer = inputContainer?.querySelector('.locked-container, [class*="locked-container"], .sci-lock') || card?.querySelector('.locked-container, [class*="locked-container"], .sci-lock') || Array.from(document.querySelectorAll(".locked-container, .sci-lock")).find((el) => {
               const text2 = (el.textContent || "").toLowerCase();
               return text2.includes("locked") && (card && el.closest(`#${card.id}`) || inputContainer && el.closest(".product-editor"));
@@ -228165,29 +228205,29 @@ var UploadWorkerService = class _UploadWorkerService {
                   return [u];
                 };
                 const aliases2 = getAliases(pid);
-                let card2 = null;
+                let card = null;
                 for (const a of aliases2) {
-                  card2 = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
-                  if (card2) break;
+                  card = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
+                  if (card) break;
                 }
-                if (!card2) {
+                if (!card) {
                   const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
-                  card2 = allCards.find((c) => {
+                  card = allCards.find((c) => {
                     const idUpper = (c.id || "").toUpperCase();
                     const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
                     return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
                   }) || null;
                 }
-                let inputContainer = card2;
+                let inputContainer = card;
                 const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-                if (card2) {
-                  const cardRect = card2.getBoundingClientRect();
-                  const validEditors2 = allEditors.filter((ed) => {
+                if (card) {
+                  const cardRect = card.getBoundingClientRect();
+                  const validEditors = allEditors.filter((ed) => {
                     const edRect = ed.getBoundingClientRect();
                     return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
                   });
-                  if (validEditors2.length > 0) {
-                    inputContainer = validEditors2[0];
+                  if (validEditors.length > 0) {
+                    inputContainer = validEditors[0];
                   } else if (allEditors.length > 0) {
                     inputContainer = allEditors[allEditors.length - 1];
                   }
@@ -228195,7 +228235,7 @@ var UploadWorkerService = class _UploadWorkerService {
                   inputContainer = allEditors[allEditors.length - 1];
                 }
                 let clickedDelete = false;
-                let deleteButton = card2?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                let deleteButton = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
                 if (!deleteButton) {
                   for (const a of aliases2) {
                     deleteButton = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button`);
@@ -228208,11 +228248,11 @@ var UploadWorkerService = class _UploadWorkerService {
                 }
                 let uploadLabel = null;
                 for (const a of aliases2) {
-                  uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || inputContainer?.querySelector(`label.file-upload-input[for*="${a}"]`) || card2?.querySelector(`label.file-upload-input[for*="${a}"]`);
+                  uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || inputContainer?.querySelector(`label.file-upload-input[for*="${a}"]`) || card?.querySelector(`label.file-upload-input[for*="${a}"]`);
                   if (uploadLabel) break;
                 }
                 if (!uploadLabel) {
-                  uploadLabel = inputContainer?.querySelector("label.file-upload-input") || card2?.querySelector("label.file-upload-input") || inputContainer?.querySelector('label[for*="DESIGN"]') || card2?.querySelector('label[for*="DESIGN"]');
+                  uploadLabel = inputContainer?.querySelector("label.file-upload-input") || card?.querySelector("label.file-upload-input") || inputContainer?.querySelector('label[for*="DESIGN"]') || card?.querySelector('label[for*="DESIGN"]');
                 }
                 let inputId = "";
                 if (uploadLabel) {
@@ -228232,7 +228272,7 @@ var UploadWorkerService = class _UploadWorkerService {
                   }
                 }
                 if (!inputId) {
-                  const genericInput = inputContainer?.querySelector('.dropzone-container input[type="file"]') || card2?.querySelector('.dropzone-container input[type="file"]') || inputContainer?.querySelector('input[type="file"]') || card2?.querySelector('input[type="file"]');
+                  const genericInput = inputContainer?.querySelector('.dropzone-container input[type="file"]') || card?.querySelector('.dropzone-container input[type="file"]') || inputContainer?.querySelector('input[type="file"]') || card?.querySelector('input[type="file"]');
                   if (genericInput) {
                     if (!genericInput.id) genericInput.id = `mba-upload-input-${pid}`;
                     inputId = genericInput.id;
@@ -228250,8 +228290,8 @@ var UploadWorkerService = class _UploadWorkerService {
                   this.log(`\u23F3 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork zugewiesen (${import_path78.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
                   const uploadDone = await page.waitForFunction((aliases2) => {
                     for (const a of aliases2) {
-                      const card2 = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`);
-                      const delOnCard = card2?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                      const card = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`);
+                      const delOnCard = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
                       if (delOnCard && delOnCard.offsetParent !== null) return true;
                       const delInDoc = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button, [id*="${a}"] .delete-button`);
                       if (delInDoc && delInDoc.offsetParent !== null) return true;
