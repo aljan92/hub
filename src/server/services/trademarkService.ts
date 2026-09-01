@@ -1359,12 +1359,14 @@ export class TrademarkService {
 
         // If Verifier flagged HIGH_RISK:
         console.warn(`[TrademarkServiceV2] ⚠️ Verifier hat HIGH_RISK gemeldet (${verifierRes.identifiedRisks.length} Risiken).`);
-        if (!verifierRes.canBeFixedByListingRewrite) {
+        const hasInvalidAi = verifierRes.identifiedRisks?.some((r: any) => r.riskType === 'INVALID_AI_RESPONSE');
+        if (!verifierRes.canBeFixedByListingRewrite || hasInvalidAi) {
+          const reasonCode = hasInvalidAi ? 'INVALID_AI_RESPONSE' : 'VERIFIER_UNFIXABLE_RISK';
           return {
             finalDecision: 'ESCALATE',
             isSafe: false,
             canBeFixedByListingRewrite: false,
-            reasonCode: 'VERIFIER_UNFIXABLE_RISK',
+            reasonCode,
             recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
             initialTrademarkHits,
             finalTrademarkHits: normalizedHits,

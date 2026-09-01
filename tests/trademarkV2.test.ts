@@ -352,6 +352,149 @@ async function runAcceptanceTests() {
   }
 
   // ----------------------------------------------------
+  // TEST O: Referee Fail-Safe Validation
+  // ----------------------------------------------------
+  {
+    const originalExecuteFetch = (LLMService as any).executeFetch;
+    const dummyListing = { brand: 'Test', title: 'Test Title', bullet1: 'B1', bullet2: 'B2', description: 'Desc' };
+    const mockRes = (content: string, finishReason: string = 'stop') => {
+      return Promise.resolve(new Response(JSON.stringify({
+        choices: [{
+          finish_reason: finishReason,
+          message: { content }
+        }]
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    };
+
+    try {
+      // 1. {}
+      (LLMService as any).executeFetch = () => mockRes('{}');
+      const resEmptyObj = await LLMService.evaluateTrademarkReferee({ currentListing: dummyListing, compactHits: [] });
+      assert(resEmptyObj.decision === 'ESCALATE' && resEmptyObj.reasonCode === 'INVALID_AI_RESPONSE' && resEmptyObj.canBeFixedByListingRewrite === false,
+        'Test O1: Referee {} defaults fail-safe to ESCALATE with INVALID_AI_RESPONSE');
+
+      // 2. leere Antwort
+      (LLMService as any).executeFetch = () => mockRes('');
+      const resEmptyStr = await LLMService.evaluateTrademarkReferee({ currentListing: dummyListing, compactHits: [] });
+      assert(resEmptyStr.decision === 'ESCALATE' && resEmptyStr.reasonCode === 'INVALID_AI_RESPONSE' && resEmptyStr.canBeFixedByListingRewrite === false,
+        'Test O2: Referee leere Antwort defaults fail-safe to ESCALATE with INVALID_AI_RESPONSE');
+
+      // 3. fehlende decision
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({ foo: 'bar' }));
+      const resMissingDec = await LLMService.evaluateTrademarkReferee({ currentListing: dummyListing, compactHits: [] });
+      assert(resMissingDec.decision === 'ESCALATE' && resMissingDec.reasonCode === 'INVALID_AI_RESPONSE',
+        'Test O3: Referee fehlende decision defaults to ESCALATE with INVALID_AI_RESPONSE');
+
+      // 4. unbekannte decision
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({ decision: 'MAYBE_APPROVED' }));
+      const resUnknownDec = await LLMService.evaluateTrademarkReferee({ currentListing: dummyListing, compactHits: [] });
+      assert(resUnknownDec.decision === 'ESCALATE' && resUnknownDec.reasonCode === 'INVALID_AI_RESPONSE',
+        'Test O4: Referee unbekannte decision defaults to ESCALATE with INVALID_AI_RESPONSE');
+
+      // 5. gültiges APPROVE
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({ decision: 'APPROVE', problematicHits: [] }));
+      const resValidApprove = await LLMService.evaluateTrademarkReferee({ currentListing: dummyListing, compactHits: [] });
+      assert(resValidApprove.decision === 'APPROVE' && resValidApprove.reasonCode === null,
+        'Test O5: Referee gültiges APPROVE wird sauber als APPROVE verarbeitet');
+
+      // 6. gültiges REWRITE
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({
+        decision: 'REWRITE',
+        canBeFixedByListingRewrite: true,
+        problematicHits: [{ id: '1', mark: 'BRAND', action: 'REWRITE' }]
+      }));
+      const resValidRewrite = await LLMService.evaluateTrademarkReferee({ currentListing: dummyListing, compactHits: [] });
+      assert(resValidRewrite.decision === 'REWRITE' && resValidRewrite.canBeFixedByListingRewrite === true,
+        'Test O6: Referee gültiges REWRITE wird sauber als REWRITE verarbeitet');
+
+      // 7. finish_reason=length
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({ decision: 'APPROVE', problematicHits: [] }), 'length');
+      const resTruncated = await LLMService.evaluateTrademarkReferee({ currentListing: dummyListing, compactHits: [] });
+      assert(resTruncated.decision === 'ESCALATE' && resTruncated.reasonCode === 'INVALID_AI_RESPONSE',
+        'Test O7: Referee finish_reason=length wird als INVALID_AI_RESPONSE und ESCALATE behandelt');
+
+    } finally {
+      (LLMService as any).executeFetch = originalExecuteFetch;
+    }
+  }
+
+  // ----------------------------------------------------
+  // TEST P: Verifier Fail-Safe Validation
+  // ----------------------------------------------------
+  {
+    const originalExecuteFetch = (LLMService as any).executeFetch;
+    const dummyListing = { brand: 'Test', title: 'Test Title', bullet1: 'B1', bullet2: 'B2', description: 'Desc' };
+    const mockRes = (content: string, finishReason: string = 'stop') => {
+      return Promise.resolve(new Response(JSON.stringify({
+        choices: [{
+          finish_reason: finishReason,
+          message: { content }
+        }]
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    };
+
+    try {
+      // 1. {}
+      (LLMService as any).executeFetch = () => mockRes('{}');
+      const resEmptyObj = await LLMService.evaluateTrademarkVerifier({ currentListing: dummyListing, compactHits: [] });
+      assert(resEmptyObj.verdict === 'HIGH_RISK' && resEmptyObj.identifiedRisks.some(r => r.riskType === 'INVALID_AI_RESPONSE') && resEmptyObj.canBeFixedByListingRewrite === false,
+        'Test P1: Verifier {} defaults fail-safe to HIGH_RISK mit INVALID_AI_RESPONSE');
+
+      // 2. leere Antwort
+      (LLMService as any).executeFetch = () => mockRes('');
+      const resEmptyStr = await LLMService.evaluateTrademarkVerifier({ currentListing: dummyListing, compactHits: [] });
+      assert(resEmptyStr.verdict === 'HIGH_RISK' && resEmptyStr.identifiedRisks.some(r => r.riskType === 'INVALID_AI_RESPONSE') && resEmptyStr.canBeFixedByListingRewrite === false,
+        'Test P2: Verifier leere Antwort defaults fail-safe to HIGH_RISK mit INVALID_AI_RESPONSE');
+
+      // 3. fehlendes verdict
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({ foo: 'bar', identifiedRisks: [] }));
+      const resMissingVerdict = await LLMService.evaluateTrademarkVerifier({ currentListing: dummyListing, compactHits: [] });
+      assert(resMissingVerdict.verdict === 'HIGH_RISK' && resMissingVerdict.identifiedRisks.some(r => r.riskType === 'INVALID_AI_RESPONSE'),
+        'Test P3: Verifier fehlendes verdict defaults to HIGH_RISK mit INVALID_AI_RESPONSE');
+
+      // 4. unbekanntes verdict
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({ verdict: 'PROBABLY_SAFE', identifiedRisks: [] }));
+      const resUnknownVerdict = await LLMService.evaluateTrademarkVerifier({ currentListing: dummyListing, compactHits: [] });
+      assert(resUnknownVerdict.verdict === 'HIGH_RISK' && resUnknownVerdict.identifiedRisks.some(r => r.riskType === 'INVALID_AI_RESPONSE'),
+        'Test P4: Verifier unbekanntes verdict defaults to HIGH_RISK mit INVALID_AI_RESPONSE');
+
+      // 5. gültiges SAFE
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({
+        verdict: 'SAFE',
+        identifiedRisks: [],
+        recommendation: 'SAFE_TO_PUBLISH'
+      }));
+      const resValidSafe = await LLMService.evaluateTrademarkVerifier({ currentListing: dummyListing, compactHits: [] });
+      assert(resValidSafe.verdict === 'SAFE' && resValidSafe.identifiedRisks.length === 0 && resValidSafe.recommendation === 'SAFE_TO_PUBLISH',
+        'Test P5: Verifier explizites und valides SAFE wird als SAFE akzeptiert');
+
+      // 6. gültiges HIGH_RISK
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({
+        verdict: 'HIGH_RISK',
+        identifiedRisks: [{ term: 'RISKY', field: 'title', riskType: 'BRAND_RISK', explanation: 'Known brand' }],
+        canBeFixedByListingRewrite: true,
+        recommendation: 'REWRITE_NEEDED'
+      }));
+      const resValidHighRisk = await LLMService.evaluateTrademarkVerifier({ currentListing: dummyListing, compactHits: [] });
+      assert(resValidHighRisk.verdict === 'HIGH_RISK' && resValidHighRisk.identifiedRisks.length === 1 && resValidHighRisk.canBeFixedByListingRewrite === true,
+        'Test P6: Verifier gültiges HIGH_RISK wird sauber verarbeitet');
+
+      // 7. finish_reason=length
+      (LLMService as any).executeFetch = () => mockRes(JSON.stringify({
+        verdict: 'SAFE',
+        identifiedRisks: [],
+        recommendation: 'SAFE_TO_PUBLISH'
+      }), 'length');
+      const resTruncated = await LLMService.evaluateTrademarkVerifier({ currentListing: dummyListing, compactHits: [] });
+      assert(resTruncated.verdict === 'HIGH_RISK' && resTruncated.identifiedRisks.some(r => r.riskType === 'INVALID_AI_RESPONSE'),
+        'Test P7: Verifier finish_reason=length wird als INVALID_AI_RESPONSE und HIGH_RISK behandelt');
+
+    } finally {
+      (LLMService as any).executeFetch = originalExecuteFetch;
+    }
+  }
+
+  // ----------------------------------------------------
   // Summary
   // ----------------------------------------------------
   console.log('\n====================================================');

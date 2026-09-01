@@ -715,5 +715,33 @@ MBA HUB/
   - Acceptance-Tests in `tests/trademarkV2.test.ts` um Test N1–N8 erweitert (38/38 Tests erfolgreich).
   - Production Build (`npm run build`) fehlerfrei.
 
+### 10.29 🛡️ Modellunabhängige Fail-Safe Validierung für Trademark Referee & Verifier
+- **Problem & Sicherheitsrisiko:**
+  - Bei leeren AI-Antworten oder `{}` (z. B. wenn Thinking-Modelle wie DeepSeek Tokens aufbrauchten oder OpenRouter leere Payloads lieferte) führte `parsed.verdict === 'HIGH_RISK' ? 'HIGH_RISK' : 'SAFE'` dazu, dass ein leeres Objekt als `verdict = 'SAFE'` und `recommendation = 'SAFE_TO_PUBLISH'` durchgewinkt wurde.
+  - Im Referee existierte dieselbe Gefahr durch `parsed.decision || 'APPROVE'`.
+- **Lösung & Fail-Safe Architektur:**
+  1. **Trademark Referee (`evaluateTrademarkReferee`):**
+     - `parsed.decision || 'APPROVE'` entfernt.
+     - Strikte Prüfung auf gültige Enums (`APPROVE`, `REWRITE`, `APPROVE_WITH_BLOCKED_PRODUCTS`, `ESCALATE`).
+     - Bei `{}` leere Antwort, Parsing-Fehler, fehlender oder unbekannter Decision:
+       ➔ `decision = 'ESCALATE'`, `reasonCode = 'INVALID_AI_RESPONSE'`, `canBeFixedByListingRewrite = false`.
+  2. **Trademark Verifier (`evaluateTrademarkVerifier`):**
+     - Niemals implizit `SAFE`.
+     - `SAFE` wird **ausschließlich** akzeptiert, wenn `verdict === 'SAFE'`, `identifiedRisks` ein gültiges Array ist und `!isTruncated`.
+     - Bei `{}` leere Antwort, Parsing-Fehler, fehlendem oder unbekanntem Verdict:
+       ➔ `verdict = 'HIGH_RISK'`, `riskType = 'INVALID_AI_RESPONSE'`, `canBeFixedByListingRewrite = false`, `recommendation = 'ESCALATE_TO_HUMAN'`.
+  3. **Generische Truncation-Prüfung (`finish_reason === "length"`):**
+     - Wenn ein Modell aufgrund des Token-Limits abgeschnitten wird, darf die unvollständige Antwort niemals als APPROVE oder SAFE gelten.
+     - Wird sofort modellunabhängig als `INVALID_AI_RESPONSE` behandelt.
+  4. **Workflow-Eskalation (`executeTrademarkAuditV2`):**
+     - Bei `INVALID_AI_RESPONSE` wird kein sinnloser automatischer Listing-Rewrite versucht.
+     - Der Workflow eskaliert direkt fail-safe in den bestehenden Human-Review-Pfad:
+       `status = 'AWAITING_TM_REVIEW'`, `reasonCode = 'INVALID_AI_RESPONSE'`.
+- **Tests & Validierung:**
+  - `tests/trademarkV2.test.ts`: Testblöcke `Test O1–O7` (Referee) und `Test P1–P7` (Verifier) hinzugefügt.
+  - Gesamtergebnis: **52/52 Tests bestanden (100% Pass Rate)**.
+  - Production Build (`npm run build`) fehlerfrei abgeschlossen.
+
+
 
 

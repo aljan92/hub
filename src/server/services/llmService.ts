@@ -676,10 +676,38 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
 
       if (!res.ok) throw new Error(`LLM TM Referee error: ${res.status} ${res.statusText}`);
       const data = await res.json();
-      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
-      const parsed = this.extractJsonFromLlmResponse(content);
+      const finishReason = data.choices?.[0]?.finish_reason;
+      const isTruncated = finishReason === 'length';
 
-      const decision = parsed.decision || 'APPROVE';
+      const rawContent = data.choices?.[0]?.message?.content;
+      const content = typeof rawContent === 'string' ? rawContent.trim() : '';
+      const parsed = content ? this.extractJsonFromLlmResponse(content) : null;
+
+      const validDecisions = ['APPROVE', 'REWRITE', 'APPROVE_WITH_BLOCKED_PRODUCTS', 'ESCALATE'];
+      const hasValidDecision = !isTruncated && parsed && typeof parsed === 'object' && validDecisions.includes(parsed.decision);
+
+      if (!hasValidDecision) {
+        const errorDetail = isTruncated 
+          ? 'LLM response was truncated (finish_reason === "length")' 
+          : (!content ? 'Empty LLM response' : 'Invalid JSON or missing/unrecognized decision in LLM response');
+
+        console.warn(`[LLMService] ⚠️ Fail-safe triggered in evaluateTrademarkReferee: ${errorDetail}`);
+        return {
+          decision: 'ESCALATE',
+          canBeFixedByListingRewrite: false,
+          reasonCode: 'INVALID_AI_RESPONSE',
+          recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
+          hits: [],
+          blockedProducts: params.blockedProducts || [],
+          rewriteRequired: false,
+          rewriteInstructions: [],
+          escalation: { error: errorDetail },
+          _rawRequest: requestPayload,
+          _rawResponse: content
+        };
+      }
+
+      const decision = parsed.decision;
       const canBeFixed = parsed.canBeFixedByListingRewrite !== undefined 
         ? Boolean(parsed.canBeFixedByListingRewrite) 
         : (decision !== 'ESCALATE');
@@ -703,7 +731,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
       }));
 
       return {
-        decision: ['APPROVE', 'REWRITE', 'APPROVE_WITH_BLOCKED_PRODUCTS', 'ESCALATE'].includes(decision) ? decision : 'APPROVE',
+        decision,
         canBeFixedByListingRewrite: canBeFixed,
         reasonCode: parsed.reasonCode || parsed.reason_code || (parsed.escalation?.reasonCode ?? null),
         recommendedAction: parsed.recommendedAction || parsed.recommended_action || (parsed.escalation?.recommendedAction ?? null),
@@ -720,7 +748,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
       return {
         decision: 'ESCALATE',
         canBeFixedByListingRewrite: false,
-        reasonCode: 'TM_REFEREE_FAILURE',
+        reasonCode: 'INVALID_AI_RESPONSE',
         recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
         hits: [],
         blockedProducts: params.blockedProducts || [],
@@ -811,17 +839,66 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
 
       if (!res.ok) throw new Error(`LLM TM Verifier error: ${res.status} ${res.statusText}`);
       const data = await res.json();
-      const content = data.choices?.[0]?.message?.content?.trim() || '{}';
-      const parsed = this.extractJsonFromLlmResponse(content);
+      const finishReason = data.choices?.[0]?.finish_reason;
+      const isTruncated = finishReason === 'length';
 
-      const verdict = parsed.verdict === 'HIGH_RISK' ? 'HIGH_RISK' : 'SAFE';
-      const canBeFixed = parsed.canBeFixedByListingRewrite !== undefined ? Boolean(parsed.canBeFixedByListingRewrite) : true;
+      const rawContent = data.choices?.[0]?.message?.content;
+      const content = typeof rawContent === 'string' ? rawContent.trim() : '';
+      const parsed = content ? this.extractJsonFromLlmResponse(content) : null;
 
+      const rawRisks = Array.isArray(parsed?.identifiedRisks) 
+        ? parsed.identifiedRisks 
+        : (Array.isArray(parsed?.identified_risks) ? parsed.identified_risks : null);
+
+      const isValidSafe = !isTruncated && 
+        parsed && 
+        typeof parsed === 'object' && 
+        parsed.verdict === 'SAFE' && 
+        Array.isArray(rawRisks);
+
+      const isValidHighRisk = !isTruncated && 
+        parsed && 
+        typeof parsed === 'object' && 
+        parsed.verdict === 'HIGH_RISK';
+
+      if (isValidSafe) {
+        return {
+          verdict: 'SAFE',
+          identifiedRisks: rawRisks,
+          canBeFixedByListingRewrite: parsed.canBeFixedByListingRewrite !== undefined ? Boolean(parsed.canBeFixedByListingRewrite) : true,
+          recommendation: parsed.recommendation || 'SAFE_TO_PUBLISH',
+          _rawRequest: requestPayload,
+          _rawResponse: content
+        };
+      }
+
+      if (isValidHighRisk) {
+        return {
+          verdict: 'HIGH_RISK',
+          identifiedRisks: Array.isArray(rawRisks) ? rawRisks : [{ term: 'N/A', field: 'all', riskType: 'HIGH_RISK', explanation: parsed.explanation || 'Verifier identified high risk' }],
+          canBeFixedByListingRewrite: parsed.canBeFixedByListingRewrite !== undefined ? Boolean(parsed.canBeFixedByListingRewrite) : false,
+          recommendation: parsed.recommendation || 'REWRITE_NEEDED',
+          _rawRequest: requestPayload,
+          _rawResponse: content
+        };
+      }
+
+      // Fail-safe: empty, {}, invalid JSON, missing verdict, unknown verdict or finish_reason=length
+      const errorDetail = isTruncated
+        ? 'LLM response was truncated (finish_reason === "length")'
+        : (!content ? 'Empty LLM response' : 'Invalid JSON, missing verdict, or invalid schema in LLM response');
+
+      console.warn(`[LLMService] ⚠️ Fail-safe triggered in evaluateTrademarkVerifier: ${errorDetail}`);
       return {
-        verdict,
-        identifiedRisks: Array.isArray(parsed.identifiedRisks) ? parsed.identifiedRisks : (Array.isArray(parsed.identified_risks) ? parsed.identified_risks : []),
-        canBeFixedByListingRewrite: canBeFixed,
-        recommendation: parsed.recommendation || (verdict === 'SAFE' ? 'SAFE_TO_PUBLISH' : 'REWRITE_NEEDED'),
+        verdict: 'HIGH_RISK',
+        identifiedRisks: [{
+          term: 'N/A',
+          field: 'all',
+          riskType: 'INVALID_AI_RESPONSE',
+          explanation: errorDetail
+        }],
+        canBeFixedByListingRewrite: false,
+        recommendation: 'ESCALATE_TO_HUMAN',
         _rawRequest: requestPayload,
         _rawResponse: content
       };
@@ -829,7 +906,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
       console.error('[LLMService] Error in evaluateTrademarkVerifier:', err);
       return {
         verdict: 'HIGH_RISK',
-        identifiedRisks: [{ term: 'N/A', field: 'all', riskType: 'VERIFIER_API_FAILURE', explanation: err.message }],
+        identifiedRisks: [{ term: 'N/A', field: 'all', riskType: 'INVALID_AI_RESPONSE', explanation: err.message }],
         canBeFixedByListingRewrite: false,
         recommendation: 'ESCALATE_TO_HUMAN',
         _rawRequest: requestPayload,
