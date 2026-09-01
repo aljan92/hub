@@ -22098,12 +22098,12 @@ var require_application = __commonJS2({
     };
     app2.set = function set(setting, val) {
       if (arguments.length === 1) {
-        var settings = this.settings;
-        while (settings && settings !== Object.prototype) {
-          if (hasOwnProperty2.call(settings, setting)) {
-            return settings[setting];
+        var settings2 = this.settings;
+        while (settings2 && settings2 !== Object.prototype) {
+          if (hasOwnProperty2.call(settings2, setting)) {
+            return settings2[setting];
           }
-          settings = Object.getPrototypeOf(settings);
+          settings2 = Object.getPrototypeOf(settings2);
         }
         return void 0;
       }
@@ -30469,12 +30469,12 @@ ${cause.stack}`;
       * Execution Time: 0.119 ms
       * ```
       */
-      explain({ analyze = false, verbose = false, settings = false, buffers = false, wal = false, format = "text" } = {}) {
+      explain({ analyze = false, verbose = false, settings: settings2 = false, buffers = false, wal = false, format = "text" } = {}) {
         var _this$headers$get;
         const options2 = [
           analyze ? "analyze" : null,
           verbose ? "verbose" : null,
-          settings ? "settings" : null,
+          settings2 ? "settings" : null,
           buffers ? "buffers" : null,
           wal ? "wal" : null
         ].filter(Boolean).join("|");
@@ -43878,13 +43878,13 @@ var require_GoTrueClient = __commonJS2({
         this.pendingInLock = [];
         this.broadcastChannel = null;
         this.logger = console.log;
-        const settings = Object.assign(Object.assign({}, DEFAULT_OPTIONS), options2);
-        this.storageKey = settings.storageKey;
+        const settings2 = Object.assign(Object.assign({}, DEFAULT_OPTIONS), options2);
+        this.storageKey = settings2.storageKey;
         this.instanceID = (_a = _GoTrueClient.nextInstanceID[this.storageKey]) !== null && _a !== void 0 ? _a : 0;
         _GoTrueClient.nextInstanceID[this.storageKey] = this.instanceID + 1;
-        this.logDebugMessages = !!settings.debug;
-        if (typeof settings.debug === "function") {
-          this.logger = settings.debug;
+        this.logDebugMessages = !!settings2.debug;
+        if (typeof settings2.debug === "function") {
+          this.logger = settings2.debug;
         }
         if (this.instanceID > 0 && (0, helpers_1.isBrowser)()) {
           const message = `${this._logPrefix()} Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key.`;
@@ -43893,25 +43893,25 @@ var require_GoTrueClient = __commonJS2({
             console.trace(message);
           }
         }
-        this.persistSession = settings.persistSession;
-        this.autoRefreshToken = settings.autoRefreshToken;
-        this.experimental = (_b = settings.experimental) !== null && _b !== void 0 ? _b : {};
+        this.persistSession = settings2.persistSession;
+        this.autoRefreshToken = settings2.autoRefreshToken;
+        this.experimental = (_b = settings2.experimental) !== null && _b !== void 0 ? _b : {};
         this.admin = new GoTrueAdminApi_1.default({
-          url: settings.url,
-          headers: settings.headers,
-          fetch: settings.fetch,
+          url: settings2.url,
+          headers: settings2.headers,
+          fetch: settings2.fetch,
           experimental: this.experimental
         });
-        this.url = settings.url;
-        this.headers = settings.headers;
-        this.fetch = (0, helpers_1.resolveFetch)(settings.fetch);
-        this.detectSessionInUrl = settings.detectSessionInUrl;
-        this.flowType = settings.flowType;
-        this.hasCustomAuthorizationHeader = settings.hasCustomAuthorizationHeader;
-        this.throwOnError = settings.throwOnError;
-        this.lockAcquireTimeout = settings.lockAcquireTimeout;
-        if (settings.lock != null) {
-          this.lock = settings.lock;
+        this.url = settings2.url;
+        this.headers = settings2.headers;
+        this.fetch = (0, helpers_1.resolveFetch)(settings2.fetch);
+        this.detectSessionInUrl = settings2.detectSessionInUrl;
+        this.flowType = settings2.flowType;
+        this.hasCustomAuthorizationHeader = settings2.hasCustomAuthorizationHeader;
+        this.throwOnError = settings2.throwOnError;
+        this.lockAcquireTimeout = settings2.lockAcquireTimeout;
+        if (settings2.lock != null) {
+          this.lock = settings2.lock;
         }
         if (!this.jwks) {
           this.jwks = { keys: [] };
@@ -43944,8 +43944,8 @@ var require_GoTrueClient = __commonJS2({
           delete: this._deletePasskey.bind(this)
         };
         if (this.persistSession) {
-          if (settings.storage) {
-            this.storage = settings.storage;
+          if (settings2.storage) {
+            this.storage = settings2.storage;
           } else {
             if ((0, helpers_1.supportsLocalStorage)()) {
               this.storage = globalThis.localStorage;
@@ -43954,8 +43954,8 @@ var require_GoTrueClient = __commonJS2({
               this.storage = (0, local_storage_1.memoryLocalStorageAdapter)(this.memoryStorage);
             }
           }
-          if (settings.userStorage) {
-            this.userStorage = settings.userStorage;
+          if (settings2.userStorage) {
+            this.userStorage = settings2.userStorage;
           }
         } else {
           this.memoryStorage = {};
@@ -43979,7 +43979,7 @@ var require_GoTrueClient = __commonJS2({
             }
           });
         }
-        if (!settings.skipAutoInitialize) {
+        if (!settings2.skipAutoInitialize) {
           this.initialize().catch((error) => {
             this._debug("#initialize()", "error", error);
           });
@@ -49570,37 +49570,37 @@ var init_dist4 = __esm2({
           global: DEFAULT_GLOBAL_OPTIONS,
           tracePropagation: DEFAULT_TRACE_PROPAGATION_OPTIONS
         };
-        const settings = applySettingDefaults(options2 !== null && options2 !== void 0 ? options2 : {}, DEFAULTS);
-        this.settings = settings;
-        this.storageKey = (_settings$auth$storag = settings.auth.storageKey) !== null && _settings$auth$storag !== void 0 ? _settings$auth$storag : "";
-        this.headers = (_settings$global$head = settings.global.headers) !== null && _settings$global$head !== void 0 ? _settings$global$head : {};
-        if (!settings.accessToken) {
+        const settings2 = applySettingDefaults(options2 !== null && options2 !== void 0 ? options2 : {}, DEFAULTS);
+        this.settings = settings2;
+        this.storageKey = (_settings$auth$storag = settings2.auth.storageKey) !== null && _settings$auth$storag !== void 0 ? _settings$auth$storag : "";
+        this.headers = (_settings$global$head = settings2.global.headers) !== null && _settings$global$head !== void 0 ? _settings$global$head : {};
+        if (!settings2.accessToken) {
           var _settings$auth;
-          this.auth = this._initSupabaseAuthClient((_settings$auth = settings.auth) !== null && _settings$auth !== void 0 ? _settings$auth : {}, this.headers, settings.global.fetch);
+          this.auth = this._initSupabaseAuthClient((_settings$auth = settings2.auth) !== null && _settings$auth !== void 0 ? _settings$auth : {}, this.headers, settings2.global.fetch);
         } else {
-          this.accessToken = settings.accessToken;
+          this.accessToken = settings2.accessToken;
           this.auth = new Proxy({}, { get: (_, prop) => {
             throw new Error(`@supabase/supabase-js: Supabase Client is configured with the accessToken option, accessing supabase.auth.${String(prop)} is not possible`);
           } });
         }
-        this.fetch = fetchWithAuth(supabaseKey, supabaseUrl, this._getSessionToken.bind(this), settings.global.fetch, settings.tracePropagation);
-        this.functionsFetch = fetchWithAuth(supabaseKey, supabaseUrl, this._getSessionToken.bind(this), settings.global.fetch, settings.tracePropagation, { omitApiKeyAsBearer: true });
+        this.fetch = fetchWithAuth(supabaseKey, supabaseUrl, this._getSessionToken.bind(this), settings2.global.fetch, settings2.tracePropagation);
+        this.functionsFetch = fetchWithAuth(supabaseKey, supabaseUrl, this._getSessionToken.bind(this), settings2.global.fetch, settings2.tracePropagation, { omitApiKeyAsBearer: true });
         this.realtime = this._initRealtimeClient(_objectSpread23({
           headers: this.headers,
           accessToken: this._getAccessToken.bind(this),
           fetch: this.fetch
-        }, settings.realtime));
+        }, settings2.realtime));
         if (this.accessToken) Promise.resolve(this.accessToken()).then((token) => this.realtime.setAuth(token)).catch((e) => console.warn("Failed to set initial Realtime auth token:", e));
         this.rest = new PostgrestClient(new URL("rest/v1", baseUrl).href, {
           headers: this.headers,
-          schema: settings.db.schema,
+          schema: settings2.db.schema,
           fetch: this.fetch,
-          timeout: settings.db.timeout,
-          urlLengthLimit: settings.db.urlLengthLimit,
-          retry: settings.db.retry
+          timeout: settings2.db.timeout,
+          urlLengthLimit: settings2.db.urlLengthLimit,
+          retry: settings2.db.retry
         });
         this.storage = new StorageClient(this.storageUrl.href, this.headers, this.fetch, options2 === null || options2 === void 0 ? void 0 : options2.storage);
-        if (!settings.accessToken) this._listenForAuthEvents();
+        if (!settings2.accessToken) this._listenForAuthEvents();
       }
       /**
       * Supabase Functions allows you to deploy and invoke edge functions.
@@ -49809,29 +49809,29 @@ function loadSettings() {
     try {
       const fileData = import_fs71.default.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(fileData);
-      const settings = { ...DEFAULT_SETTINGS, ...parsed };
-      if (!settings.mcpApiKey) {
-        settings.mcpApiKey = generateApiKey();
-        const merged = { ...DEFAULT_SETTINGS, ...parsed, mcpApiKey: settings.mcpApiKey };
+      const settings2 = { ...DEFAULT_SETTINGS, ...parsed };
+      if (!settings2.mcpApiKey) {
+        settings2.mcpApiKey = generateApiKey();
+        const merged = { ...DEFAULT_SETTINGS, ...parsed, mcpApiKey: settings2.mcpApiKey };
         try {
           import_fs71.default.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
         } catch (e) {
         }
       }
-      cachedSettings = settings;
-      return settings;
+      cachedSettings = settings2;
+      return settings2;
     } catch (err) {
       console.error("[Settings] Error reading settings.json:", err);
     }
   } else {
     const initialKey = generateApiKey();
-    const settings = { ...DEFAULT_SETTINGS, mcpApiKey: initialKey };
+    const settings2 = { ...DEFAULT_SETTINGS, mcpApiKey: initialKey };
     try {
-      import_fs71.default.writeFileSync(filePath, JSON.stringify(settings, null, 2), "utf-8");
+      import_fs71.default.writeFileSync(filePath, JSON.stringify(settings2, null, 2), "utf-8");
     } catch (e) {
     }
-    cachedSettings = settings;
-    return settings;
+    cachedSettings = settings2;
+    return settings2;
   }
   cachedSettings = { ...DEFAULT_SETTINGS };
   return cachedSettings;
@@ -49850,11 +49850,11 @@ function saveSettings(newSettings) {
   return merged;
 }
 function getSupabaseClient() {
-  const settings = loadSettings();
-  if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+  const settings2 = loadSettings();
+  if (!settings2.supabaseUrl || !settings2.supabaseServiceRoleKey) {
     return null;
   }
-  return createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), {
+  return createClient(settings2.supabaseUrl.trim(), settings2.supabaseServiceRoleKey.trim(), {
     auth: { persistSession: false }
   });
 }
@@ -49915,7 +49915,9 @@ var init_settingsService = __esm2({
       queueUpdateMaxActiveProducts: 100,
       costPerImage: 0.08,
       costPerVectorization: 0.05,
-      openRouterMinBalanceThreshold: 1
+      openRouterMinBalanceThreshold: 1,
+      translationDesignEnabled: true,
+      translationUpdateEnabled: true
     };
     cachedSettings = null;
   }
@@ -52564,18 +52566,18 @@ var init_llmService = __esm2({
         return trimmed;
       }
       static getBaseUrlAndHeaders() {
-        const settings = loadSettings();
-        const isDirectOpenAI = settings.llmProvider === "openai";
+        const settings2 = loadSettings();
+        const isDirectOpenAI = settings2.llmProvider === "openai";
         const url = isDirectOpenAI ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
         const headers = {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${settings.openRouterApiKey.trim()}`
+          "Authorization": `Bearer ${settings2.openRouterApiKey.trim()}`
         };
         if (!isDirectOpenAI) {
           headers["HTTP-Referer"] = "https://mba-hub.local";
           headers["X-Title"] = "MBA HUB";
         }
-        const rawModel = settings.llmModel || "anthropic/claude-3-5-sonnet";
+        const rawModel = settings2.llmModel || "anthropic/claude-3-5-sonnet";
         return {
           url,
           headers,
@@ -52649,8 +52651,8 @@ var init_llmService = __esm2({
         };
       }
       static async getAvailableBalance(forceFresh = false) {
-        const settings = loadSettings();
-        if (settings.llmProvider !== "openrouter") {
+        const settings2 = loadSettings();
+        if (settings2.llmProvider !== "openrouter") {
           return 999;
         }
         const now = Date.now();
@@ -52661,7 +52663,7 @@ var init_llmService = __esm2({
           const credits = await this.getCredits();
           if (credits.balanceRemaining !== void 0 && credits.balanceRemaining !== null) {
             this.balanceCache = { balance: credits.balanceRemaining, timestamp: now };
-            const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+            const threshold = settings2.openRouterMinBalanceThreshold ?? 1;
             if (credits.balanceRemaining < threshold) {
               if (!this.circuitBroken) {
                 this.tripCircuitBreaker(`OpenRouter Guthaben ($${credits.balanceRemaining.toFixed(2)}) liegt unter Schwellenwert ($${threshold.toFixed(2)})`);
@@ -52695,8 +52697,8 @@ var init_llmService = __esm2({
        * Check OpenRouter credit balance & usage
        */
       static async getCredits(customKey) {
-        const settings = loadSettings();
-        const key = (customKey || settings.openRouterApiKey).trim();
+        const settings2 = loadSettings();
+        const key = (customKey || settings2.openRouterApiKey).trim();
         if (!key) return { error: "Kein API Key" };
         try {
           const [authRes, creditsRes] = await Promise.all([
@@ -52752,9 +52754,9 @@ var init_llmService = __esm2({
        * Uses OpenRouter /auth/key endpoint or OpenAI /models endpoint to verify the key instantly & safely
        */
       static async testConnection(customKey, customModel) {
-        const settings = loadSettings();
-        const key = (customKey || settings.openRouterApiKey).trim();
-        const isDirectOpenAI = settings.llmProvider === "openai";
+        const settings2 = loadSettings();
+        const key = (customKey || settings2.openRouterApiKey).trim();
+        const isDirectOpenAI = settings2.llmProvider === "openai";
         if (!key) {
           return { success: false, latencyMs: 0, error: "Kein API Key hinterlegt" };
         }
@@ -52935,18 +52937,18 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
             image_url: { url: params2.imageSource }
           });
         }
-        const settings = loadSettings();
+        const settings2 = loadSettings();
         const requestPayload = {
           model,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userContent }
           ],
-          temperature: settings.llmTemperature ?? 0.35,
-          max_tokens: settings.llmMaxTokens || 3e3
+          temperature: settings2.llmTemperature ?? 0.35,
+          max_tokens: settings2.llmMaxTokens || 3e3
         };
         try {
-          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
+          const timeoutMs = (settings2.llmTimeoutSeconds || 90) * 1e3;
           const res = await this.executeFetch(url, {
             method: "POST",
             headers,
@@ -53022,21 +53024,21 @@ Rewrite Context:
 - Currently Blocked Products: ${JSON.stringify(params2.blockedProducts || [])}
 
 Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/descriptive words are implicitly KEEP and must NOT be output in problematicHits. Return valid JSON only.`;
-        const settings = loadSettings();
+        const settings2 = loadSettings();
         const requestPayload = {
           model,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMessage }
           ],
-          temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-          max_tokens: settings.llmMaxTokens || 2500
+          temperature: Math.min(settings2.llmTemperature ?? 0.35, 0.2),
+          max_tokens: settings2.llmMaxTokens || 2500
         };
         if (params2.sessionId) {
           requestPayload.session_id = params2.sessionId;
         }
         try {
-          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
+          const timeoutMs = (settings2.llmTimeoutSeconds || 90) * 1e3;
           const res = await this.executeFetch(url, {
             method: "POST",
             headers,
@@ -53120,21 +53122,21 @@ Previous Referee Verdict: "${params2.refereeDecision || "APPROVE"}"
 Blocked Products: ${JSON.stringify(params2.blockedProducts || [])}
 
 Act as the final adversarial Amazon Merch reviewer. Do you see any plausible trademark, brand, or policy reasons why Amazon Merch might reject this submission or penalize the account? Return valid JSON.`;
-        const settings = loadSettings();
+        const settings2 = loadSettings();
         const requestPayload = {
           model,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMessage }
           ],
-          temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-          max_tokens: settings.llmMaxTokens || 2500
+          temperature: Math.min(settings2.llmTemperature ?? 0.35, 0.2),
+          max_tokens: settings2.llmMaxTokens || 2500
         };
         if (params2.sessionId) {
           requestPayload.session_id = params2.sessionId;
         }
         try {
-          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
+          const timeoutMs = (settings2.llmTimeoutSeconds || 90) * 1e3;
           const res = await this.executeFetch(url, {
             method: "POST",
             headers,
@@ -53212,21 +53214,21 @@ Return ONLY valid JSON:
   "description": "...",
   "actions_taken": ["Replaced term X with Y in Brand", "Rewrote Bullet 1 to remove phrase Z"]
 }`;
-        const settings = loadSettings();
+        const settings2 = loadSettings();
         const requestPayload = {
           model,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMessage }
           ],
-          temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
-          max_tokens: settings.llmMaxTokens || 2500
+          temperature: Math.min(settings2.llmTemperature ?? 0.35, 0.25),
+          max_tokens: settings2.llmMaxTokens || 2500
         };
         if (params2.sessionId) {
           requestPayload.session_id = params2.sessionId;
         }
         try {
-          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
+          const timeoutMs = (settings2.llmTimeoutSeconds || 90) * 1e3;
           const res = await this.executeFetch(url, {
             method: "POST",
             headers,
@@ -53306,18 +53308,18 @@ Primary Niche: "${params2.niche1 || ""}"
 Subniche: "${params2.subniche || ""}"
 
 Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with the translated Niche/Subniche noun without trailing punctuation!`;
-        const settings = loadSettings();
+        const settings2 = loadSettings();
         const requestPayload = {
           model,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMessage }
           ],
-          temperature: Math.min(settings.llmTemperature ?? 0.35, 0.3),
-          max_tokens: Math.max(settings.llmMaxTokens || 3e3, 2500)
+          temperature: Math.min(settings2.llmTemperature ?? 0.35, 0.3),
+          max_tokens: Math.max(settings2.llmMaxTokens || 3e3, 2500)
         };
         try {
-          const timeoutMs = (settings.llmTimeoutSeconds || 90) * 1e3;
+          const timeoutMs = (settings2.llmTimeoutSeconds || 90) * 1e3;
           const res = await this.executeFetch(url, {
             method: "POST",
             headers,
@@ -53527,7 +53529,7 @@ var init_trademarkService = __esm2({
        * Test connection to Productor Trademark APIs
        */
       static async testConnection() {
-        const settings = loadSettings();
+        const settings2 = loadSettings();
         const start3 = Date.now();
         try {
           const fd = new FormData();
@@ -53535,7 +53537,7 @@ var init_trademarkService = __esm2({
           const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
             method: "POST",
             headers: {
-              "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
+              "Authorization": settings2.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
               "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
               "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
             },
@@ -53637,7 +53639,7 @@ var init_trademarkService = __esm2({
        * Check terms across specified trademark offices
        */
       static async queryOffices(uniqueTerms, offices) {
-        const settings = loadSettings();
+        const settings2 = loadSettings();
         const allHits = {};
         if (uniqueTerms.length === 0 || offices.length === 0) {
           return allHits;
@@ -53656,7 +53658,7 @@ var init_trademarkService = __esm2({
                 method: "POST",
                 headers: {
                   ...defaultHeaders,
-                  "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
+                  "Authorization": settings2.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
                 },
                 body: usptoFd,
                 signal: AbortSignal.timeout(9e3)
@@ -53700,7 +53702,7 @@ var init_trademarkService = __esm2({
                 method: "POST",
                 headers: {
                   ...defaultHeaders,
-                  "Authorization": settings.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
+                  "Authorization": settings2.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
                 },
                 body: euFd,
                 signal: AbortSignal.timeout(9e3)
@@ -53742,7 +53744,7 @@ var init_trademarkService = __esm2({
                 method: "POST",
                 headers: {
                   ...defaultHeaders,
-                  "Authorization": settings.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
+                  "Authorization": settings2.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
                 },
                 body: dpmaFd,
                 signal: AbortSignal.timeout(9e3)
@@ -54176,13 +54178,13 @@ var init_trademarkService = __esm2({
        * Query USPTO batch endpoint (batching up to 50 terms per request)
        */
       static async queryUsptoBatch(terms) {
-        const settings = loadSettings();
+        const settings2 = loadSettings();
         const allResults = {};
         if (terms.length === 0) return allResults;
         const defaultHeaders = {
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
           "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk",
-          "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
+          "Authorization": settings2.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
         };
         const chunkSize = 50;
         for (let i = 0; i < terms.length; i += chunkSize) {
@@ -54629,8 +54631,8 @@ var init_ideogramService = __esm2({
        * Test Ideogram API connection (0 credits consumed)
        */
       static async testConnection(customKey) {
-        const settings = loadSettings();
-        const rawKey = customKey || settings.ideogramApiKey;
+        const settings2 = loadSettings();
+        const rawKey = customKey || settings2.ideogramApiKey;
         if (!rawKey || !rawKey.trim()) {
           return { success: false, latencyMs: 0, error: "Kein Ideogram API Key hinterlegt" };
         }
@@ -54678,11 +54680,11 @@ var init_ideogramService = __esm2({
           { id: "V_2_TURBO", name: "Ideogram 2.0 Turbo (Schnell & G\xFCnstig)" },
           { id: "V_2", name: "Ideogram 2.0 (High Quality)" }
         ];
-        const settings = loadSettings();
-        if (!settings.ideogramApiKey) return standardModels;
+        const settings2 = loadSettings();
+        if (!settings2.ideogramApiKey) return standardModels;
         try {
           const res = await fetch("https://api.ideogram.ai/models", {
-            headers: { "Api-Key": settings.ideogramApiKey.trim() },
+            headers: { "Api-Key": settings2.ideogramApiKey.trim() },
             signal: AbortSignal.timeout(1e4)
           });
           if (res.ok) {
@@ -54704,16 +54706,16 @@ var init_ideogramService = __esm2({
        * Generate Image via Ideogram API (supports V3, V4, V2)
        */
       static async generateImage(options2) {
-        const settings = loadSettings();
-        const key = settings.ideogramApiKey;
+        const settings2 = loadSettings();
+        const key = settings2.ideogramApiKey;
         if (!key) {
           throw new Error("Ideogram API Key fehlt in den Einstellungen.");
         }
-        const renderingSpeed = options2.renderingSpeed || settings.ideogramRenderingSpeed || "DEFAULT";
-        const styleType = options2.styleType || settings.ideogramStyle || "GENERAL";
-        const magicPromptOption = options2.magicPromptOption || settings.ideogramMagicPromptOption || "AUTO";
-        const selectedModel = options2.model || settings.ideogramModel || "V_3";
-        const cleanRatio = (options2.aspectRatio || settings.ideogramAspectRatio || "10x16").replace(":", "x");
+        const renderingSpeed = options2.renderingSpeed || settings2.ideogramRenderingSpeed || "DEFAULT";
+        const styleType = options2.styleType || settings2.ideogramStyle || "GENERAL";
+        const magicPromptOption = options2.magicPromptOption || settings2.ideogramMagicPromptOption || "AUTO";
+        const selectedModel = options2.model || settings2.ideogramModel || "V_3";
+        const cleanRatio = (options2.aspectRatio || settings2.ideogramAspectRatio || "10x16").replace(":", "x");
         if (selectedModel === "V_3" || selectedModel === "V_3_TURBO" || selectedModel.startsWith("V_3")) {
           const formData = new FormData();
           formData.append("prompt", options2.prompt);
@@ -54833,9 +54835,9 @@ var init_vectorizerService = __esm2({
        * Test Vectorizer.ai API credentials and query account details
        */
       static async testConnection(customKey, customSecret) {
-        const settings = loadSettings();
-        const key = customKey || settings.vectorizerApiKey;
-        const secret = customSecret || settings.vectorizerApiSecret;
+        const settings2 = loadSettings();
+        const key = customKey || settings2.vectorizerApiKey;
+        const secret = customSecret || settings2.vectorizerApiSecret;
         if (!key || !secret) {
           return { success: false, latencyMs: 0, error: "API Key (ID) oder API Secret fehlt" };
         }
@@ -54875,7 +54877,7 @@ var init_vectorizerService = __esm2({
        * Helper to build FormData with complete MBA Manager parameters
        */
       static buildFormData(imageField, isPreview = false, options2) {
-        const settings = loadSettings();
+        const settings2 = loadSettings();
         const formData = new FormData();
         if (imageField.type === "url") {
           formData.append("image.url", imageField.value);
@@ -54883,37 +54885,37 @@ var init_vectorizerService = __esm2({
           const blob = new Blob([imageField.buffer], { type: imageField.mimeType || "image/png" });
           formData.append("image", blob, imageField.filename || "design.png");
         }
-        const mode = options2?.mode ?? (isPreview ? settings.vectorizerModePreview || "test" : settings.vectorizerModeProduction || "production");
+        const mode = options2?.mode ?? (isPreview ? settings2.vectorizerModePreview || "test" : settings2.vectorizerModeProduction || "production");
         formData.append("mode", mode);
-        const maxColors = options2?.maxColors ?? settings.vectorizerMaxColors ?? 2;
+        const maxColors = options2?.maxColors ?? settings2.vectorizerMaxColors ?? 2;
         formData.append("processing.max_colors", String(maxColors));
         const removeBg = options2?.removeBackground ?? false;
         formData.append("processing.remove_background", String(removeBg));
-        const minArea = options2?.minArea ?? settings.vectorizerMinArea ?? 10;
+        const minArea = options2?.minArea ?? settings2.vectorizerMinArea ?? 10;
         if (minArea > 0) {
           formData.append("processing.shapes.min_area_px", String(minArea));
         }
         formData.append("output.svg.version", "svg_1_1");
-        const drawStyle = options2?.drawStyle ?? settings.vectorizerDrawStyle ?? "fill_shapes";
+        const drawStyle = options2?.drawStyle ?? settings2.vectorizerDrawStyle ?? "fill_shapes";
         formData.append("output.draw_style", drawStyle);
-        const shapeStacking = options2?.shapeStacking ?? settings.vectorizerShapeStacking ?? "cutouts";
+        const shapeStacking = options2?.shapeStacking ?? settings2.vectorizerShapeStacking ?? "cutouts";
         formData.append("output.shape_stacking", shapeStacking);
-        const groupBy = options2?.groupBy ?? settings.vectorizerGroupBy ?? "none";
+        const groupBy = options2?.groupBy ?? settings2.vectorizerGroupBy ?? "none";
         formData.append("output.group_by", groupBy);
         formData.append("output.curves.allowed.quadratic_bezier", "true");
         formData.append("output.curves.allowed.cubic_bezier", "true");
         formData.append("output.curves.allowed.circular_arc", "true");
         formData.append("output.curves.allowed.elliptical_arc", "true");
-        const optimized = options2?.optimizedShapes ?? settings.vectorizerOptimizedShapes ?? true;
+        const optimized = options2?.optimizedShapes ?? settings2.vectorizerOptimizedShapes ?? true;
         formData.append("output.parameterized_shapes.flatten", String(!optimized));
-        const gapFiller = options2?.gapFiller ?? settings.vectorizerGapFiller ?? false;
+        const gapFiller = options2?.gapFiller ?? settings2.vectorizerGapFiller ?? false;
         formData.append("output.gap_filler.enabled", String(gapFiller));
         if (gapFiller) {
           formData.append("output.gap_filler.clip_overflow", "false");
           formData.append("output.gap_filler.non_scaling_stroke", "true");
         }
         if (drawStyle.includes("stroke")) {
-          const lineFit = options2?.lineFitTolerance ?? settings.vectorizerLineFitTolerance ?? 0.1;
+          const lineFit = options2?.lineFitTolerance ?? settings2.vectorizerLineFitTolerance ?? 0.1;
           formData.append("output.curves.line_fit_tolerance", String(lineFit));
         }
         return formData;
@@ -54922,9 +54924,9 @@ var init_vectorizerService = __esm2({
        * Vectorize an image URL to SVG
        */
       static async vectorizeImage(imageUrl, isPreview = false, options2) {
-        const settings = loadSettings();
-        const key = settings.vectorizerApiKey;
-        const secret = settings.vectorizerApiSecret;
+        const settings2 = loadSettings();
+        const key = settings2.vectorizerApiKey;
+        const secret = settings2.vectorizerApiSecret;
         if (!key || !secret) {
           throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
         }
@@ -54948,9 +54950,9 @@ var init_vectorizerService = __esm2({
        * Vectorize an image Buffer to SVG
        */
       static async vectorizeBuffer(buffer, mimeType = "image/png", isPreview = false, options2) {
-        const settings = loadSettings();
-        const key = settings.vectorizerApiKey;
-        const secret = settings.vectorizerApiSecret;
+        const settings2 = loadSettings();
+        const key = settings2.vectorizerApiKey;
+        const secret = settings2.vectorizerApiSecret;
         if (!key || !secret) {
           throw new Error("Vectorizer.ai Credentials fehlen in den Einstellungen.");
         }
@@ -178140,23 +178142,23 @@ ${e.stack}`);
       const settingsFile = import_path21.default.join(registryDirectory, ".settings", `${appName}.json`);
       const controller = new ProgressController();
       await controller.run(async (progress2) => {
-        await page.exposeBinding(progress2, "_saveSerializedSettings", (_, settings2) => {
+        await page.exposeBinding(progress2, "_saveSerializedSettings", (_, settings22) => {
           import_fs20.default.mkdirSync(import_path21.default.dirname(settingsFile), { recursive: true });
-          import_fs20.default.writeFileSync(settingsFile, settings2);
+          import_fs20.default.writeFileSync(settingsFile, settings22);
         });
-        const settings = await progress2.race(import_fs20.default.promises.readFile(settingsFile, "utf-8").catch(() => "{}"));
+        const settings2 = await progress2.race(import_fs20.default.promises.readFile(settingsFile, "utf-8").catch(() => "{}"));
         await page.addInitScript(
           progress2,
-          `(${String((settings2) => {
+          `(${String((settings22) => {
             if (location && location.protocol === "data:")
               return;
             if (window.top !== window)
               return;
-            Object.entries(settings2).map(([k, v]) => localStorage[k] = v);
+            Object.entries(settings22).map(([k, v]) => localStorage[k] = v);
             window.saveSettings = () => {
               window._saveSerializedSettings(JSON.stringify({ ...localStorage }));
             };
-          })})(${settings});
+          })})(${settings2});
     `
         );
       });
@@ -219013,22 +219015,22 @@ ${c.title}:`);
     }
     async function syncLocalStorageWithSettings2(page, appName) {
       const settingsFile = process.env.PWTEST_DASHBOARD_SETTINGS_FILE ?? import_path65.default.join(registryDirectory, ".settings", `${appName}.json`);
-      await page.exposeBinding("_saveSerializedSettings", (_, settings2) => {
+      await page.exposeBinding("_saveSerializedSettings", (_, settings22) => {
         import_fs70.default.mkdirSync(import_path65.default.dirname(settingsFile), { recursive: true });
-        import_fs70.default.writeFileSync(settingsFile, settings2);
+        import_fs70.default.writeFileSync(settingsFile, settings22);
       });
-      const settings = await import_fs70.default.promises.readFile(settingsFile, "utf-8").catch(() => "{}");
+      const settings2 = await import_fs70.default.promises.readFile(settingsFile, "utf-8").catch(() => "{}");
       await page.addInitScript(
-        `(${String((settings2) => {
+        `(${String((settings22) => {
           if (location && location.protocol === "data:")
             return;
           if (window.top !== window)
             return;
-          Object.entries(settings2).map(([k, v]) => localStorage[k] = v);
+          Object.entries(settings22).map(([k, v]) => localStorage[k] = v);
           window.saveSettings = () => {
             window._saveSerializedSettings(JSON.stringify({ ...localStorage }));
           };
-        })})(${settings});
+        })})(${settings2});
   `
       );
     }
@@ -219905,8 +219907,8 @@ var init_syncEngine = __esm2({
         this.addLog("Scan manuell abgebrochen.", "warn");
       }
       static init() {
-        const settings = loadSettings();
-        const enabled = settings.autoSyncEnabled !== void 0 ? settings.autoSyncEnabled : true;
+        const settings2 = loadSettings();
+        const enabled = settings2.autoSyncEnabled !== void 0 ? settings2.autoSyncEnabled : true;
         this.state.autoUpdateEnabled = enabled;
         if (enabled) {
           this.addLog("[Auto-Update] Hintergrund-Scheduler aktiv (alle 15 Min).", "info");
@@ -222877,8 +222879,8 @@ var init_updatePipelineService = __esm2({
         console.log(`[UpdatePipeline] \u{1F9E0} Starte Step U3 (Vision & Listing Analyse) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
+        const settings2 = loadSettings();
+        const apiKey = settings2.openRouterApiKey;
         if (!apiKey) {
           const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
           TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
@@ -222931,7 +222933,7 @@ Bullets: ${oldBullets}`
             image_url: { url: imageBase64 }
           });
         }
-        const model = settings.llmModel || "google/gemini-2.5-flash";
+        const model = settings2.llmModel || "google/gemini-2.5-flash";
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "ANALYSIS_REQUEST",
@@ -223034,8 +223036,8 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u270D\uFE0F Starte Step U4 (Master English Listing Rewrite) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
+        const settings2 = loadSettings();
+        const apiKey = settings2.openRouterApiKey;
         if (!apiKey) {
           const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
           TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
@@ -223247,7 +223249,6 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u{1F310} Starte Step U6 (SEO Translation & Sanitizer) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        TaskLogService2.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
         const enListing = task.listingResult?.en || {
           brand: task.payload?.brand || "",
           title: task.payload?.title || "",
@@ -223258,6 +223259,24 @@ Bullets: ${oldBullets}`
         const quote5 = task.payload?.quote || "";
         const niche1 = task.niche1 || task.customAnswers?.niche1 || "";
         const subniche = task.subniche || task.customAnswers?.subniche || "";
+        const settings2 = loadSettings();
+        if (settings2.translationUpdateEnabled === false) {
+          console.log(`[UpdatePipeline] \u23E9 \xDCbersetzung deaktiviert (Settings). Verwende englisches Master-Listing f\xFCr Amazon Auto-Translate.`);
+          const sanitized = { en: enListing };
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_TRANSLATED",
+            listingResult: sanitized,
+            hasError: false
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TRANSLATION_SKIPPED",
+            title: "SEO-\xDCbersetzung \xFCbersprungen (Amazon Auto-Translate aktiv)",
+            content: { message: "\xDCbersetzung f\xFCr Update-Pipeline in Settings deaktiviert. Listing wird als englisches Master-Listing \xFCbergeben.", listing: sanitized }
+          });
+          return { success: true, fullListings: sanitized };
+        }
+        TaskLogService2.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TRANSLATION_REQUEST",
@@ -223446,8 +223465,8 @@ Bullets: ${oldBullets}`
         if (!u2.success) return { success: false, error: u2.error };
         const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
         if (!u3.success) return { success: false, error: u3.error };
-        const settings = loadSettings();
-        const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
+        const settings2 = loadSettings();
+        const autonomyUpdate = settings2.aiAutonomyUpdateEnabled ?? settings2.aiAutonomyEnabled;
         const isDefective = u3.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || u3.analysisResult?.overall_verdict === "REJECTED";
         const qualityReason = u3.analysisResult?.design_quality?.quality_issues;
         const taskCurrent = this.getTask(taskId);
@@ -223623,16 +223642,16 @@ var init_updateBackfillService = __esm2({
        * Strictly checks that the "published_products" cell is NOT empty.
        */
       static async fetchNextCandidateFromSupabase(extraExcludedIds) {
-        const settings = loadSettings();
-        if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+        const settings2 = loadSettings();
+        if (!settings2.supabaseUrl || !settings2.supabaseServiceRoleKey) {
           console.warn("[UpdateBackfillService] \u26A0\uFE0F Supabase URL oder Service Role Key fehlt in den Einstellungen.");
           return null;
         }
-        const supabase = createClient(settings.supabaseUrl, settings.supabaseServiceRoleKey, {
+        const supabase = createClient(settings2.supabaseUrl, settings2.supabaseServiceRoleKey, {
           auth: { persistSession: false, autoRefreshToken: false }
         });
         const excludedIds = this.getExcludedDesignIds(extraExcludedIds);
-        const maxActiveProducts = settings.queueUpdateMaxActiveProducts ?? 100;
+        const maxActiveProducts = settings2.queueUpdateMaxActiveProducts ?? 100;
         console.log(`[UpdateBackfillService] \u{1F50D} Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
         const { data: candidates, error } = await supabase.from("mba_designs").select("design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status, sales_total").eq("status", "PUBLISHED").not("published_products", "is", null).or("sales_total.eq.0,sales_total.is.null").order("updated_date", { ascending: true, nullsFirst: true }).limit(300);
         if (error) {
@@ -223727,18 +223746,18 @@ var init_updateBackfillService = __esm2({
        * Run one backfill cycle (pulls 1 design and runs U1–U7 or pauses at Tasks review)
        */
       static async runBackfillCycle(forceSingle = false) {
-        const settings = loadSettings();
-        if (!forceSingle && !settings.queueUpdateAutoBackfillEnabled) {
+        const settings2 = loadSettings();
+        if (!forceSingle && !settings2.queueUpdateAutoBackfillEnabled) {
           return { success: false, message: "Automatik ist ausgeschaltet." };
         }
         const counts = this.getActiveUpdateCount();
-        const targetCount = settings.queueUpdateTargetCount ?? 10;
+        const targetCount = settings2.queueUpdateTargetCount ?? 10;
         if (!forceSingle && counts.currentCount >= targetCount) {
           return { success: false, message: `Update-Pool ist bereits voll (${counts.currentCount}/${targetCount} aktive Designs im Pool).` };
         }
         const circuit = LLMService.isCircuitBroken();
         const balance = await LLMService.getAvailableBalance();
-        const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+        const threshold = settings2.openRouterMinBalanceThreshold ?? 1;
         if (circuit.broken || balance !== null && balance < threshold) {
           const reason = circuit.reason || `OpenRouter Guthaben ($${balance?.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})`;
           console.warn(`[UpdateBackfillService] \u23F8\uFE0F runBackfillCycle \xFCbersprungen: ${reason}`);
@@ -223798,11 +223817,11 @@ var init_updateBackfillService = __esm2({
         console.log("[UpdateBackfillService] \u23F1\uFE0F Update-Backfill Scheduler gestartet (Pr\xFCfintervall: 10s).");
         this.intervalId = setInterval(async () => {
           try {
-            const settings = loadSettings();
-            if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
+            const settings2 = loadSettings();
+            if (settings2.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
               const circuit = LLMService.isCircuitBroken();
               const balance = await LLMService.getAvailableBalance();
-              const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+              const threshold = settings2.openRouterMinBalanceThreshold ?? 1;
               if (circuit.broken || balance !== null && balance < threshold) {
                 const now = Date.now();
                 if (now - this.lastWarningTime > this.WARNING_THROTTLE_MS) {
@@ -223813,7 +223832,7 @@ var init_updateBackfillService = __esm2({
                 return;
               }
               const counts = this.getActiveUpdateCount();
-              const target = settings.queueUpdateTargetCount ?? 10;
+              const target = settings2.queueUpdateTargetCount ?? 10;
               if (counts.currentCount < target) {
                 this.isRunningLoop = true;
                 await this.runBackfillCycle(false);
@@ -224101,17 +224120,17 @@ var init_queueService = __esm2({
        */
       static getState() {
         this.ensureLoaded();
-        const settings = loadSettings();
-        const mode = settings.queueUploadMode || "draft";
+        const settings2 = loadSettings();
+        const mode = settings2.queueUploadMode || "draft";
         const isDraftMode = mode === "draft";
         const isLiveMode = mode === "live";
         const isHybridMode = mode === "hybrid";
         const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
-        const maxDrop = settings.queueMaxDropPerDesign ?? 10;
+        const maxDrop = settings2.queueMaxDropPerDesign ?? 10;
         const defaultDraftProducts = Math.max(1, maxCatalogSlots);
         const draftProductsPerDesign = Math.max(
           Math.max(1, maxCatalogSlots - maxDrop),
-          Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? defaultDraftProducts)
+          Math.min(maxCatalogSlots, settings2.queueDraftProductsPerDesign ?? defaultDraftProducts)
         );
         const isUpdateItem = (i) => i.type === "update" || i.type === "UPDATE" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_") || i.taskId && String(i.taskId).endsWith("-U");
         const activeItems = this.items.filter((i) => i.status === "UPLOADING" || i.status === "WAITING");
@@ -224174,16 +224193,16 @@ var init_queueService = __esm2({
           scheduledDraftProductsToday,
           scheduledItemsCount,
           overflowItemsCount,
-          uploadScheduleTime: settings.queueUploadScheduleTime || "off",
+          uploadScheduleTime: settings2.queueUploadScheduleTime || "off",
           maxDropPerDesign: maxDrop,
-          autoBalance: settings.queueAutoBalance ?? true,
+          autoBalance: settings2.queueAutoBalance ?? true,
           maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),
           uploadMode: mode,
           draftProductsPerDesign,
           maxCatalogSlots,
-          updateTargetCount: settings.queueUpdateTargetCount ?? 10,
-          updateAutoBackfillEnabled: settings.queueUpdateAutoBackfillEnabled ?? false,
-          updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100,
+          updateTargetCount: settings2.queueUpdateTargetCount ?? 10,
+          updateAutoBackfillEnabled: settings2.queueUpdateAutoBackfillEnabled ?? false,
+          updateMaxActiveProducts: settings2.queueUpdateMaxActiveProducts ?? 100,
           updateCurrentCount: (() => {
             try {
               const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
@@ -224541,13 +224560,13 @@ var init_queueService = __esm2({
        */
       static rebalanceQueue(freeSlotsOverride) {
         this.ensureLoaded();
-        const settings = loadSettings();
-        const mode = settings.queueUploadMode || "draft";
+        const settings2 = loadSettings();
+        const mode = settings2.queueUploadMode || "draft";
         const isDraftMode = mode === "draft";
         const isLiveMode = mode === "live";
         const isHybridMode = mode === "hybrid";
         const freeDailySlots = freeSlotsOverride !== void 0 ? freeSlotsOverride : this.dailySlotsInfo.free;
-        const maxDrop = settings.queueMaxDropPerDesign ?? 10;
+        const maxDrop = settings2.queueMaxDropPerDesign ?? 10;
         const droppableProducts = ProductCatalogService.getDroppableProductsOrdered();
         const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
         const catalog = ProductCatalogService.getCatalog();
@@ -224668,7 +224687,7 @@ var init_queueService = __esm2({
           }
           const targetDraftProducts = Math.max(
             Math.max(1, maxCatalogSlots - maxDrop),
-            Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? maxCatalogSlots)
+            Math.min(maxCatalogSlots, settings2.queueDraftProductsPerDesign ?? maxCatalogSlots)
           );
           for (const item of waitingNewItems) {
             if (item.isLocked) {
@@ -224756,7 +224775,7 @@ var init_queueService = __esm2({
           }
           const targetDraftProducts = Math.max(
             Math.max(1, maxCatalogSlots - maxDrop),
-            Math.min(maxCatalogSlots, settings.queueDraftProductsPerDesign ?? maxCatalogSlots)
+            Math.min(maxCatalogSlots, settings2.queueDraftProductsPerDesign ?? maxCatalogSlots)
           );
           for (const item of waitingNewItems) {
             if (item.isLocked) {
@@ -225112,10 +225131,10 @@ var init_taskLogService = __esm2({
       static async processTaskWithOpenRouter(taskId, options2) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
-        const settings = loadSettings();
-        const apiKey = (settings.openRouterApiKey || "").trim();
-        const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
-        const provider = settings.llmProvider === "openai" ? "OpenAI Direct" : "OpenRouter";
+        const settings2 = loadSettings();
+        const apiKey = (settings2.openRouterApiKey || "").trim();
+        const model = settings2.llmModel || "anthropic/claude-3-5-sonnet";
+        const provider = settings2.llmProvider === "openai" ? "OpenAI Direct" : "OpenRouter";
         const quote5 = (task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || "").trim();
         if (quote5 && !options2?.skipPreFlight) {
           console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Pre-Flight USPTO TM-Check f\xFCr Quote "${quote5}" (Task ${taskId})...`);
@@ -225224,12 +225243,12 @@ ${JSON.stringify(task.payload, null, 2)}`;
           }
         });
         const start3 = Date.now();
-        const url = settings.llmProvider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
+        const url = settings2.llmProvider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
         const headers = {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${apiKey}`
         };
-        if (settings.llmProvider !== "openai") {
+        if (settings2.llmProvider !== "openai") {
           headers["HTTP-Referer"] = "https://mba-hub.local";
           headers["X-Title"] = "MBA HUB";
         }
@@ -225316,14 +225335,14 @@ ${JSON.stringify(task.payload, null, 2)}`;
       static async processTaskWithIdeogram(taskId, promptText) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
-        const settings = loadSettings();
-        const model = settings.ideogramModel || "V_3";
-        const renderingSpeed = settings.ideogramRenderingSpeed || "DEFAULT";
-        const aspectRatio = settings.ideogramAspectRatio || "10x16";
-        const styleType = settings.ideogramStyle || "GENERAL";
-        const magicPromptOption = settings.ideogramMagicPromptOption || "AUTO";
+        const settings2 = loadSettings();
+        const model = settings2.ideogramModel || "V_3";
+        const renderingSpeed = settings2.ideogramRenderingSpeed || "DEFAULT";
+        const aspectRatio = settings2.ideogramAspectRatio || "10x16";
+        const styleType = settings2.ideogramStyle || "GENERAL";
+        const magicPromptOption = settings2.ideogramMagicPromptOption || "AUTO";
         this.updateTaskStatus(taskId, { status: "GENERATING_IMAGE" });
-        if (!settings.ideogramApiKey) {
+        if (!settings2.ideogramApiKey) {
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ERROR",
@@ -225422,8 +225441,8 @@ ${JSON.stringify(task.payload, null, 2)}`;
       static async analyzeDesignWithOpenRouter(taskId, localFilePath, imageUrl) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
+        const settings2 = loadSettings();
+        const apiKey = settings2.openRouterApiKey;
         if (!apiKey) {
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -225462,7 +225481,7 @@ Beantworte die Analysefragen streng als JSON!`;
             subniche
           },
           metadata: {
-            model: settings.llmModel || "anthropic/claude-3.5-sonnet",
+            model: settings2.llmModel || "anthropic/claude-3.5-sonnet",
             provider: "OpenRouter Vision"
           }
         });
@@ -225474,7 +225493,7 @@ Beantworte die Analysefragen streng als JSON!`;
           } catch (e) {
           }
         }
-        const model = settings.llmModel || "anthropic/claude-3.5-sonnet";
+        const model = settings2.llmModel || "anthropic/claude-3.5-sonnet";
         const start3 = Date.now();
         try {
           const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -225538,7 +225557,7 @@ Beantworte die Analysefragen streng als JSON!`;
           const aiSub = rawAiSub && rawAiSub.toLowerCase() !== "none" ? rawAiSub : "none";
           const rawAiKw = parsedAnalysis?.niche_analysis?.keywords || parsedAnalysis?.keywords || parsedAnalysis?.seo_keywords;
           const aiKeywords = Array.isArray(rawAiKw) ? rawAiKw.map((k) => String(k).trim()).filter(Boolean) : typeof rawAiKw === "string" ? rawAiKw.split(",").map((s) => s.trim()).filter(Boolean) : void 0;
-          const autonomyDesign = settings.aiAutonomyDesignEnabled ?? settings.aiAutonomyEnabled;
+          const autonomyDesign = settings2.aiAutonomyDesignEnabled ?? settings2.aiAutonomyEnabled;
           if (autonomyDesign && isApproved) {
             console.log(`[TaskLogService] \u26A1 Autonomie aktiv: Task ${taskId} \xFCberspringt Human-in-the-Loop (Design freigegeben) -> Listing-Generierung gestartet.`);
             this.updateTaskStatus(taskId, {
@@ -225596,8 +225615,8 @@ Beantworte die Analysefragen streng als JSON!`;
       static async generateListingWithOpenRouter(taskId) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
-        const settings = loadSettings();
-        const apiKey = settings.openRouterApiKey;
+        const settings2 = loadSettings();
+        const apiKey = settings2.openRouterApiKey;
         if (!apiKey) {
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -225647,7 +225666,7 @@ Beantworte die Analysefragen streng als JSON!`;
             },
             metadata: {
               provider: "OpenRouter",
-              model: enListing._rawRequest?.model || settings.llmModel || "anthropic/claude-3-5-sonnet"
+              model: enListing._rawRequest?.model || settings2.llmModel || "anthropic/claude-3-5-sonnet"
             }
           });
           this.addEvent(taskId, {
@@ -225796,23 +225815,39 @@ Beantworte die Analysefragen streng als JSON!`;
               finalDecision: auditV2.finalDecision
             }
           });
-          this.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
-          const transStart = Date.now();
-          const translatedListings = await LLMService.translateApprovedListing({
-            englishListing: auditV2.finalListing,
-            quote: quote5,
-            niche1,
-            subniche
-          });
-          const transLatencyMs = Date.now() - transStart;
-          const sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TRANSLATION_RESPONSE",
-            title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
-            content: sanitizedListings,
-            metadata: { latencyMs: transLatencyMs }
-          });
+          const settings2 = loadSettings();
+          const isTranslationEnabled = task.source === "UPDATE" || task.suffix === "U" ? settings2.translationUpdateEnabled ?? true : settings2.translationDesignEnabled ?? true;
+          let sanitizedListings;
+          if (!isTranslationEnabled) {
+            console.log(`[TaskLogService] \u23E9 \xDCbersetzung deaktiviert (${task.source === "UPDATE" ? "Update" : "Design"}-Pipeline). Verwende englisches Master-Listing f\xFCr Amazon Auto-Translate.`);
+            sanitizedListings = {
+              en: auditV2.finalListing
+            };
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TRANSLATION_SKIPPED",
+              title: "Lokalisierung \xFCbersprungen (Amazon Auto-Translate aktiv)",
+              content: { message: "\xDCbersetzung in Settings deaktiviert. Listing wird als englisches Master-Listing \xFCbergeben.", listing: sanitizedListings }
+            });
+          } else {
+            this.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
+            const transStart = Date.now();
+            const translatedListings = await LLMService.translateApprovedListing({
+              englishListing: auditV2.finalListing,
+              quote: quote5,
+              niche1,
+              subniche
+            });
+            const transLatencyMs = Date.now() - transStart;
+            sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "TRANSLATION_RESPONSE",
+              title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
+              content: sanitizedListings,
+              metadata: { latencyMs: transLatencyMs }
+            });
+          }
           this.updateTaskStatus(taskId, {
             status: "CHECKING_TRADEMARKS",
             listingResult: sanitizedListings,
@@ -225873,9 +225908,9 @@ Beantworte die Analysefragen streng als JSON!`;
           }
           return;
         }
-        const settings = loadSettings();
-        const hasKey = Boolean(settings.vectorizerApiKey && settings.vectorizerApiKey.trim());
-        const hasSecret = Boolean(settings.vectorizerApiSecret && settings.vectorizerApiSecret.trim());
+        const settings2 = loadSettings();
+        const hasKey = Boolean(settings2.vectorizerApiKey && settings2.vectorizerApiKey.trim());
+        const hasSecret = Boolean(settings2.vectorizerApiSecret && settings2.vectorizerApiSecret.trim());
         if (!hasKey || !hasSecret) {
           console.log(`[TaskLogService] \u2139\uFE0F Vectorizer.ai API Credentials nicht konfiguriert -> Task ${taskId} ohne Vektorisierung abgeschlossen.`);
           this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
@@ -225896,14 +225931,14 @@ Beantworte die Analysefragen streng als JSON!`;
           type: "VECTORIZE_REQUEST",
           title: `Senden an Vectorizer.ai (Vektorisierung)`,
           content: {
-            mode: settings.vectorizerModeProduction || "production",
+            mode: settings2.vectorizerModeProduction || "production",
             maxColors,
-            drawStyle: settings.vectorizerDrawStyle || "fill_shapes",
-            shapeStacking: settings.vectorizerShapeStacking || "cutouts",
-            groupBy: settings.vectorizerGroupBy || "none",
-            minArea: settings.vectorizerMinArea ?? 10,
-            optimizedShapes: settings.vectorizerOptimizedShapes ?? true,
-            gapFiller: settings.vectorizerGapFiller ?? false,
+            drawStyle: settings2.vectorizerDrawStyle || "fill_shapes",
+            shapeStacking: settings2.vectorizerShapeStacking || "cutouts",
+            groupBy: settings2.vectorizerGroupBy || "none",
+            minArea: settings2.vectorizerMinArea ?? 10,
+            optimizedShapes: settings2.vectorizerOptimizedShapes ?? true,
+            gapFiller: settings2.vectorizerGapFiller ?? false,
             imageSource: hasLocalImage ? `data/designs/${cleanId}.png` : task.imageUrl
           },
           metadata: {
@@ -226635,6 +226670,17 @@ Beantworte die Analysefragen streng als JSON!`;
             }
             return { success: true, message: "Update-Listing freigegeben! \xDCbersetzung & Queue-\xDCbergabe laufen." };
           }
+          const isTranslationEnabled = settings.translationDesignEnabled ?? true;
+          if (!isTranslationEnabled) {
+            console.log(`[TaskLogService] \u23E9 Manuelle Freigabe: \xDCbersetzung deaktiviert. Verwende englisches Master-Listing.`);
+            task.listingResult = { en: approvedEn };
+            this.saveLogs(this.loadLogs());
+            this.emitUpdate(task);
+            this.vectorizeDesignTask(taskId).catch((err) => {
+              console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe f\xFCr Task ${taskId} fehlgeschlagen:`, err);
+            });
+            return { success: true, message: "Listing manuell freigegeben! Vektorisierung gestartet (\xDCbersetzung \xFCbersprungen)." };
+          }
           LLMService.translateApprovedListing({
             englishListing: approvedEn,
             quote: quote5,
@@ -226958,9 +227004,9 @@ var SupabaseService = class {
    * Test Supabase connection: verifies both READ and WRITE (INSERT/DELETE) permissions on mba_designs
    */
   static async testConnection(customUrl, customKey) {
-    const settings = loadSettings();
-    const url = customUrl || settings.supabaseUrl;
-    const key = customKey || settings.supabaseServiceRoleKey;
+    const settings2 = loadSettings();
+    const url = customUrl || settings2.supabaseUrl;
+    const key = customKey || settings2.supabaseServiceRoleKey;
     if (!url || !key) {
       return {
         success: false,
@@ -227029,12 +227075,12 @@ var SupabaseService = class {
       return { totalDesigns: 0, liveDesigns: 0, unresolvedAsins: 0, sales30d: 0, royalties30dEur: 0, royalties30dUsd: 0 };
     };
     const persisted = loadPersisted();
-    const settings = loadSettings();
-    if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+    const settings2 = loadSettings();
+    if (!settings2.supabaseUrl || !settings2.supabaseServiceRoleKey) {
       return persisted;
     }
     try {
-      const supabase = createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), { auth: { persistSession: false } });
+      const supabase = createClient(settings2.supabaseUrl.trim(), settings2.supabaseServiceRoleKey.trim(), { auth: { persistSession: false } });
       const [totalRes, liveRes, unresolvedRes, salesRes] = await Promise.all([
         supabase.from("mba_designs").select("design_id", { count: "exact", head: true }),
         supabase.from("mba_designs").select("design_id", { count: "exact", head: true }).in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]),
@@ -228724,18 +228770,31 @@ var UploadWorkerService = class _UploadWorkerService {
       }
       this.log(`\u2705 Alle ${totalActiveProducts} Produkte erfolgreich konfiguriert & verifiziert!`, "Produktdetails fertig \u2713", 80, 100);
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
-      this.log(`\u{1F30D} Deaktiviere Amazon Auto-\xDCbersetzung (Eigene mehrsprachige Listings)...`, "Setze \xDCbersetzung auf NO...", 82, 100);
-      await page.evaluate(async () => {
-        const autoTranslateRadioNo = document.getElementById("translation-request-no");
-        if (autoTranslateRadioNo && !autoTranslateRadioNo.checked) {
-          autoTranslateRadioNo.click();
-        }
-      });
-      await page.waitForTimeout(1e3);
-      this.log(`\u{1F4DD} Trage mehrsprachige SEO-Listings ein (inkl. Zeichen-Bereinigung)...`, "Bef\xFClle Listings...", 85, 100);
       const rawListings = item.listings || {
         en: { brand: item.brand, title: item.title, bullet1: item.bullet1, bullet2: item.bullet2, description: item.description }
       };
+      const hasLocalizedListings = Boolean(
+        rawListings && (rawListings.de || rawListings.fr || rawListings.es || rawListings.it || rawListings.ja || rawListings.jp)
+      );
+      if (hasLocalizedListings) {
+        this.log(`\u{1F30D} Deaktiviere Amazon Auto-\xDCbersetzung (Eigene mehrsprachige Listings vorhanden)...`, "Setze \xDCbersetzung auf NO...", 82, 100);
+        await page.evaluate(async () => {
+          const autoTranslateRadioNo = document.getElementById("translation-request-no");
+          if (autoTranslateRadioNo && !autoTranslateRadioNo.checked) {
+            autoTranslateRadioNo.click();
+          }
+        });
+      } else {
+        this.log(`\u{1F30D} Aktiviere Amazon Auto-\xDCbersetzung (Reines englisches Master-Listing)...`, "Setze \xDCbersetzung auf YES...", 82, 100);
+        await page.evaluate(async () => {
+          const autoTranslateRadioYes = document.getElementById("translation-request-yes");
+          if (autoTranslateRadioYes && !autoTranslateRadioYes.checked) {
+            autoTranslateRadioYes.click();
+          }
+        });
+      }
+      await page.waitForTimeout(1e3);
+      this.log(`\u{1F4DD} Trage ${hasLocalizedListings ? "mehrsprachige" : "englisches"} SEO-Listing ein (inkl. Zeichen-Bereinigung)...`, "Bef\xFClle Listings...", 85, 100);
       const sanitizedListings = {};
       for (const [loc, content] of Object.entries(rawListings)) {
         if (!content) continue;
@@ -228747,11 +228806,11 @@ var UploadWorkerService = class _UploadWorkerService {
           description: _UploadWorkerService.sanitizeListingText(content.description || "", loc)
         };
       }
-      const fillResult = await page.evaluate(async (listingMap) => {
+      const fillResult = await page.evaluate(async ({ listingMap, hasTranslations }) => {
         const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
-        const locales = ["en", "de", "fr", "it", "es", "ja"];
+        const locales = hasTranslations ? ["en", "de", "fr", "it", "es", "ja"] : ["en"];
         const filledLocales = [];
-        const listingSection = document.getElementById("translation-request-no") || document.querySelector("product-editor-listing") || document.getElementById("designCreator-productEditor-title");
+        const listingSection = document.getElementById(hasTranslations ? "translation-request-no" : "translation-request-yes") || document.querySelector("product-editor-listing") || document.getElementById("designCreator-productEditor-title");
         if (listingSection) {
           listingSection.scrollIntoView({ behavior: "smooth", block: "center" });
           await sleep2(300);
@@ -228819,7 +228878,7 @@ var UploadWorkerService = class _UploadWorkerService {
         setRootVal("designCreator-productEditor-featureBullet2", enContent.bullet2 || enContent.bullet_2 || "", 256);
         setRootVal("designCreator-productEditor-description", enContent.description || "", 2e3);
         return { success: true, filledLocales };
-      }, sanitizedListings);
+      }, { listingMap: sanitizedListings, hasTranslations: hasLocalizedListings });
       this.log(`\u2705 Listings f\xFCr Sprachen [${fillResult.filledLocales.join(", ")}] eingetragen!`, "Listings fertig \u2713", 90, 100);
       await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
       await page.waitForTimeout(1500);
@@ -228942,8 +229001,8 @@ var CostTrackingService = class {
    * Fetch current total account usage from OpenRouter API key
    */
   static async fetchOpenRouterUsage() {
-    const settings = loadSettings();
-    const apiKey = (settings.openRouterApiKey || "").trim();
+    const settings2 = loadSettings();
+    const apiKey = (settings2.openRouterApiKey || "").trim();
     if (!apiKey) return 0;
     const now = Date.now();
     if (now - this.lastOpenRouterFetch < 15e3 && this.cachedOpenRouterTotal > 0) {
@@ -228973,11 +229032,11 @@ var CostTrackingService = class {
    * Calculate full costs breakdown
    */
   static async getCostStats() {
-    const settings = loadSettings();
-    const costPerImage = settings.costPerImage !== void 0 ? Number(settings.costPerImage) : 0.08;
-    const costPerVectorization = settings.costPerVectorization !== void 0 ? Number(settings.costPerVectorization) : 0.05;
-    const resetTimestamp = settings.costStatsResetTimestamp ? new Date(settings.costStatsResetTimestamp).getTime() : 0;
-    const baselineUsage = settings.costStatsBaselineOpenRouterUsage || 0;
+    const settings2 = loadSettings();
+    const costPerImage = settings2.costPerImage !== void 0 ? Number(settings2.costPerImage) : 0.08;
+    const costPerVectorization = settings2.costPerVectorization !== void 0 ? Number(settings2.costPerVectorization) : 0.05;
+    const resetTimestamp = settings2.costStatsResetTimestamp ? new Date(settings2.costStatsResetTimestamp).getTime() : 0;
+    const baselineUsage = settings2.costStatsBaselineOpenRouterUsage || 0;
     const currentTotalUsage = await this.fetchOpenRouterUsage();
     let openRouterCost = Math.max(0, currentTotalUsage - baselineUsage);
     let imageGenerationsCount = 0;
@@ -229043,7 +229102,7 @@ var CostTrackingService = class {
       completedDesignsCount,
       activeDesignsCount,
       costPerDesign,
-      lastResetAt: settings.costStatsResetTimestamp
+      lastResetAt: settings2.costStatsResetTimestamp
     };
   }
   /**
@@ -229120,8 +229179,8 @@ var DesignPipelineService = class {
       return { success: false, error: `Design-Pipeline pausiert: ${circuit.reason}` };
     }
     const balance = await LLMService.getAvailableBalance();
-    const settings = loadSettings();
-    const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+    const settings2 = loadSettings();
+    const threshold = settings2.openRouterMinBalanceThreshold ?? 1;
     if (balance !== null && balance < threshold) {
       return { success: false, error: `Design-Pipeline pausiert: OpenRouter Guthaben ($${balance.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})` };
     }
@@ -229600,8 +229659,8 @@ app.post("/api/v1/browser/navigate", async (req, res) => {
   }
 });
 app.get("/api/v1/settings", (req, res) => {
-  const settings = loadSettings();
-  res.json({ success: true, settings });
+  const settings2 = loadSettings();
+  res.json({ success: true, settings: settings2 });
 });
 app.post("/api/v1/settings", (req, res) => {
   try {
@@ -229690,17 +229749,17 @@ var lastKnownCredits = {
 };
 async function refreshCreditsInBackground() {
   try {
-    const settings = loadSettings();
-    const hasOpenRouterKey = Boolean(settings.openRouterApiKey && settings.openRouterApiKey.trim());
-    const hasVectorizerKey = Boolean(settings.vectorizerApiKey && settings.vectorizerApiKey.trim());
-    const hasIdeogramKey = Boolean(settings.ideogramApiKey && settings.ideogramApiKey.trim());
+    const settings2 = loadSettings();
+    const hasOpenRouterKey = Boolean(settings2.openRouterApiKey && settings2.openRouterApiKey.trim());
+    const hasVectorizerKey = Boolean(settings2.vectorizerApiKey && settings2.vectorizerApiKey.trim());
+    const hasIdeogramKey = Boolean(settings2.ideogramApiKey && settings2.ideogramApiKey.trim());
     const [openrouter, vectorizer, ideogram] = await Promise.all([
       hasOpenRouterKey ? LLMService.getCredits() : Promise.resolve({ error: "Kein Key" }),
       hasVectorizerKey ? VectorizerService.testConnection() : Promise.resolve({ success: false }),
       hasIdeogramKey ? IdeogramService.testConnection() : Promise.resolve({ success: false })
     ]);
     const circuit = LLMService.isCircuitBroken();
-    const threshold = settings.openRouterMinBalanceThreshold ?? 1;
+    const threshold = settings2.openRouterMinBalanceThreshold ?? 1;
     const balance = openrouter.balanceRemaining ?? lastKnownCredits.openrouter?.balanceRemaining;
     const isLowBalance = balance !== void 0 && balance !== null && balance < threshold;
     const orData = {
@@ -230192,8 +230251,8 @@ function validateMcpAuth(req, res, next) {
   if (isInternal) {
     return next();
   }
-  const settings = loadSettings();
-  if (!settings.mcpApiKey) {
+  const settings2 = loadSettings();
+  if (!settings2.mcpApiKey) {
     recordHermesHeartbeat(req);
     return next();
   }
@@ -230205,7 +230264,7 @@ function validateMcpAuth(req, res, next) {
   } else if (authHeader && authHeader.startsWith("Bearer ")) {
     providedKey = authHeader.slice(7).trim();
   }
-  if (!providedKey || providedKey !== settings.mcpApiKey) {
+  if (!providedKey || providedKey !== settings2.mcpApiKey) {
     return res.status(401).json({
       success: false,
       error: "Unauthorized: Invalid or missing x-mba-api-key header or Bearer token."
@@ -230479,7 +230538,7 @@ app.post("/api/v1/hermes/task", async (req, res) => {
   });
 });
 app.all(["/api/v1/mcp/ping", "/api/v1/mcp/heartbeat"], (req, res) => {
-  const settings = loadSettings();
+  const settings2 = loadSettings();
   const authHeader = req.headers["authorization"];
   const customHeader = req.headers["x-mba-api-key"];
   let providedKey = "";
@@ -230488,8 +230547,8 @@ app.all(["/api/v1/mcp/ping", "/api/v1/mcp/heartbeat"], (req, res) => {
   } else if (authHeader && authHeader.startsWith("Bearer ")) {
     providedKey = authHeader.slice(7).trim();
   }
-  const isAuthValid = !settings.mcpApiKey || providedKey === settings.mcpApiKey;
-  if (settings.mcpApiKey && providedKey && !isAuthValid) {
+  const isAuthValid = !settings2.mcpApiKey || providedKey === settings2.mcpApiKey;
+  if (settings2.mcpApiKey && providedKey && !isAuthValid) {
     console.warn(`[MCP Ping] \u26A0\uFE0F Ping von ${req.headers["cf-connecting-ip"] || req.socket.remoteAddress} abgewiesen: Key mismatch`);
     return res.status(401).json({
       status: "error",
@@ -230502,7 +230561,7 @@ app.all(["/api/v1/mcp/ping", "/api/v1/mcp/heartbeat"], (req, res) => {
     status: "ok",
     message: "Heartbeat registered successfully.",
     authenticated: Boolean(providedKey && isAuthValid),
-    authConfigured: Boolean(settings.mcpApiKey),
+    authConfigured: Boolean(settings2.mcpApiKey),
     serverTime: (/* @__PURE__ */ new Date()).toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     activeTasksCount: TaskLogService2.getAwaitingTasks().length,
@@ -230514,7 +230573,7 @@ app.all(["/api/v1/mcp/ping", "/api/v1/mcp/heartbeat"], (req, res) => {
   });
 });
 app.get(["/api/v1/mcp/health", "/health"], (req, res) => {
-  const settings = loadSettings();
+  const settings2 = loadSettings();
   const authHeader = req.headers["authorization"];
   const customHeader = req.headers["x-mba-api-key"];
   let providedKey = "";
@@ -230523,7 +230582,7 @@ app.get(["/api/v1/mcp/health", "/health"], (req, res) => {
   } else if (authHeader && authHeader.startsWith("Bearer ")) {
     providedKey = authHeader.slice(7).trim();
   }
-  const isAuthValid = !settings.mcpApiKey || providedKey === settings.mcpApiKey;
+  const isAuthValid = !settings2.mcpApiKey || providedKey === settings2.mcpApiKey;
   if (isAuthValid) {
     recordHermesHeartbeat(req);
   }
@@ -230534,7 +230593,7 @@ app.get(["/api/v1/mcp/health", "/health"], (req, res) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     authenticated: Boolean(providedKey && isAuthValid),
-    authConfigured: Boolean(settings.mcpApiKey),
+    authConfigured: Boolean(settings2.mcpApiKey),
     heartbeat: {
       lastPingTime: hermesHeartbeat.lastPingTime,
       totalPings: hermesHeartbeat.totalPings

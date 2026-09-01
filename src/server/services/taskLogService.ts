@@ -1159,27 +1159,48 @@ export class TaskLogService {
         }
       });
 
-      this.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', hasError: false });
+      const settings = loadSettings();
+      const isTranslationEnabled = (task.source === 'UPDATE' || task.suffix === 'U')
+        ? (settings.translationUpdateEnabled ?? true)
+        : (settings.translationDesignEnabled ?? true);
 
-      const transStart = Date.now();
-      const translatedListings = await LLMService.translateApprovedListing({
-        englishListing: auditV2.finalListing,
-        quote,
-        niche1,
-        subniche
-      });
-      const transLatencyMs = Date.now() - transStart;
+      let sanitizedListings: any;
 
-      // 3. Hard Sanitizer Gatekeeper
-      const sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
+      if (!isTranslationEnabled) {
+        console.log(`[TaskLogService] ⏩ Übersetzung deaktiviert (${task.source === 'UPDATE' ? 'Update' : 'Design'}-Pipeline). Verwende englisches Master-Listing für Amazon Auto-Translate.`);
+        sanitizedListings = {
+          en: auditV2.finalListing
+        };
 
-      this.addEvent(taskId, {
-        timestamp: new Date().toISOString(),
-        type: 'TRANSLATION_RESPONSE',
-        title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
-        content: sanitizedListings,
-        metadata: { latencyMs: transLatencyMs }
-      });
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'TRANSLATION_SKIPPED',
+          title: 'Lokalisierung übersprungen (Amazon Auto-Translate aktiv)',
+          content: { message: 'Übersetzung in Settings deaktiviert. Listing wird als englisches Master-Listing übergeben.', listing: sanitizedListings }
+        });
+      } else {
+        this.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', hasError: false });
+
+        const transStart = Date.now();
+        const translatedListings = await LLMService.translateApprovedListing({
+          englishListing: auditV2.finalListing,
+          quote,
+          niche1,
+          subniche
+        });
+        const transLatencyMs = Date.now() - transStart;
+
+        // 3. Hard Sanitizer Gatekeeper
+        sanitizedListings = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
+
+        this.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'TRANSLATION_RESPONSE',
+          title: `Lokalisierte Listings erfolgreich erstellt & bereinigt (${transLatencyMs}ms)`,
+          content: sanitizedListings,
+          metadata: { latencyMs: transLatencyMs }
+        });
+      }
 
       this.updateTaskStatus(taskId, {
         status: 'CHECKING_TRADEMARKS',
@@ -2153,7 +2174,20 @@ export class TaskLogService {
         return { success: true, message: 'Update-Listing freigegeben! Übersetzung & Queue-Übergabe laufen.' };
       }
 
-      // For Creation Tasks: Translate and then vectorize
+      // For Creation Tasks: Translate (if enabled) and then vectorize
+      const isTranslationEnabled = settings.translationDesignEnabled ?? true;
+
+      if (!isTranslationEnabled) {
+        console.log(`[TaskLogService] ⏩ Manuelle Freigabe: Übersetzung deaktiviert. Verwende englisches Master-Listing.`);
+        task.listingResult = { en: approvedEn };
+        this.saveLogs(this.loadLogs());
+        this.emitUpdate(task);
+        this.vectorizeDesignTask(taskId).catch(err => {
+          console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe für Task ${taskId} fehlgeschlagen:`, err);
+        });
+        return { success: true, message: 'Listing manuell freigegeben! Vektorisierung gestartet (Übersetzung übersprungen).' };
+      }
+
       LLMService.translateApprovedListing({
         englishListing: approvedEn,
         quote,

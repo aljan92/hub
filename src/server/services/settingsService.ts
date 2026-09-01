@@ -56,6 +56,8 @@ export interface AppSettings {
   costStatsResetTimestamp?: string;// e.g. ISO string for stats reset
   costStatsBaselineOpenRouterUsage?: number; // e.g. OpenRouter baseline usage at reset
   openRouterMinBalanceThreshold: number;     // e.g. 1.00 ($ min balance to allow auto tasks)
+  translationDesignEnabled: boolean;         // e.g. true (false = skip LLM translation for design pipeline)
+  translationUpdateEnabled: boolean;         // e.g. true (false = skip LLM translation for update pipeline)
 }
 
 export function generateApiKey(): string {
@@ -112,6 +114,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   costPerImage: 0.08,
   costPerVectorization: 0.05,
   openRouterMinBalanceThreshold: 1.00,
+  translationDesignEnabled: true,
+  translationUpdateEnabled: true,
 };
 
 function getSettingsFilePath(): string {

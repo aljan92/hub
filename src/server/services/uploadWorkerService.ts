@@ -1380,21 +1380,36 @@ export class UploadWorkerService {
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
 
-      // 7. Auto-Translate Toggle to 'NO'
-      this.log(`🌍 Deaktiviere Amazon Auto-Übersetzung (Eigene mehrsprachige Listings)...`, 'Setze Übersetzung auf NO...', 82, 100);
-      await page.evaluate(async () => {
-        const autoTranslateRadioNo = document.getElementById('translation-request-no') as HTMLInputElement;
-        if (autoTranslateRadioNo && !autoTranslateRadioNo.checked) {
-          autoTranslateRadioNo.click();
-        }
-      });
-      await page.waitForTimeout(1000);
-
-      // 8. Multi-Language Listings Injection (with Length Clamping & Angular Events)
-      this.log(`📝 Trage mehrsprachige SEO-Listings ein (inkl. Zeichen-Bereinigung)...`, 'Befülle Listings...', 85, 100);
       const rawListings = item.listings || {
         en: { brand: item.brand, title: item.title, bullet1: item.bullet1, bullet2: item.bullet2, description: item.description }
       };
+
+      const hasLocalizedListings = Boolean(
+        rawListings && (rawListings.de || rawListings.fr || rawListings.es || rawListings.it || rawListings.ja || rawListings.jp)
+      );
+
+      // 7. Auto-Translate Toggle
+      if (hasLocalizedListings) {
+        this.log(`🌍 Deaktiviere Amazon Auto-Übersetzung (Eigene mehrsprachige Listings vorhanden)...`, 'Setze Übersetzung auf NO...', 82, 100);
+        await page.evaluate(async () => {
+          const autoTranslateRadioNo = document.getElementById('translation-request-no') as HTMLInputElement;
+          if (autoTranslateRadioNo && !autoTranslateRadioNo.checked) {
+            autoTranslateRadioNo.click();
+          }
+        });
+      } else {
+        this.log(`🌍 Aktiviere Amazon Auto-Übersetzung (Reines englisches Master-Listing)...`, 'Setze Übersetzung auf YES...', 82, 100);
+        await page.evaluate(async () => {
+          const autoTranslateRadioYes = document.getElementById('translation-request-yes') as HTMLInputElement;
+          if (autoTranslateRadioYes && !autoTranslateRadioYes.checked) {
+            autoTranslateRadioYes.click();
+          }
+        });
+      }
+      await page.waitForTimeout(1000);
+
+      // 8. Listings Injection (with Length Clamping & Angular Events)
+      this.log(`📝 Trage ${hasLocalizedListings ? 'mehrsprachige' : 'englisches'} SEO-Listing ein (inkl. Zeichen-Bereinigung)...`, 'Befülle Listings...', 85, 100);
 
       // Sanitize all listings on server first
       const sanitizedListings: Record<string, any> = {};
@@ -1409,13 +1424,13 @@ export class UploadWorkerService {
         };
       }
 
-      const fillResult = await page.evaluate(async (listingMap: Record<string, any>) => {
+      const fillResult = await page.evaluate(async ({ listingMap, hasTranslations }: { listingMap: Record<string, any>; hasTranslations: boolean }) => {
         const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-        const locales = ['en', 'de', 'fr', 'it', 'es', 'ja'];
+        const locales = hasTranslations ? ['en', 'de', 'fr', 'it', 'es', 'ja'] : ['en'];
         const filledLocales: string[] = [];
 
         // Scroll to listings section
-        const listingSection = document.getElementById('translation-request-no') || document.querySelector('product-editor-listing') || document.getElementById('designCreator-productEditor-title');
+        const listingSection = document.getElementById(hasTranslations ? 'translation-request-no' : 'translation-request-yes') || document.querySelector('product-editor-listing') || document.getElementById('designCreator-productEditor-title');
         if (listingSection) {
           listingSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
           await sleep(300);
@@ -1425,7 +1440,7 @@ export class UploadWorkerService {
           const content = listingMap[loc] || (loc === 'ja' ? listingMap['jp'] : null) || listingMap['en'];
           if (!content) continue;
 
-          // Expand locale tab
+          // Expand locale tab if present
           const tabBtn = document.querySelector(`button[aria-controls="${loc}"], #${loc}-header button, [id="${loc}-header"] button`) as HTMLElement;
           if (tabBtn) {
             tabBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1505,7 +1520,7 @@ export class UploadWorkerService {
         setRootVal('designCreator-productEditor-description', enContent.description || '', 2000);
 
         return { success: true, filledLocales };
-      }, sanitizedListings);
+      }, { listingMap: sanitizedListings, hasTranslations: hasLocalizedListings });
 
       this.log(`✅ Listings für Sprachen [${fillResult.filledLocales.join(', ')}] eingetragen!`, 'Listings fertig ✓', 90, 100);
 

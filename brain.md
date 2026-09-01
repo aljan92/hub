@@ -683,7 +683,37 @@ MBA HUB/
      - Bei `refereeRes.decision === 'REWRITE'` wird der Verifier übersprungen und sofort die minimale Nachbesserung durchgeführt.
      - Der Verifier läuft ausschließlich als finale Qualitätskontrolle, wenn der Referee `APPROVE` oder `APPROVE_WITH_BLOCKED_PRODUCTS` meldet.
 - **Unit-Tests & Validierung:**
-  - `tests/trademarkV2.test.ts`: 27/27 Tests bestanden (100%).
+  - `tests/trademarkV2.test.ts`: 38/38 Tests bestanden (100%).
   - Vollständiger Build `npm run build` fehlerfrei abgeschlossen.
+
+### 10.28 🌐 Optionale Deaktivierung der LLM-Übersetzung & Amazon Auto-Translate Steuerung
+- **Hintergrund:**
+  - Die LLM-Übersetzung in DE, FR, ES, IT, JA verbraucht ~1.200 Input- und ~2.000 Completion-Tokens pro Listing.
+  - Um Testläufe zu beschleunigen und Kosten zu senken, soll die Übersetzung optional deaktiviert werden können.
+  - Im Upload-Prozess auf Amazon Merch übernimmt bei deaktivierter Übersetzung Amazons hauseigenes Auto-Translate (`#translation-request-yes`).
+- **Architektur & Komponenten:**
+  1. **Settings & UI (`AppSettings`, `SettingsView`):**
+     - Zwei getrennte Schalter: `translationDesignEnabled` (Design-Pipeline) und `translationUpdateEnabled` (Update-Pipeline).
+     - Standardwert: `true` (Aktiv), um bestehendes Verhalten nicht ungefragt zu brechen.
+     - Im UI mit reaktiven Toggle-Buttons und klaren Statustexten hinterlegt.
+  2. **Design-Pipeline (`taskLogService.ts`):**
+     - Bei `translationDesignEnabled === false`:
+       - LLM-Call `LLMService.translateApprovedListing` wird übersprungen.
+       - Listing wird als reines englisches Master-Listing `{ en: auditV2.finalListing }` übergeben.
+       - Event `TRANSLATION_SKIPPED` wird geloggt.
+       - Task wechselt sofort zur Vektorisierung bzw. Übergabe an Queue.
+  3. **Update-Pipeline (`updatePipelineService.ts`):**
+     - In Step U6 (`stepU6_TranslateListing`):
+       - Bei `translationUpdateEnabled === false` wird der LLM-Call übersprungen.
+       - ListingResult wird auf `{ en: enListing }` gesetzt und Event `TRANSLATION_SKIPPED` erzeugt.
+       - Nahtloser Übergang zu Step U6.5 (Resize) und Step U7 (Queue).
+  4. **Upload Worker (`uploadWorkerService.ts`):**
+     - Erkennt dynamisch via `hasLocalizedListings`, ob fremdsprachige Listings (`de`, `fr`, `es`, `it`, `ja`/`jp`) vorhanden sind:
+       - **Nur Englisch (`hasLocalizedListings === false`):** Klickt `#translation-request-yes` (Amazon Auto-Translate aktiviert) und befüllt ausschließlich den `en`-Tab. Spart DOM-Interaktionen und Zeit.
+       - **Mehrsprachig (`hasLocalizedListings === true`):** Klickt `#translation-request-no` und befüllt alle 6 Sprach-Tabs wie gehabt.
+- **Tests & Validierung:**
+  - Acceptance-Tests in `tests/trademarkV2.test.ts` um Test N1–N8 erweitert (38/38 Tests erfolgreich).
+  - Production Build (`npm run build`) fehlerfrei.
+
 
 

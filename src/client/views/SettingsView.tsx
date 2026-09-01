@@ -58,6 +58,8 @@ export const SettingsView: React.FC = () => {
   const [openRouterMinBalanceThreshold, setOpenRouterMinBalanceThreshold] = useState<number>(initialSettings.openRouterMinBalanceThreshold ?? 1.00);
   const [aiAutonomyDesignEnabled, setAiAutonomyDesignEnabled] = useState<boolean>(initialSettings.aiAutonomyDesignEnabled ?? false);
   const [aiAutonomyUpdateEnabled, setAiAutonomyUpdateEnabled] = useState<boolean>(initialSettings.aiAutonomyUpdateEnabled ?? false);
+  const [translationDesignEnabled, setTranslationDesignEnabled] = useState<boolean>(initialSettings.translationDesignEnabled ?? true);
+  const [translationUpdateEnabled, setTranslationUpdateEnabled] = useState<boolean>(initialSettings.translationUpdateEnabled ?? true);
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string; promptPrice?: string; completionPrice?: string }[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
@@ -153,6 +155,8 @@ export const SettingsView: React.FC = () => {
           setOpenRouterMinBalanceThreshold(s.openRouterMinBalanceThreshold ?? 1.00);
           setAiAutonomyDesignEnabled(s.aiAutonomyDesignEnabled ?? s.aiAutonomyEnabled ?? false);
           setAiAutonomyUpdateEnabled(s.aiAutonomyUpdateEnabled ?? s.aiAutonomyEnabled ?? false);
+          setTranslationDesignEnabled(s.translationDesignEnabled ?? true);
+          setTranslationUpdateEnabled(s.translationUpdateEnabled ?? true);
           setIdeogramApiKey(s.ideogramApiKey || '');
           setIdeogramModel(s.ideogramModel || 'V_3');
           setIdeogramRenderingSpeed(s.ideogramRenderingSpeed || 'DEFAULT');
@@ -307,6 +311,8 @@ export const SettingsView: React.FC = () => {
         openRouterMinBalanceThreshold: Number(openRouterMinBalanceThreshold),
         aiAutonomyDesignEnabled: Boolean(aiAutonomyDesignEnabled),
         aiAutonomyUpdateEnabled: Boolean(aiAutonomyUpdateEnabled),
+        translationDesignEnabled: Boolean(translationDesignEnabled),
+        translationUpdateEnabled: Boolean(translationUpdateEnabled),
         ideogramApiKey,
         ideogramModel,
         ideogramRenderingSpeed,
@@ -572,6 +578,60 @@ export const SettingsView: React.FC = () => {
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-primary-500 focus:outline-none font-mono"
                 />
                 <span className="text-[10px] text-slate-500 mt-0.5 block">Pausiert Automatik &lt; $</span>
+              </div>
+            </div>
+
+            {/* Pipeline Translation / Auto-Translate Toggles */}
+            <div className="pt-3 border-t border-slate-800/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-slate-200 block">Pipeline-Übersetzungen (DE, FR, ES, IT, JA)</span>
+                  <span className="text-[10px] text-slate-400 block">Deaktivieren spart LLM-Tokens. Upload nutzt dann Amazon Auto-Translate (YES).</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Design Pipeline Toggle */}
+                <div className="flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2.5">
+                  <div className="pr-2">
+                    <span className="text-xs font-semibold text-slate-300 block">Design-Pipeline</span>
+                    <span className="text-[10px] text-slate-500 block">{translationDesignEnabled ? 'LLM-Übersetzung aktiv' : 'Überspringen (Auto-Translate)'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTranslationDesignEnabled(!translationDesignEnabled)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      translationDesignEnabled ? 'bg-primary-500' : 'bg-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        translationDesignEnabled ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Update Pipeline Toggle */}
+                <div className="flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2.5">
+                  <div className="pr-2">
+                    <span className="text-xs font-semibold text-slate-300 block">Update-Pipeline</span>
+                    <span className="text-[10px] text-slate-500 block">{translationUpdateEnabled ? 'Step U6 LLM aktiv' : 'Überspringen (Auto-Translate)'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTranslationUpdateEnabled(!translationUpdateEnabled)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      translationUpdateEnabled ? 'bg-teal-500' : 'bg-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        translationUpdateEnabled ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
           </div>

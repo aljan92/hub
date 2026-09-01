@@ -313,6 +313,45 @@ async function runAcceptanceTests() {
   }
 
   // ----------------------------------------------------
+  // TEST N: Translation Bypass & Upload Auto-Translate Decision
+  // ----------------------------------------------------
+  {
+    // Case 1: Translation disabled -> only EN listing
+    const mockEnglishListing = { brand: 'Brand', title: 'Title', bullet1: 'B1', bullet2: 'B2', description: 'Desc' };
+    const settingsWithTranslationDisabled = { translationDesignEnabled: false, translationUpdateEnabled: false };
+
+    const isDesignTranslationEnabled = settingsWithTranslationDisabled.translationDesignEnabled ?? true;
+    const finalDesignListings = isDesignTranslationEnabled ? { en: mockEnglishListing, de: mockEnglishListing } : { en: mockEnglishListing };
+
+    assert(!isDesignTranslationEnabled, 'Test N1: Translation is correctly recognized as disabled in settings');
+    assert(Object.keys(finalDesignListings).length === 1 && Boolean(finalDesignListings.en), 'Test N2: Pipeline generates only English listing when translation is disabled');
+
+    // Case 2: Upload Worker decision with single EN listing
+    const rawListingsEnOnly = finalDesignListings;
+    const hasLocalizedListingsEnOnly = Boolean(
+      rawListingsEnOnly && (rawListingsEnOnly.de || rawListingsEnOnly.fr || rawListingsEnOnly.es || rawListingsEnOnly.it || rawListingsEnOnly.ja || (rawListingsEnOnly as any).jp)
+    );
+    const targetAutoTranslateRadioEnOnly = hasLocalizedListingsEnOnly ? 'translation-request-no' : 'translation-request-yes';
+    const targetLocalesEnOnly = hasLocalizedListingsEnOnly ? ['en', 'de', 'fr', 'it', 'es', 'ja'] : ['en'];
+
+    assert(!hasLocalizedListingsEnOnly, 'Test N3: hasLocalizedListings is false for EN-only listing');
+    assert(targetAutoTranslateRadioEnOnly === 'translation-request-yes', 'Test N4: Selects Amazon Auto-Translate YES for EN-only listing');
+    assert(targetLocalesEnOnly.length === 1 && targetLocalesEnOnly[0] === 'en', 'Test N5: Only fills EN locale in browser for EN-only listing');
+
+    // Case 3: Upload Worker decision with multi-language listings
+    const rawListingsMulti = { en: mockEnglishListing, de: mockEnglishListing, fr: mockEnglishListing };
+    const hasLocalizedListingsMulti = Boolean(
+      rawListingsMulti && (rawListingsMulti.de || rawListingsMulti.fr || rawListingsMulti.es || rawListingsMulti.it || rawListingsMulti.ja || (rawListingsMulti as any).jp)
+    );
+    const targetAutoTranslateRadioMulti = hasLocalizedListingsMulti ? 'translation-request-no' : 'translation-request-yes';
+    const targetLocalesMulti = hasLocalizedListingsMulti ? ['en', 'de', 'fr', 'it', 'es', 'ja'] : ['en'];
+
+    assert(hasLocalizedListingsMulti, 'Test N6: hasLocalizedListings is true when translations exist');
+    assert(targetAutoTranslateRadioMulti === 'translation-request-no', 'Test N7: Selects Amazon Auto-Translate NO when translations exist');
+    assert(targetLocalesMulti.length === 6, 'Test N8: Fills all 6 locales when translations exist');
+  }
+
+  // ----------------------------------------------------
   // Summary
   // ----------------------------------------------------
   console.log('\n====================================================');

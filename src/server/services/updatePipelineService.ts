@@ -502,8 +502,6 @@ export class UpdatePipelineService {
     const task = this.getTask(taskId);
     if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
 
-    TaskLogService.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', hasError: false });
-
     const enListing = task.listingResult?.en || {
       brand: task.payload?.brand || '',
       title: task.payload?.title || '',
@@ -515,6 +513,29 @@ export class UpdatePipelineService {
     const quote = task.payload?.quote || '';
     const niche1 = task.niche1 || task.customAnswers?.niche1 || '';
     const subniche = task.subniche || task.customAnswers?.subniche || '';
+
+    const settings = loadSettings();
+    if (settings.translationUpdateEnabled === false) {
+      console.log(`[UpdatePipeline] ⏩ Übersetzung deaktiviert (Settings). Verwende englisches Master-Listing für Amazon Auto-Translate.`);
+      const sanitized = { en: enListing };
+
+      TaskLogService.updateTaskStatus(taskId, {
+        status: 'UPDATE_TRANSLATED',
+        listingResult: sanitized,
+        hasError: false
+      });
+
+      TaskLogService.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TRANSLATION_SKIPPED',
+        title: 'SEO-Übersetzung übersprungen (Amazon Auto-Translate aktiv)',
+        content: { message: 'Übersetzung für Update-Pipeline in Settings deaktiviert. Listing wird als englisches Master-Listing übergeben.', listing: sanitized }
+      });
+
+      return { success: true, fullListings: sanitized };
+    }
+
+    TaskLogService.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', hasError: false });
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
