@@ -227942,11 +227942,26 @@ var UploadWorkerService = class _UploadWorkerService {
           let finalActiveColorNames = [];
           let selfHealedColor = "";
           if (params2.colorMode === "customPicker") {
+            const inputContainer = card ? validEditors[0] || card : document;
+            const lockedContainer = inputContainer?.querySelector('.locked-container, [class*="locked-container"], .sci-lock') || card?.querySelector('.locked-container, [class*="locked-container"], .sci-lock') || Array.from(document.querySelectorAll(".locked-container, .sci-lock")).find((el) => {
+              const text2 = (el.textContent || "").toLowerCase();
+              return text2.includes("locked") && (card && el.closest(`#${card.id}`) || inputContainer && el.closest(".product-editor"));
+            });
+            const isLocked = Boolean(lockedContainer || inputContainer?.innerText?.toLowerCase().includes("locked on published products"));
+            if (isLocked) {
+              return {
+                success: true,
+                activeColors: ["Farbe gesperrt (bereits live)"],
+                fitTypesApplied: activeFitsApplied,
+                fitDebug: fitDebugSummary,
+                selfHealedColor: "",
+                isLocked: true
+              };
+            }
             let cleanHex = (params2.customBgColor || "000000").replace(/^#/, "").toUpperCase();
             if (!/^[0-9A-F]{6}$/.test(cleanHex)) {
               cleanHex = params2.avoidColor === "black" ? "FFFFFF" : "000000";
             }
-            const inputContainer = card ? validEditors[0] || card : document;
             const colorBtn = inputContainer?.querySelector('#color-btn, button[id*="color-btn"], .background-color-picker-button, button.color-btn, .color-picker-button') || document.querySelector('#color-btn, button[id*="color-btn"]');
             if (colorBtn) {
               const isPopoverOpen = colorBtn.hasAttribute("aria-describedby");
@@ -228094,7 +228109,8 @@ var UploadWorkerService = class _UploadWorkerService {
             activeColors: finalActiveColorNames,
             fitTypesApplied: activeFitsApplied,
             fitDebug: fitDebugSummary,
-            selfHealedColor
+            selfHealedColor,
+            isLocked: false
           };
         }, {
           productId: product.id,
@@ -228108,7 +228124,9 @@ var UploadWorkerService = class _UploadWorkerService {
           const colorsList = editResult.activeColors && editResult.activeColors.length > 0 ? editResult.activeColors.join(", ") : "OK";
           const fitsList = editResult.fitTypesApplied && editResult.fitTypesApplied.length > 0 ? editResult.fitTypesApplied.join(", ") : "Standard";
           const fitDetails = editResult.fitDebug && Object.keys(editResult.fitDebug).length > 0 ? ` [Fits: ${Object.entries(editResult.fitDebug).map(([k, v]) => `${k}:${v.final ? "\u2713" : "\u2717"}`).join(" ")}]` : "";
-          if (editResult.selfHealedColor) {
+          if (editResult.isLocked) {
+            this.log(`\u2139\uFE0F ${product.displayName}: Farbe & Artwork auf Amazon gesperrt (bereits live) \u2713 | Fit: ${fitsList}${fitDetails}`);
+          } else if (editResult.selfHealedColor) {
             this.log(`\u26A0\uFE0F ${product.displayName}: 0 Farben verhindert \u2794 Selbstheilung: "${editResult.selfHealedColor}" aktiviert \u2713 | Fit: ${fitsList}${fitDetails}`);
           } else {
             this.log(`\u2713 ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}${fitDetails}`);
@@ -228118,139 +228136,143 @@ var UploadWorkerService = class _UploadWorkerService {
         }
         const isDrinkwareResize = ["CERAMIC_MUG", "TUMBLER", "WATER_BOTTLE", "TRAVEL_TUMBLER"].includes(product.id);
         if (isDrinkwareResize) {
-          const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-          const designsDir = import_path78.default.resolve(process.cwd(), "data", "designs");
-          let targetArtworkPath;
-          let isBrushApplied = false;
-          if (product.id === "CERAMIC_MUG" || product.id === "TRAVEL_TUMBLER") {
-            if (avoidColor === "white") {
-              targetArtworkPath = item.resizedAssets?.mugBrushPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_brush.png`);
-              isBrushApplied = true;
-            } else {
-              targetArtworkPath = item.resizedAssets?.mugStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_standard.png`);
-            }
+          if (editResult.isLocked) {
+            this.log(`\u2139\uFE0F ${product.displayName}: \xDCberspringe Two-Sided Artwork-Ersetzung, da Artwork auf Amazon gesperrt ist.`);
           } else {
-            targetArtworkPath = item.resizedAssets?.drinkwareStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
-          }
-          if (targetArtworkPath && import_fs83.default.existsSync(targetArtworkPath)) {
-            this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit Two-Sided ${isBrushApplied ? "Black Brush " : ""}Variante...`);
-            const prepUpload = await page.evaluate((pid) => {
-              const getAliases = (p) => {
-                const u = p.toUpperCase();
-                if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
-                if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
-                if (u === "TUMBLER") return ["TUMBLER"];
-                if (u === "WATER_BOTTLE") return ["WATER_BOTTLE", "WATER-BOTTLE"];
-                return [u];
-              };
-              const aliases2 = getAliases(pid);
-              let card2 = null;
-              for (const a of aliases2) {
-                card2 = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
-                if (card2) break;
+            const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+            const designsDir = import_path78.default.resolve(process.cwd(), "data", "designs");
+            let targetArtworkPath;
+            let isBrushApplied = false;
+            if (product.id === "CERAMIC_MUG" || product.id === "TRAVEL_TUMBLER") {
+              if (avoidColor === "white") {
+                targetArtworkPath = item.resizedAssets?.mugBrushPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_brush.png`);
+                isBrushApplied = true;
+              } else {
+                targetArtworkPath = item.resizedAssets?.mugStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_standard.png`);
               }
-              if (!card2) {
-                const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
-                card2 = allCards.find((c) => {
-                  const idUpper = (c.id || "").toUpperCase();
-                  const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-                  return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
-                }) || null;
-              }
-              let inputContainer = card2;
-              const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-              if (card2) {
-                const cardRect = card2.getBoundingClientRect();
-                const validEditors2 = allEditors.filter((ed) => {
-                  const edRect = ed.getBoundingClientRect();
-                  return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
-                });
-                if (validEditors2.length > 0) {
-                  inputContainer = validEditors2[0];
+            } else {
+              targetArtworkPath = item.resizedAssets?.drinkwareStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
+            }
+            if (targetArtworkPath && import_fs83.default.existsSync(targetArtworkPath)) {
+              this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit Two-Sided ${isBrushApplied ? "Black Brush " : ""}Variante...`);
+              const prepUpload = await page.evaluate((pid) => {
+                const getAliases = (p) => {
+                  const u = p.toUpperCase();
+                  if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
+                  if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
+                  if (u === "TUMBLER") return ["TUMBLER"];
+                  if (u === "WATER_BOTTLE") return ["WATER_BOTTLE", "WATER-BOTTLE"];
+                  return [u];
+                };
+                const aliases2 = getAliases(pid);
+                let card2 = null;
+                for (const a of aliases2) {
+                  card2 = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
+                  if (card2) break;
+                }
+                if (!card2) {
+                  const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
+                  card2 = allCards.find((c) => {
+                    const idUpper = (c.id || "").toUpperCase();
+                    const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
+                    return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
+                  }) || null;
+                }
+                let inputContainer = card2;
+                const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+                if (card2) {
+                  const cardRect = card2.getBoundingClientRect();
+                  const validEditors2 = allEditors.filter((ed) => {
+                    const edRect = ed.getBoundingClientRect();
+                    return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
+                  });
+                  if (validEditors2.length > 0) {
+                    inputContainer = validEditors2[0];
+                  } else if (allEditors.length > 0) {
+                    inputContainer = allEditors[allEditors.length - 1];
+                  }
                 } else if (allEditors.length > 0) {
                   inputContainer = allEditors[allEditors.length - 1];
                 }
-              } else if (allEditors.length > 0) {
-                inputContainer = allEditors[allEditors.length - 1];
-              }
-              let clickedDelete = false;
-              let deleteButton = card2?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-              if (!deleteButton) {
-                for (const a of aliases2) {
-                  deleteButton = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button`);
-                  if (deleteButton) break;
-                }
-              }
-              if (deleteButton) {
-                deleteButton.click();
-                clickedDelete = true;
-              }
-              let uploadLabel = null;
-              for (const a of aliases2) {
-                uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || inputContainer?.querySelector(`label.file-upload-input[for*="${a}"]`) || card2?.querySelector(`label.file-upload-input[for*="${a}"]`);
-                if (uploadLabel) break;
-              }
-              if (!uploadLabel) {
-                uploadLabel = inputContainer?.querySelector("label.file-upload-input") || card2?.querySelector("label.file-upload-input") || inputContainer?.querySelector('label[for*="DESIGN"]') || card2?.querySelector('label[for*="DESIGN"]');
-              }
-              let inputId = "";
-              if (uploadLabel) {
-                const forAttr = uploadLabel.getAttribute("for");
-                if (forAttr && document.getElementById(forAttr)) {
-                  inputId = forAttr;
-                }
-              }
-              if (!inputId) {
-                for (const a of aliases2) {
-                  const directInput = document.getElementById(`${a}-DESIGN-wizzy`) || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`);
-                  if (directInput) {
-                    if (!directInput.id) directInput.id = `mba-upload-input-${a}`;
-                    inputId = directInput.id;
-                    break;
-                  }
-                }
-              }
-              if (!inputId) {
-                const genericInput = inputContainer?.querySelector('.dropzone-container input[type="file"]') || card2?.querySelector('.dropzone-container input[type="file"]') || inputContainer?.querySelector('input[type="file"]') || card2?.querySelector('input[type="file"]');
-                if (genericInput) {
-                  if (!genericInput.id) genericInput.id = `mba-upload-input-${pid}`;
-                  inputId = genericInput.id;
-                }
-              }
-              return { clickedDelete, inputId, aliases: aliases2 };
-            }, product.id);
-            if (prepUpload.clickedDelete) {
-              await page.waitForTimeout(500);
-            }
-            if (prepUpload.inputId) {
-              try {
-                const fileInputLocator = page.locator(`#${prepUpload.inputId}`);
-                await fileInputLocator.setInputFiles(targetArtworkPath);
-                this.log(`\u23F3 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork zugewiesen (${import_path78.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
-                const uploadDone = await page.waitForFunction((aliases2) => {
+                let clickedDelete = false;
+                let deleteButton = card2?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                if (!deleteButton) {
                   for (const a of aliases2) {
-                    const card2 = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`);
-                    const delOnCard = card2?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-                    if (delOnCard && delOnCard.offsetParent !== null) return true;
-                    const delInDoc = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button, [id*="${a}"] .delete-button`);
-                    if (delInDoc && delInDoc.offsetParent !== null) return true;
+                    deleteButton = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button`);
+                    if (deleteButton) break;
                   }
-                  const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-                  const container = allEditors[allEditors.length - 1];
-                  const delBtn = container?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-                  return Boolean(delBtn && delBtn.offsetParent !== null);
-                }, prepUpload.aliases, { timeout: 35e3 }).then(() => true).catch(() => false);
-                if (uploadDone) {
-                  await page.waitForTimeout(1e3);
-                  this.log(`\u2713 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork erfolgreich hochgeladen & best\xE4tigt \u2713`);
-                } else {
-                  this.log(`\u26A0\uFE0F ${product.displayName}: Upload-Best\xE4tigung nach 35s nicht erkannt, fahre fort...`);
                 }
-              } catch (upErr) {
-                this.log(`\u26A0\uFE0F Fehler beim Hochladen des Resized Artworks f\xFCr ${product.displayName}: ${upErr.message}`);
+                if (deleteButton) {
+                  deleteButton.click();
+                  clickedDelete = true;
+                }
+                let uploadLabel = null;
+                for (const a of aliases2) {
+                  uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || inputContainer?.querySelector(`label.file-upload-input[for*="${a}"]`) || card2?.querySelector(`label.file-upload-input[for*="${a}"]`);
+                  if (uploadLabel) break;
+                }
+                if (!uploadLabel) {
+                  uploadLabel = inputContainer?.querySelector("label.file-upload-input") || card2?.querySelector("label.file-upload-input") || inputContainer?.querySelector('label[for*="DESIGN"]') || card2?.querySelector('label[for*="DESIGN"]');
+                }
+                let inputId = "";
+                if (uploadLabel) {
+                  const forAttr = uploadLabel.getAttribute("for");
+                  if (forAttr && document.getElementById(forAttr)) {
+                    inputId = forAttr;
+                  }
+                }
+                if (!inputId) {
+                  for (const a of aliases2) {
+                    const directInput = document.getElementById(`${a}-DESIGN-wizzy`) || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`);
+                    if (directInput) {
+                      if (!directInput.id) directInput.id = `mba-upload-input-${a}`;
+                      inputId = directInput.id;
+                      break;
+                    }
+                  }
+                }
+                if (!inputId) {
+                  const genericInput = inputContainer?.querySelector('.dropzone-container input[type="file"]') || card2?.querySelector('.dropzone-container input[type="file"]') || inputContainer?.querySelector('input[type="file"]') || card2?.querySelector('input[type="file"]');
+                  if (genericInput) {
+                    if (!genericInput.id) genericInput.id = `mba-upload-input-${pid}`;
+                    inputId = genericInput.id;
+                  }
+                }
+                return { clickedDelete, inputId, aliases: aliases2 };
+              }, product.id);
+              if (prepUpload.clickedDelete) {
+                await page.waitForTimeout(500);
               }
-            } else {
-              this.log(`\u26A0\uFE0F ${product.displayName}: Kein Upload-Feld im DOM gefunden, behalte Standard-Artwork.`);
+              if (prepUpload.inputId) {
+                try {
+                  const fileInputLocator = page.locator(`#${prepUpload.inputId}`);
+                  await fileInputLocator.setInputFiles(targetArtworkPath);
+                  this.log(`\u23F3 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork zugewiesen (${import_path78.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
+                  const uploadDone = await page.waitForFunction((aliases2) => {
+                    for (const a of aliases2) {
+                      const card2 = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`);
+                      const delOnCard = card2?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                      if (delOnCard && delOnCard.offsetParent !== null) return true;
+                      const delInDoc = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button, [id*="${a}"] .delete-button`);
+                      if (delInDoc && delInDoc.offsetParent !== null) return true;
+                    }
+                    const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+                    const container = allEditors[allEditors.length - 1];
+                    const delBtn = container?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                    return Boolean(delBtn && delBtn.offsetParent !== null);
+                  }, prepUpload.aliases, { timeout: 35e3 }).then(() => true).catch(() => false);
+                  if (uploadDone) {
+                    await page.waitForTimeout(1e3);
+                    this.log(`\u2713 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork erfolgreich hochgeladen & best\xE4tigt \u2713`);
+                  } else {
+                    this.log(`\u26A0\uFE0F ${product.displayName}: Upload-Best\xE4tigung nach 35s nicht erkannt, fahre fort...`);
+                  }
+                } catch (upErr) {
+                  this.log(`\u26A0\uFE0F Fehler beim Hochladen des Resized Artworks f\xFCr ${product.displayName}: ${upErr.message}`);
+                }
+              } else {
+                this.log(`\u26A0\uFE0F ${product.displayName}: Kein Upload-Feld im DOM gefunden, behalte Standard-Artwork.`);
+              }
             }
           }
         }

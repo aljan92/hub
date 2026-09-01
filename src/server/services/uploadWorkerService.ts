@@ -801,13 +801,35 @@ export class UploadWorkerService {
           let selfHealedColor = '';
 
           if (params.colorMode === 'customPicker') {
+            const inputContainer = (card ? (validEditors[0] || card) : document) as HTMLElement;
+
+            // Prüfen ob Produkt auf Amazon bereits veröffentlicht und damit für Farb-/Artwork-Änderungen gesperrt ist
+            const lockedContainer = (inputContainer?.querySelector('.locked-container, [class*="locked-container"], .sci-lock')
+              || card?.querySelector('.locked-container, [class*="locked-container"], .sci-lock')
+              || Array.from(document.querySelectorAll('.locked-container, .sci-lock')).find(el => {
+                   const text = (el.textContent || '').toLowerCase();
+                   return text.includes('locked') && (card && el.closest(`#${card.id}`) || inputContainer && el.closest('.product-editor'));
+                 })) as HTMLElement;
+
+            const isLocked = Boolean(lockedContainer || inputContainer?.innerText?.toLowerCase().includes('locked on published products'));
+
+            if (isLocked) {
+              return { 
+                success: true, 
+                activeColors: ['Farbe gesperrt (bereits live)'],
+                fitTypesApplied: activeFitsApplied,
+                fitDebug: fitDebugSummary,
+                selfHealedColor: '',
+                isLocked: true
+              };
+            }
+
             // Hex color picker mode
             let cleanHex = (params.customBgColor || '000000').replace(/^#/, '').toUpperCase();
             if (!/^[0-9A-F]{6}$/.test(cleanHex)) {
               cleanHex = params.avoidColor === 'black' ? 'FFFFFF' : '000000';
             }
 
-            const inputContainer = (card ? (validEditors[0] || card) : document) as HTMLElement;
             const colorBtn = (inputContainer?.querySelector('#color-btn, button[id*="color-btn"], .background-color-picker-button, button.color-btn, .color-picker-button') 
               || document.querySelector('#color-btn, button[id*="color-btn"]')) as HTMLElement;
 
@@ -1000,7 +1022,8 @@ export class UploadWorkerService {
             activeColors: finalActiveColorNames,
             fitTypesApplied: activeFitsApplied,
             fitDebug: fitDebugSummary,
-            selfHealedColor
+            selfHealedColor,
+            isLocked: false
           };
         }, {
           productId: product.id,
@@ -1018,7 +1041,9 @@ export class UploadWorkerService {
             ? ` [Fits: ${Object.entries(editResult.fitDebug).map(([k, v]) => `${k}:${v.final ? '✓' : '✗'}`).join(' ')}]` 
             : '';
 
-          if (editResult.selfHealedColor) {
+          if (editResult.isLocked) {
+            this.log(`ℹ️ ${product.displayName}: Farbe & Artwork auf Amazon gesperrt (bereits live) ✓ | Fit: ${fitsList}${fitDetails}`);
+          } else if (editResult.selfHealedColor) {
             this.log(`⚠️ ${product.displayName}: 0 Farben verhindert ➔ Selbstheilung: "${editResult.selfHealedColor}" aktiviert ✓ | Fit: ${fitsList}${fitDetails}`);
           } else {
             this.log(`✓ ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}${fitDetails}`);
@@ -1030,7 +1055,10 @@ export class UploadWorkerService {
         // Resize Step für Produkte mit spezifischem Two-Sided Artwork (Mug, Tumbler, Water Bottle, Travel Tumbler)
         const isDrinkwareResize = ['CERAMIC_MUG', 'TUMBLER', 'WATER_BOTTLE', 'TRAVEL_TUMBLER'].includes(product.id);
         if (isDrinkwareResize) {
-          const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+          if (editResult.isLocked) {
+            this.log(`ℹ️ ${product.displayName}: Überspringe Two-Sided Artwork-Ersetzung, da Artwork auf Amazon gesperrt ist.`);
+          } else {
+            const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
           const designsDir = path.resolve(process.cwd(), 'data', 'designs');
           
           let targetArtworkPath: string | undefined;
@@ -1210,6 +1238,7 @@ export class UploadWorkerService {
             }
           }
         }
+      }
 
         await page.waitForTimeout(300);
       }
