@@ -1170,7 +1170,7 @@ export class TrademarkService {
     maxRewriteCycles?: number;
     taskId?: string;
     sessionId?: string;
-    onEvent?: (event: { type: string; title: string; content: any }) => void;
+    onEvent?: (event: { type: string; title: string; content: any; metadata?: any }) => void;
   }): Promise<TrademarkAuditResultV2> {
     let currentListing: EnglishListing = { ...params.listing };
     const forbiddenTermsForTask: string[] = [];
@@ -1285,7 +1285,8 @@ export class TrademarkService {
       params.onEvent?.({
         type: 'TM_REFEREE_RESPONSE',
         title: `Trademark Referee: ${refereeRes.decision} (Zyklus ${cycle})`,
-        content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits }
+        content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits },
+        metadata: { provider: 'OpenRouter', model: refereeRes._rawRequest?.model }
       });
 
       // A. Check for Immediate Escalation (Only if decision is ESCALATE, or if REWRITE is unfixable due to core quote)
@@ -1332,7 +1333,8 @@ export class TrademarkService {
         params.onEvent?.({
           type: 'TM_VERIFIER_RESPONSE',
           title: `Amazon Rejection Verifier: ${verifierRes.verdict}`,
-          content: { verdict: verifierRes.verdict, recommendation: verifierRes.recommendation, risks: verifierRes.identifiedRisks }
+          content: { verdict: verifierRes.verdict, recommendation: verifierRes.recommendation, risks: verifierRes.identifiedRisks },
+          metadata: { provider: 'OpenRouter', model: verifierRes._rawRequest?.model }
         });
 
         if (verifierRes.verdict === 'SAFE') {
@@ -1460,7 +1462,8 @@ export class TrademarkService {
       params.onEvent?.({
         type: 'TM_REWRITE_RESPONSE',
         title: `SEO-Rewrite Runde ${cycle + 1} abgeschlossen`,
-        content: { iteration: cycle + 1, actionsTaken: rewriteRes.actionsTaken, listing: currentListing }
+        content: { iteration: cycle + 1, actionsTaken: rewriteRes.actionsTaken, listing: currentListing },
+        metadata: { provider: 'OpenRouter', model: rewriteRes._rawRequest?.model }
       });
     }
 

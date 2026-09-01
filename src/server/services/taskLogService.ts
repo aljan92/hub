@@ -1075,11 +1075,13 @@ export class TaskLogService {
     try {
       console.log(`[TaskLogService] 🛡️ Starte Trademark Workflow V2 für Task ${taskId}...`);
 
+      const currentSettings = loadSettings();
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TM_CHECK_REQUEST',
         title: 'Starte Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)',
-        content: { quote, niche1, niche2, subniche, fields: initialFields }
+        content: { quote, niche1, niche2, subniche, fields: initialFields },
+        metadata: { provider: 'OpenRouter', model: currentSettings.llmModel }
       });
 
       const auditV2 = await TrademarkService.executeTrademarkAuditV2({
@@ -1095,7 +1097,8 @@ export class TaskLogService {
             timestamp: new Date().toISOString(),
             type: ev.type,
             title: ev.title,
-            content: ev.content
+            content: ev.content,
+            metadata: ev.metadata
           });
         }
       });

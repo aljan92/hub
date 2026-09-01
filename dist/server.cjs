@@ -54442,7 +54442,8 @@ var init_trademarkService = __esm2({
           params2.onEvent?.({
             type: "TM_REFEREE_RESPONSE",
             title: `Trademark Referee: ${refereeRes.decision} (Zyklus ${cycle})`,
-            content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits }
+            content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits },
+            metadata: { provider: "OpenRouter", model: refereeRes._rawRequest?.model }
           });
           if (refereeRes.decision === "ESCALATE" || refereeRes.decision === "REWRITE" && refereeRes.canBeFixedByListingRewrite === false) {
             const reasonCode = refereeRes.reasonCode || (refereeRes.decision === "ESCALATE" ? "CORE_QUOTE_CLASS25_CONFLICT" : "UNFIXABLE_TRADEMARK_CONFLICT");
@@ -54483,7 +54484,8 @@ var init_trademarkService = __esm2({
             params2.onEvent?.({
               type: "TM_VERIFIER_RESPONSE",
               title: `Amazon Rejection Verifier: ${verifierRes.verdict}`,
-              content: { verdict: verifierRes.verdict, recommendation: verifierRes.recommendation, risks: verifierRes.identifiedRisks }
+              content: { verdict: verifierRes.verdict, recommendation: verifierRes.recommendation, risks: verifierRes.identifiedRisks },
+              metadata: { provider: "OpenRouter", model: verifierRes._rawRequest?.model }
             });
             if (verifierRes.verdict === "SAFE") {
               console.log(`[TrademarkServiceV2] \u2705 Verifier best\xE4tigt SAFE. Listing endg\xFCltig freigegeben!`);
@@ -54596,7 +54598,8 @@ var init_trademarkService = __esm2({
           params2.onEvent?.({
             type: "TM_REWRITE_RESPONSE",
             title: `SEO-Rewrite Runde ${cycle + 1} abgeschlossen`,
-            content: { iteration: cycle + 1, actionsTaken: rewriteRes.actionsTaken, listing: currentListing }
+            content: { iteration: cycle + 1, actionsTaken: rewriteRes.actionsTaken, listing: currentListing },
+            metadata: { provider: "OpenRouter", model: rewriteRes._rawRequest?.model }
           });
         }
         return {
@@ -225740,11 +225743,13 @@ Beantworte die Analysefragen streng als JSON!`;
         const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || "";
         try {
           console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Trademark Workflow V2 f\xFCr Task ${taskId}...`);
+          const currentSettings = loadSettings();
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TM_CHECK_REQUEST",
             title: "Starte Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)",
-            content: { quote: quote5, niche1, niche2, subniche, fields: initialFields }
+            content: { quote: quote5, niche1, niche2, subniche, fields: initialFields },
+            metadata: { provider: "OpenRouter", model: currentSettings.llmModel }
           });
           const auditV2 = await TrademarkService.executeTrademarkAuditV2({
             listing: initialFields,
@@ -225759,7 +225764,8 @@ Beantworte die Analysefragen streng als JSON!`;
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: ev.type,
                 title: ev.title,
-                content: ev.content
+                content: ev.content,
+                metadata: ev.metadata
               });
             }
           });
