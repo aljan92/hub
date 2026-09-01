@@ -583,3 +583,18 @@ MBA HUB/
   6. **Unit- & Integrationstests:**
      - `tests/resizeService.test.ts` (16/16 Tests bestanden).
 
+### 10.23 🛠️ Upload-Worker & Resize Feinabstimmung (Travel Tumbler, Hex-Color & Polling Fixes)
+- **Problem & Ursachen:**
+  1. **Hex-Eingabe ("Automatic"):** `taskLogService.ts` und `queueService.ts` übergaben fälschlicherweise `task.customAnswers?.reuseBackground` (Hintergrund-Freistellungsmodus: "Automatisch"/"AUTOMATIC") als `customBackgroundColor`, was dazu führte, dass der String "AUTOMATIC" in das Amazon Hex-Feld getippt wurde.
+  2. **Verzögerung nach Tumbler:** `page.waitForFunction` suchte den wiederkehrenden `.delete-button` nur im unteren `.product-editor` Panel statt auf der Produktkarte (`#TUMBLER-card`), wodurch der Worker in den vollen 60s Timeout lief, obwohl der Upload nach 2 Sekunden abgeschlossen war.
+  3. **Ceramic Mug Fehler:** Amazon nennt die Tasse im DOM `#MUG-card` und `#MUG-DESIGN-wizzy`. Die Suche nach `#CERAMIC_MUG-card` scheiterte daher.
+  4. **Neues Produkt Travel Tumbler:** Amazon rollte `TRAVEL_TUMBLER` aus, welcher analog zum Mug mit Two-Sided Artworks (Brush bei `avoidColor: white`) versorgt werden soll.
+- **Lösung & Architektur:**
+  1. **Strikte Hex-Validierung & Popover-Steuerung:** `reuseBackground` Zuweisung entfernt. Nur valide 6-stellige Hex-Strings (`/^#?[0-9A-Fa-f]{6}$/`) werden akzeptiert; Fallback nach Regel (`#FFFFFF` bei `avoidColor: black`, sonst `#000000`). Eingabe und Schließen des Popovers spiegeln 1:1 die bewährte *Listing Optimizer* Logik.
+  2. **Multi-Target Delete-Button Polling:** Prüft synchron `card.querySelector('.delete-button')`, `#${alias}-card .delete-button` und den Container mit sichtbarem Offset. Sobald der Upload verarbeitet ist (1-2s), geht es nach 1000ms Puffer sofort weiter.
+  3. **Vollständiges Alias-Mapping:** `CERAMIC_MUG` mappt im DOM auf `MUG`, `SPORT_SUN_VISOR` auf `VISOR`, `TRAVEL_TUMBLER` auf `TRAVEL_TUMBLER`/`TRAVEL-TUMBLER`/`TRAVEL_MUG`.
+  4. **Travel Tumbler Support:** `TRAVEL_TUMBLER` in `product_catalog.json` (Klasse 21) und in `uploadWorkerService.ts` integriert.
+  5. **Unit-Tests:**
+     - `tests/domLiveNormalization.test.ts` (17/17 Tests bestanden, inkl. TRAVEL_TUMBLER).
+     - `tests/knapsackOptimizer.test.ts` (16/16 Tests bestanden).
+     - `tests/resizeService.test.ts` (16/16 Tests bestanden).

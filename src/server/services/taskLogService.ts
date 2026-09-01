@@ -302,7 +302,9 @@ export class TaskLogService {
       if (avoid.includes('white') || avoid.includes('weiß')) avoidColor = 'white';
       else if (avoid.includes('black') || avoid.includes('schwarz')) avoidColor = 'black';
 
-      const customBackgroundColor = task.customAnswers?.reuseBackground;
+      // Only set customBackgroundColor if explicitly provided and a valid hex format (never reuseBackground!)
+      const rawHex = (task.customAnswers as any)?.customBackgroundColor || (task.customAnswers as any)?.accessoryColorHex;
+      const customBackgroundColor = (typeof rawHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim())) ? (rawHex.startsWith('#') ? rawHex : `#${rawHex}`) : undefined;
 
       const { QueueService } = require('./queueService');
       const queueItem = QueueService.enqueueDesign({

@@ -134,6 +134,7 @@ export function normalizeCatalogProductId(raw: string): string {
   if (['SPORT_BACKPACK', 'BACKPACK'].includes(s)) return 'SPORT_BACKPACK';
   if (['MUG', 'MUGS', 'CERAMIC_MUG'].includes(s)) return 'CERAMIC_MUG';
   if (['WATER_BOTTLE', 'WATER_BOTTLES'].includes(s)) return 'WATER_BOTTLE';
+  if (['TRAVEL_TUMBLER', 'TRAVEL_TUMBLERS', 'TRAVEL_MUG'].includes(s)) return 'TRAVEL_TUMBLER';
   if (['HARDCOVER_JOURNAL', 'JOURNAL'].includes(s)) return 'HARDCOVER_JOURNAL';
   return s;
 }
@@ -319,11 +320,6 @@ export class QueueService {
               item.designId = task.payload.designId;
               hasChanges = true;
             }
-          }
-
-          if (!item.customBackgroundColor && task.customAnswers?.reuseBackground) {
-            item.customBackgroundColor = task.customAnswers.reuseBackground;
-            hasChanges = true;
           }
 
           // Auto-enrich tmBlockedProductIds from task if missing in queue item

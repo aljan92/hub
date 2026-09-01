@@ -223553,6 +223553,7 @@ function normalizeCatalogProductId(raw) {
   if (["SPORT_BACKPACK", "BACKPACK"].includes(s)) return "SPORT_BACKPACK";
   if (["MUG", "MUGS", "CERAMIC_MUG"].includes(s)) return "CERAMIC_MUG";
   if (["WATER_BOTTLE", "WATER_BOTTLES"].includes(s)) return "WATER_BOTTLE";
+  if (["TRAVEL_TUMBLER", "TRAVEL_TUMBLERS", "TRAVEL_MUG"].includes(s)) return "TRAVEL_TUMBLER";
   if (["HARDCOVER_JOURNAL", "JOURNAL"].includes(s)) return "HARDCOVER_JOURNAL";
   return s;
 }
@@ -223716,10 +223717,6 @@ var init_queueService = __esm2({
                   item.designId = task.payload.designId;
                   hasChanges = true;
                 }
-              }
-              if (!item.customBackgroundColor && task.customAnswers?.reuseBackground) {
-                item.customBackgroundColor = task.customAnswers.reuseBackground;
-                hasChanges = true;
               }
               if ((!item.tmBlockedProductIds || item.tmBlockedProductIds.length === 0) && (task.blockedProducts || task.trademarkCheckResult?.blockedProducts)) {
                 const rawBlocked = task.blockedProducts || task.trademarkCheckResult?.blockedProducts || [];
@@ -224716,7 +224713,8 @@ var init_taskLogService = __esm2({
           const avoid = (task.customAnswers?.avoidColor || task.payload?.avoidColor || "").toLowerCase();
           if (avoid.includes("white") || avoid.includes("wei\xDF")) avoidColor = "white";
           else if (avoid.includes("black") || avoid.includes("schwarz")) avoidColor = "black";
-          const customBackgroundColor = task.customAnswers?.reuseBackground;
+          const rawHex = task.customAnswers?.customBackgroundColor || task.customAnswers?.accessoryColorHex;
+          const customBackgroundColor = typeof rawHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim()) ? rawHex.startsWith("#") ? rawHex : `#${rawHex}` : void 0;
           const { QueueService: QueueService2 } = (init_queueService(), __toCommonJS2(queueService_exports));
           const queueItem = QueueService2.enqueueDesign({
             taskId: task.id,
@@ -227194,12 +227192,12 @@ var ProductScannerService = class {
           let inputContainer = configSection;
           const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
           const cardRect = configSection.getBoundingClientRect();
-          const validEditors = allEditors.filter((ed) => {
+          const validEditors2 = allEditors.filter((ed) => {
             const edRect = ed.getBoundingClientRect();
             return edRect.top >= cardRect.bottom - 50 && ed.innerHTML.length > 20;
           });
-          if (validEditors.length > 0) {
-            inputContainer = validEditors[0];
+          if (validEditors2.length > 0) {
+            inputContainer = validEditors2[0];
           } else if (allEditors.length > 0) {
             inputContainer = allEditors[allEditors.length - 1];
           }
@@ -227707,7 +227705,14 @@ var UploadWorkerService = class _UploadWorkerService {
       if (normalizedFits.includes("youth") && !normalizedFits.includes("men") && !normalizedFits.includes("women")) {
         fitTypes = [...fitTypes, "men"];
       }
-      const customBgColor = item.customBackgroundColor || (avoidColor === "black" ? "#FFFFFF" : "#000000");
+      let resolvedBgHex = avoidColor === "black" ? "#FFFFFF" : "#000000";
+      if (item.customBackgroundColor && typeof item.customBackgroundColor === "string") {
+        const trimmed = item.customBackgroundColor.trim().replace(/^#/, "");
+        if (/^[0-9A-Fa-f]{6}$/.test(trimmed)) {
+          resolvedBgHex = `#${trimmed.toUpperCase()}`;
+        }
+      }
+      const customBgColor = resolvedBgHex;
       for (let i = 0; i < totalActiveProducts; i++) {
         if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
         const product = activeProductsToProcess[i];
@@ -227720,21 +227725,47 @@ var UploadWorkerService = class _UploadWorkerService {
           openRetries++;
           const openResult = await page.evaluate(async (pid) => {
             const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
+            const getAliases = (p) => {
+              const u = p.toUpperCase();
+              if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
+              if (u === "SPORT_SUN_VISOR") return ["VISOR", "SPORT_SUN_VISOR"];
+              if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
+              if (u === "POPSOCKETS") return ["POPSOCKET", "POP_SOCKET", "POPSOCKETS"];
+              if (u === "THROW_PILLOWS") return ["THROW_PILLOW", "THROW_PILLOWS"];
+              if (u === "IPHONE_CASES") return ["IPHONE_CASES", "PHONE_CASE_APPLE_IPHONE", "PHONE_CASE"];
+              if (u === "STANDARD_PULLOVER_HOODIE") return ["PULLOVER_HOODIE", "STANDARD_PULLOVER_HOODIE"];
+              if (u === "STANDARD_SWEATSHIRT") return ["SWEATSHIRT", "STANDARD_SWEATSHIRT"];
+              if (u === "STANDARD_LONG_SLEEVE") return ["LONG_SLEEVE_TSHIRT", "STANDARD_LONG_SLEEVE"];
+              if (u === "VALUE_TSHIRT") return ["VALUE_GRAPHIC_TSHIRT", "VALUE_TSHIRT"];
+              if (u === "VNECK") return ["VNECK_TSHIRT", "VNECK"];
+              return [u];
+            };
+            const aliases2 = getAliases(pid);
             const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
-            let card = document.getElementById(`${pid}-card`) || document.getElementById(`config-${pid}`) || allCards.find((c) => {
-              const idUpper = (c.id || "").toUpperCase();
-              const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-              return idUpper.includes(pid) || clsUpper.includes(pid) || pid === "SPORT_SUN_VISOR" && (idUpper.includes("VISOR") || clsUpper.includes("VISOR"));
-            }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
+            let card2 = null;
+            for (const a of aliases2) {
+              card2 = document.getElementById(`${a}-card`) || document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`config-${a}`) || document.getElementById(`config-${a.toLowerCase()}`);
+              if (card2) break;
+            }
+            if (!card2) {
+              card2 = allCards.find((c) => {
+                const idUpper = (c.id || "").toUpperCase();
+                const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
+                return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
+              }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
+            }
             let editBtn = null;
-            if (card) {
-              editBtn = card.querySelector(".edit-button") || card.querySelector("button.edit-btn") || card.querySelector(".edit-details-btn") || card.querySelector('button[class*="edit"]') || Array.from(card.querySelectorAll("button")).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
+            if (card2) {
+              editBtn = card2.querySelector(".edit-button") || card2.querySelector("button.edit-btn") || card2.querySelector(".edit-details-btn") || card2.querySelector('button[class*="edit"]') || Array.from(card2.querySelectorAll("button")).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
             }
             if (!editBtn) {
-              editBtn = document.querySelector(`.${pid}-edit-btn`) || document.querySelector(`#${pid}-card .edit-button`) || document.querySelector(`#${pid}-card button.edit-btn`) || document.querySelector(`button[class*="${pid}-edit"]`) || (pid === "SPORT_SUN_VISOR" ? document.querySelector('[id*="VISOR"] button, [class*="VISOR"] button') : null) || Array.from(document.querySelectorAll(`button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit") && (b.closest(`#${pid}-card`) || card && b.closest(`#${card.id}`)));
+              for (const a of aliases2) {
+                editBtn = document.querySelector(`.${a}-edit-btn`) || document.querySelector(`.${a.toLowerCase()}-edit-btn`) || document.querySelector(`#${a}-card .edit-button`) || document.querySelector(`#${a}-card button.edit-btn`) || document.querySelector(`button[class*="${a}-edit"]`) || document.querySelector(`[id*="${a}"] button, [class*="${a}"] button`) || Array.from(document.querySelectorAll(`button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit") && (b.closest(`#${a}-card`) || card2 && b.closest(`#${card2.id}`)));
+                if (editBtn) break;
+              }
             }
             if (!editBtn) {
-              return { success: false, reason: `Edit button f\xFCr ${pid} nicht im DOM gefunden` };
+              return { success: false, reason: `Edit button f\xFCr ${pid} (Aliases: ${aliases2.join(",")}) nicht im DOM gefunden` };
             }
             editBtn.scrollIntoView({ behavior: "smooth", block: "center" });
             await sleep2(200);
@@ -227911,7 +227942,12 @@ var UploadWorkerService = class _UploadWorkerService {
           let finalActiveColorNames = [];
           let selfHealedColor = "";
           if (params2.colorMode === "customPicker") {
-            const colorBtn = document.querySelector("#color-btn") || document.querySelector('button[id*="color-btn"]') || document.querySelector(".background-color-picker-button") || document.querySelector("button.color-btn") || document.querySelector(".color-picker-button");
+            let cleanHex = (params2.customBgColor || "000000").replace(/^#/, "").toUpperCase();
+            if (!/^[0-9A-F]{6}$/.test(cleanHex)) {
+              cleanHex = params2.avoidColor === "black" ? "FFFFFF" : "000000";
+            }
+            const inputContainer = card ? validEditors[0] || card : document;
+            const colorBtn = inputContainer?.querySelector('#color-btn, button[id*="color-btn"], .background-color-picker-button, button.color-btn, .color-picker-button') || document.querySelector('#color-btn, button[id*="color-btn"]');
             if (colorBtn) {
               const isPopoverOpen = colorBtn.hasAttribute("aria-describedby");
               if (!isPopoverOpen) {
@@ -227921,48 +227957,69 @@ var UploadWorkerService = class _UploadWorkerService {
                 await sleep2(500);
               }
               const popoverId = colorBtn.getAttribute("aria-describedby");
-              const popover = (popoverId ? document.getElementById(popoverId) : null) || document.querySelector(".sketch-picker, .color-picker-container, ngb-popover-window, color-sketch, .color-picker-popover");
+              const popover = (popoverId ? document.getElementById(popoverId) : null) || document.querySelector("ngb-popover-window, color-sketch, .color-picker-popover, .sketch-picker");
               if (popover) {
-                const cleanHex = (params2.customBgColor || "000000").replace(/^#/, "").toUpperCase();
                 const swatches = Array.from(popover.querySelectorAll(".sketch-swatches div, .sketch-swatches span, .sketch-swatches [title], .sketch-swatches [style]"));
                 let matchedSwatch = null;
                 for (const sw of swatches) {
                   const title = (sw.getAttribute("title") || "").replace(/^#/, "").toUpperCase();
                   const style = (sw.getAttribute("style") || "").toLowerCase();
-                  if (title === cleanHex || cleanHex.length === 6 && title === cleanHex.slice(0, 3)) {
+                  if (title === cleanHex) {
                     matchedSwatch = sw;
                     break;
                   }
-                  if ((cleanHex === "000000" || cleanHex === "000") && (style.includes("rgb(0, 0, 0)") || style.includes("#000000") || title === "000000" || title === "#000000")) {
+                  if (cleanHex === "000000" && (style.includes("rgb(0, 0, 0)") || style.includes("#000000") || title === "000000")) {
                     matchedSwatch = sw;
                     break;
                   }
-                  if ((cleanHex === "FFFFFF" || cleanHex === "FFF") && (style.includes("rgb(255, 255, 255)") || style.includes("#ffffff") || title === "FFFFFF" || title === "#FFFFFF")) {
+                  if (cleanHex === "FFFFFF" && (style.includes("rgb(255, 255, 255)") || style.includes("#ffffff") || title === "FFFFFF")) {
                     matchedSwatch = sw;
                     break;
                   }
                 }
                 if (matchedSwatch) {
-                  matchedSwatch.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-                  matchedSwatch.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
                   matchedSwatch.click();
                   await sleep2(150);
                 }
-                let hexInput = popover.querySelector('color-editable-input[label="hex"] input, div[label="hex"] input, input[aria-label="hex"]') || popover.querySelector(".wrap input") || popover.querySelector('input[type="text"]') || popover.querySelector("input");
+                let hexInput = popover.querySelector('color-editable-input[label="hex"] input');
+                if (!hexInput) {
+                  const spans = Array.from(popover.querySelectorAll("span"));
+                  const hexSpan = spans.find((span) => span.textContent?.trim().toLowerCase() === "hex");
+                  if (hexSpan) {
+                    hexInput = hexSpan.closest(".wrap")?.querySelector("input") || hexSpan.parentElement?.querySelector("input");
+                  }
+                }
+                if (!hexInput) {
+                  hexInput = popover.querySelector('input[type="text"]') || popover.querySelector("input");
+                }
                 if (hexInput) {
                   hexInput.focus();
                   hexInput.value = "";
                   hexInput.dispatchEvent(new Event("input", { bubbles: true }));
-                  hexInput.dispatchEvent(new Event("change", { bubbles: true }));
-                  await sleep2(50);
-                  for (const char of cleanHex) {
-                    hexInput.value += char;
+                  for (let i2 = 0; i2 < cleanHex.length; i2++) {
+                    const char = cleanHex[i2];
+                    hexInput.dispatchEvent(new KeyboardEvent("keydown", { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
+                    hexInput.value = cleanHex.slice(0, i2 + 1);
                     hexInput.dispatchEvent(new Event("input", { bubbles: true }));
+                    hexInput.dispatchEvent(new KeyboardEvent("keyup", { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
                     await sleep2(25);
                   }
                   hexInput.dispatchEvent(new Event("change", { bubbles: true }));
                   hexInput.blur();
+                  await sleep2(200);
                 }
+                if (colorBtn.hasAttribute("aria-describedby")) {
+                  colorBtn.click();
+                  await sleep2(200);
+                }
+                finalActiveColorNames.push(`#${cleanHex}`);
+              }
+            } else {
+              const directHex = inputContainer?.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]') || document.querySelector('input[type="text"][id*="hex"]');
+              if (directHex) {
+                directHex.value = cleanHex;
+                directHex.dispatchEvent(new Event("input", { bubbles: true }));
+                directHex.dispatchEvent(new Event("change", { bubbles: true }));
                 finalActiveColorNames.push(`#${cleanHex}`);
               }
             }
@@ -228059,13 +228116,13 @@ var UploadWorkerService = class _UploadWorkerService {
         } else {
           this.log(`\u26A0\uFE0F Hinweis zu ${product.displayName}: ${editResult.reason}`);
         }
-        const isDrinkwareResize = ["CERAMIC_MUG", "TUMBLER", "WATER_BOTTLE"].includes(product.id);
+        const isDrinkwareResize = ["CERAMIC_MUG", "TUMBLER", "WATER_BOTTLE", "TRAVEL_TUMBLER"].includes(product.id);
         if (isDrinkwareResize) {
           const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const designsDir = import_path78.default.resolve(process.cwd(), "data", "designs");
           let targetArtworkPath;
           let isBrushApplied = false;
-          if (product.id === "CERAMIC_MUG") {
+          if (product.id === "CERAMIC_MUG" || product.id === "TRAVEL_TUMBLER") {
             if (avoidColor === "white") {
               targetArtworkPath = item.resizedAssets?.mugBrushPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_brush.png`);
               isBrushApplied = true;
@@ -228078,29 +228135,38 @@ var UploadWorkerService = class _UploadWorkerService {
           if (targetArtworkPath && import_fs83.default.existsSync(targetArtworkPath)) {
             this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit Two-Sided ${isBrushApplied ? "Black Brush " : ""}Variante...`);
             const prepUpload = await page.evaluate((pid) => {
-              const altPid = pid === "CERAMIC_MUG" ? "MUG" : pid === "MUG" ? "CERAMIC_MUG" : "";
-              let card = document.getElementById(pid.toLowerCase() + "-card") || document.getElementById(pid.toUpperCase() + "-card") || document.getElementById("config-" + pid.toLowerCase()) || document.getElementById("config-" + pid.toUpperCase());
-              if (!card && altPid) {
-                card = document.getElementById(altPid.toLowerCase() + "-card") || document.getElementById(altPid.toUpperCase() + "-card") || document.getElementById("config-" + altPid.toLowerCase()) || document.getElementById("config-" + altPid.toUpperCase());
+              const getAliases = (p) => {
+                const u = p.toUpperCase();
+                if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
+                if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
+                if (u === "TUMBLER") return ["TUMBLER"];
+                if (u === "WATER_BOTTLE") return ["WATER_BOTTLE", "WATER-BOTTLE"];
+                return [u];
+              };
+              const aliases2 = getAliases(pid);
+              let card2 = null;
+              for (const a of aliases2) {
+                card2 = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
+                if (card2) break;
               }
-              if (!card) {
+              if (!card2) {
                 const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
-                card = allCards.find((c) => {
+                card2 = allCards.find((c) => {
                   const idUpper = (c.id || "").toUpperCase();
                   const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-                  return idUpper.includes(pid) || clsUpper.includes(pid) || altPid && (idUpper.includes(altPid) || clsUpper.includes(altPid));
+                  return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
                 }) || null;
               }
-              let inputContainer = card;
+              let inputContainer = card2;
               const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-              if (card) {
-                const cardRect = card.getBoundingClientRect();
-                const validEditors = allEditors.filter((ed) => {
+              if (card2) {
+                const cardRect = card2.getBoundingClientRect();
+                const validEditors2 = allEditors.filter((ed) => {
                   const edRect = ed.getBoundingClientRect();
                   return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
                 });
-                if (validEditors.length > 0) {
-                  inputContainer = validEditors[0];
+                if (validEditors2.length > 0) {
+                  inputContainer = validEditors2[0];
                 } else if (allEditors.length > 0) {
                   inputContainer = allEditors[allEditors.length - 1];
                 }
@@ -228108,12 +228174,25 @@ var UploadWorkerService = class _UploadWorkerService {
                 inputContainer = allEditors[allEditors.length - 1];
               }
               let clickedDelete = false;
-              const deleteButton = inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || card?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+              let deleteButton = card2?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+              if (!deleteButton) {
+                for (const a of aliases2) {
+                  deleteButton = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button`);
+                  if (deleteButton) break;
+                }
+              }
               if (deleteButton) {
                 deleteButton.click();
                 clickedDelete = true;
               }
-              const uploadLabel = document.querySelector(`label.file-upload-input[for="${pid}-DESIGN-wizzy"]`) || (altPid ? document.querySelector(`label.file-upload-input[for="${altPid}-DESIGN-wizzy"]`) : null) || inputContainer?.querySelector("label.file-upload-input") || inputContainer?.querySelector('label[for*="DESIGN"]');
+              let uploadLabel = null;
+              for (const a of aliases2) {
+                uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || inputContainer?.querySelector(`label.file-upload-input[for*="${a}"]`) || card2?.querySelector(`label.file-upload-input[for*="${a}"]`);
+                if (uploadLabel) break;
+              }
+              if (!uploadLabel) {
+                uploadLabel = inputContainer?.querySelector("label.file-upload-input") || card2?.querySelector("label.file-upload-input") || inputContainer?.querySelector('label[for*="DESIGN"]') || card2?.querySelector('label[for*="DESIGN"]');
+              }
               let inputId = "";
               if (uploadLabel) {
                 const forAttr = uploadLabel.getAttribute("for");
@@ -228122,13 +228201,23 @@ var UploadWorkerService = class _UploadWorkerService {
                 }
               }
               if (!inputId) {
-                const directInput = document.getElementById(`${pid}-DESIGN-wizzy`) || (altPid ? document.getElementById(`${altPid}-DESIGN-wizzy`) : null) || inputContainer?.querySelector('.dropzone-container input[type="file"]') || inputContainer?.querySelector('input[type="file"]');
-                if (directInput) {
-                  if (!directInput.id) directInput.id = `mba-upload-input-${pid}`;
-                  inputId = directInput.id;
+                for (const a of aliases2) {
+                  const directInput = document.getElementById(`${a}-DESIGN-wizzy`) || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`);
+                  if (directInput) {
+                    if (!directInput.id) directInput.id = `mba-upload-input-${a}`;
+                    inputId = directInput.id;
+                    break;
+                  }
                 }
               }
-              return { clickedDelete, inputId };
+              if (!inputId) {
+                const genericInput = inputContainer?.querySelector('.dropzone-container input[type="file"]') || card2?.querySelector('.dropzone-container input[type="file"]') || inputContainer?.querySelector('input[type="file"]') || card2?.querySelector('input[type="file"]');
+                if (genericInput) {
+                  if (!genericInput.id) genericInput.id = `mba-upload-input-${pid}`;
+                  inputId = genericInput.id;
+                }
+              }
+              return { clickedDelete, inputId, aliases: aliases2 };
             }, product.id);
             if (prepUpload.clickedDelete) {
               await page.waitForTimeout(500);
@@ -228138,23 +228227,24 @@ var UploadWorkerService = class _UploadWorkerService {
                 const fileInputLocator = page.locator(`#${prepUpload.inputId}`);
                 await fileInputLocator.setInputFiles(targetArtworkPath);
                 this.log(`\u23F3 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork zugewiesen (${import_path78.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
-                const uploadDone = await page.waitForFunction((pid) => {
-                  const altPid = pid === "CERAMIC_MUG" ? "MUG" : pid === "MUG" ? "CERAMIC_MUG" : "";
-                  let card = document.getElementById(pid.toLowerCase() + "-card") || document.getElementById(pid.toUpperCase() + "-card");
-                  if (!card && altPid) {
-                    card = document.getElementById(altPid.toLowerCase() + "-card") || document.getElementById(altPid.toUpperCase() + "-card");
+                const uploadDone = await page.waitForFunction((aliases2) => {
+                  for (const a of aliases2) {
+                    const card2 = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`);
+                    const delOnCard = card2?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                    if (delOnCard && delOnCard.offsetParent !== null) return true;
+                    const delInDoc = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button, [id*="${a}"] .delete-button`);
+                    if (delInDoc && delInDoc.offsetParent !== null) return true;
                   }
                   const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-                  const container = allEditors[allEditors.length - 1] || card;
-                  if (!container) return false;
-                  const delBtn = container.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                  const container = allEditors[allEditors.length - 1];
+                  const delBtn = container?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
                   return Boolean(delBtn && delBtn.offsetParent !== null);
-                }, product.id, { timeout: 6e4 }).then(() => true).catch(() => false);
+                }, prepUpload.aliases, { timeout: 35e3 }).then(() => true).catch(() => false);
                 if (uploadDone) {
                   await page.waitForTimeout(1e3);
                   this.log(`\u2713 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork erfolgreich hochgeladen & best\xE4tigt \u2713`);
                 } else {
-                  this.log(`\u26A0\uFE0F ${product.displayName}: Upload-Best\xE4tigung nach 60s nicht erkannt, fahre fort...`);
+                  this.log(`\u26A0\uFE0F ${product.displayName}: Upload-Best\xE4tigung nach 35s nicht erkannt, fahre fort...`);
                 }
               } catch (upErr) {
                 this.log(`\u26A0\uFE0F Fehler beim Hochladen des Resized Artworks f\xFCr ${product.displayName}: ${upErr.message}`);
