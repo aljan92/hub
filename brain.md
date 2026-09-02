@@ -1,13 +1,13 @@
 # 🧠 MBA HUB — Master-Architektur & Projekt-Brain
 
-> **Status:** Phase 1 bis Phase 8 vollständig implementiert, verifiziert & im Produktivbetrieb 🚀  
+> **Status:** Phase 1 bis Phase 9 vollständig implementiert, verifiziert & im Produktivbetrieb 🚀  
 > **Projekt:** MBA Hub (Merch By Amazon Automation & Hub Platform)  
 > **Ziel-Umgebung:** TerraMaster NAS (TOS 6.0) unter Docker / Port `3000`  
 > **Repository:** `https://github.com/aljan92/hub.git` (Branch: `main`)  
 > **Deployment & Update:** Live-Betrieb auf dem NAS. Updates werden nach jedem Schritt automatisch per `git push origin main` auf GitHub veröffentlicht. 1-Click Update im Web-Dashboard (automatischer Tarball-Download & 10s Server-Neustart).  
 > **Workflow-Regel:** Nach jedem Feature/Fix führt der AI-Agent **automatisch** `npm run build` und `git push origin main` aus!  
 > **Projekt-Gedächtnis:** Diese `brain.md` dient als zentraler Master-Notizzettel und wird bei jedem Schritt fortlaufend gepflegt.  
-> **Letzte Aktualisierung:** 1. September 2026  
+> **Letzte Aktualisierung:** 2. September 2026  
 
 ---
 
@@ -205,22 +205,65 @@ graph TD
     * **Drinkware (`TUMBLER`, `WATER_BOTTLE`):**
       * `${taskId}_two_sided_drinkware_standard.png`: 3000 × 1400 px, 300 DPI (7.5 % Margin, zentriert bei x=31 und x=1566.67).
 * **Headless Chromium Rendering (Playwright):** 100% C++ Addon-freie Ausführung auf dem TerraMaster NAS Docker-Container mit nativer 300 DPI PNG `pHYs`-Chunk Injection.
-* **Workflow & Pipeline Integration:**
-  * **Design-Pipeline:** Step D7.5 (nach Vektorisierung & 4-Panel Audit, vor Übergabe an die Queue D8).
-  * **Update-Pipeline:** Step U6.5 (nach Übersetzung, vor Enqueue U7).
-  * Timeline Event: `📐 Two-Sided & Brush Varianten generiert ✓`.
+* **Orchestrierung:** Vollständig migriert in `FinalizationService` (einziger Orchestrator via sequentiellen Mutex; alte Zwischenschritte D7.5 und U6.5 wurden restlos aus den Pipelines eliminiert).
 * **Playwright Upload Worker Integration (`uploadWorkerService.ts`):**
-  * Erkennt `CERAMIC_MUG`, `TUMBLER` und `WATER_BOTTLE` in der sequenziellen Produktschleife.
+  * Erkennt Two-Sided und Custom Resize Produkte dynamisch aus dem Katalog.
   * Wählt bei `avoidColor === 'white'` automatisch die Brush-Variante für den Mug, sonst Standard.
   * Klickt im Produkt-Editor auf `.delete-button` zur Entfernung des Standard-Artworks und lädt das optimierte Two-Sided PNG via nativem Playwright `setInputFiles` hoch.
 * **Automated Tests:** 16/16 Unit- & Integrationstests in `tests/resizeService.test.ts` bestanden.
 
 ---
 
+### ✅ Phase 8.5: Product Catalog V2 & Architecture Guard (`productCatalogService.ts`, `data/product_catalog_overrides.json`)
+* **Strikte Architekturgrenze:**
+  * Saubere Trennung zwischen Product Catalog / Upload V2 und der geschützten `SUPABASE_SYNC_PROTECTED` Engine (`syncEngine.ts`, `settingsService.ts`, `/api/v1/sync/*`).
+* **Dynamische Produktdefinitionen:**
+  * 0 Produkt-IDs hartcodiert im Core-Pipeline-Code. Alle produktspezifischen Regeln (Nizza-Klassen, Fit-Types, Swatches, Resize-Verhalten) stammen ausschließlich aus dem Dynamic Catalog oder persistenten Overrides.
+* **Dynamic Color Discovery V2:**
+  * Robuste, CSS-gestützte Erkennung von Farb-Swatches und Color-Pickern ohne DOM-Brittle-Abhängigkeiten.
+  * Farbvermeidungsregeln (`avoidColor: white/black`) werden dynamisch mit entdeckten Farben verschmolzen.
+  * Volle Unterstützung für `colorMode: 'none'` (Produkte ohne Swatches wie Poster, Mousepads, Journals, PopSockets).
+  * Sofortiger Upload-Stop (`colorDiscoveryStatus: FAILED`) bei unentdeckten Produktfarben.
+* **Automated Architecture Guard:**
+  * `tests/productCatalogArchitectureGuard.test.ts` scannt den gesamten Codebase automatisch auf verbotene statische Produkt-Sonderregeln.
+
+---
+
+### ✅ Phase 9: Unified Finalization Pipeline, Queue Immutability & Deterministischer Upload
+* **Single Point of Finalization (`FinalizationService.finalizeForQueue`):**
+  * Genau **eine** zentrale Instanz für Listing-Sanitizing, Validierung, Resize-Erzeugung und Queue-Handoff für beide Pipelines (Design & Update).
+  * **Deterministisches Amazon-Sanitizing (`ListingSanitizationService.sanitizeText`):**
+    * Konvertiert typografische Quotes („ “ ” « »), Apostrophe (’ ‘ ‚) und Gedankenstriche (— – −) in Standard-ASCII.
+    * Entfernt unzulässige Zeichen, erhält aber 100% legitimierte Zeichen (Umlaute Ä/Ö/Ü/ß, Akzente é/è/ñ, japanische Kanji/Kana).
+  * **Strikte Validierung (`ListingValidationService.validateFinalListing`):**
+    * Prüft harte Amazon-Limits (Title ≤ 60, Brand ≤ 50, Bullets ≤ 256, Description ≤ 2000).
+    * Keine mutierenden Textänderungen mehr nach der Trademark-Prüfung.
+  * **Vollständiges 5/5 Artwork-Paket:**
+    * Erzeugt für jeden Task sequentiell über einen Mutex-Lock alle 5 Varianten: `trimmedPath`, `mugStandardPath`, `mugBrushPath`, `drinkwareStandardPath`, `drinkwareBrushPath`.
+    * Volle Zukunftssicherheit: Der Katalog entscheidet später nur noch, welches bereits fertig vorliegende Asset beim Upload verwendet wird.
+  * **Vollständige Eliminierung von Legacy-Steps:**
+    * `stepD7_5_ResizeArtworks` und `stepU6_5_ResizeArtworks` wurden restlos aus `DesignPipelineService` und `UpdatePipelineService` entfernt.
+* **Queue Immutability (Read-Only Post-Handoff):**
+  * Sobald ein Design in der Queue liegt, sind Listing-Texte unveränderbar (Read-Only).
+  * Sämtliche mutierenden `cleanStr()`-Aufrufe aus `QueueService` und `UploadWorkerService.sanitizeListingText` wurden entfernt.
+  * **Read-Only Integrity Guard im Worker:** Vor der Injektion prüft der Worker `sanitizeText(val) === val`. Bei Diskrepanz wird `FAILED_LISTING_INTEGRITY` ausgelöst und der Publish Guard stoppt die Veröffentlichung, statt Daten stillschweigend zu mutieren.
+  * **Browser DOM-Injektion:** Regex-Ersetzungen im Browser (`setRootVal`, `setVal`) wurden entfernt; exakte Queue-Werte werden direkt übergeben.
+* **Automatischer Produktkatalog-Abgleich & Upload-Reihenfolge:**
+  * **Automatische Übernahme:** `QueueService` bindet neue Produkte aus `ProductCatalogService.getCatalog()` beim Enqueue vollautomatisch in `activeProductsMap` ein (inkl. aller Marktplätze, gefiltert nach Nizza-Klassen-Freigaben).
+  * **Deterministische Upload-Reihenfolge:** `UploadWorkerService` verarbeitet Produkte strikt nach `amazonSortOrder` (natürliche DOM-Reihenfolge der Produktkarten von oben nach unten auf Amazon), was für flüssiges Scrolling ohne Re-Renders sorgt.
+* **Automated Tests:**
+  * 10/10 Tests in `tests/unifiedFinalizationAndCustomResize.test.ts` (Sanitizer, Validation, Variant-Registry, Custom-Resize Matrix, Immutability, Integrity-Guard, 5/5 Assets, Legacy-Step-Entfernung).
+
+---
+
 ## 4. 🗺️ Nächste Roadmap-Phasen
 
-### 🔜 Phase 9: Multi-Produkt-Resize Erweiterung
-* PopSockets (`1200 × 1200 px`), Phone Cases (`1800 × 3200 px`), Throw Pillows & Tote Bags (`2925 × 2925 px`) auf Basis von `${taskId}_trimmed.png`.
+### 🔜 Phase 10: Multi-Produkt-Resize Erweiterung (Mousepad, PopSockets etc.)
+* Mousepad (`3600 × 3000 px`), PopSockets (`1200 × 1200 px`), Phone Cases (`1800 × 3200 px`), Throw Pillows & Tote Bags (`2925 × 2925 px`) auf Basis von `${taskId}_trimmed.png`.
+* Infinite Scrolling / Virtualisierung für Prompt Log & Task-Liste zur Schonung des NAS-Arbeitsspeichers.
+* Draft-Modus Slot-Rebalancing bei nachträglicher Änderung der Zielproduktanzahl.
+
+---
 
 ## 5. 🛠️ Build-, Git- & Deployment-Workflows
 
