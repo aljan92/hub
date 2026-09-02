@@ -627,6 +627,17 @@ export class UploadWorkerService {
           continue;
         }
 
+        if (product.colorDiscoveryStatus === 'FAILED') {
+          this.log(`❌ Farbentdeckung für "${product.displayName}" war fehlgeschlagen (colorDiscoveryStatus = FAILED)!`);
+          productUploadResults.push({
+            productId: product.id,
+            amazonKey: product.amazon?.key || product.id,
+            status: 'FAILED_COLOR_CONFIGURATION',
+            reason: `Farbentdeckung für ${product.displayName} im Produktkatalog ist unvollständig (colorDiscoveryStatus = FAILED)`
+          });
+          continue;
+        }
+
         const editResult = await page.evaluate(async (params: {
           productId: string;
           amazonKey: string;
@@ -851,7 +862,16 @@ export class UploadWorkerService {
           let finalActiveColorNames: string[] = [];
           let selfHealedColor = '';
 
-          if (params.colorMode === 'customPicker') {
+          if (params.colorMode === 'none') {
+            return {
+              success: true,
+              activeColors: ['Keine Farbkonfiguration erforderlich'],
+              fitTypesApplied: activeFitsApplied,
+              fitDebug: fitDebugSummary,
+              selfHealedColor: '',
+              isLocked: false
+            };
+          } else if (params.colorMode === 'customPicker') {
             // Prüfen ob Farbauswahl für das Produkt gesperrt ist (.locked-container)
             const lockedContainer = (inputContainer?.querySelector('.locked-container, [class*="locked-container"]')
               || card?.querySelector('.locked-container, [class*="locked-container"]')) as HTMLElement;

@@ -813,3 +813,34 @@ MBA HUB/
   - `tests/trademarkV2.test.ts`: 115/115 Tests bestanden (100%).
   - Production Build (`npm run build:client && npm run build:server`) fehlerfrei abgeschlossen.
 
+### 10.33 🔬 Product Catalog V2 – Color Discovery Live-DOM Bug Analyse & Behebung
+- **Problem & Ursachenanalyse:**
+  - Der initiale Live-Scan erfasste alle Produkte, aber lieferte bei jedem Produkt `colors: []` (0 Farben) und 0 Color-Picker.
+  - *Ursache 1 (Falscher Container & Lifecycle):* Der `<product-editor>` existiert **nicht** innerhalb der Produktkarte (`[id$="-card"]`), sondern wird zeilenweise als Geschwister-Zeile (`form-row mb-base`) darunter gerendert. Bei geschlossener Karte hat der Editor `height: 1px` und enthält keine Swatches.
+  - *Ursache 2 (Falscher Edit-Button-Selektor):* Der Button besitzt die Klassen `btn btn-secondary btn-edit ${amazonKey}-edit-btn` (kein `.edit-details-btn` oder `aria-expanded`).
+  - *Ursache 3 (Falsche Swatch-Selektoren):* Swatches sind Angular-Komponenten `<colorcheckbox class="${colorId}-checkbox">` mit innerem `<span class="color-checkbox checkbox-${colorId}">`. Es existieren keine `input[id*="color-"]`.
+  - *Ursache 4 (Zerstörung valider Daten bei Scan-Fehler):* `ProductCatalogService.saveCatalog` ersetzte bestehende Farben ungeprüft mit `(scanned.colors || [])`, wodurch fehlgeschlagene Scans den Farbkatalog leerten.
+- **Implementierte Lösung:**
+  1. **Sequentielles Card-Opening & Lifecycle-Synchronisation (`productScannerService.ts`):**
+     - Scanner scrollt jede Karte ins Blickfeld, klickt `button.btn-edit, .${amazonKey}-edit-btn` und wartet auf tatsächliche DOM-Expansion des Editors (`offsetHeight > 50` und Position unterhalb der Karte).
+     - Extrahiert `<colorcheckbox>` Swatches über Regex `([a-z0-9_]+)-checkbox`.
+     - Schließt den Editor nach dem Auslesen wieder sauber.
+  2. **Eindeutige Klassifikation des ColorMode:**
+     - `PREDEFINED_SWATCHES` (Apparel & Drinkware: 1 bis 34 Swatches).
+     - `CUSTOM_PICKER` (dynamische Erkennung von `#color-btn` / Hex-Input).
+     - `NO_COLOR_CONFIGURATION` (Accessoires: Backpack, PopSockets, Cases, Tote Bags, Pillows, Journal akzeptieren Direct-Uploads).
+     - `SCAN_FAILED` (bei Timeout oder fehlgeschlagener Card-Expansion).
+  3. **Color Scan Validation Gate & Schutz bestehender Daten (`productCatalogService.ts`):**
+     - Integritäts-Gate: Werden bei $\ge 5$ Produkten 0 Swatches und 0 Picker gefunden, bricht der Scan mit `Color Discovery Validierungsfehler` ab.
+     - Transaktionale Sicherheit: Einzelprodukte mit `colorDiscoveryStatus === 'FAILED'` oder verdächtigem leeren Scan behalten ihre validen existierenden Farben und Modi.
+  4. **UploadWorker Roundtrip & Guard (`uploadWorkerService.ts`):**
+     - Produkte mit `colorMode === 'none'` laufen fehlerfrei durch (keine Swatches erforderlich).
+     - Produkte mit `colorDiscoveryStatus === 'FAILED'` werden vor Veröffentlichung abgefangen (`FAILED_COLOR_CONFIGURATION`).
+     - Swatches matchen 1:1 auf die stabilen Amazon-Klassen (`asphalt-checkbox`, etc.).
+  5. **100% Erhalt der 54 Avoid Rules:**
+     - Alle 54 persistenten Farb-Vermeidungsregeln in `product_catalog_overrides.json` bleiben unberührt und werden bei dynamischen Amazon-Updates sauber gemerged.
+- **Verifikation & Testergebnisse:**
+  - `tests/productCatalogV2.test.ts`: 12/12 Tests bestanden.
+  - `tests/colorDiscoveryV2.test.ts`: 7/7 Tests bestanden.
+  - Live Amazon DOM Scan erfolgreich: 38 Produkte, 32 mit Swatches (250+ Swatches live extrahiert, Standard T-Shirt = 34 Farben, Mug = 10 Farben).
+

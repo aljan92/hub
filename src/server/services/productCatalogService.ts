@@ -12,6 +12,8 @@ export interface MerchColorDef {
   avoidRule?: 'none' | 'white' | 'black'; // 'none' (default) | 'white' (avoid on white) | 'black' (avoid on black)
 }
 
+export type ColorMode = 'predefined' | 'customPicker' | 'none';
+
 export interface MerchFitTypeDef {
   id: string;          // e.g. "men", "women", "youth", "girls"
   displayName: string; // e.g. "Men", "Women"
@@ -62,7 +64,8 @@ export interface MerchProduct {
   id: string;                          // Stable MBA Hub ID, e.g. "STANDARD_TSHIRT", "CERAMIC_MUG"
   displayName: string;                 // Human-readable name, e.g. "Standard t-shirt"
   niceClass?: number | null;           // Nice Trademark Class (25, 18, 20, 21, 9, 16) or null
-  colorMode: ColorMode;                // 'predefined' or 'customPicker'
+  colorMode: ColorMode;                // 'predefined', 'customPicker', or 'none'
+  colorDiscoveryStatus?: 'SUCCESS' | 'FAILED'; // Status of color discovery for this product
   colors: MerchColorDef[];             // Available swatches
   fitTypes: MerchFitTypeDef[];         // Available fit types
   availableMarketplaces: string[];     // Marketplace IDs, e.g. ["US", "GB", "DE", "FR", "IT", "ES", "JP"]
@@ -389,15 +392,31 @@ export class ProductCatalogService {
         if (matched) {
           matchedExistingIds.add(matched.id);
 
-          // Update dynamic fields while preserving stable ID
-          const existingColorsMap = new Map((matched.colors || []).map(c => [c.id, c]));
-          const mergedColors: MerchColorDef[] = (scanned.colors || []).map(sc => {
-            const existCol = existingColorsMap.get(sc.id);
-            return {
-              ...sc,
-              avoidRule: existCol?.avoidRule ?? 'none'
-            };
-          });
+          // Check if color scan was valid for this product
+          const isColorScanValid = scanned.colorDiscoveryStatus !== 'FAILED';
+          const isSuspectEmptyColor = (scanned.colors.length === 0 && (matched.colors || []).length > 0 && scanned.colorMode !== 'none');
+
+          let mergedColors: MerchColorDef[] = [];
+          let mergedColorMode: ColorMode = scanned.colorMode || matched.colorMode;
+          let colorDiscoveryStatus: 'SUCCESS' | 'FAILED' = scanned.colorDiscoveryStatus ?? 'SUCCESS';
+
+          if (!isColorScanValid || isSuspectEmptyColor) {
+            // PROTECT PREVIOUS VALID DATA: Keep existing colors and colorMode
+            console.log(`[ProductCatalogService] 🛡️ Retaining existing colors for ${matched.id} (${(matched.colors || []).length} colors) due to incomplete color scan`);
+            mergedColors = matched.colors || [];
+            mergedColorMode = matched.colorMode;
+            colorDiscoveryStatus = !isColorScanValid ? 'FAILED' : 'SUCCESS';
+          } else {
+            // Update dynamic fields while merging with persistent avoidRules
+            const productOverrides = overrides[matched.id]?.colors || {};
+            mergedColors = (scanned.colors || []).map(sc => {
+              const rule = productOverrides[sc.id]?.avoidRule ?? 'none';
+              return {
+                ...sc,
+                avoidRule: rule
+              };
+            });
+          }
 
           const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? matched.amazonSortOrder ?? matched.sortOrder;
 
@@ -406,7 +425,8 @@ export class ProductCatalogService {
             displayName: scanned.displayName || matched.displayName,
             available: true,
             lastSeenAt: nowIso,
-            colorMode: scanned.colorMode || matched.colorMode,
+            colorMode: mergedColorMode,
+            colorDiscoveryStatus,
             colors: mergedColors,
             fitTypes: scanned.fitTypes && scanned.fitTypes.length > 0 ? scanned.fitTypes : matched.fitTypes,
             availableMarketplaces: scanned.availableMarketplaces && scanned.availableMarketplaces.length > 0 ? scanned.availableMarketplaces : matched.availableMarketplaces,
@@ -424,6 +444,7 @@ export class ProductCatalogService {
           // Brand NEW product detected by Amazon!
           const newStableId = scanned.id || scannedAmazonKey;
           const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? updatedProducts.length;
+          const isColorScanValid = scanned.colorDiscoveryStatus !== 'FAILED';
           
           console.log(`[ProductCatalogService] 🌟 New Amazon Product detected: ${newStableId} (${scannedAmazonKey})`);
 
@@ -449,7 +470,8 @@ export class ProductCatalogService {
             available: true,
             lastSeenAt: nowIso,
             niceClass: null,
-            colorMode: scanned.colorMode || 'predefined',
+            colorMode: scanned.colorMode || (scanned.colors && scanned.colors.length > 0 ? 'predefined' : 'none'),
+            colorDiscoveryStatus: isColorScanValid ? 'SUCCESS' : 'FAILED',
             colors: (scanned.colors || []).map(c => ({ ...c, avoidRule: 'none' })),
             fitTypes: scanned.fitTypes || [],
             availableMarketplaces: scanned.availableMarketplaces || ['US'],
