@@ -58,14 +58,14 @@ export interface ProductOverridesData {
 }
 
 export interface MerchProduct {
-  id: string;                          // Stable MBA Hub ID, e.g. "STANDARD_TSHIRT", "CERAMIC_MUG"
-  displayName: string;                 // Human-readable name, e.g. "Standard t-shirt"
-  niceClass?: number | null;           // Nice Trademark Class (25, 18, 20, 21, 9, 16) or null
+  id: string;                          // Stable internal MBA Hub Product ID (unique identifier)
+  displayName: string;                 // Human-readable name from Amazon DOM or catalog
+  niceClass?: number | null;           // Nice Trademark Class or null
   colorMode: ColorMode;                // 'predefined', 'customPicker', or 'none'
   colorDiscoveryStatus?: 'SUCCESS' | 'FAILED'; // Status of color discovery for this product
   colors: MerchColorDef[];             // Available swatches
   fitTypes: MerchFitTypeDef[];         // Available fit types
-  availableMarketplaces: string[];     // Marketplace IDs, e.g. ["US", "GB", "DE", "FR", "IT", "ES", "JP"]
+  availableMarketplaces: string[];     // Marketplace IDs
   sortOrder: number;                   // UI Display order for MBA Hub menus
   amazonSortOrder?: number;            // Dynamic Amazon row order (0, 1, 2...) for UploadWorker
   amazon?: ProductAmazonIdentity;      // Dynamic Amazon DOM identity
@@ -329,7 +329,6 @@ export class ProductCatalogService {
       if (pId === clean || pKey === clean) return true;
       if (pId.replace(/_/g, '') === compact || pKey.replace(/_/g, '') === compact) return true;
       if (pId.replace(/_/g, '').replace(/S$/, '') === compact.replace(/S$/, '') || pKey.replace(/_/g, '').replace(/S$/, '') === compact.replace(/S$/, '')) return true;
-      if (clean === 'TRAVEL_MUG' && (pId === 'TRAVEL_TUMBLER' || pKey === 'TRAVEL_TUMBLER')) return true;
       return false;
     });
   }

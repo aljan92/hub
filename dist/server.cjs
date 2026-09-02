@@ -50145,7 +50145,6 @@ var init_productCatalogService = __esm2({
           if (pId === clean || pKey === clean) return true;
           if (pId.replace(/_/g, "") === compact || pKey.replace(/_/g, "") === compact) return true;
           if (pId.replace(/_/g, "").replace(/S$/, "") === compact.replace(/S$/, "") || pKey.replace(/_/g, "").replace(/S$/, "") === compact.replace(/S$/, "")) return true;
-          if (clean === "TRAVEL_MUG" && (pId === "TRAVEL_TUMBLER" || pKey === "TRAVEL_TUMBLER")) return true;
           return false;
         });
       }
@@ -222613,6 +222612,7 @@ var init_amazonInspectService = __esm2({
             fits: pVal.dimensions?.FIT || [],
             colors: pVal.dimensions?.COLOR || [],
             marketplaces: normalizedMarketplaces,
+            // EXTERNAL_AMAZON_API_SCHEMA: Amazon Coral/ProductConfiguration API placement slot key for PopSockets
             artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
           };
           productSummary[normalizedKey] = entry;
@@ -228388,7 +228388,7 @@ var UploadWorkerService = class _UploadWorkerService {
         this.log(`\u23F3 PNG zugewiesen. Warte auf vollst\xE4ndiges Amazon-Asset-Rendering...`, "Warte auf Rendering...", 25, 100);
         try {
           await page.waitForFunction(() => {
-            const img = document.querySelector("#STANDARD_TSHIRT-card .asset img, .asset img, #global-uploader-container img.artwork");
+            const img = document.querySelector('[id$="-card"] .asset img, .product-card .asset img, .asset img, #global-uploader-container img.artwork');
             return img && (img.complete || img.naturalWidth && img.naturalWidth > 0 || img.src && img.src.length > 0);
           }, { timeout: 6e4 });
           const rateLimit = await page.$(".daily-rate-limit-breached");

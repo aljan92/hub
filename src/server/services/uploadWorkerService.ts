@@ -300,10 +300,10 @@ export class UploadWorkerService {
         await fileInput.setInputFiles(pngAbsolutePath);
         this.log(`⏳ PNG zugewiesen. Warte auf vollständiges Amazon-Asset-Rendering...`, 'Warte auf Rendering...', 25, 100);
 
-        // Wait for artwork to render on product card (#STANDARD_TSHIRT-card .asset img or .asset img)
+        // Wait for artwork to render on any product card or global asset container
         try {
           await page.waitForFunction(() => {
-            const img = document.querySelector('#STANDARD_TSHIRT-card .asset img, .asset img, #global-uploader-container img.artwork') as HTMLImageElement;
+            const img = document.querySelector('[id$="-card"] .asset img, .product-card .asset img, .asset img, #global-uploader-container img.artwork') as HTMLImageElement;
             return img && (img.complete || (img.naturalWidth && img.naturalWidth > 0) || (img.src && img.src.length > 0));
           }, { timeout: 60000 });
 

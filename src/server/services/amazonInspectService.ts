@@ -323,6 +323,7 @@ export class AmazonInspectService {
         fits: pVal.dimensions?.FIT || [],
         colors: pVal.dimensions?.COLOR || [],
         marketplaces: normalizedMarketplaces,
+        // EXTERNAL_AMAZON_API_SCHEMA: Amazon Coral/ProductConfiguration API placement slot key for PopSockets
         artworkInstruction: pVal.artworkInstructions?.FRONT || pVal.artworkInstructions?.BACK || pVal.artworkInstructions?.POP_SOCKET || null
       };
 

@@ -36,7 +36,7 @@ async function runDomLiveNormalizationTests() {
     assert(normalizeCatalogProductId('STANDARD_SWEATSHIRT') === 'SWEATSHIRT', 'Test 1.9: STANDARD_SWEATSHIRT -> SWEATSHIRT');
     assert(normalizeCatalogProductId('STANDARD_PULLOVER_HOODIE') === 'PULLOVER_HOODIE', 'Test 1.10: STANDARD_PULLOVER_HOODIE -> PULLOVER_HOODIE');
     assert(normalizeCatalogProductId('TRAVEL_TUMBLER') === 'TRAVEL_TUMBLER', 'Test 1.11: TRAVEL_TUMBLER -> TRAVEL_TUMBLER');
-    assert(normalizeCatalogProductId('TRAVEL_MUG') === 'TRAVEL_TUMBLER', 'Test 1.12: TRAVEL_MUG -> TRAVEL_TUMBLER');
+    assert(normalizeCatalogProductId('TRAVEL-TUMBLER') === 'TRAVEL_TUMBLER', 'Test 1.12: TRAVEL-TUMBLER -> TRAVEL_TUMBLER');
   }
 
   // ----------------------------------------------------
