@@ -590,6 +590,11 @@ export const ProductsView: React.FC = () => {
                               Prio #{product.dropPriorityOrder || 1}
                             </span>
                           )}
+                          {product.colors.filter(c => c.avoidRule && c.avoidRule !== 'none').length > 0 && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                              {product.colors.filter(c => c.avoidRule && c.avoidRule !== 'none').length} Farbregeln
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] font-mono text-slate-400 mt-0.5">
                           {product.id}
@@ -901,23 +906,32 @@ export const ProductsView: React.FC = () => {
                                 </div>
                               </div>
 
-                              {/* 3-State Avoid Rule Icon (Compact, Icon-only) */}
+                              {/* 3-State Avoid Rule Badge */}
                               <div className="shrink-0 ml-1.5">
                                 {isAvoidWhite ? (
                                   <span
-                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs bg-white/20 border border-white/40 shadow-sm"
-                                    title="⚪ Bei Weiß meiden"
+                                    className="px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 bg-white/20 text-white border border-white/40 shadow-sm"
+                                    title="⚪ Bei Weiß meiden (Wird bei hellem Artwork auf Amazon abgewählt)"
                                   >
-                                    ⚪
+                                    <span>⚪</span>
+                                    <span>Meide Weiß</span>
                                   </span>
                                 ) : isAvoidBlack ? (
                                   <span
-                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs bg-amber-500/20 border border-amber-500/40 shadow-sm"
-                                    title="⚫ Bei Schwarz meiden"
+                                    className="px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
+                                    title="⚫ Bei Schwarz meiden (Wird bei dunklem Artwork auf Amazon abgewählt)"
                                   >
-                                    ⚫
+                                    <span>⚫</span>
+                                    <span>Meide Schwarz</span>
                                   </span>
-                                ) : null}
+                                ) : (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded text-[9px] text-slate-500 group-hover:text-slate-400"
+                                    title="Immer aktiv (Klicken zum Durchschalten)"
+                                  >
+                                    Aktiv
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );

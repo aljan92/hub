@@ -50353,7 +50353,9 @@ var init_productCatalogService = __esm2({
           this.overridesData.overrides[id].niceClass = niceClass;
         }
         this.saveOverridesAtomic(this.overridesData);
-        return this.getCatalog();
+        const catalog = this.getCatalog();
+        this.saveCatalogAtomic(catalog);
+        return catalog;
       }
       /**
        * Update avoid rule for a specific color of a product (saved to persistent overrides)
@@ -50373,7 +50375,9 @@ var init_productCatalogService = __esm2({
         }
         this.overridesData.overrides[productId].colors[colorId] = { avoidRule };
         this.saveOverridesAtomic(this.overridesData);
-        return this.getCatalog();
+        const catalog = this.getCatalog();
+        this.saveCatalogAtomic(catalog);
+        return catalog;
       }
       /**
        * Update drop configuration (isDropAllowed, dropPriorityOrder) for products (saved to persistent overrides)
@@ -50395,7 +50399,9 @@ var init_productCatalogService = __esm2({
           }
         }
         this.saveOverridesAtomic(this.overridesData);
-        return this.getCatalog();
+        const catalog = this.getCatalog();
+        this.saveCatalogAtomic(catalog);
+        return catalog;
       }
       /**
        * Get all active products allowed to be dropped, ordered by user priority

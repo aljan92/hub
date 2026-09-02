@@ -835,6 +835,7 @@ MBA HUB/
      - Alle 54 historischen Avoid Rules in `product_catalog_overrides.json` bleiben unberührt erhalten (39 EXACT_MATCH, 15 NO_CURRENT_COLOR als historische Overrides).
      - Ergänzung von 2 bewusst bestätigten Mappings für Comfort Colors: `COMFORT_COLORS_SWEATSHIRT` (`pepper` ➔ `black`) und `COMFORT_COLORS_CROP_SWEATSHIRT` (`pepper` ➔ `black`), während `black` ➔ `black` erhalten bleibt.
      - Stand in Overrides: 56 Regeln gesamt. Auf aktuelle Live-Amazon-Swatches anwendbar: von 39 auf 41 gestiegen.
+     - **UI-Transparenz & End-to-End-Anwendung:** In `ProductsView` zeigen die Swatches nun eindeutige Pill-Badges (`⚪ Meide Weiß`, `⚫ Meide Schwarz`, `Aktiv`) und die Produktliste zeigt einen Counter (`X Farbregeln`). `ProductCatalogService` synchronisiert `product_catalog.json` bei jedem UI-Klick atomar auf Disk. Im `UploadWorkerService` werden Swatches mit aktiver Regel basierend auf `avoidColor` des Auftrags (`white` / `black`) zuverlässig deselektiert.
 - **Verifikation:**
   - `tests/productCatalogV2.test.ts`: 12/12 Tests bestanden (56 Overrides validiert).
   - `tests/colorDiscoveryV2.test.ts`: 7/7 Tests bestanden.

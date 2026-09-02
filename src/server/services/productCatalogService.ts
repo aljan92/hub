@@ -588,7 +588,9 @@ export class ProductCatalogService {
     }
 
     this.saveOverridesAtomic(this.overridesData);
-    return this.getCatalog();
+    const catalog = this.getCatalog();
+    this.saveCatalogAtomic(catalog);
+    return catalog;
   }
 
   /**
@@ -610,7 +612,9 @@ export class ProductCatalogService {
     this.overridesData.overrides[productId].colors![colorId] = { avoidRule };
 
     this.saveOverridesAtomic(this.overridesData);
-    return this.getCatalog();
+    const catalog = this.getCatalog();
+    this.saveCatalogAtomic(catalog);
+    return catalog;
   }
 
   /**
@@ -634,7 +638,9 @@ export class ProductCatalogService {
     }
 
     this.saveOverridesAtomic(this.overridesData);
-    return this.getCatalog();
+    const catalog = this.getCatalog();
+    this.saveCatalogAtomic(catalog);
+    return catalog;
   }
 
   /**
