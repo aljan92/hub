@@ -841,3 +841,22 @@ MBA HUB/
   - `tests/colorDiscoveryV2.test.ts`: 7/7 Tests bestanden.
   - Live-Katalog: 41 Avoid Rules aktiv angewendet, alle Nice Classes (34) und Droppables (30) unverändert.
 
+### 10.34 Verbindliche Architektur-Regel: Product Catalog Data Ownership
+
+# Product Catalog Data Ownership
+Product-specific runtime knowledge MUST originate from exactly one of:
+1. Dynamic Product Catalog (`data/product_catalog.json`)
+2. Persistent Product Overrides (`data/product_catalog_overrides.json`)
+
+Do NOT introduce hardcoded product mappings in services, workers or UI.
+- Amazon-observable information belongs to the dynamic catalog.
+- Hub/user-owned information belongs to product overrides.
+- Generic strategies and algorithms may be implemented in code, but Product→Strategy assignment belongs to overrides.
+
+**Clean Architecture Invariants:**
+- Keine hardcodierten Produkt-Arrays, Alias-Listen oder `normalizeProductKey` `if`-Kaskaden im Runtime-Code.
+- Normalisierung erfolgt ausschließlich dynamisch über `ProductCatalogService.findProductByAmazonKey()`.
+- Keine `KNOWN_COLORS` im Upload-Worker; Farb-IDs werden live aus den DOM-Klassen (`extractDomColorId`) extrahiert und gegen `params.catalogColors` gematcht.
+- Keine automatische Nice-Class-Inferenz; neue Produkte erhalten `niceClass: null` bis zur manuellen Konfiguration im UI.
+- Keine `knownAmazonKeys`-Listen mehr in Overrides; Zuordnungen erfolgen dynamisch über den aktuellen Katalog.
+

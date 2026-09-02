@@ -50001,7 +50001,6 @@ var init_productCatalogService = __esm2({
     ProductCatalogService = class {
       static catalogFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog.json");
       static overridesFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog_overrides.json");
-      static backupFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog.backup.v1.json");
       static catalogData = {
         products: [],
         marketplaces: [],
@@ -50115,7 +50114,7 @@ var init_productCatalogService = __esm2({
         return this.catalogData;
       }
       /**
-       * Helper to look up an override entry by stable ID or by known Amazon DOM keys
+       * Helper to look up an override entry by stable ID or by matching dynamic catalog product
        */
       static getOverrideEntry(productId, amazonKey) {
         this.ensureLoaded();
@@ -50123,12 +50122,32 @@ var init_productCatalogService = __esm2({
         if (overrides[productId]) {
           return { key: productId, override: overrides[productId] };
         }
-        for (const [k, v] of Object.entries(overrides)) {
-          if (v.knownAmazonKeys?.includes(productId) || amazonKey && v.knownAmazonKeys?.includes(amazonKey)) {
-            return { key: k, override: v };
-          }
+        const cleanId = String(productId || "").trim().toUpperCase();
+        const cleanKey = amazonKey ? String(amazonKey).trim().toUpperCase() : void 0;
+        const prod = this.catalogData.products.find(
+          (p) => p.id.toUpperCase() === cleanId || p.amazon?.key?.toUpperCase() === cleanId || cleanKey && p.amazon?.key?.toUpperCase() === cleanKey
+        );
+        if (prod && overrides[prod.id]) {
+          return { key: prod.id, override: overrides[prod.id] };
         }
         return null;
+      }
+      /**
+       * Dynamic lookup: find product by Amazon DOM key or stable ID
+       */
+      static findProductByAmazonKey(key) {
+        this.ensureLoaded();
+        const clean = String(key || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_");
+        const compact = clean.replace(/_/g, "");
+        return this.catalogData.products.find((p) => {
+          const pId = p.id.toUpperCase();
+          const pKey = (p.amazon?.key || "").toUpperCase();
+          if (pId === clean || pKey === clean) return true;
+          if (pId.replace(/_/g, "") === compact || pKey.replace(/_/g, "") === compact) return true;
+          if (pId.replace(/_/g, "").replace(/S$/, "") === compact.replace(/S$/, "") || pKey.replace(/_/g, "").replace(/S$/, "") === compact.replace(/S$/, "")) return true;
+          if (clean === "TRAVEL_MUG" && (pId === "TRAVEL_TUMBLER" || pKey === "TRAVEL_TUMBLER")) return true;
+          return false;
+        });
       }
       /**
        * Get merged catalog: Amazon dynamic data + persistent MBA Hub overrides
@@ -50139,7 +50158,7 @@ var init_productCatalogService = __esm2({
           const matched = this.getOverrideEntry(prod.id, prod.amazon?.key);
           const override = matched?.override;
           const isAvailable = prod.available !== false;
-          const amazonKey = prod.amazon?.key || override?.knownAmazonKeys?.[0] || prod.id;
+          const amazonKey = prod.amazon?.key || prod.id;
           const amazonSort = prod.amazonSortOrder ?? prod.amazon?.sortOrder ?? prod.sortOrder ?? 999;
           const uiSort = override?.uiSortOrder ?? prod.sortOrder ?? amazonSort;
           const mergedColors = (prod.colors || []).map((col) => {
@@ -50191,8 +50210,6 @@ var init_productCatalogService = __esm2({
           for (const scanned of data.products) {
             const scannedAmazonKey = scanned.amazon?.key || scanned.id;
             let matched = existingProds.find((p) => {
-              const ov = overrides[p.id];
-              if (ov?.knownAmazonKeys && ov.knownAmazonKeys.includes(scannedAmazonKey)) return true;
               if (p.amazon?.key === scannedAmazonKey) return true;
               return p.id === scannedAmazonKey;
             });
@@ -50253,7 +50270,6 @@ var init_productCatalogService = __esm2({
                   niceClass: null,
                   uiSortOrder: updatedProducts.length + 1,
                   isDropAllowed: false,
-                  knownAmazonKeys: [scannedAmazonKey],
                   artwork: {
                     variants: [],
                     selectionStrategy: "DEFAULT_MASTER"
@@ -222326,6 +222342,7 @@ var init_amazonInspectService = __esm2({
     init_browserSessionService();
     init_syncEngine();
     init_taskLogService();
+    init_productCatalogService();
     FIND_LISTINGS_URL2 = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
     PRODUCT_CONFIG_URL2 = "https://merch.amazon.com/api/productconfiguration/get?id=";
     ALL_STATUSES2 = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
@@ -222557,45 +222574,11 @@ var init_amazonInspectService = __esm2({
         if (["JP", "8", "CO.JP", "AMAZON.CO.JP", "A1VC38T7YXB528"].includes(s)) return "JP";
         return s;
       }
-      // Helper to normalize Amazon product keys to catalog product IDs
+      // Helper to normalize Amazon product keys to catalog product IDs via dynamic ProductCatalogService
       static normalizeProductKey(raw) {
-        const s = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_");
-        if (["STANDARD_TSHIRT", "STANDARD_T_SHIRT", "TSHIRT", "STANDARD"].includes(s)) return "STANDARD_TSHIRT";
-        if (["VALUE_GRAPHIC_TSHIRT", "VALUE_GRAPHIC_T_SHIRT", "VALUE_TSHIRT", "VALUE_T_SHIRT"].includes(s)) return "VALUE_GRAPHIC_TSHIRT";
-        if (["PREMIUM_TSHIRT", "PREMIUM_T_SHIRT", "PREMIUM"].includes(s)) return "PREMIUM_TSHIRT";
-        if (["COMFORT_COLORS_HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS", "HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS_TSHIRT"].includes(s)) return "COMFORT_COLORS_HEAVYWEIGHT_TSHIRT";
-        if (["VNECK_TSHIRT", "VNECK", "V_NECK", "V_NECK_TSHIRT", "V_NECK_T_SHIRT"].includes(s)) return "VNECK_TSHIRT";
-        if (["TANK_TOP", "TANKTOP", "TANK"].includes(s)) return "TANK_TOP";
-        if (["STANDARD_LONG_SLEEVE", "LONG_SLEEVE_TSHIRT", "LONG_SLEEVE_T_SHIRT", "LONGSLEEVE", "LONG_SLEEVE", "STANDARD_LONG_SLEEVE_TSHIRT"].includes(s)) return "LONG_SLEEVE_TSHIRT";
-        if (["RAGLAN", "BASEBALL_TEE", "RAGLAN_TSHIRT"].includes(s)) return "RAGLAN";
-        if (["SOCCER_JERSEY", "SOCCER"].includes(s)) return "SOCCER_JERSEY";
-        if (["BASKETBALL_JERSEY", "BASKETBALL"].includes(s)) return "BASKETBALL_JERSEY";
-        if (["BASEBALL_JERSEY", "BASEBALL"].includes(s)) return "BASEBALL_JERSEY";
-        if (["STANDARD_SWEATSHIRT", "SWEATSHIRT", "SWEAT_SHIRT"].includes(s)) return "SWEATSHIRT";
-        if (["STANDARD_PULLOVER_HOODIE", "PULLOVER_HOODIE", "HOODIE", "PULLOVER"].includes(s)) return "PULLOVER_HOODIE";
-        if (["ZIP_HOODIE", "ZIPHOODIE", "ZIPPER_HOODIE"].includes(s)) return "ZIP_HOODIE";
-        if (["POP_SOCKET", "POPSOCKET", "POPSOCKETS", "POP_SOCKETS"].includes(s)) return "POPSOCKETS";
-        if (["PHONE_CASE_APPLE_IPHONE", "IPHONE_CASE", "IPHONE_CASES", "IPHONE"].includes(s)) return "IPHONE_CASES";
-        if (["PHONE_CASE_SAMSUNG_GALAXY", "SAMSUNG_GALAXY_CASE", "SAMSUNG_CASE", "SAMSUNG", "SAMSUNG_GALAXY_CASES"].includes(s)) return "SAMSUNG_GALAXY_CASE";
-        if (["TOTE_BAG", "TOTE_BAGS", "TOTEBAG", "TOTEBAGS", "BAG"].includes(s)) return "TOTE_BAG";
-        if (["THROW_PILLOW", "THROW_PILLOWS", "PILLOW", "PILLOWS"].includes(s)) return "THROW_PILLOWS";
-        if (["TUMBLER", "TUMBLERS"].includes(s)) return "TUMBLER";
-        if (["OVERSIZED_TSHIRT", "OVERSIZED_T_SHIRT", "OVERSIZED"].includes(s)) return "OVERSIZED_TSHIRT";
-        if (["COMFORT_COLORS_SWEATSHIRT"].includes(s)) return "COMFORT_COLORS_SWEATSHIRT";
-        if (["COMFORT_COLORS_CROP_SWEATSHIRT"].includes(s)) return "COMFORT_COLORS_CROP_SWEATSHIRT";
-        if (["CROP_TOP", "CROPTOP"].includes(s)) return "CROP_TOP";
-        if (["PERFORMANCE_HOODIE"].includes(s)) return "PERFORMANCE_HOODIE";
-        if (["PERFORMANCE_TSHIRT", "PERFORMANCE_T_SHIRT"].includes(s)) return "PERFORMANCE_TSHIRT";
-        if (["POLO", "PERFORMANCE_POLO"].includes(s)) return "PERFORMANCE_POLO";
-        if (["QUARTER_ZIP", "QUARTERZIP", "PERFORMANCE_QUARTER_ZIP"].includes(s)) return "PERFORMANCE_QUARTER_ZIP";
-        if (["PRINTED_BASEBALL_HAT", "BASEBALL_HAT"].includes(s)) return "BASEBALL_HAT";
-        if (["PRINTED_TRUCKER_HAT", "TRUCKER_HAT"].includes(s)) return "TRUCKER_HAT";
-        if (["SPORT_SUN_VISOR", "SUN_VISOR", "VISOR"].includes(s)) return "SPORT_SUN_VISOR";
-        if (["SPORT_BACKPACK", "BACKPACK"].includes(s)) return "SPORT_BACKPACK";
-        if (["MUG", "MUGS", "CERAMIC_MUG"].includes(s)) return "CERAMIC_MUG";
-        if (["WATER_BOTTLE", "WATER_BOTTLES"].includes(s)) return "WATER_BOTTLE";
-        if (["HARDCOVER_JOURNAL", "JOURNAL"].includes(s)) return "HARDCOVER_JOURNAL";
-        return s;
+        const s = String(raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_");
+        const matched = ProductCatalogService.findProductByAmazonKey(s);
+        return matched ? matched.id : s;
       }
       /**
        * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
@@ -224226,44 +224209,9 @@ function normalizeMarketplaceCode(raw) {
   return s;
 }
 function normalizeCatalogProductId(raw) {
-  const s = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_");
-  if (["STANDARD_TSHIRT", "STANDARD_T_SHIRT", "TSHIRT", "STANDARD"].includes(s)) return "STANDARD_TSHIRT";
-  if (["VALUE_GRAPHIC_TSHIRT", "VALUE_GRAPHIC_T_SHIRT", "VALUE_TSHIRT", "VALUE_T_SHIRT"].includes(s)) return "VALUE_GRAPHIC_TSHIRT";
-  if (["PREMIUM_TSHIRT", "PREMIUM_T_SHIRT", "PREMIUM"].includes(s)) return "PREMIUM_TSHIRT";
-  if (["COMFORT_COLORS_HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS", "HEAVYWEIGHT_TSHIRT", "COMFORT_COLORS_TSHIRT"].includes(s)) return "COMFORT_COLORS_HEAVYWEIGHT_TSHIRT";
-  if (["VNECK_TSHIRT", "VNECK", "V_NECK", "V_NECK_TSHIRT", "V_NECK_T_SHIRT"].includes(s)) return "VNECK_TSHIRT";
-  if (["TANK_TOP", "TANKTOP", "TANK"].includes(s)) return "TANK_TOP";
-  if (["STANDARD_LONG_SLEEVE", "LONG_SLEEVE_TSHIRT", "LONG_SLEEVE_T_SHIRT", "LONGSLEEVE", "LONG_SLEEVE", "STANDARD_LONG_SLEEVE_TSHIRT"].includes(s)) return "LONG_SLEEVE_TSHIRT";
-  if (["RAGLAN", "BASEBALL_TEE", "RAGLAN_TSHIRT"].includes(s)) return "RAGLAN";
-  if (["SOCCER_JERSEY", "SOCCER"].includes(s)) return "SOCCER_JERSEY";
-  if (["BASKETBALL_JERSEY", "BASKETBALL"].includes(s)) return "BASKETBALL_JERSEY";
-  if (["BASEBALL_JERSEY", "BASEBALL"].includes(s)) return "BASEBALL_JERSEY";
-  if (["STANDARD_SWEATSHIRT", "SWEATSHIRT", "SWEAT_SHIRT"].includes(s)) return "SWEATSHIRT";
-  if (["STANDARD_PULLOVER_HOODIE", "PULLOVER_HOODIE", "HOODIE", "PULLOVER"].includes(s)) return "PULLOVER_HOODIE";
-  if (["ZIP_HOODIE", "ZIPHOODIE", "ZIPPER_HOODIE"].includes(s)) return "ZIP_HOODIE";
-  if (["POP_SOCKET", "POPSOCKET", "POPSOCKETS", "POP_SOCKETS"].includes(s)) return "POPSOCKETS";
-  if (["PHONE_CASE_APPLE_IPHONE", "IPHONE_CASE", "IPHONE_CASES", "IPHONE"].includes(s)) return "IPHONE_CASES";
-  if (["PHONE_CASE_SAMSUNG_GALAXY", "SAMSUNG_GALAXY_CASE", "SAMSUNG_CASE", "SAMSUNG", "SAMSUNG_GALAXY_CASES"].includes(s)) return "SAMSUNG_GALAXY_CASE";
-  if (["TOTE_BAG", "TOTE_BAGS", "TOTEBAG", "TOTEBAGS", "BAG"].includes(s)) return "TOTE_BAG";
-  if (["THROW_PILLOW", "THROW_PILLOWS", "PILLOW", "PILLOWS"].includes(s)) return "THROW_PILLOWS";
-  if (["TUMBLER", "TUMBLERS"].includes(s)) return "TUMBLER";
-  if (["OVERSIZED_TSHIRT", "OVERSIZED_T_SHIRT", "OVERSIZED"].includes(s)) return "OVERSIZED_TSHIRT";
-  if (["COMFORT_COLORS_SWEATSHIRT"].includes(s)) return "COMFORT_COLORS_SWEATSHIRT";
-  if (["COMFORT_COLORS_CROP_SWEATSHIRT"].includes(s)) return "COMFORT_COLORS_CROP_SWEATSHIRT";
-  if (["CROP_TOP", "CROPTOP"].includes(s)) return "CROP_TOP";
-  if (["PERFORMANCE_HOODIE"].includes(s)) return "PERFORMANCE_HOODIE";
-  if (["PERFORMANCE_TSHIRT", "PERFORMANCE_T_SHIRT"].includes(s)) return "PERFORMANCE_TSHIRT";
-  if (["POLO", "PERFORMANCE_POLO"].includes(s)) return "PERFORMANCE_POLO";
-  if (["QUARTER_ZIP", "QUARTERZIP", "PERFORMANCE_QUARTER_ZIP"].includes(s)) return "PERFORMANCE_QUARTER_ZIP";
-  if (["PRINTED_BASEBALL_HAT", "BASEBALL_HAT"].includes(s)) return "BASEBALL_HAT";
-  if (["PRINTED_TRUCKER_HAT", "TRUCKER_HAT"].includes(s)) return "TRUCKER_HAT";
-  if (["SPORT_SUN_VISOR", "SUN_VISOR", "VISOR"].includes(s)) return "SPORT_SUN_VISOR";
-  if (["SPORT_BACKPACK", "BACKPACK"].includes(s)) return "SPORT_BACKPACK";
-  if (["MUG", "MUGS", "CERAMIC_MUG"].includes(s)) return "CERAMIC_MUG";
-  if (["WATER_BOTTLE", "WATER_BOTTLES"].includes(s)) return "WATER_BOTTLE";
-  if (["TRAVEL_TUMBLER", "TRAVEL_TUMBLERS", "TRAVEL_MUG"].includes(s)) return "TRAVEL_TUMBLER";
-  if (["HARDCOVER_JOURNAL", "JOURNAL"].includes(s)) return "HARDCOVER_JOURNAL";
-  return s;
+  const s = String(raw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_");
+  const matched = ProductCatalogService.findProductByAmazonKey(s);
+  return matched ? matched.id : s;
 }
 var import_fs81, import_path76, NON_US_DROP_ORDER, QueueService;
 var init_queueService = __esm2({
@@ -228747,43 +228695,11 @@ var UploadWorkerService = class _UploadWorkerService {
             if (cb.textContent) clues.push(cb.textContent.trim());
             return clues.join(" ").toLowerCase();
           };
-          const KNOWN_COLORS = [
-            { id: "black", matchers: ["black", "schwarz"] },
-            { id: "white", matchers: ["white", "wei\xDF", "weiss"] },
-            { id: "navy", matchers: ["navy", "dunkelblau"] },
-            { id: "asphalt", matchers: ["asphalt"] },
-            { id: "dark_heather", matchers: ["dark_heather", "dark-heather", "dark heather", "darkheather"] },
-            { id: "heather_grey", matchers: ["heather_grey", "heather-grey", "heather grey", "heathergrey", "heather gray", "heather_gray"] },
-            { id: "royal", matchers: ["royal", "royal_blue", "royal-blue", "royal blue", "royalblue"] },
-            { id: "red", matchers: ["red", "rot"] },
-            { id: "olive", matchers: ["olive"] },
-            { id: "kelly_green", matchers: ["kelly_green", "kelly-green", "kelly green", "kellygreen"] },
-            { id: "baby_blue", matchers: ["baby_blue", "baby-blue", "baby blue", "babyblue"] },
-            { id: "pink", matchers: ["pink", "rosa"] },
-            { id: "purple", matchers: ["purple", "lila"] },
-            { id: "orange", matchers: ["orange"] },
-            { id: "lemon", matchers: ["lemon", "yellow", "gelb"] },
-            { id: "cranberry", matchers: ["cranberry"] },
-            { id: "brown", matchers: ["brown", "braun"] },
-            { id: "silver", matchers: ["silver", "silber"] },
-            { id: "slate", matchers: ["slate"] },
-            { id: "sage_green", matchers: ["sage_green", "sage-green", "sage green", "sagegreen", "sage"] },
-            { id: "tan", matchers: ["tan"] },
-            { id: "heather_blue", matchers: ["heather_blue", "heather-blue", "heather blue", "heatherblue"] },
-            { id: "black_white", matchers: ["black_white", "black-white", "black white"] },
-            { id: "navy_white", matchers: ["navy_white", "navy-white", "navy white"] },
-            { id: "red_white", matchers: ["red_white", "red-white", "red white"] },
-            { id: "royal_blue_white", matchers: ["royal_blue_white", "royal-white", "royal_white", "royal white"] },
-            { id: "dark_heather_white", matchers: ["dark_heather_white", "dark_heather-white", "dark heather white"] },
-            { id: "white_black", matchers: ["white_black", "white-black", "white black"] },
-            { id: "white_white", matchers: ["white_white", "white-white", "white white"] },
-            { id: "black_black", matchers: ["black_black", "black-black", "black black"] }
-          ];
-          const identifyColorId = (haystack) => {
-            for (const col of KNOWN_COLORS) {
-              if (col.matchers.some((m) => haystack.includes(m))) return col.id;
-            }
-            return "";
+          const extractDomColorId = (cb) => {
+            const m1 = (cb.className || "").match(/([a-z0-9_]+)-checkbox/i);
+            const innerSpan = cb.querySelector('span.color-checkbox, span[class*="checkbox-"]');
+            const m2 = innerSpan ? (innerSpan.className || "").match(/checkbox-([a-z0-9_]+)/i) : null;
+            return (m1 ? m1[1] : m2 ? m2[1] : "").toLowerCase();
           };
           let desiredFits = params2.fitTypes.map((f) => f.toLowerCase());
           if (desiredFits.includes("youth") && !desiredFits.includes("men") && !desiredFits.includes("women")) {
@@ -228959,12 +228875,12 @@ var UploadWorkerService = class _UploadWorkerService {
               return rect.height > 0 && rect.width > 0;
             });
             for (const cb of colorCheckboxes) {
+              const domColorId = extractDomColorId(cb);
               const haystack = extractColorClues(cb);
-              const matchedColorId = identifyColorId(haystack);
               let matchedConfig;
               if (params2.catalogColors && params2.catalogColors.length > 0) {
                 matchedConfig = params2.catalogColors.find(
-                  (c) => matchedColorId && c.id === matchedColorId || haystack.includes(c.id) || matchedColorId && c.id.includes(matchedColorId)
+                  (c) => domColorId && c.id === domColorId || haystack.includes(c.id) || domColorId && c.id.includes(domColorId)
                 );
               }
               let shouldBeChecked = false;

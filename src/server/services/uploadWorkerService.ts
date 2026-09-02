@@ -731,44 +731,11 @@ export class UploadWorkerService {
             return clues.join(' ').toLowerCase();
           };
 
-          const KNOWN_COLORS: { id: string; matchers: string[] }[] = [
-            { id: 'black', matchers: ['black', 'schwarz'] },
-            { id: 'white', matchers: ['white', 'weiß', 'weiss'] },
-            { id: 'navy', matchers: ['navy', 'dunkelblau'] },
-            { id: 'asphalt', matchers: ['asphalt'] },
-            { id: 'dark_heather', matchers: ['dark_heather', 'dark-heather', 'dark heather', 'darkheather'] },
-            { id: 'heather_grey', matchers: ['heather_grey', 'heather-grey', 'heather grey', 'heathergrey', 'heather gray', 'heather_gray'] },
-            { id: 'royal', matchers: ['royal', 'royal_blue', 'royal-blue', 'royal blue', 'royalblue'] },
-            { id: 'red', matchers: ['red', 'rot'] },
-            { id: 'olive', matchers: ['olive'] },
-            { id: 'kelly_green', matchers: ['kelly_green', 'kelly-green', 'kelly green', 'kellygreen'] },
-            { id: 'baby_blue', matchers: ['baby_blue', 'baby-blue', 'baby blue', 'babyblue'] },
-            { id: 'pink', matchers: ['pink', 'rosa'] },
-            { id: 'purple', matchers: ['purple', 'lila'] },
-            { id: 'orange', matchers: ['orange'] },
-            { id: 'lemon', matchers: ['lemon', 'yellow', 'gelb'] },
-            { id: 'cranberry', matchers: ['cranberry'] },
-            { id: 'brown', matchers: ['brown', 'braun'] },
-            { id: 'silver', matchers: ['silver', 'silber'] },
-            { id: 'slate', matchers: ['slate'] },
-            { id: 'sage_green', matchers: ['sage_green', 'sage-green', 'sage green', 'sagegreen', 'sage'] },
-            { id: 'tan', matchers: ['tan'] },
-            { id: 'heather_blue', matchers: ['heather_blue', 'heather-blue', 'heather blue', 'heatherblue'] },
-            { id: 'black_white', matchers: ['black_white', 'black-white', 'black white'] },
-            { id: 'navy_white', matchers: ['navy_white', 'navy-white', 'navy white'] },
-            { id: 'red_white', matchers: ['red_white', 'red-white', 'red white'] },
-            { id: 'royal_blue_white', matchers: ['royal_blue_white', 'royal-white', 'royal_white', 'royal white'] },
-            { id: 'dark_heather_white', matchers: ['dark_heather_white', 'dark_heather-white', 'dark heather white'] },
-            { id: 'white_black', matchers: ['white_black', 'white-black', 'white black'] },
-            { id: 'white_white', matchers: ['white_white', 'white-white', 'white white'] },
-            { id: 'black_black', matchers: ['black_black', 'black-black', 'black black'] }
-          ];
-
-          const identifyColorId = (haystack: string): string => {
-            for (const col of KNOWN_COLORS) {
-              if (col.matchers.some(m => haystack.includes(m))) return col.id;
-            }
-            return '';
+          const extractDomColorId = (cb: Element): string => {
+            const m1 = (cb.className || '').match(/([a-z0-9_]+)-checkbox/i);
+            const innerSpan = cb.querySelector('span.color-checkbox, span[class*="checkbox-"]');
+            const m2 = innerSpan ? (innerSpan.className || '').match(/checkbox-([a-z0-9_]+)/i) : null;
+            return (m1 ? m1[1] : (m2 ? m2[1] : '')).toLowerCase();
           };
 
           // -------------------------------------------------------------
@@ -997,17 +964,17 @@ export class UploadWorkerService {
 
             // PASS 1: Apply user's Product Catalog definitions exclusively (Single Source of Truth)
             for (const cb of colorCheckboxes) {
+              const domColorId = extractDomColorId(cb);
               const haystack = extractColorClues(cb);
-              const matchedColorId = identifyColorId(haystack);
 
               // 1. Find matching color definition from product catalog
               let matchedConfig: { id: string; avoidRule?: 'none' | 'white' | 'black' } | undefined;
 
               if (params.catalogColors && params.catalogColors.length > 0) {
                 matchedConfig = params.catalogColors.find((c: any) => 
-                  (matchedColorId && c.id === matchedColorId) || 
+                  (domColorId && c.id === domColorId) || 
                   haystack.includes(c.id) ||
-                  (matchedColorId && c.id.includes(matchedColorId))
+                  (domColorId && c.id.includes(domColorId))
                 );
               }
 

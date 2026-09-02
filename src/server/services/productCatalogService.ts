@@ -49,7 +49,6 @@ export interface ProductOverride {
   dropPriorityOrder?: number;
   artwork?: ProductArtworkConfig;
   colors?: Record<string, { avoidRule: 'none' | 'white' | 'black' }>;
-  knownAmazonKeys?: string[];
 }
 
 export interface ProductOverridesData {
@@ -77,16 +76,6 @@ export interface MerchProduct {
   lastUpdated: string;                 // ISO date string
   isDropAllowed?: boolean;             // Whether this product can be dropped during slot shortage
   dropPriorityOrder?: number;          // Order for drop cascade (1 = drop first, 2 = drop second, etc.)
-}
-
-export function inferNiceClass(idOrName: string): number {
-  const clean = (idOrName || '').toLowerCase();
-  if (clean.includes('popsocket') || clean.includes('case') || clean.includes('phone')) return 9;
-  if (clean.includes('backpack') || clean.includes('tote') || clean.includes('bag')) return 18;
-  if (clean.includes('pillow') || clean.includes('cushion')) return 20;
-  if (clean.includes('mug') || clean.includes('tumbler') || clean.includes('bottle')) return 21;
-  if (clean.includes('journal') || clean.includes('notebook') || clean.includes('book')) return 16;
-  return 25; // Default to 25 (Apparel & Headwear)
 }
 
 export interface ProductCatalogData {
@@ -176,7 +165,6 @@ export const MERCH_COLOR_HEX_MAP: Record<string, string> = {
 export class ProductCatalogService {
   private static catalogFilePath = path.resolve(process.cwd(), 'data', 'product_catalog.json');
   private static overridesFilePath = path.resolve(process.cwd(), 'data', 'product_catalog_overrides.json');
-  private static backupFilePath = path.resolve(process.cwd(), 'data', 'product_catalog.backup.v1.json');
 
   private static catalogData: ProductCatalogData = {
     products: [],
@@ -307,20 +295,43 @@ export class ProductCatalogService {
   }
 
   /**
-   * Helper to look up an override entry by stable ID or by known Amazon DOM keys
+   * Helper to look up an override entry by stable ID or by matching dynamic catalog product
    */
-  public static getOverrideEntry(productId: string, amazonKey?: string): { key: string; override: ProductOverrideEntry } | null {
+  public static getOverrideEntry(productId: string, amazonKey?: string): { key: string; override: ProductOverride } | null {
     this.ensureLoaded();
     const overrides = this.overridesData.overrides || {};
     if (overrides[productId]) {
       return { key: productId, override: overrides[productId] };
     }
-    for (const [k, v] of Object.entries(overrides)) {
-      if (v.knownAmazonKeys?.includes(productId) || (amazonKey && v.knownAmazonKeys?.includes(amazonKey))) {
-        return { key: k, override: v };
-      }
+    const cleanId = String(productId || '').trim().toUpperCase();
+    const cleanKey = amazonKey ? String(amazonKey).trim().toUpperCase() : undefined;
+    const prod = this.catalogData.products.find(p => 
+      p.id.toUpperCase() === cleanId || 
+      p.amazon?.key?.toUpperCase() === cleanId ||
+      (cleanKey && p.amazon?.key?.toUpperCase() === cleanKey)
+    );
+    if (prod && overrides[prod.id]) {
+      return { key: prod.id, override: overrides[prod.id] };
     }
     return null;
+  }
+
+  /**
+   * Dynamic lookup: find product by Amazon DOM key or stable ID
+   */
+  public static findProductByAmazonKey(key: string): MerchProduct | undefined {
+    this.ensureLoaded();
+    const clean = String(key || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
+    const compact = clean.replace(/_/g, '');
+    return this.catalogData.products.find(p => {
+      const pId = p.id.toUpperCase();
+      const pKey = (p.amazon?.key || '').toUpperCase();
+      if (pId === clean || pKey === clean) return true;
+      if (pId.replace(/_/g, '') === compact || pKey.replace(/_/g, '') === compact) return true;
+      if (pId.replace(/_/g, '').replace(/S$/, '') === compact.replace(/S$/, '') || pKey.replace(/_/g, '').replace(/S$/, '') === compact.replace(/S$/, '')) return true;
+      if (clean === 'TRAVEL_MUG' && (pId === 'TRAVEL_TUMBLER' || pKey === 'TRAVEL_TUMBLER')) return true;
+      return false;
+    });
   }
 
   /**
@@ -333,7 +344,7 @@ export class ProductCatalogService {
       const matched = this.getOverrideEntry(prod.id, prod.amazon?.key);
       const override = matched?.override;
       const isAvailable = prod.available !== false;
-      const amazonKey = prod.amazon?.key || override?.knownAmazonKeys?.[0] || prod.id;
+      const amazonKey = prod.amazon?.key || prod.id;
       const amazonSort = prod.amazonSortOrder ?? prod.amazon?.sortOrder ?? prod.sortOrder ?? 999;
       const uiSort = override?.uiSortOrder ?? prod.sortOrder ?? amazonSort;
 
@@ -396,10 +407,8 @@ export class ProductCatalogService {
       for (const scanned of data.products) {
         const scannedAmazonKey = scanned.amazon?.key || scanned.id;
 
-        // 1. Try to find existing product by knownAmazonKeys or amazon.key or id
+        // 1. Try to find existing product by amazon.key or id
         let matched = existingProds.find(p => {
-          const ov = overrides[p.id];
-          if (ov?.knownAmazonKeys && ov.knownAmazonKeys.includes(scannedAmazonKey)) return true;
           if (p.amazon?.key === scannedAmazonKey) return true;
           return p.id === scannedAmazonKey;
         });
@@ -473,7 +482,6 @@ export class ProductCatalogService {
               niceClass: null,
               uiSortOrder: updatedProducts.length + 1,
               isDropAllowed: false,
-              knownAmazonKeys: [scannedAmazonKey],
               artwork: {
                 variants: [],
                 selectionStrategy: 'DEFAULT_MASTER'
