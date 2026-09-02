@@ -1005,6 +1005,20 @@ app.get('/api/v1/tasks', (req, res) => {
   res.json({ success: true, tasks: awaiting });
 });
 
+// 7.1 Task Logs Management Endpoints for Prompt Log UI (Must be declared BEFORE /:taskId)
+app.get('/api/v1/tasks/log', (req, res) => {
+  res.json({
+    success: true,
+    tasks: TaskLogService.getTaskLogs()
+  });
+});
+
+app.delete('/api/v1/tasks/log', (req, res) => {
+  TaskLogService.clearTaskLogs();
+  broadcast('TASK_LOGS_CLEARED', {});
+  res.json({ success: true, message: 'All task logs cleared' });
+});
+
 app.get('/api/v1/tasks/:taskId', (req, res) => {
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (!task) {
@@ -1149,20 +1163,6 @@ app.post(['/api/v1/design', '/design', '/api/v1/hermes/design', '/api/v1/mcp/des
     console.error('[Design Ingestion] Error processing task:', err);
     res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
   }
-});
-
-// 8.1 Task Logs Management Endpoints for Prompt Log UI
-app.get('/api/v1/tasks/log', (req, res) => {
-  res.json({
-    success: true,
-    tasks: TaskLogService.getTaskLogs()
-  });
-});
-
-app.delete('/api/v1/tasks/log', (req, res) => {
-  TaskLogService.clearTaskLogs();
-  broadcast('TASK_LOGS_CLEARED', {});
-  res.json({ success: true, message: 'All task logs cleared' });
 });
 
 // Full Workspace Reset: Deletes all tasks, queue items, and all design/artwork files on disk

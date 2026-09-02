@@ -230920,6 +230920,17 @@ app.get("/api/v1/tasks", (req, res) => {
   const awaiting = TaskLogService2.getAwaitingTasks();
   res.json({ success: true, tasks: awaiting });
 });
+app.get("/api/v1/tasks/log", (req, res) => {
+  res.json({
+    success: true,
+    tasks: TaskLogService2.getTaskLogs()
+  });
+});
+app.delete("/api/v1/tasks/log", (req, res) => {
+  TaskLogService2.clearTaskLogs();
+  broadcast("TASK_LOGS_CLEARED", {});
+  res.json({ success: true, message: "All task logs cleared" });
+});
 app.get("/api/v1/tasks/:taskId", (req, res) => {
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (!task) {
@@ -231041,17 +231052,6 @@ app.post(["/api/v1/design", "/design", "/api/v1/hermes/design", "/api/v1/mcp/des
     console.error("[Design Ingestion] Error processing task:", err);
     res.status(500).json({ success: false, error: err.message || "Internal Server Error" });
   }
-});
-app.get("/api/v1/tasks/log", (req, res) => {
-  res.json({
-    success: true,
-    tasks: TaskLogService2.getTaskLogs()
-  });
-});
-app.delete("/api/v1/tasks/log", (req, res) => {
-  TaskLogService2.clearTaskLogs();
-  broadcast("TASK_LOGS_CLEARED", {});
-  res.json({ success: true, message: "All task logs cleared" });
 });
 app.post("/api/v1/system/purge-all-data", (req, res) => {
   try {
