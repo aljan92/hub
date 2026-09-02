@@ -1902,6 +1902,24 @@ app.post('/api/v1/products/nice-class', (req, res) => {
   }
 });
 
+// Update artwork configuration for a product
+app.post('/api/v1/products/artwork-config', (req, res) => {
+  try {
+    const { productId, artwork } = req.body;
+    if (!productId || !artwork || typeof artwork !== 'object') {
+      return res.status(400).json({ success: false, error: 'productId und artwork erforderlich' });
+    }
+    const catalog = ProductCatalogService.updateProductArtworkConfig(productId, artwork);
+    res.json({
+      success: true,
+      catalog,
+      message: `Artwork-Konfiguration für ${productId} erfolgreich aktualisiert.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ==============================================================================
 // 12. Product Database & CDP Scanner API
 // ==============================================================================

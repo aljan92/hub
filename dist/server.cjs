@@ -49998,7 +49998,7 @@ var init_productCatalogService = __esm2({
       fern_tie_dye: "#3D5E43",
       umber_tie_dye: "#5A3E31"
     };
-    ProductCatalogService = class {
+    ProductCatalogService = class _ProductCatalogService {
       static catalogFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog.json");
       static overridesFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog_overrides.json");
       static catalogData = {
@@ -50127,8 +50127,16 @@ var init_productCatalogService = __esm2({
         const prod = this.catalogData.products.find(
           (p) => p.id.toUpperCase() === cleanId || p.amazon?.key?.toUpperCase() === cleanId || cleanKey && p.amazon?.key?.toUpperCase() === cleanKey
         );
-        if (prod && overrides[prod.id]) {
-          return { key: prod.id, override: overrides[prod.id] };
+        if (prod) {
+          if (overrides[prod.id]) {
+            return { key: prod.id, override: overrides[prod.id] };
+          }
+          for (const [ovKey, ovVal] of Object.entries(overrides)) {
+            const matched = _ProductCatalogService.findProductByAmazonKey(ovKey);
+            if (matched && (matched.id === prod.id || matched.amazon?.key === prod.amazon?.key)) {
+              return { key: ovKey, override: ovVal };
+            }
+          }
         }
         return null;
       }
@@ -50409,6 +50417,29 @@ var init_productCatalogService = __esm2({
           this.overridesData.overrides[targetKey].colors = {};
         }
         this.overridesData.overrides[targetKey].colors[colorId] = { avoidRule };
+        this.saveOverridesAtomic(this.overridesData);
+        const catalog = this.getCatalog();
+        this.saveCatalogAtomic(catalog);
+        return catalog;
+      }
+      /**
+       * Update artwork configuration for a product (saved to persistent overrides)
+       */
+      static updateProductArtworkConfig(productId, artwork) {
+        this.ensureLoaded();
+        const found = this.getOverrideEntry(productId);
+        const targetKey = found ? found.key : productId;
+        if (!this.overridesData.overrides[targetKey]) {
+          this.overridesData.overrides[targetKey] = {
+            niceClass: null,
+            uiSortOrder: 999,
+            isDropAllowed: false,
+            colors: {},
+            artwork
+          };
+        } else {
+          this.overridesData.overrides[targetKey].artwork = artwork;
+        }
         this.saveOverridesAtomic(this.overridesData);
         const catalog = this.getCatalog();
         this.saveCatalogAtomic(catalog);
@@ -228169,6 +228200,7 @@ var import_fs83 = __toESM2(require("fs"), 1);
 init_browserSessionService();
 init_queueService();
 init_productCatalogService();
+init_artworkResizeService();
 init_syncEngine();
 var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
@@ -228968,8 +229000,9 @@ var UploadWorkerService = class _UploadWorkerService {
         const strategy = artworkConfig?.selectionStrategy || "DEFAULT_MASTER";
         if (strategy !== "DEFAULT_MASTER" && artworkConfig?.variants && artworkConfig.variants.length > 0) {
           let selectedVariant = artworkConfig.variants[0];
+          const isAvoidWhite = String(avoidColor || "").trim().toLowerCase() === "white";
           if (strategy === "VISION_AVOID_WHITE") {
-            if (avoidColor === "white") {
+            if (isAvoidWhite) {
               const brushVariant = artworkConfig.variants.find((v) => v.id.includes("BRUSH"));
               if (brushVariant) selectedVariant = brushVariant;
             } else {
@@ -228988,9 +229021,20 @@ var UploadWorkerService = class _UploadWorkerService {
             const candidatePath = import_path78.default.join(designsDir, expectedFilename);
             if (import_fs83.default.existsSync(candidatePath)) targetArtworkPath = candidatePath;
           }
+          if (!targetArtworkPath || !import_fs83.default.existsSync(targetArtworkPath)) {
+            if (pngAbsolutePath && import_fs83.default.existsSync(pngAbsolutePath)) {
+              try {
+                this.log(`\u{1F4D0} Generiere Two-Sided Resized Varianten f\xFCr Task ${item.taskId} on-the-fly...`);
+                const resizeResult = await ArtworkResizeService.generateResizedArtworks(cleanTaskId, pngAbsolutePath);
+                targetArtworkPath = resizeResult[selectedVariant.artifactKey];
+              } catch (e) {
+                this.log(`\u26A0\uFE0F On-the-fly Resize fehlgeschlagen f\xFCr ${product.displayName}: ${e.message}`);
+              }
+            }
+          }
           if (targetArtworkPath && import_fs83.default.existsSync(targetArtworkPath)) {
             const isBrushApplied = selectedVariant.id.includes("BRUSH");
-            this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit ${selectedVariant.id} (${isBrushApplied ? "Black Brush" : "Standard"})...`);
+            this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit ${selectedVariant.id} (${isBrushApplied ? "Black Brush weil avoid white" : "Two-Sided Standard"})...`);
             const deleteResult = await page.evaluate(async (params2) => {
               const { pid, amazonKey, cardId } = params2;
               let card = document.getElementById(cardId) || document.getElementById(`${amazonKey}-card`) || document.getElementById(`${amazonKey.toLowerCase()}-card`) || document.getElementById(`${pid}-card`) || document.getElementById(`${pid.toLowerCase()}-card`);
@@ -231338,6 +231382,22 @@ app.post("/api/v1/products/nice-class", (req, res) => {
       success: true,
       catalog,
       message: `Nizza-Klasse f\xFCr ${productId} auf Kl. ${niceClass} aktualisiert.`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/products/artwork-config", (req, res) => {
+  try {
+    const { productId, artwork } = req.body;
+    if (!productId || !artwork || typeof artwork !== "object") {
+      return res.status(400).json({ success: false, error: "productId und artwork erforderlich" });
+    }
+    const catalog = ProductCatalogService.updateProductArtworkConfig(productId, artwork);
+    res.json({
+      success: true,
+      catalog,
+      message: `Artwork-Konfiguration f\xFCr ${productId} erfolgreich aktualisiert.`
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

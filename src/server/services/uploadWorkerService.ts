@@ -3,6 +3,7 @@ import fs from 'fs';
 import { BrowserSessionService } from './browserSessionService';
 import { QueueService, QueueItem, ProductUploadResult, ProductUploadStatus, UploadResultSummary } from './queueService';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
+import { ArtworkResizeService } from './artworkResizeService';
 import { SyncEngine } from './syncEngine';
 import { Page } from 'playwright';
 
@@ -1083,8 +1084,10 @@ export class UploadWorkerService {
 
         if (strategy !== 'DEFAULT_MASTER' && artworkConfig?.variants && artworkConfig.variants.length > 0) {
           let selectedVariant = artworkConfig.variants[0];
+          const isAvoidWhite = String(avoidColor || '').trim().toLowerCase() === 'white';
+
           if (strategy === 'VISION_AVOID_WHITE') {
-            if (avoidColor === 'white') {
+            if (isAvoidWhite) {
               const brushVariant = artworkConfig.variants.find(v => v.id.includes('BRUSH'));
               if (brushVariant) selectedVariant = brushVariant;
             } else {
@@ -1106,9 +1109,22 @@ export class UploadWorkerService {
             if (fs.existsSync(candidatePath)) targetArtworkPath = candidatePath;
           }
 
+          // On-the-fly Resize Fallback wenn Resized Asset noch nicht auf Disk existiert
+          if (!targetArtworkPath || !fs.existsSync(targetArtworkPath)) {
+            if (pngAbsolutePath && fs.existsSync(pngAbsolutePath)) {
+              try {
+                this.log(`📐 Generiere Two-Sided Resized Varianten für Task ${item.taskId} on-the-fly...`);
+                const resizeResult = await ArtworkResizeService.generateResizedArtworks(cleanTaskId, pngAbsolutePath);
+                targetArtworkPath = resizeResult[selectedVariant.artifactKey as keyof typeof resizeResult];
+              } catch (e: any) {
+                this.log(`⚠️ On-the-fly Resize fehlgeschlagen für ${product.displayName}: ${e.message}`);
+              }
+            }
+          }
+
           if (targetArtworkPath && fs.existsSync(targetArtworkPath)) {
             const isBrushApplied = selectedVariant.id.includes('BRUSH');
-            this.log(`🎨 Ersetze Artwork für ${product.displayName} mit ${selectedVariant.id} (${isBrushApplied ? 'Black Brush' : 'Standard'})...`);
+            this.log(`🎨 Ersetze Artwork für ${product.displayName} mit ${selectedVariant.id} (${isBrushApplied ? 'Black Brush weil avoid white' : 'Two-Sided Standard'})...`);
             
             // 1. Altes Artwork löschen falls delete-button vorhanden
             const deleteResult = await page.evaluate(async (params: { pid: string; amazonKey: string; cardId: string }) => {

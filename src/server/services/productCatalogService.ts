@@ -310,8 +310,16 @@ export class ProductCatalogService {
       p.amazon?.key?.toUpperCase() === cleanId ||
       (cleanKey && p.amazon?.key?.toUpperCase() === cleanKey)
     );
-    if (prod && overrides[prod.id]) {
-      return { key: prod.id, override: overrides[prod.id] };
+    if (prod) {
+      if (overrides[prod.id]) {
+        return { key: prod.id, override: overrides[prod.id] };
+      }
+      for (const [ovKey, ovVal] of Object.entries(overrides)) {
+        const matched = ProductCatalogService.findProductByAmazonKey(ovKey);
+        if (matched && (matched.id === prod.id || matched.amazon?.key === prod.amazon?.key)) {
+          return { key: ovKey, override: ovVal };
+        }
+      }
     }
     return null;
   }
@@ -640,6 +648,32 @@ export class ProductCatalogService {
       this.overridesData.overrides[targetKey].colors = {};
     }
     this.overridesData.overrides[targetKey].colors![colorId] = { avoidRule };
+
+    this.saveOverridesAtomic(this.overridesData);
+    const catalog = this.getCatalog();
+    this.saveCatalogAtomic(catalog);
+    return catalog;
+  }
+
+  /**
+   * Update artwork configuration for a product (saved to persistent overrides)
+   */
+  public static updateProductArtworkConfig(productId: string, artwork: ProductArtworkConfig): ProductCatalogData {
+    this.ensureLoaded();
+    const found = this.getOverrideEntry(productId);
+    const targetKey = found ? found.key : productId;
+
+    if (!this.overridesData.overrides[targetKey]) {
+      this.overridesData.overrides[targetKey] = {
+        niceClass: null,
+        uiSortOrder: 999,
+        isDropAllowed: false,
+        colors: {},
+        artwork
+      };
+    } else {
+      this.overridesData.overrides[targetKey].artwork = artwork;
+    }
 
     this.saveOverridesAtomic(this.overridesData);
     const catalog = this.getCatalog();
