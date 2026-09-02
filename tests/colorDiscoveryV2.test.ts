@@ -197,12 +197,12 @@ async function runColorDiscoveryTests() {
   ProductCatalogService.loadCatalog();
   console.log('Clean state restored.');
 
-  // Validate exactly 54 avoid rules are preserved in overrides
+  // Validate exactly 56 avoid rules are preserved in overrides (54 historical + 2 pepper)
   const totalAvoidRules = Object.values(ProductCatalogService.loadOverrides().overrides).reduce((acc, p) => {
     return acc + Object.values(p.colors || {}).filter(c => c.avoidRule && c.avoidRule !== 'none').length;
   }, 0);
-  assert.strictEqual(totalAvoidRules, 54, `Expected exactly 54 non-none avoid rules, got ${totalAvoidRules}`);
-  console.log('✅ Final Check: Exactly 54/54 avoid rules verified active in overrides.');
+  assert.strictEqual(totalAvoidRules, 56, `Expected exactly 56 non-none avoid rules (54 historical + 2 pepper), got ${totalAvoidRules}`);
+  console.log('✅ Final Check: Exactly 56 avoid rules (54 historical + 2 pepper) verified active in overrides.');
 
   console.log('\n===========================================================');
   console.log('🎉 ALL 7 COLOR DISCOVERY V2 REGRESSION TESTS PASSED! 🎉');

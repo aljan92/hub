@@ -831,10 +831,12 @@ MBA HUB/
      - `data/product_catalog.json` und `data/product_catalog_overrides.json` bleiben strikt in `.gitignore` und werden NICHT über Git übertragen.
      - Persistenz auf dem NAS erfolgt ausschließlich über den Host-Volume-Bind `./data:/app/data` in `docker-compose.yml`.
      - Bei fehlschlagendem Scan (z.B. Session nicht eingeloggt) bricht der Scan transaktionssicher ab; bestehende Daten, Farben und Verfügbarkeiten bleiben 100% geschützt.
-  4. **100% Erhalt der 54 Avoid Rules:**
-     - Alle 54 persistenten Avoid Rules in `product_catalog_overrides.json` bleiben unberührt und werden bei Predefined Swatches sauber gemerged.
+  4. **100% Erhalt der 54 Avoid Rules + 2 Pepper-Ergänzungen:**
+     - Alle 54 historischen Avoid Rules in `product_catalog_overrides.json` bleiben unberührt erhalten (39 EXACT_MATCH, 15 NO_CURRENT_COLOR als historische Overrides).
+     - Ergänzung von 2 bewusst bestätigten Mappings für Comfort Colors: `COMFORT_COLORS_SWEATSHIRT` (`pepper` ➔ `black`) und `COMFORT_COLORS_CROP_SWEATSHIRT` (`pepper` ➔ `black`), während `black` ➔ `black` erhalten bleibt.
+     - Stand in Overrides: 56 Regeln gesamt. Auf aktuelle Live-Amazon-Swatches anwendbar: von 39 auf 41 gestiegen.
 - **Verifikation:**
-  - `tests/productCatalogV2.test.ts`: 12/12 Tests bestanden.
+  - `tests/productCatalogV2.test.ts`: 12/12 Tests bestanden (56 Overrides validiert).
   - `tests/colorDiscoveryV2.test.ts`: 7/7 Tests bestanden.
-  - Live Amazon DOM Scan: 38 Produkte, 34 T-Shirt Farben, 10 Mug Farben, PopSocket / Phone Case / Pillow als `customPicker`, 54 Avoid Rules aktiv.
+  - Live-Katalog: 41 Avoid Rules aktiv angewendet, alle Nice Classes (34) und Droppables (30) unverändert.
 

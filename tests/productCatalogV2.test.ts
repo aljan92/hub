@@ -49,7 +49,7 @@ async function runTests() {
   }
 
   assert(niceClassCount === 34, `Expected 34 Nice Classes in overrides, got ${niceClassCount}`);
-  assert(nonNoneAvoidRuleCount === 54, `Expected 54 non-none avoidRules, got ${nonNoneAvoidRuleCount}`);
+  assert(nonNoneAvoidRuleCount === 56, `Expected 56 non-none avoidRules (54 historical + 2 pepper), got ${nonNoneAvoidRuleCount}`);
   assert(droppableCount === 30, `Expected 30 droppable products, got ${droppableCount}`);
   assert(artworkConfigsCount === 4, `Expected 4 special artwork configs, got ${artworkConfigsCount}`);
   console.log(`✅ Test 2 Passed: Overrides validated (34 products, ${niceClassCount} niceClasses, ${nonNoneAvoidRuleCount} avoidRules, ${droppableCount} droppables, ${artworkConfigsCount} special artworks).\n`);
