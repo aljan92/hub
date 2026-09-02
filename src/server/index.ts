@@ -1001,16 +1001,46 @@ app.post('/api/v1/designer/generate', async (req, res) => {
 
 // 7. Tasks Management (Connected to Human-in-the-Loop Engine)
 app.get('/api/v1/tasks', (req, res) => {
-  const awaiting = TaskLogService.getAwaitingTasks();
+  if (TaskLogService.isStorageFailSafe()) {
+    return res.status(500).json({
+      success: false,
+      corrupted: true,
+      error: 'TASK_STORAGE_CORRUPTED: Task-Speicher ist beschädigt. Schreibvorgänge sind im Fail-Safe-Modus gesperrt.',
+      tasks: []
+    });
+  }
+  const awaiting = TaskLogService.getAwaitingTaskSummaries();
   res.json({ success: true, tasks: awaiting });
 });
 
 // 7.1 Task Logs Management Endpoints for Prompt Log UI (Must be declared BEFORE /:taskId)
 app.get('/api/v1/tasks/log', (req, res) => {
-  res.json({
-    success: true,
-    tasks: TaskLogService.getTaskLogs()
+  if (TaskLogService.isStorageFailSafe()) {
+    return res.status(500).json({
+      success: false,
+      corrupted: true,
+      error: 'TASK_STORAGE_CORRUPTED: Task-Speicher ist beschädigt. Schreibvorgänge sind im Fail-Safe-Modus gesperrt.',
+      tasks: []
+    });
+  }
+
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+  const cursor = req.query.cursor ? String(req.query.cursor) : undefined;
+  const source = req.query.source as any;
+  const status = req.query.status as any;
+  const checkpoint = req.query.checkpoint as any;
+  const search = req.query.search ? String(req.query.search) : undefined;
+
+  const result = TaskLogService.getTaskSummariesPage({
+    limit,
+    cursor,
+    source,
+    status,
+    checkpoint,
+    search
   });
+
+  res.json(result);
 });
 
 app.delete('/api/v1/tasks/log', (req, res) => {
@@ -1032,7 +1062,7 @@ app.post('/api/v1/tasks/:taskId/submit-design-review', async (req, res) => {
   const { action, answers, updatedPrompt } = req.body;
   try {
     const result = await TaskLogService.submitDesignReview(taskId, { action, answers, updatedPrompt });
-    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
@@ -1044,7 +1074,7 @@ app.post('/api/v1/tasks/:taskId/submit-tm-review', async (req, res) => {
   const { action, refinedListing } = req.body;
   try {
     const result = await TaskLogService.submitTmReview(taskId, { action, refinedListing });
-    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
@@ -1056,7 +1086,7 @@ app.post('/api/v1/tasks/:taskId/override-preflight', async (req, res) => {
   const { action, newQuote } = req.body;
   try {
     const result = await TaskLogService.overridePreFlight(taskId, { action, newQuote });
-    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
@@ -1068,7 +1098,7 @@ app.post('/api/v1/tasks/:taskId/submit-svg-review', async (req, res) => {
   const { action, editedSvgContent, maxColors } = req.body;
   try {
     const result = await TaskLogService.submitSvgReview(taskId, { action, editedSvgContent, maxColors });
-    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
@@ -1079,7 +1109,7 @@ app.post('/api/v1/tasks/:taskId/reset-svg', async (req, res) => {
   const { taskId } = req.params;
   try {
     const result = await TaskLogService.resetSvg(taskId);
-    broadcast('TASK_UPDATED', TaskLogService.getTaskLogById(taskId));
+    broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
@@ -1150,7 +1180,7 @@ app.post(['/api/v1/design', '/design', '/api/v1/hermes/design', '/api/v1/mcp/des
       });
     }
 
-    broadcast('TASK_LOG_CREATED', taskLog);
+    broadcast('TASK_LOG_CREATED', TaskLogService.toTaskSummary(taskLog));
 
     res.json({
       success: true,

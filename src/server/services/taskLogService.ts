@@ -27,7 +27,9 @@ import {
   EventType, 
   SessionEvent, 
   DesignTaskLog,
-  RetryStepType 
+  RetryStepType,
+  TaskSummary,
+  toTaskSummary
 } from '../../types/tasks';
 
 export class TaskLogService {
@@ -45,7 +47,7 @@ export class TaskLogService {
 
   private static emitUpdate(task: DesignTaskLog) {
     if (this.eventBroadcaster) {
-      this.eventBroadcaster('TASK_UPDATED', task);
+      this.eventBroadcaster('TASK_UPDATED', this.toTaskSummary(task));
     }
   }
 
@@ -86,7 +88,7 @@ export class TaskLogService {
     this.currentCounter += 1;
 
     try {
-      atomicWriteJson(this.counterFile, { counter: this.currentCounter }, { backup: true, space: 2 });
+      atomicWriteJson(this.counterFile, { counter: this.currentCounter }, { backup: true });
     } catch (e: any) {
       console.error('[TaskLogService] Failed to persist tasks_counter.json atomically:', e.message);
     }
@@ -191,7 +193,7 @@ export class TaskLogService {
     }
 
     try {
-      atomicWriteJson(this.logsFile, logs, { backup: true, space: 2 });
+      atomicWriteJson(this.logsFile, logs, { backup: true });
     } catch (e: any) {
       console.error('[TaskLogService] Failed to persist tasks_log.json atomically:', e.message);
     }
@@ -1872,6 +1874,15 @@ export class TaskLogService {
     throw new Error(`Unbekannter Step-Typ: ${stepType}`);
   }
 
+  static toTaskSummary(task: DesignTaskLog): TaskSummary {
+    return toTaskSummary(task);
+  }
+
+  static getTaskSummaryById(id: string): TaskSummary | undefined {
+    const task = this.getTaskLogById(id);
+    return task ? this.toTaskSummary(task) : undefined;
+  }
+
   static getTaskLogs(): DesignTaskLog[] {
     return this.loadLogs();
   }
@@ -1884,6 +1895,89 @@ export class TaskLogService {
       t.status === 'AWAITING_TM_REVIEW' ||
       t.status === 'AWAITING_SVG_REVIEW'
     );
+  }
+
+  static getAwaitingTaskSummaries(): TaskSummary[] {
+    const awaiting = this.getAwaitingTasks();
+    return awaiting.map(t => this.toTaskSummary(t));
+  }
+
+  static getTaskSummariesPage(options: {
+    limit?: number;
+    cursor?: string;
+    source?: TaskSource | 'ALL';
+    status?: TaskStatus | 'ALL';
+    checkpoint?: CheckpointType | 'ALL';
+    search?: string;
+  }): {
+    success: boolean;
+    tasks: TaskSummary[];
+    totalCount: number;
+    hasMore: boolean;
+    nextCursor: string | null;
+  } {
+    const limit = Math.max(1, Math.min(options.limit || 20, 100));
+    const allLogs = this.loadLogs();
+
+    // 1. Apply Filters
+    let filtered = allLogs;
+
+    if (options.source && options.source !== 'ALL') {
+      filtered = filtered.filter(t => t.source === options.source);
+    }
+
+    if (options.status && options.status !== 'ALL') {
+      filtered = filtered.filter(t => t.status === options.status);
+    }
+
+    if (options.checkpoint && options.checkpoint !== 'ALL') {
+      filtered = filtered.filter(t => t.checkpoint === options.checkpoint);
+    }
+
+    if (options.search && options.search.trim()) {
+      const q = options.search.trim().toLowerCase();
+      filtered = filtered.filter(t => {
+        const idMatch = t.id.toLowerCase().includes(q);
+        const quote = t.payload?.title || t.payload?.quote || t.payload?.quote_or_phrase || t.payload?.text || '';
+        const quoteMatch = quote.toLowerCase().includes(q);
+        const nicheMatch = (t.niche1 || t.payload?.niche1 || '').toLowerCase().includes(q) ||
+                           (t.niche2 || t.payload?.niche2 || '').toLowerCase().includes(q) ||
+                           (t.subniche || t.payload?.subniche || '').toLowerCase().includes(q);
+        const designIdMatch = (t.payload?.designId || '').toLowerCase().includes(q);
+        return idMatch || quoteMatch || nicheMatch || designIdMatch;
+      });
+    }
+
+    const totalCount = filtered.length;
+
+    // 2. Cursor Pagination (Stable against new incoming tasks at the top)
+    let startIndex = 0;
+    if (options.cursor) {
+      const cleanCursor = decodeURIComponent(options.cursor).trim().toLowerCase();
+      const cursorIdx = filtered.findIndex(t => {
+        const tid = t.id.toLowerCase();
+        return tid === cleanCursor || tid.replace('#', '') === cleanCursor.replace('#', '');
+      });
+
+      if (cursorIdx !== -1) {
+        startIndex = cursorIdx + 1;
+      }
+    }
+
+    const pageLogs = filtered.slice(startIndex, startIndex + limit);
+    const hasMore = startIndex + limit < filtered.length;
+    const nextCursor = pageLogs.length > 0 && hasMore ? pageLogs[pageLogs.length - 1].id : null;
+
+    // 3. Map to TaskSummary BEFORE returning/serializing to prevent heavy payload trees
+    const tasks = pageLogs.map(t => this.toTaskSummary(t));
+
+    return {
+      success: true,
+      tasks,
+      totalCount,
+      hasMore,
+      nextCursor
+    };
   }
 
   static getTaskLogById(id: string): DesignTaskLog | undefined {

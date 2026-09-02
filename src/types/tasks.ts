@@ -160,3 +160,57 @@ export type RetryStepType =
   | 'UPDATE_U6_TRANSLATE'
   | 'UPDATE_U6_5_RESIZE'
   | 'UPDATE_U7_ENQUEUE';
+
+export interface TaskSummary {
+  id: string;
+  counter: number;
+  source: TaskSource;
+  suffix: TaskSuffix;
+  status: TaskStatus;
+  checkpoint?: CheckpointType;
+  receivedAt: string;
+  updatedAt?: string;
+  quote?: string;
+  niche1?: string;
+  niche2?: string;
+  subniche?: string;
+  imageUrl?: string;
+  hasError: boolean;
+  errorDetails?: string;
+  eventsCount: number;
+  clientIp?: string;
+  designId?: string;
+  inQueue?: boolean;
+}
+
+export function toTaskSummary(task: DesignTaskLog): TaskSummary {
+  const quote = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || undefined;
+  const niche1 = task.niche1 || task.payload?.niche1 || undefined;
+  const niche2 = task.niche2 || task.payload?.niche2 || undefined;
+  const subniche = task.subniche || task.payload?.subniche || undefined;
+  const designId = task.payload?.designId || undefined;
+  const imageUrl = task.imageUrl || task.u4PreviewUrl || task.mbaPngUrl || undefined;
+  const lastEvent = task.events && task.events.length > 0 ? task.events[task.events.length - 1] : undefined;
+
+  return {
+    id: task.id,
+    counter: task.counter,
+    source: task.source,
+    suffix: task.suffix,
+    status: task.status,
+    checkpoint: task.checkpoint,
+    receivedAt: task.receivedAt,
+    updatedAt: lastEvent?.timestamp || task.receivedAt,
+    quote,
+    niche1,
+    niche2,
+    subniche,
+    imageUrl,
+    hasError: Boolean(task.hasError),
+    errorDetails: task.errorDetails,
+    eventsCount: Array.isArray(task.events) ? task.events.length : 0,
+    clientIp: task.clientIp,
+    designId,
+    inQueue: task.inQueue
+  };
+}

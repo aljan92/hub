@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Terminal, 
   Send, 
@@ -41,9 +41,11 @@ import {
   DesignTaskLog, 
   SessionEvent, 
   RetryStepType,
-  EventCategory 
+  EventCategory,
+  TaskSummary 
 } from '../../types/tasks';
 import { TaskStatusBadge, getTaskStatusInfo } from '../components/TaskStatusBadge';
+import { useTaskWebSocket } from '../hooks/useTaskWebSocket';
 
 // ---------------------------------------------------------------------------
 // Helper: Event Category & Color System
@@ -293,8 +295,14 @@ const EventHeader: React.FC<EventHeaderProps> = ({
 // Main Component
 // ---------------------------------------------------------------------------
 export const PromptLogView: React.FC = () => {
-  const [tasks, setTasks] = useState<DesignTaskLog[]>([]);
+  const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedTaskDetail, setSelectedTaskDetail] = useState<DesignTaskLog | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [totalCount, setTotalCount] = useState<number>(0);
   const [filterSource, setFilterSource] = useState<'ALL' | 'HERMES' | 'TEST' | 'DESIGNER' | 'UPDATE'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
@@ -492,27 +500,168 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
-  const selectedTask = tasks.find(t => t.id === selectedTaskId) || tasks[0] || null;
+  const selectedSummary = tasks.find(t => t.id === selectedTaskId) || tasks[0] || null;
+  const selectedTask = selectedTaskDetail;
 
-  const fetchTasks = async () => {
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const selectedTaskIdRef = useRef<string | null>(null);
+  selectedTaskIdRef.current = selectedTaskId;
+
+  const fetchTaskDetail = useCallback(async (taskId: string) => {
+    if (!taskId) {
+      setSelectedTaskDetail(null);
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setLoadingDetail(true);
     try {
-      const res = await fetch('/api/v1/tasks/log');
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+        signal: controller.signal
+      });
+      const data = await res.json();
+      if (data.success && data.task) {
+        setSelectedTaskDetail(data.task);
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.warn(`[PromptLogView] Failed to fetch task detail for ${taskId}:`, err);
+      }
+    } finally {
+      if (abortControllerRef.current === controller) {
+        setLoadingDetail(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedTaskId) {
+      fetchTaskDetail(selectedTaskId);
+    } else {
+      setSelectedTaskDetail(null);
+    }
+  }, [selectedTaskId, fetchTaskDetail]);
+
+  const fetchTasks = useCallback(async (source = filterSource, search = searchQuery) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', '20');
+      if (source !== 'ALL') params.set('source', source);
+      if (search.trim()) params.set('search', search.trim());
+
+      const res = await fetch(`/api/v1/tasks/log?${params.toString()}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.tasks)) {
         setTasks(data.tasks);
+        setHasMore(Boolean(data.hasMore));
+        setNextCursor(data.nextCursor || null);
+        setTotalCount(data.totalCount ?? data.tasks.length);
+
         setSelectedTaskId(prev => {
-          if (prev && data.tasks.some((t: any) => t.id === prev)) {
+          if (prev && data.tasks.some((t: TaskSummary) => t.id === prev)) {
             return prev;
           }
           return data.tasks[0]?.id || null;
         });
       }
     } catch (err) {
-      console.warn('Failed to fetch task logs:', err);
+      console.warn('[PromptLogView] Failed to fetch task summaries:', err);
     } finally {
       setLoading(false);
     }
+  }, [filterSource, searchQuery]);
+
+  const loadMoreTasks = async () => {
+    if (!hasMore || loadingMore || !nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', '20');
+      params.set('cursor', nextCursor);
+      if (filterSource !== 'ALL') params.set('source', filterSource);
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+
+      const res = await fetch(`/api/v1/tasks/log?${params.toString()}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.tasks)) {
+        setTasks(prev => {
+          const existingIds = new Set(prev.map(t => t.id));
+          const newItems = data.tasks.filter((t: TaskSummary) => !existingIds.has(t.id));
+          return [...prev, ...newItems];
+        });
+        setHasMore(Boolean(data.hasMore));
+        setNextCursor(data.nextCursor || null);
+      }
+    } catch (err) {
+      console.warn('[PromptLogView] Failed to load more tasks:', err);
+    } finally {
+      setLoadingMore(false);
+    }
   };
+
+  const { isConnected } = useTaskWebSocket({
+    onTaskUpdated: (updatedSummary) => {
+      setTasks(prev => {
+        const exists = prev.some(t => t.id === updatedSummary.id);
+        if (exists) {
+          return prev.map(t => t.id === updatedSummary.id ? updatedSummary : t);
+        }
+        if (filterSource === 'ALL' || updatedSummary.source === filterSource) {
+          return [updatedSummary, ...prev];
+        }
+        return prev;
+      });
+
+      if (selectedTaskIdRef.current === updatedSummary.id) {
+        fetchTaskDetail(updatedSummary.id);
+      }
+    },
+    onTaskCreated: (newSummary) => {
+      setTasks(prev => {
+        const exists = prev.some(t => t.id === newSummary.id);
+        if (exists) return prev;
+        if (filterSource === 'ALL' || newSummary.source === filterSource) {
+          return [newSummary, ...prev];
+        }
+        return prev;
+      });
+      setTotalCount(c => c + 1);
+    },
+    onTasksCleared: () => {
+      setTasks([]);
+      setSelectedTaskId(null);
+      setSelectedTaskDetail(null);
+      setTotalCount(0);
+      setHasMore(false);
+      setNextCursor(null);
+    },
+    onReconnect: () => {
+      fetchTasks(filterSource, searchQuery);
+    }
+  });
+
+  // Debounced server search / filter
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchTasks(filterSource, searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [filterSource, searchQuery, fetchTasks]);
+
+  // Fallback polling ONLY if WebSocket is disconnected
+  useEffect(() => {
+    if (isConnected) return;
+    const interval = setInterval(() => {
+      fetchTasks(filterSource, searchQuery);
+    }, 25000);
+    return () => clearInterval(interval);
+  }, [isConnected, filterSource, searchQuery, fetchTasks]);
 
   const handleRetryStep = async (taskId: string, stepType: RetryStepType, eventIndex?: number) => {
     setRetryingStep(`${taskId}-${stepType}-${eventIndex ?? 0}`);
@@ -523,7 +672,7 @@ export const PromptLogView: React.FC = () => {
         body: JSON.stringify({ stepType, eventIndex })
       });
       if (res.ok) {
-        await fetchTasks();
+        fetchTaskDetail(taskId);
       }
     } catch (e) {
       console.warn('Failed to retry task step:', e);
@@ -531,12 +680,6 @@ export const PromptLogView: React.FC = () => {
       setTimeout(() => setRetryingStep(null), 1000);
     }
   };
-
-  useEffect(() => {
-    fetchTasks();
-    const interval = setInterval(fetchTasks, 3000);
-    return () => clearInterval(interval);
-  }, []);
 
   const handleSendTestTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -633,15 +776,10 @@ export const PromptLogView: React.FC = () => {
     }
   };
 
-  // Filter tasks
+  // Filter tasks (filtering & search happen on server across full history)
   const filteredTasks = tasks.filter(t => {
     if (filterSource !== 'ALL' && t.source !== filterSource) return false;
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    const idMatch = t.id.toLowerCase().includes(q);
-    const nicheMatch = t.payload?.niche1?.toLowerCase().includes(q) || t.payload?.niche2?.toLowerCase().includes(q);
-    const quoteMatch = t.payload?.quote?.toLowerCase().includes(q);
-    return idMatch || nicheMatch || quoteMatch;
+    return true;
   });
 
   const getSourceIcon = (source: string) => {
@@ -1113,10 +1251,10 @@ export const PromptLogView: React.FC = () => {
             </div>
           ) : (
             filteredTasks.map(task => {
-              const isSelected = selectedTask?.id === task.id;
-              const displayQuote = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || (task.source === 'UPDATE' ? 'Amazon Update Task' : 'Kein Quote');
-              const displayNiche = [task.payload?.niche1, task.payload?.niche2].filter(Boolean).join(' • ') || (task.source === 'UPDATE' ? `ID: ${task.payload?.designId?.slice(0, 8)}...` : '');
-              const isUpdateDownloading = task.source === 'UPDATE' && (task.status === 'PROCESSING' || downloadingArtworkTaskId === task.id || (!task.imageUrl && !task.hasError && (task.events?.length || 0) <= 2));
+              const isSelected = selectedTaskId === task.id;
+              const displayQuote = task.quote || (task.source === 'UPDATE' ? 'Amazon Update Task' : 'Kein Quote');
+              const displayNiche = [task.niche1, task.niche2].filter(Boolean).join(' • ') || (task.source === 'UPDATE' ? `ID: ${task.designId?.slice(0, 8) || ''}...` : '');
+              const isUpdateDownloading = task.source === 'UPDATE' && (task.status === 'PROCESSING' || downloadingArtworkTaskId === task.id || (!task.imageUrl && !task.hasError && (task.eventsCount || 0) <= 2));
 
               return (
                 <div
@@ -1169,18 +1307,41 @@ export const PromptLogView: React.FC = () => {
                     <TaskStatusBadge task={task} size="sm" />
 
                     <span className="text-slate-500 font-mono">
-                      {task.events?.length || 1} Events
+                      {task.eventsCount || 1} Events
                     </span>
                   </div>
                 </div>
               );
             })
           )}
+
+          {/* Load More Button */}
+          {hasMore && (
+            <button
+              onClick={loadMoreTasks}
+              disabled={loadingMore}
+              className="w-full py-2.5 px-3 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-cyan-500/40 text-xs font-semibold text-cyan-400 hover:bg-slate-850 flex items-center justify-center gap-2 transition-all mt-2"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingMore ? 'animate-spin' : ''}`} />
+              <span>{loadingMore ? 'Lade weitere Tasks...' : 'Mehr Tasks laden (20 weitere)'}</span>
+            </button>
+          )}
+          {!hasMore && tasks.length > 0 && (
+            <p className="text-[10px] text-slate-500 text-center py-2">
+              Alle {totalCount || tasks.length} Tasks geladen
+            </p>
+          )}
         </div>
 
         {/* Right Column: Timeline Logbook (8 cols) */}
         <div className="lg:col-span-8 glass-panel rounded-2xl p-5 border border-slate-800 space-y-5 max-h-[720px] overflow-y-auto custom-scrollbar">
-          {selectedTask ? (
+          {loadingDetail ? (
+            <div className="flex flex-col items-center justify-center py-28 space-y-3">
+              <RefreshCw className="w-7 h-7 text-cyan-400 animate-spin" />
+              <p className="text-xs font-semibold text-slate-300">Lade vollständige Task-Details...</p>
+              <p className="text-[11px] text-slate-500">Events, Listings und Metadaten werden abgerufen</p>
+            </div>
+          ) : selectedTask ? (
             <div className="space-y-5">
               {/* Task Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">

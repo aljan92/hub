@@ -222584,6 +222584,15 @@ function atomicWriteFile(filePath, content, options2 = {}) {
       }
     }
     import_fs79.default.renameSync(tmpPath, resolvedPath);
+    try {
+      const dirFd = import_fs79.default.openSync(dir, "r");
+      try {
+        import_fs79.default.fsyncSync(dirFd);
+      } finally {
+        import_fs79.default.closeSync(dirFd);
+      }
+    } catch {
+    }
   } catch (err) {
     if (import_fs79.default.existsSync(tmpPath)) {
       try {
@@ -222595,8 +222604,8 @@ function atomicWriteFile(filePath, content, options2 = {}) {
   }
 }
 function atomicWriteJson(filePath, data, options2 = {}) {
-  const space = options2.space !== void 0 ? options2.space : 2;
-  const jsonStr = JSON.stringify(data, null, space);
+  const space = options2.space !== void 0 ? options2.space : void 0;
+  const jsonStr = space !== void 0 ? JSON.stringify(data, null, space) : JSON.stringify(data);
   if (!jsonStr) {
     throw new Error(`[AtomicStorage] JSON serialization produced empty string for '${filePath}'`);
   }
@@ -222698,6 +222707,36 @@ var init_atomicFileStorage = __esm2({
 });
 
 // src/types/tasks.ts
+function toTaskSummary(task) {
+  const quote5 = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || void 0;
+  const niche1 = task.niche1 || task.payload?.niche1 || void 0;
+  const niche2 = task.niche2 || task.payload?.niche2 || void 0;
+  const subniche = task.subniche || task.payload?.subniche || void 0;
+  const designId = task.payload?.designId || void 0;
+  const imageUrl = task.imageUrl || task.u4PreviewUrl || task.mbaPngUrl || void 0;
+  const lastEvent = task.events && task.events.length > 0 ? task.events[task.events.length - 1] : void 0;
+  return {
+    id: task.id,
+    counter: task.counter,
+    source: task.source,
+    suffix: task.suffix,
+    status: task.status,
+    checkpoint: task.checkpoint,
+    receivedAt: task.receivedAt,
+    updatedAt: lastEvent?.timestamp || task.receivedAt,
+    quote: quote5,
+    niche1,
+    niche2,
+    subniche,
+    imageUrl,
+    hasError: Boolean(task.hasError),
+    errorDetails: task.errorDetails,
+    eventsCount: Array.isArray(task.events) ? task.events.length : 0,
+    clientIp: task.clientIp,
+    designId,
+    inQueue: task.inQueue
+  };
+}
 var init_tasks = __esm2({
   "src/types/tasks.ts"() {
     "use strict";
@@ -225710,7 +225749,8 @@ var init_finalizationService = __esm2({
 // src/server/services/taskLogService.ts
 var taskLogService_exports = {};
 __export2(taskLogService_exports, {
-  TaskLogService: () => TaskLogService2
+  TaskLogService: () => TaskLogService2,
+  toTaskSummary: () => toTaskSummary
 });
 var import_fs84, import_path78, TaskLogService2;
 var init_taskLogService = __esm2({
@@ -225732,6 +225772,7 @@ var init_taskLogService = __esm2({
     init_listingSanitizationService();
     init_atomicFileStorage();
     init_tasks();
+    init_tasks();
     TaskLogService2 = class {
       static dataDir = import_path78.default.resolve(process.cwd(), "data");
       static counterFile = import_path78.default.resolve(process.cwd(), "data", "tasks_counter.json");
@@ -225744,7 +225785,7 @@ var init_taskLogService = __esm2({
       }
       static emitUpdate(task) {
         if (this.eventBroadcaster) {
-          this.eventBroadcaster("TASK_UPDATED", task);
+          this.eventBroadcaster("TASK_UPDATED", this.toTaskSummary(task));
         }
       }
       static ensureDataDir() {
@@ -225777,7 +225818,7 @@ var init_taskLogService = __esm2({
         }
         this.currentCounter += 1;
         try {
-          atomicWriteJson(this.counterFile, { counter: this.currentCounter }, { backup: true, space: 2 });
+          atomicWriteJson(this.counterFile, { counter: this.currentCounter }, { backup: true });
         } catch (e) {
           console.error("[TaskLogService] Failed to persist tasks_counter.json atomically:", e.message);
         }
@@ -225868,7 +225909,7 @@ var init_taskLogService = __esm2({
           );
         }
         try {
-          atomicWriteJson(this.logsFile, logs, { backup: true, space: 2 });
+          atomicWriteJson(this.logsFile, logs, { backup: true });
         } catch (e) {
           console.error("[TaskLogService] Failed to persist tasks_log.json atomically:", e.message);
         }
@@ -227307,6 +227348,13 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         throw new Error(`Unbekannter Step-Typ: ${stepType}`);
       }
+      static toTaskSummary(task) {
+        return toTaskSummary(task);
+      }
+      static getTaskSummaryById(id) {
+        const task = this.getTaskLogById(id);
+        return task ? this.toTaskSummary(task) : void 0;
+      }
       static getTaskLogs() {
         return this.loadLogs();
       }
@@ -227315,6 +227363,58 @@ Beantworte die Analysefragen streng als JSON!`;
         return logs.filter(
           (t) => t.status === "AWAITING_PRE_FLIGHT_REVIEW" || t.status === "AWAITING_DESIGN_REVIEW" || t.status === "AWAITING_TM_REVIEW" || t.status === "AWAITING_SVG_REVIEW"
         );
+      }
+      static getAwaitingTaskSummaries() {
+        const awaiting = this.getAwaitingTasks();
+        return awaiting.map((t) => this.toTaskSummary(t));
+      }
+      static getTaskSummariesPage(options2) {
+        const limit = Math.max(1, Math.min(options2.limit || 20, 100));
+        const allLogs = this.loadLogs();
+        let filtered = allLogs;
+        if (options2.source && options2.source !== "ALL") {
+          filtered = filtered.filter((t) => t.source === options2.source);
+        }
+        if (options2.status && options2.status !== "ALL") {
+          filtered = filtered.filter((t) => t.status === options2.status);
+        }
+        if (options2.checkpoint && options2.checkpoint !== "ALL") {
+          filtered = filtered.filter((t) => t.checkpoint === options2.checkpoint);
+        }
+        if (options2.search && options2.search.trim()) {
+          const q = options2.search.trim().toLowerCase();
+          filtered = filtered.filter((t) => {
+            const idMatch = t.id.toLowerCase().includes(q);
+            const quote5 = t.payload?.title || t.payload?.quote || t.payload?.quote_or_phrase || t.payload?.text || "";
+            const quoteMatch = quote5.toLowerCase().includes(q);
+            const nicheMatch = (t.niche1 || t.payload?.niche1 || "").toLowerCase().includes(q) || (t.niche2 || t.payload?.niche2 || "").toLowerCase().includes(q) || (t.subniche || t.payload?.subniche || "").toLowerCase().includes(q);
+            const designIdMatch = (t.payload?.designId || "").toLowerCase().includes(q);
+            return idMatch || quoteMatch || nicheMatch || designIdMatch;
+          });
+        }
+        const totalCount = filtered.length;
+        let startIndex = 0;
+        if (options2.cursor) {
+          const cleanCursor = decodeURIComponent(options2.cursor).trim().toLowerCase();
+          const cursorIdx = filtered.findIndex((t) => {
+            const tid = t.id.toLowerCase();
+            return tid === cleanCursor || tid.replace("#", "") === cleanCursor.replace("#", "");
+          });
+          if (cursorIdx !== -1) {
+            startIndex = cursorIdx + 1;
+          }
+        }
+        const pageLogs = filtered.slice(startIndex, startIndex + limit);
+        const hasMore = startIndex + limit < filtered.length;
+        const nextCursor = pageLogs.length > 0 && hasMore ? pageLogs[pageLogs.length - 1].id : null;
+        const tasks = pageLogs.map((t) => this.toTaskSummary(t));
+        return {
+          success: true,
+          tasks,
+          totalCount,
+          hasMore,
+          nextCursor
+        };
       }
       static getTaskLogById(id) {
         if (!id) return void 0;
@@ -231175,14 +231275,41 @@ app.post("/api/v1/designer/generate", async (req, res) => {
   }
 });
 app.get("/api/v1/tasks", (req, res) => {
-  const awaiting = TaskLogService2.getAwaitingTasks();
+  if (TaskLogService2.isStorageFailSafe()) {
+    return res.status(500).json({
+      success: false,
+      corrupted: true,
+      error: "TASK_STORAGE_CORRUPTED: Task-Speicher ist besch\xE4digt. Schreibvorg\xE4nge sind im Fail-Safe-Modus gesperrt.",
+      tasks: []
+    });
+  }
+  const awaiting = TaskLogService2.getAwaitingTaskSummaries();
   res.json({ success: true, tasks: awaiting });
 });
 app.get("/api/v1/tasks/log", (req, res) => {
-  res.json({
-    success: true,
-    tasks: TaskLogService2.getTaskLogs()
+  if (TaskLogService2.isStorageFailSafe()) {
+    return res.status(500).json({
+      success: false,
+      corrupted: true,
+      error: "TASK_STORAGE_CORRUPTED: Task-Speicher ist besch\xE4digt. Schreibvorg\xE4nge sind im Fail-Safe-Modus gesperrt.",
+      tasks: []
+    });
+  }
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : 20;
+  const cursor = req.query.cursor ? String(req.query.cursor) : void 0;
+  const source12 = req.query.source;
+  const status = req.query.status;
+  const checkpoint = req.query.checkpoint;
+  const search = req.query.search ? String(req.query.search) : void 0;
+  const result2 = TaskLogService2.getTaskSummariesPage({
+    limit,
+    cursor,
+    source: source12,
+    status,
+    checkpoint,
+    search
   });
+  res.json(result2);
 });
 app.delete("/api/v1/tasks/log", (req, res) => {
   TaskLogService2.clearTaskLogs();
@@ -231201,7 +231328,7 @@ app.post("/api/v1/tasks/:taskId/submit-design-review", async (req, res) => {
   const { action, answers, updatedPrompt } = req.body;
   try {
     const result2 = await TaskLogService2.submitDesignReview(taskId, { action, answers, updatedPrompt });
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -231212,7 +231339,7 @@ app.post("/api/v1/tasks/:taskId/submit-tm-review", async (req, res) => {
   const { action, refinedListing } = req.body;
   try {
     const result2 = await TaskLogService2.submitTmReview(taskId, { action, refinedListing });
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -231223,7 +231350,7 @@ app.post("/api/v1/tasks/:taskId/override-preflight", async (req, res) => {
   const { action, newQuote } = req.body;
   try {
     const result2 = await TaskLogService2.overridePreFlight(taskId, { action, newQuote });
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -231234,7 +231361,7 @@ app.post("/api/v1/tasks/:taskId/submit-svg-review", async (req, res) => {
   const { action, editedSvgContent, maxColors } = req.body;
   try {
     const result2 = await TaskLogService2.submitSvgReview(taskId, { action, editedSvgContent, maxColors });
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -231244,7 +231371,7 @@ app.post("/api/v1/tasks/:taskId/reset-svg", async (req, res) => {
   const { taskId } = req.params;
   try {
     const result2 = await TaskLogService2.resetSvg(taskId);
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskLogById(taskId));
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -231298,7 +231425,7 @@ app.post(["/api/v1/design", "/design", "/api/v1/hermes/design", "/api/v1/mcp/des
         quote: payload.quote
       });
     }
-    broadcast("TASK_LOG_CREATED", taskLog);
+    broadcast("TASK_LOG_CREATED", TaskLogService2.toTaskSummary(taskLog));
     res.json({
       success: true,
       taskId: taskLog.id,

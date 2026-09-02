@@ -143,6 +143,16 @@ export function atomicWriteFile(
 
     // 3. Atomically replace target file
     fs.renameSync(tmpPath, resolvedPath);
+
+    // 4. Directory fsync for maximum crash-durability on Linux/NAS filesystems (commits dentry)
+    try {
+      const dirFd = fs.openSync(dir, 'r');
+      try {
+        fs.fsyncSync(dirFd);
+      } finally {
+        fs.closeSync(dirFd);
+      }
+    } catch {}
   } catch (err: any) {
     // Clean up temporary file on failure
     if (fs.existsSync(tmpPath)) {
@@ -154,14 +164,15 @@ export function atomicWriteFile(
 
 /**
  * Atomically serializes and writes JSON data to a target file.
+ * Defaults to compact JSON (no indentation) to minimize disk I/O, file size, and fsync latency.
  */
 export function atomicWriteJson<T>(
   filePath: string,
   data: T,
   options: AtomicWriteOptions = {}
 ): void {
-  const space = options.space !== undefined ? options.space : 2;
-  const jsonStr = JSON.stringify(data, null, space);
+  const space = options.space !== undefined ? options.space : undefined;
+  const jsonStr = space !== undefined ? JSON.stringify(data, null, space) : JSON.stringify(data);
   if (!jsonStr) {
     throw new Error(`[AtomicStorage] JSON serialization produced empty string for '${filePath}'`);
   }

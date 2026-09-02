@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   CheckSquare, 
   Sparkles, 
@@ -25,9 +25,10 @@ import {
   Layers
 } from 'lucide-react';
 
-import { DesignTaskLog } from '../../types/tasks';
+import { DesignTaskLog, TaskSummary } from '../../types/tasks';
 import { SvgEditor } from '../components/SvgEditor';
 import { TaskStatusBadge } from '../components/TaskStatusBadge';
+import { useTaskWebSocket } from '../hooks/useTaskWebSocket';
 
 // ---------------------------------------------------------------------------
 // Helper: Detailed Word-by-Word Trademark Hits Display per Field
@@ -146,7 +147,9 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
 // Main Component
 // ---------------------------------------------------------------------------
 export const TasksView: React.FC = () => {
-  const [tasks, setTasks] = useState<DesignTaskLog[]>([]);
+  const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  const [activeTaskDetail, setActiveTaskDetail] = useState<DesignTaskLog | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string>('');
   const [filter, setFilter] = useState<'ALL' | 'PRE_FLIGHT' | 'DESIGN' | 'TRADEMARK' | 'SVG'>('ALL');
@@ -290,6 +293,36 @@ export const TasksView: React.FC = () => {
     return 'None';
   };
 
+  const selectedTaskIdRef = useRef<string>('');
+  selectedTaskIdRef.current = selectedTaskId;
+
+  const fetchActiveTaskDetail = useCallback(async (taskId: string) => {
+    if (!taskId) {
+      setActiveTaskDetail(null);
+      return;
+    }
+    setLoadingDetail(true);
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
+      const data = await res.json();
+      if (data.success && data.task) {
+        setActiveTaskDetail(data.task);
+      }
+    } catch (err) {
+      console.warn('[TasksView] Error loading task detail:', err);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedTaskId) {
+      fetchActiveTaskDetail(selectedTaskId);
+    } else {
+      setActiveTaskDetail(null);
+    }
+  }, [selectedTaskId, fetchActiveTaskDetail]);
+
   // Fetch Tasks
   const fetchTasks = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
@@ -301,7 +334,7 @@ export const TasksView: React.FC = () => {
         setSelectedTaskId(prevId => {
           if (data.tasks.length === 0) return '';
           // If previous selection still exists in the task list, retain it!
-          if (prevId && data.tasks.some((t: DesignTaskLog) => t.id === prevId)) {
+          if (prevId && data.tasks.some((t: TaskSummary) => t.id === prevId)) {
             return prevId;
           }
           // Otherwise default to first task
@@ -314,6 +347,39 @@ export const TasksView: React.FC = () => {
       if (!isBackground) setLoading(false);
     }
   };
+
+  const { isConnected } = useTaskWebSocket({
+    onTaskUpdated: (updatedSummary) => {
+      setTasks(prev => {
+        const isAwaiting = updatedSummary.status === 'AWAITING_PRE_FLIGHT_REVIEW' ||
+                           updatedSummary.status === 'AWAITING_DESIGN_REVIEW' ||
+                           updatedSummary.status === 'AWAITING_TM_REVIEW' ||
+                           updatedSummary.status === 'AWAITING_SVG_REVIEW';
+        const exists = prev.some(t => t.id === updatedSummary.id);
+        if (isAwaiting) {
+          if (exists) {
+            return prev.map(t => t.id === updatedSummary.id ? updatedSummary : t);
+          } else {
+            return [updatedSummary, ...prev];
+          }
+        } else {
+          return prev.filter(t => t.id !== updatedSummary.id);
+        }
+      });
+
+      if (selectedTaskIdRef.current === updatedSummary.id) {
+        fetchActiveTaskDetail(updatedSummary.id);
+      }
+    },
+    onTaskCreated: (newSummary) => {
+      if (newSummary.status.startsWith('AWAITING_')) {
+        setTasks(prev => [newSummary, ...prev]);
+      }
+    },
+    onReconnect: () => {
+      fetchTasks(true);
+    }
+  });
 
   const fetchSettings = async () => {
     try {
@@ -364,11 +430,16 @@ export const TasksView: React.FC = () => {
   useEffect(() => {
     fetchTasks(false);
     fetchSettings();
-    const interval = setInterval(() => fetchTasks(true), 8000);
-    return () => clearInterval(interval);
   }, []);
 
-  const activeTask = tasks.find(t => t.id === selectedTaskId) || (tasks.length > 0 ? tasks[0] : null);
+  // Light fallback polling ONLY if WebSocket is disconnected
+  useEffect(() => {
+    if (isConnected) return;
+    const interval = setInterval(() => fetchTasks(true), 25000);
+    return () => clearInterval(interval);
+  }, [isConnected]);
+
+  const activeTask = activeTaskDetail;
 
   // Sync active task form fields when selection changes
   useEffect(() => {
@@ -776,7 +847,7 @@ export const TasksView: React.FC = () => {
                 const isDesign = t.status === 'AWAITING_DESIGN_REVIEW';
                 const isTm = t.status === 'AWAITING_TM_REVIEW';
                 const isSvg = t.status === 'AWAITING_SVG_REVIEW';
-                const displayQuote = t.payload?.quote || t.payload?.quote_or_phrase || t.payload?.text || t.id;
+                const displayQuote = t.quote || (t as any).payload?.quote || (t as any).payload?.quote_or_phrase || (t as any).payload?.text || t.id;
 
                 return (
                   <div
@@ -794,6 +865,7 @@ export const TasksView: React.FC = () => {
                         <img
                           src={t.imageUrl}
                           alt={displayQuote}
+                          loading="lazy"
                           className="w-12 h-12 rounded-lg object-cover border border-slate-800 shrink-0 bg-slate-950"
                         />
                       ) : (
@@ -827,7 +899,12 @@ export const TasksView: React.FC = () => {
           </div>
 
           {/* Right Column: Review Workspace (8 cols) */}
-          {activeTask && (
+          {loadingDetail ? (
+            <div className="lg:col-span-8 glass-panel p-12 rounded-2xl border border-slate-800 flex flex-col items-center justify-center space-y-3 min-h-[400px]">
+              <RefreshCw className="w-7 h-7 text-primary-400 animate-spin" />
+              <p className="text-xs font-semibold text-slate-300">Lade Review-Details...</p>
+            </div>
+          ) : activeTask ? (
             <div className="lg:col-span-8 space-y-4">
               <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-5">
                 {/* Task Header */}
@@ -2127,7 +2204,7 @@ export const TasksView: React.FC = () => {
                 )}
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       )}
 

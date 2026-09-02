@@ -18,7 +18,7 @@ import {
   XCircle,
   Sliders
 } from 'lucide-react';
-import { DesignTaskLog, EventCategory } from '../../types/tasks';
+import { DesignTaskLog, TaskSummary, EventCategory } from '../../types/tasks';
 
 export interface TaskStatusInfo {
   label: string;
@@ -29,7 +29,7 @@ export interface TaskStatusInfo {
   isAnimated: boolean;
 }
 
-export const getTaskStatusInfo = (task: DesignTaskLog): TaskStatusInfo => {
+export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatusInfo => {
   const isUpdate = task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U');
 
   // 1. Error state
