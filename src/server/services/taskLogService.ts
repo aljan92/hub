@@ -10,6 +10,7 @@ import { SvgRenderService } from './svgRenderService';
 import { LLMService } from './llmService';
 import { VisionOptimizationService } from './visionOptimizationService';
 import { ArtworkResizeService } from './artworkResizeService';
+import { ListingValidationService } from './listingValidationService';
 
 export * from '../../types/tasks';
 import { 
@@ -860,11 +861,9 @@ export class TaskLogService {
       const isApproved = parsedAnalysis?.overall_verdict === 'APPROVED' || 
         (parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended);
 
-      const aiN1 = parsedAnalysis?.niche_analysis?.niche1 || parsedAnalysis?.niche1;
-      const rawAiN2 = parsedAnalysis?.niche_analysis?.niche2 || parsedAnalysis?.niche2;
-      const aiN2 = rawAiN2 && rawAiN2.toLowerCase() !== 'none' ? rawAiN2 : 'none';
-      const rawAiSub = parsedAnalysis?.niche_analysis?.subniche || parsedAnalysis?.subniche;
-      const aiSub = rawAiSub && rawAiSub.toLowerCase() !== 'none' ? rawAiSub : 'none';
+      const aiN1 = ListingValidationService.normalizeOptionalText(parsedAnalysis?.niche_analysis?.niche1 || parsedAnalysis?.niche1);
+      const aiN2 = ListingValidationService.normalizeOptionalText(parsedAnalysis?.niche_analysis?.niche2 || parsedAnalysis?.niche2);
+      const aiSub = ListingValidationService.normalizeOptionalText(parsedAnalysis?.niche_analysis?.subniche || parsedAnalysis?.subniche);
       const rawAiKw = parsedAnalysis?.niche_analysis?.keywords || parsedAnalysis?.keywords || parsedAnalysis?.seo_keywords;
       const aiKeywords: string[] | undefined = Array.isArray(rawAiKw)
         ? rawAiKw.map((k: any) => String(k).trim()).filter(Boolean)
@@ -877,8 +876,8 @@ export class TaskLogService {
         this.updateTaskStatus(taskId, {
           status: 'GENERATING_LISTING',
           niche1: aiN1 || task.niche1,
-          niche2: aiN2 !== 'none' ? aiN2 : task.niche2,
-          subniche: aiSub !== 'none' ? aiSub : task.subniche,
+          niche2: aiN2 || task.niche2,
+          subniche: aiSub || task.subniche,
           keywords: aiKeywords || task.keywords,
           analysisResult: parsedAnalysis,
           hasError: false
@@ -951,9 +950,9 @@ export class TaskLogService {
     }
 
     const quote = task.payload?.quote || '';
-    const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || task.analysisResult?.niche_analysis?.niche1 || '';
-    const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || task.analysisResult?.niche_analysis?.niche2 || '';
-    const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || task.analysisResult?.niche_analysis?.subniche || '';
+    const niche1 = ListingValidationService.normalizeOptionalText(task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || task.analysisResult?.niche_analysis?.niche1) || '';
+    const niche2 = ListingValidationService.normalizeOptionalText(task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || task.analysisResult?.niche_analysis?.niche2) || '';
+    const subniche = ListingValidationService.normalizeOptionalText(task.subniche || task.customAnswers?.subniche || task.payload?.subniche || task.analysisResult?.niche_analysis?.subniche) || '';
     const keywords = task.keywords || task.customAnswers?.keywords || task.payload?.keywords || [];
     const hermesKeywords = task.hermesKeywords || task.payload?.hermesKeywords || [];
     const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) 
@@ -1153,9 +1152,9 @@ export class TaskLogService {
     };
 
     const quote = task.payload?.quote || '';
-    const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || '';
-    const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || '';
-    const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || '';
+    const niche1 = ListingValidationService.normalizeOptionalText(task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1) || '';
+    const niche2 = ListingValidationService.normalizeOptionalText(task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2) || '';
+    const subniche = ListingValidationService.normalizeOptionalText(task.subniche || task.customAnswers?.subniche || task.payload?.subniche) || '';
 
     try {
       console.log(`[TaskLogService] 🛡️ Starte Trademark Workflow V2 für Task ${taskId}...`);
@@ -2085,25 +2084,29 @@ export class TaskLogService {
           ? (Array.isArray(params.answers.keywords) ? params.answers.keywords : String(params.answers.keywords).split(',').map((s: string) => s.trim()).filter(Boolean))
           : (task.keywords || []);
 
-        task.niche1 = n1;
-        task.niche2 = n2;
-        task.subniche = sub;
+        const normN1 = ListingValidationService.normalizeOptionalText(n1) || '';
+        const normN2 = ListingValidationService.normalizeOptionalText(n2);
+        const normSub = ListingValidationService.normalizeOptionalText(sub);
+
+        task.niche1 = normN1;
+        task.niche2 = normN2;
+        task.subniche = normSub;
         task.keywords = kwList;
 
         if (!task.payload) task.payload = {};
-        task.payload.niche1 = n1;
-        task.payload.niche2 = n2;
-        task.payload.subniche = sub;
+        task.payload.niche1 = normN1;
+        task.payload.niche2 = normN2;
+        task.payload.subniche = normSub;
         task.payload.keywords = kwList;
 
         if (task.analysisResult && typeof task.analysisResult === 'object') {
-          task.analysisResult.niche1 = n1;
-          task.analysisResult.niche2 = n2 || 'none';
-          task.analysisResult.subniche = sub || 'none';
+          task.analysisResult.niche1 = normN1;
+          task.analysisResult.niche2 = normN2;
+          task.analysisResult.subniche = normSub;
           task.analysisResult.niche_analysis = {
-            niche1: n1,
-            niche2: n2 || 'none',
-            subniche: sub || 'none'
+            niche1: normN1,
+            niche2: normN2 || '',
+            subniche: normSub || ''
           };
           if (params.answers.audience) {
             const rawAud = String(params.answers.audience).toLowerCase();

@@ -1,6 +1,7 @@
 import { loadSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
 import { BannedWordsService } from './bannedWordsService';
+import { ListingValidationService } from './listingValidationService';
 
 export interface EnglishListing {
   brand: string;
@@ -501,9 +502,9 @@ Style Preset: ${stylePreset}`;
     const bannedSection = BannedWordsService.getBannedWordsPromptSection('en');
     const systemPrompt = `${basePrompt}\n\n${bannedSection}`;
 
-    const n1 = params.niche1 || 'Graphic Art';
-    const n2 = params.niche2 && params.niche2.toLowerCase() !== 'none' ? params.niche2 : '';
-    const sub = params.subniche && params.subniche.toLowerCase() !== 'none' ? params.subniche : '';
+    const n1 = ListingValidationService.normalizeOptionalText(params.niche1) || 'Graphic Art';
+    const n2 = ListingValidationService.normalizeOptionalText(params.niche2) || '';
+    const sub = ListingValidationService.normalizeOptionalText(params.subniche) || '';
     const quote = params.quote || '';
     const allKw = [
       ...(params.hermesKeywords || []),
@@ -577,26 +578,48 @@ Style Preset: ${stylePreset}`;
       let cleanTitle = (rawTitle || '').trim();
       cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, '').trim();
 
-      const targetEnd = sub || n1;
+      const targetEnd = sub || n2 || n1;
 
-      return {
+      const rawListing: EnglishListing = {
         brand: (rawBrand || `${n1} ${sub ? sub + ' ' : ''}Apparel Collection`).trim().slice(0, 50),
         title: cleanTitle || `${n1} ${quote ? quote + ' ' : ''}${targetEnd}`.trim().slice(0, 60),
         bullet1: (rawBullet1 || `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`).trim().slice(0, 256),
         bullet2: (rawBullet2 || `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`).trim().slice(0, 256),
-        description: (rawDesc || `High quality ${n1} graphic design celebrating authentic vintage aesthetics and community passion.`).trim().slice(0, 600),
+        description: (rawDesc || `High quality ${n1} graphic design celebrating authentic vintage aesthetics and community passion.`).trim().slice(0, 600)
+      };
+
+      const validated = ListingValidationService.validateAndRepairListing({
+        listing: rawListing,
+        niche1: n1,
+        niche2: n2,
+        subniche: sub
+      });
+
+      return {
+        ...validated.listing,
         _rawRequest: requestPayload,
         _rawResponse: content
       };
     } catch (err: any) {
       console.error('[LLMService] Error generating master English listing:', err);
-      const targetEnd = sub || n1;
-      return {
+      const targetEnd = sub || n2 || n1;
+      const fallbackListing: EnglishListing = {
         brand: `${n1} ${sub ? sub + ' ' : ''}Apparel Collection`.trim().slice(0, 50),
         title: `Vintage Retro ${quote ? quote + ' ' : ''}${targetEnd}`.trim().slice(0, 60),
         bullet1: `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`,
         bullet2: `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`,
-        description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`,
+        description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`
+      };
+
+      const validated = ListingValidationService.validateAndRepairListing({
+        listing: fallbackListing,
+        niche1: n1,
+        niche2: n2,
+        subniche: sub
+      });
+
+      return {
+        ...validated.listing,
         _rawRequest: requestPayload,
         _rawResponse: err.message
       };
@@ -963,6 +986,15 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
     const { url, headers, model } = this.getBaseUrlAndHeaders();
     const systemPrompt = SystemPromptService.getTrademarkRewritePrompt();
 
+    const normN1 = ListingValidationService.normalizeOptionalText(params.niche1);
+    const normN2 = ListingValidationService.normalizeOptionalText(params.niche2);
+    const normSub = ListingValidationService.normalizeOptionalText(params.subniche);
+    const expectedSuffix = ListingValidationService.resolveExpectedTitleSuffix({
+      niche1: normN1,
+      niche2: normN2,
+      subniche: normSub
+    });
+
     const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params.rewriteIteration} of 3).
 
 Current Listing:
@@ -973,9 +1005,9 @@ Current Listing:
 - Description: "${params.currentListing.description}"
 
 Design Metadata:
-- Primary Niche (niche1): ${params.niche1 || ''}
-- Secondary Niche (niche2): ${params.niche2 || ''}
-- Subniche: ${params.subniche || ''}
+- Primary Niche (niche1): ${normN1 || 'none'}
+- Secondary Niche (niche2): ${normN2 || 'none'}
+- Subniche: ${normSub || 'none'}
 - Quote / Slogan: "${params.quote || ''}"
 
 SPECIFIC TRADEMARK ISSUES TO RESOLVE:
@@ -984,7 +1016,7 @@ ${params.rewriteInstructions.length > 0 ? params.rewriteInstructions.map(i => `-
 CRITICAL CONSTRAINTS:
 1. STRICTLY FORBIDDEN TERMS (DO NOT USE THESE OR CLOSE VARIANTS):
    ${JSON.stringify(params.forbiddenTermsForTask)}
-2. LOCKED TITLE SUFFIX: Title MUST end literally with "${params.subniche || params.niche2 || params.niche1 || ''}"
+2. LOCKED TITLE SUFFIX: Title MUST end literally with "${expectedSuffix}"
 3. EXACT CHARACTER LIMITS:
    - Brand: 40-50 chars
    - Title: 50-60 chars (ending with locked suffix)
@@ -1043,18 +1075,37 @@ Return ONLY valid JSON:
         description: (parsed.description || params.currentListing.description).trim().slice(0, 600)
       };
 
+      const validated = ListingValidationService.validateAndRepairListing({
+        listing: refined,
+        niche1: normN1,
+        niche2: normN2,
+        subniche: normSub,
+        forbiddenTerms: params.forbiddenTermsForTask
+      });
+
       const actionsTaken = Array.isArray(parsed.actions_taken) ? parsed.actions_taken : (Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : ['Automated trademark rewrite applied']);
+      if (validated.repaired) {
+        actionsTaken.push(`Deterministic validation repair: ${validated.issues.join('; ')}`);
+      }
 
       return {
-        refinedListing: refined,
+        refinedListing: validated.listing,
         actionsTaken,
         _rawRequest: requestPayload,
         _rawResponse: content
       };
     } catch (err: any) {
       console.error('[LLMService] Error in rewriteListingForTrademarkV2:', err);
+      const validated = ListingValidationService.validateAndRepairListing({
+        listing: params.currentListing,
+        niche1: normN1,
+        niche2: normN2,
+        subniche: normSub,
+        forbiddenTerms: params.forbiddenTermsForTask
+      });
+
       return {
-        refinedListing: params.currentListing,
+        refinedListing: validated.listing,
         actionsTaken: ['Failed to rewrite: network/timeout error'],
         _rawRequest: requestPayload,
         _rawResponse: err.message

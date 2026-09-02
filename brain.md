@@ -742,6 +742,25 @@ MBA HUB/
   - Gesamtergebnis: **52/52 Tests bestanden (100% Pass Rate)**.
   - Production Build (`npm run build`) fehlerfrei abgeschlossen.
 
+### 10.30 🛡️ Placeholder-Normalisierung & Deterministische Listing-Validierung (`ListingValidationService`)
+- **Problem & Ursachen:**
+  - In seltenen Fällen tauchten Dummy-Platzhalter wie `"none"`, `"n/a"`, `"undefined"` oder `"-"` in den Nischen-Feldern auf und wanderten bis in den Titel (z. B. `... 111 Numerology none`).
+  - Wenn ein Rewrite durch das LLM erfolgte, konnten Zeichenlimits geringfügig verletzt werden oder trailing Satzzeichen verbleiben.
+- **Lösung & Architektur:**
+  1. **Zentraler Validierungs- & Reparaturservice (`listingValidationService.ts`):**
+     - `normalizeOptionalText`: Filtert Platzhalter (`none`, `n/a`, `na`, `null`, `undefined`, `-`) deterministisch zu `undefined`.
+     - `resolveExpectedTitleSuffix`: Priorisiert strikt: validierte `subniche` > validierte `niche2` > `niche1` (Fallback: `'Graphic Art'`).
+     - `cleanTrailingPlaceholders`: Entfernt trailing Platzhalter-Tokens und trailing Interpunktion aus dem Titel.
+     - `validateAndRepairListing`: Erzwingt MBA-Regeln (Title 50–60 Zeichen mit Locked Suffix, Brand 40–50 Zeichen, Bullets 230–256 Zeichen, Description 300–600 Zeichen, Banned Words & TM-Verbotsbegriffe automatisch bereinigt).
+  2. **Zentrale Verankerung in der Pipeline:**
+     - Direkt nach LLM-Listing-Generierung (D5 / U4).
+     - Nach jedem Trademark-Rewrite-Zyklus (V2 Loop).
+     - Bei Eingabeübernahme und Task-Initialisierung in `taskLogService.ts` und `updatePipelineService.ts`.
+- **Tests & Validierung:**
+  - `tests/trademarkV2.test.ts`: Test Suite E (E1 bis E13) erfolgreich integriert.
+  - Gesamtergebnis: **115/115 Tests bestanden (100% Pass Rate)**.
+  - Production Build (`npm run build`) fehlerfrei abgeschlossen.
+
 
 
 

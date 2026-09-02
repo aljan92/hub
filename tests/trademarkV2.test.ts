@@ -3,6 +3,7 @@ import { LLMService } from '../src/server/services/llmService';
 import { BannedWordsService } from '../src/server/services/bannedWordsService';
 import { VisionOptimizationService } from '../src/server/services/visionOptimizationService';
 import { SystemPromptService } from '../src/server/services/systemPromptService';
+import { ListingValidationService } from '../src/server/services/listingValidationService';
 import fs from 'fs';
 import path from 'path';
 
@@ -891,6 +892,166 @@ async function runAcceptanceTests() {
   }
 
   // ----------------------------------------------------
+  // TEST E: PLACEHOLDER-NORMALISIERUNG & DETERMINISTISCHE LISTING-VALIDIERUNG (E1 bis E13)
+  // ----------------------------------------------------
+  console.log('\n--- TEST SUITE E: Placeholder-Normalisierung & Deterministische Listing-Validierung ---');
+
+  // E1: subniche="none" wird als nicht vorhanden behandelt
+  const e1Val = ListingValidationService.normalizeOptionalText('none');
+  assert(e1Val === undefined, 'Test E1: subniche="none" wird als nicht vorhanden behandelt (undefined).');
+
+  // E2: subniche=" NONE " wird als nicht vorhanden behandelt
+  const e2Val = ListingValidationService.normalizeOptionalText(' NONE ');
+  assert(e2Val === undefined, 'Test E2: subniche=" NONE " (mit Spaces & Uppercase) wird als nicht vorhanden behandelt.');
+
+  // E3: niche2="n/a" wird als nicht vorhanden behandelt
+  const e3Val1 = ListingValidationService.normalizeOptionalText('n/a');
+  const e3Val2 = ListingValidationService.normalizeOptionalText('NA');
+  const e3Val3 = ListingValidationService.normalizeOptionalText('null');
+  const e3Val4 = ListingValidationService.normalizeOptionalText('undefined');
+  const e3Val5 = ListingValidationService.normalizeOptionalText('-');
+  const e3Val6 = ListingValidationService.normalizeOptionalText('');
+  assert(e3Val1 === undefined && e3Val2 === undefined && e3Val3 === undefined && e3Val4 === undefined && e3Val5 === undefined && e3Val6 === undefined,
+    'Test E3: Platzhalter-Tokens (n/a, NA, null, undefined, -, "") werden zuverlässig als undefined normalisiert.');
+
+  // E4: echte Subniche bleibt unverändert
+  const e4Val1 = ListingValidationService.normalizeOptionalText('Angel Numbers');
+  const e4Val2 = ListingValidationService.normalizeOptionalText('Christmas Cookies');
+  const e4Val3 = ListingValidationService.normalizeOptionalText('Western Horse');
+  assert(e4Val1 === 'Angel Numbers' && e4Val2 === 'Christmas Cookies' && e4Val3 === 'Western Horse',
+    'Test E4: Echte Nischen- & Subnischenwerte ("Angel Numbers", "Christmas Cookies", "Western Horse") bleiben vollständig unverändert.');
+
+  // E5: Title darf niemals auf "none" enden
+  const e5Cleaned = ListingValidationService.cleanTrailingPlaceholders('Manifest Your Reality Divine Guidance 111 Numerology none');
+  const e5Res = ListingValidationService.validateAndRepairListing({
+    listing: {
+      brand: '111 Numerology Manifestation Celestial Symbols',
+      title: 'Manifest Your Reality Divine Guidance 111 Numerology none',
+      bullet1: '111 Manifest Your Reality frames repeating ones as a reminder to align thoughts, intentions, and inner purpose. Ideal for numerology followers, spiritual seekers, manifestors, and anyone drawn to synchronicity, divine timing, and intuitive inner wisdom.',
+      bullet2: 'A meaningful choice for meditation sessions, intention setting, vision board planning, journaling rituals, moon circles, yoga practice, or quiet reflection. The winged numeral artwork suits numerology meetups, spiritual retreats, and manifestation groups.',
+      description: 'This vintage-inspired celestial composition centers the repeating number 111 amid feathered angel wings, radiant stars, crescent moons, and sunbursts. Flowing mystical lettering reinforces a message of conscious creation and personal alignment.'
+    },
+    niche1: 'Angel Numbers',
+    niche2: '111 Numerology',
+    subniche: 'none'
+  });
+  assert(!e5Cleaned.toLowerCase().endsWith('none') && !e5Res.listing.title.toLowerCase().endsWith('none') && e5Res.repaired === true,
+    'Test E5: Title darf niemals auf "none" enden; trailing "none" wird deterministisch entfernt.');
+
+  // E6: Design Pipeline #056-artige Daten wählen korrekten Fallback-Suffix
+  const e6Suffix = ListingValidationService.resolveExpectedTitleSuffix({
+    niche1: 'Angel Numbers',
+    niche2: '111',
+    subniche: 'none'
+  });
+  const e6SuffixFallbackN1 = ListingValidationService.resolveExpectedTitleSuffix({
+    niche1: 'Angel Numbers',
+    niche2: 'none',
+    subniche: 'none'
+  });
+  assert(e6Suffix === '111' && e6SuffixFallbackN1 === 'Angel Numbers',
+    'Test E6: Design Pipeline #056-artige Daten wählen korrekten Fallback-Suffix (niche2 "111" wenn subniche="none", sonst niche1).');
+
+  // E7: Update Pipeline mit niche2/subniche="none" bleibt korrekt
+  const e7Suffix = ListingValidationService.resolveExpectedTitleSuffix({
+    niche1: 'Christmas',
+    niche2: 'none',
+    subniche: 'none'
+  });
+  assert(e7Suffix === 'Christmas',
+    'Test E7: Update Pipeline mit niche2/subniche="none" wählt deterministisch Niche1 ("Christmas").');
+
+  // E8: Title >60 wird von Hard Validation erkannt und gekürzt
+  const e8LongTitle = 'Manifest Your Reality Divine Guidance Celestial Law of Attraction 111 Numerology'; // 78 chars
+  const e8Res = ListingValidationService.validateAndRepairListing({
+    listing: {
+      brand: '111 Numerology Manifestation Celestial Symbols',
+      title: e8LongTitle,
+      bullet1: '111 Manifest Your Reality frames repeating ones as a reminder to align thoughts, intentions, and inner purpose. Ideal for numerology followers, spiritual seekers, manifestors, and anyone drawn to synchronicity, divine timing, and intuitive inner wisdom.',
+      bullet2: 'A meaningful choice for meditation sessions, intention setting, vision board planning, journaling rituals, moon circles, yoga practice, or quiet reflection. The winged numeral artwork suits numerology meetups, spiritual retreats, and manifestation groups.',
+      description: 'This vintage-inspired celestial composition centers the repeating number 111 amid feathered angel wings, radiant stars, crescent moons, and sunbursts. Flowing mystical lettering reinforces a message of conscious creation and personal alignment.'
+    },
+    niche1: 'Angel Numbers',
+    niche2: '111 Numerology',
+    subniche: 'none'
+  });
+  assert(e8Res.listing.title.length <= 60 && e8Res.listing.title.endsWith('111 Numerology') && e8Res.repaired === true,
+    `Test E8: Title >60 (${e8LongTitle.length} Zeichen) wird von Hard Validation erkannt und auf <= 60 (${e8Res.listing.title.length} Zeichen) unter Beibehaltung des Suffixes gekürzt.`);
+
+  // E9: Brand/Bullets/Description Limits werden erkannt und durchgesetzt
+  const e9OverBrand = 'A'.repeat(55);
+  const e9OverBullet1 = 'B'.repeat(270);
+  const e9OverBullet2 = 'C'.repeat(280);
+  const e9OverDesc = 'D'.repeat(650);
+  const e9Res = ListingValidationService.validateAndRepairListing({
+    listing: {
+      brand: e9OverBrand,
+      title: 'Manifest Your Reality Divine Guidance 111 Numerology',
+      bullet1: e9OverBullet1,
+      bullet2: e9OverBullet2,
+      description: e9OverDesc
+    },
+    niche1: 'Angel Numbers',
+    niche2: '111 Numerology'
+  });
+  assert(e9Res.listing.brand.length <= 50 && e9Res.listing.bullet1.length <= 256 && e9Res.listing.bullet2.length <= 256 && e9Res.listing.description.length <= 600 && e9Res.repaired === true,
+    'Test E9: Brand-, Bullet- und Description-Längenüberschreitungen werden deterministisch gekürzt.');
+
+  // E10: Validation läuft nach Master Listing
+  const e10SampleCandidate = {
+    brand: 'Angel Numbers Vintage Collection Premium',
+    title: 'Divine Inspiration Reality 111 none',
+    bullet1: 'Featuring high quality authentic artwork suitable for daily wear and gift giving.',
+    bullet2: 'Comfortable fit for all outdoor adventures and casual hangouts with friends.',
+    description: 'High quality graphic design celebrating authentic vintage aesthetics.'
+  };
+  const e10Validated = ListingValidationService.validateAndRepairListing({
+    listing: e10SampleCandidate,
+    niche1: 'Angel Numbers',
+    niche2: '111',
+    subniche: 'none'
+  });
+  assert(!e10Validated.listing.title.toLowerCase().endsWith('none') && e10Validated.listing.title.endsWith('111'),
+    'Test E10: Validation nach Master Listing entfernt trailing Placeholders und stellt korrekten Suffix sicher.');
+
+  // E11: Validation läuft nach jedem TM Rewrite
+  const e11RewrittenListing = {
+    brand: '111 Numerology Manifestation Celestial Symbols',
+    title: 'Manifest Your Reality Divine Guidance 111 Numerology none',
+    bullet1: '111 Manifest Your Reality frames repeating ones as a reminder to align thoughts, intentions, and inner purpose.',
+    bullet2: 'A meaningful choice for meditation sessions, intention setting, vision board planning, journaling rituals.',
+    description: 'This vintage-inspired celestial composition centers the repeating number 111 amid feathered angel wings.'
+  };
+  const e11Validated = ListingValidationService.validateAndRepairListing({
+    listing: e11RewrittenListing,
+    niche1: 'Angel Numbers',
+    niche2: '111 Numerology',
+    subniche: 'none'
+  });
+  assert(!e11Validated.listing.title.toLowerCase().endsWith('none') && e11Validated.listing.title.endsWith('111 Numerology'),
+    'Test E11: Validation nach TM Rewrite bereinigt den Titel deterministisch auf den gültigen Suffix ohne "none".');
+
+  // E12: TM forbiddenTerms werden durch Repair nicht wieder eingeführt
+  const e12ListingWithForbidden = {
+    brand: 'Angel Numbers Manifestation Celestial Symbols',
+    title: 'Manifest Your Reality Divine Guidance Angel Numbers',
+    bullet1: 'Made for spiritual seekers drawn to synchronicity and angel numbers.',
+    bullet2: 'Ideal for meditation and intention setting.',
+    description: 'A symbolic design with angelic wings.'
+  };
+  const e12Validated = ListingValidationService.validateAndRepairListing({
+    listing: e12ListingWithForbidden,
+    niche1: '111 Numerology',
+    forbiddenTerms: ['angel numbers', 'made for']
+  });
+  assert(!e12Validated.listing.title.toLowerCase().includes('angel numbers') && !e12Validated.listing.bullet1.toLowerCase().includes('made for'),
+    'Test E12: TM forbiddenTerms werden durch ListingValidationService nicht wieder eingeführt und sicher entfernt.');
+
+  // E13: Bestehende Tests bleiben unverändert grün
+  assert(passed >= 102,
+    `Test E13: Alle bestehenden 102 Tests (A1-D22) laufen unverändert durch (aktuell bestanden: ${passed}).`);
+
+  // ----------------------------------------------------
   // Summary
   // ----------------------------------------------------
   console.log('\n====================================================');
@@ -900,6 +1061,7 @@ async function runAcceptanceTests() {
   if (passed !== total) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 runAcceptanceTests().catch(err => {

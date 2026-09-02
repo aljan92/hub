@@ -10,6 +10,7 @@ import { LLMService, EnglishListing } from './llmService';
 import { TrademarkService } from './trademarkService';
 import { VisionOptimizationService } from './visionOptimizationService';
 import { ArtworkResizeService } from './artworkResizeService';
+import { ListingValidationService } from './listingValidationService';
 
 export class UpdatePipelineService {
   /**
@@ -331,9 +332,9 @@ export class UpdatePipelineService {
     }
 
     const raw = task.payload || {};
-    const niche1 = task.customAnswers?.niche1 !== undefined ? task.customAnswers.niche1 : (task.niche1 || task.analysisResult?.niche1 || '');
-    const niche2 = task.customAnswers?.niche2 !== undefined ? task.customAnswers.niche2 : (task.niche2 || task.analysisResult?.niche2 || '');
-    const subniche = task.customAnswers?.subniche !== undefined ? task.customAnswers.subniche : (task.subniche || task.analysisResult?.subniche || '');
+    const niche1 = ListingValidationService.normalizeOptionalText(task.customAnswers?.niche1 !== undefined ? task.customAnswers.niche1 : (task.niche1 || task.analysisResult?.niche1 || '')) || 'Graphic Art';
+    const niche2 = ListingValidationService.normalizeOptionalText(task.customAnswers?.niche2 !== undefined ? task.customAnswers.niche2 : (task.niche2 || task.analysisResult?.niche2 || ''));
+    const subniche = ListingValidationService.normalizeOptionalText(task.customAnswers?.subniche !== undefined ? task.customAnswers.subniche : (task.subniche || task.analysisResult?.subniche || ''));
     const keywords = task.customAnswers?.keywords !== undefined
       ? (Array.isArray(task.customAnswers.keywords) ? task.customAnswers.keywords : String(task.customAnswers.keywords).split(',').map((s: string) => s.trim()).filter(Boolean))
       : (task.keywords || task.payload?.keywords || []);

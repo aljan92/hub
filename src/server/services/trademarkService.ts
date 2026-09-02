@@ -2,6 +2,7 @@ import { loadSettings } from './settingsService';
 import { ProductCatalogService } from './productCatalogService';
 import { TrademarkWhitelistService } from './trademarkWhitelistService';
 import { LLMService, EnglishListing } from './llmService';
+import { ListingValidationService } from './listingValidationService';
 
 export type TrademarkOffice = 'USPTO' | 'EUIPO' | 'DPMA';
 
@@ -1187,7 +1188,18 @@ export class TrademarkService {
     sessionId?: string;
     onEvent?: (event: { type: string; title: string; content: any; metadata?: any }) => void;
   }): Promise<TrademarkAuditResultV2> {
-    let currentListing: EnglishListing = { ...params.listing };
+    const normN1 = ListingValidationService.normalizeOptionalText(params.niche1);
+    const normN2 = ListingValidationService.normalizeOptionalText(params.niche2);
+    const normSub = ListingValidationService.normalizeOptionalText(params.subniche);
+
+    // Validate and sanitize incoming candidate listing
+    const initialValidation = ListingValidationService.validateAndRepairListing({
+      listing: params.listing,
+      niche1: normN1,
+      niche2: normN2,
+      subniche: normSub
+    });
+    let currentListing: EnglishListing = { ...initialValidation.listing };
     const forbiddenTermsForTask: string[] = [];
     const rewriteIterations: Array<{
       iteration: number;
@@ -1266,9 +1278,9 @@ export class TrademarkService {
         // 4. GPT-5.6 Sol Trademark Referee Pass (with compact hits & stable session_id)
         refereeRes = await LLMService.evaluateTrademarkReferee({
           currentListing,
-          niche1: params.niche1,
-          niche2: params.niche2,
-          subniche: params.subniche,
+          niche1: normN1,
+          niche2: normN2,
+          subniche: normSub,
           quote: params.quote,
           compactHits: hitsToReview,
           normalizedHits,
@@ -1326,7 +1338,13 @@ export class TrademarkService {
           forbiddenTermsForTask,
           blockedProducts,
           blockedNiceClasses,
-          finalListing: currentListing
+          finalListing: ListingValidationService.validateAndRepairListing({
+            listing: currentListing,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
+            forbiddenTerms: forbiddenTermsForTask
+          }).listing
         };
       }
 
@@ -1336,9 +1354,9 @@ export class TrademarkService {
         
         const verifierRes = await LLMService.evaluateTrademarkVerifier({
           currentListing,
-          niche1: params.niche1,
-          niche2: params.niche2,
-          subniche: params.subniche,
+          niche1: normN1,
+          niche2: normN2,
+          subniche: normSub,
           quote: params.quote,
           compactHits, // Final Verifier receives the FULL compact hits of the candidate
           normalizedHits,
@@ -1372,7 +1390,13 @@ export class TrademarkService {
             forbiddenTermsForTask,
             blockedProducts,
             blockedNiceClasses,
-            finalListing: currentListing
+            finalListing: ListingValidationService.validateAndRepairListing({
+              listing: currentListing,
+              niche1: normN1,
+              niche2: normN2,
+              subniche: normSub,
+              forbiddenTerms: forbiddenTermsForTask
+            }).listing
           };
         }
 
@@ -1395,7 +1419,13 @@ export class TrademarkService {
             forbiddenTermsForTask,
             blockedProducts,
             blockedNiceClasses,
-            finalListing: currentListing
+            finalListing: ListingValidationService.validateAndRepairListing({
+              listing: currentListing,
+              niche1: normN1,
+              niche2: normN2,
+              subniche: normSub,
+              forbiddenTerms: forbiddenTermsForTask
+            }).listing
           };
         }
 
@@ -1414,7 +1444,13 @@ export class TrademarkService {
             forbiddenTermsForTask,
             blockedProducts,
             blockedNiceClasses,
-            finalListing: currentListing
+            finalListing: ListingValidationService.validateAndRepairListing({
+              listing: currentListing,
+              niche1: normN1,
+              niche2: normN2,
+              subniche: normSub,
+              forbiddenTerms: forbiddenTermsForTask
+            }).listing
           };
         }
 
@@ -1444,7 +1480,13 @@ export class TrademarkService {
           forbiddenTermsForTask,
           blockedProducts,
           blockedNiceClasses,
-          finalListing: currentListing
+          finalListing: ListingValidationService.validateAndRepairListing({
+            listing: currentListing,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
+            forbiddenTerms: forbiddenTermsForTask
+          }).listing
         };
       }
 
@@ -1460,9 +1502,9 @@ export class TrademarkService {
 
       const rewriteRes = await LLMService.rewriteListingForTrademarkV2({
         currentListing,
-        niche1: params.niche1,
-        niche2: params.niche2,
-        subniche: params.subniche,
+        niche1: normN1,
+        niche2: normN2,
+        subniche: normSub,
         quote: params.quote,
         rewriteIteration: cycle + 1,
         forbiddenTermsForTask: Array.from(new Set(forbiddenTermsForTask)),
@@ -1472,6 +1514,15 @@ export class TrademarkService {
       });
 
       currentListing = rewriteRes.refinedListing;
+
+      const postRewriteValidation = ListingValidationService.validateAndRepairListing({
+        listing: currentListing,
+        niche1: normN1,
+        niche2: normN2,
+        subniche: normSub,
+        forbiddenTerms: forbiddenTermsForTask
+      });
+      currentListing = postRewriteValidation.listing;
 
       rewriteIterations.push({
         iteration: cycle + 1,
@@ -1503,7 +1554,13 @@ export class TrademarkService {
       forbiddenTermsForTask,
       blockedProducts,
       blockedNiceClasses,
-      finalListing: currentListing
+      finalListing: ListingValidationService.validateAndRepairListing({
+        listing: currentListing,
+        niche1: normN1,
+        niche2: normN2,
+        subniche: normSub,
+        forbiddenTerms: forbiddenTermsForTask
+      }).listing
     };
   }
 }

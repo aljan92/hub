@@ -52033,6 +52033,249 @@ You MUST NEVER use any of the following prohibited words or phrases:
   }
 });
 
+// src/server/services/listingValidationService.ts
+var PLACEHOLDER_TOKENS, ListingValidationService;
+var init_listingValidationService = __esm2({
+  "src/server/services/listingValidationService.ts"() {
+    "use strict";
+    init_bannedWordsService();
+    PLACEHOLDER_TOKENS = /* @__PURE__ */ new Set([
+      "none",
+      "n/a",
+      "na",
+      "null",
+      "undefined",
+      "-"
+    ]);
+    ListingValidationService = class {
+      /**
+       * Normalize optional text fields (niche2, subniche, etc.)
+       * Case-insensitive, trimmed check against common placeholder strings.
+       * Returns undefined if the string is empty or matches a placeholder token.
+       */
+      static normalizeOptionalText(value2) {
+        if (value2 === null || value2 === void 0) return void 0;
+        const str = String(value2).trim();
+        if (!str) return void 0;
+        const lower = str.toLowerCase();
+        if (PLACEHOLDER_TOKENS.has(lower)) {
+          return void 0;
+        }
+        return str;
+      }
+      /**
+       * Deterministically resolve the expected Title suffix:
+       * 1. Valid normalized Subniche (if present)
+       * 2. Otherwise valid normalized Niche2 (if present)
+       * 3. Otherwise Niche1 (fallback to 'Graphic Art')
+       */
+      static resolveExpectedTitleSuffix(params2) {
+        const normSub = this.normalizeOptionalText(params2.subniche);
+        if (normSub) return normSub;
+        const normN2 = this.normalizeOptionalText(params2.niche2);
+        if (normN2) return normN2;
+        const normN1 = this.normalizeOptionalText(params2.niche1);
+        return normN1 || "Graphic Art";
+      }
+      /**
+       * Check if a Title ends with the expected suffix (or an accepted niche variant)
+       */
+      static titleEndsWithSuffix(title, expectedSuffix, fallbackSuffixes = []) {
+        if (!title) return false;
+        const clean = title.trim().toLowerCase().replace(/[,.!?:;'"\-–—]+$/, "").trim();
+        const allExpected = [expectedSuffix, ...fallbackSuffixes].map((s) => this.normalizeOptionalText(s)).filter((s) => !!s).map((s) => s.toLowerCase());
+        for (const exp of allExpected) {
+          if (clean === exp || clean.endsWith(" " + exp)) {
+            return true;
+          }
+        }
+        return false;
+      }
+      /**
+       * Strip trailing placeholder tokens (e.g. " none", " null", " n/a") and trailing punctuation from Title
+       */
+      static cleanTrailingPlaceholders(title) {
+        let clean = (title || "").trim();
+        clean = clean.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+        const trailingPlaceholderRegex = /\s+(?:none|null|undefined|n\/a|na|-)$/i;
+        while (trailingPlaceholderRegex.test(clean)) {
+          clean = clean.replace(trailingPlaceholderRegex, "").trim();
+          clean = clean.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+        }
+        return clean;
+      }
+      /**
+       * Hard constraint validation and deterministic repair for English Master Listings.
+       * Runs after U4/D5 Master Listing generation and after EVERY Trademark Rewrite cycle.
+       */
+      static validateAndRepairListing(params2) {
+        const issues = [];
+        let repaired = false;
+        const raw = params2.listing || {};
+        let brand = String(raw.brand || "").trim();
+        let title = String(raw.title || "").trim();
+        let bullet1 = String(raw.bullet1 || "").trim();
+        let bullet2 = String(raw.bullet2 || "").trim();
+        let description = String(raw.description || "").trim();
+        const expectedSuffix = this.resolveExpectedTitleSuffix({
+          niche1: params2.niche1,
+          niche2: params2.niche2,
+          subniche: params2.subniche
+        });
+        const fallbackSuffixes = [
+          this.normalizeOptionalText(params2.subniche),
+          this.normalizeOptionalText(params2.niche2),
+          this.normalizeOptionalText(params2.niche1)
+        ].filter((s) => !!s);
+        const titleBeforePlaceholderClean = title;
+        title = this.cleanTrailingPlaceholders(title);
+        if (title !== titleBeforePlaceholderClean) {
+          issues.push(`Title contained trailing placeholder token: "${titleBeforePlaceholderClean}" -> "${title}"`);
+          repaired = true;
+        }
+        title = title.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+        const hasValidSuffix = this.titleEndsWithSuffix(title, expectedSuffix, fallbackSuffixes);
+        if (!hasValidSuffix) {
+          issues.push(`Title did not end with expected suffix "${expectedSuffix}". Attempting repair.`);
+          const spaceNeeded = expectedSuffix.length + 1;
+          if (title.length + spaceNeeded <= 60) {
+            title = `${title} ${expectedSuffix}`;
+            repaired = true;
+          } else {
+            const maxPrefixLen = 60 - spaceNeeded;
+            let prefix = title.slice(0, maxPrefixLen).trim();
+            const lastSpace = prefix.lastIndexOf(" ");
+            if (lastSpace > 20) {
+              prefix = prefix.slice(0, lastSpace).trim();
+            }
+            prefix = prefix.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+            title = `${prefix} ${expectedSuffix}`.trim();
+            repaired = true;
+          }
+        }
+        if (title.length > 60) {
+          issues.push(`Title exceeded 60 chars (${title.length} chars). Trimming while preserving suffix.`);
+          const matchedSuffix = fallbackSuffixes.find((s) => title.toLowerCase().endsWith(s.toLowerCase())) || expectedSuffix;
+          const spaceNeeded = matchedSuffix.length + 1;
+          const maxPrefixLen = Math.max(10, 60 - spaceNeeded);
+          let prefix = title.slice(0, title.length - matchedSuffix.length).trim();
+          prefix = prefix.slice(0, maxPrefixLen).trim();
+          const lastSpace = prefix.lastIndexOf(" ");
+          if (lastSpace > 15) {
+            prefix = prefix.slice(0, lastSpace).trim();
+          }
+          prefix = prefix.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+          title = `${prefix} ${matchedSuffix}`.trim().slice(0, 60);
+          repaired = true;
+        }
+        brand = brand.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+        brand = this.cleanTrailingPlaceholders(brand);
+        if (brand.length > 50) {
+          issues.push(`Brand exceeded 50 chars (${brand.length} chars). Trimming.`);
+          let cut = brand.slice(0, 50).trim();
+          const lastSp = cut.lastIndexOf(" ");
+          if (lastSp > 25) cut = cut.slice(0, lastSp).trim();
+          brand = cut.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+          repaired = true;
+        }
+        if (bullet1.length > 256) {
+          issues.push(`Bullet 1 exceeded 256 chars (${bullet1.length} chars). Trimming.`);
+          let cut = bullet1.slice(0, 256).trim();
+          const lastPeriod = cut.lastIndexOf(".");
+          if (lastPeriod > 200) {
+            cut = cut.slice(0, lastPeriod + 1).trim();
+          } else {
+            const lastSp = cut.lastIndexOf(" ");
+            if (lastSp > 200) cut = cut.slice(0, lastSp).trim();
+          }
+          bullet1 = cut;
+          repaired = true;
+        }
+        if (bullet2.length > 256) {
+          issues.push(`Bullet 2 exceeded 256 chars (${bullet2.length} chars). Trimming.`);
+          let cut = bullet2.slice(0, 256).trim();
+          const lastPeriod = cut.lastIndexOf(".");
+          if (lastPeriod > 200) {
+            cut = cut.slice(0, lastPeriod + 1).trim();
+          } else {
+            const lastSp = cut.lastIndexOf(" ");
+            if (lastSp > 200) cut = cut.slice(0, lastSp).trim();
+          }
+          bullet2 = cut;
+          repaired = true;
+        }
+        if (description.length > 600) {
+          issues.push(`Description exceeded 600 chars (${description.length} chars). Trimming.`);
+          let cut = description.slice(0, 600).trim();
+          const lastPeriod = cut.lastIndexOf(".");
+          if (lastPeriod > 400) {
+            cut = cut.slice(0, lastPeriod + 1).trim();
+          }
+          description = cut;
+          repaired = true;
+        }
+        const fieldsToClean = [
+          { name: "brand", val: brand, set: (v) => {
+            brand = v;
+          } },
+          { name: "title", val: title, set: (v) => {
+            title = v;
+          } },
+          { name: "bullet1", val: bullet1, set: (v) => {
+            bullet1 = v;
+          } },
+          { name: "bullet2", val: bullet2, set: (v) => {
+            bullet2 = v;
+          } },
+          { name: "description", val: description, set: (v) => {
+            description = v;
+          } }
+        ];
+        for (const f of fieldsToClean) {
+          const foundBanned = BannedWordsService.findBannedWordsInText(f.val, "en");
+          if (foundBanned.length > 0) {
+            issues.push(`Banned word(s) [${foundBanned.join(", ")}] detected in ${f.name}. Stripping.`);
+            const cleaned = BannedWordsService.stripBannedWordsFromText(f.val, "en");
+            f.set(cleaned);
+            repaired = true;
+          }
+        }
+        if (params2.forbiddenTerms && params2.forbiddenTerms.length > 0) {
+          const normForbidden = params2.forbiddenTerms.map((t) => t.toLowerCase().trim()).filter(Boolean);
+          for (const f of fieldsToClean) {
+            for (const term of normForbidden) {
+              const esc = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+              const regex = new RegExp(`\\b${esc}\\b`, "i");
+              if (regex.test(f.val)) {
+                issues.push(`Forbidden TM term "${term}" found in ${f.name}. Removing.`);
+                f.set(f.val.replace(regex, "").replace(/\s+/g, " ").trim());
+                repaired = true;
+              }
+            }
+          }
+        }
+        title = title.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+        brand = brand.replace(/[,.!?:;'"\-–—]+$/, "").trim();
+        const finalListing = {
+          brand: brand.slice(0, 50),
+          title: title.slice(0, 60),
+          bullet1: bullet1.slice(0, 256),
+          bullet2: bullet2.slice(0, 256),
+          description: description.slice(0, 600)
+        };
+        const isValid = finalListing.brand.length >= 40 && finalListing.brand.length <= 50 && finalListing.title.length >= 50 && finalListing.title.length <= 60 && this.titleEndsWithSuffix(finalListing.title, expectedSuffix, fallbackSuffixes) && !finalListing.title.toLowerCase().endsWith(" none") && finalListing.bullet1.length >= 230 && finalListing.bullet1.length <= 256 && finalListing.bullet2.length >= 230 && finalListing.bullet2.length <= 256 && finalListing.description.length >= 300 && finalListing.description.length <= 600;
+        return {
+          isValid,
+          issues,
+          repaired,
+          listing: finalListing,
+          expectedSuffix
+        };
+      }
+    };
+  }
+});
+
 // src/server/services/llmService.ts
 var cachedModels, lastModelsFetch, LLMService;
 var init_llmService = __esm2({
@@ -52041,6 +52284,7 @@ var init_llmService = __esm2({
     init_settingsService();
     init_systemPromptService();
     init_bannedWordsService();
+    init_listingValidationService();
     cachedModels = [
       { id: "openai/gpt-5.6-sol", name: "OpenAI: GPT-5.6 Sol" },
       { id: "deepseek/deepseek-v4-pro", name: "DeepSeek: DeepSeek V4 Pro" },
@@ -52408,9 +52652,9 @@ Style Preset: ${stylePreset}`;
         const systemPrompt = `${basePrompt}
 
 ${bannedSection}`;
-        const n1 = params2.niche1 || "Graphic Art";
-        const n2 = params2.niche2 && params2.niche2.toLowerCase() !== "none" ? params2.niche2 : "";
-        const sub = params2.subniche && params2.subniche.toLowerCase() !== "none" ? params2.subniche : "";
+        const n1 = ListingValidationService.normalizeOptionalText(params2.niche1) || "Graphic Art";
+        const n2 = ListingValidationService.normalizeOptionalText(params2.niche2) || "";
+        const sub = ListingValidationService.normalizeOptionalText(params2.subniche) || "";
         const quote5 = params2.quote || "";
         const allKw = [
           ...params2.hermesKeywords || [],
@@ -52475,25 +52719,43 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
           const rawDesc = parsed.description || parsed.Description || parsed.product_description;
           let cleanTitle = (rawTitle || "").trim();
           cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, "").trim();
-          const targetEnd = sub || n1;
-          return {
+          const targetEnd = sub || n2 || n1;
+          const rawListing = {
             brand: (rawBrand || `${n1} ${sub ? sub + " " : ""}Apparel Collection`).trim().slice(0, 50),
             title: cleanTitle || `${n1} ${quote5 ? quote5 + " " : ""}${targetEnd}`.trim().slice(0, 60),
             bullet1: (rawBullet1 || `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`).trim().slice(0, 256),
             bullet2: (rawBullet2 || `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`).trim().slice(0, 256),
-            description: (rawDesc || `High quality ${n1} graphic design celebrating authentic vintage aesthetics and community passion.`).trim().slice(0, 600),
+            description: (rawDesc || `High quality ${n1} graphic design celebrating authentic vintage aesthetics and community passion.`).trim().slice(0, 600)
+          };
+          const validated = ListingValidationService.validateAndRepairListing({
+            listing: rawListing,
+            niche1: n1,
+            niche2: n2,
+            subniche: sub
+          });
+          return {
+            ...validated.listing,
             _rawRequest: requestPayload,
             _rawResponse: content
           };
         } catch (err) {
           console.error("[LLMService] Error generating master English listing:", err);
-          const targetEnd = sub || n1;
-          return {
+          const targetEnd = sub || n2 || n1;
+          const fallbackListing = {
             brand: `${n1} ${sub ? sub + " " : ""}Apparel Collection`.trim().slice(0, 50),
             title: `Vintage Retro ${quote5 ? quote5 + " " : ""}${targetEnd}`.trim().slice(0, 60),
             bullet1: `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`,
             bullet2: `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`,
-            description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`,
+            description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`
+          };
+          const validated = ListingValidationService.validateAndRepairListing({
+            listing: fallbackListing,
+            niche1: n1,
+            niche2: n2,
+            subniche: sub
+          });
+          return {
+            ...validated.listing,
             _rawRequest: requestPayload,
             _rawResponse: err.message
           };
@@ -52736,6 +52998,14 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
       static async rewriteListingForTrademarkV2(params2) {
         const { url, headers, model } = this.getBaseUrlAndHeaders();
         const systemPrompt = SystemPromptService.getTrademarkRewritePrompt();
+        const normN1 = ListingValidationService.normalizeOptionalText(params2.niche1);
+        const normN2 = ListingValidationService.normalizeOptionalText(params2.niche2);
+        const normSub = ListingValidationService.normalizeOptionalText(params2.subniche);
+        const expectedSuffix = ListingValidationService.resolveExpectedTitleSuffix({
+          niche1: normN1,
+          niche2: normN2,
+          subniche: normSub
+        });
         const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params2.rewriteIteration} of 3).
 
 Current Listing:
@@ -52746,9 +53016,9 @@ Current Listing:
 - Description: "${params2.currentListing.description}"
 
 Design Metadata:
-- Primary Niche (niche1): ${params2.niche1 || ""}
-- Secondary Niche (niche2): ${params2.niche2 || ""}
-- Subniche: ${params2.subniche || ""}
+- Primary Niche (niche1): ${normN1 || "none"}
+- Secondary Niche (niche2): ${normN2 || "none"}
+- Subniche: ${normSub || "none"}
 - Quote / Slogan: "${params2.quote || ""}"
 
 SPECIFIC TRADEMARK ISSUES TO RESOLVE:
@@ -52757,7 +53027,7 @@ ${params2.rewriteInstructions.length > 0 ? params2.rewriteInstructions.map((i) =
 CRITICAL CONSTRAINTS:
 1. STRICTLY FORBIDDEN TERMS (DO NOT USE THESE OR CLOSE VARIANTS):
    ${JSON.stringify(params2.forbiddenTermsForTask)}
-2. LOCKED TITLE SUFFIX: Title MUST end literally with "${params2.subniche || params2.niche2 || params2.niche1 || ""}"
+2. LOCKED TITLE SUFFIX: Title MUST end literally with "${expectedSuffix}"
 3. EXACT CHARACTER LIMITS:
    - Brand: 40-50 chars
    - Title: 50-60 chars (ending with locked suffix)
@@ -52809,17 +53079,34 @@ Return ONLY valid JSON:
             bullet2: (parsed.bullet2 || params2.currentListing.bullet2).trim().slice(0, 256),
             description: (parsed.description || params2.currentListing.description).trim().slice(0, 600)
           };
+          const validated = ListingValidationService.validateAndRepairListing({
+            listing: refined,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
+            forbiddenTerms: params2.forbiddenTermsForTask
+          });
           const actionsTaken = Array.isArray(parsed.actions_taken) ? parsed.actions_taken : Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : ["Automated trademark rewrite applied"];
+          if (validated.repaired) {
+            actionsTaken.push(`Deterministic validation repair: ${validated.issues.join("; ")}`);
+          }
           return {
-            refinedListing: refined,
+            refinedListing: validated.listing,
             actionsTaken,
             _rawRequest: requestPayload,
             _rawResponse: content
           };
         } catch (err) {
           console.error("[LLMService] Error in rewriteListingForTrademarkV2:", err);
+          const validated = ListingValidationService.validateAndRepairListing({
+            listing: params2.currentListing,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
+            forbiddenTerms: params2.forbiddenTermsForTask
+          });
           return {
-            refinedListing: params2.currentListing,
+            refinedListing: validated.listing,
             actionsTaken: ["Failed to rewrite: network/timeout error"],
             _rawRequest: requestPayload,
             _rawResponse: err.message
@@ -53033,6 +53320,7 @@ var init_trademarkService = __esm2({
     init_productCatalogService();
     init_trademarkWhitelistService();
     init_llmService();
+    init_listingValidationService();
     COMMON_STOP_WORDS = /* @__PURE__ */ new Set([
       "the",
       "and",
@@ -53936,7 +54224,16 @@ var init_trademarkService = __esm2({
        * Scan ➔ Match Normalization ➔ Compact LLM Payload ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) ➔ Final Verifier Gate
        */
       static async executeTrademarkAuditV2(params2) {
-        let currentListing = { ...params2.listing };
+        const normN1 = ListingValidationService.normalizeOptionalText(params2.niche1);
+        const normN2 = ListingValidationService.normalizeOptionalText(params2.niche2);
+        const normSub = ListingValidationService.normalizeOptionalText(params2.subniche);
+        const initialValidation = ListingValidationService.validateAndRepairListing({
+          listing: params2.listing,
+          niche1: normN1,
+          niche2: normN2,
+          subniche: normSub
+        });
+        let currentListing = { ...initialValidation.listing };
         const forbiddenTermsForTask = [];
         const rewriteIterations = [];
         const tmSessionId = params2.sessionId || (params2.taskId ? `tm:${params2.taskId}` : `tm:${Date.now()}`);
@@ -53991,9 +54288,9 @@ var init_trademarkService = __esm2({
           } else {
             refereeRes = await LLMService.evaluateTrademarkReferee({
               currentListing,
-              niche1: params2.niche1,
-              niche2: params2.niche2,
-              subniche: params2.subniche,
+              niche1: normN1,
+              niche2: normN2,
+              subniche: normSub,
               quote: params2.quote,
               compactHits: hitsToReview,
               normalizedHits,
@@ -54041,16 +54338,22 @@ var init_trademarkService = __esm2({
               forbiddenTermsForTask,
               blockedProducts,
               blockedNiceClasses,
-              finalListing: currentListing
+              finalListing: ListingValidationService.validateAndRepairListing({
+                listing: currentListing,
+                niche1: normN1,
+                niche2: normN2,
+                subniche: normSub,
+                forbiddenTerms: forbiddenTermsForTask
+              }).listing
             };
           }
           if (refereeRes.decision === "APPROVE" || refereeRes.decision === "APPROVE_WITH_BLOCKED_PRODUCTS") {
             console.log(`[TrademarkServiceV2] \u{1F6E1}\uFE0F Referee hat genehmigt (${refereeRes.decision}). Starte Verifier als Final Gate...`);
             const verifierRes = await LLMService.evaluateTrademarkVerifier({
               currentListing,
-              niche1: params2.niche1,
-              niche2: params2.niche2,
-              subniche: params2.subniche,
+              niche1: normN1,
+              niche2: normN2,
+              subniche: normSub,
               quote: params2.quote,
               compactHits,
               // Final Verifier receives the FULL compact hits of the candidate
@@ -54082,7 +54385,13 @@ var init_trademarkService = __esm2({
                 forbiddenTermsForTask,
                 blockedProducts,
                 blockedNiceClasses,
-                finalListing: currentListing
+                finalListing: ListingValidationService.validateAndRepairListing({
+                  listing: currentListing,
+                  niche1: normN1,
+                  niche2: normN2,
+                  subniche: normSub,
+                  forbiddenTerms: forbiddenTermsForTask
+                }).listing
               };
             }
             console.warn(`[TrademarkServiceV2] \u26A0\uFE0F Verifier hat HIGH_RISK gemeldet (${verifierRes.identifiedRisks.length} Risiken).`);
@@ -54103,7 +54412,13 @@ var init_trademarkService = __esm2({
                 forbiddenTermsForTask,
                 blockedProducts,
                 blockedNiceClasses,
-                finalListing: currentListing
+                finalListing: ListingValidationService.validateAndRepairListing({
+                  listing: currentListing,
+                  niche1: normN1,
+                  niche2: normN2,
+                  subniche: normSub,
+                  forbiddenTerms: forbiddenTermsForTask
+                }).listing
               };
             }
             if (cycle >= maxCycles) {
@@ -54121,7 +54436,13 @@ var init_trademarkService = __esm2({
                 forbiddenTermsForTask,
                 blockedProducts,
                 blockedNiceClasses,
-                finalListing: currentListing
+                finalListing: ListingValidationService.validateAndRepairListing({
+                  listing: currentListing,
+                  niche1: normN1,
+                  niche2: normN2,
+                  subniche: normSub,
+                  forbiddenTerms: forbiddenTermsForTask
+                }).listing
               };
             }
             if (!refereeRes.rewriteInstructions) refereeRes.rewriteInstructions = [];
@@ -54147,7 +54468,13 @@ var init_trademarkService = __esm2({
               forbiddenTermsForTask,
               blockedProducts,
               blockedNiceClasses,
-              finalListing: currentListing
+              finalListing: ListingValidationService.validateAndRepairListing({
+                listing: currentListing,
+                niche1: normN1,
+                niche2: normN2,
+                subniche: normSub,
+                forbiddenTerms: forbiddenTermsForTask
+              }).listing
             };
           }
           for (const h of refereeRes.hits) {
@@ -54159,9 +54486,9 @@ var init_trademarkService = __esm2({
           console.log(`[TrademarkServiceV2] \u270D\uFE0F F\xFChre SEO-Rewrite durch (Runde ${cycle + 1}). Verbotene Begriffe: [${forbiddenTermsForTask.join(", ")}]`);
           const rewriteRes = await LLMService.rewriteListingForTrademarkV2({
             currentListing,
-            niche1: params2.niche1,
-            niche2: params2.niche2,
-            subniche: params2.subniche,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
             quote: params2.quote,
             rewriteIteration: cycle + 1,
             forbiddenTermsForTask: Array.from(new Set(forbiddenTermsForTask)),
@@ -54170,6 +54497,14 @@ var init_trademarkService = __esm2({
             sessionId: tmSessionId
           });
           currentListing = rewriteRes.refinedListing;
+          const postRewriteValidation = ListingValidationService.validateAndRepairListing({
+            listing: currentListing,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
+            forbiddenTerms: forbiddenTermsForTask
+          });
+          currentListing = postRewriteValidation.listing;
           rewriteIterations.push({
             iteration: cycle + 1,
             actionsTaken: rewriteRes.actionsTaken,
@@ -54197,7 +54532,13 @@ var init_trademarkService = __esm2({
           forbiddenTermsForTask,
           blockedProducts,
           blockedNiceClasses,
-          finalListing: currentListing
+          finalListing: ListingValidationService.validateAndRepairListing({
+            listing: currentListing,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
+            forbiddenTerms: forbiddenTermsForTask
+          }).listing
         };
       }
     };
@@ -222488,6 +222829,7 @@ var init_updatePipelineService = __esm2({
     init_trademarkService();
     init_visionOptimizationService();
     init_artworkResizeService();
+    init_listingValidationService();
     UpdatePipelineService = class {
       /**
        * Helper to retrieve a task safely
@@ -222769,9 +223111,9 @@ Bullets: ${oldBullets}`
           return { success: true, listingResult: { en: enListing } };
         }
         const raw = task.payload || {};
-        const niche1 = task.customAnswers?.niche1 !== void 0 ? task.customAnswers.niche1 : task.niche1 || task.analysisResult?.niche1 || "";
-        const niche2 = task.customAnswers?.niche2 !== void 0 ? task.customAnswers.niche2 : task.niche2 || task.analysisResult?.niche2 || "";
-        const subniche = task.customAnswers?.subniche !== void 0 ? task.customAnswers.subniche : task.subniche || task.analysisResult?.subniche || "";
+        const niche1 = ListingValidationService.normalizeOptionalText(task.customAnswers?.niche1 !== void 0 ? task.customAnswers.niche1 : task.niche1 || task.analysisResult?.niche1 || "") || "Graphic Art";
+        const niche2 = ListingValidationService.normalizeOptionalText(task.customAnswers?.niche2 !== void 0 ? task.customAnswers.niche2 : task.niche2 || task.analysisResult?.niche2 || "");
+        const subniche = ListingValidationService.normalizeOptionalText(task.customAnswers?.subniche !== void 0 ? task.customAnswers.subniche : task.subniche || task.analysisResult?.subniche || "");
         const keywords = task.customAnswers?.keywords !== void 0 ? Array.isArray(task.customAnswers.keywords) ? task.customAnswers.keywords : String(task.customAnswers.keywords).split(",").map((s) => s.trim()).filter(Boolean) : task.keywords || task.payload?.keywords || [];
         const audience = task.customAnswers?.audience || (Array.isArray(task.analysisResult?.fitTypes) ? task.analysisResult.fitTypes.join(", ") : "men, women");
         const avoidColor = task.customAnswers?.avoidColor || task.analysisResult?.avoidColor || "none";
@@ -224601,6 +224943,7 @@ var init_taskLogService = __esm2({
     init_llmService();
     init_visionOptimizationService();
     init_artworkResizeService();
+    init_listingValidationService();
     init_tasks();
     TaskLogService2 = class {
       static dataDir = import_path77.default.resolve(process.cwd(), "data");
@@ -225309,11 +225652,9 @@ Beantworte die Analysefragen streng als JSON!`;
           });
           console.log(`[TaskLogService] \u{1F441}\uFE0F Vision Design-Analyse f\xFCr Task ${taskId} erfolgreich in ${latencyMs}ms`);
           const isApproved = parsedAnalysis?.overall_verdict === "APPROVED" || parsedAnalysis?.quote_check?.quote_matches === true && !parsedAnalysis?.quote_check?.regenerate_recommended;
-          const aiN1 = parsedAnalysis?.niche_analysis?.niche1 || parsedAnalysis?.niche1;
-          const rawAiN2 = parsedAnalysis?.niche_analysis?.niche2 || parsedAnalysis?.niche2;
-          const aiN2 = rawAiN2 && rawAiN2.toLowerCase() !== "none" ? rawAiN2 : "none";
-          const rawAiSub = parsedAnalysis?.niche_analysis?.subniche || parsedAnalysis?.subniche;
-          const aiSub = rawAiSub && rawAiSub.toLowerCase() !== "none" ? rawAiSub : "none";
+          const aiN1 = ListingValidationService.normalizeOptionalText(parsedAnalysis?.niche_analysis?.niche1 || parsedAnalysis?.niche1);
+          const aiN2 = ListingValidationService.normalizeOptionalText(parsedAnalysis?.niche_analysis?.niche2 || parsedAnalysis?.niche2);
+          const aiSub = ListingValidationService.normalizeOptionalText(parsedAnalysis?.niche_analysis?.subniche || parsedAnalysis?.subniche);
           const rawAiKw = parsedAnalysis?.niche_analysis?.keywords || parsedAnalysis?.keywords || parsedAnalysis?.seo_keywords;
           const aiKeywords = Array.isArray(rawAiKw) ? rawAiKw.map((k) => String(k).trim()).filter(Boolean) : typeof rawAiKw === "string" ? rawAiKw.split(",").map((s) => s.trim()).filter(Boolean) : void 0;
           const autonomyDesign = settings2.aiAutonomyDesignEnabled ?? settings2.aiAutonomyEnabled;
@@ -225322,8 +225663,8 @@ Beantworte die Analysefragen streng als JSON!`;
             this.updateTaskStatus(taskId, {
               status: "GENERATING_LISTING",
               niche1: aiN1 || task.niche1,
-              niche2: aiN2 !== "none" ? aiN2 : task.niche2,
-              subniche: aiSub !== "none" ? aiSub : task.subniche,
+              niche2: aiN2 || task.niche2,
+              subniche: aiSub || task.subniche,
               keywords: aiKeywords || task.keywords,
               analysisResult: parsedAnalysis,
               hasError: false
@@ -225387,9 +225728,9 @@ Beantworte die Analysefragen streng als JSON!`;
           return;
         }
         const quote5 = task.payload?.quote || "";
-        const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || task.analysisResult?.niche_analysis?.niche1 || "";
-        const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || task.analysisResult?.niche_analysis?.niche2 || "";
-        const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || task.analysisResult?.niche_analysis?.subniche || "";
+        const niche1 = ListingValidationService.normalizeOptionalText(task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || task.analysisResult?.niche_analysis?.niche1) || "";
+        const niche2 = ListingValidationService.normalizeOptionalText(task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || task.analysisResult?.niche_analysis?.niche2) || "";
+        const subniche = ListingValidationService.normalizeOptionalText(task.subniche || task.customAnswers?.subniche || task.payload?.subniche || task.analysisResult?.niche_analysis?.subniche) || "";
         const keywords = task.keywords || task.customAnswers?.keywords || task.payload?.keywords || [];
         const hermesKeywords = task.hermesKeywords || task.payload?.hermesKeywords || [];
         const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "Men, Women, Youth";
@@ -225559,9 +225900,9 @@ Beantworte die Analysefragen streng als JSON!`;
           description: typeof enListing === "object" ? enListing.description || "" : ""
         };
         const quote5 = task.payload?.quote || "";
-        const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || "";
-        const niche2 = task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || "";
-        const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || "";
+        const niche1 = ListingValidationService.normalizeOptionalText(task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1) || "";
+        const niche2 = ListingValidationService.normalizeOptionalText(task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2) || "";
+        const subniche = ListingValidationService.normalizeOptionalText(task.subniche || task.customAnswers?.subniche || task.payload?.subniche) || "";
         try {
           console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Trademark Workflow V2 f\xFCr Task ${taskId}...`);
           const currentSettings = loadSettings();
@@ -226347,23 +226688,26 @@ Beantworte die Analysefragen streng als JSON!`;
             const n2 = params2.answers.niche2 !== void 0 ? params2.answers.niche2.trim() : task.niche2 || "";
             const sub = params2.answers.subniche !== void 0 ? params2.answers.subniche.trim() : task.subniche || "";
             const kwList = params2.answers.keywords !== void 0 ? Array.isArray(params2.answers.keywords) ? params2.answers.keywords : String(params2.answers.keywords).split(",").map((s) => s.trim()).filter(Boolean) : task.keywords || [];
-            task.niche1 = n1;
-            task.niche2 = n2;
-            task.subniche = sub;
+            const normN1 = ListingValidationService.normalizeOptionalText(n1) || "";
+            const normN2 = ListingValidationService.normalizeOptionalText(n2);
+            const normSub = ListingValidationService.normalizeOptionalText(sub);
+            task.niche1 = normN1;
+            task.niche2 = normN2;
+            task.subniche = normSub;
             task.keywords = kwList;
             if (!task.payload) task.payload = {};
-            task.payload.niche1 = n1;
-            task.payload.niche2 = n2;
-            task.payload.subniche = sub;
+            task.payload.niche1 = normN1;
+            task.payload.niche2 = normN2;
+            task.payload.subniche = normSub;
             task.payload.keywords = kwList;
             if (task.analysisResult && typeof task.analysisResult === "object") {
-              task.analysisResult.niche1 = n1;
-              task.analysisResult.niche2 = n2 || "none";
-              task.analysisResult.subniche = sub || "none";
+              task.analysisResult.niche1 = normN1;
+              task.analysisResult.niche2 = normN2;
+              task.analysisResult.subniche = normSub;
               task.analysisResult.niche_analysis = {
-                niche1: n1,
-                niche2: n2 || "none",
-                subniche: sub || "none"
+                niche1: normN1,
+                niche2: normN2 || "",
+                subniche: normSub || ""
               };
               if (params2.answers.audience) {
                 const rawAud = String(params2.answers.audience).toLowerCase();
