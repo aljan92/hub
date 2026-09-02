@@ -111,6 +111,8 @@ export interface DesignTaskLog {
   localMbaPngPath?: string;
   fourPanelImageUrl?: string;
   localFourPanelImagePath?: string;
+  u4PreviewUrl?: string;
+  localU4PreviewPath?: string;
   svgAuditResult?: any;
   analysisResult?: any;
   customAnswers?: {

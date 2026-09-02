@@ -1305,7 +1305,7 @@ app.get('/api/v1/designs/grid2x2/:taskId', async (req, res) => {
     ? task.localMbaPngPath
     : (task?.localImagePath && fs.existsSync(task.localImagePath))
     ? task.localImagePath
-    : fs.existsSync(mbaFilePath) ? mbaFilePath : fs.existsSync(rawPath) ? rawPath : null;
+    : fs.existsSync(mbaFilePath) ? mbaFilePath : fs.existsSync(rawFilePath) ? rawFilePath : null;
 
   if (targetPath) {
     try {
@@ -1317,6 +1317,51 @@ app.get('/api/v1/designs/grid2x2/:taskId', async (req, res) => {
       }
     } catch (e: any) {
       console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen für ${cleanId}:`, e.message);
+    }
+  }
+
+  // Fallback to regular design image if master PNG not found
+  res.redirect(`/api/v1/designs/image/${encodeURIComponent(req.params.taskId)}`);
+});
+
+// 8.3c Design U4 Preview Image Serving Endpoint (1125x1350 on #B8B8B8 with automatic on-demand generation)
+app.get('/api/v1/designs/u4-preview/:taskId', async (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const previewFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.u4-preview.png`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  if (fs.existsSync(previewFilePath)) {
+    try {
+      const stats = fs.statSync(previewFilePath);
+      if (stats.size > 1000) {
+        res.setHeader('Content-Type', 'image/png');
+        return fs.createReadStream(previewFilePath).pipe(res);
+      }
+    } catch (e) {}
+  }
+
+  // Look for source master PNG to generate U4 preview on demand
+  const mbaFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+  const rawFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  const targetPath = (task?.localMbaPngPath && fs.existsSync(task.localMbaPngPath))
+    ? task.localMbaPngPath
+    : (task?.localImagePath && fs.existsSync(task.localImagePath))
+    ? task.localImagePath
+    : fs.existsSync(mbaFilePath) ? mbaFilePath : fs.existsSync(rawFilePath) ? rawFilePath : null;
+
+  if (targetPath) {
+    try {
+      console.log(`[API] Erzeuge U4 Preview für Task ${cleanId} on-demand aus ${targetPath}...`);
+      const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
+      if (savedPath && fs.existsSync(savedPath)) {
+        res.setHeader('Content-Type', 'image/png');
+        return fs.createReadStream(savedPath).pipe(res);
+      }
+    } catch (e: any) {
+      console.warn(`[API] U4-Preview Generierung on-demand fehlgeschlagen für ${cleanId}:`, e.message);
     }
   }
 

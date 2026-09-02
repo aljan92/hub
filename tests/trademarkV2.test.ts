@@ -1,5 +1,9 @@
 import { TrademarkService, MatchTypeV2 } from '../src/server/services/trademarkService';
 import { LLMService } from '../src/server/services/llmService';
+import { BannedWordsService } from '../src/server/services/bannedWordsService';
+import { VisionOptimizationService } from '../src/server/services/visionOptimizationService';
+import fs from 'fs';
+import path from 'path';
 
 async function runAcceptanceTests() {
   console.log('====================================================');
@@ -231,8 +235,9 @@ async function runAcceptanceTests() {
     assert(compact[0].classes.includes(9) && compact[0].classes.includes(25), 'Test J3: Deduplicated classes [9, 25]');
     assert(compact[0].offices.includes('USPTO') && compact[0].offices.includes('EUIPO'), 'Test J4: Deduplicated offices [EUIPO, USPTO]');
     assert(compact[0].occurrences.length === 3, 'Test J5: Occurrences collect distinct fields');
-    assert(compact[0].occurrences.some(o => o.field === 'brand' && o.text === listing.brand), 'Test J6: Field text extracted correctly');
-    assert(!('serialNumber' in compact[0]) && !('filingDate' in compact[0]), 'Test J7: Internal metadata stripped from compact hit');
+    assert(compact[0].occurrences.some(o => o.field === 'brand' && o.matchedTerm === 'western'), 'Test J6: matchedTerm extracted correctly');
+    assert(!compact[0].occurrences.some((o: any) => 'text' in o), 'Test J7: No full field text in any occurrence');
+    assert(!('serialNumber' in compact[0]) && !('filingDate' in compact[0]), 'Test J8: Internal metadata stripped from compact hit');
   }
 
   // ----------------------------------------------------
@@ -491,6 +496,248 @@ async function runAcceptanceTests() {
 
     } finally {
       (LLMService as any).executeFetch = originalExecuteFetch;
+    }
+  }
+
+  // ----------------------------------------------------
+  // TEST Q: Compact Occurrences Optimization & Deduplication
+  // ----------------------------------------------------
+  {
+    const sampleListing = {
+      brand: 'Rustic Western Horse Brand',
+      title: 'Western Style Horse Riding Outfit',
+      bullet1: 'Western style vintage artwork with style. and western vibes for horse lovers.',
+      bullet2: 'High quality print made for cowboys.',
+      description: 'A detailed 500-character description with rustic typography and authentic rodeo charm.'
+    };
+
+    const hits: any[] = [
+      // 1. gleicher Mark in mehreren Fields (brand vs bullet1)
+      {
+        searchedTerm: 'western',
+        registeredMark: 'WESTERN',
+        field: 'brand',
+        office: 'USPTO',
+        status: 'LIVE',
+        markFeature: 'Word',
+        classes: [25],
+        matchType: 'SINGLE_WORD_EXACT'
+      },
+      {
+        searchedTerm: 'western',
+        registeredMark: 'WESTERN',
+        field: 'bullet1',
+        office: 'USPTO',
+        status: 'LIVE',
+        markFeature: 'Word',
+        classes: [25],
+        matchType: 'SINGLE_WORD_EXACT'
+      },
+      // 2. gleicher Mark mehrfach im selben Field (bullet1 duplicate with identical term)
+      {
+        searchedTerm: 'western',
+        registeredMark: 'WESTERN',
+        field: 'bullet1',
+        office: 'USPTO',
+        status: 'LIVE',
+        markFeature: 'Word',
+        classes: [25],
+        matchType: 'SINGLE_WORD_EXACT'
+      },
+      // 3. punctuation / normalized match: "style." in bullet1
+      {
+        searchedTerm: 'style.',
+        registeredMark: 'STYLE',
+        field: 'bullet1',
+        office: 'USPTO',
+        status: 'LIVE',
+        markFeature: 'Word',
+        classes: [25],
+        matchType: 'SINGLE_WORD_EXACT'
+      },
+      // 4. EXACT_NGRAM
+      {
+        searchedTerm: 'vintage artwork',
+        registeredMark: 'VINTAGE ARTWORK',
+        field: 'bullet1',
+        office: 'USPTO',
+        status: 'LIVE',
+        markFeature: 'Word',
+        classes: [25],
+        matchType: 'EXACT_NGRAM'
+      },
+      // 5. CONTAINS_REGISTERED_MARK
+      {
+        searchedTerm: 'horse lovers',
+        registeredMark: 'LOVERS',
+        field: 'bullet1',
+        office: 'USPTO',
+        status: 'LIVE',
+        markFeature: 'Word',
+        classes: [25],
+        matchType: 'CONTAINS_REGISTERED_MARK'
+      },
+      // 6. fehlendes matchedTerm (wird weggelassen, NICHT blind mit registeredMark gefüllt)
+      {
+        searchedTerm: '',
+        registeredMark: 'SECRET MARK',
+        field: 'description',
+        office: 'USPTO',
+        status: 'LIVE',
+        markFeature: 'Word',
+        classes: [25],
+        matchType: 'SINGLE_WORD_EXACT'
+      }
+    ];
+
+    const compact = TrademarkService.buildCompactTrademarkHits(hits, sampleListing, 'Western Horse');
+
+    // 1. gleicher Mark in mehreren Fields: WESTERN has brand and bullet1
+    const westernHit = compact.find(c => c.mark === 'WESTERN');
+    assert(westernHit !== undefined, 'Test Q1: Found WESTERN compact hit');
+    const westernFields = westernHit?.occurrences.map(o => o.field) || [];
+    assert(westernFields.includes('brand') && westernFields.includes('bullet1'),
+      'Test Q2: gleicher Mark in mehreren Fields gesammelt');
+
+    // 2. Brand occurrence kann nicht mit Bullet occurrence verwechselt werden
+    const brandOcc = westernHit?.occurrences.find(o => o.field === 'brand');
+    const bulletOcc = westernHit?.occurrences.find(o => o.field === 'bullet1');
+    assert(brandOcc !== undefined && bulletOcc !== undefined && brandOcc !== bulletOcc,
+      'Test Q3: Brand occurrence kann nicht mit Bullet occurrence verwechselt werden');
+
+    // 3. gleicher Mark mehrfach im selben Field (Deduplikation): bullet1 should only appear ONCE for "western"
+    const bulletOccs = westernHit?.occurrences.filter(o => o.field === 'bullet1') || [];
+    assert(bulletOccs.length === 1,
+      'Test Q4: gleicher Mark mehrfach im selben Field wird dedupliziert (bullet1)');
+
+    // 4. punctuation / normalized match
+    const styleHit = compact.find(c => c.mark === 'STYLE');
+    assert(styleHit?.occurrences[0]?.matchedTerm === 'style.',
+      'Test Q5: punctuation / normalized match behält exakten matchedTerm ("style.")');
+
+    // 5. EXACT_NGRAM
+    const ngramHit = compact.find(c => c.mark === 'VINTAGE ARTWORK');
+    assert(ngramHit?.matchType === 'EXACT_NGRAM' && ngramHit?.occurrences[0]?.matchedTerm === 'vintage artwork',
+      'Test Q6: EXACT_NGRAM matchType und matchedTerm korrekt');
+
+    // 6. SINGLE_WORD_EXACT
+    assert(westernHit?.matchType === 'SINGLE_WORD_EXACT' && westernHit?.occurrences[0]?.matchedTerm === 'western',
+      'Test Q7: SINGLE_WORD_EXACT matchType und matchedTerm korrekt');
+
+    // 7. CONTAINS_REGISTERED_MARK
+    const containsHit = compact.find(c => c.mark === 'LOVERS');
+    assert(containsHit?.matchType === 'CONTAINS_REGISTERED_MARK' && containsHit?.occurrences[0]?.matchedTerm === 'horse lovers',
+      'Test Q8: CONTAINS_REGISTERED_MARK matchType und matchedTerm korrekt');
+
+    // 8. fehlendes matchedTerm (darf nicht blind mit registeredMark gefüllt werden)
+    const missingTermHit = compact.find(c => c.mark === 'SECRET MARK');
+    assert(missingTermHit !== undefined && missingTermHit?.occurrences[0]?.matchedTerm === undefined,
+      'Test Q9: fehlendes matchedTerm wird weggelassen und nicht aus registeredMark gefüllt');
+
+    // 9. Vollständiger Listingtext kommt NICHT in occurrences vor
+    const serialized = JSON.stringify(compact);
+    assert(!serialized.includes(sampleListing.description),
+      'Test Q10: vollständiger Listingtext (description) kommt NICHT in occurrences vor');
+    assert(!serialized.includes(sampleListing.bullet1),
+      'Test Q11: vollständiger Listingtext (bullet1) kommt NICHT in occurrences vor');
+    assert(!serialized.includes('"text":'),
+      'Test Q12: property "text" kommt in keinem occurrence-Objekt vor');
+  }
+
+  // ----------------------------------------------------
+  // TEST R: Banned Words Language Filtering (English Master Listing)
+  // ----------------------------------------------------
+  {
+    const enSection = BannedWordsService.getBannedWordsPromptSection('en');
+
+    // 1. English Master Listing Prompt enthält EN Banned Words
+    assert(enSection.includes('[EN]:') && enSection.includes('glitter') && enSection.includes('t-shirt'),
+      'Test R1: English Master Listing Prompt enthält EN Banned Words');
+
+    // 2. English Master Listing Prompt enthält KEINE DE Banned Words
+    assert(!enSection.includes('[DE]:'),
+      'Test R2: English Master Listing Prompt enthält KEINEN [DE] Block');
+
+    // 3. "gift" ist enthalten, "geschenk" ist nicht enthalten
+    assert(enSection.includes('gift') && !enSection.includes('geschenk'),
+      'Test R3: "gift" ist enthalten, "geschenk" ist nicht enthalten');
+
+    // 4. "premium" bleibt enthalten, "hohe qualität" ist nicht enthalten
+    assert(enSection.includes('premium') && !enSection.includes('hohe qualität'),
+      'Test R4: "premium" bleibt enthalten, "hohe qualität" ist nicht enthalten');
+
+    // 5. Weitere deutsche Wörter (glitzernd) sind nicht im EN-Prompt enthalten
+    assert(!enSection.includes('glitzernd') && !enSection.includes('weihnachtsgeschenk'),
+      'Test R5: deutsche Material- und Werbewörter sind vollständig aus EN-Prompt entfernt');
+
+    // 6. Die zentrale deutsche Banned-Words-Liste bleibt weiterhin im System vorhanden
+    const deWords = BannedWordsService.getBannedWords('de');
+    assert(Array.isArray(deWords) && deWords.includes('geschenk') && deWords.includes('hohe qualität'),
+      'Test R6: Die zentrale deutsche Banned-Words-Liste bleibt weiterhin im System vorhanden');
+
+    // 7. getBannedWordsPromptSection("de") erzeugt weiterhin den deutschen Block
+    const deSection = BannedWordsService.getBannedWordsPromptSection('de');
+    assert(deSection.includes('[DE]:') && deSection.includes('geschenk'),
+      'Test R7: getBannedWordsPromptSection("de") erzeugt weiterhin die deutsche Sperrwort-Liste');
+
+    // 8. Keine englischen Banned Words gehen verloren
+    const enWords = BannedWordsService.getBannedWords('en');
+    const allEnPresent = enWords.every(w => enSection.includes(w));
+    assert(allEnPresent && enWords.length > 50,
+      'Test R8: Keine englischen Banned Words gehen verloren (alle 55+ EN-Wörter vorhanden)');
+  }
+
+  // ----------------------------------------------------
+  // TEST S: U4 Vision Preview Optimization (1125x1350 on #B8B8B8)
+  // ----------------------------------------------------
+  {
+    const dummySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="4500" height="5400" viewBox="0 0 4500 5400"><rect width="4500" height="5400" fill="transparent"/><text x="2250" y="2700" font-size="300" text-anchor="middle" fill="#FFFFFF">TEST DESIGN</text></svg>`;
+    const dataUri = `data:image/svg+xml;base64,${Buffer.from(dummySvg).toString('base64')}`;
+    const testOutputPath = path.resolve(process.cwd(), 'data', 'test_u4_preview.png');
+
+    try {
+      const res = await VisionOptimizationService.prepareU4PreviewImage(dataUri, testOutputPath);
+
+      // 1. Valid data URL returned
+      assert(res.base64DataUrl.startsWith('data:image/png;base64,'),
+        'Test S1: prepareU4PreviewImage erzeugt ein gültiges PNG Data-URL Format');
+
+      // 2. Output file saved to disk
+      assert(res.savedPath === testOutputPath && fs.existsSync(testOutputPath),
+        'Test S2: U4-Preview wurde erfolgreich unter testOutputPath auf Festplatte gespeichert');
+
+      // 3. Exact 1125 x 1350 dimensions in PNG header
+      const fileBuf = fs.readFileSync(testOutputPath);
+      const width = fileBuf.readUInt32BE(16);
+      const height = fileBuf.readUInt32BE(20);
+      assert(width === 1125 && height === 1350,
+        `Test S3: Exakte Zielauflösung 1125x1350 erfüllt (gemessen: ${width}x${height})`);
+
+      // 4. Compact size (signifikant kleiner als 4500x5400)
+      assert(fileBuf.length > 1000 && fileBuf.length < 500000,
+        `Test S4: Kompakte Dateigröße (${(fileBuf.length / 1024).toFixed(1)} KB) senkt Vision-Tokens drastisch`);
+
+      // 5. U3 Grid bleibt unverändert ein 1024x1024 4-Panel Grid
+      const u3Res = await VisionOptimizationService.prepareVisionImage(dataUri);
+      assert(u3Res.is4Panel === true && u3Res.base64DataUrl.startsWith('data:image/jpeg;base64,'),
+        'Test S5: U3 Vision-Grid bleibt unverändert als 4-Panel 1024x1024 JPEG erhalten');
+
+      // 6. Fehlerbehandlung / Graceful Fallback bei ungültigem Pfad
+      const invalidRes = await VisionOptimizationService.prepareU4PreviewImage('/non_existent_file_xyz.png');
+      assert(invalidRes.base64DataUrl === '',
+        'Test S6: Ungültiger Dateipfad bricht den Workflow nicht ab (liefert leeres base64 für Fallback)');
+
+      // 7. Saubere Pfadunterscheidung zwischen Original und Preview
+      const cleanId = 'task_test_123';
+      const origPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+      const prevPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.u4-preview.png`);
+      assert(origPath !== prevPath && prevPath.endsWith('.u4-preview.png'),
+        'Test S7: Klare Benennungstrennung zwischen original (.png) und preview (.u4-preview.png)');
+
+    } finally {
+      if (fs.existsSync(testOutputPath)) {
+        try { fs.unlinkSync(testOutputPath); } catch (e) {}
+      }
     }
   }
 

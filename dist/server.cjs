@@ -52455,32 +52455,53 @@ var init_bannedWordsService = __esm2({
         return BANNED_WORDS_BY_LOCALE[norm] || BANNED_WORDS_BY_LOCALE.en || [];
       }
       /**
-       * Generate formatted Markdown section to append to the Listing Generator system prompt
+       * Generate formatted Markdown section to append to the Listing Generator system prompt.
+       * Parameterized by locale (default 'en') so that the English Master Listing receives
+       * exclusively English / universal banned words without leaking German terms.
        */
-      static getBannedWordsPromptSection() {
-        const enWords = this.getBannedWords("en").join(", ");
-        const deWords = this.getBannedWords("de").join(", ");
-        return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+      static getBannedWordsPromptSection(locale = "en") {
+        const norm = locale.toLowerCase().trim();
+        if (norm === "en") {
+          const enWords = this.getBannedWords("en").join(", ");
+          return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
 You MUST NEVER use any of the following prohibited words or phrases in ANY field (Brand, Title, Bullet 1, Bullet 2, Description) under ANY circumstances:
 
 A. FAUX MATERIAL & PHYSICAL EFFECT CLAIMS (CRITICAL! DO NOT DESCRIBE 2D ARTWORK AS PHYSICAL MATERIALS):
-- English: sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
-- German: glitzernd, Glitter, Pailletten, leuchtend, Neon, Metallic, Folie, Ros\xE9gold, Gold, Holz, Metall, Marmor, Glas, Leder, Diamant, Edelstein.
+- sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
 
 B. QUALITY, FIT & SIZING CLAIMS:
-- English: premium, high quality, quality, fitted, looser, size up, bigger size, larger size, maternity, printed in, made in.
-- German: hohe qualit\xE4t, premium, bewertung, Schwangerschaftsbekleidung.
+- premium, high quality, quality, fitted, looser, size up, bigger size, larger size, maternity, printed in, made in.
 
 C. PROMOTIONAL & GIFT LANGUAGE:
-- English: gift, present, birthday gift, christmas gift, best seller, sale, buy now, discount.
-- German: geschenk, geburtstagsgeschenk, weihnachtsgeschenk, rabatt.
+- gift, present, birthday gift, christmas gift, best seller, sale, buy now, discount.
 
 D. PRODUCT TYPE IN TITLE/BRAND:
 - NO words like: "T-Shirt", "tshirt", "shirt", "hoodie", "tank top", "popsocket", "pop socket".
 
 E. ALL PROHIBITED WORDS LIST:
-- [EN]: ${enWords}
+- [EN]: ${enWords}`;
+        }
+        if (norm === "de") {
+          const deWords = this.getBannedWords("de").join(", ");
+          return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+You MUST NEVER use any of the following prohibited words or phrases in ANY field under ANY circumstances:
+
+A. PHYSISCHE MATERIAL- & EFFEKT-BEHAUPTUNGEN:
+- glitzernd, Glitter, Pailletten, leuchtend, leuchtet bei Schwarzlicht, leuchtet im Dunkeln, Neon, Metallic, Folie, Ros\xE9gold, Gold, Holz, Metall, Marmor, Glas, Leder, Gummi, Diamant, Edelstein, flauschig, Pl\xFCsch, gepr\xE4gt.
+
+B. QUALIT\xC4T & PASSFORM:
+- hohe qualit\xE4t, premium, bewertung, Schwangerschaftsbekleidung, \xDCbergr\xF6\xDFe.
+
+C. WERBE- & GESCHENK-SPRACHE:
+- geschenk, geburtstagsgeschenk, weihnachtsgeschenk, bester verk\xE4ufer, rabatt, jetzt kaufen.
+
+D. ALL PROHIBITED WORDS LIST:
 - [DE]: ${deWords}`;
+        }
+        const words = this.getBannedWords(norm).join(", ");
+        return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+You MUST NEVER use any of the following prohibited words or phrases:
+- [${norm.toUpperCase()}]: ${words}`;
       }
       /**
        * Scan text for banned words in a given language locale
@@ -52912,7 +52933,7 @@ Style Preset: ${stylePreset}`;
       static async generateMasterEnglishListing(params2) {
         const { url, headers, model } = this.getBaseUrlAndHeaders();
         const basePrompt = SystemPromptService.getListingGeneratorPrompt();
-        const bannedSection = BannedWordsService.getBannedWordsPromptSection();
+        const bannedSection = BannedWordsService.getBannedWordsPromptSection("en");
         const systemPrompt = `${basePrompt}
 
 ${bannedSection}`;
@@ -53593,7 +53614,7 @@ var init_trademarkService = __esm2({
       "vintage",
       "classic"
     ]);
-    TrademarkService = class {
+    TrademarkService = class _TrademarkService {
       /**
        * Test connection to Productor Trademark APIs
        */
@@ -54351,6 +54372,23 @@ var init_trademarkService = __esm2({
        * Compact, deduplicated representation of trademark hits specifically tailored for LLM evaluation.
        * Strips internal registration numbers, dates, and duplicate entries, aggregating by registered mark.
        */
+      /**
+       * Helper to retrieve the current text of a listing field (for fingerprinting & logging)
+       */
+      static getFieldText(listing = {}, field, quote5) {
+        if (field === "brand") return listing.brand || "";
+        if (field === "title") return listing.title || "";
+        if (field === "bullet1") return listing.bullet1 || "";
+        if (field === "bullet2") return listing.bullet2 || "";
+        if (field === "description") return listing.description || "";
+        if (field === "quote") return quote5 || "";
+        return "";
+      }
+      /**
+       * Compacts hundreds of raw/normalized hits into deduplicated mark entities.
+       * Significantly reduces token payload by omitting full field text repetition
+       * while preserving exact field locations and actual matched terms.
+       */
       static buildCompactTrademarkHits(normalizedHits, listing, quote5) {
         const markMap = /* @__PURE__ */ new Map();
         for (const h of normalizedHits) {
@@ -54366,7 +54404,7 @@ var init_trademarkService = __esm2({
               offices: /* @__PURE__ */ new Set(),
               matchTypes: /* @__PURE__ */ new Set(),
               fullQuoteMatch: false,
-              fields: /* @__PURE__ */ new Set()
+              occurrencesMap: /* @__PURE__ */ new Map()
             };
             markMap.set(cleanMark, entry);
           }
@@ -54377,7 +54415,17 @@ var init_trademarkService = __esm2({
           if (h.office) entry.offices.add(h.office);
           if (h.matchType) entry.matchTypes.add(h.matchType);
           if (h.isFullQuoteMatch) entry.fullQuoteMatch = true;
-          if (h.field) entry.fields.add(h.field);
+          const field = h.field || "listing";
+          const rawMatched = String(h.matchedTerm || h.searchedTerm || "").trim();
+          const matchedTerm = rawMatched.length > 0 ? rawMatched : void 0;
+          const occKey = `${field.toLowerCase()}|${matchedTerm ? matchedTerm.toLowerCase() : ""}`;
+          if (!entry.occurrencesMap.has(occKey)) {
+            const occ = { field };
+            if (matchedTerm) {
+              occ.matchedTerm = matchedTerm;
+            }
+            entry.occurrencesMap.set(occKey, occ);
+          }
         }
         const matchTypePriority = [
           "FULL_EXACT",
@@ -54387,15 +54435,6 @@ var init_trademarkService = __esm2({
           "QUERY_INSIDE_LONGER_MARK",
           "FUZZY_OR_SIMILAR"
         ];
-        const getFieldText = (f) => {
-          if (f === "brand") return listing.brand || "";
-          if (f === "title") return listing.title || "";
-          if (f === "bullet1") return listing.bullet1 || "";
-          if (f === "bullet2") return listing.bullet2 || "";
-          if (f === "description") return listing.description || "";
-          if (f === "quote") return quote5 || "";
-          return "";
-        };
         const compactList = [];
         let idx = 1;
         for (const [_, entry] of markMap.entries()) {
@@ -54407,10 +54446,6 @@ var init_trademarkService = __esm2({
             }
           }
           const feature = entry.features.has("Combined") ? "Combined" : entry.features.values().next().value || "Word";
-          const occurrences = Array.from(entry.fields).map((f) => ({
-            field: f,
-            text: getFieldText(f)
-          }));
           compactList.push({
             id: `tm_${idx++}`,
             mark: entry.mark,
@@ -54420,7 +54455,7 @@ var init_trademarkService = __esm2({
             offices: Array.from(entry.offices).sort(),
             matchType: bestMatchType,
             fullQuoteMatch: entry.fullQuoteMatch,
-            occurrences
+            occurrences: Array.from(entry.occurrencesMap.values())
           });
         }
         return compactList;
@@ -54464,7 +54499,10 @@ var init_trademarkService = __esm2({
             content: { cycle, totalHits: normalizedHits.length, compactHitsCount: compactHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
           });
           const hitsToReview = cycle === 0 ? compactHits : compactHits.filter((h) => {
-            return h.occurrences.some((occ) => !approvedHitContexts.has(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, occ.text)));
+            return h.occurrences.some((occ) => {
+              const fieldText = _TrademarkService.getFieldText(currentListing, occ.field, params2.quote);
+              return !approvedHitContexts.has(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, fieldText));
+            });
           });
           let refereeRes;
           if (cycle > 0 && hitsToReview.length === 0) {
@@ -54501,7 +54539,8 @@ var init_trademarkService = __esm2({
           for (const h of hitsToReview) {
             if (!problematicMarks.has(h.mark.trim().toLowerCase())) {
               for (const occ of h.occurrences) {
-                approvedHitContexts.add(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, occ.text));
+                const fieldText = _TrademarkService.getFieldText(currentListing, occ.field, params2.quote);
+                approvedHitContexts.add(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, fieldText));
               }
             }
           }
@@ -221584,6 +221623,94 @@ var init_visionOptimizationService = __esm2({
           return { base64DataUrl: "", is4Panel: false };
         }
       }
+      /**
+       * Generates a single, high-contrast, centered 1125x1350 preview image on flat neutral mid-gray (#B8B8B8)
+       * specifically designed for Step U4 Master English Listing creation.
+       * - Resolution: exactly 1125x1350 (1/4 width, 1/4 height of 4500x5400)
+       * - Background: #B8B8B8 (neutral mid-gray, no gradients, no textures, no borders, no text, no watermarks)
+       * - Centers transparent PNG, composites alpha seamlessly, preserves aspect ratio
+       * - Drastically reduces vision token usage while ensuring both white and dark designs remain legible
+       */
+      static async prepareU4PreviewImage(input, outputPath) {
+        try {
+          let dataUri;
+          if (typeof input === "string") {
+            if (input.startsWith("data:image")) {
+              dataUri = input;
+            } else if (import_fs77.default.existsSync(input)) {
+              const fileBuf = import_fs77.default.readFileSync(input);
+              dataUri = `data:image/png;base64,${fileBuf.toString("base64")}`;
+            } else {
+              throw new Error(`File not found: ${input}`);
+            }
+          } else if (Buffer.isBuffer(input)) {
+            dataUri = `data:image/png;base64,${input.toString("base64")}`;
+          } else {
+            return { base64DataUrl: "" };
+          }
+          const browser = await getBrowser2();
+          const context2 = await browser.newContext({
+            viewport: { width: 1125, height: 1350 },
+            deviceScaleFactor: 1
+          });
+          const page = await context2.newPage();
+          try {
+            const html = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              body {
+                width: 1125px;
+                height: 1350px;
+                background-color: #B8B8B8;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+              }
+              img {
+                max-width: 1125px;
+                max-height: 1350px;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                display: block;
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${dataUri}" />
+          </body>
+          </html>
+        `;
+            await page.setContent(html);
+            await page.waitForTimeout(30);
+            const screenshotBuf = await page.screenshot({ type: "png" });
+            if (outputPath) {
+              try {
+                const dir = import_path72.default.dirname(outputPath);
+                if (!import_fs77.default.existsSync(dir)) import_fs77.default.mkdirSync(dir, { recursive: true });
+                import_fs77.default.writeFileSync(outputPath, screenshotBuf);
+              } catch (e) {
+                console.warn("[VisionOptimizationService] Failed to save U4 preview file:", e.message);
+              }
+            }
+            return {
+              base64DataUrl: `data:image/png;base64,${screenshotBuf.toString("base64")}`,
+              savedPath: outputPath && import_fs77.default.existsSync(outputPath) ? outputPath : void 0
+            };
+          } finally {
+            await context2.close().catch(() => {
+            });
+          }
+        } catch (err) {
+          console.warn("[VisionOptimizationService] U4 preview generation fallback:", err.message);
+          return { base64DataUrl: "" };
+        }
+      }
     };
   }
 });
@@ -222936,6 +223063,23 @@ var init_updatePipelineService = __esm2({
           });
           return { success: false, error: res.error };
         }
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const mbaPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+        const rawPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const targetPath = task.localMbaPngPath && import_fs80.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs80.default.existsSync(mbaPath) ? mbaPath : import_fs80.default.existsSync(rawPath) ? rawPath : null;
+        const u4PreviewPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+        if (targetPath && import_fs80.default.existsSync(targetPath)) {
+          VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
+            if (r.savedPath) {
+              TaskLogService2.updateTaskStatus(taskId, {
+                u4PreviewUrl: `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`,
+                localU4PreviewPath: u4PreviewPath
+              });
+            }
+          }).catch((err) => {
+            console.warn(`[UpdatePipeline] Vorab-Erzeugung der U4-Preview in U2 fehlgeschlagen:`, err.message);
+          });
+        }
         TaskLogService2.updateTaskStatus(taskId, {
           status: "UPDATE_ARTWORK_READY",
           hasError: false
@@ -222965,9 +223109,10 @@ var init_updatePipelineService = __esm2({
         let gridPreviewUrl;
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const mbaPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath2 = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs80.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs80.default.existsSync(mbaPath) ? mbaPath : import_fs80.default.existsSync(rawPath2) ? rawPath2 : null;
+        const rawPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const targetPath = task.localMbaPngPath && import_fs80.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs80.default.existsSync(mbaPath) ? mbaPath : import_fs80.default.existsSync(rawPath) ? rawPath : null;
         const gridOutputPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
+        const u4PreviewPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
         if (targetPath) {
           try {
             const { base64DataUrl, savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridOutputPath);
@@ -222977,6 +223122,18 @@ var init_updatePipelineService = __esm2({
             }
           } catch (err) {
             console.warn(`[UpdatePipeline] Konnte Bild f\xFCr Vision nicht optimieren:`, err);
+          }
+          if (!import_fs80.default.existsSync(u4PreviewPath)) {
+            VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
+              if (r.savedPath) {
+                TaskLogService2.updateTaskStatus(taskId, {
+                  u4PreviewUrl: `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`,
+                  localU4PreviewPath: u4PreviewPath
+                });
+              }
+            }).catch((err) => {
+              console.warn(`[UpdatePipeline] Vorab-Erzeugung der U4-Preview in U3 fehlgeschlagen:`, err.message);
+            });
           }
         }
         const rawPayload = task.payload || {};
@@ -223154,17 +223311,53 @@ Bullets: ${oldBullets}`
           content: { originalTitle: raw.title, originalBrand: raw.brand, niche1, niche2, subniche, keywords },
           metadata: { provider: "OpenRouter" }
         });
-        let originalImageBase64;
+        let u4ImageBase64;
+        let u4ImageSourceType = "ORIGINAL_FALLBACK";
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const mbaPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath2 = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs80.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs80.default.existsSync(mbaPath) ? mbaPath : import_fs80.default.existsSync(rawPath2) ? rawPath2 : null;
+        const rawPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const targetPath = task.localMbaPngPath && import_fs80.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs80.default.existsSync(mbaPath) ? mbaPath : import_fs80.default.existsSync(rawPath) ? rawPath : null;
+        const u4PreviewPath = import_path75.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
         if (targetPath && import_fs80.default.existsSync(targetPath)) {
-          try {
-            const buf = import_fs80.default.readFileSync(targetPath);
-            originalImageBase64 = `data:image/png;base64,${buf.toString("base64")}`;
-          } catch (e) {
-            console.warn(`[UpdatePipeline] Konnte Original-PNG f\xFCr Listing-LLM nicht einlesen:`, e);
+          if (import_fs80.default.existsSync(u4PreviewPath)) {
+            try {
+              const stats2 = import_fs80.default.statSync(u4PreviewPath);
+              if (stats2.size > 1e3) {
+                const buf = import_fs80.default.readFileSync(u4PreviewPath);
+                u4ImageBase64 = `data:image/png;base64,${buf.toString("base64")}`;
+                u4ImageSourceType = "PREVIEW_1125x1350";
+                console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Verwende vorhandene 1125x1350 U4-Preview (${u4PreviewPath}, ${(buf.length / 1024).toFixed(1)} KB)`);
+              }
+            } catch (err) {
+              console.warn(`[UpdatePipeline] Konnte vorhandene U4-Preview nicht lesen:`, err.message);
+            }
+          }
+          if (!u4ImageBase64) {
+            try {
+              console.log(`[UpdatePipeline] \u{1F3A8} Erzeuge 1125x1350 U4-Preview auf #B8B8B8 f\xFCr Task ${taskId}...`);
+              const previewRes = await VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath);
+              if (previewRes.base64DataUrl) {
+                u4ImageBase64 = previewRes.base64DataUrl;
+                u4ImageSourceType = "PREVIEW_1125x1350";
+                console.log(`[UpdatePipeline] \u2705 U4-Preview erfolgreich erstellt und geladen (${u4PreviewPath})`);
+                TaskLogService2.updateTaskStatus(taskId, {
+                  u4PreviewUrl: `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`,
+                  localU4PreviewPath: u4PreviewPath
+                });
+              }
+            } catch (err) {
+              console.warn(`[UpdatePipeline] \u26A0\uFE0F U4-Preview Erzeugung fehlgeschlagen, wechsle auf Fallback:`, err.message);
+            }
+          }
+          if (!u4ImageBase64) {
+            try {
+              console.warn(`[UpdatePipeline] \u{1F504} FALLBACK: Verwende Original-PNG f\xFCr U4-Call (${targetPath})...`);
+              const buf = import_fs80.default.readFileSync(targetPath);
+              u4ImageBase64 = `data:image/png;base64,${buf.toString("base64")}`;
+              u4ImageSourceType = "ORIGINAL_FALLBACK";
+            } catch (e) {
+              console.warn(`[UpdatePipeline] Konnte Original-PNG f\xFCr Listing-LLM nicht einlesen:`, e.message);
+            }
           }
         }
         try {
@@ -223176,7 +223369,7 @@ Bullets: ${oldBullets}`
             quote: raw.quote || task.analysisResult?.quote_check?.detected_quote || "",
             audience,
             avoidColor,
-            imageSource: originalImageBase64,
+            imageSource: u4ImageBase64,
             oldListing: {
               brand: raw.brand,
               title: raw.title,
@@ -223194,7 +223387,14 @@ Bullets: ${oldBullets}`
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "LISTING_RESPONSE",
             title: "Optimiertes Master English Listing generiert",
-            content: { en: enListing },
+            content: {
+              en: enListing,
+              imageOptimization: {
+                sourceType: u4ImageSourceType,
+                previewPath: u4ImageSourceType === "PREVIEW_1125x1350" ? u4PreviewPath : null,
+                resolution: u4ImageSourceType === "PREVIEW_1125x1350" ? "1125x1350" : "4500x5400"
+              }
+            },
             metadata: { provider: "OpenRouter" }
           });
           return { success: true, listingResult: { en: enListing } };
@@ -226509,7 +226709,7 @@ Beantworte die Analysefragen streng als JSON!`;
           if (import_fs82.default.existsSync(dataDir)) {
             const files = import_fs82.default.readdirSync(dataDir);
             for (const file of files) {
-              if (file.endsWith("_grid2x2.jpg") || file.endsWith("_mba.png") || file.endsWith("_orig.svg") || file.endsWith("_4panel.jpg") || file.endsWith(".svg") || file.startsWith("test_")) {
+              if (file.endsWith("_grid2x2.jpg") || file.endsWith(".u4-preview.png") || file.endsWith("_mba.png") || file.endsWith("_orig.svg") || file.endsWith("_4panel.jpg") || file.endsWith(".svg") || file.startsWith("test_")) {
                 try {
                   const filePath = import_path77.default.join(dataDir, file);
                   if (import_fs82.default.statSync(filePath).isFile()) {
@@ -230558,7 +230758,7 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   const mbaFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   const rawFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs85.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs85.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs85.default.existsSync(rawPath) ? rawPath : null;
+  const targetPath = task?.localMbaPngPath && import_fs85.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs85.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs85.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge 2x2 Grid f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
@@ -230569,6 +230769,40 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
       }
     } catch (e) {
       console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
+    }
+  }
+  res.redirect(`/api/v1/designs/image/${encodeURIComponent(req.params.taskId)}`);
+});
+app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const previewFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  if (import_fs85.default.existsSync(previewFilePath)) {
+    try {
+      const stats2 = import_fs85.default.statSync(previewFilePath);
+      if (stats2.size > 1e3) {
+        res.setHeader("Content-Type", "image/png");
+        return import_fs85.default.createReadStream(previewFilePath).pipe(res);
+      }
+    } catch (e) {
+    }
+  }
+  const mbaFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const task = TaskLogService2.getTaskLogById(req.params.taskId);
+  const targetPath = task?.localMbaPngPath && import_fs85.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs85.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs85.default.existsSync(rawFilePath) ? rawFilePath : null;
+  if (targetPath) {
+    try {
+      console.log(`[API] Erzeuge U4 Preview f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
+      const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
+      if (savedPath && import_fs85.default.existsSync(savedPath)) {
+        res.setHeader("Content-Type", "image/png");
+        return import_fs85.default.createReadStream(savedPath).pipe(res);
+      }
+    } catch (e) {
+      console.warn(`[API] U4-Preview Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
     }
   }
   res.redirect(`/api/v1/designs/image/${encodeURIComponent(req.params.taskId)}`);

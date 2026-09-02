@@ -498,7 +498,7 @@ Style Preset: ${stylePreset}`;
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
     const basePrompt = SystemPromptService.getListingGeneratorPrompt();
-    const bannedSection = BannedWordsService.getBannedWordsPromptSection();
+    const bannedSection = BannedWordsService.getBannedWordsPromptSection('en');
     const systemPrompt = `${basePrompt}\n\n${bannedSection}`;
 
     const n1 = params.niche1 || 'Graphic Art';

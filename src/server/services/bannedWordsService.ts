@@ -232,33 +232,56 @@ export class BannedWordsService {
   }
 
   /**
-   * Generate formatted Markdown section to append to the Listing Generator system prompt
+   * Generate formatted Markdown section to append to the Listing Generator system prompt.
+   * Parameterized by locale (default 'en') so that the English Master Listing receives
+   * exclusively English / universal banned words without leaking German terms.
    */
-  static getBannedWordsPromptSection(): string {
-    const enWords = this.getBannedWords('en').join(', ');
-    const deWords = this.getBannedWords('de').join(', ');
+  static getBannedWordsPromptSection(locale: string = 'en'): string {
+    const norm = locale.toLowerCase().trim();
 
-    return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+    if (norm === 'en') {
+      const enWords = this.getBannedWords('en').join(', ');
+      return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
 You MUST NEVER use any of the following prohibited words or phrases in ANY field (Brand, Title, Bullet 1, Bullet 2, Description) under ANY circumstances:
 
 A. FAUX MATERIAL & PHYSICAL EFFECT CLAIMS (CRITICAL! DO NOT DESCRIBE 2D ARTWORK AS PHYSICAL MATERIALS):
-- English: sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
-- German: glitzernd, Glitter, Pailletten, leuchtend, Neon, Metallic, Folie, Roségold, Gold, Holz, Metall, Marmor, Glas, Leder, Diamant, Edelstein.
+- sparkling, glitter, neon, metallic, foil, rose gold, gold, glow effect, glows in black light, glow in the dark, sequin, metal, wood, diamond, gem, texture, textured, holographic, embossed, leather, rubber.
 
 B. QUALITY, FIT & SIZING CLAIMS:
-- English: premium, high quality, quality, fitted, looser, size up, bigger size, larger size, maternity, printed in, made in.
-- German: hohe qualität, premium, bewertung, Schwangerschaftsbekleidung.
+- premium, high quality, quality, fitted, looser, size up, bigger size, larger size, maternity, printed in, made in.
 
 C. PROMOTIONAL & GIFT LANGUAGE:
-- English: gift, present, birthday gift, christmas gift, best seller, sale, buy now, discount.
-- German: geschenk, geburtstagsgeschenk, weihnachtsgeschenk, rabatt.
+- gift, present, birthday gift, christmas gift, best seller, sale, buy now, discount.
 
 D. PRODUCT TYPE IN TITLE/BRAND:
 - NO words like: "T-Shirt", "tshirt", "shirt", "hoodie", "tank top", "popsocket", "pop socket".
 
 E. ALL PROHIBITED WORDS LIST:
-- [EN]: ${enWords}
+- [EN]: ${enWords}`;
+    }
+
+    if (norm === 'de') {
+      const deWords = this.getBannedWords('de').join(', ');
+      return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+You MUST NEVER use any of the following prohibited words or phrases in ANY field under ANY circumstances:
+
+A. PHYSISCHE MATERIAL- & EFFEKT-BEHAUPTUNGEN:
+- glitzernd, Glitter, Pailletten, leuchtend, leuchtet bei Schwarzlicht, leuchtet im Dunkeln, Neon, Metallic, Folie, Roségold, Gold, Holz, Metall, Marmor, Glas, Leder, Gummi, Diamant, Edelstein, flauschig, Plüsch, geprägt.
+
+B. QUALITÄT & PASSFORM:
+- hohe qualität, premium, bewertung, Schwangerschaftsbekleidung, Übergröße.
+
+C. WERBE- & GESCHENK-SPRACHE:
+- geschenk, geburtstagsgeschenk, weihnachtsgeschenk, bester verkäufer, rabatt, jetzt kaufen.
+
+D. ALL PROHIBITED WORDS LIST:
 - [DE]: ${deWords}`;
+    }
+
+    const words = this.getBannedWords(norm).join(', ');
+    return `### 4. STRICT BLACKLIST / BANNED WORDS (ACCOUNT SAFETY - ZERO TOLERANCE):
+You MUST NEVER use any of the following prohibited words or phrases:
+- [${norm.toUpperCase()}]: ${words}`;
   }
 
   /**

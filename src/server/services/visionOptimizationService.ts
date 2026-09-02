@@ -164,4 +164,100 @@ export class VisionOptimizationService {
       return { base64DataUrl: '', is4Panel: false };
     }
   }
+
+  /**
+   * Generates a single, high-contrast, centered 1125x1350 preview image on flat neutral mid-gray (#B8B8B8)
+   * specifically designed for Step U4 Master English Listing creation.
+   * - Resolution: exactly 1125x1350 (1/4 width, 1/4 height of 4500x5400)
+   * - Background: #B8B8B8 (neutral mid-gray, no gradients, no textures, no borders, no text, no watermarks)
+   * - Centers transparent PNG, composites alpha seamlessly, preserves aspect ratio
+   * - Drastically reduces vision token usage while ensuring both white and dark designs remain legible
+   */
+  public static async prepareU4PreviewImage(
+    input: string | Buffer,
+    outputPath?: string
+  ): Promise<{ base64DataUrl: string; savedPath?: string }> {
+    try {
+      let dataUri: string;
+      if (typeof input === 'string') {
+        if (input.startsWith('data:image')) {
+          dataUri = input;
+        } else if (fs.existsSync(input)) {
+          const fileBuf = fs.readFileSync(input);
+          dataUri = `data:image/png;base64,${fileBuf.toString('base64')}`;
+        } else {
+          throw new Error(`File not found: ${input}`);
+        }
+      } else if (Buffer.isBuffer(input)) {
+        dataUri = `data:image/png;base64,${input.toString('base64')}`;
+      } else {
+        return { base64DataUrl: '' };
+      }
+
+      const browser = await getBrowser();
+      const context = await browser.newContext({
+        viewport: { width: 1125, height: 1350 },
+        deviceScaleFactor: 1
+      });
+      const page = await context.newPage();
+
+      try {
+        const html = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              body {
+                width: 1125px;
+                height: 1350px;
+                background-color: #B8B8B8;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+              }
+              img {
+                max-width: 1125px;
+                max-height: 1350px;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                display: block;
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${dataUri}" />
+          </body>
+          </html>
+        `;
+
+        await page.setContent(html);
+        await page.waitForTimeout(30);
+        const screenshotBuf = await page.screenshot({ type: 'png' });
+
+        if (outputPath) {
+          try {
+            const dir = path.dirname(outputPath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(outputPath, screenshotBuf);
+          } catch (e: any) {
+            console.warn('[VisionOptimizationService] Failed to save U4 preview file:', e.message);
+          }
+        }
+
+        return {
+          base64DataUrl: `data:image/png;base64,${screenshotBuf.toString('base64')}`,
+          savedPath: outputPath && fs.existsSync(outputPath) ? outputPath : undefined
+        };
+      } finally {
+        await context.close().catch(() => {});
+      }
+    } catch (err: any) {
+      console.warn('[VisionOptimizationService] U4 preview generation fallback:', err.message);
+      return { base64DataUrl: '' };
+    }
+  }
 }

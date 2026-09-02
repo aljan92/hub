@@ -1870,6 +1870,7 @@ export class TaskLogService {
         for (const file of files) {
           if (
             file.endsWith('_grid2x2.jpg') ||
+            file.endsWith('.u4-preview.png') ||
             file.endsWith('_mba.png') ||
             file.endsWith('_orig.svg') ||
             file.endsWith('_4panel.jpg') ||

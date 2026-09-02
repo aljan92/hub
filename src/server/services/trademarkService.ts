@@ -35,7 +35,7 @@ export interface TrademarkHitV2 {
 
 export interface CompactOccurrence {
   field: string;
-  text: string;
+  matchedTerm?: string;
 }
 
 export interface CompactTrademarkHit {
@@ -1058,9 +1058,27 @@ export class TrademarkService {
    * Compact, deduplicated representation of trademark hits specifically tailored for LLM evaluation.
    * Strips internal registration numbers, dates, and duplicate entries, aggregating by registered mark.
    */
+  /**
+   * Helper to retrieve the current text of a listing field (for fingerprinting & logging)
+   */
+  static getFieldText(listing: Partial<EnglishListing> = {}, field: string, quote?: string): string {
+    if (field === 'brand') return listing.brand || '';
+    if (field === 'title') return listing.title || '';
+    if (field === 'bullet1') return listing.bullet1 || '';
+    if (field === 'bullet2') return listing.bullet2 || '';
+    if (field === 'description') return listing.description || '';
+    if (field === 'quote') return quote || '';
+    return '';
+  }
+
+  /**
+   * Compacts hundreds of raw/normalized hits into deduplicated mark entities.
+   * Significantly reduces token payload by omitting full field text repetition
+   * while preserving exact field locations and actual matched terms.
+   */
   static buildCompactTrademarkHits(
     normalizedHits: TrademarkHitV2[],
-    listing: EnglishListing,
+    listing?: Partial<EnglishListing>,
     quote?: string
   ): CompactTrademarkHit[] {
     const markMap = new Map<string, {
@@ -1071,7 +1089,7 @@ export class TrademarkService {
       offices: Set<string>;
       matchTypes: Set<MatchTypeV2>;
       fullQuoteMatch: boolean;
-      fields: Set<string>;
+      occurrencesMap: Map<string, CompactOccurrence>;
     }>();
 
     for (const h of normalizedHits) {
@@ -1088,7 +1106,7 @@ export class TrademarkService {
           offices: new Set(),
           matchTypes: new Set(),
           fullQuoteMatch: false,
-          fields: new Set()
+          occurrencesMap: new Map()
         };
         markMap.set(cleanMark, entry);
       }
@@ -1100,7 +1118,19 @@ export class TrademarkService {
       if (h.office) entry.offices.add(h.office);
       if (h.matchType) entry.matchTypes.add(h.matchType);
       if (h.isFullQuoteMatch) entry.fullQuoteMatch = true;
-      if (h.field) entry.fields.add(h.field);
+
+      const field = h.field || 'listing';
+      const rawMatched = String((h as any).matchedTerm || h.searchedTerm || '').trim();
+      const matchedTerm = rawMatched.length > 0 ? rawMatched : undefined;
+      const occKey = `${field.toLowerCase()}|${matchedTerm ? matchedTerm.toLowerCase() : ''}`;
+
+      if (!entry.occurrencesMap.has(occKey)) {
+        const occ: CompactOccurrence = { field };
+        if (matchedTerm) {
+          occ.matchedTerm = matchedTerm;
+        }
+        entry.occurrencesMap.set(occKey, occ);
+      }
     }
 
     const matchTypePriority: MatchTypeV2[] = [
@@ -1111,16 +1141,6 @@ export class TrademarkService {
       'QUERY_INSIDE_LONGER_MARK',
       'FUZZY_OR_SIMILAR'
     ];
-
-    const getFieldText = (f: string): string => {
-      if (f === 'brand') return listing.brand || '';
-      if (f === 'title') return listing.title || '';
-      if (f === 'bullet1') return listing.bullet1 || '';
-      if (f === 'bullet2') return listing.bullet2 || '';
-      if (f === 'description') return listing.description || '';
-      if (f === 'quote') return quote || '';
-      return '';
-    };
 
     const compactList: CompactTrademarkHit[] = [];
     let idx = 1;
@@ -1136,11 +1156,6 @@ export class TrademarkService {
 
       const feature = entry.features.has('Combined') ? 'Combined' : (entry.features.values().next().value || 'Word');
 
-      const occurrences: CompactOccurrence[] = Array.from(entry.fields).map(f => ({
-        field: f,
-        text: getFieldText(f)
-      }));
-
       compactList.push({
         id: `tm_${idx++}`,
         mark: entry.mark,
@@ -1150,7 +1165,7 @@ export class TrademarkService {
         offices: Array.from(entry.offices).sort(),
         matchType: bestMatchType,
         fullQuoteMatch: entry.fullQuoteMatch,
-        occurrences
+        occurrences: Array.from(entry.occurrencesMap.values())
       });
     }
 
@@ -1227,7 +1242,10 @@ export class TrademarkService {
 
       // Check which hits are genuinely new or in a modified context (Hit-Re-Use optimization)
       const hitsToReview = cycle === 0 ? compactHits : compactHits.filter(h => {
-        return h.occurrences.some(occ => !approvedHitContexts.has(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, occ.text)));
+        return h.occurrences.some(occ => {
+          const fieldText = TrademarkService.getFieldText(currentListing, occ.field, params.quote);
+          return !approvedHitContexts.has(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, fieldText));
+        });
       });
 
       let refereeRes: any;
@@ -1272,7 +1290,8 @@ export class TrademarkService {
       for (const h of hitsToReview) {
         if (!problematicMarks.has(h.mark.trim().toLowerCase())) {
           for (const occ of h.occurrences) {
-            approvedHitContexts.add(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, occ.text));
+            const fieldText = TrademarkService.getFieldText(currentListing, occ.field, params.quote);
+            approvedHitContexts.add(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, fieldText));
           }
         }
       }

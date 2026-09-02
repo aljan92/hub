@@ -65,6 +65,27 @@ export class UpdatePipelineService {
       return { success: false, error: res.error };
     }
 
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const mbaPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+    const rawPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+    const targetPath = (task.localMbaPngPath && fs.existsSync(task.localMbaPngPath))
+      ? task.localMbaPngPath
+      : fs.existsSync(mbaPath) ? mbaPath : fs.existsSync(rawPath) ? rawPath : null;
+
+    const u4PreviewPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.u4-preview.png`);
+    if (targetPath && fs.existsSync(targetPath)) {
+      VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then(r => {
+        if (r.savedPath) {
+          TaskLogService.updateTaskStatus(taskId, {
+            u4PreviewUrl: `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`,
+            localU4PreviewPath: u4PreviewPath
+          });
+        }
+      }).catch(err => {
+        console.warn(`[UpdatePipeline] Vorab-Erzeugung der U4-Preview in U2 fehlgeschlagen:`, err.message);
+      });
+    }
+
     TaskLogService.updateTaskStatus(taskId, {
       status: 'UPDATE_ARTWORK_READY',
       hasError: false
@@ -106,6 +127,7 @@ export class UpdatePipelineService {
       : fs.existsSync(mbaPath) ? mbaPath : fs.existsSync(rawPath) ? rawPath : null;
 
     const gridOutputPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_grid2x2.jpg`);
+    const u4PreviewPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.u4-preview.png`);
 
     if (targetPath) {
       try {
@@ -116,6 +138,20 @@ export class UpdatePipelineService {
         }
       } catch (err) {
         console.warn(`[UpdatePipeline] Konnte Bild für Vision nicht optimieren:`, err);
+      }
+
+      // Proactively ensure U4 preview is generated in background if missing
+      if (!fs.existsSync(u4PreviewPath)) {
+        VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then(r => {
+          if (r.savedPath) {
+            TaskLogService.updateTaskStatus(taskId, {
+              u4PreviewUrl: `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`,
+              localU4PreviewPath: u4PreviewPath
+            });
+          }
+        }).catch(err => {
+          console.warn(`[UpdatePipeline] Vorab-Erzeugung der U4-Preview in U3 fehlgeschlagen:`, err.message);
+        });
       }
     }
 
@@ -312,7 +348,8 @@ export class UpdatePipelineService {
       metadata: { provider: 'OpenRouter' }
     });
 
-    let originalImageBase64: string | undefined;
+    let u4ImageBase64: string | undefined;
+    let u4ImageSourceType: 'PREVIEW_1125x1350' | 'ORIGINAL_FALLBACK' = 'ORIGINAL_FALLBACK';
     const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
     const mbaPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
     const rawPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
@@ -320,12 +357,53 @@ export class UpdatePipelineService {
       ? task.localMbaPngPath
       : fs.existsSync(mbaPath) ? mbaPath : fs.existsSync(rawPath) ? rawPath : null;
 
+    const u4PreviewPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.u4-preview.png`);
+
     if (targetPath && fs.existsSync(targetPath)) {
-      try {
-        const buf = fs.readFileSync(targetPath);
-        originalImageBase64 = `data:image/png;base64,${buf.toString('base64')}`;
-      } catch (e) {
-        console.warn(`[UpdatePipeline] Konnte Original-PNG für Listing-LLM nicht einlesen:`, e);
+      // 1. Try reading existing U4 preview from disk
+      if (fs.existsSync(u4PreviewPath)) {
+        try {
+          const stats = fs.statSync(u4PreviewPath);
+          if (stats.size > 1000) {
+            const buf = fs.readFileSync(u4PreviewPath);
+            u4ImageBase64 = `data:image/png;base64,${buf.toString('base64')}`;
+            u4ImageSourceType = 'PREVIEW_1125x1350';
+            console.log(`[UpdatePipeline] 🖼️ Verwende vorhandene 1125x1350 U4-Preview (${u4PreviewPath}, ${(buf.length / 1024).toFixed(1)} KB)`);
+          }
+        } catch (err: any) {
+          console.warn(`[UpdatePipeline] Konnte vorhandene U4-Preview nicht lesen:`, err.message);
+        }
+      }
+
+      // 2. If not found or invalid, generate U4 preview on-demand
+      if (!u4ImageBase64) {
+        try {
+          console.log(`[UpdatePipeline] 🎨 Erzeuge 1125x1350 U4-Preview auf #B8B8B8 für Task ${taskId}...`);
+          const previewRes = await VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath);
+          if (previewRes.base64DataUrl) {
+            u4ImageBase64 = previewRes.base64DataUrl;
+            u4ImageSourceType = 'PREVIEW_1125x1350';
+            console.log(`[UpdatePipeline] ✅ U4-Preview erfolgreich erstellt und geladen (${u4PreviewPath})`);
+            TaskLogService.updateTaskStatus(taskId, {
+              u4PreviewUrl: `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`,
+              localU4PreviewPath: u4PreviewPath
+            });
+          }
+        } catch (err: any) {
+          console.warn(`[UpdatePipeline] ⚠️ U4-Preview Erzeugung fehlgeschlagen, wechsle auf Fallback:`, err.message);
+        }
+      }
+
+      // 3. Fallback: If preview generation or reading failed, use original 4500x5400 image
+      if (!u4ImageBase64) {
+        try {
+          console.warn(`[UpdatePipeline] 🔄 FALLBACK: Verwende Original-PNG für U4-Call (${targetPath})...`);
+          const buf = fs.readFileSync(targetPath);
+          u4ImageBase64 = `data:image/png;base64,${buf.toString('base64')}`;
+          u4ImageSourceType = 'ORIGINAL_FALLBACK';
+        } catch (e: any) {
+          console.warn(`[UpdatePipeline] Konnte Original-PNG für Listing-LLM nicht einlesen:`, e.message);
+        }
       }
     }
 
@@ -338,7 +416,7 @@ export class UpdatePipelineService {
         quote: raw.quote || task.analysisResult?.quote_check?.detected_quote || '',
         audience,
         avoidColor,
-        imageSource: originalImageBase64,
+        imageSource: u4ImageBase64,
         oldListing: {
           brand: raw.brand,
           title: raw.title,
@@ -358,7 +436,14 @@ export class UpdatePipelineService {
         timestamp: new Date().toISOString(),
         type: 'LISTING_RESPONSE',
         title: 'Optimiertes Master English Listing generiert',
-        content: { en: enListing },
+        content: {
+          en: enListing,
+          imageOptimization: {
+            sourceType: u4ImageSourceType,
+            previewPath: u4ImageSourceType === 'PREVIEW_1125x1350' ? u4PreviewPath : null,
+            resolution: u4ImageSourceType === 'PREVIEW_1125x1350' ? '1125x1350' : '4500x5400'
+          }
+        },
         metadata: { provider: 'OpenRouter' }
       });
 
