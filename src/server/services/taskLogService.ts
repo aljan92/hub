@@ -680,6 +680,12 @@ export class TaskLogService {
           const arrayBuffer = await imgRes.arrayBuffer();
           fs.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
           console.log(`[TaskLogService] 💾 Bild für Task ${taskId} lokal gespeichert: ${localFilePath}`);
+
+          // Pre-generate U4 Preview in the background for Step D5 Listing
+          const previewFilePath = path.join(designsDir, `${cleanId}.u4-preview.png`);
+          VisionOptimizationService.prepareU4PreviewImage(localFilePath, previewFilePath).catch(err => {
+            console.warn(`[TaskLogService] Background preview pre-generation failed for ${taskId}:`, err.message);
+          });
         }
       } catch (e) {
         console.warn(`[TaskLogService] Konnte Bild für Task ${taskId} nicht lokal cachen:`, e);
@@ -955,6 +961,82 @@ export class TaskLogService {
       : 'Men, Women, Youth';
     const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || 'None';
 
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+    const previewFilePath = path.join(designsDir, `${cleanId}.u4-preview.png`);
+    const mbaFilePath = path.join(designsDir, `${cleanId}_mba.png`);
+    const rawFilePath = path.join(designsDir, `${cleanId}.png`);
+
+    const targetOriginalPath = (task.localMbaPngPath && fs.existsSync(task.localMbaPngPath))
+      ? task.localMbaPngPath
+      : (task.localImagePath && fs.existsSync(task.localImagePath))
+      ? task.localImagePath
+      : fs.existsSync(mbaFilePath)
+      ? mbaFilePath
+      : (fs.existsSync(rawFilePath) ? rawFilePath : undefined);
+
+    let listingImageBase64: string | undefined = undefined;
+    let listingImageSourceType: 'PREVIEW_1125x1350' | 'ORIGINAL_FALLBACK' | 'NONE' = 'NONE';
+    let optimizationMeta: any = undefined;
+
+    if (targetOriginalPath) {
+      // 1. Try reading existing preview from disk
+      if (fs.existsSync(previewFilePath)) {
+        try {
+          const previewBuf = fs.readFileSync(previewFilePath);
+          if (previewBuf.length > 500) {
+            listingImageBase64 = `data:image/png;base64,${previewBuf.toString('base64')}`;
+            listingImageSourceType = 'PREVIEW_1125x1350';
+            task.localU4PreviewPath = previewFilePath;
+            task.u4PreviewUrl = `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`;
+            optimizationMeta = {
+              sourceType: 'PREVIEW_1125x1350',
+              previewPath: previewFilePath,
+              resolution: '1125x1350'
+            };
+          }
+        } catch (e: any) {
+          console.warn(`[TaskLogService] Fehler beim Lesen der vorhandenen Preview für ${taskId}:`, e.message);
+        }
+      }
+
+      // 2. Generate preview on demand if missing
+      if (!listingImageBase64) {
+        try {
+          const { base64DataUrl, savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetOriginalPath, previewFilePath);
+          if (base64DataUrl) {
+            listingImageBase64 = base64DataUrl;
+            listingImageSourceType = 'PREVIEW_1125x1350';
+            task.localU4PreviewPath = savedPath || previewFilePath;
+            task.u4PreviewUrl = `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`;
+            optimizationMeta = {
+              sourceType: 'PREVIEW_1125x1350',
+              previewPath: savedPath || previewFilePath,
+              resolution: '1125x1350'
+            };
+          }
+        } catch (err: any) {
+          console.warn(`[TaskLogService] Preview-Generierung fehlgeschlagen für ${taskId}, wechsle auf Fallback:`, err.message);
+        }
+      }
+
+      // 3. Fallback: If preview generation or reading failed, use original image
+      if (!listingImageBase64) {
+        try {
+          console.warn(`[TaskLogService] 🔄 FALLBACK: Verwende Originalbild für Listing-Vision-Call (${targetOriginalPath})...`);
+          const origBuf = fs.readFileSync(targetOriginalPath);
+          listingImageBase64 = `data:image/png;base64,${origBuf.toString('base64')}`;
+          listingImageSourceType = 'ORIGINAL_FALLBACK';
+          optimizationMeta = {
+            sourceType: 'ORIGINAL_FALLBACK',
+            fallbackPath: targetOriginalPath
+          };
+        } catch (e: any) {
+          console.warn(`[TaskLogService] Konnte Originalbild nicht für Listing-LLM einlesen:`, e.message);
+        }
+      }
+    }
+
     const start = Date.now();
     try {
       const enListing = await LLMService.generateMasterEnglishListing({
@@ -966,7 +1048,8 @@ export class TaskLogService {
         hermesKeywords,
         stylePreset: task.payload?.stylePreset || task.payload?.style || 'vintage retro vector',
         audience: targetGroup,
-        avoidColor: avoidColors
+        avoidColor: avoidColors,
+        imageSource: listingImageBase64
       });
 
       const latencyMs = Date.now() - start;
@@ -1006,6 +1089,7 @@ export class TaskLogService {
             bullet2: enListing.bullet2,
             description: enListing.description
           },
+          imageOptimization: optimizationMeta,
           rawResponse: enListing._rawResponse || null
         },
         metadata: {
@@ -1024,6 +1108,8 @@ export class TaskLogService {
             description: enListing.description
           }
         },
+        localU4PreviewPath: task.localU4PreviewPath,
+        u4PreviewUrl: task.u4PreviewUrl,
         niche1,
         niche2,
         subniche,
@@ -1913,6 +1999,8 @@ export class TaskLogService {
         const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
         const imgPath = path.resolve(process.cwd(), 'data', 'designs', `${safeId}.png`);
         if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+        const previewPath = path.resolve(process.cwd(), 'data', 'designs', `${safeId}.u4-preview.png`);
+        if (fs.existsSync(previewPath)) fs.unlinkSync(previewPath);
       } catch (e) {}
       if (this.eventBroadcaster) {
         this.eventBroadcaster('TASK_DELETED', { taskId });

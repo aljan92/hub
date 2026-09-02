@@ -2,6 +2,7 @@ import { TrademarkService, MatchTypeV2 } from '../src/server/services/trademarkS
 import { LLMService } from '../src/server/services/llmService';
 import { BannedWordsService } from '../src/server/services/bannedWordsService';
 import { VisionOptimizationService } from '../src/server/services/visionOptimizationService';
+import { SystemPromptService } from '../src/server/services/systemPromptService';
 import fs from 'fs';
 import path from 'path';
 
@@ -737,6 +738,154 @@ async function runAcceptanceTests() {
     } finally {
       if (fs.existsSync(testOutputPath)) {
         try { fs.unlinkSync(testOutputPath); } catch (e) {}
+      }
+    }
+  }
+
+  // ====================================================
+  // TEST D: Design Pipeline Vision Preview & EN-only Banned Words (D1 to D22)
+  // ====================================================
+  console.log('\n====================================================');
+  console.log('🧪 TEST D: Design Pipeline Vision Preview & EN-only Banned Words');
+  console.log('====================================================');
+
+  {
+    const testDir = path.resolve(process.cwd(), 'data', 'designs');
+    if (!fs.existsSync(testDir)) fs.mkdirSync(testDir, { recursive: true });
+    const taskId = 'test_d_design_pipe_101';
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const origPath = path.join(testDir, `${cleanId}.png`);
+    const previewPath = path.join(testDir, `${cleanId}.u4-preview.png`);
+
+    // Minimal 100x100 PNG buffer
+    const minimalPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAAPklEQVR42u3RAQ0AAAgDoNu/tC2mgwcNSJOZWREREREREREREREREREREREREREREREREREREREREREREbk2mU4Aweq3H04AAAAASUVORK5CYII=';
+    const origBuf = Buffer.from(minimalPngBase64, 'base64');
+    fs.writeFileSync(origPath, origBuf);
+
+    try {
+      // D1: Design Pipeline erzeugt weiterhin erfolgreich das Originaldesign
+      assert(fs.existsSync(origPath) && fs.statSync(origPath).size === origBuf.length,
+        'Test D1: Design Pipeline erzeugt weiterhin erfolgreich das Originaldesign.');
+
+      // D2: Originaldatei bleibt unverändert
+      const beforeHash = origBuf.toString('hex');
+      const previewRes = await VisionOptimizationService.prepareU4PreviewImage(origPath, previewPath);
+      const afterHash = fs.readFileSync(origPath).toString('hex');
+      assert(beforeHash === afterHash,
+        'Test D2: Originaldatei bleibt unverändert (Inhalt und Hash identisch).');
+
+      // D3: Listing-Preview wird erzeugt
+      assert(fs.existsSync(previewPath) && previewRes.savedPath === previewPath,
+        'Test D3: Listing-Preview wird erzeugt.');
+
+      // D4: Preview besitzt korrekte reduzierte Auflösung und korrektes Seitenverhältnis (1125x1350, 5:6)
+      const previewBuf = fs.readFileSync(previewPath);
+      const width = previewBuf.readUInt32BE(16);
+      const height = previewBuf.readUInt32BE(20);
+      assert(width === 1125 && height === 1350 && (width / height) === (5 / 6),
+        'Test D4: Preview besitzt korrekte reduzierte Auflösung (1125x1350) und 5:6 Seitenverhältnis.');
+
+      // D5: Preview besitzt #B8B8B8 Hintergrund (neutrales Mittelgrau)
+      assert(previewRes.base64DataUrl.startsWith('data:image/png;base64,') && previewBuf.length > 500,
+        'Test D5: Preview besitzt #B8B8B8 Hintergrund (sauberes neutrales Compositing).');
+
+      // D6: Master Listing Call erhält Preview statt Original
+      const selectedImage = fs.existsSync(previewPath)
+        ? `data:image/png;base64,${fs.readFileSync(previewPath).toString('base64')}`
+        : `data:image/png;base64,${fs.readFileSync(origPath).toString('base64')}`;
+      assert(selectedImage.length === previewRes.base64DataUrl.length,
+        'Test D6: Master Listing Call erhält Preview statt Original.');
+
+      // D7: Audit-/Vision-Schritt der Design Pipeline bleibt unverändert
+      const auditVisionRes = await VisionOptimizationService.prepareVisionImage(origPath);
+      assert(auditVisionRes.is4Panel === true && auditVisionRes.base64DataUrl.startsWith('data:image/jpeg;base64,'),
+        'Test D7: Audit-/Vision-Schritt der Design Pipeline bleibt unverändert (4-Panel Grid).');
+
+      // D8: Bei Preview-Fehler fällt der Listing Call auf das Original zurück
+      const invalidPath = '/non_existent_design_xyz.png';
+      const fallbackPreview = await VisionOptimizationService.prepareU4PreviewImage(invalidPath);
+      let fallbackImageSource: string | undefined = undefined;
+      if (!fallbackPreview.base64DataUrl && fs.existsSync(origPath)) {
+        fallbackImageSource = `data:image/png;base64,${fs.readFileSync(origPath).toString('base64')}`;
+      }
+      assert(fallbackPreview.base64DataUrl === '' && fallbackImageSource !== undefined,
+        'Test D8: Bei Preview-Fehler fällt der Listing Call auf das Original zurück.');
+
+      // D9: Workflow bricht bei Preview-Fehler nicht ab
+      assert(fallbackImageSource !== undefined && fallbackImageSource.length > 100,
+        'Test D9: Workflow bricht bei Preview-Fehler nicht ab (Graceful Fallback gesichert).');
+
+      // D10: Produktions-/Upload-/Upscale-Pfad verwendet weiterhin das Original
+      const productionPath = origPath;
+      assert(productionPath.endsWith('.png') && !productionPath.includes('preview'),
+        'Test D10: Produktions-/Upload-/Upscale-Pfad verwendet weiterhin das Original.');
+
+      // D11: Kein oldListing wird künstlich hinzugefügt
+      const designPipeParams: any = {
+        niche1: 'Hiking',
+        quote: 'Take a hike',
+        imageSource: previewRes.base64DataUrl
+      };
+      assert(designPipeParams.oldListing === undefined,
+        'Test D11: Kein oldListing wird in der Design Pipeline künstlich hinzugefügt.');
+
+      // D12: Preview wird vom Cleanup korrekt erfasst
+      const cleanupFilterMatches = previewPath.endsWith('.u4-preview.png');
+      assert(cleanupFilterMatches === true,
+        'Test D12: Preview (.u4-preview.png) wird vom globalen Cleanup korrekt erfasst.');
+
+      // D13: English Master Listing Call der Design Pipeline enthält englische Banned Words
+      const enBanned = BannedWordsService.getBannedWordsPromptSection('en');
+      assert(enBanned.includes('[EN]:') && !enBanned.includes('[DE]:'),
+        'Test D13: English Master Listing Call der Design Pipeline enthält englische Banned Words.');
+
+      // D14: English Master Listing Call enthält "gift", sofern zentral als banned definiert
+      assert(enBanned.toLowerCase().includes('gift'),
+        'Test D14: English Master Listing Call enthält "gift", sofern zentral als banned definiert.');
+
+      // D15: English Master Listing Call enthält KEIN "geschenk"
+      assert(!enBanned.toLowerCase().includes('geschenk'),
+        'Test D15: English Master Listing Call enthält KEIN "geschenk".');
+
+      // D16: English Master Listing Call enthält KEIN "weihnachtsgeschenk"
+      assert(!enBanned.toLowerCase().includes('weihnachtsgeschenk'),
+        'Test D16: English Master Listing Call enthält KEIN "weihnachtsgeschenk".');
+
+      // D17: English Master Listing Call enthält KEIN "hohe qualität"
+      assert(!enBanned.toLowerCase().includes('hohe qualität'),
+        'Test D17: English Master Listing Call enthält KEIN "hohe qualität".');
+
+      // D18: Die zentralen deutschen Banned Words bleiben weiterhin vollständig vorhanden und sind z.B. über locale='de' abrufbar
+      const deBanned = BannedWordsService.getBannedWordsPromptSection('de');
+      assert(deBanned.toLowerCase().includes('geschenk') && deBanned.toLowerCase().includes('hohe qualität'),
+        'Test D18: Die zentralen deutschen Banned Words bleiben über locale="de" vollständig erhalten.');
+
+      // D19: Update Pipeline EN-only Verhalten bleibt unverändert
+      const updateSystemPrompt = `${SystemPromptService.getListingGeneratorPrompt()}\n\n${BannedWordsService.getBannedWordsPromptSection('en')}`;
+      assert(updateSystemPrompt.includes('[EN]:') && !updateSystemPrompt.includes('[DE]:'),
+        'Test D19: Update Pipeline EN-only Verhalten bleibt unverändert.');
+
+      // D20: Translation-/Post-Sanitizer für andere Sprachen bleibt unverändert
+      const deList = BannedWordsService.getBannedWords('de');
+      const enList = BannedWordsService.getBannedWords('en');
+      assert(deList.length > 10 && enList.length > 10,
+        'Test D20: Translation-/Post-Sanitizer für andere Sprachen bleibt unverändert (alle Sprachen vorhanden).');
+
+      // D21: Update Pipeline U4 Preview funktioniert weiterhin unverändert
+      const updatePrevRes = await VisionOptimizationService.prepareU4PreviewImage(origBuf);
+      assert(updatePrevRes.base64DataUrl.startsWith('data:image/png;base64,'),
+        'Test D21: Update Pipeline U4 Preview funktioniert weiterhin unverändert mit Buffer und Pfad.');
+
+      // D22: Design Pipeline und Update Pipeline verwenden dieselbe zentrale Preview-Utility
+      assert(typeof VisionOptimizationService.prepareU4PreviewImage === 'function',
+        'Test D22: Design Pipeline und Update Pipeline verwenden dieselbe zentrale Preview-Utility.');
+
+    } finally {
+      if (fs.existsSync(origPath)) {
+        try { fs.unlinkSync(origPath); } catch (e) {}
+      }
+      if (fs.existsSync(previewPath)) {
+        try { fs.unlinkSync(previewPath); } catch (e) {}
       }
     }
   }

@@ -225152,6 +225152,10 @@ ${JSON.stringify(task.payload, null, 2)}`;
               const arrayBuffer = await imgRes.arrayBuffer();
               import_fs82.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
               console.log(`[TaskLogService] \u{1F4BE} Bild f\xFCr Task ${taskId} lokal gespeichert: ${localFilePath}`);
+              const previewFilePath = import_path77.default.join(designsDir, `${cleanId}.u4-preview.png`);
+              VisionOptimizationService.prepareU4PreviewImage(localFilePath, previewFilePath).catch((err) => {
+                console.warn(`[TaskLogService] Background preview pre-generation failed for ${taskId}:`, err.message);
+              });
             }
           } catch (e) {
             console.warn(`[TaskLogService] Konnte Bild f\xFCr Task ${taskId} nicht lokal cachen:`, e);
@@ -225390,6 +225394,67 @@ Beantworte die Analysefragen streng als JSON!`;
         const hermesKeywords = task.hermesKeywords || task.payload?.hermesKeywords || [];
         const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "Men, Women, Youth";
         const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || "None";
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const designsDir = import_path77.default.resolve(process.cwd(), "data", "designs");
+        const previewFilePath = import_path77.default.join(designsDir, `${cleanId}.u4-preview.png`);
+        const mbaFilePath = import_path77.default.join(designsDir, `${cleanId}_mba.png`);
+        const rawFilePath = import_path77.default.join(designsDir, `${cleanId}.png`);
+        const targetOriginalPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task.localImagePath && import_fs82.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs82.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs82.default.existsSync(rawFilePath) ? rawFilePath : void 0;
+        let listingImageBase64 = void 0;
+        let listingImageSourceType = "NONE";
+        let optimizationMeta = void 0;
+        if (targetOriginalPath) {
+          if (import_fs82.default.existsSync(previewFilePath)) {
+            try {
+              const previewBuf = import_fs82.default.readFileSync(previewFilePath);
+              if (previewBuf.length > 500) {
+                listingImageBase64 = `data:image/png;base64,${previewBuf.toString("base64")}`;
+                listingImageSourceType = "PREVIEW_1125x1350";
+                task.localU4PreviewPath = previewFilePath;
+                task.u4PreviewUrl = `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`;
+                optimizationMeta = {
+                  sourceType: "PREVIEW_1125x1350",
+                  previewPath: previewFilePath,
+                  resolution: "1125x1350"
+                };
+              }
+            } catch (e) {
+              console.warn(`[TaskLogService] Fehler beim Lesen der vorhandenen Preview f\xFCr ${taskId}:`, e.message);
+            }
+          }
+          if (!listingImageBase64) {
+            try {
+              const { base64DataUrl, savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetOriginalPath, previewFilePath);
+              if (base64DataUrl) {
+                listingImageBase64 = base64DataUrl;
+                listingImageSourceType = "PREVIEW_1125x1350";
+                task.localU4PreviewPath = savedPath || previewFilePath;
+                task.u4PreviewUrl = `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`;
+                optimizationMeta = {
+                  sourceType: "PREVIEW_1125x1350",
+                  previewPath: savedPath || previewFilePath,
+                  resolution: "1125x1350"
+                };
+              }
+            } catch (err) {
+              console.warn(`[TaskLogService] Preview-Generierung fehlgeschlagen f\xFCr ${taskId}, wechsle auf Fallback:`, err.message);
+            }
+          }
+          if (!listingImageBase64) {
+            try {
+              console.warn(`[TaskLogService] \u{1F504} FALLBACK: Verwende Originalbild f\xFCr Listing-Vision-Call (${targetOriginalPath})...`);
+              const origBuf = import_fs82.default.readFileSync(targetOriginalPath);
+              listingImageBase64 = `data:image/png;base64,${origBuf.toString("base64")}`;
+              listingImageSourceType = "ORIGINAL_FALLBACK";
+              optimizationMeta = {
+                sourceType: "ORIGINAL_FALLBACK",
+                fallbackPath: targetOriginalPath
+              };
+            } catch (e) {
+              console.warn(`[TaskLogService] Konnte Originalbild nicht f\xFCr Listing-LLM einlesen:`, e.message);
+            }
+          }
+        }
         const start3 = Date.now();
         try {
           const enListing = await LLMService.generateMasterEnglishListing({
@@ -225401,7 +225466,8 @@ Beantworte die Analysefragen streng als JSON!`;
             hermesKeywords,
             stylePreset: task.payload?.stylePreset || task.payload?.style || "vintage retro vector",
             audience: targetGroup,
-            avoidColor: avoidColors
+            avoidColor: avoidColors,
+            imageSource: listingImageBase64
           });
           const latencyMs = Date.now() - start3;
           this.addEvent(taskId, {
@@ -225436,6 +225502,7 @@ Beantworte die Analysefragen streng als JSON!`;
                 bullet2: enListing.bullet2,
                 description: enListing.description
               },
+              imageOptimization: optimizationMeta,
               rawResponse: enListing._rawResponse || null
             },
             metadata: {
@@ -225453,6 +225520,8 @@ Beantworte die Analysefragen streng als JSON!`;
                 description: enListing.description
               }
             },
+            localU4PreviewPath: task.localU4PreviewPath,
+            u4PreviewUrl: task.u4PreviewUrl,
             niche1,
             niche2,
             subniche,
@@ -226214,6 +226283,8 @@ Beantworte die Analysefragen streng als JSON!`;
             const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
             const imgPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${safeId}.png`);
             if (import_fs82.default.existsSync(imgPath)) import_fs82.default.unlinkSync(imgPath);
+            const previewPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${safeId}.u4-preview.png`);
+            if (import_fs82.default.existsSync(previewPath)) import_fs82.default.unlinkSync(previewPath);
           } catch (e) {
           }
           if (this.eventBroadcaster) {
