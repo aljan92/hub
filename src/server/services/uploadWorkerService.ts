@@ -1022,9 +1022,11 @@ export class UploadWorkerService {
 
             // PASS 4: Finale Namen der aktivierten Farben für das Live-Log auslesen
             finalActiveColorNames = activeSwatches.map(cb => {
+              const domId = extractDomColorId(cb);
+              if (domId) return domId;
               const h = extractColorClues(cb);
-              const id = identifyColorId(h);
-              if (id) return id;
+              const matched = (params.catalogColors || []).find((c: any) => h.includes(c.id));
+              if (matched) return matched.id;
               return cb.getAttribute('name') || cb.getAttribute('title') || 'Color';
             });
           }

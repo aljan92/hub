@@ -228916,9 +228916,11 @@ var UploadWorkerService = class _UploadWorkerService {
               };
             }
             finalActiveColorNames = activeSwatches.map((cb) => {
+              const domId = extractDomColorId(cb);
+              if (domId) return domId;
               const h = extractColorClues(cb);
-              const id = identifyColorId(h);
-              if (id) return id;
+              const matched = (params2.catalogColors || []).find((c) => h.includes(c.id));
+              if (matched) return matched.id;
               return cb.getAttribute("name") || cb.getAttribute("title") || "Color";
             });
           }
