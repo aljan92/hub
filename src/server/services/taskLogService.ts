@@ -244,6 +244,8 @@ export class TaskLogService {
   static async completeTaskAndEnqueue(taskOrId: DesignTaskLog | string): Promise<{ success: boolean; error?: string }> {
     const task = typeof taskOrId === 'string' ? this.getTaskLogById(taskOrId) : taskOrId;
     if (!task) return { success: false, error: 'Task nicht gefunden' };
+    if (task.inQueue) return { success: true };
+    task.inQueue = true;
 
     try {
       const listing = task.listingResult || task.trademarkRefineResult || {};
@@ -279,7 +281,7 @@ export class TaskLogService {
       const rawHex = (task.customAnswers as any)?.customBackgroundColor || (task.customAnswers as any)?.accessoryColorHex;
       const customBackgroundColor = (typeof rawHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim())) ? (rawHex.startsWith('#') ? rawHex : `#${rawHex}`) : undefined;
 
-      const { FinalizationService } = require('./finalizationService');
+      const { FinalizationService } = await import('./finalizationService');
       const finResult = await FinalizationService.finalizeForQueue({
         taskId: task.id,
         pipeline: 'DESIGN',
@@ -314,7 +316,8 @@ export class TaskLogService {
 
     Object.assign(task, updates);
 
-    if ((updates.status === 'COMPLETED' || task.status === 'COMPLETED') && task.source !== 'UPDATE') {
+    if ((updates.status === 'COMPLETED' || task.status === 'COMPLETED') && task.source !== 'UPDATE' && !task.inQueue) {
+      task.inQueue = true;
       this.completeTaskAndEnqueue(task);
       return task;
     }

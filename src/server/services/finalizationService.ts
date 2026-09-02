@@ -49,6 +49,8 @@ export class FinalizationService {
   public static async finalizeForQueue(params: FinalizationParams): Promise<FinalizationResult> {
     const { taskId, pipeline } = params;
     console.log(`[FinalizationService] 🚀 Starte Unified Finalization für Task #${taskId} (Pipeline: ${pipeline})...`);
+    const task = TaskLogService.getTask(taskId);
+    const masterPngPath = params.masterPngPath || task?.localMbaPngPath || task?.localImagePath || '';
 
     // =========================================================================
     // PHASE 1: LISTING SANITIZATION
@@ -136,8 +138,8 @@ export class FinalizationService {
       content: { phase: 'ARTWORK_PREPARATION', status: 'RUNNING' }
     });
 
-    if (!params.masterPngPath || !fs.existsSync(params.masterPngPath)) {
-      const err = `Master-Artwork nicht gefunden unter: ${params.masterPngPath}`;
+    if (!masterPngPath || !fs.existsSync(masterPngPath)) {
+      const err = `Master-Artwork nicht gefunden unter: ${masterPngPath}`;
       console.error(`[FinalizationService] ❌ ${err}`);
 
       TaskLogService.addEvent(taskId, {
@@ -164,7 +166,7 @@ export class FinalizationService {
     } else {
       try {
         // Execute resize exactly once via ArtworkResizeService mutex
-        resizedAssets = await ArtworkResizeService.generateResizedArtworks(taskId, params.masterPngPath);
+        resizedAssets = await ArtworkResizeService.generateResizedArtworks(taskId, masterPngPath);
       } catch (resizeErr: any) {
         const err = `Fehler bei Artwork-Resize: ${resizeErr.message}`;
         console.error(`[FinalizationService] ❌ ${err}`);
@@ -219,7 +221,6 @@ export class FinalizationService {
     });
 
     let queueItem: QueueItem;
-    const task = TaskLogService.getTask(taskId);
 
     if (pipeline === 'DESIGN') {
       queueItem = QueueService.enqueueDesign({
@@ -244,12 +245,14 @@ export class FinalizationService {
       // Preserve Design Task Completion Side Effects
       if (task) {
         task.status = 'COMPLETED';
+        task.inQueue = true;
         task.checkpoint = undefined;
         task.hasError = false;
         task.resizedAssets = resizedAssets;
       }
       TaskLogService.updateTaskStatus(taskId, {
         status: 'COMPLETED',
+        inQueue: true,
         hasError: false,
         resizedAssets
       });

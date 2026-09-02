@@ -720,7 +720,7 @@ export class UpdatePipelineService {
     }
 
     try {
-      const { FinalizationService } = require('./finalizationService');
+      const { FinalizationService } = await import('./finalizationService');
       const finRes = await FinalizationService.finalizeForQueue({
         taskId: task.id,
         pipeline: 'UPDATE',

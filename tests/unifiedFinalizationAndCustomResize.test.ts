@@ -186,6 +186,39 @@ async function runTests() {
   console.log('✅ Test 6 Passed: Finalization aborts without queue handoff on validation failure.\n');
 
   // --------------------------------------------------------------------------
+  // Test 6b: Unified Finalization success through Phase 3 (No TDZ error on 'task')
+  // --------------------------------------------------------------------------
+  console.log('Test 6b: Finalization access to task in Phase 3...');
+  const successTask = {
+    id: 'test_success_task_' + Date.now(),
+    source: 'DESIGN' as const,
+    status: 'GENERATING' as const,
+    createdAt: new Date().toISOString(),
+    events: [],
+    resizedAssets: {
+      trimmedPath: dummyMasterPng,
+      mugStandardPath: dummyMasterPng,
+      mugBrushPath: dummyMasterPng,
+      drinkwareStandardPath: dummyMasterPng,
+      drinkwareBrushPath: dummyMasterPng
+    }
+  };
+  (TaskLogService as any).inMemoryLogs = [...((TaskLogService as any).inMemoryLogs || []), successTask];
+
+  const successResult = await FinalizationService.finalizeForQueue({
+    taskId: successTask.id,
+    pipeline: 'DESIGN',
+    brand: 'Valid Adventure Apparel Brand',
+    title: 'Retro Sunset Silhouette Wilderness Adventure Graphic Art',
+    bullet1: 'Features an atmospheric sunset silhouette with pine trees and distressed vintage styling. Suitable for outdoor hiking, camping trips, nature exploration, and mountain trails.',
+    bullet2: 'Showcases artistic hand drawn typography and rustic scenery elements. Designed for wilderness enthusiasts, backpackers, mountain climbers, and national park explorers.',
+    description: 'Detailed apparel design showcasing outdoor adventure and nature motifs.',
+    masterPngPath: dummyMasterPng
+  });
+  assert.strictEqual(successResult.success, true, `Finalization must succeed without ReferenceError: ${successResult.error}`);
+  console.log('✅ Test 6b Passed: Task is correctly accessible in Phase 3 without ReferenceError.\n');
+
+  // --------------------------------------------------------------------------
   // Test 7: Queue Immutability (QueueService does not mutate listings)
   // --------------------------------------------------------------------------
   console.log('Test 7: Queue Immutability (Read-only persistence)...');

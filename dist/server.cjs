@@ -223861,7 +223861,7 @@ Bullets: ${oldBullets}`
           resolvedAvoidColor = "black";
         }
         try {
-          const { FinalizationService: FinalizationService2 } = (init_finalizationService(), __toCommonJS2(finalizationService_exports));
+          const { FinalizationService: FinalizationService2 } = await Promise.resolve().then(() => (init_finalizationService(), finalizationService_exports));
           const finRes = await FinalizationService2.finalizeForQueue({
             taskId: task.id,
             pipeline: "UPDATE",
@@ -225263,6 +225263,8 @@ var init_finalizationService = __esm2({
       static async finalizeForQueue(params2) {
         const { taskId, pipeline: pipeline2 } = params2;
         console.log(`[FinalizationService] \u{1F680} Starte Unified Finalization f\xFCr Task #${taskId} (Pipeline: ${pipeline2})...`);
+        const task = TaskLogService2.getTask(taskId);
+        const masterPngPath = params2.masterPngPath || task?.localMbaPngPath || task?.localImagePath || "";
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
@@ -225326,8 +225328,8 @@ var init_finalizationService = __esm2({
           title: "\u{1F4D0} Artwork-Vorbereitung (Alpha Trim & Two-Sided Resizes)...",
           content: { phase: "ARTWORK_PREPARATION", status: "RUNNING" }
         });
-        if (!params2.masterPngPath || !import_fs82.default.existsSync(params2.masterPngPath)) {
-          const err = `Master-Artwork nicht gefunden unter: ${params2.masterPngPath}`;
+        if (!masterPngPath || !import_fs82.default.existsSync(masterPngPath)) {
+          const err = `Master-Artwork nicht gefunden unter: ${masterPngPath}`;
           console.error(`[FinalizationService] \u274C ${err}`);
           TaskLogService2.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -225344,7 +225346,7 @@ var init_finalizationService = __esm2({
           console.log(`[FinalizationService] \u26A1 Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
         } else {
           try {
-            resizedAssets = await ArtworkResizeService.generateResizedArtworks(taskId, params2.masterPngPath);
+            resizedAssets = await ArtworkResizeService.generateResizedArtworks(taskId, masterPngPath);
           } catch (resizeErr) {
             const err = `Fehler bei Artwork-Resize: ${resizeErr.message}`;
             console.error(`[FinalizationService] \u274C ${err}`);
@@ -225386,7 +225388,6 @@ var init_finalizationService = __esm2({
           content: { phase: "QUEUE_HANDOFF", status: "RUNNING" }
         });
         let queueItem;
-        const task = TaskLogService2.getTask(taskId);
         if (pipeline2 === "DESIGN") {
           queueItem = QueueService.enqueueDesign({
             taskId,
@@ -225408,12 +225409,14 @@ var init_finalizationService = __esm2({
           });
           if (task) {
             task.status = "COMPLETED";
+            task.inQueue = true;
             task.checkpoint = void 0;
             task.hasError = false;
             task.resizedAssets = resizedAssets;
           }
           TaskLogService2.updateTaskStatus(taskId, {
             status: "COMPLETED",
+            inQueue: true,
             hasError: false,
             resizedAssets
           });
@@ -225701,6 +225704,8 @@ var init_taskLogService = __esm2({
       static async completeTaskAndEnqueue(taskOrId) {
         const task = typeof taskOrId === "string" ? this.getTaskLogById(taskOrId) : taskOrId;
         if (!task) return { success: false, error: "Task nicht gefunden" };
+        if (task.inQueue) return { success: true };
+        task.inQueue = true;
         try {
           const listing = task.listingResult || task.trademarkRefineResult || {};
           const enListing = listing.en || (listing.title || listing.brand ? listing : {});
@@ -225728,7 +225733,7 @@ var init_taskLogService = __esm2({
           else if (avoid.includes("black") || avoid.includes("schwarz")) avoidColor = "black";
           const rawHex = task.customAnswers?.customBackgroundColor || task.customAnswers?.accessoryColorHex;
           const customBackgroundColor = typeof rawHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim()) ? rawHex.startsWith("#") ? rawHex : `#${rawHex}` : void 0;
-          const { FinalizationService: FinalizationService2 } = (init_finalizationService(), __toCommonJS2(finalizationService_exports));
+          const { FinalizationService: FinalizationService2 } = await Promise.resolve().then(() => (init_finalizationService(), finalizationService_exports));
           const finResult = await FinalizationService2.finalizeForQueue({
             taskId: task.id,
             pipeline: "DESIGN",
@@ -225759,7 +225764,8 @@ var init_taskLogService = __esm2({
         const task = logs.find((t) => t.id === taskId);
         if (!task) return void 0;
         Object.assign(task, updates);
-        if ((updates.status === "COMPLETED" || task.status === "COMPLETED") && task.source !== "UPDATE") {
+        if ((updates.status === "COMPLETED" || task.status === "COMPLETED") && task.source !== "UPDATE" && !task.inQueue) {
+          task.inQueue = true;
           this.completeTaskAndEnqueue(task);
           return task;
         }
