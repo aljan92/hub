@@ -6,6 +6,10 @@ import { ProductCatalogService, MerchProduct } from '../src/server/services/prod
 async function runColorDiscoveryTests() {
   console.log('🧪 Starting Color Discovery V2 Regression Tests...\n');
 
+  // Save current catalog state to restore exactly after tests
+  const catalogSnapshotPath = path.resolve(process.cwd(), 'data', 'product_catalog.json');
+  const initialCatalogSnapshot = fs.readFileSync(catalogSnapshotPath, 'utf-8');
+
   // Load current baseline catalog and overrides
   const catalog = ProductCatalogService.getCatalog();
   const overrides = ProductCatalogService.loadOverrides();
@@ -186,16 +190,19 @@ async function runColorDiscoveryTests() {
   }
 
   // -------------------------------------------------------------
-  // Restore original catalog data from backup to maintain state
+  // Restore original catalog data snapshot to maintain live scan state
   // -------------------------------------------------------------
-  console.log('Restoring clean catalog state from backup...');
-  const backupData = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'data', 'product_catalog.backup.v1.json'), 'utf-8'));
-  ProductCatalogService.saveCatalog({
-    products: backupData.products,
-    marketplaces: ProductCatalogService.getDefaultMarketplaces(),
-    lastScanDate: new Date().toISOString()
-  });
+  console.log('Restoring clean catalog state from initial snapshot...');
+  fs.writeFileSync(catalogSnapshotPath, initialCatalogSnapshot, 'utf-8');
+  ProductCatalogService.loadCatalog();
   console.log('Clean state restored.');
+
+  // Validate exactly 54 avoid rules are preserved in overrides
+  const totalAvoidRules = Object.values(ProductCatalogService.loadOverrides().overrides).reduce((acc, p) => {
+    return acc + Object.values(p.colors || {}).filter(c => c.avoidRule && c.avoidRule !== 'none').length;
+  }, 0);
+  assert.strictEqual(totalAvoidRules, 54, `Expected exactly 54 non-none avoid rules, got ${totalAvoidRules}`);
+  console.log('✅ Final Check: Exactly 54/54 avoid rules verified active in overrides.');
 
   console.log('\n===========================================================');
   console.log('🎉 ALL 7 COLOR DISCOVERY V2 REGRESSION TESTS PASSED! 🎉');

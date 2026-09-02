@@ -43,7 +43,7 @@ interface MerchMarketplace {
 interface MerchProduct {
   id: string;
   displayName: string;
-  colorMode: 'predefined' | 'customPicker';
+  colorMode: 'predefined' | 'customPicker' | 'none' | 'failed';
   colors: MerchColorDef[];
   fitTypes: MerchFitTypeDef[];
   availableMarketplaces: string[];
@@ -834,7 +834,11 @@ export const ProductsView: React.FC = () => {
                       <span>
                         {selectedProduct.colorMode === 'predefined'
                           ? `Farbvarianten (${selectedProduct.colors.length} Swatches)`
-                          : 'Color Picker & Hex-Presets'}
+                          : selectedProduct.colorMode === 'customPicker'
+                          ? 'Color Picker & Hex-Presets'
+                          : selectedProduct.colorMode === 'failed'
+                          ? 'Farb-Discovery fehlgeschlagen'
+                          : 'Keine Farbkonfiguration'}
                       </span>
                     </h3>
                     {copiedColor && (
@@ -920,7 +924,7 @@ export const ProductsView: React.FC = () => {
                         })}
                       </div>
                     </div>
-                  ) : (
+                  ) : selectedProduct.colorMode === 'customPicker' ? (
                     /* Color Picker Mode (e.g. PopSockets, Cases, Pillows, Tote Bags) */
                     <div className="space-y-4 bg-slate-900/60 border border-slate-800 rounded-xl p-4">
                       <div className="flex items-center space-x-3 text-xs text-purple-300 bg-purple-950/30 border border-purple-500/20 p-3 rounded-xl">
@@ -931,7 +935,7 @@ export const ProductsView: React.FC = () => {
                         </div>
                       </div>
 
-                      {selectedProduct.presetHexColors && (
+                      {selectedProduct.presetHexColors && selectedProduct.presetHexColors.length > 0 && (
                         <div className="space-y-2">
                           <div className="text-[11px] font-semibold text-slate-400">Standard Hex-Presets:</div>
                           <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
@@ -954,6 +958,20 @@ export const ProductsView: React.FC = () => {
                           </div>
                         </div>
                       )}
+                    </div>
+                  ) : selectedProduct.colorMode === 'failed' ? (
+                    <div className="p-4 bg-rose-950/30 border border-rose-500/30 rounded-xl flex items-center space-x-3 text-xs text-rose-300">
+                      <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                      <div>
+                        <strong>Farb-Discovery unvollständig:</strong> Die Farbvarianten für dieses Produkt konnten beim letzten Scan nicht aus dem DOM gelesen werden. Der Upload für dieses Produkt ist gesperrt, bis ein erneuter Scan erfolgreich ist.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center space-x-3 text-xs text-slate-400">
+                      <Info className="w-4 h-4 text-slate-500 shrink-0" />
+                      <div>
+                        Keine Farbkonfiguration erforderlich (Direct-Artwork / Vollflächiger Druck).
+                      </div>
                     </div>
                   )}
                 </div>

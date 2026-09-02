@@ -813,34 +813,28 @@ MBA HUB/
   - `tests/trademarkV2.test.ts`: 115/115 Tests bestanden (100%).
   - Production Build (`npm run build:client && npm run build:server`) fehlerfrei abgeschlossen.
 
-### 10.33 🔬 Product Catalog V2 – Color Discovery Live-DOM Bug Analyse & Behebung
+### 10.33 🔬 Product Catalog V2 – Color Discovery Live-DOM & Picker Lifecycle Fix
 - **Problem & Ursachenanalyse:**
-  - Der initiale Live-Scan erfasste alle Produkte, aber lieferte bei jedem Produkt `colors: []` (0 Farben) und 0 Color-Picker.
   - *Ursache 1 (Falscher Container & Lifecycle):* Der `<product-editor>` existiert **nicht** innerhalb der Produktkarte (`[id$="-card"]`), sondern wird zeilenweise als Geschwister-Zeile (`form-row mb-base`) darunter gerendert. Bei geschlossener Karte hat der Editor `height: 1px` und enthält keine Swatches.
-  - *Ursache 2 (Falscher Edit-Button-Selektor):* Der Button besitzt die Klassen `btn btn-secondary btn-edit ${amazonKey}-edit-btn` (kein `.edit-details-btn` oder `aria-expanded`).
-  - *Ursache 3 (Falsche Swatch-Selektoren):* Swatches sind Angular-Komponenten `<colorcheckbox class="${colorId}-checkbox">` mit innerem `<span class="color-checkbox checkbox-${colorId}">`. Es existieren keine `input[id*="color-"]`.
-  - *Ursache 4 (Zerstörung valider Daten bei Scan-Fehler):* `ProductCatalogService.saveCatalog` ersetzte bestehende Farben ungeprüft mit `(scanned.colors || [])`, wodurch fehlgeschlagene Scans den Farbkatalog leerten.
+  - *Ursache 2 (Color-Picker Lifecycle & Artwork-Hydration):* Der `#color-btn` (Palette-Icon `icon_palette.svg` mit Klasse `btn btn-secondary icon`) für freie Hex-Wahl bei Accessoires (`POP_SOCKET`, `PHONE_CASE_APPLE_IPHONE`, `THROW_PILLOW`, `TOTE_BAG`) wird von Amazon erst dann in den DOM gerendert, **wenn ein Artwork auf die Karte geladen und aktiv ist**. Ohne Artwork-Hydration war `#color-btn` nicht im DOM.
+  - *Ursache 3 (Schema-Mismatch & 4 Kanonische Zustände):* Es muss ein einheitlicher, kanonischer Vertrag über die gesamte Kette (Scanner ➔ Catalog JSON ➔ ProductCatalogService ➔ API ➔ ProductsView ➔ UploadWorker) herrschen.
 - **Implementierte Lösung:**
-  1. **Sequentielles Card-Opening & Lifecycle-Synchronisation (`productScannerService.ts`):**
-     - Scanner scrollt jede Karte ins Blickfeld, klickt `button.btn-edit, .${amazonKey}-edit-btn` und wartet auf tatsächliche DOM-Expansion des Editors (`offsetHeight > 50` und Position unterhalb der Karte).
-     - Extrahiert `<colorcheckbox>` Swatches über Regex `([a-z0-9_]+)-checkbox`.
-     - Schließt den Editor nach dem Auslesen wieder sauber.
-  2. **Eindeutige Klassifikation des ColorMode:**
-     - `PREDEFINED_SWATCHES` (Apparel & Drinkware: 1 bis 34 Swatches).
-     - `CUSTOM_PICKER` (dynamische Erkennung von `#color-btn` / Hex-Input).
-     - `NO_COLOR_CONFIGURATION` (Accessoires: Backpack, PopSockets, Cases, Tote Bags, Pillows, Journal akzeptieren Direct-Uploads).
-     - `SCAN_FAILED` (bei Timeout oder fehlgeschlagener Card-Expansion).
-  3. **Color Scan Validation Gate & Schutz bestehender Daten (`productCatalogService.ts`):**
-     - Integritäts-Gate: Werden bei $\ge 5$ Produkten 0 Swatches und 0 Picker gefunden, bricht der Scan mit `Color Discovery Validierungsfehler` ab.
-     - Transaktionale Sicherheit: Einzelprodukte mit `colorDiscoveryStatus === 'FAILED'` oder verdächtigem leeren Scan behalten ihre validen existierenden Farben und Modi.
-  4. **UploadWorker Roundtrip & Guard (`uploadWorkerService.ts`):**
-     - Produkte mit `colorMode === 'none'` laufen fehlerfrei durch (keine Swatches erforderlich).
-     - Produkte mit `colorDiscoveryStatus === 'FAILED'` werden vor Veröffentlichung abgefangen (`FAILED_COLOR_CONFIGURATION`).
-     - Swatches matchen 1:1 auf die stabilen Amazon-Klassen (`asphalt-checkbox`, etc.).
-  5. **100% Erhalt der 54 Avoid Rules:**
-     - Alle 54 persistenten Farb-Vermeidungsregeln in `product_catalog_overrides.json` bleiben unberührt und werden bei dynamischen Amazon-Updates sauber gemerged.
-- **Verifikation & Testergebnisse:**
+  1. **Artwork-Hydration & Sequentielles Card-Opening (`productScannerService.ts`):**
+     - Scanner lädt ein 500x500px Mock-Artwork hoch und wartet auf vollständige Hydration der Toolbar.
+     - Scrollt jede Karte ins Blickfeld, öffnet `button.btn-edit`, wartet auf tatsächliche DOM-Expansion des Editors (`offsetHeight > 50`), liest Swatches & Picker aus und schließt den Editor wieder.
+  2. **Kanonische 4-State Farbdefinition (`ColorMode`):**
+     - `predefined`: Amazon stellt feste Swatches bereit (`<colorcheckbox>`). Tatsächliche Amazon-IDs (`asphalt`, `baby_blue`, `black_white`, etc.) werden extrahiert.
+     - `customPicker`: Amazon stellt freie Hex-Farbkonfiguration bereit (`#color-btn`). `colors = []` (keine Beschränkung auf feste Farben); 16 Standard-Hex-Werte dienen rein als UI-Presets. Beliebiger Hex-Code wird beim Upload via Popover gesetzt und validiert (`FAILED_COLOR_CONFIGURATION` bei Fehler).
+     - `none`: Produkt benötigt keine Farbkonfiguration (Direkt-Upload / Vollflächiger Druck).
+     - `failed`: Color Discovery technisch unvollständig. Upload für dieses Produkt wird gesperrt.
+  3. **Persistenz & NAS Deployment:**
+     - `data/product_catalog.json` und `data/product_catalog_overrides.json` bleiben strikt in `.gitignore` und werden NICHT über Git übertragen.
+     - Persistenz auf dem NAS erfolgt ausschließlich über den Host-Volume-Bind `./data:/app/data` in `docker-compose.yml`.
+     - Bei fehlschlagendem Scan (z.B. Session nicht eingeloggt) bricht der Scan transaktionssicher ab; bestehende Daten, Farben und Verfügbarkeiten bleiben 100% geschützt.
+  4. **100% Erhalt der 54 Avoid Rules:**
+     - Alle 54 persistenten Avoid Rules in `product_catalog_overrides.json` bleiben unberührt und werden bei Predefined Swatches sauber gemerged.
+- **Verifikation:**
   - `tests/productCatalogV2.test.ts`: 12/12 Tests bestanden.
   - `tests/colorDiscoveryV2.test.ts`: 7/7 Tests bestanden.
-  - Live Amazon DOM Scan erfolgreich: 38 Produkte, 32 mit Swatches (250+ Swatches live extrahiert, Standard T-Shirt = 34 Farben, Mug = 10 Farben).
+  - Live Amazon DOM Scan: 38 Produkte, 34 T-Shirt Farben, 10 Mug Farben, PopSocket / Phone Case / Pillow als `customPicker`, 54 Avoid Rules aktiv.
 

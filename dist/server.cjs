@@ -50182,21 +50182,38 @@ var init_productCatalogService = __esm2({
             });
             if (matched) {
               matchedExistingIds.add(matched.id);
-              const existingColorsMap = new Map((matched.colors || []).map((c) => [c.id, c]));
-              const mergedColors = (scanned.colors || []).map((sc) => {
-                const existCol = existingColorsMap.get(sc.id);
-                return {
-                  ...sc,
-                  avoidRule: existCol?.avoidRule ?? "none"
-                };
-              });
+              const isColorScanValid = scanned.colorDiscoveryStatus !== "FAILED" && scanned.colorMode !== "failed";
+              const isSuspectEmptyColor = scanned.colorMode === "predefined" && (!scanned.colors || scanned.colors.length === 0) && (matched.colors || []).length > 0;
+              let mergedColors = [];
+              let mergedColorMode = scanned.colorMode || matched.colorMode;
+              let colorDiscoveryStatus = isColorScanValid ? "SUCCESS" : "FAILED";
+              if (!isColorScanValid || isSuspectEmptyColor) {
+                console.log(`[ProductCatalogService] \u{1F6E1}\uFE0F Retaining existing colors for ${matched.id} (${(matched.colors || []).length} colors) due to incomplete color scan`);
+                mergedColors = matched.colors || [];
+                mergedColorMode = matched.colorMode;
+                colorDiscoveryStatus = !isColorScanValid ? "FAILED" : "SUCCESS";
+              } else if (scanned.colorMode === "customPicker" || scanned.colorMode === "none") {
+                mergedColors = [];
+                mergedColorMode = scanned.colorMode;
+              } else {
+                const productOverrides = overrides[matched.id]?.colors || {};
+                mergedColors = (scanned.colors || []).map((sc) => {
+                  const rule = productOverrides[sc.id]?.avoidRule ?? "none";
+                  return {
+                    ...sc,
+                    avoidRule: rule
+                  };
+                });
+                mergedColorMode = "predefined";
+              }
               const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? matched.amazonSortOrder ?? matched.sortOrder;
               updatedProducts.push({
                 ...matched,
                 displayName: scanned.displayName || matched.displayName,
                 available: true,
                 lastSeenAt: nowIso,
-                colorMode: scanned.colorMode || matched.colorMode,
+                colorMode: mergedColorMode,
+                colorDiscoveryStatus,
                 colors: mergedColors,
                 fitTypes: scanned.fitTypes && scanned.fitTypes.length > 0 ? scanned.fitTypes : matched.fitTypes,
                 availableMarketplaces: scanned.availableMarketplaces && scanned.availableMarketplaces.length > 0 ? scanned.availableMarketplaces : matched.availableMarketplaces,
@@ -50213,6 +50230,7 @@ var init_productCatalogService = __esm2({
             } else {
               const newStableId = scanned.id || scannedAmazonKey;
               const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? updatedProducts.length;
+              const isColorScanValid = scanned.colorDiscoveryStatus !== "FAILED";
               console.log(`[ProductCatalogService] \u{1F31F} New Amazon Product detected: ${newStableId} (${scannedAmazonKey})`);
               if (!overrides[newStableId]) {
                 overrides[newStableId] = {
@@ -50234,7 +50252,8 @@ var init_productCatalogService = __esm2({
                 available: true,
                 lastSeenAt: nowIso,
                 niceClass: null,
-                colorMode: scanned.colorMode || "predefined",
+                colorMode: scanned.colorMode || (scanned.colors && scanned.colors.length > 0 ? "predefined" : "none"),
+                colorDiscoveryStatus: isColorScanValid ? "SUCCESS" : "FAILED",
                 colors: (scanned.colors || []).map((c) => ({ ...c, avoidRule: "none" })),
                 fitTypes: scanned.fitTypes || [],
                 availableMarketplaces: scanned.availableMarketplaces || ["US"],
@@ -227911,7 +227930,9 @@ var ProductScannerService = class {
         }
       });
       this.addLog(`Mock-Upload Status: ${JSON.stringify(uploadResult)}`);
-      await page.waitForTimeout(3e3);
+      this.scanProgress = "Warte auf Artwork-Hydration auf Produktkarten...";
+      this.addLog("Warte auf Artwork-Hydration auf Produktkarten (Toolbar & Color-Controls)...");
+      await page.waitForTimeout(8e3);
       this.scanProgress = "\xD6ffne Produkt- & Marktplatz-Matrix...";
       this.addLog("\xD6ffne Produkt- & Marktplatz-Matrix (#select-marketplace-button-original)...");
       const selectMarketplaceBtn = await page.$('#select-marketplace-button-original, [id*="select-marketplace"]');
@@ -227921,6 +227942,7 @@ var ProductScannerService = class {
       }
       this.scanProgress = "Scanne Produkt-Matrix & Marktpl\xE4tze...";
       this.addLog("Scanne alle Produkt-IDs, Marktpl\xE4tze und Farbvarianten...");
+      await page.evaluate("window.__name = window.__name || ((fn) => fn);");
       const scannedCatalogRaw = await page.evaluate(async () => {
         const sleep2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const catalog = {};
@@ -227938,7 +227960,7 @@ var ProductScannerService = class {
               }
               if (!catalog[productId]) {
                 const formattedName = productId.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase());
-                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: "none", colors: [], amazonSortOrder: productOrderList.indexOf(productId) };
+                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: "none", colorDiscoveryStatus: "FAILED", colors: [], amazonSortOrder: productOrderList.indexOf(productId) };
               }
               if (!catalog[productId].marketplaces.includes(marketplace)) {
                 catalog[productId].marketplaces.push(marketplace);
@@ -227968,7 +227990,7 @@ var ProductScannerService = class {
               }
               if (!catalog[productId]) {
                 const formattedName = productId.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase());
-                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: "none", colors: [], amazonSortOrder: productOrderList.indexOf(productId) };
+                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: "none", colorDiscoveryStatus: "FAILED", colors: [], amazonSortOrder: productOrderList.indexOf(productId) };
               }
               if (!catalog[productId].marketplaces.includes(marketplace)) {
                 catalog[productId].marketplaces.push(marketplace);
@@ -227986,46 +228008,84 @@ var ProductScannerService = class {
           closeBtn.click();
           await sleep2(1500);
         }
-        const productIds = Object.keys(catalog);
-        for (const productId of productIds) {
-          const configSection = document.getElementById(`config-${productId}`) || document.getElementById(`${productId}-card`);
-          if (!configSection) continue;
-          const isExpanded = configSection.querySelector('button[aria-expanded="true"]');
-          const editDetailsBtn = configSection.querySelector(`.edit-details-btn, .${productId}-edit-btn, button[aria-expanded="false"]`);
-          if (!isExpanded && editDetailsBtn) {
-            editDetailsBtn.click();
-            await sleep2(800);
+        for (const amazonKey of productOrderList) {
+          const cardId = `${amazonKey}-card`;
+          const card = document.getElementById(cardId) || document.querySelector(`[id*="${amazonKey}-card"]`);
+          if (!card) {
+            catalog[amazonKey].colorDiscoveryStatus = "FAILED";
+            continue;
           }
-          const headerTitle = configSection.querySelector(".accordion-header-title, .product-title, .heading")?.textContent?.trim();
-          if (headerTitle) {
-            catalog[productId].name = headerTitle;
+          card.scrollIntoView({ behavior: "auto", block: "center" });
+          await sleep2(150);
+          const editBtn = card.querySelector('.edit-button, button.btn-edit, [class*="edit"]') || Array.from(card.querySelectorAll("button")).find((b) => (b.textContent || "").trim().toLowerCase().includes("edit"));
+          if (!editBtn) {
+            catalog[amazonKey].colorDiscoveryStatus = "FAILED";
+            continue;
           }
-          let inputContainer = configSection;
-          const editorIframe = configSection.querySelector("iframe");
-          if (editorIframe && editorIframe.contentDocument) {
-            inputContainer = editorIframe.contentDocument.body;
+          editBtn.click();
+          const cardRect = card.getBoundingClientRect();
+          let activeEditor = null;
+          for (let attempt = 0; attempt < 25; attempt++) {
+            await sleep2(120);
+            const eds = Array.from(document.querySelectorAll("product-editor, .product-editor"));
+            const found = eds.find((ed) => {
+              const r = ed.getBoundingClientRect();
+              return ed.offsetHeight > 50 && r.top >= cardRect.top - 50;
+            });
+            if (found) {
+              activeEditor = found;
+              break;
+            }
           }
-          const fitInputs = Array.from(inputContainer.querySelectorAll('input[type="checkbox"]'));
+          if (!activeEditor) {
+            catalog[amazonKey].colorDiscoveryStatus = "FAILED";
+            continue;
+          }
+          const headerTitle = activeEditor.querySelector("h2, h3, h4, .editor-title, .product-title, .title")?.textContent?.trim();
+          if (headerTitle && headerTitle.length > 2) {
+            catalog[amazonKey].name = headerTitle;
+          }
+          const fitElements = Array.from(activeEditor.querySelectorAll('flowcheckbox, input[type="checkbox"]'));
           const detectedFits = [];
-          fitInputs.forEach((input) => {
-            const label = input.closest("label")?.textContent?.toLowerCase().trim() || input.getAttribute("aria-label")?.toLowerCase().trim() || input.getAttribute("name")?.toLowerCase().trim() || "";
-            if (label.includes("men") && !label.includes("women")) detectedFits.push("men");
-            else if (label.includes("women")) detectedFits.push("women");
-            else if (label.includes("youth") || label.includes("kids")) detectedFits.push("youth");
-            else if (label.includes("girls")) detectedFits.push("girls");
-            else if (label.includes("unisex") || label.includes("adult") || label.includes("standard")) detectedFits.push("standard");
-          });
-          if (detectedFits.length > 0) {
-            const validFits = Array.from(new Set(detectedFits));
-            catalog[productId].fits = validFits;
-          } else {
-            catalog[productId].fits = [];
+          for (const fe of fitElements) {
+            const labelText = (fe.textContent || fe.closest("label")?.textContent || fe.getAttribute("aria-label") || "").toLowerCase().trim();
+            if (labelText.includes("men") && !labelText.includes("women")) detectedFits.push("men");
+            else if (labelText.includes("women")) detectedFits.push("women");
+            else if (labelText.includes("youth") || labelText.includes("kids")) detectedFits.push("youth");
+            else if (labelText.includes("girls")) detectedFits.push("girls");
+            else if (labelText.includes("unisex") || labelText.includes("adult") || labelText.includes("standard")) detectedFits.push("standard");
           }
-          const hexInput = inputContainer.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"], color-sketch, .sketch-picker, .color-picker');
-          const swatchInputs = Array.from(inputContainer.querySelectorAll('input[type="checkbox"][id*="color-"], colorcheckbox, .color-checkbox'));
-          if (hexInput && swatchInputs.length === 0) {
-            catalog[productId].colorType = "hex";
-            catalog[productId].presetHexColors = [
+          catalog[amazonKey].fits = Array.from(new Set(detectedFits));
+          const colorCheckboxes = Array.from(activeEditor.querySelectorAll("colorcheckbox"));
+          const detectedColors = [];
+          for (const cb of colorCheckboxes) {
+            let colorId = "";
+            const m1 = (cb.className || "").match(/([a-z0-9_]+)-checkbox/i);
+            if (m1 && !["color", "flow", "men", "women", "youth", "girls", "guides", "wizzy"].includes(m1[1].toLowerCase())) {
+              colorId = m1[1].toLowerCase();
+            }
+            const innerSpan = cb.querySelector("span.color-checkbox");
+            const m2 = innerSpan ? (innerSpan.className || "").match(/checkbox-([a-z0-9_]+)/i) : null;
+            if (!colorId && m2 && !["color", "flow", "men", "women", "youth", "girls", "guides", "wizzy"].includes(m2[1].toLowerCase())) {
+              colorId = m2[1].toLowerCase();
+            }
+            if (colorId && !detectedColors.includes(colorId)) {
+              detectedColors.push(colorId);
+            }
+          }
+          const pickerBtn = activeEditor.querySelector('#color-btn, button[id*="color-btn"], .color-picker-button, .background-color-picker-button, button.color-btn, [class*="picker"]');
+          const directHex = activeEditor.querySelector('input[type="text"][id*="hex"], input[placeholder*="Hex"], input[type="color"]');
+          editBtn.click();
+          await sleep2(200);
+          if (detectedColors.length > 0) {
+            catalog[amazonKey].colorType = "predefined";
+            catalog[amazonKey].colors = detectedColors;
+            catalog[amazonKey].colorDiscoveryStatus = "SUCCESS";
+          } else if (pickerBtn || directHex) {
+            catalog[amazonKey].colorType = "customPicker";
+            catalog[amazonKey].colors = [];
+            catalog[amazonKey].colorDiscoveryStatus = "SUCCESS";
+            catalog[amazonKey].presetHexColors = [
               "#840A08",
               "#C70010",
               "#F36900",
@@ -228044,61 +228104,10 @@ var ProductScannerService = class {
               "#000000"
             ];
           } else {
-            const colorSwatches = Array.from(inputContainer.querySelectorAll('input[type="checkbox"][id*="color-"]'));
-            if (colorSwatches.length > 0) {
-              catalog[productId].colorType = "swatches";
-              colorSwatches.forEach((input) => {
-                const colorVal = input.value.toLowerCase();
-                if (!catalog[productId].colors.includes(colorVal)) {
-                  catalog[productId].colors.push(colorVal);
-                }
-              });
-            } else {
-              catalog[productId].colorType = "swatches";
-              const colorNodes = Array.from(inputContainer.querySelectorAll("colorcheckbox, .color-checkbox, [title], [aria-label], img[alt]"));
-              colorNodes.forEach((el) => {
-                let val = "";
-                const match1 = (el.className || "").match(/checkbox-([a-z_]+)/i);
-                const match2 = (el.className || "").match(/([a-z_]+)-checkbox/i);
-                if (match1) {
-                  val = match1[1].toLowerCase();
-                } else if (match2 && !["color", "flow", "men", "women", "youth", "girls", "guides", "wizzy"].includes(match2[1].toLowerCase())) {
-                  val = match2[1].toLowerCase();
-                } else {
-                  val = (el.getAttribute("title") || el.getAttribute("aria-label") || el.getAttribute("alt"))?.toLowerCase().trim() || "";
-                }
-                if (val) {
-                  const cleanVal = val.replace(/ /g, "_");
-                  const ignoreList = ["color", "select_colors:", "choose_fit_types:", "drag_and_drop_artwork_here", "men", "women", "youth", "girls", "front", "back", "guides", "wizzy"];
-                  if (!ignoreList.includes(cleanVal) && !catalog[productId].colors.includes(cleanVal)) {
-                    catalog[productId].colors.push(cleanVal);
-                  }
-                }
-              });
-              if (catalog[productId].colors.length === 0 && hexInput) {
-                catalog[productId].colorType = "hex";
-                catalog[productId].presetHexColors = [
-                  "#840A08",
-                  "#C70010",
-                  "#F36900",
-                  "#FEC600",
-                  "#01B62F",
-                  "#1C8C46",
-                  "#37602B",
-                  "#1AB7EA",
-                  "#002BB6",
-                  "#5C2D91",
-                  "#E0218A",
-                  "#E9CDDB",
-                  "#7B4A1B",
-                  "#979797",
-                  "#FFFFFF",
-                  "#000000"
-                ];
-              }
-            }
+            catalog[amazonKey].colorType = "none";
+            catalog[amazonKey].colors = [];
+            catalog[amazonKey].colorDiscoveryStatus = "SUCCESS";
           }
-          await sleep2(100);
         }
         return catalog;
       });
@@ -228110,7 +228119,7 @@ var ProductScannerService = class {
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       const products = productKeys.map((id, index) => {
         const item = scannedCatalogRaw[id];
-        const colorMode = item.colorType === "hex" ? "customPicker" : "predefined";
+        const colorMode = item.colorType || "none";
         const colorDefs = (item.colors || []).map((cid) => ({
           id: cid,
           displayName: cid.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
@@ -228124,6 +228133,7 @@ var ProductScannerService = class {
           id,
           displayName: item.name || id.replace(/_/g, " "),
           colorMode,
+          colorDiscoveryStatus: item.colorDiscoveryStatus,
           colors: colorDefs,
           fitTypes: fitDefs,
           availableMarketplaces: item.marketplaces.length > 0 ? item.marketplaces : ["US"],
@@ -228141,6 +228151,15 @@ var ProductScannerService = class {
           lastUpdated: nowIso
         };
       });
+      const totalProducts = products.length;
+      const productsWithSwatches = products.filter((p) => p.colors && p.colors.length > 0).length;
+      const productsWithPicker = products.filter((p) => p.colorMode === "customPicker").length;
+      const totalSwatches = products.reduce((acc, p) => acc + (p.colors?.length || 0), 0);
+      this.addLog(`\u{1F4CA} Scan-Ergebnis: ${totalProducts} Produkte, ${productsWithSwatches} mit Swatches (${totalSwatches} Swatches gesamt), ${productsWithPicker} mit Color-Picker.`);
+      if (totalProducts >= 5 && productsWithSwatches === 0 && productsWithPicker === 0) {
+        this.addLog(`\u{1F6A8} SYSTEMISCHER SCAN-FEHLER: 0 Farben und 0 Picker bei ${totalProducts} Produkten entdeckt! Breche ab zum Schutz der Katalogdaten.`, "error");
+        throw new Error(`Color Discovery Validierungsfehler: 0 Farben und 0 Picker bei ${totalProducts} Produkten entdeckt. Vorherige Daten wurden gesch\xFCtzt.`);
+      }
       ProductCatalogService.saveCatalog({
         products,
         marketplaces: ProductCatalogService.getDefaultMarketplaces(),
@@ -228626,6 +228645,16 @@ var UploadWorkerService = class _UploadWorkerService {
           });
           continue;
         }
+        if (product.colorDiscoveryStatus === "FAILED") {
+          this.log(`\u274C Farbentdeckung f\xFCr "${product.displayName}" war fehlgeschlagen (colorDiscoveryStatus = FAILED)!`);
+          productUploadResults.push({
+            productId: product.id,
+            amazonKey: product.amazon?.key || product.id,
+            status: "FAILED_COLOR_CONFIGURATION",
+            reason: `Farbentdeckung f\xFCr ${product.displayName} im Produktkatalog ist unvollst\xE4ndig (colorDiscoveryStatus = FAILED)`
+          });
+          continue;
+        }
         const editResult = await page.evaluate(async (params2) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const { productId: pid, amazonKey, cardId } = params2;
@@ -228794,7 +228823,16 @@ var UploadWorkerService = class _UploadWorkerService {
           }
           let finalActiveColorNames = [];
           let selfHealedColor = "";
-          if (params2.colorMode === "customPicker") {
+          if (params2.colorMode === "none") {
+            return {
+              success: true,
+              activeColors: ["Keine Farbkonfiguration erforderlich"],
+              fitTypesApplied: activeFitsApplied,
+              fitDebug: fitDebugSummary,
+              selfHealedColor: "",
+              isLocked: false
+            };
+          } else if (params2.colorMode === "customPicker") {
             const lockedContainer = inputContainer?.querySelector('.locked-container, [class*="locked-container"]') || card?.querySelector('.locked-container, [class*="locked-container"]');
             const isLocked = Boolean(lockedContainer || inputContainer?.innerText?.toLowerCase().includes("locked on published products"));
             if (isLocked) {

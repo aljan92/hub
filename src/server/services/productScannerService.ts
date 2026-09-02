@@ -232,7 +232,9 @@ export class ProductScannerService {
       });
 
       this.addLog(`Mock-Upload Status: ${JSON.stringify(uploadResult)}`);
-      await page.waitForTimeout(3000);
+      this.scanProgress = 'Warte auf Artwork-Hydration auf Produktkarten...';
+      this.addLog('Warte auf Artwork-Hydration auf Produktkarten (Toolbar & Color-Controls)...');
+      await page.waitForTimeout(8000);
 
       // 5. Open Product Matrix Modal
       this.scanProgress = 'Öffne Produkt- & Marktplatz-Matrix...';
@@ -258,7 +260,7 @@ export class ProductScannerService {
           name: string;
           marketplaces: string[];
           fits: string[];
-          colorType: 'swatches' | 'hex' | 'none';
+          colorType: 'predefined' | 'customPicker' | 'none' | 'failed';
           colorDiscoveryStatus: 'SUCCESS' | 'FAILED';
           colors: string[];
           amazonSortOrder: number;
@@ -431,13 +433,13 @@ export class ProductScannerService {
           editBtn.click();
           await sleep(200);
 
-          // F. Determine exact colorType and colorDiscoveryStatus
+          // F. Determine exact canonical colorType and colorDiscoveryStatus
           if (detectedColors.length > 0) {
-            catalog[amazonKey].colorType = 'swatches';
+            catalog[amazonKey].colorType = 'predefined';
             catalog[amazonKey].colors = detectedColors;
             catalog[amazonKey].colorDiscoveryStatus = 'SUCCESS';
           } else if (pickerBtn || directHex) {
-            catalog[amazonKey].colorType = 'hex';
+            catalog[amazonKey].colorType = 'customPicker';
             catalog[amazonKey].colors = [];
             catalog[amazonKey].colorDiscoveryStatus = 'SUCCESS';
             catalog[amazonKey].presetHexColors = [
@@ -466,7 +468,7 @@ export class ProductScannerService {
       const nowIso = new Date().toISOString();
       const products: MerchProduct[] = productKeys.map((id, index) => {
         const item = scannedCatalogRaw[id];
-        const colorMode: ColorMode = item.colorType === 'hex' ? 'customPicker' : (item.colorType === 'swatches' ? 'predefined' : 'none');
+        const colorMode: ColorMode = item.colorType || 'none';
 
         const colorDefs: MerchColorDef[] = (item.colors || []).map(cid => ({
           id: cid,

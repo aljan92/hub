@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-export type ColorMode = 'predefined' | 'customPicker';
+export type ColorMode = 'predefined' | 'customPicker' | 'none' | 'failed';
 
 export interface MerchColorDef {
   id: string;          // e.g. "dark_heather"
@@ -11,8 +11,6 @@ export interface MerchColorDef {
   hexPreview?: string; // e.g. "#3A3D40"
   avoidRule?: 'none' | 'white' | 'black'; // 'none' (default) | 'white' (avoid on white) | 'black' (avoid on black)
 }
-
-export type ColorMode = 'predefined' | 'customPicker' | 'none';
 
 export interface MerchFitTypeDef {
   id: string;          // e.g. "men", "women", "youth", "girls"
@@ -393,12 +391,12 @@ export class ProductCatalogService {
           matchedExistingIds.add(matched.id);
 
           // Check if color scan was valid for this product
-          const isColorScanValid = scanned.colorDiscoveryStatus !== 'FAILED';
-          const isSuspectEmptyColor = (scanned.colors.length === 0 && (matched.colors || []).length > 0 && scanned.colorMode !== 'none');
+          const isColorScanValid = scanned.colorDiscoveryStatus !== 'FAILED' && scanned.colorMode !== 'failed';
+          const isSuspectEmptyColor = (scanned.colorMode === 'predefined' && (!scanned.colors || scanned.colors.length === 0) && (matched.colors || []).length > 0);
 
           let mergedColors: MerchColorDef[] = [];
           let mergedColorMode: ColorMode = scanned.colorMode || matched.colorMode;
-          let colorDiscoveryStatus: 'SUCCESS' | 'FAILED' = scanned.colorDiscoveryStatus ?? 'SUCCESS';
+          let colorDiscoveryStatus: 'SUCCESS' | 'FAILED' = isColorScanValid ? 'SUCCESS' : 'FAILED';
 
           if (!isColorScanValid || isSuspectEmptyColor) {
             // PROTECT PREVIOUS VALID DATA: Keep existing colors and colorMode
@@ -406,6 +404,9 @@ export class ProductCatalogService {
             mergedColors = matched.colors || [];
             mergedColorMode = matched.colorMode;
             colorDiscoveryStatus = !isColorScanValid ? 'FAILED' : 'SUCCESS';
+          } else if (scanned.colorMode === 'customPicker' || scanned.colorMode === 'none') {
+            mergedColors = [];
+            mergedColorMode = scanned.colorMode;
           } else {
             // Update dynamic fields while merging with persistent avoidRules
             const productOverrides = overrides[matched.id]?.colors || {};
@@ -416,6 +417,7 @@ export class ProductCatalogService {
                 avoidRule: rule
               };
             });
+            mergedColorMode = 'predefined';
           }
 
           const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? matched.amazonSortOrder ?? matched.sortOrder;
