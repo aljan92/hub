@@ -1294,8 +1294,8 @@ var require_node = __commonJS2({
           }
           break;
         case "FILE":
-          var fs16 = require("fs");
-          stream2 = new fs16.SyncWriteStream(fd2, { autoClose: false });
+          var fs18 = require("fs");
+          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -17727,8 +17727,8 @@ var require_node2 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs16 = require("fs");
-          stream2 = new fs16.SyncWriteStream(fd2, { autoClose: false });
+          var fs18 = require("fs");
+          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18446,8 +18446,8 @@ var require_node3 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs16 = require("fs");
-          stream2 = new fs16.SyncWriteStream(fd2, { autoClose: false });
+          var fs18 = require("fs");
+          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -19341,7 +19341,7 @@ var require_view = __commonJS2({
     "use strict";
     var debug17 = require_src3()("express:view");
     var path16 = require("path");
-    var fs16 = require("fs");
+    var fs18 = require("fs");
     var dirname = path16.dirname;
     var basename = path16.basename;
     var extname = path16.extname;
@@ -19407,7 +19407,7 @@ var require_view = __commonJS2({
     function tryStat(path17) {
       debug17('stat "%s"', path17);
       try {
-        return fs16.statSync(path17);
+        return fs18.statSync(path17);
       } catch (e) {
         return void 0;
       }
@@ -20012,8 +20012,8 @@ var require_node4 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs16 = require("fs");
-          stream2 = new fs16.SyncWriteStream(fd2, { autoClose: false });
+          var fs18 = require("fs");
+          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -20186,7 +20186,7 @@ var require_types = __commonJS2({
 var require_mime = __commonJS2({
   "node_modules/mime/mime.js"(exports2, module3) {
     var path16 = require("path");
-    var fs16 = require("fs");
+    var fs18 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -20207,7 +20207,7 @@ var require_mime = __commonJS2({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs16.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs18.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -20445,7 +20445,7 @@ var require_send = __commonJS2({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs16 = require("fs");
+    var fs18 = require("fs");
     var mime8 = require_mime();
     var ms = require_ms5();
     var onFinished = require_on_finished();
@@ -20778,7 +20778,7 @@ var require_send = __commonJS2({
       var i = 0;
       var self2 = this;
       debug17('stat "%s"', path17);
-      fs16.stat(path17, function onstat(err, stat) {
+      fs18.stat(path17, function onstat(err, stat) {
         if (err && err.code === "ENOENT" && !extname(path17) && path17[path17.length - 1] !== sep) {
           return next(err);
         }
@@ -20793,7 +20793,7 @@ var require_send = __commonJS2({
         }
         var p = path17 + "." + self2._extensions[i++];
         debug17('stat "%s"', p);
-        fs16.stat(p, function(err2, stat) {
+        fs18.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20811,7 +20811,7 @@ var require_send = __commonJS2({
         }
         var p = join(path17, self2._index[i]);
         debug17('stat "%s"', p);
-        fs16.stat(p, function(err2, stat) {
+        fs18.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20823,7 +20823,7 @@ var require_send = __commonJS2({
     SendStream.prototype.stream = function stream(path17, options2) {
       var self2 = this;
       var res = this.res;
-      var stream2 = fs16.createReadStream(path17, options2);
+      var stream2 = fs18.createReadStream(path17, options2);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -27965,7 +27965,7 @@ var require_package = __commonJS2({
 // node_modules/dotenv/lib/main.js
 var require_main = __commonJS2({
   "node_modules/dotenv/lib/main.js"(exports2, module3) {
-    var fs16 = require("fs");
+    var fs18 = require("fs");
     var path16 = require("path");
     var os = require("os");
     var crypto3 = require("crypto");
@@ -28074,7 +28074,7 @@ var require_main = __commonJS2({
       if (options2 && options2.path && options2.path.length > 0) {
         if (Array.isArray(options2.path)) {
           for (const filepath of options2.path) {
-            if (fs16.existsSync(filepath)) {
+            if (fs18.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -28084,7 +28084,7 @@ var require_main = __commonJS2({
       } else {
         possibleVaultPath = path16.resolve(process.cwd(), ".env.vault");
       }
-      if (fs16.existsSync(possibleVaultPath)) {
+      if (fs18.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
@@ -28133,7 +28133,7 @@ var require_main = __commonJS2({
       const parsedAll = {};
       for (const path17 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs16.readFileSync(path17, { encoding }));
+          const parsed = DotenvModule.parse(fs18.readFileSync(path17, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options2);
         } catch (e) {
           if (debug17) {
@@ -49924,12 +49924,39 @@ var init_settingsService = __esm2({
 });
 
 // src/server/services/productCatalogService.ts
-var import_fs72, import_path67, MERCH_COLOR_HEX_MAP, ProductCatalogService;
+var import_fs72, import_path67, ARTWORK_VARIANT_REGISTRY, MERCH_COLOR_HEX_MAP, ProductCatalogService;
 var init_productCatalogService = __esm2({
   "src/server/services/productCatalogService.ts"() {
     "use strict";
     import_fs72 = __toESM2(require("fs"), 1);
     import_path67 = __toESM2(require("path"), 1);
+    ARTWORK_VARIANT_REGISTRY = {
+      MASTER: {
+        id: "MASTER",
+        label: "Master Design",
+        artifactKey: "pngPath"
+      },
+      TWO_SIDED_MUG_STANDARD: {
+        id: "TWO_SIDED_MUG_STANDARD",
+        label: "Two Sided Mug",
+        artifactKey: "mugStandardPath"
+      },
+      TWO_SIDED_MUG_BRUSH: {
+        id: "TWO_SIDED_MUG_BRUSH",
+        label: "Two Sided Mug Brush",
+        artifactKey: "mugBrushPath"
+      },
+      TWO_SIDED_DRINKWARE_STANDARD: {
+        id: "TWO_SIDED_DRINKWARE_STANDARD",
+        label: "Two Sided Drinkware",
+        artifactKey: "drinkwareStandardPath"
+      },
+      TWO_SIDED_DRINKWARE_BRUSH: {
+        id: "TWO_SIDED_DRINKWARE_BRUSH",
+        label: "Two Sided Drinkware Brush",
+        artifactKey: "drinkwareBrushPath"
+      }
+    };
     MERCH_COLOR_HEX_MAP = {
       black: "#121212",
       white: "#FFFFFF",
@@ -50421,6 +50448,9 @@ var init_productCatalogService = __esm2({
         const catalog = this.getCatalog();
         this.saveCatalogAtomic(catalog);
         return catalog;
+      }
+      static getArtworkVariantRegistry() {
+        return ARTWORK_VARIANT_REGISTRY;
       }
       /**
        * Update artwork configuration for a product (saved to persistent overrides)
@@ -52547,6 +52577,76 @@ var init_listingValidationService = __esm2({
           expectedSuffix
         };
       }
+      /**
+       * Pure deterministic final validation immediately before queue handoff.
+       * Does NOT rewrite, modify or generate any text.
+       * Checks strict Amazon limits and safety constraints across master and all localized listings.
+       */
+      static validateFinalListing(params2) {
+        const errors2 = [];
+        const checkEntry = (prefix, data, locale) => {
+          const title = String(data.title || "").trim();
+          const brand = String(data.brand || "").trim();
+          const bullet1 = String(data.bullet1 || data.bullet_1 || "").trim();
+          const bullet2 = String(data.bullet2 || data.bullet_2 || "").trim();
+          const description = String(data.description || "").trim();
+          if (!title) {
+            errors2.push(`${prefix} Title darf nicht leer sein.`);
+          } else {
+            if (title.length > 60) {
+              errors2.push(`${prefix} Title \xFCberschreitet 60 Zeichen (${title.length} Chars: "${title.slice(0, 30)}...")`);
+            }
+            if (/[,.!?:;'"\-–—]+$/.test(title)) {
+              errors2.push(`${prefix} Title darf nicht auf Satzzeichen enden ("${title}").`);
+            }
+            if (/\s+(?:none|null|undefined|n\/a|na|-)$/i.test(title)) {
+              errors2.push(`${prefix} Title enth\xE4lt einen trailing Platzhalter-Token ("${title}").`);
+            }
+          }
+          if (!brand) {
+            errors2.push(`${prefix} Brand darf nicht leer sein.`);
+          } else if (brand.length > 50) {
+            errors2.push(`${prefix} Brand \xFCberschreitet 50 Zeichen (${brand.length} Chars: "${brand}")`);
+          }
+          if (bullet1.length > 256) {
+            errors2.push(`${prefix} Bullet 1 \xFCberschreitet 256 Zeichen (${bullet1.length} Chars).`);
+          }
+          if (bullet2.length > 256) {
+            errors2.push(`${prefix} Bullet 2 \xFCberschreitet 256 Zeichen (${bullet2.length} Chars).`);
+          }
+          if (description.length > 600) {
+            errors2.push(`${prefix} Description \xFCberschreitet 600 Zeichen (${description.length} Chars).`);
+          }
+          const lang = locale === "de" ? "de" : "en";
+          const fields = [
+            { name: "Title", val: title },
+            { name: "Brand", val: brand },
+            { name: "Bullet 1", val: bullet1 },
+            { name: "Bullet 2", val: bullet2 },
+            { name: "Description", val: description }
+          ];
+          for (const f of fields) {
+            if (f.val) {
+              const banned = BannedWordsService.findBannedWordsInText(f.val, lang);
+              if (banned.length > 0) {
+                errors2.push(`${prefix} ${f.name} enth\xE4lt verbotene W\xF6rter: [${banned.join(", ")}]`);
+              }
+            }
+          }
+        };
+        checkEntry("[Master]", params2.listing, "en");
+        if (params2.allListings && typeof params2.allListings === "object") {
+          for (const [loc, locData] of Object.entries(params2.allListings)) {
+            if (locData && typeof locData === "object") {
+              checkEntry(`[${loc.toUpperCase()}]`, locData, loc);
+            }
+          }
+        }
+        return {
+          isValid: errors2.length === 0,
+          errors: errors2
+        };
+      }
     };
   }
 });
@@ -53498,8 +53598,8 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
         let imagePayload = fourPanelImageBase64OrPath;
         if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
           try {
-            const fs16 = await import("fs");
-            const buffer = fs16.readFileSync(imagePayload);
+            const fs18 = await import("fs");
+            const buffer = fs18.readFileSync(imagePayload);
             imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
           } catch (e) {
           }
@@ -222355,6 +222455,61 @@ var init_artworkResizeService = __esm2({
   }
 });
 
+// src/server/services/listingSanitizationService.ts
+var ListingSanitizationService;
+var init_listingSanitizationService = __esm2({
+  "src/server/services/listingSanitizationService.ts"() {
+    "use strict";
+    ListingSanitizationService = class {
+      // Amazon Merch allowed charset regex (preserves Latin, European accents, Japanese scripts, punctuation)
+      static PROHIBITED_CHARS_REGEX = /[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g;
+      /**
+       * Sanitize an individual string field according to Amazon Merch rules
+       */
+      static sanitizeText(text2) {
+        if (!text2) return "";
+        let cleaned = String(text2);
+        cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"');
+        cleaned = cleaned.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
+        cleaned = cleaned.replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
+        cleaned = cleaned.replace(/\u2026/g, "...");
+        cleaned = cleaned.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
+        cleaned = cleaned.replace(this.PROHIBITED_CHARS_REGEX, "");
+        cleaned = cleaned.replace(/\s+/g, " ").trim();
+        return cleaned;
+      }
+      /**
+       * Sanitize an entire listing object (title, brand, bullet1, bullet2, description)
+       */
+      static sanitizeListing(listing) {
+        if (!listing || typeof listing !== "object") return listing;
+        const result2 = { ...listing };
+        for (const [k, v] of Object.entries(listing)) {
+          if (typeof v === "string") {
+            result2[k] = this.sanitizeText(v);
+          } else if (v && typeof v === "object" && !Array.isArray(v)) {
+            result2[k] = this.sanitizeListing(v);
+          }
+        }
+        return result2;
+      }
+      /**
+       * Sanitize all localized listings in a listings record (e.g. { en: {...}, de: {...}, fr: {...} })
+       */
+      static sanitizeAllListings(listings) {
+        if (!listings || typeof listings !== "object") return {};
+        const sanitized = {};
+        for (const [locale, data] of Object.entries(listings)) {
+          if (data && typeof data === "object") {
+            sanitized[locale.toLowerCase()] = this.sanitizeListing(data);
+          }
+        }
+        return sanitized;
+      }
+    };
+  }
+});
+
 // src/types/tasks.ts
 var init_tasks = __esm2({
   "src/types/tasks.ts"() {
@@ -223087,7 +223242,6 @@ var init_updatePipelineService = __esm2({
     init_taskLogService();
     init_amazonInspectService();
     init_settingsService();
-    init_queueService();
     init_systemPromptService();
     init_llmService();
     init_trademarkService();
@@ -223685,6 +223839,11 @@ Bullets: ${oldBullets}`
           console.warn(`[UpdatePipeline] \u26A0\uFE0F Kein lokales Master-Artwork f\xFCr Resize bei Task ${taskId} vorhanden.`);
           return { success: false, error: "Kein Master-Artwork vorhanden" };
         }
+        const existing = task.resizedAssets;
+        if (existing && existing.trimmedPath && import_fs80.default.existsSync(existing.trimmedPath) && existing.mugStandardPath && import_fs80.default.existsSync(existing.mugStandardPath) && existing.mugBrushPath && import_fs80.default.existsSync(existing.mugBrushPath) && existing.drinkwareStandardPath && import_fs80.default.existsSync(existing.drinkwareStandardPath) && existing.drinkwareBrushPath && import_fs80.default.existsSync(existing.drinkwareBrushPath)) {
+          console.log(`[UpdatePipeline] \u26A1 Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
+          return { success: true, resizedAssets: existing };
+        }
         try {
           const resized = await ArtworkResizeService.generateResizedArtworks(taskId, mbaPngPath);
           task.resizedAssets = resized;
@@ -223743,10 +223902,10 @@ Bullets: ${oldBullets}`
           resolvedAvoidColor = "black";
         }
         try {
-          const queueItem = QueueService.enqueueItem({
+          const { FinalizationService: FinalizationService2 } = (init_finalizationService(), __toCommonJS2(finalizationService_exports));
+          const finRes = await FinalizationService2.finalizeForQueue({
             taskId: task.id,
-            source: "UPDATE",
-            type: "update",
+            pipeline: "UPDATE",
             designId: task.payload?.designId,
             brand: listing.brand,
             title: listing.title,
@@ -223756,32 +223915,18 @@ Bullets: ${oldBullets}`
             listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
             fitTypes: resolvedFitTypes,
             avoidColor: resolvedAvoidColor,
-            imagePath: task.localImagePath || "",
-            pngPath: task.localMbaPngPath || "",
-            resizedAssets: task.resizedAssets,
+            localImagePath: task.localImagePath || "",
+            masterPngPath: task.localMbaPngPath || task.localImagePath || "",
             publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
             liveStats: task.payload?.liveStats || null,
             liveProductSummary: task.payload?.productSummary || task.payload?.liveProductSummary || null,
             liveProductTypes: task.payload?.productTypes || task.payload?.liveProductTypes || null,
             tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
           });
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "UPDATE_QUEUED",
-            hasError: false
-          });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
-            content: {
-              queueId: queueItem.id,
-              status: queueItem.status,
-              designId: task.payload?.designId,
-              allocatedSlots: queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0,
-              message: `Design erfolgreich in den Tab Update der Queue eingereiht (${queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0} neue Slots werden erg\xE4nzt).`
-            }
-          });
-          return { success: true, queueItem };
+          if (!finRes.success) {
+            return { success: false, error: finRes.error };
+          }
+          return { success: true };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
           TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
@@ -224251,6 +224396,7 @@ var init_queueService = __esm2({
     import_fs81 = __toESM2(require("fs"), 1);
     import_path76 = __toESM2(require("path"), 1);
     init_productCatalogService();
+    init_listingSanitizationService();
     init_settingsService();
     NON_US_DROP_ORDER = ["JP", "ES", "IT", "FR", "DE", "GB"];
     QueueService = class {
@@ -224304,10 +224450,7 @@ var init_queueService = __esm2({
           if (!Array.isArray(tasks)) return;
           const tasksMap = new Map(tasks.map((t) => [t.id, t]));
           let hasChanges = false;
-          const cleanStr = (txt) => {
-            if (!txt) return "";
-            return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
-          };
+          const cleanStr = (txt) => ListingSanitizationService.sanitizeText(txt);
           for (const item of this.items) {
             if (item.title) item.title = cleanStr(item.title);
             if (item.brand) item.brand = cleanStr(item.brand);
@@ -224546,10 +224689,7 @@ var init_queueService = __esm2({
        */
       static enqueueDesign(item) {
         this.ensureLoaded();
-        const cleanStr = (txt) => {
-          if (!txt) return "";
-          return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
-        };
+        const cleanStr = (txt) => ListingSanitizationService.sanitizeText(txt);
         const normalizeAvoidColor = (val) => {
           const raw = typeof val === "object" && val ? String(val.avoid || val.color || "none") : String(val || "none");
           const lower = raw.toLowerCase();
@@ -225160,16 +225300,269 @@ var init_queueService = __esm2({
   }
 });
 
+// src/server/services/finalizationService.ts
+var finalizationService_exports = {};
+__export2(finalizationService_exports, {
+  FinalizationService: () => FinalizationService
+});
+var import_fs82, FinalizationService;
+var init_finalizationService = __esm2({
+  "src/server/services/finalizationService.ts"() {
+    "use strict";
+    import_fs82 = __toESM2(require("fs"), 1);
+    init_taskLogService();
+    init_queueService();
+    init_listingSanitizationService();
+    init_listingValidationService();
+    init_artworkResizeService();
+    FinalizationService = class {
+      /**
+       * Single unified finalization pipeline for both Design and Update pipelines.
+       * Atomically executes:
+       * 1. Deterministic Listing Sanitization (Amazon Charset safe, preserving Umlauts/Kanji/Accents)
+       * 2. Final Strict Validation (no semantic mutations, strictly enforces limits)
+       * 3. Master Artwork & Trimmed Resizes (exactly once, using trimmed content as source)
+       * 4. Asset Verification on disk
+       * 5. Atomic Queue Handoff with all task completion side-effects preserved
+       */
+      static async finalizeForQueue(params2) {
+        const { taskId, pipeline: pipeline2 } = params2;
+        console.log(`[FinalizationService] \u{1F680} Starte Unified Finalization f\xFCr Task #${taskId} (Pipeline: ${pipeline2})...`);
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u{1F9F9} Listing wird bereinigt & normalisiert (Amazon-safe Charset)...",
+          content: { phase: "SANITIZING", status: "RUNNING" }
+        });
+        const rootListing = {
+          brand: params2.brand || "",
+          title: params2.title || "",
+          bullet1: params2.bullet1 || "",
+          bullet2: params2.bullet2 || "",
+          description: params2.description || ""
+        };
+        const sanitizedRoot = ListingSanitizationService.sanitizeListing(rootListing);
+        const rawListings = params2.listings && typeof params2.listings === "object" ? params2.listings : { en: rootListing };
+        const sanitizedListings = ListingSanitizationService.sanitizeAllListings(rawListings);
+        sanitizedListings.en = {
+          ...sanitizedRoot,
+          ...sanitizedListings.en || {}
+        };
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u2713 Listing sanitisiert (Smart Quotes, typografische Dashes & Amazon Charset normalisiert)",
+          content: { phase: "SANITIZING", status: "SUCCESS", listing: sanitizedRoot }
+        });
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u{1F50D} Finale Validierung der Listing-Limits vor Queue-Handoff...",
+          content: { phase: "FINAL_VALIDATION", status: "RUNNING" }
+        });
+        const validation = ListingValidationService.validateFinalListing({
+          listing: sanitizedRoot,
+          allListings: sanitizedListings
+        });
+        if (!validation.isValid) {
+          const errorMsg = `Final Listing Validation fehlgeschlagen: ${validation.errors.join("; ")}`;
+          console.error(`[FinalizationService] \u274C ${errorMsg}`);
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "FINALIZATION_EVENT",
+            title: "\u274C Finale Listing-Validierung fehlgeschlagen",
+            content: { phase: "FINAL_VALIDATION", status: "FAILED", errors: validation.errors }
+          });
+          TaskLogService2.updateTaskStatus(taskId, {
+            hasError: true,
+            errorDetails: errorMsg
+          });
+          return { success: false, error: errorMsg };
+        }
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u2713 Finale Validierung bestanden (Title \u226460, Brand \u226450, Bullets \u2264256, alle Locales gepr\xFCft)",
+          content: { phase: "FINAL_VALIDATION", status: "SUCCESS" }
+        });
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u{1F4D0} Artwork-Vorbereitung (Alpha Trim & Two-Sided Resizes)...",
+          content: { phase: "ARTWORK_PREPARATION", status: "RUNNING" }
+        });
+        if (!params2.masterPngPath || !import_fs82.default.existsSync(params2.masterPngPath)) {
+          const err = `Master-Artwork nicht gefunden unter: ${params2.masterPngPath}`;
+          console.error(`[FinalizationService] \u274C ${err}`);
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "FINALIZATION_EVENT",
+            title: "\u274C Master-Artwork fehlt auf Disk",
+            content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
+          });
+          TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+          return { success: false, error: err };
+        }
+        let resizedAssets = task?.resizedAssets;
+        const areAssetsValid = resizedAssets && resizedAssets.trimmedPath && import_fs82.default.existsSync(resizedAssets.trimmedPath) && resizedAssets.mugStandardPath && import_fs82.default.existsSync(resizedAssets.mugStandardPath) && resizedAssets.mugBrushPath && import_fs82.default.existsSync(resizedAssets.mugBrushPath) && resizedAssets.drinkwareStandardPath && import_fs82.default.existsSync(resizedAssets.drinkwareStandardPath) && resizedAssets.drinkwareBrushPath && import_fs82.default.existsSync(resizedAssets.drinkwareBrushPath);
+        if (areAssetsValid) {
+          console.log(`[FinalizationService] \u26A1 Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
+        } else {
+          try {
+            resizedAssets = await ArtworkResizeService.generateResizedArtworks(taskId, params2.masterPngPath);
+          } catch (resizeErr) {
+            const err = `Fehler bei Artwork-Resize: ${resizeErr.message}`;
+            console.error(`[FinalizationService] \u274C ${err}`);
+            TaskLogService2.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "FINALIZATION_EVENT",
+              title: "\u274C Artwork-Resize fehlgeschlagen",
+              content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
+            });
+            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+            return { success: false, error: err };
+          }
+        }
+        const requiredFiles = [
+          { name: "Trimmed Master", path: resizedAssets.trimmedPath },
+          { name: "Mug Standard", path: resizedAssets.mugStandardPath },
+          { name: "Mug Brush", path: resizedAssets.mugBrushPath },
+          { name: "Drinkware Standard", path: resizedAssets.drinkwareStandardPath },
+          { name: "Drinkware Brush", path: resizedAssets.drinkwareBrushPath }
+        ];
+        for (const f of requiredFiles) {
+          if (!f.path || !import_fs82.default.existsSync(f.path)) {
+            const err = `Generiertes Asset "${f.name}" nicht auf Disk gefunden: ${f.path}`;
+            console.error(`[FinalizationService] \u274C ${err}`);
+            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+            return { success: false, error: err };
+          }
+        }
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u2713 Getrimmtes Master & alle 4 Two-Sided Varianten erfolgreich auf Disk verifiziert",
+          content: { phase: "ARTWORK_PREPARATION", status: "SUCCESS", assets: resizedAssets }
+        });
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: `\u{1F4E6} \xDCbergabe an die Upload-Queue (${pipeline2 === "UPDATE" ? "Tab Update" : "Tab New"})...`,
+          content: { phase: "QUEUE_HANDOFF", status: "RUNNING" }
+        });
+        let queueItem;
+        const task = TaskLogService2.getTask(taskId);
+        if (pipeline2 === "DESIGN") {
+          queueItem = QueueService.enqueueDesign({
+            taskId,
+            designTitle: sanitizedRoot.title || "Design #" + taskId,
+            niche: params2.niche || "",
+            brand: sanitizedRoot.brand,
+            title: sanitizedRoot.title,
+            bullet1: sanitizedRoot.bullet1,
+            bullet2: sanitizedRoot.bullet2,
+            description: sanitizedRoot.description,
+            listings: sanitizedListings,
+            fitTypes: params2.fitTypes && params2.fitTypes.length > 0 ? params2.fitTypes : ["men", "women", "youth"],
+            avoidColor: params2.avoidColor || "none",
+            customBackgroundColor: params2.customBackgroundColor,
+            imagePath: params2.localImagePath || "",
+            pngPath: params2.masterPngPath,
+            resizedAssets,
+            tmBlockedProductIds: params2.tmBlockedProductIds || []
+          });
+          if (task) {
+            task.status = "COMPLETED";
+            task.checkpoint = void 0;
+            task.hasError = false;
+            task.resizedAssets = resizedAssets;
+          }
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "COMPLETED",
+            hasError: false,
+            resizedAssets
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\u{1F4E6} Design erfolgreich in die Upload-Queue \xFCbergeben",
+            content: {
+              phase: "QUEUE_HANDOFF",
+              status: "SUCCESS",
+              queueId: queueItem.id,
+              allocatedSlots: queueItem.allocatedSlots,
+              message: `Design mit 4500x5400px Master-PNG und sanitisiertem Listing an die Queue \xFCbergeben (${queueItem.allocatedSlots} Slots geplant).`
+            }
+          });
+        } else {
+          queueItem = QueueService.enqueueItem({
+            taskId,
+            source: "UPDATE",
+            type: "update",
+            designId: params2.designId,
+            brand: sanitizedRoot.brand,
+            title: sanitizedRoot.title,
+            bullet1: sanitizedRoot.bullet1,
+            bullet2: sanitizedRoot.bullet2,
+            description: sanitizedRoot.description,
+            listings: sanitizedListings,
+            fitTypes: params2.fitTypes && params2.fitTypes.length > 0 ? params2.fitTypes : ["men", "women", "youth"],
+            avoidColor: params2.avoidColor || "none",
+            imagePath: params2.localImagePath || "",
+            pngPath: params2.masterPngPath,
+            resizedAssets,
+            publishedProductsCount: params2.publishedProductsCount ?? 0,
+            liveStats: params2.liveStats || null,
+            liveProductSummary: params2.liveProductSummary || null,
+            liveProductTypes: params2.liveProductTypes || null,
+            tmBlockedProductIds: params2.tmBlockedProductIds || []
+          });
+          if (task) {
+            task.status = "UPDATE_QUEUED";
+            task.hasError = false;
+            task.resizedAssets = resizedAssets;
+          }
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_QUEUED",
+            hasError: false,
+            resizedAssets
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
+            content: {
+              phase: "QUEUE_HANDOFF",
+              status: "SUCCESS",
+              queueId: queueItem.id,
+              statusText: queueItem.status,
+              designId: params2.designId,
+              allocatedSlots: queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0,
+              message: `Design erfolgreich in den Tab Update der Queue eingereiht (${queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0} neue Slots werden erg\xE4nzt).`
+            }
+          });
+        }
+        console.log(`[FinalizationService] \u2705 Task #${taskId} erfolgreich finalisiert und in Queue \xFCbergeben (QueueId: ${queueItem.id}).`);
+        return {
+          success: true,
+          queueItemId: queueItem.id,
+          resizedAssets
+        };
+      }
+    };
+  }
+});
+
 // src/server/services/taskLogService.ts
 var taskLogService_exports = {};
 __export2(taskLogService_exports, {
   TaskLogService: () => TaskLogService2
 });
-var import_fs82, import_path77, TaskLogService2;
+var import_fs83, import_path77, TaskLogService2;
 var init_taskLogService = __esm2({
   "src/server/services/taskLogService.ts"() {
     "use strict";
-    import_fs82 = __toESM2(require("fs"), 1);
+    import_fs83 = __toESM2(require("fs"), 1);
     import_path77 = __toESM2(require("path"), 1);
     init_settingsService();
     init_systemPromptService();
@@ -225182,6 +225575,7 @@ var init_taskLogService = __esm2({
     init_visionOptimizationService();
     init_artworkResizeService();
     init_listingValidationService();
+    init_listingSanitizationService();
     init_tasks();
     TaskLogService2 = class {
       static dataDir = import_path77.default.resolve(process.cwd(), "data");
@@ -225199,9 +225593,9 @@ var init_taskLogService = __esm2({
         }
       }
       static ensureDataDir() {
-        if (!import_fs82.default.existsSync(this.dataDir)) {
+        if (!import_fs83.default.existsSync(this.dataDir)) {
           try {
-            import_fs82.default.mkdirSync(this.dataDir, { recursive: true });
+            import_fs83.default.mkdirSync(this.dataDir, { recursive: true });
           } catch (e) {
           }
         }
@@ -225210,8 +225604,8 @@ var init_taskLogService = __esm2({
         this.ensureDataDir();
         if (this.currentCounter === null) {
           try {
-            if (import_fs82.default.existsSync(this.counterFile)) {
-              const data = JSON.parse(import_fs82.default.readFileSync(this.counterFile, "utf-8"));
+            if (import_fs83.default.existsSync(this.counterFile)) {
+              const data = JSON.parse(import_fs83.default.readFileSync(this.counterFile, "utf-8"));
               this.currentCounter = Number(data.counter) || 0;
             } else {
               this.currentCounter = 0;
@@ -225222,7 +225616,7 @@ var init_taskLogService = __esm2({
         }
         this.currentCounter += 1;
         try {
-          import_fs82.default.writeFileSync(this.counterFile, JSON.stringify({ counter: this.currentCounter }, null, 2), "utf-8");
+          import_fs83.default.writeFileSync(this.counterFile, JSON.stringify({ counter: this.currentCounter }, null, 2), "utf-8");
         } catch (e) {
           console.error("[TaskLogService] Failed to persist tasks_counter.json:", e);
         }
@@ -225237,8 +225631,7 @@ var init_taskLogService = __esm2({
        * - Removes any other prohibited unicode characters not allowed on Amazon Merch
        */
       static sanitizeString(txt) {
-        if (!txt || typeof txt !== "string") return txt || "";
-        return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, "").replace(/\s+/g, " ").trim();
+        return ListingSanitizationService.sanitizeText(txt);
       }
       static sanitizeAndValidateListingBeforeQueue(listing) {
         if (!listing || typeof listing !== "object") return listing;
@@ -225281,9 +225674,9 @@ var init_taskLogService = __esm2({
           return this.inMemoryLogs;
         }
         this.ensureDataDir();
-        if (import_fs82.default.existsSync(this.logsFile)) {
+        if (import_fs83.default.existsSync(this.logsFile)) {
           try {
-            const fileContent = import_fs82.default.readFileSync(this.logsFile, "utf-8");
+            const fileContent = import_fs83.default.readFileSync(this.logsFile, "utf-8");
             this.inMemoryLogs = JSON.parse(fileContent);
             return this.inMemoryLogs || [];
           } catch (e) {
@@ -225298,7 +225691,7 @@ var init_taskLogService = __esm2({
         this.ensureDataDir();
         try {
           const trimmed = logs.slice(0, 2e3);
-          import_fs82.default.writeFileSync(this.logsFile, JSON.stringify(trimmed), "utf-8");
+          import_fs83.default.writeFileSync(this.logsFile, JSON.stringify(trimmed), "utf-8");
         } catch (e) {
           console.error("[TaskLogService] Failed to persist tasks_log.json:", e);
         }
@@ -225370,34 +225763,22 @@ var init_taskLogService = __esm2({
         this.emitUpdate(task);
         return task;
       }
-      static completeTaskAndEnqueue(task) {
-        task.status = "COMPLETED";
-        task.checkpoint = void 0;
-        task.hasError = false;
+      static async completeTaskAndEnqueue(taskOrId) {
+        const task = typeof taskOrId === "string" ? this.getTaskLogById(taskOrId) : taskOrId;
+        if (!task) return { success: false, error: "Task nicht gefunden" };
         try {
           const listing = task.listingResult || task.trademarkRefineResult || {};
           const enListing = listing.en || (listing.title || listing.brand ? listing : {});
           const brand = enListing.brand || task.payload?.brand || "";
           const title = enListing.title || task.payload?.title || task.payload?.quote || "Design #" + task.id;
-          const sanitizeText = (txt) => {
-            if (!txt) return "";
-            return txt.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/\s+/g, " ").trim();
-          };
-          const bullet1 = sanitizeText(enListing.bullet1 || enListing.bullet_1 || "");
-          const bullet2 = sanitizeText(enListing.bullet2 || enListing.bullet_2 || "");
-          const description = sanitizeText(enListing.description || "");
+          const bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
+          const bullet2 = enListing.bullet2 || enListing.bullet_2 || "";
+          const description = enListing.description || "";
           const listings = {};
           if (typeof listing === "object") {
             for (const [key, val] of Object.entries(listing)) {
               if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
-                const langObj = val;
-                listings[key.toLowerCase()] = {
-                  brand: sanitizeText(langObj.brand || brand),
-                  title: sanitizeText(langObj.title || title),
-                  bullet1: sanitizeText(langObj.bullet1 || langObj.bullet_1 || ""),
-                  bullet2: sanitizeText(langObj.bullet2 || langObj.bullet_2 || ""),
-                  description: sanitizeText(langObj.description || "")
-                };
+                listings[key.toLowerCase()] = val;
               }
             }
           }
@@ -225412,10 +225793,10 @@ var init_taskLogService = __esm2({
           else if (avoid.includes("black") || avoid.includes("schwarz")) avoidColor = "black";
           const rawHex = task.customAnswers?.customBackgroundColor || task.customAnswers?.accessoryColorHex;
           const customBackgroundColor = typeof rawHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim()) ? rawHex.startsWith("#") ? rawHex : `#${rawHex}` : void 0;
-          const { QueueService: QueueService2 } = (init_queueService(), __toCommonJS2(queueService_exports));
-          const queueItem = QueueService2.enqueueDesign({
+          const { FinalizationService: FinalizationService2 } = (init_finalizationService(), __toCommonJS2(finalizationService_exports));
+          const finResult = await FinalizationService2.finalizeForQueue({
             taskId: task.id,
-            designTitle: title || "Design #" + task.id,
+            pipeline: "DESIGN",
             niche: task.payload?.niche || "",
             brand,
             title,
@@ -225426,28 +225807,17 @@ var init_taskLogService = __esm2({
             fitTypes: fitTypes.length > 0 ? fitTypes : ["men", "women", "youth"],
             avoidColor,
             customBackgroundColor,
-            imagePath: task.localImagePath || "",
-            pngPath: task.localMbaPngPath || "",
-            resizedAssets: task.resizedAssets,
+            localImagePath: task.localImagePath || "",
+            masterPngPath: task.localMbaPngPath || "",
             tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
           });
-          this.addEvent(task.id, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: `\u{1F4E6} Design erfolgreich in die Upload-Queue \xFCbergeben`,
-            content: {
-              queueId: queueItem.id,
-              allocatedSlots: queueItem.allocatedSlots,
-              status: queueItem.status,
-              message: `Design mit 4500x5400px Master-PNG und Listing an die Queue \xFCbergeben (${queueItem.allocatedSlots} Slots geplant).`
-            }
-          });
-          console.log(`[TaskLogService] \u{1F4E6} Task ${task.id} erfolgreich in Queue enqueued (${queueItem.allocatedSlots} Slots).`);
+          this.saveLogs(this.loadLogs());
+          this.emitUpdate(task);
+          return finResult;
         } catch (err) {
           console.warn("[TaskLogService] Failed to auto-enqueue completed task:", err.message);
+          return { success: false, error: err.message };
         }
-        this.saveLogs(this.loadLogs());
-        this.emitUpdate(task);
       }
       static updateTaskStatus(taskId, updates) {
         const logs = this.loadLogs();
@@ -225718,9 +226088,9 @@ ${JSON.stringify(task.payload, null, 2)}`;
           const latencyMs = Date.now() - start3;
           const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const designsDir = import_path77.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs82.default.existsSync(designsDir)) {
+          if (!import_fs83.default.existsSync(designsDir)) {
             try {
-              import_fs82.default.mkdirSync(designsDir, { recursive: true });
+              import_fs83.default.mkdirSync(designsDir, { recursive: true });
             } catch (e) {
             }
           }
@@ -225731,7 +226101,7 @@ ${JSON.stringify(task.payload, null, 2)}`;
             const imgRes = await fetch(result2.imageUrl);
             if (imgRes.ok) {
               const arrayBuffer = await imgRes.arrayBuffer();
-              import_fs82.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
+              import_fs83.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
               console.log(`[TaskLogService] \u{1F4BE} Bild f\xFCr Task ${taskId} lokal gespeichert: ${localFilePath}`);
               const previewFilePath = import_path77.default.join(designsDir, `${cleanId}.u4-preview.png`);
               VisionOptimizationService.prepareU4PreviewImage(localFilePath, previewFilePath).catch((err) => {
@@ -225827,7 +226197,7 @@ Beantworte die Analysefragen streng als JSON!`;
           }
         });
         let imageSource = imageUrl;
-        if (import_fs82.default.existsSync(localFilePath)) {
+        if (import_fs83.default.existsSync(localFilePath)) {
           try {
             const { base64DataUrl } = await VisionOptimizationService.prepareVisionImage(localFilePath);
             imageSource = base64DataUrl || imageSource;
@@ -225978,14 +226348,14 @@ Beantworte die Analysefragen streng als JSON!`;
         const previewFilePath = import_path77.default.join(designsDir, `${cleanId}.u4-preview.png`);
         const mbaFilePath = import_path77.default.join(designsDir, `${cleanId}_mba.png`);
         const rawFilePath = import_path77.default.join(designsDir, `${cleanId}.png`);
-        const targetOriginalPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task.localImagePath && import_fs82.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs82.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs82.default.existsSync(rawFilePath) ? rawFilePath : void 0;
+        const targetOriginalPath = task.localMbaPngPath && import_fs83.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task.localImagePath && import_fs83.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs83.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs83.default.existsSync(rawFilePath) ? rawFilePath : void 0;
         let listingImageBase64 = void 0;
         let listingImageSourceType = "NONE";
         let optimizationMeta = void 0;
         if (targetOriginalPath) {
-          if (import_fs82.default.existsSync(previewFilePath)) {
+          if (import_fs83.default.existsSync(previewFilePath)) {
             try {
-              const previewBuf = import_fs82.default.readFileSync(previewFilePath);
+              const previewBuf = import_fs83.default.readFileSync(previewFilePath);
               if (previewBuf.length > 500) {
                 listingImageBase64 = `data:image/png;base64,${previewBuf.toString("base64")}`;
                 listingImageSourceType = "PREVIEW_1125x1350";
@@ -226022,7 +226392,7 @@ Beantworte die Analysefragen streng als JSON!`;
           if (!listingImageBase64) {
             try {
               console.warn(`[TaskLogService] \u{1F504} FALLBACK: Verwende Originalbild f\xFCr Listing-Vision-Call (${targetOriginalPath})...`);
-              const origBuf = import_fs82.default.readFileSync(targetOriginalPath);
+              const origBuf = import_fs83.default.readFileSync(targetOriginalPath);
               listingImageBase64 = `data:image/png;base64,${origBuf.toString("base64")}`;
               listingImageSourceType = "ORIGINAL_FALLBACK";
               optimizationMeta = {
@@ -226342,7 +226712,7 @@ Beantworte die Analysefragen streng als JSON!`;
         const maxColors = task.customAnswers?.maxColors ?? task.analysisResult?.color_analysis?.color_count ?? 2;
         const cleanId = task.id.replace(/[^a-zA-Z0-9_-]/g, "_");
         const localImagePath = task.localImagePath || import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const hasLocalImage = import_fs82.default.existsSync(localImagePath);
+        const hasLocalImage = import_fs83.default.existsSync(localImagePath);
         if (!hasLocalImage && !task.imageUrl) {
           console.warn(`[TaskLogService] \u26A0\uFE0F Kein Bild f\xFCr Vektorisierung bei Task ${taskId} gefunden.`);
           this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
@@ -226373,25 +226743,25 @@ Beantworte die Analysefragen streng als JSON!`;
         try {
           let svgText = "";
           if (hasLocalImage) {
-            const buffer = import_fs82.default.readFileSync(localImagePath);
+            const buffer = import_fs83.default.readFileSync(localImagePath);
             svgText = await VectorizerService.vectorizeBuffer(buffer, "image/png", false, { maxColors });
           } else if (task.imageUrl) {
             svgText = await VectorizerService.vectorizeImage(task.imageUrl, false, { maxColors });
           }
           const latencyMs = Date.now() - start3;
           const designsDir = import_path77.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs82.default.existsSync(designsDir)) {
+          if (!import_fs83.default.existsSync(designsDir)) {
             try {
-              import_fs82.default.mkdirSync(designsDir, { recursive: true });
+              import_fs83.default.mkdirSync(designsDir, { recursive: true });
             } catch (e) {
             }
           }
           const origFilename = `${cleanId}_original.svg`;
           const origFilePath = import_path77.default.join(designsDir, origFilename);
-          import_fs82.default.writeFileSync(origFilePath, svgText, "utf-8");
+          import_fs83.default.writeFileSync(origFilePath, svgText, "utf-8");
           const svgFilename = `${cleanId}.svg`;
           const svgFilePath = import_path77.default.join(designsDir, svgFilename);
-          import_fs82.default.writeFileSync(svgFilePath, svgText, "utf-8");
+          import_fs83.default.writeFileSync(svgFilePath, svgText, "utf-8");
           const ts = Date.now();
           const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}?t=${ts}`;
           const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${ts}`;
@@ -226425,7 +226795,7 @@ Beantworte die Analysefragen streng als JSON!`;
             const bgResult = await SvgRenderService.autoRemoveCornerBackground(svgText);
             if (bgResult.success && bgResult.removedCount > 0) {
               svgText = bgResult.modifiedSvg;
-              import_fs82.default.writeFileSync(svgFilePath, svgText, "utf-8");
+              import_fs83.default.writeFileSync(svgFilePath, svgText, "utf-8");
               task.svgContent = svgText;
               this.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -226441,7 +226811,7 @@ Beantworte die Analysefragen streng als JSON!`;
             const fourPanelFilename = `${cleanId}_4panel.png`;
             const fourPanelFilePath = import_path77.default.join(designsDir, fourPanelFilename);
             const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-            import_fs82.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+            import_fs83.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
             const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${Date.now()}`;
             task.localFourPanelImagePath = fourPanelFilePath;
             task.fourPanelImageUrl = fourPanelUrl;
@@ -226482,7 +226852,7 @@ Beantworte die Analysefragen streng als JSON!`;
               const mbaFilename = `${cleanId}_mba.png`;
               const mbaFilePath = import_path77.default.join(designsDir, mbaFilename);
               const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgText);
-              import_fs82.default.writeFileSync(mbaFilePath, mbaBuffer);
+              import_fs83.default.writeFileSync(mbaFilePath, mbaBuffer);
               const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
               task.localMbaPngPath = mbaFilePath;
               task.mbaPngUrl = mbaUrl;
@@ -226536,7 +226906,7 @@ Beantworte die Analysefragen streng als JSON!`;
               const fourPanelFilename = `${cleanId}_4panel.png`;
               const fourPanelFilePath = import_path77.default.join(designsDir, fourPanelFilename);
               const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-              import_fs82.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+              import_fs83.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
               task.localFourPanelImagePath = fourPanelFilePath;
               task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
             } catch (e) {
@@ -226788,8 +227158,8 @@ Beantworte die Analysefragen streng als JSON!`;
         this.saveLogs([]);
         this.currentCounter = 0;
         try {
-          if (import_fs82.default.existsSync(this.counterFile)) {
-            import_fs82.default.writeFileSync(this.counterFile, JSON.stringify({ counter: 0 }, null, 2), "utf-8");
+          if (import_fs83.default.existsSync(this.counterFile)) {
+            import_fs83.default.writeFileSync(this.counterFile, JSON.stringify({ counter: 0 }, null, 2), "utf-8");
           }
         } catch (err) {
           console.warn("[TaskLogService] Konnte Counter-Datei nicht zur\xFCcksetzen:", err);
@@ -226805,15 +227175,15 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         let deletedFiles = 0;
         const designsDir = import_path77.default.resolve(process.cwd(), "data", "designs");
-        if (import_fs82.default.existsSync(designsDir)) {
+        if (import_fs83.default.existsSync(designsDir)) {
           try {
-            const files = import_fs82.default.readdirSync(designsDir);
+            const files = import_fs83.default.readdirSync(designsDir);
             for (const file of files) {
               if (file.startsWith(".")) continue;
               try {
                 const filePath = import_path77.default.join(designsDir, file);
-                if (import_fs82.default.statSync(filePath).isFile()) {
-                  import_fs82.default.unlinkSync(filePath);
+                if (import_fs83.default.statSync(filePath).isFile()) {
+                  import_fs83.default.unlinkSync(filePath);
                   deletedFiles++;
                 }
               } catch (e) {
@@ -226825,14 +227195,14 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         try {
           const dataDir = import_path77.default.resolve(process.cwd(), "data");
-          if (import_fs82.default.existsSync(dataDir)) {
-            const files = import_fs82.default.readdirSync(dataDir);
+          if (import_fs83.default.existsSync(dataDir)) {
+            const files = import_fs83.default.readdirSync(dataDir);
             for (const file of files) {
               if (file.endsWith("_grid2x2.jpg") || file.endsWith(".u4-preview.png") || file.endsWith("_mba.png") || file.endsWith("_orig.svg") || file.endsWith("_4panel.jpg") || file.endsWith(".svg") || file.startsWith("test_")) {
                 try {
                   const filePath = import_path77.default.join(dataDir, file);
-                  if (import_fs82.default.statSync(filePath).isFile()) {
-                    import_fs82.default.unlinkSync(filePath);
+                  if (import_fs83.default.statSync(filePath).isFile()) {
+                    import_fs83.default.unlinkSync(filePath);
                     deletedFiles++;
                   }
                 } catch (e) {
@@ -226861,9 +227231,9 @@ Beantworte die Analysefragen streng als JSON!`;
           try {
             const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
             const imgPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${safeId}.png`);
-            if (import_fs82.default.existsSync(imgPath)) import_fs82.default.unlinkSync(imgPath);
+            if (import_fs83.default.existsSync(imgPath)) import_fs83.default.unlinkSync(imgPath);
             const previewPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${safeId}.u4-preview.png`);
-            if (import_fs82.default.existsSync(previewPath)) import_fs82.default.unlinkSync(previewPath);
+            if (import_fs83.default.existsSync(previewPath)) import_fs83.default.unlinkSync(previewPath);
           } catch (e) {
           }
           if (this.eventBroadcaster) {
@@ -227218,14 +227588,14 @@ Beantworte die Analysefragen streng als JSON!`;
         const designsDir = import_path77.default.resolve(process.cwd(), "data", "designs");
         if (params2.action === "APPROVE") {
           if (params2.editedSvgContent) {
-            if (!import_fs82.default.existsSync(designsDir)) {
+            if (!import_fs83.default.existsSync(designsDir)) {
               try {
-                import_fs82.default.mkdirSync(designsDir, { recursive: true });
+                import_fs83.default.mkdirSync(designsDir, { recursive: true });
               } catch (e) {
               }
             }
             const svgFilePath = import_path77.default.join(designsDir, `${cleanId}.svg`);
-            import_fs82.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
+            import_fs83.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
             task.svgContent = params2.editedSvgContent;
             task.localSvgPath = svgFilePath;
             task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
@@ -227235,7 +227605,7 @@ Beantworte die Analysefragen streng als JSON!`;
           console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Testbild nach SVG-Freigabe f\xFCr Task ${taskId}...`);
           const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
           const fourPanelFilePath = import_path77.default.join(designsDir, `${cleanId}_4panel.png`);
-          import_fs82.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+          import_fs83.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
           task.localFourPanelImagePath = fourPanelFilePath;
           const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
           task.fourPanelImageUrl = fourPanelUrl;
@@ -227275,7 +227645,7 @@ Beantworte die Analysefragen streng als JSON!`;
             console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
             const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
             const mbaFilePath = import_path77.default.join(designsDir, `${cleanId}_mba.png`);
-            import_fs82.default.writeFileSync(mbaFilePath, mbaBuffer);
+            import_fs83.default.writeFileSync(mbaFilePath, mbaBuffer);
             task.localMbaPngPath = mbaFilePath;
             task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
             this.addEvent(taskId, {
@@ -227386,11 +227756,11 @@ Beantworte die Analysefragen streng als JSON!`;
         const designsDir = import_path77.default.resolve(process.cwd(), "data", "designs");
         const origFilePath = import_path77.default.join(designsDir, `${cleanId}_original.svg`);
         const svgFilePath = import_path77.default.join(designsDir, `${cleanId}.svg`);
-        if (!import_fs82.default.existsSync(origFilePath)) {
+        if (!import_fs83.default.existsSync(origFilePath)) {
           throw new Error(`Original-SVG f\xFCr Task ${taskId} nicht gefunden.`);
         }
-        const originalSvgContent = import_fs82.default.readFileSync(origFilePath, "utf-8");
-        import_fs82.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
+        const originalSvgContent = import_fs83.default.readFileSync(origFilePath, "utf-8");
+        import_fs83.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
         task.svgContent = originalSvgContent;
         task.localSvgPath = svgFilePath;
         task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
@@ -227423,7 +227793,7 @@ var import_websocket_server = __toESM2(require_websocket_server(), 1);
 // src/server/index.ts
 var import_cors = __toESM2(require_lib3(), 1);
 var import_path80 = __toESM2(require("path"), 1);
-var import_fs85 = __toESM2(require("fs"), 1);
+var import_fs87 = __toESM2(require("fs"), 1);
 var import_dotenv = __toESM2(require_main(), 1);
 var import_url3 = require("url");
 var import_child_process8 = require("child_process");
@@ -228196,11 +228566,11 @@ init_queueService();
 
 // src/server/services/uploadWorkerService.ts
 var import_path78 = __toESM2(require("path"), 1);
-var import_fs83 = __toESM2(require("fs"), 1);
+var import_fs84 = __toESM2(require("fs"), 1);
 init_browserSessionService();
 init_queueService();
 init_productCatalogService();
-init_artworkResizeService();
+init_listingSanitizationService();
 init_syncEngine();
 var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
@@ -228348,17 +228718,7 @@ var UploadWorkerService = class _UploadWorkerService {
    * - Removes any other prohibited unicode characters not allowed on Amazon Merch
    */
   static sanitizeListingText(text2, locale = "en") {
-    if (!text2) return "";
-    let cleaned = text2;
-    cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"');
-    cleaned = cleaned.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
-    cleaned = cleaned.replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
-    cleaned = cleaned.replace(/\u2026/g, "...");
-    cleaned = cleaned.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
-    const prohibitedRegex = /[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g;
-    cleaned = cleaned.replace(prohibitedRegex, "");
-    cleaned = cleaned.replace(/\s+/g, " ");
-    return cleaned.trim();
+    return ListingSanitizationService.sanitizeText(text2);
   }
   /**
    * Main Upload Execution Pipeline
@@ -228384,7 +228744,7 @@ var UploadWorkerService = class _UploadWorkerService {
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       let pngAbsolutePath = "";
-      if (item.pngPath && import_fs83.default.existsSync(item.pngPath)) {
+      if (item.pngPath && import_fs84.default.existsSync(item.pngPath)) {
         pngAbsolutePath = import_path78.default.resolve(item.pngPath);
       } else {
         const candidatePaths = [
@@ -228396,7 +228756,7 @@ var UploadWorkerService = class _UploadWorkerService {
           import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}_master.png`)
         ];
         for (const cp of candidatePaths) {
-          if (import_fs83.default.existsSync(cp)) {
+          if (import_fs84.default.existsSync(cp)) {
             pngAbsolutePath = cp;
             break;
           }
@@ -228405,7 +228765,7 @@ var UploadWorkerService = class _UploadWorkerService {
       if (isUpdate) {
         this.log(`\u2139\uFE0F [UPDATE-MODUS] Bestehendes Listing wird bearbeitet \u2013 Artwork ist bereits auf Amazon vorhanden.`, "Update Modus", 25, 100);
       } else {
-        if (!pngAbsolutePath || !import_fs83.default.existsSync(pngAbsolutePath)) {
+        if (!pngAbsolutePath || !import_fs84.default.existsSync(pngAbsolutePath)) {
           throw new Error(`Druckfertige 4500x5400px PNG-Datei f\xFCr Task #${item.taskId} nicht gefunden.`);
         }
         this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path78.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
@@ -228997,44 +229357,38 @@ var UploadWorkerService = class _UploadWorkerService {
           this.log(`\u274C Konfigurationsfehler bei ${product.displayName}: ${editResult.error}`);
         }
         const artworkConfig = product.artwork;
-        const strategy = artworkConfig?.selectionStrategy || "DEFAULT_MASTER";
-        if (strategy !== "DEFAULT_MASTER" && artworkConfig?.variants && artworkConfig.variants.length > 0) {
-          let selectedVariant = artworkConfig.variants[0];
-          const isAvoidWhite = String(avoidColor || "").trim().toLowerCase() === "white";
-          if (strategy === "VISION_AVOID_WHITE") {
-            if (isAvoidWhite) {
-              const brushVariant = artworkConfig.variants.find((v) => v.id.includes("BRUSH"));
-              if (brushVariant) selectedVariant = brushVariant;
-            } else {
-              const standardVariant = artworkConfig.variants.find((v) => v.id.includes("STANDARD"));
-              if (standardVariant) selectedVariant = standardVariant;
+        if (artworkConfig?.customResizeEnabled) {
+          const rawAvoid = String(avoidColor || "none").trim().toLowerCase();
+          const avoidKey = rawAvoid.includes("white") || rawAvoid.includes("wei\xDF") ? "white" : rawAvoid.includes("black") || rawAvoid.includes("schwarz") ? "black" : "none";
+          const configuredVariantId = artworkConfig.resizeByAvoidColor?.[avoidKey];
+          if (!configuredVariantId || configuredVariantId === "MASTER") {
+            this.log(`\u{1F3A8} ${product.displayName}: Master Design konfiguriert f\xFCr avoidColor="${avoidKey}". Behalte Master-Artwork.`);
+          } else {
+            const selectedVariant = ARTWORK_VARIANT_REGISTRY[configuredVariantId];
+            if (!selectedVariant) {
+              const err = `FAILED_ARTWORK_RESOLUTION: Unbekannte Artwork-Variante "${configuredVariantId}" f\xFCr ${product.displayName}`;
+              currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
+              currentProductFailureReason = err;
+              this.log(`\u274C ${err}`);
+              continue;
             }
-          } else if (strategy === "ALWAYS_STANDARD") {
-            const standardVariant = artworkConfig.variants.find((v) => v.id.includes("STANDARD"));
-            if (standardVariant) selectedVariant = standardVariant;
-          }
-          const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-          const designsDir = import_path78.default.resolve(process.cwd(), "data", "designs");
-          let targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey];
-          if (!targetArtworkPath) {
-            const expectedFilename = `${cleanTaskId}_${selectedVariant.id.toLowerCase()}.png`;
-            const candidatePath = import_path78.default.join(designsDir, expectedFilename);
-            if (import_fs83.default.existsSync(candidatePath)) targetArtworkPath = candidatePath;
-          }
-          if (!targetArtworkPath || !import_fs83.default.existsSync(targetArtworkPath)) {
-            if (pngAbsolutePath && import_fs83.default.existsSync(pngAbsolutePath)) {
-              try {
-                this.log(`\u{1F4D0} Generiere Two-Sided Resized Varianten f\xFCr Task ${item.taskId} on-the-fly...`);
-                const resizeResult = await ArtworkResizeService.generateResizedArtworks(cleanTaskId, pngAbsolutePath);
-                targetArtworkPath = resizeResult[selectedVariant.artifactKey];
-              } catch (e) {
-                this.log(`\u26A0\uFE0F On-the-fly Resize fehlgeschlagen f\xFCr ${product.displayName}: ${e.message}`);
-              }
+            const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+            const designsDir = import_path78.default.resolve(process.cwd(), "data", "designs");
+            let targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey];
+            if (!targetArtworkPath) {
+              const expectedFilename = `${cleanTaskId}_${selectedVariant.id.toLowerCase()}.png`;
+              const candidatePath = import_path78.default.join(designsDir, expectedFilename);
+              if (import_fs84.default.existsSync(candidatePath)) targetArtworkPath = candidatePath;
             }
-          }
-          if (targetArtworkPath && import_fs83.default.existsSync(targetArtworkPath)) {
+            if (!targetArtworkPath || !import_fs84.default.existsSync(targetArtworkPath)) {
+              const err = `FAILED_ARTWORK_RESOLUTION: Resized Datei "${selectedVariant.artifactKey}" f\xFCr ${product.displayName} (${selectedVariant.id}) nicht auf Disk gefunden`;
+              currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
+              currentProductFailureReason = err;
+              this.log(`\u274C ${err}`);
+              continue;
+            }
             const isBrushApplied = selectedVariant.id.includes("BRUSH");
-            this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit ${selectedVariant.id} (${isBrushApplied ? "Black Brush weil avoid white" : "Two-Sided Standard"})...`);
+            this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit ${selectedVariant.label} [${selectedVariant.id}] (${isBrushApplied ? "Black Brush weil avoid white" : "Two-Sided Standard"})...`);
             const deleteResult = await page.evaluate(async (params2) => {
               const { pid, amazonKey, cardId } = params2;
               let card = document.getElementById(cardId) || document.getElementById(`${amazonKey}-card`) || document.getElementById(`${amazonKey.toLowerCase()}-card`) || document.getElementById(`${pid}-card`) || document.getElementById(`${pid.toLowerCase()}-card`);
@@ -229186,10 +229540,6 @@ var UploadWorkerService = class _UploadWorkerService {
               currentProductStatus = "FAILED_ARTWORK_UPLOAD";
               currentProductFailureReason = `Kein File-Upload-Feld im DOM f\xFCr ${product.displayName} gefunden`;
             }
-          } else {
-            this.log(`\u274C Special Artwork f\xFCr ${product.displayName} (${selectedVariant.id}) nicht gefunden: ${targetArtworkPath}`);
-            currentProductStatus = "FAILED_ARTWORK_UPLOAD";
-            currentProductFailureReason = `Special Artwork Datei nicht gefunden: ${targetArtworkPath}`;
           }
         }
         productUploadResults.push({
@@ -229439,7 +229789,7 @@ var UploadWorkerService = class _UploadWorkerService {
 };
 
 // src/server/services/costTrackingService.ts
-var import_fs84 = __toESM2(require("fs"), 1);
+var import_fs85 = __toESM2(require("fs"), 1);
 var import_path79 = __toESM2(require("path"), 1);
 init_settingsService();
 init_queueService();
@@ -229493,8 +229843,8 @@ var CostTrackingService = class {
     let taskEventOpenRouterCost = 0;
     try {
       const tasksLogFile = import_path79.default.resolve(process.cwd(), "data", "tasks_log.json");
-      if (import_fs84.default.existsSync(tasksLogFile)) {
-        const raw = import_fs84.default.readFileSync(tasksLogFile, "utf-8");
+      if (import_fs85.default.existsSync(tasksLogFile)) {
+        const raw = import_fs85.default.readFileSync(tasksLogFile, "utf-8");
         const tasks = JSON.parse(raw);
         if (Array.isArray(tasks)) {
           for (const task of tasks) {
@@ -229574,6 +229924,7 @@ init_amazonInspectService();
 init_updatePipelineService();
 
 // src/server/services/designPipelineService.ts
+var import_fs86 = __toESM2(require("fs"), 1);
 init_taskLogService();
 init_settingsService();
 init_trademarkService();
@@ -229721,6 +230072,11 @@ var DesignPipelineService = class {
       const task = this.getTask(taskId);
       if (!task || !task.localMbaPngPath) {
         throw new Error(`Task #${taskId} hat kein lokales Master MBA-PNG.`);
+      }
+      const existing = task.resizedAssets;
+      if (existing && existing.trimmedPath && import_fs86.default.existsSync(existing.trimmedPath) && existing.mugStandardPath && import_fs86.default.existsSync(existing.mugStandardPath) && existing.mugBrushPath && import_fs86.default.existsSync(existing.mugBrushPath) && existing.drinkwareStandardPath && import_fs86.default.existsSync(existing.drinkwareStandardPath) && existing.drinkwareBrushPath && import_fs86.default.existsSync(existing.drinkwareBrushPath)) {
+        console.log(`[DesignPipeline] \u26A1 Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
+        return { success: true, resizedAssets: existing };
       }
       const resized = await ArtworkResizeService.generateResizedArtworks(taskId, task.localMbaPngPath);
       task.resizedAssets = resized;
@@ -230130,25 +230486,25 @@ app.post("/api/v1/system/update", async (req, res) => {
     const arrayBuffer = await response2.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const tempTarPath = import_path80.default.resolve(process.cwd(), ".temp_update.tar.gz");
-    import_fs85.default.writeFileSync(tempTarPath, buffer);
+    import_fs87.default.writeFileSync(tempTarPath, buffer);
     (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
     try {
-      import_fs85.default.unlinkSync(tempTarPath);
+      import_fs87.default.unlinkSync(tempTarPath);
     } catch (e) {
     }
     const hostRepoPath = import_path80.default.resolve(process.cwd(), "host_repo");
-    if (import_fs85.default.existsSync(hostRepoPath)) {
+    if (import_fs87.default.existsSync(hostRepoPath)) {
       try {
-        import_fs85.default.writeFileSync(tempTarPath, buffer);
+        import_fs87.default.writeFileSync(tempTarPath, buffer);
         (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });
         try {
-          import_fs85.default.unlinkSync(tempTarPath);
+          import_fs87.default.unlinkSync(tempTarPath);
         } catch (e) {
         }
       } catch (e) {
@@ -230427,8 +230783,8 @@ app.post("/api/v1/design-pipeline/run", async (req, res) => {
 var heartbeatFile = import_path80.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
 function loadHeartbeatState() {
   try {
-    if (import_fs85.default.existsSync(heartbeatFile)) {
-      const data = JSON.parse(import_fs85.default.readFileSync(heartbeatFile, "utf-8"));
+    if (import_fs87.default.existsSync(heartbeatFile)) {
+      const data = JSON.parse(import_fs87.default.readFileSync(heartbeatFile, "utf-8"));
       return {
         lastPingTime: Number(data.lastPingTime) || 0,
         lastPingIp: data.lastPingIp || "",
@@ -230452,8 +230808,8 @@ function recordHermesHeartbeat(req, metadata) {
   console.log(`[MCP Heartbeat] \u{1F7E2} Heartbeat #${hermesHeartbeat.totalPings} von IP ${clientIp} registriert (Server-Zeit: ${(/* @__PURE__ */ new Date()).toLocaleTimeString()})`);
   try {
     const dataDir = import_path80.default.resolve(process.cwd(), "data");
-    if (!import_fs85.default.existsSync(dataDir)) import_fs85.default.mkdirSync(dataDir, { recursive: true });
-    import_fs85.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
+    if (!import_fs87.default.existsSync(dataDir)) import_fs87.default.mkdirSync(dataDir, { recursive: true });
+    import_fs87.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
   } catch (e) {
   }
   const currentHermes = {
@@ -230852,31 +231208,31 @@ app.get("/api/v1/designs/image/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs85.default.existsSync(mbaFilePath)) {
+  if (import_fs87.default.existsSync(mbaFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs85.default.createReadStream(mbaFilePath).pipe(res);
+    return import_fs87.default.createReadStream(mbaFilePath).pipe(res);
   }
-  if (import_fs85.default.existsSync(rawFilePath)) {
+  if (import_fs87.default.existsSync(rawFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs85.default.createReadStream(rawFilePath).pipe(res);
+    return import_fs87.default.createReadStream(rawFilePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  if (task?.localImagePath && import_fs85.default.existsSync(task.localImagePath)) {
+  if (task?.localImagePath && import_fs87.default.existsSync(task.localImagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs85.default.createReadStream(task.localImagePath).pipe(res);
+    return import_fs87.default.createReadStream(task.localImagePath).pipe(res);
   }
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
   }
   const queueItems = QueueService.loadQueue();
   const qItem = queueItems.find((q) => q.id === req.params.taskId || q.taskId === req.params.taskId || q.designId === req.params.taskId);
-  if (qItem?.pngPath && import_fs85.default.existsSync(qItem.pngPath)) {
+  if (qItem?.pngPath && import_fs87.default.existsSync(qItem.pngPath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs85.default.createReadStream(qItem.pngPath).pipe(res);
+    return import_fs87.default.createReadStream(qItem.pngPath).pipe(res);
   }
-  if (qItem?.imagePath && import_fs85.default.existsSync(qItem.imagePath)) {
+  if (qItem?.imagePath && import_fs87.default.existsSync(qItem.imagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs85.default.createReadStream(qItem.imagePath).pipe(res);
+    return import_fs87.default.createReadStream(qItem.imagePath).pipe(res);
   }
   res.status(404).send("Design image not found");
 });
@@ -230886,12 +231242,12 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs85.default.existsSync(gridFilePath)) {
+  if (import_fs87.default.existsSync(gridFilePath)) {
     try {
-      const stats2 = import_fs85.default.statSync(gridFilePath);
+      const stats2 = import_fs87.default.statSync(gridFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs85.default.createReadStream(gridFilePath).pipe(res);
+        return import_fs87.default.createReadStream(gridFilePath).pipe(res);
       }
     } catch (e) {
     }
@@ -230899,14 +231255,14 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   const mbaFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   const rawFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs85.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs85.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs85.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs87.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs87.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs87.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs87.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge 2x2 Grid f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
-      if (savedPath && import_fs85.default.existsSync(savedPath)) {
+      if (savedPath && import_fs87.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs85.default.createReadStream(savedPath).pipe(res);
+        return import_fs87.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -230920,12 +231276,12 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs85.default.existsSync(previewFilePath)) {
+  if (import_fs87.default.existsSync(previewFilePath)) {
     try {
-      const stats2 = import_fs85.default.statSync(previewFilePath);
+      const stats2 = import_fs87.default.statSync(previewFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs85.default.createReadStream(previewFilePath).pipe(res);
+        return import_fs87.default.createReadStream(previewFilePath).pipe(res);
       }
     } catch (e) {
     }
@@ -230933,14 +231289,14 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   const mbaFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   const rawFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs85.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs85.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs85.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs87.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs87.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs87.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs87.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge U4 Preview f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
-      if (savedPath && import_fs85.default.existsSync(savedPath)) {
+      if (savedPath && import_fs87.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs85.default.createReadStream(savedPath).pipe(res);
+        return import_fs87.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] U4-Preview Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -230954,9 +231310,9 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs85.default.existsSync(filePath)) {
+  if (import_fs87.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs85.default.createReadStream(filePath).pipe(res);
+    return import_fs87.default.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -230971,14 +231327,14 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs85.default.existsSync(filePath)) {
+  if (import_fs87.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs85.default.createReadStream(filePath).pipe(res);
+    return import_fs87.default.createReadStream(filePath).pipe(res);
   }
   const fallbackPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
-  if (import_fs85.default.existsSync(fallbackPath)) {
+  if (import_fs87.default.existsSync(fallbackPath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs85.default.createReadStream(fallbackPath).pipe(res);
+    return import_fs87.default.createReadStream(fallbackPath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -230993,9 +231349,9 @@ app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs85.default.existsSync(filePath)) {
+  if (import_fs87.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs85.default.createReadStream(filePath).pipe(res);
+    return import_fs87.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("MBA PNG not found");
 });
@@ -231005,9 +231361,9 @@ app.get("/api/v1/designs/4panel/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs85.default.existsSync(filePath)) {
+  if (import_fs87.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs85.default.createReadStream(filePath).pipe(res);
+    return import_fs87.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("4-Panel image not found");
 });
@@ -231403,6 +231759,12 @@ app.post("/api/v1/products/artwork-config", (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+app.get("/api/v1/products/artwork-variants", (req, res) => {
+  res.json({
+    success: true,
+    variants: Object.values(ProductCatalogService.getArtworkVariantRegistry())
+  });
+});
 app.get("/api/v1/products/catalog", (req, res) => {
   try {
     const catalog = ProductCatalogService.getCatalog();
@@ -231452,8 +231814,8 @@ app.delete("/api/v1/products/catalog", async (req, res) => {
 });
 var clientDistPath = import_path80.default.resolve(currentDir2, "client");
 var fallbackDistPath = import_path80.default.resolve(process.cwd(), "dist/client");
-var staticPath = import_fs85.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
-if (import_fs85.default.existsSync(staticPath)) {
+var staticPath = import_fs87.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
+if (import_fs87.default.existsSync(staticPath)) {
   console.log(`\u{1F4C2} Serving static frontend from ${staticPath}`);
   app.use(import_express.default.static(staticPath));
   app.get("*", (req, res) => {
@@ -231472,48 +231834,6 @@ server2.listen(Number(PORT), HOST, () => {
     ProductScannerService.init();
   } catch (err) {
     console.warn("[MBA Hub] ProductScannerService.init warning:", err.message);
-  }
-  try {
-    const seeds = {
-      CERAMIC_MUG: {
-        variants: [
-          { id: "TWO_SIDED_MUG_STANDARD", artifactKey: "mugStandardPath" },
-          { id: "TWO_SIDED_MUG_BRUSH", artifactKey: "mugBrushPath" }
-        ],
-        selectionStrategy: "VISION_AVOID_WHITE"
-      },
-      TRAVEL_TUMBLER: {
-        variants: [
-          { id: "TWO_SIDED_DRINKWARE_STANDARD", artifactKey: "drinkwareStandardPath" },
-          { id: "TWO_SIDED_DRINKWARE_BRUSH", artifactKey: "drinkwareBrushPath" }
-        ],
-        selectionStrategy: "VISION_AVOID_WHITE"
-      },
-      TUMBLER: {
-        variants: [
-          { id: "TWO_SIDED_DRINKWARE_STANDARD", artifactKey: "drinkwareStandardPath" }
-        ],
-        selectionStrategy: "ALWAYS_STANDARD"
-      },
-      WATER_BOTTLE: {
-        variants: [
-          { id: "TWO_SIDED_DRINKWARE_STANDARD", artifactKey: "drinkwareStandardPath" }
-        ],
-        selectionStrategy: "ALWAYS_STANDARD"
-      }
-    };
-    for (const [key, artwork] of Object.entries(seeds)) {
-      const p = ProductCatalogService.findProductByAmazonKey(key);
-      if (p) {
-        const ov = ProductCatalogService.getOverrideEntry(p.id);
-        if (!ov?.override.artwork || !ov.override.artwork.variants || ov.override.artwork.variants.length === 0 || ov.override.artwork.selectionStrategy === "DEFAULT_MASTER") {
-          console.log(`[ProductCatalogService] \u{1F3A8} Seeding default artwork config for ${p.displayName} (${key})...`);
-          ProductCatalogService.updateProductArtworkConfig(p.id, artwork);
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("[ProductCatalogService] Failed to seed artwork configs:", err.message);
   }
   try {
     const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));

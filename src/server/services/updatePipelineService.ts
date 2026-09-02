@@ -688,6 +688,16 @@ export class UpdatePipelineService {
       return { success: false, error: 'Kein Master-Artwork vorhanden' };
     }
 
+    const existing = task.resizedAssets;
+    if (existing && existing.trimmedPath && fs.existsSync(existing.trimmedPath) &&
+        existing.mugStandardPath && fs.existsSync(existing.mugStandardPath) &&
+        existing.mugBrushPath && fs.existsSync(existing.mugBrushPath) &&
+        existing.drinkwareStandardPath && fs.existsSync(existing.drinkwareStandardPath) &&
+        existing.drinkwareBrushPath && fs.existsSync(existing.drinkwareBrushPath)) {
+      console.log(`[UpdatePipeline] ⚡ Resized Assets für Task #${taskId} bereits vorhanden. Überspringe doppelten Resize.`);
+      return { success: true, resizedAssets: existing };
+    }
+
     try {
       const resized = await ArtworkResizeService.generateResizedArtworks(taskId, mbaPngPath);
       task.resizedAssets = resized;
@@ -760,10 +770,10 @@ export class UpdatePipelineService {
     }
 
     try {
-      const queueItem = QueueService.enqueueItem({
+      const { FinalizationService } = require('./finalizationService');
+      const finRes = await FinalizationService.finalizeForQueue({
         taskId: task.id,
-        source: 'UPDATE',
-        type: 'update',
+        pipeline: 'UPDATE',
         designId: task.payload?.designId,
         brand: listing.brand,
         title: listing.title,
@@ -773,9 +783,8 @@ export class UpdatePipelineService {
         listings: task.listingResult ? (task.listingResult.en ? task.listingResult : { en: task.listingResult }) : { en: listing },
         fitTypes: resolvedFitTypes,
         avoidColor: resolvedAvoidColor,
-        imagePath: task.localImagePath || '',
-        pngPath: task.localMbaPngPath || '',
-        resizedAssets: task.resizedAssets,
+        localImagePath: task.localImagePath || '',
+        masterPngPath: task.localMbaPngPath || task.localImagePath || '',
         publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
         liveStats: task.payload?.liveStats || null,
         liveProductSummary: task.payload?.productSummary || task.payload?.liveProductSummary || null,
@@ -783,25 +792,11 @@ export class UpdatePipelineService {
         tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
       });
 
-      TaskLogService.updateTaskStatus(taskId, {
-        status: 'UPDATE_QUEUED',
-        hasError: false
-      });
+      if (!finRes.success) {
+        return { success: false, error: finRes.error };
+      }
 
-      TaskLogService.addEvent(taskId, {
-        timestamp: new Date().toISOString(),
-        type: 'TASK_HANDOFF',
-        title: '📦 Update-Task an Queue übergeben (Tab Update)',
-        content: {
-          queueId: queueItem.id,
-          status: queueItem.status,
-          designId: task.payload?.designId,
-          allocatedSlots: queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0,
-          message: `Design erfolgreich in den Tab Update der Queue eingereiht (${queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0} neue Slots werden ergänzt).`
-        }
-      });
-
-      return { success: true, queueItem };
+      return { success: true };
     } catch (err: any) {
       console.error(`[UpdatePipeline] ❌ Fehler in Step U7:`, err);
       TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: err.message });

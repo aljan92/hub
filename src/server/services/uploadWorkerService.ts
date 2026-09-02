@@ -2,8 +2,9 @@ import path from 'path';
 import fs from 'fs';
 import { BrowserSessionService } from './browserSessionService';
 import { QueueService, QueueItem, ProductUploadResult, ProductUploadStatus, UploadResultSummary } from './queueService';
-import { ProductCatalogService, MerchProduct } from './productCatalogService';
+import { ProductCatalogService, MerchProduct, ARTWORK_VARIANT_REGISTRY } from './productCatalogService';
 import { ArtworkResizeService } from './artworkResizeService';
+import { ListingSanitizationService } from './listingSanitizationService';
 import { SyncEngine } from './syncEngine';
 import { Page } from 'playwright';
 
@@ -197,32 +198,7 @@ export class UploadWorkerService {
    * - Removes any other prohibited unicode characters not allowed on Amazon Merch
    */
   public static sanitizeListingText(text: string, locale = 'en'): string {
-    if (!text) return '';
-    let cleaned = text;
-
-    // 1. Replace typographic double quotes with standard quotes
-    cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"');
-
-    // 2. Replace typographic single quotes with standard apostrophes
-    cleaned = cleaned.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
-
-    // 3. Replace em/en dashes and minus signs with standard hyphens
-    cleaned = cleaned.replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
-
-    // 4. Replace ellipsis with three dots
-    cleaned = cleaned.replace(/\u2026/g, '...');
-
-    // 5. Replace non-breaking and special spaces with standard space
-    cleaned = cleaned.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ');
-
-    // 6. Clean prohibited characters using Amazon's character set
-    const prohibitedRegex = /[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g;
-    cleaned = cleaned.replace(prohibitedRegex, '');
-
-    // 7. Collapse multi-spaces
-    cleaned = cleaned.replace(/\s+/g, ' ');
-
-    return cleaned.trim();
+    return ListingSanitizationService.sanitizeText(text);
   }
 
   /**
@@ -1080,51 +1056,46 @@ export class UploadWorkerService {
 
         // Dynamic Artwork Replacement via ProductArtworkConfig
         const artworkConfig = product.artwork;
-        const strategy = artworkConfig?.selectionStrategy || 'DEFAULT_MASTER';
+        if (artworkConfig?.customResizeEnabled) {
+          const rawAvoid = String(avoidColor || 'none').trim().toLowerCase();
+          const avoidKey: 'white' | 'black' | 'none' = 
+            (rawAvoid.includes('white') || rawAvoid.includes('weiß')) ? 'white' :
+            (rawAvoid.includes('black') || rawAvoid.includes('schwarz')) ? 'black' : 'none';
 
-        if (strategy !== 'DEFAULT_MASTER' && artworkConfig?.variants && artworkConfig.variants.length > 0) {
-          let selectedVariant = artworkConfig.variants[0];
-          const isAvoidWhite = String(avoidColor || '').trim().toLowerCase() === 'white';
+          const configuredVariantId = artworkConfig.resizeByAvoidColor?.[avoidKey];
 
-          if (strategy === 'VISION_AVOID_WHITE') {
-            if (isAvoidWhite) {
-              const brushVariant = artworkConfig.variants.find(v => v.id.includes('BRUSH'));
-              if (brushVariant) selectedVariant = brushVariant;
-            } else {
-              const standardVariant = artworkConfig.variants.find(v => v.id.includes('STANDARD'));
-              if (standardVariant) selectedVariant = standardVariant;
+          if (!configuredVariantId || configuredVariantId === 'MASTER') {
+            this.log(`🎨 ${product.displayName}: Master Design konfiguriert für avoidColor="${avoidKey}". Behalte Master-Artwork.`);
+          } else {
+            const selectedVariant = ARTWORK_VARIANT_REGISTRY[configuredVariantId];
+            if (!selectedVariant) {
+              const err = `FAILED_ARTWORK_RESOLUTION: Unbekannte Artwork-Variante "${configuredVariantId}" für ${product.displayName}`;
+              currentProductStatus = 'FAILED_ARTWORK_RESOLUTION';
+              currentProductFailureReason = err;
+              this.log(`❌ ${err}`);
+              continue;
             }
-          } else if (strategy === 'ALWAYS_STANDARD') {
-            const standardVariant = artworkConfig.variants.find(v => v.id.includes('STANDARD'));
-            if (standardVariant) selectedVariant = standardVariant;
-          }
 
-          const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
-          const designsDir = path.resolve(process.cwd(), 'data', 'designs');
-          
-          let targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey as keyof typeof item.resizedAssets];
-          if (!targetArtworkPath) {
-            const expectedFilename = `${cleanTaskId}_${selectedVariant.id.toLowerCase()}.png`;
-            const candidatePath = path.join(designsDir, expectedFilename);
-            if (fs.existsSync(candidatePath)) targetArtworkPath = candidatePath;
-          }
-
-          // On-the-fly Resize Fallback wenn Resized Asset noch nicht auf Disk existiert
-          if (!targetArtworkPath || !fs.existsSync(targetArtworkPath)) {
-            if (pngAbsolutePath && fs.existsSync(pngAbsolutePath)) {
-              try {
-                this.log(`📐 Generiere Two-Sided Resized Varianten für Task ${item.taskId} on-the-fly...`);
-                const resizeResult = await ArtworkResizeService.generateResizedArtworks(cleanTaskId, pngAbsolutePath);
-                targetArtworkPath = resizeResult[selectedVariant.artifactKey as keyof typeof resizeResult];
-              } catch (e: any) {
-                this.log(`⚠️ On-the-fly Resize fehlgeschlagen für ${product.displayName}: ${e.message}`);
-              }
+            const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+            const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+            
+            let targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey as keyof typeof item.resizedAssets];
+            if (!targetArtworkPath) {
+              const expectedFilename = `${cleanTaskId}_${selectedVariant.id.toLowerCase()}.png`;
+              const candidatePath = path.join(designsDir, expectedFilename);
+              if (fs.existsSync(candidatePath)) targetArtworkPath = candidatePath;
             }
-          }
 
-          if (targetArtworkPath && fs.existsSync(targetArtworkPath)) {
+            if (!targetArtworkPath || !fs.existsSync(targetArtworkPath)) {
+              const err = `FAILED_ARTWORK_RESOLUTION: Resized Datei "${selectedVariant.artifactKey}" für ${product.displayName} (${selectedVariant.id}) nicht auf Disk gefunden`;
+              currentProductStatus = 'FAILED_ARTWORK_RESOLUTION';
+              currentProductFailureReason = err;
+              this.log(`❌ ${err}`);
+              continue;
+            }
+
             const isBrushApplied = selectedVariant.id.includes('BRUSH');
-            this.log(`🎨 Ersetze Artwork für ${product.displayName} mit ${selectedVariant.id} (${isBrushApplied ? 'Black Brush weil avoid white' : 'Two-Sided Standard'})...`);
+            this.log(`🎨 Ersetze Artwork für ${product.displayName} mit ${selectedVariant.label} [${selectedVariant.id}] (${isBrushApplied ? 'Black Brush weil avoid white' : 'Two-Sided Standard'})...`);
             
             // 1. Altes Artwork löschen falls delete-button vorhanden
             const deleteResult = await page.evaluate(async (params: { pid: string; amazonKey: string; cardId: string }) => {
@@ -1330,10 +1301,6 @@ export class UploadWorkerService {
               currentProductStatus = 'FAILED_ARTWORK_UPLOAD';
               currentProductFailureReason = `Kein File-Upload-Feld im DOM für ${product.displayName} gefunden`;
             }
-          } else {
-            this.log(`❌ Special Artwork für ${product.displayName} (${selectedVariant.id}) nicht gefunden: ${targetArtworkPath}`);
-            currentProductStatus = 'FAILED_ARTWORK_UPLOAD';
-            currentProductFailureReason = `Special Artwork Datei nicht gefunden: ${targetArtworkPath}`;
           }
         }
 

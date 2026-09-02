@@ -1920,6 +1920,14 @@ app.post('/api/v1/products/artwork-config', (req, res) => {
   }
 });
 
+// Get central artwork variant registry
+app.get('/api/v1/products/artwork-variants', (req, res) => {
+  res.json({
+    success: true,
+    variants: Object.values(ProductCatalogService.getArtworkVariantRegistry())
+  });
+});
+
 // ==============================================================================
 // 12. Product Database & CDP Scanner API
 // ==============================================================================
@@ -2015,50 +2023,6 @@ server.listen(Number(PORT), HOST, () => {
     console.warn('[MBA Hub] ProductScannerService.init warning:', err.message);
   }
 
-  // Ensure default Drinkware & Mug artwork configs are seeded in overrides if missing
-  try {
-    const seeds: Record<string, any> = {
-      CERAMIC_MUG: {
-        variants: [
-          { id: 'TWO_SIDED_MUG_STANDARD', artifactKey: 'mugStandardPath' },
-          { id: 'TWO_SIDED_MUG_BRUSH', artifactKey: 'mugBrushPath' }
-        ],
-        selectionStrategy: 'VISION_AVOID_WHITE'
-      },
-      TRAVEL_TUMBLER: {
-        variants: [
-          { id: 'TWO_SIDED_DRINKWARE_STANDARD', artifactKey: 'drinkwareStandardPath' },
-          { id: 'TWO_SIDED_DRINKWARE_BRUSH', artifactKey: 'drinkwareBrushPath' }
-        ],
-        selectionStrategy: 'VISION_AVOID_WHITE'
-      },
-      TUMBLER: {
-        variants: [
-          { id: 'TWO_SIDED_DRINKWARE_STANDARD', artifactKey: 'drinkwareStandardPath' }
-        ],
-        selectionStrategy: 'ALWAYS_STANDARD'
-      },
-      WATER_BOTTLE: {
-        variants: [
-          { id: 'TWO_SIDED_DRINKWARE_STANDARD', artifactKey: 'drinkwareStandardPath' }
-        ],
-        selectionStrategy: 'ALWAYS_STANDARD'
-      }
-    };
-
-    for (const [key, artwork] of Object.entries(seeds)) {
-      const p = ProductCatalogService.findProductByAmazonKey(key);
-      if (p) {
-        const ov = ProductCatalogService.getOverrideEntry(p.id);
-        if (!ov?.override.artwork || !ov.override.artwork.variants || ov.override.artwork.variants.length === 0 || ov.override.artwork.selectionStrategy === 'DEFAULT_MASTER') {
-          console.log(`[ProductCatalogService] 🎨 Seeding default artwork config for ${p.displayName} (${key})...`);
-          ProductCatalogService.updateProductArtworkConfig(p.id, artwork);
-        }
-      }
-    }
-  } catch (err: any) {
-    console.warn('[ProductCatalogService] Failed to seed artwork configs:', err.message);
-  }
 
   // Initialize UpdateBackfillService background scheduler
   try {

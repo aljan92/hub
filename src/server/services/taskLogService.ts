@@ -11,6 +11,7 @@ import { LLMService } from './llmService';
 import { VisionOptimizationService } from './visionOptimizationService';
 import { ArtworkResizeService } from './artworkResizeService';
 import { ListingValidationService } from './listingValidationService';
+import { ListingSanitizationService } from './listingSanitizationService';
 
 export * from '../../types/tasks';
 import { 
@@ -85,16 +86,7 @@ export class TaskLogService {
    * - Removes any other prohibited unicode characters not allowed on Amazon Merch
    */
   public static sanitizeString(txt: string): string {
-    if (!txt || typeof txt !== 'string') return txt || '';
-    return txt
-      .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
-      .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'")
-      .replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
-      .replace(/\u2026/g, '...')
-      .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
-      .replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return ListingSanitizationService.sanitizeText(txt);
   }
 
   public static sanitizeAndValidateListingBeforeQueue(listing: any): any {
@@ -249,45 +241,25 @@ export class TaskLogService {
     return task;
   }
 
-  static completeTaskAndEnqueue(task: DesignTaskLog) {
-    task.status = 'COMPLETED';
-    task.checkpoint = undefined;
-    task.hasError = false;
+  static async completeTaskAndEnqueue(taskOrId: DesignTaskLog | string): Promise<{ success: boolean; error?: string }> {
+    const task = typeof taskOrId === 'string' ? this.getTaskLogById(taskOrId) : taskOrId;
+    if (!task) return { success: false, error: 'Task nicht gefunden' };
 
     try {
       const listing = task.listingResult || task.trademarkRefineResult || {};
       const enListing = listing.en || (listing.title || listing.brand ? listing : {});
       const brand = enListing.brand || task.payload?.brand || '';
       const title = enListing.title || task.payload?.title || task.payload?.quote || 'Design #' + task.id;
-      const sanitizeText = (txt: string) => {
-        if (!txt) return '';
-        return txt
-          .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
-          .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'")
-          .replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
-          .replace(/\u2026/g, '...')
-          .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-      };
-
-      const bullet1 = sanitizeText(enListing.bullet1 || enListing.bullet_1 || '');
-      const bullet2 = sanitizeText(enListing.bullet2 || enListing.bullet_2 || '');
-      const description = sanitizeText(enListing.description || '');
+      const bullet1 = enListing.bullet1 || enListing.bullet_1 || '';
+      const bullet2 = enListing.bullet2 || enListing.bullet_2 || '';
+      const description = enListing.description || '';
 
       // Collect all language listings (en, de, fr, es, it, jp, etc.)
       const listings: Record<string, any> = {};
       if (typeof listing === 'object') {
         for (const [key, val] of Object.entries(listing)) {
           if (val && typeof val === 'object' && !Array.isArray(val) && !key.startsWith('_')) {
-            const langObj = val as any;
-            listings[key.toLowerCase()] = {
-              brand: sanitizeText(langObj.brand || brand),
-              title: sanitizeText(langObj.title || title),
-              bullet1: sanitizeText(langObj.bullet1 || langObj.bullet_1 || ''),
-              bullet2: sanitizeText(langObj.bullet2 || langObj.bullet_2 || ''),
-              description: sanitizeText(langObj.description || '')
-            };
+            listings[key.toLowerCase()] = val;
           }
         }
       }
@@ -303,14 +275,14 @@ export class TaskLogService {
       if (avoid.includes('white') || avoid.includes('weiß')) avoidColor = 'white';
       else if (avoid.includes('black') || avoid.includes('schwarz')) avoidColor = 'black';
 
-      // Only set customBackgroundColor if explicitly provided and a valid hex format (never reuseBackground!)
+      // Only set customBackgroundColor if explicitly provided and a valid hex format
       const rawHex = (task.customAnswers as any)?.customBackgroundColor || (task.customAnswers as any)?.accessoryColorHex;
       const customBackgroundColor = (typeof rawHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim())) ? (rawHex.startsWith('#') ? rawHex : `#${rawHex}`) : undefined;
 
-      const { QueueService } = require('./queueService');
-      const queueItem = QueueService.enqueueDesign({
+      const { FinalizationService } = require('./finalizationService');
+      const finResult = await FinalizationService.finalizeForQueue({
         taskId: task.id,
-        designTitle: title || 'Design #' + task.id,
+        pipeline: 'DESIGN',
         niche: task.payload?.niche || '',
         brand,
         title,
@@ -321,30 +293,18 @@ export class TaskLogService {
         fitTypes: fitTypes.length > 0 ? fitTypes : ['men', 'women', 'youth'],
         avoidColor,
         customBackgroundColor,
-        imagePath: task.localImagePath || '',
-        pngPath: task.localMbaPngPath || '',
-        resizedAssets: task.resizedAssets,
+        localImagePath: task.localImagePath || '',
+        masterPngPath: task.localMbaPngPath || '',
         tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
       });
 
-      this.addEvent(task.id, {
-        timestamp: new Date().toISOString(),
-        type: 'TASK_HANDOFF',
-        title: `📦 Design erfolgreich in die Upload-Queue übergeben`,
-        content: {
-          queueId: queueItem.id,
-          allocatedSlots: queueItem.allocatedSlots,
-          status: queueItem.status,
-          message: `Design mit 4500x5400px Master-PNG und Listing an die Queue übergeben (${queueItem.allocatedSlots} Slots geplant).`
-        }
-      });
-      console.log(`[TaskLogService] 📦 Task ${task.id} erfolgreich in Queue enqueued (${queueItem.allocatedSlots} Slots).`);
+      this.saveLogs(this.loadLogs());
+      this.emitUpdate(task);
+      return finResult;
     } catch (err: any) {
       console.warn('[TaskLogService] Failed to auto-enqueue completed task:', err.message);
+      return { success: false, error: err.message };
     }
-
-    this.saveLogs(this.loadLogs());
-    this.emitUpdate(task);
   }
 
   static updateTaskStatus(taskId: string, updates: Partial<DesignTaskLog>): DesignTaskLog | undefined {

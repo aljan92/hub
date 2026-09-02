@@ -53,6 +53,14 @@ interface MerchProduct {
   isDropAllowed?: boolean;
   dropPriorityOrder?: number;
   niceClass?: number;
+  artwork?: {
+    customResizeEnabled?: boolean;
+    resizeByAvoidColor?: {
+      white?: string;
+      black?: string;
+      none?: string;
+    };
+  };
 }
 
 interface ProductCatalogStats {
@@ -105,6 +113,28 @@ export const ProductsView: React.FC = () => {
   const [maxDroppableCapacity, setMaxDroppableCapacity] = useState(0);
   const [queueTolerance, setQueueTolerance] = useState(10);
   const [isUpdatingDropConfig, setIsUpdatingDropConfig] = useState(false);
+  const [artworkVariants, setArtworkVariants] = useState<Array<{ id: string; label: string; artifactKey: string }>>([]);
+
+  const handleUpdateArtworkConfig = async (productId: string, updatedArtwork: any) => {
+    setProducts(prev => prev.map(p => {
+      if (p.id !== productId) return p;
+      return {
+        ...p,
+        artwork: updatedArtwork
+      };
+    }));
+
+    try {
+      await fetch('/api/v1/products/artwork-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, artwork: updatedArtwork })
+      });
+    } catch (err) {
+      console.error('Failed to update artwork config:', err);
+      fetchCatalogData();
+    }
+  };
 
   const handleCycleColorAvoidRule = async (productId: string, colorId: string, currentRule?: 'none' | 'white' | 'black') => {
     const nextRule: 'none' | 'white' | 'black' = 
@@ -163,6 +193,13 @@ export const ProductsView: React.FC = () => {
       if (qData.success) {
         setMaxDroppableCapacity(qData.maxDroppableCapacity || 0);
         if (qData.maxDropPerDesign !== undefined) setQueueTolerance(qData.maxDropPerDesign);
+      }
+
+      // Fetch central artwork variants
+      const vRes = await fetch('/api/v1/products/artwork-variants');
+      const vData = await vRes.json();
+      if (vData.success && Array.isArray(vData.variants)) {
+        setArtworkVariants(vData.variants);
       }
     } catch (err) {
       console.error('Error fetching product catalog:', err);
@@ -825,6 +862,138 @@ export const ProductsView: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Special Artwork & Custom Resize Configuration */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <Layers className="w-4 h-4 text-accent-cyan" />
+                      <div>
+                        <div className="text-xs font-bold text-slate-100">Special Artwork / Custom Resize</div>
+                        <div className="text-[10px] text-slate-400">Automatische Two-Sided oder Spezial-Artwork Zuweisung nach avoidColor</div>
+                      </div>
+                    </div>
+                    <label className="flex items-center space-x-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedProduct.artwork?.customResizeEnabled)}
+                        onChange={(e) => {
+                          const enabled = e.target.checked;
+                          const current = selectedProduct.artwork || {};
+                          const newCfg = {
+                            ...current,
+                            customResizeEnabled: enabled,
+                            resizeByAvoidColor: current.resizeByAvoidColor || {
+                              white: 'MASTER',
+                              black: 'MASTER',
+                              none: 'MASTER'
+                            }
+                          };
+                          handleUpdateArtworkConfig(selectedProduct.id, newCfg);
+                        }}
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-accent-cyan focus:ring-accent-cyan/30"
+                      />
+                      <span className="text-xs font-semibold text-slate-200">Custom Resize aktivieren</span>
+                    </label>
+                  </div>
+
+                  {selectedProduct.artwork?.customResizeEnabled && (
+                    <div className="pt-3 border-t border-slate-800/80 space-y-2.5 animate-fadeIn">
+                      <div className="text-[11px] text-slate-400">
+                        Wähle pro Design-Erkennung (avoidColor) die gewünschte Two-Sided oder Spezial-Artwork Version:
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {/* Avoid White */}
+                        <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                          <div className="text-[11px] font-semibold text-slate-200 flex items-center space-x-1.5">
+                            <span>⚪</span>
+                            <span>Avoid White</span>
+                          </div>
+                          <select
+                            value={selectedProduct.artwork?.resizeByAvoidColor?.white || 'MASTER'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const newCfg = {
+                                ...selectedProduct.artwork,
+                                customResizeEnabled: true,
+                                resizeByAvoidColor: {
+                                  ...(selectedProduct.artwork?.resizeByAvoidColor || {}),
+                                  white: val
+                                }
+                              };
+                              handleUpdateArtworkConfig(selectedProduct.id, newCfg);
+                            }}
+                            className="w-full text-xs bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-accent-cyan focus:outline-none"
+                          >
+                            <option value="MASTER">Master Design (Kein Resize)</option>
+                            {artworkVariants.filter(v => v.id !== 'MASTER').map(v => (
+                              <option key={v.id} value={v.id}>{v.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Avoid Black */}
+                        <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                          <div className="text-[11px] font-semibold text-slate-200 flex items-center space-x-1.5">
+                            <span>⚫</span>
+                            <span>Avoid Black</span>
+                          </div>
+                          <select
+                            value={selectedProduct.artwork?.resizeByAvoidColor?.black || 'MASTER'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const newCfg = {
+                                ...selectedProduct.artwork,
+                                customResizeEnabled: true,
+                                resizeByAvoidColor: {
+                                  ...(selectedProduct.artwork?.resizeByAvoidColor || {}),
+                                  black: val
+                                }
+                              };
+                              handleUpdateArtworkConfig(selectedProduct.id, newCfg);
+                            }}
+                            className="w-full text-xs bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-accent-cyan focus:outline-none"
+                          >
+                            <option value="MASTER">Master Design (Kein Resize)</option>
+                            {artworkVariants.filter(v => v.id !== 'MASTER').map(v => (
+                              <option key={v.id} value={v.id}>{v.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Kein Avoid */}
+                        <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                          <div className="text-[11px] font-semibold text-slate-200 flex items-center space-x-1.5">
+                            <span>🔘</span>
+                            <span>Kein Avoid (Standard)</span>
+                          </div>
+                          <select
+                            value={selectedProduct.artwork?.resizeByAvoidColor?.none || 'MASTER'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const newCfg = {
+                                ...selectedProduct.artwork,
+                                customResizeEnabled: true,
+                                resizeByAvoidColor: {
+                                  ...(selectedProduct.artwork?.resizeByAvoidColor || {}),
+                                  none: val
+                                }
+                              };
+                              handleUpdateArtworkConfig(selectedProduct.id, newCfg);
+                            }}
+                            className="w-full text-xs bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-accent-cyan focus:outline-none"
+                          >
+                            <option value="MASTER">Master Design (Kein Resize)</option>
+                            {artworkVariants.filter(v => v.id !== 'MASTER').map(v => (
+                              <option key={v.id} value={v.id}>{v.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Colors Section: Swatches or Color Picker */}
                 <div className="space-y-3">

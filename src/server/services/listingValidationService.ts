@@ -303,4 +303,100 @@ export class ListingValidationService {
       expectedSuffix
     };
   }
+
+  /**
+   * Pure deterministic final validation immediately before queue handoff.
+   * Does NOT rewrite, modify or generate any text.
+   * Checks strict Amazon limits and safety constraints across master and all localized listings.
+   */
+  public static validateFinalListing(params: {
+    listing: {
+      brand?: string;
+      title?: string;
+      bullet1?: string;
+      bullet2?: string;
+      description?: string;
+    };
+    allListings?: Record<string, any>;
+  }): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    const checkEntry = (prefix: string, data: Record<string, any>, locale: string) => {
+      const title = String(data.title || '').trim();
+      const brand = String(data.brand || '').trim();
+      const bullet1 = String(data.bullet1 || data.bullet_1 || '').trim();
+      const bullet2 = String(data.bullet2 || data.bullet_2 || '').trim();
+      const description = String(data.description || '').trim();
+
+      // Title checks
+      if (!title) {
+        errors.push(`${prefix} Title darf nicht leer sein.`);
+      } else {
+        if (title.length > 60) {
+          errors.push(`${prefix} Title überschreitet 60 Zeichen (${title.length} Chars: "${title.slice(0, 30)}...")`);
+        }
+        if (/[,.!?:;'"\-–—]+$/.test(title)) {
+          errors.push(`${prefix} Title darf nicht auf Satzzeichen enden ("${title}").`);
+        }
+        if (/\s+(?:none|null|undefined|n\/a|na|-)$/i.test(title)) {
+          errors.push(`${prefix} Title enthält einen trailing Platzhalter-Token ("${title}").`);
+        }
+      }
+
+      // Brand checks
+      if (!brand) {
+        errors.push(`${prefix} Brand darf nicht leer sein.`);
+      } else if (brand.length > 50) {
+        errors.push(`${prefix} Brand überschreitet 50 Zeichen (${brand.length} Chars: "${brand}")`);
+      }
+
+      // Bullets checks
+      if (bullet1.length > 256) {
+        errors.push(`${prefix} Bullet 1 überschreitet 256 Zeichen (${bullet1.length} Chars).`);
+      }
+      if (bullet2.length > 256) {
+        errors.push(`${prefix} Bullet 2 überschreitet 256 Zeichen (${bullet2.length} Chars).`);
+      }
+
+      // Description check
+      if (description.length > 600) {
+        errors.push(`${prefix} Description überschreitet 600 Zeichen (${description.length} Chars).`);
+      }
+
+      // Banned words check
+      const lang = locale === 'de' ? 'de' : 'en';
+      const fields = [
+        { name: 'Title', val: title },
+        { name: 'Brand', val: brand },
+        { name: 'Bullet 1', val: bullet1 },
+        { name: 'Bullet 2', val: bullet2 },
+        { name: 'Description', val: description }
+      ];
+      for (const f of fields) {
+        if (f.val) {
+          const banned = BannedWordsService.findBannedWordsInText(f.val, lang);
+          if (banned.length > 0) {
+            errors.push(`${prefix} ${f.name} enthält verbotene Wörter: [${banned.join(', ')}]`);
+          }
+        }
+      }
+    };
+
+    // 1. Check master listing
+    checkEntry('[Master]', params.listing, 'en');
+
+    // 2. Check all localized listings if provided
+    if (params.allListings && typeof params.allListings === 'object') {
+      for (const [loc, locData] of Object.entries(params.allListings)) {
+        if (locData && typeof locData === 'object') {
+          checkEntry(`[${loc.toUpperCase()}]`, locData as Record<string, any>, loc);
+        }
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
 }

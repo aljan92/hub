@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
+import { ListingSanitizationService } from './listingSanitizationService';
 import { loadSettings, saveSettings } from './settingsService';
 
 export type QueueItemStatus = 'WAITING' | 'UPLOADING' | 'COMPLETED' | 'ERROR';
@@ -23,6 +24,7 @@ export type ProductUploadStatus =
   | 'FAILED_EDITOR_OPEN'
   | 'FAILED_FIT_TYPE'
   | 'FAILED_COLOR_CONFIGURATION'
+  | 'FAILED_ARTWORK_RESOLUTION'
   | 'FAILED_ARTWORK_UPLOAD'
   | 'FAILED_UNKNOWN';
 
@@ -195,18 +197,7 @@ export class QueueService {
       const tasksMap = new Map(tasks.map((t: any) => [t.id, t]));
       let hasChanges = false;
 
-      const cleanStr = (txt: string) => {
-        if (!txt) return '';
-        return txt
-          .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
-          .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'")
-          .replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
-          .replace(/\u2026/g, '...')
-          .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
-          .replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, '')
-          .replace(/\s+/g, ' ')
-          .trim();
-      };
+      const cleanStr = (txt: string) => ListingSanitizationService.sanitizeText(txt);
 
       for (const item of this.items) {
         // Always sanitize root fields
@@ -504,18 +495,7 @@ export class QueueService {
   }): QueueItem {
     this.ensureLoaded();
 
-    const cleanStr = (txt: string) => {
-      if (!txt) return '';
-      return txt
-        .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
-        .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'")
-        .replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
-        .replace(/\u2026/g, '...')
-        .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
-        .replace(/[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
+    const cleanStr = (txt: string) => ListingSanitizationService.sanitizeText(txt);
 
     // Normalization helper for avoidColor
     const normalizeAvoidColor = (val: any): 'white' | 'black' | 'none' => {

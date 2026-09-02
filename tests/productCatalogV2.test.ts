@@ -38,7 +38,7 @@ async function runTests() {
     const o = overrides[pid];
     if (o.niceClass !== null && o.niceClass !== undefined) niceClassCount++;
     if (o.isDropAllowed === true) droppableCount++;
-    if (o.artwork && o.artwork.variants && o.artwork.variants.length > 0) artworkConfigsCount++;
+    if (o.artwork && (o.artwork.customResizeEnabled === true || (o.artwork.variants && o.artwork.variants.length > 0))) artworkConfigsCount++;
     if (o.colors) {
       for (const colId of Object.keys(o.colors)) {
         if (o.colors[colId].avoidRule && o.colors[colId].avoidRule !== 'none') {
@@ -63,7 +63,7 @@ async function runTests() {
   assert(Boolean(mug), 'CERAMIC_MUG not found in merged catalog');
   assert(mug?.niceClass === 21, `CERAMIC_MUG niceClass expected 21, got ${mug?.niceClass}`);
   assert(mug?.isDropAllowed === true, 'CERAMIC_MUG should be droppable');
-  assert(mug?.artwork?.variants?.length === 2, 'CERAMIC_MUG should have 2 artwork variants');
+  assert(mug?.artwork?.customResizeEnabled === true, 'CERAMIC_MUG should have customResizeEnabled: true');
   assert(mug?.amazon?.key === 'MUG', `CERAMIC_MUG amazon key expected 'MUG', got ${mug?.amazon?.key}`);
   console.log('✅ Test 3 Passed: Dynamic catalog merging verified.\n');
 
@@ -170,20 +170,18 @@ async function runTests() {
   assert(class16Products.includes('HARDCOVER_JOURNAL'), 'Class 16 must block HARDCOVER_JOURNAL');
   console.log('✅ Test 8 Passed: Trademark Nice Class blocking verified across Classes 9, 16, 18, 20, 21.\n');
 
-  // Test 9: Artwork Variant Resolution
-  console.log('Test 9: Verify Artwork Variant Resolution');
+  // Test 9: Artwork Variant Resolution (New Matrix Schema)
+  console.log('Test 9: Verify Artwork Variant Resolution (Custom Resize Matrix)');
   const mugArtwork = catalog.products.find(p => p.id === 'CERAMIC_MUG')?.artwork;
-  assert(mugArtwork?.selectionStrategy === 'VISION_AVOID_WHITE', `Mug strategy expected 'VISION_AVOID_WHITE', got ${mugArtwork?.selectionStrategy}`);
-  
-  const standardVariant = mugArtwork?.variants?.find(v => v.id.includes('STANDARD'));
-  const brushVariant = mugArtwork?.variants?.find(v => v.id.includes('BRUSH'));
-  assert(standardVariant?.artifactKey === 'mugStandardPath', `Mug standard artifactKey expected 'mugStandardPath', got ${standardVariant?.artifactKey}`);
-  assert(brushVariant?.artifactKey === 'mugBrushPath', `Mug brush artifactKey expected 'mugBrushPath', got ${brushVariant?.artifactKey}`);
+  assert(mugArtwork?.customResizeEnabled === true, 'Mug customResizeEnabled expected true');
+  assert(mugArtwork?.resizeByAvoidColor?.white === 'TWO_SIDED_MUG_BRUSH', 'Mug avoid white expected TWO_SIDED_MUG_BRUSH');
+  assert(mugArtwork?.resizeByAvoidColor?.black === 'TWO_SIDED_MUG_STANDARD', 'Mug avoid black expected TWO_SIDED_MUG_STANDARD');
+  assert(mugArtwork?.resizeByAvoidColor?.none === 'TWO_SIDED_MUG_STANDARD', 'Mug avoid none expected TWO_SIDED_MUG_STANDARD');
 
   const tumblerArtwork = catalog.products.find(p => p.id === 'TUMBLER')?.artwork;
-  assert(tumblerArtwork?.selectionStrategy === 'ALWAYS_STANDARD', `Tumbler strategy expected 'ALWAYS_STANDARD', got ${tumblerArtwork?.selectionStrategy}`);
-  assert(tumblerArtwork?.variants?.[0]?.artifactKey === 'drinkwareStandardPath', `Tumbler artifactKey expected 'drinkwareStandardPath'`);
-  console.log('✅ Test 9 Passed: Artwork variant resolution verified.\n');
+  assert(tumblerArtwork?.customResizeEnabled === true, 'Tumbler customResizeEnabled expected true');
+  assert(tumblerArtwork?.resizeByAvoidColor?.white === 'TWO_SIDED_DRINKWARE_STANDARD', 'Tumbler avoid white expected TWO_SIDED_DRINKWARE_STANDARD');
+  console.log('✅ Test 9 Passed: Custom Resize matrix resolution verified.\n');
 
   // Test 10: Queue Balancing with Unavailable Products
   console.log('Test 10: Verify Queue Balancing filters out unavailable products');

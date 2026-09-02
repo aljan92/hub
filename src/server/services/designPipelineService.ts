@@ -171,6 +171,15 @@ export class DesignPipelineService {
       if (!task || !task.localMbaPngPath) {
         throw new Error(`Task #${taskId} hat kein lokales Master MBA-PNG.`);
       }
+      const existing = task.resizedAssets;
+      if (existing && existing.trimmedPath && fs.existsSync(existing.trimmedPath) &&
+          existing.mugStandardPath && fs.existsSync(existing.mugStandardPath) &&
+          existing.mugBrushPath && fs.existsSync(existing.mugBrushPath) &&
+          existing.drinkwareStandardPath && fs.existsSync(existing.drinkwareStandardPath) &&
+          existing.drinkwareBrushPath && fs.existsSync(existing.drinkwareBrushPath)) {
+        console.log(`[DesignPipeline] ⚡ Resized Assets für Task #${taskId} bereits vorhanden. Überspringe doppelten Resize.`);
+        return { success: true, resizedAssets: existing };
+      }
       const resized = await ArtworkResizeService.generateResizedArtworks(taskId, task.localMbaPngPath);
       task.resizedAssets = resized;
       TaskLogService.updateTaskStatus(taskId, { resizedAssets: resized });

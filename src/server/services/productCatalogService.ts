@@ -32,14 +32,54 @@ export interface ProductAmazonIdentity {
   sortOrder: number;        // Dynamic row index in "Select Products" modal
 }
 
+export interface ArtworkVariantRegistryEntry {
+  id: string;
+  label: string;
+  artifactKey: 'trimmedPath' | 'mugStandardPath' | 'mugBrushPath' | 'drinkwareStandardPath' | 'drinkwareBrushPath' | 'pngPath';
+}
+
+export const ARTWORK_VARIANT_REGISTRY: Record<string, ArtworkVariantRegistryEntry> = {
+  MASTER: {
+    id: 'MASTER',
+    label: 'Master Design',
+    artifactKey: 'pngPath'
+  },
+  TWO_SIDED_MUG_STANDARD: {
+    id: 'TWO_SIDED_MUG_STANDARD',
+    label: 'Two Sided Mug',
+    artifactKey: 'mugStandardPath'
+  },
+  TWO_SIDED_MUG_BRUSH: {
+    id: 'TWO_SIDED_MUG_BRUSH',
+    label: 'Two Sided Mug Brush',
+    artifactKey: 'mugBrushPath'
+  },
+  TWO_SIDED_DRINKWARE_STANDARD: {
+    id: 'TWO_SIDED_DRINKWARE_STANDARD',
+    label: 'Two Sided Drinkware',
+    artifactKey: 'drinkwareStandardPath'
+  },
+  TWO_SIDED_DRINKWARE_BRUSH: {
+    id: 'TWO_SIDED_DRINKWARE_BRUSH',
+    label: 'Two Sided Drinkware Brush',
+    artifactKey: 'drinkwareBrushPath'
+  }
+};
+
 export interface ProductArtworkVariantConfig {
-  id: string;               // e.g. "TWO_SIDED_MUG_STANDARD", "TWO_SIDED_MUG_BRUSH"
+  id: string;
   artifactKey: 'trimmedPath' | 'mugStandardPath' | 'mugBrushPath' | 'drinkwareStandardPath' | 'drinkwareBrushPath';
 }
 
 export interface ProductArtworkConfig {
-  variants: ProductArtworkVariantConfig[];
-  selectionStrategy: 'DEFAULT_MASTER' | 'VISION_AVOID_WHITE' | 'ALWAYS_STANDARD';
+  customResizeEnabled?: boolean;
+  resizeByAvoidColor?: {
+    white?: string;
+    black?: string;
+    none?: string;
+  };
+  variants?: ProductArtworkVariantConfig[];
+  selectionStrategy?: 'DEFAULT_MASTER' | 'VISION_AVOID_WHITE' | 'ALWAYS_STANDARD' | string;
 }
 
 export interface ProductOverride {
@@ -653,6 +693,10 @@ export class ProductCatalogService {
     const catalog = this.getCatalog();
     this.saveCatalogAtomic(catalog);
     return catalog;
+  }
+
+  public static getArtworkVariantRegistry() {
+    return ARTWORK_VARIANT_REGISTRY;
   }
 
   /**
