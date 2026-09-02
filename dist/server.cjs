@@ -50115,13 +50115,29 @@ var init_productCatalogService = __esm2({
         return this.catalogData;
       }
       /**
+       * Helper to look up an override entry by stable ID or by known Amazon DOM keys
+       */
+      static getOverrideEntry(productId, amazonKey) {
+        this.ensureLoaded();
+        const overrides = this.overridesData.overrides || {};
+        if (overrides[productId]) {
+          return { key: productId, override: overrides[productId] };
+        }
+        for (const [k, v] of Object.entries(overrides)) {
+          if (v.knownAmazonKeys?.includes(productId) || amazonKey && v.knownAmazonKeys?.includes(amazonKey)) {
+            return { key: k, override: v };
+          }
+        }
+        return null;
+      }
+      /**
        * Get merged catalog: Amazon dynamic data + persistent MBA Hub overrides
        */
       static getCatalog() {
         this.ensureLoaded();
-        const overrides = this.overridesData.overrides || {};
         const mergedProducts = this.catalogData.products.map((prod) => {
-          const override = overrides[prod.id];
+          const matched = this.getOverrideEntry(prod.id, prod.amazon?.key);
+          const override = matched?.override;
           const isAvailable = prod.available !== false;
           const amazonKey = prod.amazon?.key || override?.knownAmazonKeys?.[0] || prod.id;
           const amazonSort = prod.amazonSortOrder ?? prod.amazon?.sortOrder ?? prod.sortOrder ?? 999;
@@ -50342,15 +50358,17 @@ var init_productCatalogService = __esm2({
        */
       static updateProductNiceClass(id, niceClass) {
         this.ensureLoaded();
-        if (!this.overridesData.overrides[id]) {
-          this.overridesData.overrides[id] = {
+        const found = this.getOverrideEntry(id);
+        const targetKey = found ? found.key : id;
+        if (!this.overridesData.overrides[targetKey]) {
+          this.overridesData.overrides[targetKey] = {
             niceClass,
             uiSortOrder: 999,
             isDropAllowed: false,
             colors: {}
           };
         } else {
-          this.overridesData.overrides[id].niceClass = niceClass;
+          this.overridesData.overrides[targetKey].niceClass = niceClass;
         }
         this.saveOverridesAtomic(this.overridesData);
         const catalog = this.getCatalog();
@@ -50362,18 +50380,20 @@ var init_productCatalogService = __esm2({
        */
       static updateProductColorAvoidRule(productId, colorId, avoidRule) {
         this.ensureLoaded();
-        if (!this.overridesData.overrides[productId]) {
-          this.overridesData.overrides[productId] = {
+        const found = this.getOverrideEntry(productId);
+        const targetKey = found ? found.key : productId;
+        if (!this.overridesData.overrides[targetKey]) {
+          this.overridesData.overrides[targetKey] = {
             niceClass: null,
             uiSortOrder: 999,
             isDropAllowed: false,
             colors: {}
           };
         }
-        if (!this.overridesData.overrides[productId].colors) {
-          this.overridesData.overrides[productId].colors = {};
+        if (!this.overridesData.overrides[targetKey].colors) {
+          this.overridesData.overrides[targetKey].colors = {};
         }
-        this.overridesData.overrides[productId].colors[colorId] = { avoidRule };
+        this.overridesData.overrides[targetKey].colors[colorId] = { avoidRule };
         this.saveOverridesAtomic(this.overridesData);
         const catalog = this.getCatalog();
         this.saveCatalogAtomic(catalog);
@@ -50385,8 +50405,10 @@ var init_productCatalogService = __esm2({
       static updateDropConfig(configs) {
         this.ensureLoaded();
         for (const conf of configs) {
-          if (!this.overridesData.overrides[conf.id]) {
-            this.overridesData.overrides[conf.id] = {
+          const found = this.getOverrideEntry(conf.id);
+          const targetKey = found ? found.key : conf.id;
+          if (!this.overridesData.overrides[targetKey]) {
+            this.overridesData.overrides[targetKey] = {
               niceClass: null,
               uiSortOrder: 999,
               isDropAllowed: conf.isDropAllowed,
@@ -50394,8 +50416,8 @@ var init_productCatalogService = __esm2({
               colors: {}
             };
           } else {
-            this.overridesData.overrides[conf.id].isDropAllowed = conf.isDropAllowed;
-            this.overridesData.overrides[conf.id].dropPriorityOrder = conf.dropPriorityOrder;
+            this.overridesData.overrides[targetKey].isDropAllowed = conf.isDropAllowed;
+            this.overridesData.overrides[targetKey].dropPriorityOrder = conf.dropPriorityOrder;
           }
         }
         this.saveOverridesAtomic(this.overridesData);
