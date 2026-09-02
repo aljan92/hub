@@ -6,6 +6,8 @@ export type ColorMode = 'predefined' | 'customPicker';
 export interface MerchColorDef {
   id: string;          // e.g. "dark_heather"
   displayName: string; // e.g. "Dark Heather"
+  amazonIdentifier?: string; // e.g. "dark_heather_swatch"
+  domIdentifier?: string;    // e.g. "flowcheckbox-dark_heather"
   hexPreview?: string; // e.g. "#3A3D40"
   avoidRule?: 'none' | 'white' | 'black'; // 'none' (default) | 'white' (avoid on white) | 'black' (avoid on black)
 }
@@ -13,6 +15,8 @@ export interface MerchColorDef {
 export interface MerchFitTypeDef {
   id: string;          // e.g. "men", "women", "youth", "girls"
   displayName: string; // e.g. "Men", "Women"
+  amazonIdentifier?: string;
+  domIdentifier?: string;
 }
 
 export interface MerchMarketplace {
@@ -21,15 +25,53 @@ export interface MerchMarketplace {
   defaultPrice: string;// e.g. "19.99"
 }
 
+export interface ProductAmazonIdentity {
+  key: string;              // Dynamic Amazon productType e.g. "MUG", "STANDARD_LONG_SLEEVE"
+  cardId: string;           // Dynamic card container ID e.g. "MUG-card"
+  checkboxClass: string;    // Dynamic modal checkbox class prefix e.g. "MUG"
+  sortOrder: number;        // Dynamic row index in "Select Products" modal
+}
+
+export interface ProductArtworkVariantConfig {
+  id: string;               // e.g. "TWO_SIDED_MUG_STANDARD", "TWO_SIDED_MUG_BRUSH"
+  artifactKey: 'trimmedPath' | 'mugStandardPath' | 'mugBrushPath' | 'drinkwareStandardPath' | 'drinkwareBrushPath';
+}
+
+export interface ProductArtworkConfig {
+  variants: ProductArtworkVariantConfig[];
+  selectionStrategy: 'DEFAULT_MASTER' | 'VISION_AVOID_WHITE' | 'ALWAYS_STANDARD';
+}
+
+export interface ProductOverride {
+  niceClass: number | null;
+  uiSortOrder?: number;
+  isDropAllowed?: boolean;
+  dropPriorityOrder?: number;
+  artwork?: ProductArtworkConfig;
+  colors?: Record<string, { avoidRule: 'none' | 'white' | 'black' }>;
+  knownAmazonKeys?: string[];
+}
+
+export interface ProductOverridesData {
+  schemaVersion: number;
+  lastUpdated: string;
+  overrides: Record<string, ProductOverride>;
+}
+
 export interface MerchProduct {
-  id: string;                          // CSS identifier, e.g. "STANDARD_TSHIRT"
+  id: string;                          // Stable MBA Hub ID, e.g. "STANDARD_TSHIRT", "CERAMIC_MUG"
   displayName: string;                 // Human-readable name, e.g. "Standard t-shirt"
-  niceClass?: number;                  // Nice Trademark Class (25, 18, 20, 21, 9, 16)
+  niceClass?: number | null;           // Nice Trademark Class (25, 18, 20, 21, 9, 16) or null
   colorMode: ColorMode;                // 'predefined' or 'customPicker'
   colors: MerchColorDef[];             // Available swatches
   fitTypes: MerchFitTypeDef[];         // Available fit types
   availableMarketplaces: string[];     // Marketplace IDs, e.g. ["US", "GB", "DE", "FR", "IT", "ES", "JP"]
-  sortOrder: number;                   // Display / upload order
+  sortOrder: number;                   // UI Display order for MBA Hub menus
+  amazonSortOrder?: number;            // Dynamic Amazon row order (0, 1, 2...) for UploadWorker
+  amazon?: ProductAmazonIdentity;      // Dynamic Amazon DOM identity
+  artwork?: ProductArtworkConfig;      // Special artwork capabilities & selection strategy
+  available?: boolean;                 // Soft delete flag (true = active, false = temporarily unlisted by Amazon)
+  lastSeenAt?: string;                 // ISO date when Amazon last confirmed this product
   presetHexColors?: string[];          // Preset hex values for custom picker
   lastUpdated: string;                 // ISO date string
   isDropAllowed?: boolean;             // Whether this product can be dropped during slot shortage
@@ -132,6 +174,9 @@ export const MERCH_COLOR_HEX_MAP: Record<string, string> = {
 
 export class ProductCatalogService {
   private static catalogFilePath = path.resolve(process.cwd(), 'data', 'product_catalog.json');
+  private static overridesFilePath = path.resolve(process.cwd(), 'data', 'product_catalog_overrides.json');
+  private static backupFilePath = path.resolve(process.cwd(), 'data', 'product_catalog.backup.v1.json');
+
   private static catalogData: ProductCatalogData = {
     products: [],
     marketplaces: [],
@@ -139,12 +184,93 @@ export class ProductCatalogService {
     schemaVersion: 1
   };
 
+  private static overridesData: ProductOverridesData = {
+    schemaVersion: 1,
+    lastUpdated: new Date().toISOString(),
+    overrides: {}
+  };
+
   private static isLoaded = false;
 
-  private static ensureLoaded() {
+  public static ensureLoaded(): void {
     if (this.isLoaded) return;
+    this.loadOverrides();
     this.loadCatalog();
     this.isLoaded = true;
+  }
+
+  /**
+   * Save overrides atomically: .tmp file -> JSON validate -> renameSync
+   */
+  public static saveOverridesAtomic(data: ProductOverridesData): void {
+    try {
+      const dataDir = path.dirname(this.overridesFilePath);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+
+      data.lastUpdated = new Date().toISOString();
+      const tmpPath = `${this.overridesFilePath}.tmp`;
+      const jsonStr = JSON.stringify(data, null, 2);
+      
+      // Strict integrity check before replacing
+      JSON.parse(jsonStr);
+
+      fs.writeFileSync(tmpPath, jsonStr, 'utf-8');
+      fs.renameSync(tmpPath, this.overridesFilePath);
+      this.overridesData = data;
+    } catch (err: any) {
+      console.error('[ProductCatalogService] Failed to save product_catalog_overrides.json atomically:', err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Load overrides from data/product_catalog_overrides.json
+   */
+  public static loadOverrides(): ProductOverridesData {
+    try {
+      if (fs.existsSync(this.overridesFilePath)) {
+        const raw = fs.readFileSync(this.overridesFilePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.overrides === 'object') {
+          this.overridesData = parsed;
+          return this.overridesData;
+        }
+      }
+    } catch (err: any) {
+      console.error('[ProductCatalogService] Failed to load product_catalog_overrides.json:', err.message);
+    }
+
+    this.overridesData = {
+      schemaVersion: 1,
+      lastUpdated: new Date().toISOString(),
+      overrides: {}
+    };
+    return this.overridesData;
+  }
+
+  /**
+   * Save catalog data atomically to data/product_catalog.json
+   */
+  public static saveCatalogAtomic(data: ProductCatalogData): void {
+    try {
+      const dataDir = path.dirname(this.catalogFilePath);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+
+      const tmpPath = `${this.catalogFilePath}.tmp`;
+      const jsonStr = JSON.stringify(data, null, 2);
+      JSON.parse(jsonStr);
+
+      fs.writeFileSync(tmpPath, jsonStr, 'utf-8');
+      fs.renameSync(tmpPath, this.catalogFilePath);
+      this.catalogData = data;
+    } catch (err: any) {
+      console.error('[ProductCatalogService] Failed to save product_catalog.json atomically:', err.message);
+      throw err;
+    }
   }
 
   /**
@@ -180,38 +306,186 @@ export class ProductCatalogService {
   }
 
   /**
-   * Save catalog data to ./data/product_catalog.json
+   * Get merged catalog: Amazon dynamic data + persistent MBA Hub overrides
+   */
+  public static getCatalog(): ProductCatalogData {
+    this.ensureLoaded();
+    const overrides = this.overridesData.overrides || {};
+
+    const mergedProducts: MerchProduct[] = this.catalogData.products.map(prod => {
+      const override = overrides[prod.id];
+      const isAvailable = prod.available !== false;
+      const amazonKey = prod.amazon?.key || override?.knownAmazonKeys?.[0] || prod.id;
+      const amazonSort = prod.amazonSortOrder ?? prod.amazon?.sortOrder ?? prod.sortOrder ?? 999;
+      const uiSort = override?.uiSortOrder ?? prod.sortOrder ?? amazonSort;
+
+      // Merge colors with persistent avoidRules
+      const mergedColors = (prod.colors || []).map(col => {
+        const colorOverride = override?.colors?.[col.id];
+        return {
+          ...col,
+          avoidRule: colorOverride?.avoidRule ?? col.avoidRule ?? 'none'
+        };
+      });
+
+      const artwork = override?.artwork ?? prod.artwork ?? {
+        variants: [],
+        selectionStrategy: 'DEFAULT_MASTER'
+      };
+
+      return {
+        ...prod,
+        available: isAvailable,
+        niceClass: override?.niceClass !== undefined ? override.niceClass : (prod.niceClass ?? null),
+        sortOrder: uiSort,
+        amazonSortOrder: amazonSort,
+        isDropAllowed: override?.isDropAllowed ?? prod.isDropAllowed ?? false,
+        dropPriorityOrder: override?.dropPriorityOrder ?? prod.dropPriorityOrder,
+        colors: mergedColors,
+        artwork,
+        amazon: prod.amazon || {
+          key: amazonKey,
+          cardId: `${amazonKey}-card`,
+          checkboxClass: amazonKey,
+          sortOrder: amazonSort
+        }
+      };
+    });
+
+    return {
+      ...this.catalogData,
+      products: mergedProducts
+    };
+  }
+
+  /**
+   * Save catalog data from scanner or update operations.
+   * Merges scanned products with existing products and persistent overrides.
    */
   public static saveCatalog(data: Partial<ProductCatalogData>): ProductCatalogData {
     this.ensureLoaded();
+    const nowIso = new Date().toISOString();
 
     if (data.products !== undefined) {
-      // Merge with existing products to preserve niceClass, isDropAllowed, dropPriorityOrder, and color avoidRules
-      const existingMap = new Map(this.catalogData.products.map(p => [p.id, p]));
-      this.catalogData.products = data.products.map(newProd => {
-        const existing = existingMap.get(newProd.id);
-        const niceClass = newProd.niceClass ?? existing?.niceClass ?? inferNiceClass(newProd.displayName || newProd.id);
-        const isDropAllowed = newProd.isDropAllowed ?? existing?.isDropAllowed ?? false;
-        const dropPriorityOrder = newProd.dropPriorityOrder ?? existing?.dropPriorityOrder;
+      const existingProds = [...this.catalogData.products];
+      const overrides = this.overridesData.overrides || {};
 
-        const existingColorsMap = new Map((existing?.colors || []).map(c => [c.id, c]));
-        const mergedColors = (newProd.colors || []).map(newCol => {
-          const existCol = existingColorsMap.get(newCol.id);
-          return {
-            ...newCol,
-            avoidRule: newCol.avoidRule ?? existCol?.avoidRule ?? 'none'
-          };
+      // Match each incoming product against existing catalog
+      const matchedExistingIds = new Set<string>();
+
+      const updatedProducts: MerchProduct[] = [];
+
+      for (const scanned of data.products) {
+        const scannedAmazonKey = scanned.amazon?.key || scanned.id;
+
+        // 1. Try to find existing product by knownAmazonKeys or amazon.key or id
+        let matched = existingProds.find(p => {
+          const ov = overrides[p.id];
+          if (ov?.knownAmazonKeys && ov.knownAmazonKeys.includes(scannedAmazonKey)) return true;
+          if (p.amazon?.key === scannedAmazonKey) return true;
+          return p.id === scannedAmazonKey;
         });
 
-        return {
-          ...newProd,
-          colors: mergedColors,
-          niceClass,
-          isDropAllowed,
-          dropPriorityOrder
-        };
-      });
+        if (matched) {
+          matchedExistingIds.add(matched.id);
+
+          // Update dynamic fields while preserving stable ID
+          const existingColorsMap = new Map((matched.colors || []).map(c => [c.id, c]));
+          const mergedColors: MerchColorDef[] = (scanned.colors || []).map(sc => {
+            const existCol = existingColorsMap.get(sc.id);
+            return {
+              ...sc,
+              avoidRule: existCol?.avoidRule ?? 'none'
+            };
+          });
+
+          const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? matched.amazonSortOrder ?? matched.sortOrder;
+
+          updatedProducts.push({
+            ...matched,
+            displayName: scanned.displayName || matched.displayName,
+            available: true,
+            lastSeenAt: nowIso,
+            colorMode: scanned.colorMode || matched.colorMode,
+            colors: mergedColors,
+            fitTypes: scanned.fitTypes && scanned.fitTypes.length > 0 ? scanned.fitTypes : matched.fitTypes,
+            availableMarketplaces: scanned.availableMarketplaces && scanned.availableMarketplaces.length > 0 ? scanned.availableMarketplaces : matched.availableMarketplaces,
+            amazonSortOrder: amazonSort,
+            amazon: scanned.amazon || {
+              key: scannedAmazonKey,
+              cardId: `${scannedAmazonKey}-card`,
+              checkboxClass: scannedAmazonKey,
+              sortOrder: amazonSort
+            },
+            presetHexColors: scanned.presetHexColors || matched.presetHexColors,
+            lastUpdated: nowIso
+          });
+        } else {
+          // Brand NEW product detected by Amazon!
+          const newStableId = scanned.id || scannedAmazonKey;
+          const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? updatedProducts.length;
+          
+          console.log(`[ProductCatalogService] 🌟 New Amazon Product detected: ${newStableId} (${scannedAmazonKey})`);
+
+          // Ensure override exists with niceClass: null
+          if (!overrides[newStableId]) {
+            overrides[newStableId] = {
+              niceClass: null,
+              uiSortOrder: updatedProducts.length + 1,
+              isDropAllowed: false,
+              knownAmazonKeys: [scannedAmazonKey],
+              artwork: {
+                variants: [],
+                selectionStrategy: 'DEFAULT_MASTER'
+              },
+              colors: {}
+            };
+            this.saveOverridesAtomic(this.overridesData);
+          }
+
+          updatedProducts.push({
+            id: newStableId,
+            displayName: scanned.displayName || newStableId.replace(/_/g, ' '),
+            available: true,
+            lastSeenAt: nowIso,
+            niceClass: null,
+            colorMode: scanned.colorMode || 'predefined',
+            colors: (scanned.colors || []).map(c => ({ ...c, avoidRule: 'none' })),
+            fitTypes: scanned.fitTypes || [],
+            availableMarketplaces: scanned.availableMarketplaces || ['US'],
+            sortOrder: overrides[newStableId]?.uiSortOrder ?? (updatedProducts.length + 1),
+            amazonSortOrder: amazonSort,
+            amazon: scanned.amazon || {
+              key: scannedAmazonKey,
+              cardId: `${scannedAmazonKey}-card`,
+              checkboxClass: scannedAmazonKey,
+              sortOrder: amazonSort
+            },
+            artwork: {
+              variants: [],
+              selectionStrategy: 'DEFAULT_MASTER'
+            },
+            presetHexColors: scanned.presetHexColors,
+            lastUpdated: nowIso,
+            isDropAllowed: false
+          });
+        }
+      }
+
+      // Soft-delete products not seen in current scan: KEEP them, set available = false!
+      for (const exist of existingProds) {
+        if (!matchedExistingIds.has(exist.id)) {
+          console.log(`[ProductCatalogService] ⚠️ Product ${exist.id} not in current scan. Soft-deleting (available = false).`);
+          updatedProducts.push({
+            ...exist,
+            available: false
+          });
+        }
+      }
+
+      this.catalogData.products = updatedProducts;
     }
+
     if (data.marketplaces !== undefined) {
       this.catalogData.marketplaces = data.marketplaces;
     }
@@ -220,25 +494,15 @@ export class ProductCatalogService {
     }
 
     this.enrichColorsWithHex();
-
-    try {
-      const dataDir = path.dirname(this.catalogFilePath);
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      fs.writeFileSync(this.catalogFilePath, JSON.stringify(this.catalogData, null, 2), 'utf-8');
-      console.log(`[ProductCatalogService] Saved ${this.catalogData.products.length} products to ${this.catalogFilePath}`);
-    } catch (err: any) {
-      console.error('[ProductCatalogService] Error writing product_catalog.json:', err.message);
-    }
-
-    return this.catalogData;
+    this.saveCatalogAtomic(this.catalogData);
+    return this.getCatalog();
   }
 
   /**
-   * Clear the dynamic catalog completely
+   * Clear dynamic catalog cache. Overrides are NEVER deleted!
    */
   public static clearCatalog(): ProductCatalogData {
+    this.ensureLoaded();
     this.catalogData = {
       products: [],
       marketplaces: this.getDefaultMarketplaces(),
@@ -246,62 +510,30 @@ export class ProductCatalogService {
       schemaVersion: 1
     };
 
-    try {
-      if (fs.existsSync(this.catalogFilePath)) {
-        fs.writeFileSync(this.catalogFilePath, JSON.stringify(this.catalogData, null, 2), 'utf-8');
-      }
-      console.log('[ProductCatalogService] Cleared product catalog');
-    } catch (err: any) {
-      console.error('[ProductCatalogService] Error clearing catalog:', err.message);
-    }
-
-    return this.catalogData;
+    this.saveCatalogAtomic(this.catalogData);
+    console.log('[ProductCatalogService] Cleared dynamic product catalog (overrides preserved)');
+    return this.getCatalog();
   }
 
   /**
-   * Get active catalog data
+   * Get single product by stable ID
    */
-  public static getCatalog(): ProductCatalogData {
-    this.ensureLoaded();
-    return this.catalogData;
+  public static getProduct(id: string): MerchProduct | undefined {
+    return this.getCatalog().products.find(p => p.id === id);
   }
 
   /**
-   * Get catalog statistics (Total products, total slots across all marketplaces)
-   */
-  public static getStats(): ProductCatalogStats {
-    this.ensureLoaded();
-    const products = this.catalogData.products || [];
-    
-    // Each product on each marketplace counts as 1 slot
-    let totalSlots = 0;
-    for (const prod of products) {
-      const mpCount = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces.length : 0;
-      totalSlots += mpCount;
-    }
-
-    return {
-      totalProducts: products.length,
-      totalSlots,
-      totalMarketplaces: (this.catalogData.marketplaces || []).length,
-      lastScanDate: this.catalogData.lastScanDate
-    };
-  }
-
-  /**
-   * Look up a single product by ID
+   * Look up a single product by ID (alias for getProduct)
    */
   public static getProductById(id: string): MerchProduct | undefined {
-    this.ensureLoaded();
-    return this.catalogData.products.find(p => p.id === id);
+    return this.getProduct(id);
   }
 
   /**
    * Get all products belonging to a specific Nice Trademark Class (e.g. 25, 9, 18, 20, 21, 16)
    */
   public static getProductsByNiceClass(niceClass: number): MerchProduct[] {
-    this.ensureLoaded();
-    return this.catalogData.products.filter(p => (p.niceClass ?? inferNiceClass(p.displayName || p.id)) === niceClass);
+    return this.getCatalog().products.filter(p => p.niceClass === niceClass);
   }
 
   /**
@@ -309,67 +541,85 @@ export class ProductCatalogService {
    */
   public static getBlockedProductIdsForNiceClasses(blockedClasses: number[]): string[] {
     if (!blockedClasses || blockedClasses.length === 0) return [];
-    this.ensureLoaded();
     const blockedSet = new Set(blockedClasses);
-    return this.catalogData.products
-      .filter(p => blockedSet.has(p.niceClass ?? inferNiceClass(p.displayName || p.id)))
+    return this.getCatalog().products
+      .filter(p => p.niceClass !== null && p.niceClass !== undefined && blockedSet.has(p.niceClass))
       .map(p => p.id);
   }
 
   /**
-   * Update nice class for a single product
+   * Update nice class for a single product (saved to persistent overrides)
    */
-  public static updateProductNiceClass(id: string, niceClass: number): ProductCatalogData {
+  public static updateProductNiceClass(id: string, niceClass: number | null): ProductCatalogData {
     this.ensureLoaded();
-    const prod = this.catalogData.products.find(p => p.id === id);
-    if (prod) {
-      prod.niceClass = niceClass;
-      return this.saveCatalog(this.catalogData);
+    if (!this.overridesData.overrides[id]) {
+      this.overridesData.overrides[id] = {
+        niceClass,
+        uiSortOrder: 999,
+        isDropAllowed: false,
+        colors: {}
+      };
+    } else {
+      this.overridesData.overrides[id].niceClass = niceClass;
     }
-    return this.catalogData;
+
+    this.saveOverridesAtomic(this.overridesData);
+    return this.getCatalog();
   }
 
   /**
-   * Update avoid rule for a specific color of a product
+   * Update avoid rule for a specific color of a product (saved to persistent overrides)
    */
   public static updateProductColorAvoidRule(productId: string, colorId: string, avoidRule: 'none' | 'white' | 'black'): ProductCatalogData {
     this.ensureLoaded();
-    const prod = this.catalogData.products.find(p => p.id === productId);
-    if (prod && Array.isArray(prod.colors)) {
-      const col = prod.colors.find(c => c.id === colorId);
-      if (col) {
-        col.avoidRule = avoidRule;
-        return this.saveCatalog(this.catalogData);
-      }
+    if (!this.overridesData.overrides[productId]) {
+      this.overridesData.overrides[productId] = {
+        niceClass: null,
+        uiSortOrder: 999,
+        isDropAllowed: false,
+        colors: {}
+      };
     }
-    return this.catalogData;
+    if (!this.overridesData.overrides[productId].colors) {
+      this.overridesData.overrides[productId].colors = {};
+    }
+    this.overridesData.overrides[productId].colors![colorId] = { avoidRule };
+
+    this.saveOverridesAtomic(this.overridesData);
+    return this.getCatalog();
   }
 
   /**
-   * Update drop configuration (isDropAllowed, dropPriorityOrder) for products
+   * Update drop configuration (isDropAllowed, dropPriorityOrder) for products (saved to persistent overrides)
    */
   public static updateDropConfig(configs: Array<{ id: string; isDropAllowed: boolean; dropPriorityOrder: number }>): ProductCatalogData {
     this.ensureLoaded();
-    const configMap = new Map(configs.map(c => [c.id, c]));
-
-    for (const prod of this.catalogData.products) {
-      if (configMap.has(prod.id)) {
-        const conf = configMap.get(prod.id)!;
-        prod.isDropAllowed = conf.isDropAllowed;
-        prod.dropPriorityOrder = conf.dropPriorityOrder;
+    for (const conf of configs) {
+      if (!this.overridesData.overrides[conf.id]) {
+        this.overridesData.overrides[conf.id] = {
+          niceClass: null,
+          uiSortOrder: 999,
+          isDropAllowed: conf.isDropAllowed,
+          dropPriorityOrder: conf.dropPriorityOrder,
+          colors: {}
+        };
+      } else {
+        this.overridesData.overrides[conf.id].isDropAllowed = conf.isDropAllowed;
+        this.overridesData.overrides[conf.id].dropPriorityOrder = conf.dropPriorityOrder;
       }
     }
 
-    return this.saveCatalog(this.catalogData);
+    this.saveOverridesAtomic(this.overridesData);
+    return this.getCatalog();
   }
 
   /**
-   * Get all products allowed to be dropped, ordered by user priority
+   * Get all active products allowed to be dropped, ordered by user priority
    */
   public static getDroppableProductsOrdered(): MerchProduct[] {
-    this.ensureLoaded();
-    return this.catalogData.products
-      .filter(p => p.isDropAllowed === true)
+    const catalog = this.getCatalog();
+    return catalog.products
+      .filter(p => p.available !== false && p.isDropAllowed === true)
       .sort((a, b) => {
         const orderA = a.dropPriorityOrder ?? 99;
         const orderB = b.dropPriorityOrder ?? 99;
@@ -385,7 +635,7 @@ export class ProductCatalogService {
     const droppables = this.getDroppableProductsOrdered();
     let count = 0;
     for (const prod of droppables) {
-      // US is NEVER droppable, count only non-US marketplaces
+      if (prod.available === false) continue;
       const nonUsMarketplaces = (prod.availableMarketplaces || []).filter(mp => mp.toUpperCase() !== 'US');
       count += nonUsMarketplaces.length;
     }
@@ -397,8 +647,10 @@ export class ProductCatalogService {
   }
 
   public static getTotalBaseSlotsCount(): number {
+    const catalog = this.getCatalog();
     let count = 0;
-    for (const prod of this.catalogData.products) {
+    for (const prod of catalog.products) {
+      if (prod.available === false) continue;
       count += (prod.availableMarketplaces || []).length;
     }
     return count;
@@ -416,6 +668,17 @@ export class ProductCatalogService {
         }
       }
     }
+  }
+
+  public static getStats(): ProductCatalogStats {
+    const catalog = this.getCatalog();
+    const activeProducts = catalog.products.filter(p => p.available !== false);
+    return {
+      totalProducts: activeProducts.length,
+      totalSlots: this.getTotalBaseSlotsCount(),
+      totalMarketplaces: catalog.marketplaces.length,
+      lastScanDate: catalog.lastScanDate
+    };
   }
 
   /**

@@ -49924,15 +49924,6 @@ var init_settingsService = __esm2({
 });
 
 // src/server/services/productCatalogService.ts
-function inferNiceClass(idOrName) {
-  const clean = (idOrName || "").toLowerCase();
-  if (clean.includes("popsocket") || clean.includes("case") || clean.includes("phone")) return 9;
-  if (clean.includes("backpack") || clean.includes("tote") || clean.includes("bag")) return 18;
-  if (clean.includes("pillow") || clean.includes("cushion")) return 20;
-  if (clean.includes("mug") || clean.includes("tumbler") || clean.includes("bottle")) return 21;
-  if (clean.includes("journal") || clean.includes("notebook") || clean.includes("book")) return 16;
-  return 25;
-}
 var import_fs72, import_path67, MERCH_COLOR_HEX_MAP, ProductCatalogService;
 var init_productCatalogService = __esm2({
   "src/server/services/productCatalogService.ts"() {
@@ -50009,17 +50000,89 @@ var init_productCatalogService = __esm2({
     };
     ProductCatalogService = class {
       static catalogFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog.json");
+      static overridesFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog_overrides.json");
+      static backupFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog.backup.v1.json");
       static catalogData = {
         products: [],
         marketplaces: [],
         lastScanDate: null,
         schemaVersion: 1
       };
+      static overridesData = {
+        schemaVersion: 1,
+        lastUpdated: (/* @__PURE__ */ new Date()).toISOString(),
+        overrides: {}
+      };
       static isLoaded = false;
       static ensureLoaded() {
         if (this.isLoaded) return;
+        this.loadOverrides();
         this.loadCatalog();
         this.isLoaded = true;
+      }
+      /**
+       * Save overrides atomically: .tmp file -> JSON validate -> renameSync
+       */
+      static saveOverridesAtomic(data) {
+        try {
+          const dataDir = import_path67.default.dirname(this.overridesFilePath);
+          if (!import_fs72.default.existsSync(dataDir)) {
+            import_fs72.default.mkdirSync(dataDir, { recursive: true });
+          }
+          data.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
+          const tmpPath = `${this.overridesFilePath}.tmp`;
+          const jsonStr = JSON.stringify(data, null, 2);
+          JSON.parse(jsonStr);
+          import_fs72.default.writeFileSync(tmpPath, jsonStr, "utf-8");
+          import_fs72.default.renameSync(tmpPath, this.overridesFilePath);
+          this.overridesData = data;
+        } catch (err) {
+          console.error("[ProductCatalogService] Failed to save product_catalog_overrides.json atomically:", err.message);
+          throw err;
+        }
+      }
+      /**
+       * Load overrides from data/product_catalog_overrides.json
+       */
+      static loadOverrides() {
+        try {
+          if (import_fs72.default.existsSync(this.overridesFilePath)) {
+            const raw = import_fs72.default.readFileSync(this.overridesFilePath, "utf-8");
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed.overrides === "object") {
+              this.overridesData = parsed;
+              return this.overridesData;
+            }
+          }
+        } catch (err) {
+          console.error("[ProductCatalogService] Failed to load product_catalog_overrides.json:", err.message);
+        }
+        this.overridesData = {
+          schemaVersion: 1,
+          lastUpdated: (/* @__PURE__ */ new Date()).toISOString(),
+          overrides: {}
+        };
+        return this.overridesData;
+      }
+      /**
+       * Save catalog data atomically to data/product_catalog.json
+       */
+      static saveCatalogAtomic(data) {
+        try {
+          const dataDir = import_path67.default.dirname(this.catalogFilePath);
+          if (!import_fs72.default.existsSync(dataDir)) {
+            import_fs72.default.mkdirSync(dataDir, { recursive: true });
+          }
+          const tmpPath = `${this.catalogFilePath}.tmp`;
+          const jsonStr = JSON.stringify(data, null, 2);
+          JSON.parse(jsonStr);
+          import_fs72.default.writeFileSync(tmpPath, jsonStr, "utf-8");
+          import_fs72.default.renameSync(tmpPath, this.catalogFilePath);
+          this.catalogData = data;
+        } catch (err) {
+          console.error("[ProductCatalogService] Failed to save product_catalog.json atomically:", err.message);
+          throw err;
+        }
       }
       /**
        * Load catalog data from ./data/product_catalog.json
@@ -50052,33 +50115,157 @@ var init_productCatalogService = __esm2({
         return this.catalogData;
       }
       /**
-       * Save catalog data to ./data/product_catalog.json
+       * Get merged catalog: Amazon dynamic data + persistent MBA Hub overrides
+       */
+      static getCatalog() {
+        this.ensureLoaded();
+        const overrides = this.overridesData.overrides || {};
+        const mergedProducts = this.catalogData.products.map((prod) => {
+          const override = overrides[prod.id];
+          const isAvailable = prod.available !== false;
+          const amazonKey = prod.amazon?.key || override?.knownAmazonKeys?.[0] || prod.id;
+          const amazonSort = prod.amazonSortOrder ?? prod.amazon?.sortOrder ?? prod.sortOrder ?? 999;
+          const uiSort = override?.uiSortOrder ?? prod.sortOrder ?? amazonSort;
+          const mergedColors = (prod.colors || []).map((col) => {
+            const colorOverride = override?.colors?.[col.id];
+            return {
+              ...col,
+              avoidRule: colorOverride?.avoidRule ?? col.avoidRule ?? "none"
+            };
+          });
+          const artwork = override?.artwork ?? prod.artwork ?? {
+            variants: [],
+            selectionStrategy: "DEFAULT_MASTER"
+          };
+          return {
+            ...prod,
+            available: isAvailable,
+            niceClass: override?.niceClass !== void 0 ? override.niceClass : prod.niceClass ?? null,
+            sortOrder: uiSort,
+            amazonSortOrder: amazonSort,
+            isDropAllowed: override?.isDropAllowed ?? prod.isDropAllowed ?? false,
+            dropPriorityOrder: override?.dropPriorityOrder ?? prod.dropPriorityOrder,
+            colors: mergedColors,
+            artwork,
+            amazon: prod.amazon || {
+              key: amazonKey,
+              cardId: `${amazonKey}-card`,
+              checkboxClass: amazonKey,
+              sortOrder: amazonSort
+            }
+          };
+        });
+        return {
+          ...this.catalogData,
+          products: mergedProducts
+        };
+      }
+      /**
+       * Save catalog data from scanner or update operations.
+       * Merges scanned products with existing products and persistent overrides.
        */
       static saveCatalog(data) {
         this.ensureLoaded();
+        const nowIso = (/* @__PURE__ */ new Date()).toISOString();
         if (data.products !== void 0) {
-          const existingMap = new Map(this.catalogData.products.map((p) => [p.id, p]));
-          this.catalogData.products = data.products.map((newProd) => {
-            const existing = existingMap.get(newProd.id);
-            const niceClass = newProd.niceClass ?? existing?.niceClass ?? inferNiceClass(newProd.displayName || newProd.id);
-            const isDropAllowed = newProd.isDropAllowed ?? existing?.isDropAllowed ?? false;
-            const dropPriorityOrder = newProd.dropPriorityOrder ?? existing?.dropPriorityOrder;
-            const existingColorsMap = new Map((existing?.colors || []).map((c) => [c.id, c]));
-            const mergedColors = (newProd.colors || []).map((newCol) => {
-              const existCol = existingColorsMap.get(newCol.id);
-              return {
-                ...newCol,
-                avoidRule: newCol.avoidRule ?? existCol?.avoidRule ?? "none"
-              };
+          const existingProds = [...this.catalogData.products];
+          const overrides = this.overridesData.overrides || {};
+          const matchedExistingIds = /* @__PURE__ */ new Set();
+          const updatedProducts = [];
+          for (const scanned of data.products) {
+            const scannedAmazonKey = scanned.amazon?.key || scanned.id;
+            let matched = existingProds.find((p) => {
+              const ov = overrides[p.id];
+              if (ov?.knownAmazonKeys && ov.knownAmazonKeys.includes(scannedAmazonKey)) return true;
+              if (p.amazon?.key === scannedAmazonKey) return true;
+              return p.id === scannedAmazonKey;
             });
-            return {
-              ...newProd,
-              colors: mergedColors,
-              niceClass,
-              isDropAllowed,
-              dropPriorityOrder
-            };
-          });
+            if (matched) {
+              matchedExistingIds.add(matched.id);
+              const existingColorsMap = new Map((matched.colors || []).map((c) => [c.id, c]));
+              const mergedColors = (scanned.colors || []).map((sc) => {
+                const existCol = existingColorsMap.get(sc.id);
+                return {
+                  ...sc,
+                  avoidRule: existCol?.avoidRule ?? "none"
+                };
+              });
+              const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? matched.amazonSortOrder ?? matched.sortOrder;
+              updatedProducts.push({
+                ...matched,
+                displayName: scanned.displayName || matched.displayName,
+                available: true,
+                lastSeenAt: nowIso,
+                colorMode: scanned.colorMode || matched.colorMode,
+                colors: mergedColors,
+                fitTypes: scanned.fitTypes && scanned.fitTypes.length > 0 ? scanned.fitTypes : matched.fitTypes,
+                availableMarketplaces: scanned.availableMarketplaces && scanned.availableMarketplaces.length > 0 ? scanned.availableMarketplaces : matched.availableMarketplaces,
+                amazonSortOrder: amazonSort,
+                amazon: scanned.amazon || {
+                  key: scannedAmazonKey,
+                  cardId: `${scannedAmazonKey}-card`,
+                  checkboxClass: scannedAmazonKey,
+                  sortOrder: amazonSort
+                },
+                presetHexColors: scanned.presetHexColors || matched.presetHexColors,
+                lastUpdated: nowIso
+              });
+            } else {
+              const newStableId = scanned.id || scannedAmazonKey;
+              const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? updatedProducts.length;
+              console.log(`[ProductCatalogService] \u{1F31F} New Amazon Product detected: ${newStableId} (${scannedAmazonKey})`);
+              if (!overrides[newStableId]) {
+                overrides[newStableId] = {
+                  niceClass: null,
+                  uiSortOrder: updatedProducts.length + 1,
+                  isDropAllowed: false,
+                  knownAmazonKeys: [scannedAmazonKey],
+                  artwork: {
+                    variants: [],
+                    selectionStrategy: "DEFAULT_MASTER"
+                  },
+                  colors: {}
+                };
+                this.saveOverridesAtomic(this.overridesData);
+              }
+              updatedProducts.push({
+                id: newStableId,
+                displayName: scanned.displayName || newStableId.replace(/_/g, " "),
+                available: true,
+                lastSeenAt: nowIso,
+                niceClass: null,
+                colorMode: scanned.colorMode || "predefined",
+                colors: (scanned.colors || []).map((c) => ({ ...c, avoidRule: "none" })),
+                fitTypes: scanned.fitTypes || [],
+                availableMarketplaces: scanned.availableMarketplaces || ["US"],
+                sortOrder: overrides[newStableId]?.uiSortOrder ?? updatedProducts.length + 1,
+                amazonSortOrder: amazonSort,
+                amazon: scanned.amazon || {
+                  key: scannedAmazonKey,
+                  cardId: `${scannedAmazonKey}-card`,
+                  checkboxClass: scannedAmazonKey,
+                  sortOrder: amazonSort
+                },
+                artwork: {
+                  variants: [],
+                  selectionStrategy: "DEFAULT_MASTER"
+                },
+                presetHexColors: scanned.presetHexColors,
+                lastUpdated: nowIso,
+                isDropAllowed: false
+              });
+            }
+          }
+          for (const exist of existingProds) {
+            if (!matchedExistingIds.has(exist.id)) {
+              console.log(`[ProductCatalogService] \u26A0\uFE0F Product ${exist.id} not in current scan. Soft-deleting (available = false).`);
+              updatedProducts.push({
+                ...exist,
+                available: false
+              });
+            }
+          }
+          this.catalogData.products = updatedProducts;
         }
         if (data.marketplaces !== void 0) {
           this.catalogData.marketplaces = data.marketplaces;
@@ -50087,134 +50274,116 @@ var init_productCatalogService = __esm2({
           this.catalogData.lastScanDate = data.lastScanDate;
         }
         this.enrichColorsWithHex();
-        try {
-          const dataDir = import_path67.default.dirname(this.catalogFilePath);
-          if (!import_fs72.default.existsSync(dataDir)) {
-            import_fs72.default.mkdirSync(dataDir, { recursive: true });
-          }
-          import_fs72.default.writeFileSync(this.catalogFilePath, JSON.stringify(this.catalogData, null, 2), "utf-8");
-          console.log(`[ProductCatalogService] Saved ${this.catalogData.products.length} products to ${this.catalogFilePath}`);
-        } catch (err) {
-          console.error("[ProductCatalogService] Error writing product_catalog.json:", err.message);
-        }
-        return this.catalogData;
+        this.saveCatalogAtomic(this.catalogData);
+        return this.getCatalog();
       }
       /**
-       * Clear the dynamic catalog completely
+       * Clear dynamic catalog cache. Overrides are NEVER deleted!
        */
       static clearCatalog() {
+        this.ensureLoaded();
         this.catalogData = {
           products: [],
           marketplaces: this.getDefaultMarketplaces(),
           lastScanDate: null,
           schemaVersion: 1
         };
-        try {
-          if (import_fs72.default.existsSync(this.catalogFilePath)) {
-            import_fs72.default.writeFileSync(this.catalogFilePath, JSON.stringify(this.catalogData, null, 2), "utf-8");
-          }
-          console.log("[ProductCatalogService] Cleared product catalog");
-        } catch (err) {
-          console.error("[ProductCatalogService] Error clearing catalog:", err.message);
-        }
-        return this.catalogData;
+        this.saveCatalogAtomic(this.catalogData);
+        console.log("[ProductCatalogService] Cleared dynamic product catalog (overrides preserved)");
+        return this.getCatalog();
       }
       /**
-       * Get active catalog data
+       * Get single product by stable ID
        */
-      static getCatalog() {
-        this.ensureLoaded();
-        return this.catalogData;
+      static getProduct(id) {
+        return this.getCatalog().products.find((p) => p.id === id);
       }
       /**
-       * Get catalog statistics (Total products, total slots across all marketplaces)
-       */
-      static getStats() {
-        this.ensureLoaded();
-        const products = this.catalogData.products || [];
-        let totalSlots = 0;
-        for (const prod of products) {
-          const mpCount = Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces.length : 0;
-          totalSlots += mpCount;
-        }
-        return {
-          totalProducts: products.length,
-          totalSlots,
-          totalMarketplaces: (this.catalogData.marketplaces || []).length,
-          lastScanDate: this.catalogData.lastScanDate
-        };
-      }
-      /**
-       * Look up a single product by ID
+       * Look up a single product by ID (alias for getProduct)
        */
       static getProductById(id) {
-        this.ensureLoaded();
-        return this.catalogData.products.find((p) => p.id === id);
+        return this.getProduct(id);
       }
       /**
        * Get all products belonging to a specific Nice Trademark Class (e.g. 25, 9, 18, 20, 21, 16)
        */
       static getProductsByNiceClass(niceClass) {
-        this.ensureLoaded();
-        return this.catalogData.products.filter((p) => (p.niceClass ?? inferNiceClass(p.displayName || p.id)) === niceClass);
+        return this.getCatalog().products.filter((p) => p.niceClass === niceClass);
       }
       /**
        * Get product IDs that should be blocked for a set of Nice Trademark Classes
        */
       static getBlockedProductIdsForNiceClasses(blockedClasses) {
         if (!blockedClasses || blockedClasses.length === 0) return [];
-        this.ensureLoaded();
         const blockedSet = new Set(blockedClasses);
-        return this.catalogData.products.filter((p) => blockedSet.has(p.niceClass ?? inferNiceClass(p.displayName || p.id))).map((p) => p.id);
+        return this.getCatalog().products.filter((p) => p.niceClass !== null && p.niceClass !== void 0 && blockedSet.has(p.niceClass)).map((p) => p.id);
       }
       /**
-       * Update nice class for a single product
+       * Update nice class for a single product (saved to persistent overrides)
        */
       static updateProductNiceClass(id, niceClass) {
         this.ensureLoaded();
-        const prod = this.catalogData.products.find((p) => p.id === id);
-        if (prod) {
-          prod.niceClass = niceClass;
-          return this.saveCatalog(this.catalogData);
+        if (!this.overridesData.overrides[id]) {
+          this.overridesData.overrides[id] = {
+            niceClass,
+            uiSortOrder: 999,
+            isDropAllowed: false,
+            colors: {}
+          };
+        } else {
+          this.overridesData.overrides[id].niceClass = niceClass;
         }
-        return this.catalogData;
+        this.saveOverridesAtomic(this.overridesData);
+        return this.getCatalog();
       }
       /**
-       * Update avoid rule for a specific color of a product
+       * Update avoid rule for a specific color of a product (saved to persistent overrides)
        */
       static updateProductColorAvoidRule(productId, colorId, avoidRule) {
         this.ensureLoaded();
-        const prod = this.catalogData.products.find((p) => p.id === productId);
-        if (prod && Array.isArray(prod.colors)) {
-          const col = prod.colors.find((c) => c.id === colorId);
-          if (col) {
-            col.avoidRule = avoidRule;
-            return this.saveCatalog(this.catalogData);
-          }
+        if (!this.overridesData.overrides[productId]) {
+          this.overridesData.overrides[productId] = {
+            niceClass: null,
+            uiSortOrder: 999,
+            isDropAllowed: false,
+            colors: {}
+          };
         }
-        return this.catalogData;
+        if (!this.overridesData.overrides[productId].colors) {
+          this.overridesData.overrides[productId].colors = {};
+        }
+        this.overridesData.overrides[productId].colors[colorId] = { avoidRule };
+        this.saveOverridesAtomic(this.overridesData);
+        return this.getCatalog();
       }
       /**
-       * Update drop configuration (isDropAllowed, dropPriorityOrder) for products
+       * Update drop configuration (isDropAllowed, dropPriorityOrder) for products (saved to persistent overrides)
        */
       static updateDropConfig(configs) {
         this.ensureLoaded();
-        const configMap = new Map(configs.map((c) => [c.id, c]));
-        for (const prod of this.catalogData.products) {
-          if (configMap.has(prod.id)) {
-            const conf = configMap.get(prod.id);
-            prod.isDropAllowed = conf.isDropAllowed;
-            prod.dropPriorityOrder = conf.dropPriorityOrder;
+        for (const conf of configs) {
+          if (!this.overridesData.overrides[conf.id]) {
+            this.overridesData.overrides[conf.id] = {
+              niceClass: null,
+              uiSortOrder: 999,
+              isDropAllowed: conf.isDropAllowed,
+              dropPriorityOrder: conf.dropPriorityOrder,
+              colors: {}
+            };
+          } else {
+            this.overridesData.overrides[conf.id].isDropAllowed = conf.isDropAllowed;
+            this.overridesData.overrides[conf.id].dropPriorityOrder = conf.dropPriorityOrder;
           }
         }
-        return this.saveCatalog(this.catalogData);
+        this.saveOverridesAtomic(this.overridesData);
+        return this.getCatalog();
       }
       /**
-       * Get all products allowed to be dropped, ordered by user priority
+       * Get all active products allowed to be dropped, ordered by user priority
        */
       static getDroppableProductsOrdered() {
-        this.ensureLoaded();
-        return this.catalogData.products.filter((p) => p.isDropAllowed === true).sort((a, b) => {
+        const catalog = this.getCatalog();
+        return catalog.products.filter((p) => p.available !== false && p.isDropAllowed === true).sort((a, b) => {
           const orderA = a.dropPriorityOrder ?? 99;
           const orderB = b.dropPriorityOrder ?? 99;
           if (orderA !== orderB) return orderA - orderB;
@@ -50228,6 +50397,7 @@ var init_productCatalogService = __esm2({
         const droppables = this.getDroppableProductsOrdered();
         let count = 0;
         for (const prod of droppables) {
+          if (prod.available === false) continue;
           const nonUsMarketplaces = (prod.availableMarketplaces || []).filter((mp) => mp.toUpperCase() !== "US");
           count += nonUsMarketplaces.length;
         }
@@ -50237,8 +50407,10 @@ var init_productCatalogService = __esm2({
         return this.calculateMaxDroppableSlotsCount();
       }
       static getTotalBaseSlotsCount() {
+        const catalog = this.getCatalog();
         let count = 0;
-        for (const prod of this.catalogData.products) {
+        for (const prod of catalog.products) {
+          if (prod.available === false) continue;
           count += (prod.availableMarketplaces || []).length;
         }
         return count;
@@ -50255,6 +50427,16 @@ var init_productCatalogService = __esm2({
             }
           }
         }
+      }
+      static getStats() {
+        const catalog = this.getCatalog();
+        const activeProducts = catalog.products.filter((p) => p.available !== false);
+        return {
+          totalProducts: activeProducts.length,
+          totalSlots: this.getTotalBaseSlotsCount(),
+          totalMarketplaces: catalog.marketplaces.length,
+          lastScanDate: catalog.lastScanDate
+        };
       }
       /**
        * Default Merch by Amazon Marketplaces
@@ -224405,6 +224587,7 @@ var init_queueService = __esm2({
         const hasLiveDetail = Object.keys(liveSummary).length > 0;
         if (isUpdate && hasLiveDetail) {
           for (const prod of catalog.products) {
+            if (prod.available === false) continue;
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
             const prodId = prod.id;
             const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
@@ -224427,6 +224610,7 @@ var init_queueService = __esm2({
           }
         } else {
           for (const prod of catalog.products) {
+            if (prod.available === false) continue;
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
             const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
             activeProductsMap[prod.id] = mps;
@@ -224491,12 +224675,15 @@ var init_queueService = __esm2({
       /**
        * Update item status during upload (UPLOADING, COMPLETED, ERROR)
        */
-      static updateItemStatus(queueId, status, error) {
+      static updateItemStatus(queueId, status, error, uploadResultSummary) {
         this.ensureLoaded();
         const item = this.items.find((i) => i.id === queueId);
         if (!item) return null;
         item.status = status;
         item.lastUploadAttempt = (/* @__PURE__ */ new Date()).toISOString();
+        if (uploadResultSummary) {
+          item.uploadResultSummary = uploadResultSummary;
+        }
         if (error) {
           item.errorMessage = error;
         } else if (status === "COMPLETED") {
@@ -224724,6 +224911,7 @@ var init_queueService = __esm2({
           const activeMap = {};
           let baseSlots = 0;
           for (const prod of catalog.products) {
+            if (prod.available === false) continue;
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
             const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
             activeMap[prod.id] = mps;
@@ -224739,6 +224927,7 @@ var init_queueService = __esm2({
           const activeMap = {};
           let baseCatalogSlots = 0;
           for (const prod of catalog.products) {
+            if (prod.available === false) continue;
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
             const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
             activeMap[prod.id] = mps;
@@ -224769,6 +224958,7 @@ var init_queueService = __esm2({
           const calculatedActiveMap = {};
           if (hasLiveDetail) {
             for (const prod of catalog.products) {
+              if (prod.available === false) continue;
               if (tmBlocked.has(prod.id.toUpperCase())) continue;
               const prodId = prod.id;
               const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
@@ -224792,6 +224982,7 @@ var init_queueService = __esm2({
           } else {
             netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
             for (const prod of catalog.products) {
+              if (prod.available === false) continue;
               if (tmBlocked.has(prod.id.toUpperCase())) continue;
               calculatedActiveMap[prod.id] = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
             }
@@ -227734,6 +227925,7 @@ var ProductScannerService = class {
         const sleep2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const catalog = {};
         const knownMarkets = ["US", "GB", "DE", "FR", "IT", "ES", "JP"];
+        const productOrderList = [];
         const oldCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"][id^="checkbox-"]'));
         if (oldCheckboxes.length > 0) {
           oldCheckboxes.forEach((cb) => {
@@ -227741,9 +227933,12 @@ var ProductScannerService = class {
             if (parts.length >= 2) {
               const marketplace = parts.pop();
               const productId = parts.join("-");
+              if (!productOrderList.includes(productId)) {
+                productOrderList.push(productId);
+              }
               if (!catalog[productId]) {
                 const formattedName = productId.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase());
-                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: "none", colors: [] };
+                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: "none", colors: [], amazonSortOrder: productOrderList.indexOf(productId) };
               }
               if (!catalog[productId].marketplaces.includes(marketplace)) {
                 catalog[productId].marketplaces.push(marketplace);
@@ -227768,9 +227963,12 @@ var ProductScannerService = class {
               const parts = identifier.split("-");
               const marketplace = parts.pop();
               const productId = parts.join("-");
+              if (!productOrderList.includes(productId)) {
+                productOrderList.push(productId);
+              }
               if (!catalog[productId]) {
                 const formattedName = productId.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase());
-                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: "none", colors: [] };
+                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: "none", colors: [], amazonSortOrder: productOrderList.indexOf(productId) };
               }
               if (!catalog[productId].marketplaces.includes(marketplace)) {
                 catalog[productId].marketplaces.push(marketplace);
@@ -227803,45 +228001,29 @@ var ProductScannerService = class {
             catalog[productId].name = headerTitle;
           }
           let inputContainer = configSection;
-          const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-          const cardRect = configSection.getBoundingClientRect();
-          const validEditors = allEditors.filter((ed) => {
-            const edRect = ed.getBoundingClientRect();
-            return edRect.top >= cardRect.bottom - 50 && ed.innerHTML.length > 20;
-          });
-          if (validEditors.length > 0) {
-            inputContainer = validEditors[0];
-          } else if (allEditors.length > 0) {
-            inputContainer = allEditors[allEditors.length - 1];
+          const editorIframe = configSection.querySelector("iframe");
+          if (editorIframe && editorIframe.contentDocument) {
+            inputContainer = editorIframe.contentDocument.body;
           }
-          const fitInputs = Array.from(inputContainer.querySelectorAll('input[name="fitType"], input[id*="fitType"], flowcheckbox[class*="-checkbox"], label[class*="-label"], label'));
-          fitInputs.forEach((el) => {
-            let fitVal = "";
-            const txt = el.textContent?.trim().toLowerCase() || "";
-            const className = (el.className || "").toLowerCase();
-            if (className.includes("adult_unisex") || className.includes("unisex") || txt.includes("adult unisex") || txt.includes("unisex")) {
-              fitVal = "adult_unisex";
-            } else if (className.includes("girls") || txt.includes("girls") || txt.includes("m\xE4dchen")) {
-              fitVal = "girls";
-            } else if (className.includes("youth") || className.includes("kids") || txt.includes("youth") || txt.includes("kinder")) {
-              fitVal = "youth";
-            } else if (className.includes("women") || txt.includes("women") || txt.includes("frauen") || txt.includes("damen")) {
-              fitVal = "women";
-            } else if (className.includes("men") || txt.includes("men") || txt.includes("m\xE4nner") || txt.includes("herren")) {
-              fitVal = "men";
-            }
-            if (fitVal && !catalog[productId].fits.includes(fitVal)) {
-              catalog[productId].fits.push(fitVal);
-            }
+          const fitInputs = Array.from(inputContainer.querySelectorAll('input[type="checkbox"]'));
+          const detectedFits = [];
+          fitInputs.forEach((input) => {
+            const label = input.closest("label")?.textContent?.toLowerCase().trim() || input.getAttribute("aria-label")?.toLowerCase().trim() || input.getAttribute("name")?.toLowerCase().trim() || "";
+            if (label.includes("men") && !label.includes("women")) detectedFits.push("men");
+            else if (label.includes("women")) detectedFits.push("women");
+            else if (label.includes("youth") || label.includes("kids")) detectedFits.push("youth");
+            else if (label.includes("girls")) detectedFits.push("girls");
+            else if (label.includes("unisex") || label.includes("adult") || label.includes("standard")) detectedFits.push("standard");
           });
-          const validFits = catalog[productId].fits.filter((f) => ["men", "women", "youth", "girls", "adult_unisex", "unisex"].includes(f));
-          if (validFits.length >= 1 || productId.includes("TSHIRT") || productId.includes("VNECK")) {
+          if (detectedFits.length > 0) {
+            const validFits = Array.from(new Set(detectedFits));
             catalog[productId].fits = validFits;
           } else {
             catalog[productId].fits = [];
           }
-          const isAccessory = ["POP_SOCKET", "PHONE_CASE_APPLE_IPHONE", "GLANCE_CASE_SAMSUNG_GALAXY", "PHONE_CASE_SAMSUNG_GALAXY", "TOTE_BAG", "THROW_PILLOW"].includes(productId);
-          if (isAccessory) {
+          const hexInput = inputContainer.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"], color-sketch, .sketch-picker, .color-picker');
+          const swatchInputs = Array.from(inputContainer.querySelectorAll('input[type="checkbox"][id*="color-"], colorcheckbox, .color-checkbox'));
+          if (hexInput && swatchInputs.length === 0) {
             catalog[productId].colorType = "hex";
             catalog[productId].presetHexColors = [
               "#840A08",
@@ -227861,8 +228043,7 @@ var ProductScannerService = class {
               "#FFFFFF",
               "#000000"
             ];
-          }
-          if (catalog[productId].colorType !== "hex") {
+          } else {
             const colorSwatches = Array.from(inputContainer.querySelectorAll('input[type="checkbox"][id*="color-"]'));
             if (colorSwatches.length > 0) {
               catalog[productId].colorType = "swatches";
@@ -227894,11 +228075,26 @@ var ProductScannerService = class {
                   }
                 }
               });
-              if (catalog[productId].colors.length === 0) {
-                const hexInput = inputContainer.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]');
-                if (hexInput) {
-                  catalog[productId].colorType = "hex";
-                }
+              if (catalog[productId].colors.length === 0 && hexInput) {
+                catalog[productId].colorType = "hex";
+                catalog[productId].presetHexColors = [
+                  "#840A08",
+                  "#C70010",
+                  "#F36900",
+                  "#FEC600",
+                  "#01B62F",
+                  "#1C8C46",
+                  "#37602B",
+                  "#1AB7EA",
+                  "#002BB6",
+                  "#5C2D91",
+                  "#E0218A",
+                  "#E9CDDB",
+                  "#7B4A1B",
+                  "#979797",
+                  "#FFFFFF",
+                  "#000000"
+                ];
               }
             }
           }
@@ -227923,6 +228119,7 @@ var ProductScannerService = class {
           id: fid,
           displayName: fid.charAt(0).toUpperCase() + fid.slice(1)
         }));
+        const amazonSort = item.amazonSortOrder ?? index;
         return {
           id,
           displayName: item.name || id.replace(/_/g, " "),
@@ -227931,6 +228128,15 @@ var ProductScannerService = class {
           fitTypes: fitDefs,
           availableMarketplaces: item.marketplaces.length > 0 ? item.marketplaces : ["US"],
           sortOrder: index,
+          amazonSortOrder: amazonSort,
+          amazon: {
+            key: id,
+            cardId: `${id}-card`,
+            checkboxClass: id,
+            sortOrder: amazonSort
+          },
+          available: true,
+          lastSeenAt: nowIso,
           presetHexColors: item.presetHexColors,
           lastUpdated: nowIso
         };
@@ -228237,7 +228443,12 @@ var UploadWorkerService = class _UploadWorkerService {
         this.log(`\u26A0\uFE0F 'Select Products' Button konnte nicht ge\xF6ffnet werden, fahre mit Standard-Auswahl fort...`);
       } else {
         await page.waitForTimeout(300);
-        const modalResult = await page.evaluate(async (activeMap) => {
+        const catalog2 = ProductCatalogService.getCatalog();
+        const productAmazonKeys = {};
+        for (const p of catalog2.products) {
+          productAmazonKeys[p.id] = p.amazon?.key || p.amazon?.checkboxClass || p.id;
+        }
+        const modalResult = await page.evaluate(async (params2) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const modal = Array.from(document.querySelectorAll(".modal-content, .modal-dialog, merch-modal, .modal")).find((el) => {
             const r = el.getBoundingClientRect();
@@ -228245,13 +228456,17 @@ var UploadWorkerService = class _UploadWorkerService {
           });
           if (!modal) return { success: true, modifiedCount: 0 };
           let modifiedCount = 0;
-          const products = Object.keys(activeMap);
+          const products = Object.keys(params2.activeMap);
           for (const pid of products) {
-            const desiredMarketplaces = new Set(activeMap[pid] || []);
+            const desiredMarketplaces = new Set(params2.activeMap[pid] || []);
             const allMarketplaces = ["US", "DE", "GB", "FR", "IT", "ES", "JP"];
+            const targetKey = params2.productAmazonKeys[pid] || pid;
             for (const mp of allMarketplaces) {
-              const selector = `flowcheckbox[class*="${pid}-${mp}"]`;
-              const cb = modal.querySelector(selector);
+              let selector = `flowcheckbox[class*="${targetKey}-${mp}"]`;
+              let cb = modal.querySelector(selector);
+              if (!cb && targetKey !== pid) {
+                cb = modal.querySelector(`flowcheckbox[class*="${pid}-${mp}"]`);
+              }
               if (!cb || cb.classList.contains("ng-hide")) continue;
               const shouldBeChecked = desiredMarketplaces.has(mp);
               const icon = cb.querySelector(".sci-icon");
@@ -228294,7 +228509,7 @@ var UploadWorkerService = class _UploadWorkerService {
             return { success: true, modifiedCount };
           }
           return { success: false, error: "Continue button in modal not found" };
-        }, item.activeProductsMap);
+        }, { activeMap: item.activeProductsMap, productAmazonKeys });
         if (!modalResult.success) {
           this.log(`\u26A0\uFE0F Modal-Hinweis: ${modalResult.error} (versuche fortzufahren)`);
         }
@@ -228305,13 +228520,27 @@ var UploadWorkerService = class _UploadWorkerService {
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       const catalog = ProductCatalogService.getCatalog();
-      const sortedCatalogProducts = [...catalog.products].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+      const sortedCatalogProducts = [...catalog.products].sort(
+        (a, b) => (a.amazonSortOrder ?? a.amazon?.sortOrder ?? a.sortOrder ?? 999) - (b.amazonSortOrder ?? b.amazon?.sortOrder ?? b.sortOrder ?? 999)
+      );
       const activeProductsToProcess = sortedCatalogProducts.filter((p) => {
         const mps = item.activeProductsMap[p.id];
         return Array.isArray(mps) && mps.length > 0;
       });
       const totalActiveProducts = activeProductsToProcess.length;
-      this.log(`\u{1F455} Bearbeite ${totalActiveProducts} aktive Produkte sequenziell...`, "Bearbeite Produktdetails...", 52, 100);
+      this.log(`\u{1F455} Bearbeite ${totalActiveProducts} aktive Produkte sequenziell nach Amazon SortOrder...`, "Bearbeite Produktdetails...", 52, 100);
+      const productUploadResults = [];
+      for (const p of catalog.products) {
+        const mps = item.activeProductsMap[p.id];
+        const amazonKey = p.amazon?.key || p.id;
+        if (item.tmBlockedProductIds && item.tmBlockedProductIds.map((t) => t.toUpperCase()).includes(p.id.toUpperCase())) {
+          productUploadResults.push({ productId: p.id, amazonKey, status: "SKIPPED_TM_BLOCKED", reason: "Blocked by Trademark V2" });
+        } else if (p.available === false) {
+          productUploadResults.push({ productId: p.id, amazonKey, status: "SKIPPED_UNAVAILABLE", reason: "Product unavailable on Amazon" });
+        } else if (!Array.isArray(mps) || mps.length === 0) {
+          productUploadResults.push({ productId: p.id, amazonKey, status: "SKIPPED_NOT_SELECTED", reason: "No active marketplaces selected" });
+        }
+      }
       const avoidColor = item.avoidColor || "none";
       let fitTypes = item.fitTypes || ["men", "women", "youth"];
       const normalizedFits = fitTypes.map((f) => f.toLowerCase());
@@ -228330,41 +228559,23 @@ var UploadWorkerService = class _UploadWorkerService {
         if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
         const product = activeProductsToProcess[i];
         const stepProgress = 52 + Math.round((i + 1) / totalActiveProducts * 28);
-        this.log(`[${i + 1}/${totalActiveProducts}] \xD6ffne & pr\xFCfe "${product.displayName}"...`, `Bearbeite ${product.displayName}`, stepProgress, 100);
+        this.log(`[${i + 1}/${totalActiveProducts}] \xD6ffne & pr\xFCfe "${product.displayName}" (${product.amazon?.key || product.id})...`, `Bearbeite ${product.displayName}`, stepProgress, 100);
         let editorOpened = false;
         let openRetries = 0;
         const maxOpenRetries = 3;
+        let lastOpenReason = "";
         while (!editorOpened && openRetries < maxOpenRetries) {
           openRetries++;
-          const openResult = await page.evaluate(async (pid) => {
+          const openResult = await page.evaluate(async (params2) => {
             const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
-            const getAliases = (p) => {
-              const u = p.toUpperCase();
-              if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
-              if (u === "SPORT_SUN_VISOR") return ["VISOR", "SPORT_SUN_VISOR"];
-              if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
-              if (u === "POPSOCKETS") return ["POPSOCKET", "POP_SOCKET", "POPSOCKETS"];
-              if (u === "THROW_PILLOWS") return ["THROW_PILLOW", "THROW_PILLOWS"];
-              if (u === "IPHONE_CASES") return ["IPHONE_CASES", "PHONE_CASE_APPLE_IPHONE", "PHONE_CASE"];
-              if (u === "STANDARD_PULLOVER_HOODIE") return ["PULLOVER_HOODIE", "STANDARD_PULLOVER_HOODIE"];
-              if (u === "STANDARD_SWEATSHIRT") return ["SWEATSHIRT", "STANDARD_SWEATSHIRT"];
-              if (u === "STANDARD_LONG_SLEEVE") return ["LONG_SLEEVE_TSHIRT", "STANDARD_LONG_SLEEVE"];
-              if (u === "VALUE_TSHIRT") return ["VALUE_GRAPHIC_TSHIRT", "VALUE_TSHIRT"];
-              if (u === "VNECK") return ["VNECK_TSHIRT", "VNECK"];
-              return [u];
-            };
-            const aliases2 = getAliases(pid);
+            const { pid, amazonKey, cardId } = params2;
             const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
-            let card = null;
-            for (const a of aliases2) {
-              card = document.getElementById(`${a}-card`) || document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`config-${a}`) || document.getElementById(`config-${a.toLowerCase()}`);
-              if (card) break;
-            }
+            let card = document.getElementById(cardId) || document.getElementById(`${amazonKey}-card`) || document.getElementById(`${amazonKey.toLowerCase()}-card`) || document.getElementById(`${pid}-card`) || document.getElementById(`${pid.toLowerCase()}-card`) || document.getElementById(`config-${amazonKey}`) || document.getElementById(`config-${pid}`);
             if (!card) {
               card = allCards.find((c) => {
                 const idUpper = (c.id || "").toUpperCase();
                 const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-                return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
+                return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid) || clsUpper.includes(pid);
               }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
             }
             let editBtn = null;
@@ -228372,13 +228583,10 @@ var UploadWorkerService = class _UploadWorkerService {
               editBtn = card.querySelector(".edit-button") || card.querySelector("button.edit-btn") || card.querySelector(".edit-details-btn") || card.querySelector('button[class*="edit"]') || Array.from(card.querySelectorAll("button")).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
             }
             if (!editBtn) {
-              for (const a of aliases2) {
-                editBtn = document.querySelector(`.${a}-edit-btn`) || document.querySelector(`.${a.toLowerCase()}-edit-btn`) || document.querySelector(`#${a}-card .edit-button`) || document.querySelector(`#${a}-card button.edit-btn`) || document.querySelector(`button[class*="${a}-edit"]`) || document.querySelector(`[id*="${a}"] button, [class*="${a}"] button`) || Array.from(document.querySelectorAll(`button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit") && (b.closest(`#${a}-card`) || card && b.closest(`#${card.id}`)));
-                if (editBtn) break;
-              }
+              editBtn = document.querySelector(`.${amazonKey}-edit-btn`) || document.querySelector(`.${amazonKey.toLowerCase()}-edit-btn`) || document.querySelector(`#${amazonKey}-card .edit-button`) || document.querySelector(`#${amazonKey}-card button.edit-btn`) || document.querySelector(`button[class*="${amazonKey}-edit"]`) || document.querySelector(`[id*="${amazonKey}"] button, [class*="${amazonKey}"] button`) || Array.from(document.querySelectorAll(`button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit") && (b.closest(`#${amazonKey}-card`) || card && b.closest(`#${card.id}`)));
             }
             if (!editBtn) {
-              return { success: false, reason: `Edit button f\xFCr ${pid} (Aliases: ${aliases2.join(",")}) nicht im DOM gefunden` };
+              return { success: false, reason: `Edit button f\xFCr ${pid} (${amazonKey}) nicht im DOM gefunden` };
             }
             editBtn.scrollIntoView({ behavior: "smooth", block: "center" });
             await sleep2(200);
@@ -228395,48 +228603,39 @@ var UploadWorkerService = class _UploadWorkerService {
               }
             }
             return { success: true, reason: "proceed_anyway" };
-          }, product.id);
+          }, {
+            pid: product.id,
+            amazonKey: product.amazon?.key || product.id,
+            cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`
+          });
           if (openResult.success) {
             editorOpened = true;
           } else {
+            lastOpenReason = openResult.reason || "";
             this.log(`\u26A0\uFE0F Versuch ${openRetries}/${maxOpenRetries} f\xFCr "${product.displayName}": ${openResult.reason} - wiederhole...`);
             await page.waitForTimeout(400);
           }
         }
         if (!editorOpened) {
-          this.log(`\u274C Konnte Editor f\xFCr "${product.displayName}" nach ${maxOpenRetries} Versuchen nicht \xF6ffnen! \xDCberspringe...`);
+          this.log(`\u274C Konnte Editor f\xFCr "${product.displayName}" nach ${maxOpenRetries} Versuchen nicht \xF6ffnen!`);
+          productUploadResults.push({
+            productId: product.id,
+            amazonKey: product.amazon?.key || product.id,
+            status: "FAILED_EDITOR_OPEN",
+            reason: `Editor f\xFCr ${product.displayName} konnte nicht ge\xF6ffnet werden: ${lastOpenReason}`
+          });
           continue;
         }
         const editResult = await page.evaluate(async (params2) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
-          const pid = params2.productId;
-          const getAliases = (p) => {
-            const u = p.toUpperCase();
-            if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
-            if (u === "SPORT_SUN_VISOR") return ["VISOR", "SPORT_SUN_VISOR"];
-            if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
-            if (u === "POPSOCKETS") return ["POPSOCKET", "POP_SOCKET", "POPSOCKETS"];
-            if (u === "THROW_PILLOWS") return ["THROW_PILLOW", "THROW_PILLOWS"];
-            if (u === "IPHONE_CASES") return ["IPHONE_CASES", "PHONE_CASE_APPLE_IPHONE", "PHONE_CASE"];
-            if (u === "STANDARD_PULLOVER_HOODIE") return ["PULLOVER_HOODIE", "STANDARD_PULLOVER_HOODIE"];
-            if (u === "STANDARD_SWEATSHIRT") return ["SWEATSHIRT", "STANDARD_SWEATSHIRT"];
-            if (u === "STANDARD_LONG_SLEEVE") return ["LONG_SLEEVE_TSHIRT", "STANDARD_LONG_SLEEVE"];
-            if (u === "VALUE_TSHIRT") return ["VALUE_GRAPHIC_TSHIRT", "VALUE_TSHIRT"];
-            if (u === "VNECK") return ["VNECK_TSHIRT", "VNECK"];
-            return [u];
-          };
-          const aliases2 = getAliases(pid);
-          let card = null;
-          for (const a of aliases2) {
-            card = document.getElementById(`${a}-card`) || document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`config-${a}`) || document.getElementById(`config-${a.toLowerCase()}`);
-            if (card) break;
-          }
+          const { productId: pid, amazonKey, cardId } = params2;
+          let card = document.getElementById(cardId) || document.getElementById(`${amazonKey}-card`) || document.getElementById(`${amazonKey.toLowerCase()}-card`) || document.getElementById(`${pid}-card`) || document.getElementById(`${pid.toLowerCase()}-card`) || document.getElementById(`config-${amazonKey}`) || document.getElementById(`config-${pid}`);
           if (!card) {
             const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
             card = allCards.find((c) => {
               const idUpper = (c.id || "").toUpperCase();
               const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-              return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
+              return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid) || clsUpper.includes(pid);
             }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
           }
           const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
@@ -228724,28 +228923,15 @@ var UploadWorkerService = class _UploadWorkerService {
             await sleep2(100);
             let activeSwatches = colorCheckboxes.filter((cb) => isElementChecked(cb));
             if (activeSwatches.length === 0 && colorCheckboxes.length > 0) {
-              let fallbackSwatch = colorCheckboxes.find((cb) => {
-                const h2 = extractColorClues(cb);
-                const mid = identifyColorId(h2);
-                const cfg = params2.catalogColors?.find((c) => mid && c.id === mid || h2.includes(c.id));
-                if (!cfg) return false;
-                return cfg.avoidRule !== params2.avoidColor;
-              });
-              if (!fallbackSwatch) {
-                fallbackSwatch = colorCheckboxes.find((cb) => {
-                  const h2 = extractColorClues(cb);
-                  const mid = identifyColorId(h2);
-                  return params2.catalogColors?.some((c) => mid && c.id === mid || h2.includes(c.id));
-                });
-              }
-              if (!fallbackSwatch) {
-                fallbackSwatch = colorCheckboxes[0];
-              }
-              clickTargetElement(fallbackSwatch);
-              await sleep2(100);
-              const h = extractColorClues(fallbackSwatch);
-              selfHealedColor = identifyColorId(h) || "Fallback Color";
-              activeSwatches = colorCheckboxes.filter((cb) => isElementChecked(cb));
+              return {
+                success: false,
+                error: `FAILED_COLOR_CONFIGURATION: Keine Farben aktiv nach avoidRules (${params2.avoidColor})`,
+                activeColors: [],
+                fitTypesApplied: activeFitsApplied,
+                fitDebug: fitDebugSummary,
+                selfHealedColor: "",
+                isLocked: false
+              };
             }
             finalActiveColorNames = activeSwatches.map((cb) => {
               const h = extractColorClues(cb);
@@ -228764,72 +228950,72 @@ var UploadWorkerService = class _UploadWorkerService {
           };
         }, {
           productId: product.id,
+          amazonKey: product.amazon?.key || product.id,
+          cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`,
           colorMode: product.colorMode,
           fitTypes,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
           catalogColors: Array.isArray(product.colors) ? product.colors.map((c) => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || "none" })) : []
         });
+        let currentProductStatus = "SUCCESS";
+        let currentProductFailureReason;
         if (editResult.success) {
           const colorsList = editResult.activeColors && editResult.activeColors.length > 0 ? editResult.activeColors.join(", ") : "OK";
           const fitsList = editResult.fitTypesApplied && editResult.fitTypesApplied.length > 0 ? editResult.fitTypesApplied.join(", ") : "Standard";
           const fitDetails = editResult.fitDebug && Object.keys(editResult.fitDebug).length > 0 ? ` [Fits: ${Object.entries(editResult.fitDebug).map(([k, v]) => `${k}:${v.final ? "\u2713" : "\u2717"}`).join(" ")}]` : "";
           if (editResult.isLocked) {
             this.log(`\u2139\uFE0F ${product.displayName}: Farbe & Artwork auf Amazon gesperrt (bereits live) \u2713 | Fit: ${fitsList}${fitDetails}`);
-          } else if (editResult.selfHealedColor) {
-            this.log(`\u26A0\uFE0F ${product.displayName}: 0 Farben verhindert \u2794 Selbstheilung: "${editResult.selfHealedColor}" aktiviert \u2713 | Fit: ${fitsList}${fitDetails}`);
           } else {
             this.log(`\u2713 ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}${fitDetails}`);
           }
         } else {
-          this.log(`\u26A0\uFE0F Hinweis zu ${product.displayName}: ${editResult.reason}`);
+          if (editResult.error?.includes("FAILED_FIT_TYPE")) {
+            currentProductStatus = "FAILED_FIT_TYPE";
+          } else if (editResult.error?.includes("FAILED_COLOR_CONFIGURATION")) {
+            currentProductStatus = "FAILED_COLOR_CONFIGURATION";
+          } else {
+            currentProductStatus = "FAILED_UNKNOWN";
+          }
+          currentProductFailureReason = editResult.error;
+          this.log(`\u274C Konfigurationsfehler bei ${product.displayName}: ${editResult.error}`);
         }
-        const isDrinkwareResize = ["CERAMIC_MUG", "TUMBLER", "WATER_BOTTLE", "TRAVEL_TUMBLER"].includes(product.id);
-        if (isDrinkwareResize) {
+        const artworkConfig = product.artwork;
+        const strategy = artworkConfig?.selectionStrategy || "DEFAULT_MASTER";
+        if (strategy !== "DEFAULT_MASTER" && artworkConfig?.variants && artworkConfig.variants.length > 0) {
+          let selectedVariant = artworkConfig.variants[0];
+          if (strategy === "VISION_AVOID_WHITE") {
+            if (avoidColor === "white") {
+              const brushVariant = artworkConfig.variants.find((v) => v.id.includes("BRUSH"));
+              if (brushVariant) selectedVariant = brushVariant;
+            } else {
+              const standardVariant = artworkConfig.variants.find((v) => v.id.includes("STANDARD"));
+              if (standardVariant) selectedVariant = standardVariant;
+            }
+          } else if (strategy === "ALWAYS_STANDARD") {
+            const standardVariant = artworkConfig.variants.find((v) => v.id.includes("STANDARD"));
+            if (standardVariant) selectedVariant = standardVariant;
+          }
           const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const designsDir = import_path78.default.resolve(process.cwd(), "data", "designs");
-          let targetArtworkPath;
-          let isBrushApplied = false;
-          if (product.id === "CERAMIC_MUG") {
-            if (avoidColor === "white") {
-              targetArtworkPath = item.resizedAssets?.mugBrushPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_brush.png`);
-              isBrushApplied = true;
-            } else {
-              targetArtworkPath = item.resizedAssets?.mugStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_mug_standard.png`);
-            }
-          } else if (product.id === "TRAVEL_TUMBLER") {
-            if (avoidColor === "white") {
-              targetArtworkPath = item.resizedAssets?.drinkwareBrushPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_drinkware_brush.png`);
-              isBrushApplied = true;
-            } else {
-              targetArtworkPath = item.resizedAssets?.drinkwareStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
-            }
-          } else {
-            targetArtworkPath = item.resizedAssets?.drinkwareStandardPath || import_path78.default.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
+          let targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey];
+          if (!targetArtworkPath) {
+            const expectedFilename = `${cleanTaskId}_${selectedVariant.id.toLowerCase()}.png`;
+            const candidatePath = import_path78.default.join(designsDir, expectedFilename);
+            if (import_fs83.default.existsSync(candidatePath)) targetArtworkPath = candidatePath;
           }
           if (targetArtworkPath && import_fs83.default.existsSync(targetArtworkPath)) {
-            this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit Two-Sided ${isBrushApplied ? "Black Brush " : ""}Variante...`);
-            const deleteResult = await page.evaluate(async (pid) => {
-              const getAliases = (p) => {
-                const u = p.toUpperCase();
-                if (u === "CERAMIC_MUG") return ["MUG", "CERAMIC_MUG"];
-                if (u === "TRAVEL_TUMBLER") return ["TRAVEL_TUMBLER", "TRAVEL-TUMBLER", "TRAVEL_MUG", "TRAVEL"];
-                if (u === "TUMBLER") return ["TUMBLER"];
-                if (u === "WATER_BOTTLE") return ["WATER_BOTTLE", "WATER-BOTTLE"];
-                return [u];
-              };
-              const aliases2 = getAliases(pid);
-              let card = null;
-              for (const a of aliases2) {
-                card = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
-                if (card) break;
-              }
+            const isBrushApplied = selectedVariant.id.includes("BRUSH");
+            this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit ${selectedVariant.id} (${isBrushApplied ? "Black Brush" : "Standard"})...`);
+            const deleteResult = await page.evaluate(async (params2) => {
+              const { pid, amazonKey, cardId } = params2;
+              let card = document.getElementById(cardId) || document.getElementById(`${amazonKey}-card`) || document.getElementById(`${amazonKey.toLowerCase()}-card`) || document.getElementById(`${pid}-card`) || document.getElementById(`${pid.toLowerCase()}-card`);
               if (!card) {
                 const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
                 card = allCards.find((c) => {
                   const idUpper = (c.id || "").toUpperCase();
                   const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-                  return aliases2.some((a) => idUpper.includes(a) || clsUpper.includes(a));
+                  return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid);
                 }) || null;
               }
               const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
@@ -228849,39 +229035,30 @@ var UploadWorkerService = class _UploadWorkerService {
                 inputContainer = allEditors[allEditors.length - 1];
               }
               let clickedDelete = false;
-              let deleteButton = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-              if (!deleteButton) {
-                for (const a of aliases2) {
-                  deleteButton = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button`);
-                  if (deleteButton) break;
-                }
-              }
+              let deleteButton = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || document.querySelector(`#${amazonKey}-card .delete-button`) || document.querySelector(`#${amazonKey.toLowerCase()}-card .delete-button`) || document.querySelector(`#${pid}-card .delete-button`);
               if (deleteButton) {
                 deleteButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
                 deleteButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
                 deleteButton.click();
                 clickedDelete = true;
               }
-              return { clickedDelete, aliases: aliases2 };
-            }, product.id);
+              return { clickedDelete };
+            }, {
+              pid: product.id,
+              amazonKey: product.amazon?.key || product.id,
+              cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`
+            });
             if (deleteResult.clickedDelete) {
               this.log(`\u23F3 ${product.displayName}: Altes Artwork gel\xF6scht, warte auf Bereitstellung des Dropzone-Felds...`);
               await page.waitForTimeout(800);
             }
             const locateInputResult = await page.evaluate(async (params2) => {
               const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
-              const { pid, aliases: aliases2 } = params2;
+              const { pid, amazonKey } = params2;
               let foundInput = null;
               let retries = 0;
               while (!foundInput && retries < 15) {
-                let uploadLabel = null;
-                for (const a of aliases2) {
-                  uploadLabel = document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for*="${a}"]`) || document.querySelector(`label[for*="${a}-DESIGN"]`);
-                  if (uploadLabel) break;
-                }
-                if (!uploadLabel) {
-                  uploadLabel = document.querySelector(".product-editor label.file-upload-input") || document.querySelector("label.file-upload-input") || document.querySelector('label[for*="DESIGN"]');
-                }
+                let uploadLabel = document.querySelector(`label.file-upload-input[for="${amazonKey}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${amazonKey.toLowerCase()}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${pid}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for*="${amazonKey}"]`) || document.querySelector(".product-editor label.file-upload-input") || document.querySelector("label.file-upload-input") || document.querySelector('label[for*="DESIGN"]');
                 if (uploadLabel) {
                   const forAttr = uploadLabel.getAttribute("for");
                   if (forAttr) {
@@ -228894,18 +229071,10 @@ var UploadWorkerService = class _UploadWorkerService {
                   }
                 }
                 if (!foundInput) {
-                  for (const a of aliases2) {
-                    const directInput = document.getElementById(`${a}-DESIGN-wizzy`) || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`) || document.querySelector(`#${a}-card input[type="file"]`) || document.querySelector(`#${a.toLowerCase()}-card input[type="file"]`) || document.querySelector(`[id*="${a}"] input[type="file"]`);
-                    if (directInput && directInput.tagName === "INPUT" && directInput.type === "file") {
-                      foundInput = directInput;
-                      break;
-                    }
-                  }
-                }
-                if (!foundInput) {
-                  const dropzoneInput = document.querySelector('.product-editor .dropzone-container input[type="file"]') || document.querySelector('.product-editor input[type="file"]') || document.querySelector('.dropzone-container input[type="file"]') || document.querySelector('input[type="file"].file-upload-input');
-                  if (dropzoneInput) {
-                    foundInput = dropzoneInput;
+                  const directInput = document.getElementById(`${amazonKey}-DESIGN-wizzy`) || document.getElementById(`${amazonKey.toLowerCase()}-DESIGN-wizzy`) || document.getElementById(`${pid}-DESIGN-wizzy`) || document.querySelector(`#${amazonKey}-card input[type="file"]`) || document.querySelector(`#${amazonKey.toLowerCase()}-card input[type="file"]`) || document.querySelector(`#${pid}-card input[type="file"]`) || document.querySelector('.product-editor input[type="file"]') || document.querySelector('.dropzone-container input[type="file"]');
+                  if (directInput && directInput.tagName === "INPUT" && directInput.type === "file") {
+                    foundInput = directInput;
+                    break;
                   }
                 }
                 if (!foundInput) {
@@ -228916,13 +229085,17 @@ var UploadWorkerService = class _UploadWorkerService {
               if (foundInput) {
                 const uniqueId = `mba-upload-input-${pid.toLowerCase()}-${Date.now()}`;
                 foundInput.id = uniqueId;
-                return { success: true, inputId: uniqueId, aliases: aliases2 };
+                return { success: true, inputId: uniqueId };
               }
-              return { success: false, inputId: "", aliases: aliases2 };
-            }, { pid: product.id, aliases: deleteResult.aliases });
+              return { success: false, inputId: "" };
+            }, {
+              pid: product.id,
+              amazonKey: product.amazon?.key || product.id
+            });
             let finalInputLocator = locateInputResult.inputId ? page.locator(`#${locateInputResult.inputId}`) : null;
             if (!finalInputLocator || await finalInputLocator.count() === 0) {
-              const fallbackSelector = `#${product.id.replace("CERAMIC_", "")}-card input[type="file"], #${product.id}-card input[type="file"], .product-editor input[type="file"], .dropzone-container input[type="file"], input[type="file"].file-upload-input`;
+              const amazonKey = product.amazon?.key || product.id;
+              const fallbackSelector = `#${amazonKey}-card input[type="file"], #${amazonKey.toLowerCase()}-card input[type="file"], #${product.id}-card input[type="file"], .product-editor input[type="file"], .dropzone-container input[type="file"], input[type="file"].file-upload-input`;
               const fb = page.locator(fallbackSelector).first();
               if (await fb.count() > 0) {
                 finalInputLocator = fb;
@@ -228940,22 +229113,17 @@ var UploadWorkerService = class _UploadWorkerService {
                     }
                   }, locateInputResult.inputId);
                 }
-                this.log(`\u23F3 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork zugewiesen (${import_path78.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
+                this.log(`\u23F3 ${product.displayName}: Artwork zugewiesen (${import_path78.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
                 let uploadDone = false;
                 const pollStart = Date.now();
+                const amazonKey = product.amazon?.key || product.id;
                 while (Date.now() - pollStart < 1e4) {
                   await page.waitForTimeout(500);
-                  const isFinished = await page.evaluate((aliases2) => {
-                    for (const a of aliases2) {
-                      const card = document.getElementById(`${a.toLowerCase()}-card`) || document.getElementById(`${a.toUpperCase()}-card`) || document.getElementById(`config-${a.toLowerCase()}`) || document.getElementById(`config-${a.toUpperCase()}`);
-                      const delOnCard = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-                      if (delOnCard && (delOnCard.offsetParent !== null || delOnCard.getBoundingClientRect().width > 0)) {
-                        return true;
-                      }
-                      const delInDoc = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button, [id*="${a}"] .delete-button`);
-                      if (delInDoc && (delInDoc.offsetParent !== null || delInDoc.getBoundingClientRect().width > 0)) {
-                        return true;
-                      }
+                  const isFinished = await page.evaluate((ak) => {
+                    const card = document.getElementById(`${ak.toLowerCase()}-card`) || document.getElementById(`${ak.toUpperCase()}-card`) || document.getElementById(`config-${ak.toLowerCase()}`) || document.getElementById(`config-${ak.toUpperCase()}`);
+                    const delOnCard = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                    if (delOnCard && (delOnCard.offsetParent !== null || delOnCard.getBoundingClientRect().width > 0)) {
+                      return true;
                     }
                     const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
                     const container = allEditors[allEditors.length - 1];
@@ -228968,7 +229136,7 @@ var UploadWorkerService = class _UploadWorkerService {
                       return true;
                     }
                     return false;
-                  }, locateInputResult.aliases);
+                  }, amazonKey);
                   if (isFinished) {
                     uploadDone = true;
                     break;
@@ -228976,18 +229144,32 @@ var UploadWorkerService = class _UploadWorkerService {
                 }
                 if (uploadDone) {
                   await page.waitForTimeout(500);
-                  this.log(`\u2713 ${product.displayName}: Two-Sided ${isBrushApplied ? "Brush " : ""}Artwork erfolgreich hochgeladen & best\xE4tigt \u2713`);
+                  this.log(`\u2713 ${product.displayName}: Artwork erfolgreich hochgeladen & best\xE4tigt \u2713`);
                 } else {
                   this.log(`\u2139\uFE0F ${product.displayName}: Upload angesto\xDFen, fahre fort...`);
                 }
               } catch (upErr) {
-                this.log(`\u26A0\uFE0F Fehler beim Hochladen des Resized Artworks f\xFCr ${product.displayName}: ${upErr.message}`);
+                this.log(`\u274C Fehler beim Hochladen des Resized Artworks f\xFCr ${product.displayName}: ${upErr.message}`);
+                currentProductStatus = "FAILED_ARTWORK_UPLOAD";
+                currentProductFailureReason = `Artwork-Upload-Fehler: ${upErr.message}`;
               }
             } else {
-              this.log(`\u26A0\uFE0F ${product.displayName}: Kein Upload-Feld im DOM gefunden, behalte Standard-Artwork.`);
+              this.log(`\u274C ${product.displayName}: Kein Upload-Feld im DOM gefunden f\xFCr ${selectedVariant.id}!`);
+              currentProductStatus = "FAILED_ARTWORK_UPLOAD";
+              currentProductFailureReason = `Kein File-Upload-Feld im DOM f\xFCr ${product.displayName} gefunden`;
             }
+          } else {
+            this.log(`\u274C Special Artwork f\xFCr ${product.displayName} (${selectedVariant.id}) nicht gefunden: ${targetArtworkPath}`);
+            currentProductStatus = "FAILED_ARTWORK_UPLOAD";
+            currentProductFailureReason = `Special Artwork Datei nicht gefunden: ${targetArtworkPath}`;
           }
         }
+        productUploadResults.push({
+          productId: product.id,
+          amazonKey: product.amazon?.key || product.id,
+          status: currentProductStatus,
+          reason: currentProductFailureReason
+        });
         await page.waitForTimeout(300);
       }
       this.log(`\u2705 Alle ${totalActiveProducts} Produkte erfolgreich konfiguriert & verifiziert!`, "Produktdetails fertig \u2713", 80, 100);
@@ -229105,6 +229287,23 @@ var UploadWorkerService = class _UploadWorkerService {
       await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
       await page.waitForTimeout(1500);
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
+      const technicalFailures = productUploadResults.filter((r) => r.status.startsWith("FAILED_"));
+      const successfulCount = productUploadResults.filter((r) => r.status === "SUCCESS").length;
+      const skippedCount = productUploadResults.filter((r) => r.status.startsWith("SKIPPED_")).length;
+      const uploadSummary = {
+        totalRequested: totalActiveProducts,
+        successful: successfulCount,
+        skipped: skippedCount,
+        failed: technicalFailures.length,
+        results: productUploadResults
+      };
+      item.uploadResultSummary = uploadSummary;
+      if (technicalFailures.length > 0) {
+        const failureDetails = technicalFailures.map((f) => `${f.productId} (${f.status}: ${f.reason || "unbekannt"})`).join(", ");
+        this.log(`\u{1F6D1} PUBLISH GUARD: Upload wird gestoppt! ${technicalFailures.length} Produkt(e) mit technischem Fehler fehlgeschlagen: ${failureDetails}`, "Publish blockiert \u{1F6D1}", 90, 100);
+        throw new Error(`Upload durch Publish Guard blockiert: ${technicalFailures.length} Produkt(e) fehlgeschlagen: ${failureDetails}`);
+      }
+      this.log(`\u2705 PUBLISH GUARD: Alle ${successfulCount} Produkte erfolgreich konfiguriert (${skippedCount} erwartete Skips). Freigabe erteilt!`);
       if (mode === "publish") {
         if (this.pauseBeforePublishRequested) {
           this.isPausedBeforePublish = true;
@@ -229184,7 +229383,7 @@ var UploadWorkerService = class _UploadWorkerService {
         await page.waitForTimeout(2e3);
         this.log(`\u{1F389} Design sicher als Entwurf in Amazon Merch gespeichert & zur\xFCck auf Dashboard!`, "Entwurf gespeichert \u2713", 100, 100);
       }
-      QueueService.updateItemStatus(item.id, "COMPLETED");
+      QueueService.updateItemStatus(item.id, "COMPLETED", void 0, item.uploadResultSummary);
       try {
         this.log(`\u{1F4CA} Frage aktuelle freie Tages-Upload-Slots \xFCber Session 1 (Sync & Metadata) ab...`, "Aktualisiere freie Slots...");
         const ratelimiter = await SyncEngine.fetchDashboardRatelimiter(void 0, true);
@@ -229203,7 +229402,7 @@ var UploadWorkerService = class _UploadWorkerService {
     } catch (err) {
       const errorMsg = err.message || "Unbekannter Fehler w\xE4hrend des Uploads";
       this.log(`\u274C Upload Fehler: ${errorMsg}`, `Fehler: ${errorMsg}`);
-      QueueService.updateItemStatus(item.id, "ERROR", errorMsg);
+      QueueService.updateItemStatus(item.id, "ERROR", errorMsg, item.uploadResultSummary);
       QueueService.rebalanceQueue();
       this.isUploading = false;
       this.broadcastStatus();

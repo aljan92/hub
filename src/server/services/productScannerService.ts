@@ -257,10 +257,12 @@ export class ProductScannerService {
           fits: string[];
           colorType: 'swatches' | 'hex' | 'none';
           colors: string[];
+          amazonSortOrder: number;
           presetHexColors?: string[];
         }> = {};
 
         const knownMarkets = ['US', 'GB', 'DE', 'FR', 'IT', 'ES', 'JP'];
+        const productOrderList: string[] = [];
 
         // Extract from Checkboxes
         const oldCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"][id^="checkbox-"]'));
@@ -270,9 +272,12 @@ export class ProductScannerService {
             if (parts.length >= 2) {
               const marketplace = parts.pop()!;
               const productId = parts.join('-');
+              if (!productOrderList.includes(productId)) {
+                productOrderList.push(productId);
+              }
               if (!catalog[productId]) {
                 const formattedName = productId.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
-                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: 'none', colors: [] };
+                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: 'none', colors: [], amazonSortOrder: productOrderList.indexOf(productId) };
               }
               if (!catalog[productId].marketplaces.includes(marketplace)) {
                 catalog[productId].marketplaces.push(marketplace);
@@ -280,7 +285,7 @@ export class ProductScannerService {
             }
           });
         } else {
-          // FlowCheckbox (Angular)
+          // FlowCheckbox (Angular) - Processed in strict DOM top-to-bottom order
           const flowCheckboxes = Array.from(document.querySelectorAll('flowcheckbox[formcontrolname="shouldPublish"], flowcheckbox[class*="-checkbox"]'));
           flowCheckboxes.forEach(fc => {
             let identifier = '';
@@ -299,9 +304,12 @@ export class ProductScannerService {
               const parts = identifier.split('-');
               const marketplace = parts.pop()!;
               const productId = parts.join('-');
+              if (!productOrderList.includes(productId)) {
+                productOrderList.push(productId);
+              }
               if (!catalog[productId]) {
                 const formattedName = productId.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
-                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: 'none', colors: [] };
+                catalog[productId] = { id: productId, name: formattedName, marketplaces: [], fits: [], colorType: 'none', colors: [], amazonSortOrder: productOrderList.indexOf(productId) };
               }
               if (!catalog[productId].marketplaces.includes(marketplace)) {
                 catalog[productId].marketplaces.push(marketplace);
@@ -348,63 +356,47 @@ export class ProductScannerService {
 
           // Find mounted editor container
           let inputContainer: Element = configSection;
-          const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel'));
-          const cardRect = configSection.getBoundingClientRect();
-          const validEditors = allEditors.filter(ed => {
-            const edRect = ed.getBoundingClientRect();
-            return edRect.top >= cardRect.bottom - 50 && ed.innerHTML.length > 20;
-          });
-
-          if (validEditors.length > 0) {
-            inputContainer = validEditors[0];
-          } else if (allEditors.length > 0) {
-            inputContainer = allEditors[allEditors.length - 1];
+          const editorIframe = configSection.querySelector('iframe');
+          if (editorIframe && editorIframe.contentDocument) {
+            inputContainer = editorIframe.contentDocument.body;
           }
 
-          // 1. Scrape Fits (Men, Women, Youth, Girls, Adult Unisex)
-          const fitInputs = Array.from(inputContainer.querySelectorAll('input[name="fitType"], input[id*="fitType"], flowcheckbox[class*="-checkbox"], label[class*="-label"], label'));
-          fitInputs.forEach(el => {
-            let fitVal = '';
-            const txt = el.textContent?.trim().toLowerCase() || '';
-            const className = (el.className || '').toLowerCase();
+          // 1. Fit Types: Men, Women, Youth, etc.
+          const fitInputs = Array.from(inputContainer.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+          const detectedFits: string[] = [];
+          fitInputs.forEach(input => {
+            const label = input.closest('label')?.textContent?.toLowerCase().trim() || 
+                          input.getAttribute('aria-label')?.toLowerCase().trim() || 
+                          input.getAttribute('name')?.toLowerCase().trim() || '';
 
-            if (className.includes('adult_unisex') || className.includes('unisex') || txt.includes('adult unisex') || txt.includes('unisex')) {
-              fitVal = 'adult_unisex';
-            } else if (className.includes('girls') || txt.includes('girls') || txt.includes('mädchen')) {
-              fitVal = 'girls';
-            } else if (className.includes('youth') || className.includes('kids') || txt.includes('youth') || txt.includes('kinder')) {
-              fitVal = 'youth';
-            } else if (className.includes('women') || txt.includes('women') || txt.includes('frauen') || txt.includes('damen')) {
-              fitVal = 'women';
-            } else if (className.includes('men') || txt.includes('men') || txt.includes('männer') || txt.includes('herren')) {
-              fitVal = 'men';
-            }
-
-            if (fitVal && !catalog[productId].fits.includes(fitVal)) {
-              catalog[productId].fits.push(fitVal);
-            }
+            if (label.includes('men') && !label.includes('women')) detectedFits.push('men');
+            else if (label.includes('women')) detectedFits.push('women');
+            else if (label.includes('youth') || label.includes('kids')) detectedFits.push('youth');
+            else if (label.includes('girls')) detectedFits.push('girls');
+            else if (label.includes('unisex') || label.includes('adult') || label.includes('standard')) detectedFits.push('standard');
           });
 
-          const validFits = catalog[productId].fits.filter(f => ['men', 'women', 'youth', 'girls', 'adult_unisex', 'unisex'].includes(f));
-          if (validFits.length >= 1 || productId.includes('TSHIRT') || productId.includes('VNECK')) {
+          if (detectedFits.length > 0) {
+            const validFits = Array.from(new Set(detectedFits));
             catalog[productId].fits = validFits;
           } else {
             catalog[productId].fits = [];
           }
 
-          // 2. Accessories -> Force Hex Color Picker
-          const isAccessory = ['POP_SOCKET', 'PHONE_CASE_APPLE_IPHONE', 'GLANCE_CASE_SAMSUNG_GALAXY', 'PHONE_CASE_SAMSUNG_GALAXY', 'TOTE_BAG', 'THROW_PILLOW'].includes(productId);
-          if (isAccessory) {
+          // 2. Dynamic Color Mode Detection (Hex vs Swatches) from DOM
+          const hexInput = inputContainer.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"], color-sketch, .sketch-picker, .color-picker');
+          const swatchInputs = Array.from(inputContainer.querySelectorAll('input[type="checkbox"][id*="color-"], colorcheckbox, .color-checkbox'));
+
+          if (hexInput && swatchInputs.length === 0) {
+            // Pure hex color picker product
             catalog[productId].colorType = 'hex';
             catalog[productId].presetHexColors = [
               "#840A08", "#C70010", "#F36900", "#FEC600", "#01B62F", "#1C8C46", 
               "#37602B", "#1AB7EA", "#002BB6", "#5C2D91", "#E0218A", "#E9CDDB", 
               "#7B4A1B", "#979797", "#FFFFFF", "#000000"
             ];
-          }
-
-          // 3. Predefined Swatch Colors
-          if (catalog[productId].colorType !== 'hex') {
+          } else {
+            // Predefined Swatch Colors
             const colorSwatches = Array.from(inputContainer.querySelectorAll('input[type="checkbox"][id*="color-"]')) as HTMLInputElement[];
             if (colorSwatches.length > 0) {
               catalog[productId].colorType = 'swatches';
@@ -438,11 +430,13 @@ export class ProductScannerService {
                 }
               });
 
-              if (catalog[productId].colors.length === 0) {
-                const hexInput = inputContainer.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]');
-                if (hexInput) {
-                  catalog[productId].colorType = 'hex';
-                }
+              if (catalog[productId].colors.length === 0 && hexInput) {
+                catalog[productId].colorType = 'hex';
+                catalog[productId].presetHexColors = [
+                  "#840A08", "#C70010", "#F36900", "#FEC600", "#01B62F", "#1C8C46", 
+                  "#37602B", "#1AB7EA", "#002BB6", "#5C2D91", "#E0218A", "#E9CDDB", 
+                  "#7B4A1B", "#979797", "#FFFFFF", "#000000"
+                ];
               }
             }
           }
@@ -476,6 +470,8 @@ export class ProductScannerService {
           displayName: fid.charAt(0).toUpperCase() + fid.slice(1)
         }));
 
+        const amazonSort = item.amazonSortOrder ?? index;
+
         return {
           id,
           displayName: item.name || id.replace(/_/g, ' '),
@@ -484,6 +480,15 @@ export class ProductScannerService {
           fitTypes: fitDefs,
           availableMarketplaces: item.marketplaces.length > 0 ? item.marketplaces : ['US'],
           sortOrder: index,
+          amazonSortOrder: amazonSort,
+          amazon: {
+            key: id,
+            cardId: `${id}-card`,
+            checkboxClass: id,
+            sortOrder: amazonSort
+          },
+          available: true,
+          lastSeenAt: nowIso,
           presetHexColors: item.presetHexColors,
           lastUpdated: nowIso
         };

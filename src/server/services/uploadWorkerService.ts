@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { BrowserSessionService } from './browserSessionService';
-import { QueueService, QueueItem } from './queueService';
+import { QueueService, QueueItem, ProductUploadResult, ProductUploadStatus, UploadResultSummary } from './queueService';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
 import { SyncEngine } from './syncEngine';
 import { Page } from 'playwright';
@@ -371,8 +371,14 @@ export class UploadWorkerService {
       } else {
         await page.waitForTimeout(300);
 
+        const catalog = ProductCatalogService.getCatalog();
+        const productAmazonKeys: Record<string, string> = {};
+        for (const p of catalog.products) {
+          productAmazonKeys[p.id] = p.amazon?.key || p.amazon?.checkboxClass || p.id;
+        }
+
         // Perform fast double-check state synchronization inside the modal
-        const modalResult = await page.evaluate(async (activeMap: Record<string, string[]>) => {
+        const modalResult = await page.evaluate(async (params: { activeMap: Record<string, string[]>; productAmazonKeys: Record<string, string> }) => {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
           const modal = Array.from(document.querySelectorAll('.modal-content, .modal-dialog, merch-modal, .modal'))
             .find(el => {
@@ -382,15 +388,19 @@ export class UploadWorkerService {
           if (!modal) return { success: true, modifiedCount: 0 };
 
           let modifiedCount = 0;
-          const products = Object.keys(activeMap);
+          const products = Object.keys(params.activeMap);
 
           for (const pid of products) {
-            const desiredMarketplaces = new Set(activeMap[pid] || []);
+            const desiredMarketplaces = new Set(params.activeMap[pid] || []);
             const allMarketplaces = ['US', 'DE', 'GB', 'FR', 'IT', 'ES', 'JP'];
+            const targetKey = params.productAmazonKeys[pid] || pid;
 
             for (const mp of allMarketplaces) {
-              const selector = `flowcheckbox[class*="${pid}-${mp}"]`;
-              const cb = modal.querySelector(selector) as HTMLElement;
+              let selector = `flowcheckbox[class*="${targetKey}-${mp}"]`;
+              let cb = modal.querySelector(selector) as HTMLElement;
+              if (!cb && targetKey !== pid) {
+                cb = modal.querySelector(`flowcheckbox[class*="${pid}-${mp}"]`) as HTMLElement;
+              }
               if (!cb || cb.classList.contains('ng-hide')) continue;
 
               const shouldBeChecked = desiredMarketplaces.has(mp);
@@ -442,7 +452,7 @@ export class UploadWorkerService {
           }
 
           return { success: false, error: 'Continue button in modal not found' };
-        }, item.activeProductsMap);
+        }, { activeMap: item.activeProductsMap, productAmazonKeys });
 
         if (!modalResult.success) {
           this.log(`⚠️ Modal-Hinweis: ${modalResult.error} (versuche fortzufahren)`);
@@ -459,7 +469,10 @@ export class UploadWorkerService {
 
       // 6. Sequential Product Details Configuration (Dynamic Catalog Driven with Smooth Scrolling & Delays)
       const catalog = ProductCatalogService.getCatalog();
-      const sortedCatalogProducts = [...catalog.products].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+      const sortedCatalogProducts = [...catalog.products].sort((a, b) => 
+        (a.amazonSortOrder ?? a.amazon?.sortOrder ?? a.sortOrder ?? 999) - 
+        (b.amazonSortOrder ?? b.amazon?.sortOrder ?? b.sortOrder ?? 999)
+      );
       
       // Filter products that have at least 1 active marketplace
       const activeProductsToProcess = sortedCatalogProducts.filter(p => {
@@ -468,7 +481,22 @@ export class UploadWorkerService {
       });
 
       const totalActiveProducts = activeProductsToProcess.length;
-      this.log(`👕 Bearbeite ${totalActiveProducts} aktive Produkte sequenziell...`, 'Bearbeite Produktdetails...', 52, 100);
+      this.log(`👕 Bearbeite ${totalActiveProducts} aktive Produkte sequenziell nach Amazon SortOrder...`, 'Bearbeite Produktdetails...', 52, 100);
+
+      const productUploadResults: ProductUploadResult[] = [];
+
+      // Pre-populate skipped products (not selected, unavailable, tm-blocked)
+      for (const p of catalog.products) {
+        const mps = item.activeProductsMap[p.id];
+        const amazonKey = p.amazon?.key || p.id;
+        if (item.tmBlockedProductIds && item.tmBlockedProductIds.map(t => t.toUpperCase()).includes(p.id.toUpperCase())) {
+          productUploadResults.push({ productId: p.id, amazonKey, status: 'SKIPPED_TM_BLOCKED', reason: 'Blocked by Trademark V2' });
+        } else if (p.available === false) {
+          productUploadResults.push({ productId: p.id, amazonKey, status: 'SKIPPED_UNAVAILABLE', reason: 'Product unavailable on Amazon' });
+        } else if (!Array.isArray(mps) || mps.length === 0) {
+          productUploadResults.push({ productId: p.id, amazonKey, status: 'SKIPPED_NOT_SELECTED', reason: 'No active marketplaces selected' });
+        }
+      }
 
       const avoidColor = item.avoidColor || 'none';
       let fitTypes = item.fitTypes || ['men', 'women', 'youth'];
@@ -495,53 +523,36 @@ export class UploadWorkerService {
         const product = activeProductsToProcess[i];
         const stepProgress = 52 + Math.round(((i + 1) / totalActiveProducts) * 28); // 52% to 80%
 
-        this.log(`[${i + 1}/${totalActiveProducts}] Öffne & prüfe "${product.displayName}"...`, `Bearbeite ${product.displayName}`, stepProgress, 100);
+        this.log(`[${i + 1}/${totalActiveProducts}] Öffne & prüfe "${product.displayName}" (${product.amazon?.key || product.id})...`, `Bearbeite ${product.displayName}`, stepProgress, 100);
 
         // Säule 3: Robuster "Edit details" Klick- & Öffnungs-Check mit aktiver Verifikation & Retries
         let editorOpened = false;
         let openRetries = 0;
         const maxOpenRetries = 3;
+        let lastOpenReason = '';
 
         while (!editorOpened && openRetries < maxOpenRetries) {
           openRetries++;
 
-          const openResult = await page.evaluate(async (pid: string) => {
+          const openResult = await page.evaluate(async (params: { pid: string; amazonKey: string; cardId: string }) => {
             const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+            const { pid, amazonKey, cardId } = params;
 
-            const getAliases = (p: string): string[] => {
-              const u = p.toUpperCase();
-              if (u === 'CERAMIC_MUG') return ['MUG', 'CERAMIC_MUG'];
-              if (u === 'SPORT_SUN_VISOR') return ['VISOR', 'SPORT_SUN_VISOR'];
-              if (u === 'TRAVEL_TUMBLER') return ['TRAVEL_TUMBLER', 'TRAVEL-TUMBLER', 'TRAVEL_MUG', 'TRAVEL'];
-              if (u === 'POPSOCKETS') return ['POPSOCKET', 'POP_SOCKET', 'POPSOCKETS'];
-              if (u === 'THROW_PILLOWS') return ['THROW_PILLOW', 'THROW_PILLOWS'];
-              if (u === 'IPHONE_CASES') return ['IPHONE_CASES', 'PHONE_CASE_APPLE_IPHONE', 'PHONE_CASE'];
-              if (u === 'STANDARD_PULLOVER_HOODIE') return ['PULLOVER_HOODIE', 'STANDARD_PULLOVER_HOODIE'];
-              if (u === 'STANDARD_SWEATSHIRT') return ['SWEATSHIRT', 'STANDARD_SWEATSHIRT'];
-              if (u === 'STANDARD_LONG_SLEEVE') return ['LONG_SLEEVE_TSHIRT', 'STANDARD_LONG_SLEEVE'];
-              if (u === 'VALUE_TSHIRT') return ['VALUE_GRAPHIC_TSHIRT', 'VALUE_TSHIRT'];
-              if (u === 'VNECK') return ['VNECK_TSHIRT', 'VNECK'];
-              return [u];
-            };
-
-            const aliases = getAliases(pid);
-
-            // 1. Locate the exact product card for pid across aliases
+            // 1. Locate the exact product card using Amazon cardId and amazonKey
             const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card')) as HTMLElement[];
-            let card: HTMLElement | null = null;
-            for (const a of aliases) {
-              card = document.getElementById(`${a}-card`) 
-                || document.getElementById(`${a.toLowerCase()}-card`)
-                || document.getElementById(`config-${a}`)
-                || document.getElementById(`config-${a.toLowerCase()}`);
-              if (card) break;
-            }
+            let card = document.getElementById(cardId) 
+              || document.getElementById(`${amazonKey}-card`) 
+              || document.getElementById(`${amazonKey.toLowerCase()}-card`)
+              || document.getElementById(`${pid}-card`)
+              || document.getElementById(`${pid.toLowerCase()}-card`)
+              || document.getElementById(`config-${amazonKey}`)
+              || document.getElementById(`config-${pid}`);
 
             if (!card) {
               card = allCards.find(c => {
                 const idUpper = (c.id || '').toUpperCase();
                 const clsUpper = Array.from(c.classList).join(' ').toUpperCase();
-                return aliases.some(a => idUpper.includes(a) || clsUpper.includes(a));
+                return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid) || clsUpper.includes(pid);
               }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`)) as HTMLElement;
             }
 
@@ -556,20 +567,17 @@ export class UploadWorkerService {
             }
 
             if (!editBtn) {
-              for (const a of aliases) {
-                editBtn = (document.querySelector(`.${a}-edit-btn`) 
-                  || document.querySelector(`.${a.toLowerCase()}-edit-btn`) 
-                  || document.querySelector(`#${a}-card .edit-button`) 
-                  || document.querySelector(`#${a}-card button.edit-btn`)
-                  || document.querySelector(`button[class*="${a}-edit"]`)
-                  || document.querySelector(`[id*="${a}"] button, [class*="${a}"] button`)
-                  || Array.from(document.querySelectorAll(`button`)).find(b => b.textContent?.trim().toLowerCase().includes('edit') && (b.closest(`#${a}-card`) || (card && b.closest(`#${card.id}`))))) as HTMLElement;
-                if (editBtn) break;
-              }
+              editBtn = (document.querySelector(`.${amazonKey}-edit-btn`) 
+                || document.querySelector(`.${amazonKey.toLowerCase()}-edit-btn`) 
+                || document.querySelector(`#${amazonKey}-card .edit-button`) 
+                || document.querySelector(`#${amazonKey}-card button.edit-btn`)
+                || document.querySelector(`button[class*="${amazonKey}-edit"]`)
+                || document.querySelector(`[id*="${amazonKey}"] button, [class*="${amazonKey}"] button`)
+                || Array.from(document.querySelectorAll(`button`)).find(b => b.textContent?.trim().toLowerCase().includes('edit') && (b.closest(`#${amazonKey}-card`) || (card && b.closest(`#${card.id}`))))) as HTMLElement;
             }
 
             if (!editBtn) {
-              return { success: false, reason: `Edit button für ${pid} (Aliases: ${aliases.join(',')}) nicht im DOM gefunden` };
+              return { success: false, reason: `Edit button für ${pid} (${amazonKey}) nicht im DOM gefunden` };
             }
 
             // 3. Scroll cleanly to button
@@ -593,24 +601,36 @@ export class UploadWorkerService {
             }
 
             return { success: true, reason: 'proceed_anyway' };
-          }, product.id);
+          }, {
+            pid: product.id,
+            amazonKey: product.amazon?.key || product.id,
+            cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`
+          });
 
           if (openResult.success) {
             editorOpened = true;
           } else {
+            lastOpenReason = openResult.reason || '';
             this.log(`⚠️ Versuch ${openRetries}/${maxOpenRetries} für "${product.displayName}": ${openResult.reason} - wiederhole...`);
             await page.waitForTimeout(400);
           }
         }
 
         if (!editorOpened) {
-          this.log(`❌ Konnte Editor für "${product.displayName}" nach ${maxOpenRetries} Versuchen nicht öffnen! Überspringe...`);
+          this.log(`❌ Konnte Editor für "${product.displayName}" nach ${maxOpenRetries} Versuchen nicht öffnen!`);
+          productUploadResults.push({
+            productId: product.id,
+            amazonKey: product.amazon?.key || product.id,
+            status: 'FAILED_EDITOR_OPEN',
+            reason: `Editor für ${product.displayName} konnte nicht geöffnet werden: ${lastOpenReason}`
+          });
           continue;
         }
 
-        // Säulen 1 & 2: Konfiguration mit Fit-Type Garantie, Swatch-Audit & Minimum-1 Farbe Selbstheilung
         const editResult = await page.evaluate(async (params: {
           productId: string;
+          amazonKey: string;
+          cardId: string;
           colorMode: string;
           fitTypes: string[];
           avoidColor: string;
@@ -618,42 +638,23 @@ export class UploadWorkerService {
           catalogColors: Array<{ id: string; avoidRule?: 'none' | 'white' | 'black' }>;
         }) => {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-          const pid = params.productId;
+          const { productId: pid, amazonKey, cardId } = params;
 
-          const getAliases = (p: string): string[] => {
-            const u = p.toUpperCase();
-            if (u === 'CERAMIC_MUG') return ['MUG', 'CERAMIC_MUG'];
-            if (u === 'SPORT_SUN_VISOR') return ['VISOR', 'SPORT_SUN_VISOR'];
-            if (u === 'TRAVEL_TUMBLER') return ['TRAVEL_TUMBLER', 'TRAVEL-TUMBLER', 'TRAVEL_MUG', 'TRAVEL'];
-            if (u === 'POPSOCKETS') return ['POPSOCKET', 'POP_SOCKET', 'POPSOCKETS'];
-            if (u === 'THROW_PILLOWS') return ['THROW_PILLOW', 'THROW_PILLOWS'];
-            if (u === 'IPHONE_CASES') return ['IPHONE_CASES', 'PHONE_CASE_APPLE_IPHONE', 'PHONE_CASE'];
-            if (u === 'STANDARD_PULLOVER_HOODIE') return ['PULLOVER_HOODIE', 'STANDARD_PULLOVER_HOODIE'];
-            if (u === 'STANDARD_SWEATSHIRT') return ['SWEATSHIRT', 'STANDARD_SWEATSHIRT'];
-            if (u === 'STANDARD_LONG_SLEEVE') return ['LONG_SLEEVE_TSHIRT', 'STANDARD_LONG_SLEEVE'];
-            if (u === 'VALUE_TSHIRT') return ['VALUE_GRAPHIC_TSHIRT', 'VALUE_TSHIRT'];
-            if (u === 'VNECK') return ['VNECK_TSHIRT', 'VNECK'];
-            return [u];
-          };
-
-          const aliases = getAliases(pid);
-
-          // 1. Locate the exact product card for pid across aliases
-          let card: HTMLElement | null = null;
-          for (const a of aliases) {
-            card = document.getElementById(`${a}-card`) 
-              || document.getElementById(`${a.toLowerCase()}-card`)
-              || document.getElementById(`config-${a}`)
-              || document.getElementById(`config-${a.toLowerCase()}`);
-            if (card) break;
-          }
+          // 1. Locate the exact product card using Amazon cardId and amazonKey
+          let card: HTMLElement | null = document.getElementById(cardId) 
+            || document.getElementById(`${amazonKey}-card`) 
+            || document.getElementById(`${amazonKey.toLowerCase()}-card`)
+            || document.getElementById(`${pid}-card`)
+            || document.getElementById(`${pid.toLowerCase()}-card`)
+            || document.getElementById(`config-${amazonKey}`)
+            || document.getElementById(`config-${pid}`);
 
           if (!card) {
             const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card')) as HTMLElement[];
             card = allCards.find(c => {
               const idUpper = (c.id || '').toUpperCase();
               const clsUpper = Array.from(c.classList).join(' ').toUpperCase();
-              return aliases.some(a => idUpper.includes(a) || clsUpper.includes(a));
+              return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid) || clsUpper.includes(pid);
             }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`)) as HTMLElement;
           }
 
@@ -1019,37 +1020,17 @@ export class UploadWorkerService {
             await sleep(100);
             let activeSwatches = colorCheckboxes.filter(cb => isElementChecked(cb));
 
-            // PASS 3: SELBSTHEILUNG BEI 0 FARBEN (Sicherheitsnetz falls 0 Farben übrig blieben)
+            // PASS 3: STRICT AUDIT - KEIN LEGACY FALLBACK
             if (activeSwatches.length === 0 && colorCheckboxes.length > 0) {
-              // 1. Suche aus den im Katalog definierten Farben die erste Farbe, deren avoidRule !== params.avoidColor ist
-              let fallbackSwatch = colorCheckboxes.find(cb => {
-                const h = extractColorClues(cb);
-                const mid = identifyColorId(h);
-                const cfg = params.catalogColors?.find((c: any) => (mid && c.id === mid) || h.includes(c.id));
-                if (!cfg) return false;
-                return cfg.avoidRule !== params.avoidColor;
-              });
-
-              // 2. Falls keine gefunden: Erstes verfügbares Katalog-Swatch
-              if (!fallbackSwatch) {
-                fallbackSwatch = colorCheckboxes.find(cb => {
-                  const h = extractColorClues(cb);
-                  const mid = identifyColorId(h);
-                  return params.catalogColors?.some((c: any) => (mid && c.id === mid) || h.includes(c.id));
-                });
-              }
-
-              // 3. Absolute Notfall-Garantie: Erstes verfügbares Swatch
-              if (!fallbackSwatch) {
-                fallbackSwatch = colorCheckboxes[0];
-              }
-
-              clickTargetElement(fallbackSwatch);
-              await sleep(100);
-
-              const h = extractColorClues(fallbackSwatch);
-              selfHealedColor = identifyColorId(h) || 'Fallback Color';
-              activeSwatches = colorCheckboxes.filter(cb => isElementChecked(cb));
+              return {
+                success: false,
+                error: `FAILED_COLOR_CONFIGURATION: Keine Farben aktiv nach avoidRules (${params.avoidColor})`,
+                activeColors: [],
+                fitTypesApplied: activeFitsApplied,
+                fitDebug: fitDebugSummary,
+                selfHealedColor: '',
+                isLocked: false
+              };
             }
 
             // PASS 4: Finale Namen der aktivierten Farben für das Live-Log auslesen
@@ -1071,12 +1052,17 @@ export class UploadWorkerService {
           };
         }, {
           productId: product.id,
+          amazonKey: product.amazon?.key || product.id,
+          cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`,
           colorMode: product.colorMode,
           fitTypes,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
           catalogColors: Array.isArray(product.colors) ? product.colors.map(c => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || 'none' })) : []
         });
+
+        let currentProductStatus: ProductUploadStatus = 'SUCCESS';
+        let currentProductFailureReason: string | undefined;
 
         if (editResult.success) {
           const colorsList = editResult.activeColors && editResult.activeColors.length > 0 ? editResult.activeColors.join(', ') : 'OK';
@@ -1087,78 +1073,71 @@ export class UploadWorkerService {
 
           if (editResult.isLocked) {
             this.log(`ℹ️ ${product.displayName}: Farbe & Artwork auf Amazon gesperrt (bereits live) ✓ | Fit: ${fitsList}${fitDetails}`);
-          } else if (editResult.selfHealedColor) {
-            this.log(`⚠️ ${product.displayName}: 0 Farben verhindert ➔ Selbstheilung: "${editResult.selfHealedColor}" aktiviert ✓ | Fit: ${fitsList}${fitDetails}`);
           } else {
             this.log(`✓ ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}${fitDetails}`);
           }
         } else {
-          this.log(`⚠️ Hinweis zu ${product.displayName}: ${editResult.reason}`);
+          if (editResult.error?.includes('FAILED_FIT_TYPE')) {
+            currentProductStatus = 'FAILED_FIT_TYPE';
+          } else if (editResult.error?.includes('FAILED_COLOR_CONFIGURATION')) {
+            currentProductStatus = 'FAILED_COLOR_CONFIGURATION';
+          } else {
+            currentProductStatus = 'FAILED_UNKNOWN';
+          }
+          currentProductFailureReason = editResult.error;
+          this.log(`❌ Konfigurationsfehler bei ${product.displayName}: ${editResult.error}`);
         }
 
-        // Resize Step für Produkte mit spezifischem Two-Sided Artwork (Mug, Tumbler, Water Bottle, Travel Tumbler)
-        const isDrinkwareResize = ['CERAMIC_MUG', 'TUMBLER', 'WATER_BOTTLE', 'TRAVEL_TUMBLER'].includes(product.id);
-        if (isDrinkwareResize) {
+        // Dynamic Artwork Replacement via ProductArtworkConfig
+        const artworkConfig = product.artwork;
+        const strategy = artworkConfig?.selectionStrategy || 'DEFAULT_MASTER';
+
+        if (strategy !== 'DEFAULT_MASTER' && artworkConfig?.variants && artworkConfig.variants.length > 0) {
+          let selectedVariant = artworkConfig.variants[0];
+          if (strategy === 'VISION_AVOID_WHITE') {
+            if (avoidColor === 'white') {
+              const brushVariant = artworkConfig.variants.find(v => v.id.includes('BRUSH'));
+              if (brushVariant) selectedVariant = brushVariant;
+            } else {
+              const standardVariant = artworkConfig.variants.find(v => v.id.includes('STANDARD'));
+              if (standardVariant) selectedVariant = standardVariant;
+            }
+          } else if (strategy === 'ALWAYS_STANDARD') {
+            const standardVariant = artworkConfig.variants.find(v => v.id.includes('STANDARD'));
+            if (standardVariant) selectedVariant = standardVariant;
+          }
+
           const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
           const designsDir = path.resolve(process.cwd(), 'data', 'designs');
           
-          let targetArtworkPath: string | undefined;
-          let isBrushApplied = false;
-
-          if (product.id === 'CERAMIC_MUG') {
-            if (avoidColor === 'white') {
-              targetArtworkPath = item.resizedAssets?.mugBrushPath 
-                || path.join(designsDir, `${cleanTaskId}_two_sided_mug_brush.png`);
-              isBrushApplied = true;
-            } else {
-              targetArtworkPath = item.resizedAssets?.mugStandardPath 
-                || path.join(designsDir, `${cleanTaskId}_two_sided_mug_standard.png`);
-            }
-          } else if (product.id === 'TRAVEL_TUMBLER') {
-            if (avoidColor === 'white') {
-              targetArtworkPath = item.resizedAssets?.drinkwareBrushPath 
-                || path.join(designsDir, `${cleanTaskId}_two_sided_drinkware_brush.png`);
-              isBrushApplied = true;
-            } else {
-              targetArtworkPath = item.resizedAssets?.drinkwareStandardPath 
-                || path.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
-            }
-          } else {
-            // TUMBLER or WATER_BOTTLE
-            targetArtworkPath = item.resizedAssets?.drinkwareStandardPath 
-              || path.join(designsDir, `${cleanTaskId}_two_sided_drinkware_standard.png`);
+          let targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey as keyof typeof item.resizedAssets];
+          if (!targetArtworkPath) {
+            const expectedFilename = `${cleanTaskId}_${selectedVariant.id.toLowerCase()}.png`;
+            const candidatePath = path.join(designsDir, expectedFilename);
+            if (fs.existsSync(candidatePath)) targetArtworkPath = candidatePath;
           }
 
           if (targetArtworkPath && fs.existsSync(targetArtworkPath)) {
-            this.log(`🎨 Ersetze Artwork für ${product.displayName} mit Two-Sided ${isBrushApplied ? 'Black Brush ' : ''}Variante...`);
+            const isBrushApplied = selectedVariant.id.includes('BRUSH');
+            this.log(`🎨 Ersetze Artwork für ${product.displayName} mit ${selectedVariant.id} (${isBrushApplied ? 'Black Brush' : 'Standard'})...`);
             
-            // 1. Altes Artwork löschen falls delete-button vorhanden (mit mousedown/mouseup/click)
-            const deleteResult = await page.evaluate(async (pid: string) => {
-              const getAliases = (p: string): string[] => {
-                const u = p.toUpperCase();
-                if (u === 'CERAMIC_MUG') return ['MUG', 'CERAMIC_MUG'];
-                if (u === 'TRAVEL_TUMBLER') return ['TRAVEL_TUMBLER', 'TRAVEL-TUMBLER', 'TRAVEL_MUG', 'TRAVEL'];
-                if (u === 'TUMBLER') return ['TUMBLER'];
-                if (u === 'WATER_BOTTLE') return ['WATER_BOTTLE', 'WATER-BOTTLE'];
-                return [u];
-              };
-              const aliases = getAliases(pid);
+            // 1. Altes Artwork löschen falls delete-button vorhanden
+            const deleteResult = await page.evaluate(async (params: { pid: string; amazonKey: string; cardId: string }) => {
+              const { pid, amazonKey, cardId } = params;
 
               // 1. Locate product card
-              let card: HTMLElement | null = null;
-              for (const a of aliases) {
-                card = document.getElementById(`${a.toLowerCase()}-card`) 
-                  || document.getElementById(`${a.toUpperCase()}-card`) 
-                  || document.getElementById(`config-${a.toLowerCase()}`) 
-                  || document.getElementById(`config-${a.toUpperCase()}`);
-                if (card) break;
-              }
+              let card: HTMLElement | null = document.getElementById(cardId) 
+                || document.getElementById(`${amazonKey}-card`) 
+                || document.getElementById(`${amazonKey.toLowerCase()}-card`) 
+                || document.getElementById(`${pid}-card`) 
+                || document.getElementById(`${pid.toLowerCase()}-card`);
+
               if (!card) {
                 const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card')) as HTMLElement[];
                 card = allCards.find(c => {
                   const idUpper = (c.id || '').toUpperCase();
                   const clsUpper = Array.from(c.classList).join(' ').toUpperCase();
-                  return aliases.some(a => idUpper.includes(a) || clsUpper.includes(a));
+                  return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid);
                 }) || null;
               }
 
@@ -1181,14 +1160,10 @@ export class UploadWorkerService {
 
               let clickedDelete = false;
               let deleteButton = (card?.querySelector('.delete-button, .sci-icon.sci-delete-forever')
-                || inputContainer?.querySelector('.delete-button, .sci-icon.sci-delete-forever')) as HTMLElement;
-              
-              if (!deleteButton) {
-                for (const a of aliases) {
-                  deleteButton = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button`) as HTMLElement;
-                  if (deleteButton) break;
-                }
-              }
+                || inputContainer?.querySelector('.delete-button, .sci-icon.sci-delete-forever')
+                || document.querySelector(`#${amazonKey}-card .delete-button`)
+                || document.querySelector(`#${amazonKey.toLowerCase()}-card .delete-button`)
+                || document.querySelector(`#${pid}-card .delete-button`)) as HTMLElement;
 
               if (deleteButton) {
                 deleteButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
@@ -1197,39 +1172,34 @@ export class UploadWorkerService {
                 clickedDelete = true;
               }
 
-              return { clickedDelete, aliases };
-            }, product.id);
+              return { clickedDelete };
+            }, {
+              pid: product.id,
+              amazonKey: product.amazon?.key || product.id,
+              cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`
+            });
 
-            // WICHTIG: Wenn Delete geklickt wurde, warten bis Amazon die Dropzone neu mountet!
             if (deleteResult.clickedDelete) {
               this.log(`⏳ ${product.displayName}: Altes Artwork gelöscht, warte auf Bereitstellung des Dropzone-Felds...`);
               await page.waitForTimeout(800);
             }
 
-            // 2. File-Input mit aktivem Polling lokalisieren (genau wie in Listing Optimizer fix_bugs.js)
-            const locateInputResult = await page.evaluate(async (params: { pid: string; aliases: string[] }) => {
+            // 2. File-Input mit aktivem Polling lokalisieren
+            const locateInputResult = await page.evaluate(async (params: { pid: string; amazonKey: string }) => {
               const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-              const { pid, aliases } = params;
+              const { pid, amazonKey } = params;
 
               let foundInput: HTMLInputElement | null = null;
               let retries = 0;
 
               while (!foundInput && retries < 15) {
-                // 1. Suche nach label.file-upload-input[for="..."]
-                let uploadLabel: HTMLElement | null = null;
-                for (const a of aliases) {
-                  uploadLabel = (document.querySelector(`label.file-upload-input[for="${a}-DESIGN-wizzy"]`)
-                    || document.querySelector(`label.file-upload-input[for="${a.toLowerCase()}-DESIGN-wizzy"]`)
-                    || document.querySelector(`label.file-upload-input[for*="${a}"]`)
-                    || document.querySelector(`label[for*="${a}-DESIGN"]`)) as HTMLElement;
-                  if (uploadLabel) break;
-                }
-
-                if (!uploadLabel) {
-                  uploadLabel = (document.querySelector('.product-editor label.file-upload-input')
-                    || document.querySelector('label.file-upload-input')
-                    || document.querySelector('label[for*="DESIGN"]')) as HTMLElement;
-                }
+                let uploadLabel = (document.querySelector(`label.file-upload-input[for="${amazonKey}-DESIGN-wizzy"]`)
+                  || document.querySelector(`label.file-upload-input[for="${amazonKey.toLowerCase()}-DESIGN-wizzy"]`)
+                  || document.querySelector(`label.file-upload-input[for="${pid}-DESIGN-wizzy"]`)
+                  || document.querySelector(`label.file-upload-input[for*="${amazonKey}"]`)
+                  || document.querySelector('.product-editor label.file-upload-input')
+                  || document.querySelector('label.file-upload-input')
+                  || document.querySelector('label[for*="DESIGN"]')) as HTMLElement;
 
                 if (uploadLabel) {
                   const forAttr = uploadLabel.getAttribute('for');
@@ -1243,29 +1213,18 @@ export class UploadWorkerService {
                   }
                 }
 
-                // 2. Suche direkt nach input[type="file"] auf der Card oder nach ID
                 if (!foundInput) {
-                  for (const a of aliases) {
-                    const directInput = (document.getElementById(`${a}-DESIGN-wizzy`)
-                      || document.getElementById(`${a.toLowerCase()}-DESIGN-wizzy`)
-                      || document.querySelector(`#${a}-card input[type="file"]`)
-                      || document.querySelector(`#${a.toLowerCase()}-card input[type="file"]`)
-                      || document.querySelector(`[id*="${a}"] input[type="file"]`)) as HTMLInputElement;
-                    if (directInput && directInput.tagName === 'INPUT' && directInput.type === 'file') {
-                      foundInput = directInput;
-                      break;
-                    }
-                  }
-                }
-
-                // 3. Suche in Dropzone-Container
-                if (!foundInput) {
-                  const dropzoneInput = (document.querySelector('.product-editor .dropzone-container input[type="file"]')
+                  const directInput = (document.getElementById(`${amazonKey}-DESIGN-wizzy`)
+                    || document.getElementById(`${amazonKey.toLowerCase()}-DESIGN-wizzy`)
+                    || document.getElementById(`${pid}-DESIGN-wizzy`)
+                    || document.querySelector(`#${amazonKey}-card input[type="file"]`)
+                    || document.querySelector(`#${amazonKey.toLowerCase()}-card input[type="file"]`)
+                    || document.querySelector(`#${pid}-card input[type="file"]`)
                     || document.querySelector('.product-editor input[type="file"]')
-                    || document.querySelector('.dropzone-container input[type="file"]')
-                    || document.querySelector('input[type="file"].file-upload-input')) as HTMLInputElement;
-                  if (dropzoneInput) {
-                    foundInput = dropzoneInput;
+                    || document.querySelector('.dropzone-container input[type="file"]')) as HTMLInputElement;
+                  if (directInput && directInput.tagName === 'INPUT' && directInput.type === 'file') {
+                    foundInput = directInput;
+                    break;
                   }
                 }
 
@@ -1278,17 +1237,20 @@ export class UploadWorkerService {
               if (foundInput) {
                 const uniqueId = `mba-upload-input-${pid.toLowerCase()}-${Date.now()}`;
                 foundInput.id = uniqueId;
-                return { success: true, inputId: uniqueId, aliases };
+                return { success: true, inputId: uniqueId };
               }
 
-              return { success: false, inputId: '', aliases };
-            }, { pid: product.id, aliases: deleteResult.aliases });
+              return { success: false, inputId: '' };
+            }, {
+              pid: product.id,
+              amazonKey: product.amazon?.key || product.id
+            });
 
             let finalInputLocator = locateInputResult.inputId ? page.locator(`#${locateInputResult.inputId}`) : null;
 
-            // Fallback Playwright Locator wenn im Evaluate nichts gelabelt werden konnte
             if (!finalInputLocator || (await finalInputLocator.count()) === 0) {
-              const fallbackSelector = `#${product.id.replace('CERAMIC_', '')}-card input[type="file"], #${product.id}-card input[type="file"], .product-editor input[type="file"], .dropzone-container input[type="file"], input[type="file"].file-upload-input`;
+              const amazonKey = product.amazon?.key || product.id;
+              const fallbackSelector = `#${amazonKey}-card input[type="file"], #${amazonKey.toLowerCase()}-card input[type="file"], #${product.id}-card input[type="file"], .product-editor input[type="file"], .dropzone-container input[type="file"], input[type="file"].file-upload-input`;
               const fb = page.locator(fallbackSelector).first();
               if ((await fb.count()) > 0) {
                 finalInputLocator = fb;
@@ -1299,7 +1261,6 @@ export class UploadWorkerService {
               try {
                 await finalInputLocator.setInputFiles(targetArtworkPath);
 
-                // Event trigger in Page Context für Angular (change, input)
                 if (locateInputResult.inputId) {
                   await page.evaluate((id: string) => {
                     const el = document.getElementById(id);
@@ -1310,32 +1271,23 @@ export class UploadWorkerService {
                   }, locateInputResult.inputId);
                 }
 
-                this.log(`⏳ ${product.displayName}: Two-Sided ${isBrushApplied ? 'Brush ' : ''}Artwork zugewiesen (${path.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
+                this.log(`⏳ ${product.displayName}: Artwork zugewiesen (${path.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
 
-                // Aktives schnelles Polling (max 10s): Prüft Delete-Button & Upload-Fortschritt
                 let uploadDone = false;
                 const pollStart = Date.now();
+                const amazonKey = product.amazon?.key || product.id;
                 while (Date.now() - pollStart < 10000) {
                   await page.waitForTimeout(500);
-                  const isFinished = await page.evaluate((aliases: string[]) => {
-                    // 1. Delete-Button auf Card oder im Dokument prüfen
-                    for (const a of aliases) {
-                      const card = document.getElementById(`${a.toLowerCase()}-card`) 
-                        || document.getElementById(`${a.toUpperCase()}-card`)
-                        || document.getElementById(`config-${a.toLowerCase()}`)
-                        || document.getElementById(`config-${a.toUpperCase()}`);
-                      const delOnCard = card?.querySelector('.delete-button, .sci-icon.sci-delete-forever') as HTMLElement;
-                      if (delOnCard && (delOnCard.offsetParent !== null || delOnCard.getBoundingClientRect().width > 0)) {
-                        return true;
-                      }
-
-                      const delInDoc = document.querySelector(`#${a}-card .delete-button, #${a.toLowerCase()}-card .delete-button, [id*="${a}"] .delete-button`) as HTMLElement;
-                      if (delInDoc && (delInDoc.offsetParent !== null || delInDoc.getBoundingClientRect().width > 0)) {
-                        return true;
-                      }
+                  const isFinished = await page.evaluate((ak: string) => {
+                    const card = document.getElementById(`${ak.toLowerCase()}-card`) 
+                      || document.getElementById(`${ak.toUpperCase()}-card`)
+                      || document.getElementById(`config-${ak.toLowerCase()}`)
+                      || document.getElementById(`config-${ak.toUpperCase()}`);
+                    const delOnCard = card?.querySelector('.delete-button, .sci-icon.sci-delete-forever') as HTMLElement;
+                    if (delOnCard && (delOnCard.offsetParent !== null || delOnCard.getBoundingClientRect().width > 0)) {
+                      return true;
                     }
 
-                    // 2. Delete-Button im geöffneten Editor prüfen
                     const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
                     const container = allEditors[allEditors.length - 1];
                     const delBtn = container?.querySelector('.delete-button, .sci-icon.sci-delete-forever') as HTMLElement;
@@ -1343,14 +1295,13 @@ export class UploadWorkerService {
                       return true;
                     }
 
-                    // 3. Wenn nach 2 Sekunden kein Ladebalken/Spinner mehr da ist und ein Design-Image existiert
                     const hasProgress = Boolean(document.querySelector('.upload-progress, .progress-bar, flowprogressbar, .loading-spinner'));
                     if (!hasProgress && (container?.querySelector('.asset img, img[class*="design"], canvas.design-canvas') !== null)) {
                       return true;
                     }
 
                     return false;
-                  }, locateInputResult.aliases);
+                  }, amazonKey);
 
                   if (isFinished) {
                     uploadDone = true;
@@ -1360,18 +1311,34 @@ export class UploadWorkerService {
 
                 if (uploadDone) {
                   await page.waitForTimeout(500);
-                  this.log(`✓ ${product.displayName}: Two-Sided ${isBrushApplied ? 'Brush ' : ''}Artwork erfolgreich hochgeladen & bestätigt ✓`);
+                  this.log(`✓ ${product.displayName}: Artwork erfolgreich hochgeladen & bestätigt ✓`);
                 } else {
                   this.log(`ℹ️ ${product.displayName}: Upload angestoßen, fahre fort...`);
                 }
               } catch (upErr: any) {
-                this.log(`⚠️ Fehler beim Hochladen des Resized Artworks für ${product.displayName}: ${upErr.message}`);
+                this.log(`❌ Fehler beim Hochladen des Resized Artworks für ${product.displayName}: ${upErr.message}`);
+                currentProductStatus = 'FAILED_ARTWORK_UPLOAD';
+                currentProductFailureReason = `Artwork-Upload-Fehler: ${upErr.message}`;
               }
             } else {
-              this.log(`⚠️ ${product.displayName}: Kein Upload-Feld im DOM gefunden, behalte Standard-Artwork.`);
+              this.log(`❌ ${product.displayName}: Kein Upload-Feld im DOM gefunden für ${selectedVariant.id}!`);
+              currentProductStatus = 'FAILED_ARTWORK_UPLOAD';
+              currentProductFailureReason = `Kein File-Upload-Feld im DOM für ${product.displayName} gefunden`;
             }
+          } else {
+            this.log(`❌ Special Artwork für ${product.displayName} (${selectedVariant.id}) nicht gefunden: ${targetArtworkPath}`);
+            currentProductStatus = 'FAILED_ARTWORK_UPLOAD';
+            currentProductFailureReason = `Special Artwork Datei nicht gefunden: ${targetArtworkPath}`;
           }
         }
+
+        // Ergebnis dieses Produkts festhalten
+        productUploadResults.push({
+          productId: product.id,
+          amazonKey: product.amazon?.key || product.id,
+          status: currentProductStatus,
+          reason: currentProductFailureReason
+        });
 
         await page.waitForTimeout(300);
       }
@@ -1418,8 +1385,8 @@ export class UploadWorkerService {
         sanitizedListings[loc] = {
           brand: UploadWorkerService.sanitizeListingText(content.brand || '', loc),
           title: UploadWorkerService.sanitizeListingText(content.title || '', loc),
-          bullet1: UploadWorkerService.sanitizeListingText(content.bullet1 || content.bullet_1 || '', loc),
-          bullet2: UploadWorkerService.sanitizeListingText(content.bullet2 || content.bullet_2 || '', loc),
+          bullet1: UploadWorkerService.sanitizeListingText(content.bullet1 || (content as any).bullet_1 || '', loc),
+          bullet2: UploadWorkerService.sanitizeListingText(content.bullet2 || (content as any).bullet_2 || '', loc),
           description: UploadWorkerService.sanitizeListingText(content.description || '', loc),
         };
       }
@@ -1530,6 +1497,28 @@ export class UploadWorkerService {
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
 
+      // 8.5 Publish Guard V2: Check all product results
+      const technicalFailures = productUploadResults.filter(r => r.status.startsWith('FAILED_'));
+      const successfulCount = productUploadResults.filter(r => r.status === 'SUCCESS').length;
+      const skippedCount = productUploadResults.filter(r => r.status.startsWith('SKIPPED_')).length;
+
+      const uploadSummary: UploadResultSummary = {
+        totalRequested: totalActiveProducts,
+        successful: successfulCount,
+        skipped: skippedCount,
+        failed: technicalFailures.length,
+        results: productUploadResults
+      };
+      item.uploadResultSummary = uploadSummary;
+
+      if (technicalFailures.length > 0) {
+        const failureDetails = technicalFailures.map(f => `${f.productId} (${f.status}: ${f.reason || 'unbekannt'})`).join(', ');
+        this.log(`🛑 PUBLISH GUARD: Upload wird gestoppt! ${technicalFailures.length} Produkt(e) mit technischem Fehler fehlgeschlagen: ${failureDetails}`, 'Publish blockiert 🛑', 90, 100);
+        throw new Error(`Upload durch Publish Guard blockiert: ${technicalFailures.length} Produkt(e) fehlgeschlagen: ${failureDetails}`);
+      }
+
+      this.log(`✅ PUBLISH GUARD: Alle ${successfulCount} Produkte erfolgreich konfiguriert (${skippedCount} erwartete Skips). Freigabe erteilt!`);
+
       // 9. Final Action: Save Draft vs. Live Publish (with Strict Validation & State Verification)
       if (mode === 'publish') {
         if (this.pauseBeforePublishRequested) {
@@ -1556,7 +1545,7 @@ export class UploadWorkerService {
 
         // Check form validity before clicking
         const publishCheck = await page.evaluate(() => {
-          const submitBtn = document.getElementById('submit-button') || document.querySelector('button[id*="submit"], button.btn-submit') as HTMLButtonElement;
+          const submitBtn = (document.getElementById('submit-button') || document.querySelector('button[id*="submit"], button.btn-submit')) as HTMLButtonElement | null;
           if (!submitBtn) return { found: false, isEnabled: false, errors: ['Publish-Button nicht gefunden'] };
 
           const invalidElements = Array.from(document.querySelectorAll('.has-error, .invalid-feedback, .text-danger, .alert-danger'))
@@ -1646,7 +1635,7 @@ export class UploadWorkerService {
       }
 
       // 10. Complete Queue Item & Live Slot Refresh via Session 1
-      QueueService.updateItemStatus(item.id, 'COMPLETED');
+      QueueService.updateItemStatus(item.id, 'COMPLETED', undefined, item.uploadResultSummary);
 
       try {
         this.log(`📊 Frage aktuelle freie Tages-Upload-Slots über Session 1 (Sync & Metadata) ab...`, 'Aktualisiere freie Slots...');
@@ -1669,7 +1658,7 @@ export class UploadWorkerService {
     } catch (err: any) {
       const errorMsg = err.message || 'Unbekannter Fehler während des Uploads';
       this.log(`❌ Upload Fehler: ${errorMsg}`, `Fehler: ${errorMsg}`);
-      QueueService.updateItemStatus(item.id, 'ERROR', errorMsg);
+      QueueService.updateItemStatus(item.id, 'ERROR', errorMsg, item.uploadResultSummary);
       QueueService.rebalanceQueue();
       this.isUploading = false;
       this.broadcastStatus();

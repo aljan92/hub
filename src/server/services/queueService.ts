@@ -13,6 +13,34 @@ export interface ListingLanguageContent {
   description?: string;
 }
 
+export type ProductUploadStatus = 
+  | 'SUCCESS'
+  | 'SKIPPED_NOT_SELECTED'
+  | 'SKIPPED_UNAVAILABLE'
+  | 'SKIPPED_TM_BLOCKED'
+  | 'FAILED_CHECKBOX_NOT_FOUND'
+  | 'FAILED_CARD_NOT_FOUND'
+  | 'FAILED_EDITOR_OPEN'
+  | 'FAILED_FIT_TYPE'
+  | 'FAILED_COLOR_CONFIGURATION'
+  | 'FAILED_ARTWORK_UPLOAD'
+  | 'FAILED_UNKNOWN';
+
+export interface ProductUploadResult {
+  productId: string;
+  amazonKey: string;
+  status: ProductUploadStatus;
+  reason?: string;
+}
+
+export interface UploadResultSummary {
+  totalRequested: number;
+  successful: number;
+  skipped: number;
+  failed: number;
+  results: ProductUploadResult[];
+}
+
 export interface QueueItem {
   id: string;
   taskId: string;
@@ -45,6 +73,7 @@ export interface QueueItem {
   activeProductsMap: Record<string, string[]>; // productId -> array of active marketplaces (e.g. ['US', 'DE', 'GB'])
   droppedSlotsMap: Record<string, string[]>;   // productId -> array of dropped marketplaces (e.g. ['JP', 'ES', 'IT'])
   tmBlockedProductIds: string[];              // Product IDs blocked by TM
+  uploadResultSummary?: UploadResultSummary;  // Per-product upload summary from UploadWorker V2
   errorMessage?: string;
   sortOrder: number;
   uploadedAt?: string;
@@ -603,6 +632,7 @@ export class QueueService {
 
     if (isUpdate && hasLiveDetail) {
       for (const prod of catalog.products) {
+        if (prod.available === false) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const prodId = prod.id;
         const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
@@ -630,6 +660,7 @@ export class QueueService {
       }
     } else {
       for (const prod of catalog.products) {
+        if (prod.available === false) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
         activeProductsMap[prod.id] = mps;
@@ -730,13 +761,16 @@ export class QueueService {
   /**
    * Update item status during upload (UPLOADING, COMPLETED, ERROR)
    */
-  public static updateItemStatus(queueId: string, status: QueueItemStatus, error?: string): QueueItem | null {
+  public static updateItemStatus(queueId: string, status: QueueItemStatus, error?: string, uploadResultSummary?: UploadResultSummary): QueueItem | null {
     this.ensureLoaded();
     const item = this.items.find(i => i.id === queueId);
     if (!item) return null;
 
     item.status = status;
     item.lastUploadAttempt = new Date().toISOString();
+    if (uploadResultSummary) {
+      item.uploadResultSummary = uploadResultSummary;
+    }
     if (error) {
       item.errorMessage = error;
     } else if (status === 'COMPLETED') {
@@ -1024,6 +1058,7 @@ export class QueueService {
       let baseSlots = 0;
 
       for (const prod of catalog.products) {
+        if (prod.available === false) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
         activeMap[prod.id] = mps;
@@ -1043,6 +1078,7 @@ export class QueueService {
       let baseCatalogSlots = 0;
 
       for (const prod of catalog.products) {
+        if (prod.available === false) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
         activeMap[prod.id] = mps;
@@ -1079,6 +1115,7 @@ export class QueueService {
 
       if (hasLiveDetail) {
         for (const prod of catalog.products) {
+          if (prod.available === false) continue;
           if (tmBlocked.has(prod.id.toUpperCase())) continue;
           const prodId = prod.id;
           const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
@@ -1108,6 +1145,7 @@ export class QueueService {
       } else {
         netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
         for (const prod of catalog.products) {
+          if (prod.available === false) continue;
           if (tmBlocked.has(prod.id.toUpperCase())) continue;
           calculatedActiveMap[prod.id] = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
         }

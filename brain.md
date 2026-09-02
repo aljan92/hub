@@ -778,3 +778,38 @@ MBA HUB/
   - `tests/resizeService.test.ts`: 20/20 Tests bestanden (100%).
   - `tests/circuitBreaker.test.ts`: 11/11 Tests bestanden (100%).
   - Production Build (`npm run build`) fehlerfrei abgeschlossen.
+
+### 10.32 🚀 Product Catalog & Upload V2 Architektur (`ProductCatalogService`, `ProductScannerService`, `UploadWorkerService`)
+- **Problem & Bisherige Schwachstellen (V1):**
+  - Amazon-spezifische Eigenschaften (wie DOM-Keys, Checkboxen, Swatches) und benutzerdefinierte Hub-Regeln (Nice Classes, Avoid-Rules, Droppability, Artwork-Mappings) waren in einer einzelnen Datei vermischt. Ein erneuter Amazon-Scan drohte Hub-Metadaten zu überschreiben.
+  - Der UploadWorker verarbeitete Produkte nach Hub-`sortOrder` anstatt nach der tatsächlichen Amazon-DOM-Reihenfolge (`amazonSortOrder`), was zu unnötigen Scroll-Sprüngen und Race Conditions beim Card-Öffnen führte.
+  - Veraltete, hartcodierte Alias-Listen (`getAliases`) und fehlerhafte Fallback-Selbstheilungen (z.B. zufälliges Auswählen der ersten Checkbox bei 0 aktiven Farben) maskierten Fehler und führten zu unbemerkten Fehlkonfigurationen auf Amazon.
+- **Lösung & V2 Architektur:**
+  1. **Klare Trennung: Amazon-Dynamik vs. Persistente Hub-Overrides:**
+     - `data/product_catalog.json`: Dynamische Amazon-Wahrheit (beobachtete DOM-Keys, Card-IDs, Checkbox-Klassen, Swatches, Marktplatz-Verfügbarkeiten).
+     - `data/product_catalog_overrides.json`: Persistente Hub-Metadaten (`niceClass`, `isDropAllowed`, `dropPriorityOrder`, `uiSortOrder`, `colors[id].avoidRule`, `artwork`).
+     - Crash-sichere Persistenz: Beide Dateien werden strikt atomar via `.tmp` -> `JSON.parse` Validierung -> `renameSync` geschrieben.
+  2. **Soft-Delete & Verfügbarkeits-Management:**
+     - Verschwindet ein Produkt temporär aus dem Amazon-Scan, wird es mit `available: false` markiert. Produkte und deren Overrides werden niemals stillschweigend gelöscht.
+  3. **Dynamische Amazon-Sortierung (`amazonSortOrder`):**
+     - Der Scanner erfasst Zeilen im Modal in strikter DOM-Reihenfolge (0, 1, 2, ...).
+     - Der UploadWorker sortiert Produkte vor der Abarbeitung nach `amazonSortOrder ASC`, sodass der Bot cards von oben nach unten ohne sprunghaftes Scrolling bedient.
+  4. **Kein verdeckter Legacy-Fallback & Strikte DOM-Verifikation:**
+     - Swatches und Custom Picker (Hex) werden anhand der beim Scan erfassten echten DOM-Identifier angesprochen.
+     - Wenn keine Farben nach `avoidRules` aktiv bleiben oder ein Fit/Hex-Wert nicht gesetzt werden kann: Strikter Abbruch mit `FAILED_COLOR_CONFIGURATION` bzw. `FAILED_FIT_TYPE`. Keine zufällige Selbstheilung mehr!
+  5. **Dynamische Artwork-Zuordnung via `ProductArtworkConfig`:**
+     - Spezielle Two-Sided Artworks (`CERAMIC_MUG`, `TRAVEL_TUMBLER`, `TUMBLER`, `WATER_BOTTLE`) werden über `artifactKey` (`mugStandardPath`, `mugBrushPath`, `drinkwareStandardPath`, `drinkwareBrushPath`) dynamisch aus `QueueItem.resizedAssets` geladen. Fehlt die Datei, wird `FAILED_ARTWORK_UPLOAD` erfasst.
+  6. **Publish Guard V2:**
+     - Vor dem finalen Klick auf "Publish" oder "Save Draft" prüft der Worker alle Einzelergebnisse (`productUploadResults`).
+     - Mindestens ein technischer Fehler (`FAILED_*`) blockiert den Upload sofort, verhindert das Veröffentlichen unfertiger Produkte und markiert das QueueItem als `ERROR` mit vollständiger `uploadResultSummary`.
+  7. **Slot-Kalkulation & Kürzungs-Kapazität (100% intakt):**
+     - 148 Total Base Slots (34 Produkte).
+     - 91 Max Droppable Non-US Slots über 30 droppbare Produkte.
+     - 4 garantierte Non-Droppable Basis-Produkte (`STANDARD_TSHIRT`, `COMFORT_COLORS_HEAVYWEIGHT_TSHIRT`, `SWEATSHIRT`, `PULLOVER_HOODIE`).
+- **Tests & Validierung:**
+  - `tests/productCatalogV2.test.ts`: Alle 12 Regressionstests bestanden (100%).
+  - `tests/resizeService.test.ts`: 20/20 Tests bestanden (100%).
+  - `tests/circuitBreaker.test.ts`: 11/11 Tests bestanden (100%).
+  - `tests/trademarkV2.test.ts`: 115/115 Tests bestanden (100%).
+  - Production Build (`npm run build:client && npm run build:server`) fehlerfrei abgeschlossen.
+
