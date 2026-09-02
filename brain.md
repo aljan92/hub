@@ -903,3 +903,33 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Keine automatische Nice-Class-Inferenz; neue Produkte erhalten `niceClass: null` bis zur manuellen Konfiguration im UI.
 - Keine `knownAmazonKeys`-Listen mehr in Overrides; Zuordnungen erfolgen dynamisch über den aktuellen Katalog.
 
+### 10.35 🛡️ Phase P0: Task Persistenz Härtung, Crash Safety & Data-Loss-Prevention
+- **Hintergrund & Ursachen:**
+  - Im Deep Audit wurde festgestellt, dass `tasks_log.json` und `tasks_counter.json` synchron mit direktem `fs.writeFileSync` (ohne Temp-File, ohne `fsync`, ohne atomaren Rename) geschrieben wurden. Bei Prozess-Crashes oder Reboots drohten 0-Byte-Dateien und totaler Datenverlust, da `loadLogs()` bei Parse-Fehlern still auf `inMemoryLogs = []` zurückfiel.
+  - Ein realer Test-Task (`test_success_task_1788377257818`) hatte über 5.169 Events angesammelt (1,27 MB Dateigröße!), verursacht durch eine unbegrenzte Endlosschleife zwischen `updateTaskStatus` (welches `completeTaskAndEnqueue` bei `task.status === 'COMPLETED'` bedingungslos wieder auslöste) und `finalizationService.ts` (welches bei Validierungsfehlern erneut `updateTaskStatus` aufrief).
+  - Das bisherige `logs.slice(0, 2000)` entfernte ältere persistente Tasks still von Disk.
+- **Implementierte Lösungen (`src/server/utils/atomicFileStorage.ts`, `taskLogService.ts`, `finalizationService.ts`):**
+  1. **Atomic File Write Engine (`atomicWriteFile`, `atomicWriteJson`):**
+     - Schreibt Snapshots in `.tmp.<nonce>` im selben Ordner (`data/`).
+     - Erzwingt physischen Disk-Flush via `fs.fsyncSync(fd)`.
+     - Führt crash-sichere Backup-Rotation durch (`.bak.tmp` ➔ `fsync` ➔ `.bak`), bevor das Hauptfile atomar via `fs.renameSync` überschrieben wird.
+     - Bereinigt verwaiste `.tmp`-Dateien bei Serverstart (`cleanupOrphanedTmpFiles`).
+  2. **Startup Corruption Shield & Fail-Safe Mode (`loadJsonWithBackupRecovery`):**
+     - Bei beschädigter oder leerer Hauptdatei (`tasks_log.json`) wird automatisch das gesicherte Backup (`tasks_log.json.bak`) geladen und die Hauptdatei auf Disk sofort repariert.
+     - Wenn sowohl Hauptdatei als auch Backup beschädigt sind, schaltet der Task-Storage in den `FAIL-SAFE`-Modus: Schreibvorgänge (`saveLogs`) werden **strikt blockiert**, um ein destruktives Überschreiben mit leeren Arrays (`[]`) zu verhindern.
+  3. **Task Counter Härtung & ID-Kollisionsschutz:**
+     - `tasks_counter.json` wird ebenfalls atomar mit Backup-Rotation geschrieben.
+     - Bei beschädigtem oder fehlendem Counter wird dieser automatisch aus dem Backup oder aus dem höchsten in den Tasks vorhandenen Zähler (`maxInLogs`) abgeleitet.
+  4. **Beseitigung der 5.169-Event-Endlosschleife & Deterministischer Retry-Guard:**
+     - `finalizationService.ts`: Zählt `validationAttempts` pro Task. Nach maximal 3 Versuchen wird die automatische Korrektur deterministisch gestoppt, der Status auf `'ERROR'` gesetzt und ein finales Event mit Reason `LISTING_VALIDATION_RETRY_LIMIT_REACHED` geloggt.
+     - `taskLogService.ts`: `updateTaskStatus` triggert `completeTaskAndEnqueue` NUR noch bei explizitem Statuswechsel (`updates.status === 'COMPLETED'`), nicht mehr bei jedem Update eines bereits fertigen Tasks. Bei Fehlschlag wird `task.inQueue = false` sauber zurückgesetzt.
+     - `addEvent`: Kompaktiert direkt aufeinanderfolgende, identische Events über `repeatCount`, falls ein Prozess dieselbe Meldung mehrfach triggert.
+  5. **Beseitigung des stillen 2.000-Task-Drops:**
+     - `logs.slice(0, 2000)` auf Disk wurde entfernt. Alle Tasks bleiben persistent erhalten. Ab 2.000 Tasks erfolgt ein sauberer Logging-Hinweis.
+- **Verifikation:**
+  - `tests/taskPersistenceP0Hardening.test.ts`: Alle 9 Unit- & Regressionstests bestanden (100%).
+  - `tests/unifiedFinalizationAndCustomResize.test.ts`: 10/10 Tests bestanden.
+  - `tests/productCatalogArchitectureGuard.test.ts`: 0 Violations.
+  - `tests/productCatalogV2.test.ts`: 12/12 Tests bestanden.
+  - Production Build (`npm run build`) fehlerfrei abgeschlossen.
+

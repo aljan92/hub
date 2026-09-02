@@ -102,15 +102,46 @@ export class FinalizationService {
       allListings: sanitizedListings
     });
 
+    const validationAttempts = ((task as any)?.validationAttempts || 0) + 1;
+    if (task) {
+      (task as any).validationAttempts = validationAttempts;
+    }
+
     if (!validation.isValid) {
-      const errorMsg = `Final Listing Validation fehlgeschlagen: ${validation.errors.join('; ')}`;
+      const errorMsg = `Final Listing Validation fehlgeschlagen (Versuch ${validationAttempts}/3): ${validation.errors.join('; ')}`;
       console.error(`[FinalizationService] ❌ ${errorMsg}`);
+
+      if (validationAttempts >= 3) {
+        const limitErrorMsg = `LISTING_VALIDATION_RETRY_LIMIT_REACHED: Finale Listing-Validierung nach ${validationAttempts} Versuchen endgültig fehlgeschlagen: ${validation.errors.join('; ')}`;
+        console.error(`[FinalizationService] 🛑 ${limitErrorMsg}`);
+
+        TaskLogService.addEvent(taskId, {
+          timestamp: new Date().toISOString(),
+          type: 'FINALIZATION_EVENT' as any,
+          title: '🛑 Finale Listing-Validierung: Retry-Limit erreicht (3/3 Versuche fehlgeschlagen)',
+          content: {
+            phase: 'FINAL_VALIDATION',
+            status: 'FAILED',
+            reason: 'LISTING_VALIDATION_RETRY_LIMIT_REACHED',
+            attempts: validationAttempts,
+            errors: validation.errors
+          }
+        });
+
+        TaskLogService.updateTaskStatus(taskId, {
+          status: 'ERROR',
+          hasError: true,
+          errorDetails: limitErrorMsg
+        });
+
+        return { success: false, error: limitErrorMsg };
+      }
 
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'FINALIZATION_EVENT' as any,
-        title: '❌ Finale Listing-Validierung fehlgeschlagen',
-        content: { phase: 'FINAL_VALIDATION', status: 'FAILED', errors: validation.errors }
+        title: `❌ Finale Listing-Validierung fehlgeschlagen (Versuch ${validationAttempts}/3)`,
+        content: { phase: 'FINAL_VALIDATION', status: 'FAILED', attempt: validationAttempts, errors: validation.errors }
       });
 
       TaskLogService.updateTaskStatus(taskId, {
@@ -119,6 +150,10 @@ export class FinalizationService {
       });
 
       return { success: false, error: errorMsg };
+    }
+
+    if (task) {
+      (task as any).validationAttempts = 0;
     }
 
     TaskLogService.addEvent(taskId, {

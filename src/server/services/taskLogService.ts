@@ -12,6 +12,12 @@ import { VisionOptimizationService } from './visionOptimizationService';
 import { ArtworkResizeService } from './artworkResizeService';
 import { ListingValidationService } from './listingValidationService';
 import { ListingSanitizationService } from './listingSanitizationService';
+import { 
+  atomicWriteJson, 
+  loadJsonWithBackupRecovery, 
+  cleanupOrphanedTmpFiles, 
+  isFileInFailSafe 
+} from '../utils/atomicFileStorage';
 
 export * from '../../types/tasks';
 import { 
@@ -51,27 +57,38 @@ export class TaskLogService {
     }
   }
 
+  private static isStorageCorrupted: boolean = false;
+
+  public static isStorageFailSafe(): boolean {
+    return this.isStorageCorrupted || isFileInFailSafe(this.logsFile);
+  }
+
   private static getNextCounter(): number {
     this.ensureDataDir();
     if (this.currentCounter === null) {
-      try {
-        if (fs.existsSync(this.counterFile)) {
-          const data = JSON.parse(fs.readFileSync(this.counterFile, 'utf-8'));
-          this.currentCounter = Number(data.counter) || 0;
-        } else {
-          this.currentCounter = 0;
-        }
-      } catch (e) {
-        this.currentCounter = 0;
+      const counterRecovery = loadJsonWithBackupRecovery<{ counter: number }>(this.counterFile, {
+        backupExt: '.bak',
+        validate: (data) => data && typeof data.counter === 'number',
+        defaultValue: { counter: 0 }
+      });
+
+      let baseCounter = 0;
+      if (counterRecovery.success && counterRecovery.data && typeof counterRecovery.data.counter === 'number') {
+        baseCounter = counterRecovery.data.counter;
       }
+
+      // Safeguard: Ensure counter is at least as high as any existing task in logs to prevent ID collisions
+      const existingLogs = this.loadLogs();
+      const maxInLogs = existingLogs.reduce((max, t) => Math.max(max, t.counter || 0), 0);
+      this.currentCounter = Math.max(baseCounter, maxInLogs);
     }
 
     this.currentCounter += 1;
 
     try {
-      fs.writeFileSync(this.counterFile, JSON.stringify({ counter: this.currentCounter }, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('[TaskLogService] Failed to persist tasks_counter.json:', e);
+      atomicWriteJson(this.counterFile, { counter: this.currentCounter }, { backup: true, space: 2 });
+    } catch (e: any) {
+      console.error('[TaskLogService] Failed to persist tasks_counter.json atomically:', e.message);
     }
 
     return this.currentCounter;
@@ -127,32 +144,56 @@ export class TaskLogService {
     return result;
   }
 
-  private static loadLogs(): DesignTaskLog[] {
+  public static loadLogs(): DesignTaskLog[] {
     if (this.inMemoryLogs !== null) {
       return this.inMemoryLogs;
     }
     this.ensureDataDir();
-    if (fs.existsSync(this.logsFile)) {
-      try {
-        const fileContent = fs.readFileSync(this.logsFile, 'utf-8');
-        this.inMemoryLogs = JSON.parse(fileContent);
-        return this.inMemoryLogs || [];
-      } catch (e) {
-        console.error('[TaskLogService] Failed to read tasks_log.json:', e);
-      }
+
+    // Clean up any stale .tmp files from previous ungraceful crashes
+    cleanupOrphanedTmpFiles(this.dataDir);
+
+    const recovery = loadJsonWithBackupRecovery<DesignTaskLog[]>(this.logsFile, {
+      backupExt: '.bak',
+      validate: (data) => Array.isArray(data),
+      defaultValue: []
+    });
+
+    if (recovery.corrupted) {
+      this.isStorageCorrupted = true;
+      this.inMemoryLogs = [];
+      console.error(
+        '[TaskLogService] 🚨 CRITICAL: tasks_log.json and backup could not be parsed. Task storage writes have been disabled to prevent destructive overwrite.'
+      );
+      return this.inMemoryLogs;
     }
-    this.inMemoryLogs = [];
+
+    this.isStorageCorrupted = false;
+    this.inMemoryLogs = recovery.data || [];
     return this.inMemoryLogs;
   }
 
-  private static saveLogs(logs: DesignTaskLog[]) {
+  public static saveLogs(logs: DesignTaskLog[]) {
     this.inMemoryLogs = logs;
     this.ensureDataDir();
+
+    if (this.isStorageCorrupted || isFileInFailSafe(this.logsFile)) {
+      console.error(
+        '[TaskLogService] 🚨 CRITICAL REFUSAL: Cannot save tasks because task storage is in FAIL-SAFE (CORRUPTED) mode. Fix data files manually to prevent overwriting.'
+      );
+      return;
+    }
+
+    if (logs.length > 2000) {
+      console.warn(
+        `[TaskLogService] ℹ️ Task count is ${logs.length} (> 2,000). Retaining all tasks persistently without truncation.`
+      );
+    }
+
     try {
-      const trimmed = logs.slice(0, 2000);
-      fs.writeFileSync(this.logsFile, JSON.stringify(trimmed), 'utf-8');
-    } catch (e) {
-      console.error('[TaskLogService] Failed to persist tasks_log.json:', e);
+      atomicWriteJson(this.logsFile, logs, { backup: true, space: 2 });
+    } catch (e: any) {
+      console.error('[TaskLogService] Failed to persist tasks_log.json atomically:', e.message);
     }
   }
 
@@ -235,7 +276,24 @@ export class TaskLogService {
     const task = logs.find(t => t.id === taskId);
     if (!task) return undefined;
 
-    task.events.push(event);
+    if (!Array.isArray(task.events)) {
+      task.events = [];
+    }
+
+    // Compact directly consecutive identical events to prevent flood explosions
+    const lastEvent = task.events.length > 0 ? task.events[task.events.length - 1] : null;
+    if (
+      lastEvent &&
+      lastEvent.type === event.type &&
+      lastEvent.title === event.title &&
+      JSON.stringify(lastEvent.content) === JSON.stringify(event.content)
+    ) {
+      (lastEvent as any).repeatCount = ((lastEvent as any).repeatCount || 1) + 1;
+      lastEvent.timestamp = event.timestamp;
+    } else {
+      task.events.push(event);
+    }
+
     this.saveLogs(logs);
     this.emitUpdate(task);
     return task;
@@ -300,10 +358,15 @@ export class TaskLogService {
         tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
       });
 
+      if (!finResult.success) {
+        task.inQueue = false;
+      }
+
       this.saveLogs(this.loadLogs());
       this.emitUpdate(task);
       return finResult;
     } catch (err: any) {
+      task.inQueue = false;
       console.warn('[TaskLogService] Failed to auto-enqueue completed task:', err.message);
       return { success: false, error: err.message };
     }
@@ -316,7 +379,8 @@ export class TaskLogService {
 
     Object.assign(task, updates);
 
-    if ((updates.status === 'COMPLETED' || task.status === 'COMPLETED') && task.source !== 'UPDATE' && !task.inQueue) {
+    // Only auto-trigger enqueue when the status is explicitly transitioning to COMPLETED
+    if (updates.status === 'COMPLETED' && task.source !== 'UPDATE' && !task.inQueue) {
       task.inQueue = true;
       this.completeTaskAndEnqueue(task);
       return task;
