@@ -18,6 +18,7 @@ import {
   cleanupOrphanedTmpFiles, 
   isFileInFailSafe 
 } from '../utils/atomicFileStorage';
+import { TaskRepository } from '../storage/taskRepository';
 
 export * from '../../types/tasks';
 import { 
@@ -34,11 +35,6 @@ import {
 
 export class TaskLogService {
   private static dataDir = path.resolve(process.cwd(), 'data');
-  private static counterFile = path.resolve(process.cwd(), 'data', 'tasks_counter.json');
-  private static logsFile = path.resolve(process.cwd(), 'data', 'tasks_log.json');
-
-  private static inMemoryLogs: DesignTaskLog[] | null = null;
-  private static currentCounter: number | null = null;
   private static eventBroadcaster: ((type: string, payload: any) => void) | null = null;
 
   static setBroadcaster(fn: (type: string, payload: any) => void) {
@@ -51,49 +47,12 @@ export class TaskLogService {
     }
   }
 
-  private static ensureDataDir() {
-    if (!fs.existsSync(this.dataDir)) {
-      try {
-        fs.mkdirSync(this.dataDir, { recursive: true });
-      } catch (e) {}
-    }
-  }
-
-  private static isStorageCorrupted: boolean = false;
-
   public static isStorageFailSafe(): boolean {
-    return this.isStorageCorrupted || isFileInFailSafe(this.logsFile);
+    return false;
   }
 
-  private static getNextCounter(): number {
-    this.ensureDataDir();
-    if (this.currentCounter === null) {
-      const counterRecovery = loadJsonWithBackupRecovery<{ counter: number }>(this.counterFile, {
-        backupExt: '.bak',
-        validate: (data) => data && typeof data.counter === 'number',
-        defaultValue: { counter: 0 }
-      });
-
-      let baseCounter = 0;
-      if (counterRecovery.success && counterRecovery.data && typeof counterRecovery.data.counter === 'number') {
-        baseCounter = counterRecovery.data.counter;
-      }
-
-      // Safeguard: Ensure counter is at least as high as any existing task in logs to prevent ID collisions
-      const existingLogs = this.loadLogs();
-      const maxInLogs = existingLogs.reduce((max, t) => Math.max(max, t.counter || 0), 0);
-      this.currentCounter = Math.max(baseCounter, maxInLogs);
-    }
-
-    this.currentCounter += 1;
-
-    try {
-      atomicWriteJson(this.counterFile, { counter: this.currentCounter }, { backup: true });
-    } catch (e: any) {
-      console.error('[TaskLogService] Failed to persist tasks_counter.json atomically:', e.message);
-    }
-
-    return this.currentCounter;
+  public static getNextCounter(): number {
+    return TaskRepository.getNextCounter();
   }
 
   /**
@@ -147,55 +106,15 @@ export class TaskLogService {
   }
 
   public static loadLogs(): DesignTaskLog[] {
-    if (this.inMemoryLogs !== null) {
-      return this.inMemoryLogs;
-    }
-    this.ensureDataDir();
-
-    // Clean up any stale .tmp files from previous ungraceful crashes
-    cleanupOrphanedTmpFiles(this.dataDir);
-
-    const recovery = loadJsonWithBackupRecovery<DesignTaskLog[]>(this.logsFile, {
-      backupExt: '.bak',
-      validate: (data) => Array.isArray(data),
-      defaultValue: []
-    });
-
-    if (recovery.corrupted) {
-      this.isStorageCorrupted = true;
-      this.inMemoryLogs = [];
-      console.error(
-        '[TaskLogService] 🚨 CRITICAL: tasks_log.json and backup could not be parsed. Task storage writes have been disabled to prevent destructive overwrite.'
-      );
-      return this.inMemoryLogs;
-    }
-
-    this.isStorageCorrupted = false;
-    this.inMemoryLogs = recovery.data || [];
-    return this.inMemoryLogs;
+    const page = TaskRepository.getTaskSummariesPage({ limit: 100 });
+    return page.tasks.map(s => TaskRepository.getTaskById(s.id)).filter(Boolean) as DesignTaskLog[];
   }
 
   public static saveLogs(logs: DesignTaskLog[]) {
-    this.inMemoryLogs = logs;
-    this.ensureDataDir();
-
-    if (this.isStorageCorrupted || isFileInFailSafe(this.logsFile)) {
-      console.error(
-        '[TaskLogService] 🚨 CRITICAL REFUSAL: Cannot save tasks because task storage is in FAIL-SAFE (CORRUPTED) mode. Fix data files manually to prevent overwriting.'
-      );
-      return;
-    }
-
-    if (logs.length > 2000) {
-      console.warn(
-        `[TaskLogService] ℹ️ Task count is ${logs.length} (> 2,000). Retaining all tasks persistently without truncation.`
-      );
-    }
-
-    try {
-      atomicWriteJson(this.logsFile, logs, { backup: true });
-    } catch (e: any) {
-      console.error('[TaskLogService] Failed to persist tasks_log.json atomically:', e.message);
+    for (const task of logs) {
+      if (task && task.id) {
+        TaskRepository.updateTask(task.id, task);
+      }
     }
   }
 
@@ -258,47 +177,23 @@ export class TaskLogService {
       errorDetails: params.errorDetails
     };
 
-    const logs = this.loadLogs();
-    logs.unshift(taskLog); // newest first
-    this.saveLogs(logs);
-
-    console.log(`[TaskLogService] 📋 Task ${taskLog.id} registriert (${taskLog.source}) von ${taskLog.clientIp || 'local'}`);
-    this.emitUpdate(taskLog);
+    const created = TaskRepository.createTask(taskLog);
+    console.log(`[TaskLogService] 📋 Task ${created.id} registriert (${created.source}) von ${created.clientIp || 'local'}`);
+    this.emitUpdate(created);
 
     // Asynchronously trigger OpenRouter LLM session only for new design generation (HERMES, TEST, DESIGNER)
     if (params.source !== 'UPDATE') {
-      this.processTaskWithOpenRouter(taskLog.id);
+      this.processTaskWithOpenRouter(created.id);
     }
 
-    return taskLog;
+    return created;
   }
 
   static addEvent(taskId: string, event: SessionEvent): DesignTaskLog | undefined {
-    const logs = this.loadLogs();
-    const task = logs.find(t => t.id === taskId);
-    if (!task) return undefined;
-
-    if (!Array.isArray(task.events)) {
-      task.events = [];
-    }
-
-    // Compact directly consecutive identical events to prevent flood explosions
-    const lastEvent = task.events.length > 0 ? task.events[task.events.length - 1] : null;
-    if (
-      lastEvent &&
-      lastEvent.type === event.type &&
-      lastEvent.title === event.title &&
-      JSON.stringify(lastEvent.content) === JSON.stringify(event.content)
-    ) {
-      (lastEvent as any).repeatCount = ((lastEvent as any).repeatCount || 1) + 1;
-      lastEvent.timestamp = event.timestamp;
-    } else {
-      task.events.push(event);
-    }
-
-    this.saveLogs(logs);
-    this.emitUpdate(task);
-    return task;
+    const updated = TaskRepository.addEvent(taskId, event);
+    if (!updated) return undefined;
+    this.emitUpdate(updated);
+    return updated;
   }
 
   static async completeTaskAndEnqueue(taskOrId: DesignTaskLog | string): Promise<{ success: boolean; error?: string }> {
@@ -362,35 +257,39 @@ export class TaskLogService {
 
       if (!finResult.success) {
         task.inQueue = false;
+        TaskRepository.updateTask(task.id, { inQueue: false });
       }
 
-      this.saveLogs(this.loadLogs());
       this.emitUpdate(task);
       return finResult;
     } catch (err: any) {
       task.inQueue = false;
+      TaskRepository.updateTask(task.id, { inQueue: false });
       console.warn('[TaskLogService] Failed to auto-enqueue completed task:', err.message);
       return { success: false, error: err.message };
     }
   }
 
   static updateTaskStatus(taskId: string, updates: Partial<DesignTaskLog>): DesignTaskLog | undefined {
-    const logs = this.loadLogs();
-    const task = logs.find(t => t.id === taskId);
-    if (!task) return undefined;
-
-    Object.assign(task, updates);
-
     // Only auto-trigger enqueue when the status is explicitly transitioning to COMPLETED
-    if (updates.status === 'COMPLETED' && task.source !== 'UPDATE' && !task.inQueue) {
-      task.inQueue = true;
-      this.completeTaskAndEnqueue(task);
-      return task;
+    if (updates.status === 'COMPLETED') {
+      const current = TaskRepository.getTaskById(taskId);
+      if (current && current.source !== 'UPDATE' && !current.inQueue) {
+        updates.inQueue = true;
+        const updated = TaskRepository.updateTask(taskId, updates);
+        if (updated) {
+          this.emitUpdate(updated);
+          this.completeTaskAndEnqueue(updated);
+        }
+        return updated || undefined;
+      }
     }
 
-    this.saveLogs(logs);
-    this.emitUpdate(task);
-    return task;
+    const updated = TaskRepository.updateTask(taskId, updates);
+    if (updated) {
+      this.emitUpdate(updated);
+    }
+    return updated || undefined;
   }
 
   /**
@@ -1879,8 +1778,7 @@ export class TaskLogService {
   }
 
   static getTaskSummaryById(id: string): TaskSummary | undefined {
-    const task = this.getTaskLogById(id);
-    return task ? this.toTaskSummary(task) : undefined;
+    return TaskRepository.getTaskSummaryById(id) || undefined;
   }
 
   static getTaskLogs(): DesignTaskLog[] {
@@ -1888,18 +1786,13 @@ export class TaskLogService {
   }
 
   static getAwaitingTasks(): DesignTaskLog[] {
-    const logs = this.loadLogs();
-    return logs.filter(t => 
-      t.status === 'AWAITING_PRE_FLIGHT_REVIEW' ||
-      t.status === 'AWAITING_DESIGN_REVIEW' ||
-      t.status === 'AWAITING_TM_REVIEW' ||
-      t.status === 'AWAITING_SVG_REVIEW'
-    );
+    return TaskRepository.getAwaitingTaskSummaries()
+      .map(s => TaskRepository.getTaskById(s.id))
+      .filter(Boolean) as DesignTaskLog[];
   }
 
   static getAwaitingTaskSummaries(): TaskSummary[] {
-    const awaiting = this.getAwaitingTasks();
-    return awaiting.map(t => this.toTaskSummary(t));
+    return TaskRepository.getAwaitingTaskSummaries();
   }
 
   static getTaskSummariesPage(options: {
@@ -1916,80 +1809,12 @@ export class TaskLogService {
     hasMore: boolean;
     nextCursor: string | null;
   } {
-    const limit = Math.max(1, Math.min(options.limit || 20, 100));
-    const allLogs = this.loadLogs();
-
-    // 1. Apply Filters
-    let filtered = allLogs;
-
-    if (options.source && options.source !== 'ALL') {
-      filtered = filtered.filter(t => t.source === options.source);
-    }
-
-    if (options.status && options.status !== 'ALL') {
-      filtered = filtered.filter(t => t.status === options.status);
-    }
-
-    if (options.checkpoint && options.checkpoint !== 'ALL') {
-      filtered = filtered.filter(t => t.checkpoint === options.checkpoint);
-    }
-
-    if (options.search && options.search.trim()) {
-      const q = options.search.trim().toLowerCase();
-      filtered = filtered.filter(t => {
-        const idMatch = t.id.toLowerCase().includes(q);
-        const quote = t.payload?.title || t.payload?.quote || t.payload?.quote_or_phrase || t.payload?.text || '';
-        const quoteMatch = quote.toLowerCase().includes(q);
-        const nicheMatch = (t.niche1 || t.payload?.niche1 || '').toLowerCase().includes(q) ||
-                           (t.niche2 || t.payload?.niche2 || '').toLowerCase().includes(q) ||
-                           (t.subniche || t.payload?.subniche || '').toLowerCase().includes(q);
-        const designIdMatch = (t.payload?.designId || '').toLowerCase().includes(q);
-        return idMatch || quoteMatch || nicheMatch || designIdMatch;
-      });
-    }
-
-    const totalCount = filtered.length;
-
-    // 2. Cursor Pagination (Stable against new incoming tasks at the top)
-    let startIndex = 0;
-    if (options.cursor) {
-      const cleanCursor = decodeURIComponent(options.cursor).trim().toLowerCase();
-      const cursorIdx = filtered.findIndex(t => {
-        const tid = t.id.toLowerCase();
-        return tid === cleanCursor || tid.replace('#', '') === cleanCursor.replace('#', '');
-      });
-
-      if (cursorIdx !== -1) {
-        startIndex = cursorIdx + 1;
-      }
-    }
-
-    const pageLogs = filtered.slice(startIndex, startIndex + limit);
-    const hasMore = startIndex + limit < filtered.length;
-    const nextCursor = pageLogs.length > 0 && hasMore ? pageLogs[pageLogs.length - 1].id : null;
-
-    // 3. Map to TaskSummary BEFORE returning/serializing to prevent heavy payload trees
-    const tasks = pageLogs.map(t => this.toTaskSummary(t));
-
-    return {
-      success: true,
-      tasks,
-      totalCount,
-      hasMore,
-      nextCursor
-    };
+    return TaskRepository.getTaskSummariesPage(options);
   }
 
   static getTaskLogById(id: string): DesignTaskLog | undefined {
     if (!id) return undefined;
-    const cleanId = decodeURIComponent(id).trim().toLowerCase();
-    const logs = this.loadLogs();
-    return logs.find(t => {
-      const tId = t.id.toLowerCase();
-      return tId === cleanId || 
-             tId === `#${cleanId}` || 
-             tId.replace('#', '') === cleanId.replace('#', '');
-    });
+    return TaskRepository.getTaskById(id) || undefined;
   }
 
   static getTaskById(id: string): DesignTaskLog | undefined {
@@ -2001,8 +1826,27 @@ export class TaskLogService {
   }
 
   static clearTaskLogs() {
-    this.inMemoryLogs = [];
-    this.saveLogs([]);
+    TaskRepository.clearAllTasks();
+  }
+
+  static getActiveUpdateDesignIds(): Set<string> {
+    return TaskRepository.getActiveUpdateDesignIds();
+  }
+
+  static getActiveReviewUpdateTasks(): Array<{ id: string; designId?: string }> {
+    return TaskRepository.getActiveReviewUpdateTasks();
+  }
+
+  static cancelTasksByTarget(targetTaskId: string, targetDesignId?: string): number {
+    return TaskRepository.cancelTasksByTarget(targetTaskId, targetDesignId);
+  }
+
+  static cancelActiveUpdateTasks(): number {
+    return TaskRepository.cancelActiveUpdateTasks();
+  }
+
+  static getTaskUsageMetrics(resetTimestamp: number) {
+    return TaskRepository.getTaskUsageMetrics(resetTimestamp);
   }
 
   /**
@@ -2021,40 +1865,31 @@ export class TaskLogService {
     console.log('[TaskLogService] 🚨 Starte vollständigen System-Reset (Purge All Workspace Data)...');
     
     // 1. Clear Tasks
-    const logs = this.loadLogs();
-    const deletedTasks = logs.length;
-    this.inMemoryLogs = [];
-    this.saveLogs([]);
+    const deletedTasks = TaskRepository.getTotalTaskCount();
+    TaskRepository.clearAllTasks();
 
-    // 2. Reset Counter to 0
-    this.currentCounter = 0;
-    try {
-      if (fs.existsSync(this.counterFile)) {
-        fs.writeFileSync(this.counterFile, JSON.stringify({ counter: 0 }, null, 2), 'utf-8');
-      }
-    } catch (err) {
-      console.warn('[TaskLogService] Konnte Counter-Datei nicht zurücksetzen:', err);
-    }
+    // 2. Reset Counter
+    TaskRepository.init();
 
     // 3. Clear Upload Queue
     let deletedQueueItems = 0;
     try {
       const { QueueService } = require('./queueService');
-      const queueItems = QueueService.loadQueue();
-      deletedQueueItems = queueItems.length;
-      QueueService.clearQueue(false);
+      const queue = QueueService.loadQueue();
+      deletedQueueItems = queue.length;
+      QueueService.clearQueue();
     } catch (err) {
-      console.warn('[TaskLogService] Konnte Queue nicht leeren:', err);
+      console.warn('[TaskLogService] Konnte Upload Queue nicht leeren:', err);
     }
 
-    // 4. Delete all files in data/designs/
     let deletedFiles = 0;
-    const designsDir = path.resolve(process.cwd(), 'data', 'designs');
-    if (fs.existsSync(designsDir)) {
-      try {
+    // 4. Delete all artwork files in data/designs/
+    try {
+      const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+      if (fs.existsSync(designsDir)) {
         const files = fs.readdirSync(designsDir);
         for (const file of files) {
-          if (file.startsWith('.')) continue;
+          if (file === '.gitkeep') continue;
           try {
             const filePath = path.join(designsDir, file);
             if (fs.statSync(filePath).isFile()) {
@@ -2063,9 +1898,9 @@ export class TaskLogService {
             }
           } catch (e) {}
         }
-      } catch (err) {
-        console.warn('[TaskLogService] Konnte designs-Ordner nicht auslesen:', err);
       }
+    } catch (err) {
+      console.warn('[TaskLogService] Konnte data/designs/ nicht leeren:', err);
     }
 
     // 5. Delete any temporary/leftover design files in data/ directory
@@ -2109,12 +1944,8 @@ export class TaskLogService {
   }
 
   static deleteTaskLog(taskId: string): boolean {
-    const logs = this.loadLogs();
-    const initialLen = logs.length;
-    const filtered = logs.filter(t => t.id !== taskId);
-    if (filtered.length !== initialLen) {
-      this.inMemoryLogs = filtered;
-      this.saveLogs(filtered);
+    const deleted = TaskRepository.deleteTask(taskId);
+    if (deleted) {
       try {
         const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
         const imgPath = path.resolve(process.cwd(), 'data', 'designs', `${safeId}.png`);

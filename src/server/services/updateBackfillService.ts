@@ -42,14 +42,9 @@ export class UpdateBackfillService {
     }
 
     // 4. All non-rejected and active tasks in TaskLogService
-    const tasks = TaskLogService.loadLogs();
-    for (const task of tasks) {
-      if (['REJECTED', 'CANCELLED', 'ERROR'].includes(task.status) || task.hasError) continue;
-      if (task.payload?.designId) excluded.add(task.payload.designId.trim());
-      if (task.id) {
-        const cleanTask = task.id.replace(/^#/, '').replace(/-U$/, '').trim();
-        excluded.add(cleanTask);
-      }
+    const activeIds = TaskLogService.getActiveUpdateDesignIds();
+    for (const id of activeIds) {
+      excluded.add(id);
     }
 
     return excluded;
@@ -62,17 +57,7 @@ export class UpdateBackfillService {
     const count = this.inFlightDesigns.size;
     this.inFlightDesigns.clear();
 
-    const allLogs = TaskLogService.loadLogs();
-    let cancelledCount = 0;
-    for (const t of allLogs) {
-      if ((t.source === 'UPDATE' || t.suffix === 'U') && !['COMPLETED', 'REJECTED', 'CANCELLED'].includes(t.status)) {
-        t.status = 'CANCELLED';
-        cancelledCount++;
-      }
-    }
-    if (cancelledCount > 0) {
-      TaskLogService.saveLogs(allLogs);
-    }
+    const cancelledCount = TaskLogService.cancelActiveUpdateTasks();
 
     const counts = this.getActiveUpdateCount();
     console.log(`[UpdateBackfillService] 🔄 In-Flight Locks (${count}) & ${cancelledCount} offene Update-Tasks zurückgesetzt. Neuer Ist-Bestand: ${counts.currentCount}`);
@@ -187,12 +172,7 @@ export class UpdateBackfillService {
     const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')) || (i.taskId && String(i.taskId).endsWith('-U')));
     const activeQueueItems = queueItems.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR');
 
-    const activeTasks = TaskLogService.loadLogs();
-    const activeTasksReview = activeTasks.filter(t => {
-      if (t.source !== 'UPDATE' && t.suffix !== 'U') return false;
-      if (['COMPLETED', 'REJECTED', 'CANCELLED', 'ERROR'].includes(t.status) || t.hasError) return false;
-      return ['AWAITING_DESIGN_REVIEW', 'UPDATE_ANALYZED', 'AWAITING_TM_REVIEW'].includes(t.status);
-    });
+    const activeTasksReview = TaskLogService.getActiveReviewUpdateTasks();
 
     // Collect distinct design identifiers across Queue, active Tasks, and In-Flight
     const uniqueDesignIds = new Set<string>();
@@ -203,7 +183,7 @@ export class UpdateBackfillService {
     }
 
     for (const t of activeTasksReview) {
-      const id = (t.payload?.designId ? t.payload.designId.trim() : '') || (t.id ? t.id.replace(/^#/, '').replace(/-U$/, '').trim() : '');
+      const id = (t.designId ? t.designId.trim() : '') || (t.id ? t.id.replace(/^#/, '').replace(/-U$/, '').trim() : '');
       if (id) uniqueDesignIds.add(id.toLowerCase());
     }
 

@@ -3,6 +3,7 @@ import path from 'path';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
 import { ListingSanitizationService } from './listingSanitizationService';
 import { loadSettings, saveSettings } from './settingsService';
+import { TaskRepository } from '../storage/taskRepository';
 
 export type QueueItemStatus = 'WAITING' | 'UPLOADING' | 'COMPLETED' | 'ERROR';
 
@@ -139,7 +140,6 @@ export function normalizeCatalogProductId(raw: string): string {
 
 export class QueueService {
   private static queueFilePath = path.resolve(process.cwd(), 'data', 'upload_queue.json');
-  private static tasksLogPath = path.resolve(process.cwd(), 'data', 'tasks_log.json');
   private static items: QueueItem[] = [];
   private static isLoaded = false;
   private static dailySlotsInfo = { free: 200, used: 0, total: 200 };
@@ -190,16 +190,11 @@ export class QueueService {
    */
   private static enrichListingsFromTasksLog() {
     try {
-      if (!fs.existsSync(this.tasksLogPath)) return;
-      const tasksRaw = fs.readFileSync(this.tasksLogPath, 'utf-8');
-      const tasks = JSON.parse(tasksRaw);
-      if (!Array.isArray(tasks)) return;
-
-      const tasksMap = new Map(tasks.map((t: any) => [t.id, t]));
       let hasChanges = false;
 
       for (const item of this.items) {
-        const task = tasksMap.get(item.taskId);
+        if (!item.taskId) continue;
+        const task = TaskRepository.getTaskById(item.taskId);
         if (task) {
           const listing = task.listingResult || task.trademarkRefineResult || {};
           const enListing = listing.en || (listing.title || listing.brand ? listing : {});
@@ -774,28 +769,11 @@ export class QueueService {
     this.saveQueue();
     this.rebalanceQueue();
 
-    // If removed item was an update item or associated with a task, cancel the task in taskLogService
+    // If removed item was an update item or associated with a task, cancel the task in TaskRepository
     try {
       const targetTaskId = removedItem.taskId || removedItem.id;
       const targetDesignId = removedItem.designId;
-      const { TaskLogService } = require('./taskLogService');
-      const allLogs = TaskLogService.loadLogs();
-      let changed = false;
-      for (const t of allLogs) {
-        if (
-          t.id === targetTaskId || 
-          t.id === `#${targetTaskId}` || 
-          (targetDesignId && (t.payload?.designId === targetDesignId || t.id.includes(targetDesignId)))
-        ) {
-          if (!['COMPLETED', 'REJECTED', 'CANCELLED'].includes(t.status)) {
-            t.status = 'CANCELLED';
-            changed = true;
-          }
-        }
-      }
-      if (changed) {
-        TaskLogService.saveLogs(allLogs);
-      }
+      TaskRepository.cancelTasksByTarget(targetTaskId, targetDesignId);
     } catch (e) {}
 
     return true;

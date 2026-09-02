@@ -1,5 +1,8 @@
 import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
 import { TaskLogService, DesignTaskLog, SessionEvent } from '../src/server/services/taskLogService';
+import { TaskRepository } from '../src/server/storage/taskRepository';
 import { toTaskSummary, TaskSummary } from '../src/types/tasks';
 
 async function runTaskPaginationAndPerformanceP1Tests() {
@@ -7,8 +10,11 @@ async function runTaskPaginationAndPerformanceP1Tests() {
   console.log('⚡ RUNNING TASK UI & API PERFORMANCE P1 TESTS');
   console.log('====================================================\n');
 
-  // Save current in-memory logs to restore after tests
-  const originalLogs = TaskLogService.getTaskLogs();
+  const testDir = path.resolve(process.cwd(), 'scratch', `test_p1_sqlite_${Date.now()}`);
+  fs.mkdirSync(testDir, { recursive: true });
+  const testDbPath = path.join(testDir, 'mba_hub_p1_test.sqlite');
+
+  TaskRepository.init(testDbPath);
 
   try {
     // Generate 55 mock tasks with heavy events, SVG content, and raw listing data
@@ -52,8 +58,10 @@ async function runTaskPaginationAndPerformanceP1Tests() {
       });
     }
 
-    // Set mock tasks in TaskLogService in-memory
-    (TaskLogService as any).inMemoryLogs = mockTasks;
+    // Insert mock tasks into isolated SQLite test database
+    for (const t of mockTasks) {
+      TaskRepository.createTask(t);
+    }
 
     // --------------------------------------------------------------------------
     // TEST A: Initial Pagination (limit = 20)
@@ -224,8 +232,11 @@ async function runTaskPaginationAndPerformanceP1Tests() {
     console.log('====================================================\n');
 
   } finally {
-    // Restore original in-memory logs
-    (TaskLogService as any).inMemoryLogs = originalLogs;
+    TaskRepository.close();
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {}
+    TaskRepository.init();
   }
 }
 

@@ -105,6 +105,7 @@ export class FinalizationService {
     const validationAttempts = ((task as any)?.validationAttempts || 0) + 1;
     if (task) {
       (task as any).validationAttempts = validationAttempts;
+      TaskLogService.updateTaskStatus(taskId, { validationAttempts } as any);
     }
 
     if (!validation.isValid) {
@@ -154,6 +155,7 @@ export class FinalizationService {
 
     if (task) {
       (task as any).validationAttempts = 0;
+      TaskLogService.updateTaskStatus(taskId, { validationAttempts: 0 } as any);
     }
 
     TaskLogService.addEvent(taskId, {

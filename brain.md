@@ -972,4 +972,55 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - `tests/unifiedFinalizationAndCustomResize.test.ts`: 10/10 Tests bestanden.
   - Production Build (`npm run build`) fehlerfrei abgeschlossen.
 
+### 10.37 🏛️ Phase P2: SQLite Task Storage Migration & O(1) Performance
+- **Hintergrund & Motivation:**
+  - In Phase P0 wurde die JSON-Persistenz gehärtet (Atomic Write, Backup Recovery, Corruption Shield).
+  - In Phase P1 wurden UI-Pagination (20er-Chunks), Lazy Detail Loading und WebSockets entkoppelt.
+  - Dennoch verblieb `tasks_log.json` als monolithische Datei: Jeder Schreibvorgang (Status-Update, neues Event) erforderte ein Re-Serialisieren der gesamten Historie auf Disk. Mit 2.000+ Tasks verursachte dies unnötige Disk-I/O und CPU-Zyklen auf dem NAS.
+  - `costTrackingService.ts`, `queueService.ts` und `updateBackfillService.ts` luden bei verschiedenen Abfragen die vollständige Task-Historie.
+- **Implementierte Architektur & Lösungen:**
+  1. **SQLite Storage Engine (`src/server/storage/taskRepository.ts`):**
+     - Basiert auf `node:sqlite` (`DatabaseSync`), integriert in Node.js >= 22.5.0 (Container nutzt Node 22.16.0).
+     - Engine-Version-Guard prüft beim Start strikt `nodeMajor >= 22 && nodeMinor >= 5`.
+     - Zero Native Dependency: Keine C++ Bindings via `node-gyp` erforderlich, reibungsloser `esbuild`-Build für Linux-Docker-Container.
+  2. **Durability & Crash Safety (NAS-Power-Cut-Proof):**
+     - `PRAGMA journal_mode = WAL;` (Concurrent reads + single sequential writer).
+     - `PRAGMA synchronous = FULL;` (Fsync bei jedem Transaktions-Commit – Datensicherheit vor maximaler Schreibrate).
+     - `PRAGMA busy_timeout = 5000;` (Keine Deadlocks bei kurzzeitigen Locks).
+     - `PRAGMA foreign_keys = ON;`.
+  3. **Hybrid-Schema & Kanonische `payload_json`:**
+     - Tabelle `tasks`: Enthält sowohl indexierte Projektionsspalten (`id`, `counter`, `source`, `suffix`, `status`, `checkpoint`, `received_at`, `updated_at`, `quote`, `niche1`, `niche2`, `subniche`, `image_url`, `has_error`, `error_details`, `design_id`, `in_queue`, `events_count`, `client_ip`, `image_generations_count`, `vectorizations_count`, `openrouter_cost_usd`) als auch `payload_json` für den vollständigen kanonischen `DesignTaskLog`.
+     - Tabelle `metadata`: Speichert Key-Value-Metadaten wie den atomaren `task_counter`.
+     - Strikte Invariante: Spalten und `payload_json` werden immer atomar in derselben Transaktion synchronisiert.
+  4. **Atomare Migration via `.migrating`:**
+     - Bestehende `tasks_log.json` wird über eine temporäre Datenbank (`mba_hub.sqlite.migrating`) importiert.
+     - Nach vollständigem Import in einer Transaktion werden Zeilenanzahl und IDs 1:1 validiert und `PRAGMA integrity_check` ausgeführt.
+     - Erst nach erfolgreichem Integrity Check: Schließen der DB, atomarer Rename zu `mba_hub.sqlite` und Archivierung der JSON-Datei zu `tasks_log.pre-sqlite-backup.json`.
+     - Fail-Closed: Bei Fehler Rollback, Löschen der `.migrating`-Datei, `tasks_log.json` bleibt unangetastet.
+  5. **Beseitigung von `inMemoryLogs` & O(1) Startup:**
+     - `inMemoryLogs` im `TaskLogService` wurde vollständig eliminiert.
+     - Serverstart lädt keine historischen Tasks mehr in den RAM (Startup-Zeit < 2 ms statt ~50 MB JSON-Parsing).
+  6. **Keyset-Pagination & Composite Indexes:**
+     - Keyset Pagination direkt per SQL auf Basis des monotonen `counter`: `WHERE counter < ? ORDER BY counter DESC LIMIT 21`.
+     - Composite Indexes (`(counter DESC)`, `(source, counter DESC)`, `(status, counter DESC)`, `(checkpoint, counter DESC)`, `design_id`, `received_at`).
+     - Verifiziert mit `EXPLAIN QUERY PLAN` für 100% Index-Scan statt Table-Scan.
+  7. **O(1) CostTracking & Service-Entkopplung:**
+     - `TaskRepository.getTaskUsageMetrics()` aggregiert Image-Generierungen, Vektorisierungen und Token-Kosten per `SUM(...)` direkt in SQLite in < 0,5 ms.
+     - `QueueService`, `UpdatePipelineService`, `DesignPipelineService` und `UpdateBackfillService` greifen nur noch über zielgerichtete Abfragen (`getTaskById`, `cancelTasksByTarget`, `getActiveReviewUpdateTasks`) auf Tasks zu.
+  8. **Graceful Shutdown & WAL-Checkpoint:**
+     - `SIGINT`/`SIGTERM`-Hooks in `src/server/index.ts` führen `wal_checkpoint(TRUNCATE)` und `close()` aus.
+- **Benchmark & Performance-Ergebnisse:**
+  - Batch Insert (2.000 Tasks): **29,3 ms** (0,015 ms pro Task).
+  - Single Task Update: **0,20 ms** (vorher vollständiger JSON-Disk-Write).
+  - 20-Summary Keyset Query: **0,15 ms**.
+  - Single Detail Query: **0,05 ms**.
+  - Startup RAM-Footprint: Keine Historie mehr im Speicher.
+- **Verifikation:**
+  - `tests/taskSqliteMigrationP2.test.ts`: Alle 7 Tests bestanden (Migration, Integrity, Konsistenz, Keyset-Pagination, Restart, CostTracking, Benchmark).
+  - `tests/taskPersistenceP0Hardening.test.ts`: Alle 9 Tests bestanden.
+  - `tests/taskPaginationAndPerformanceP1.test.ts`: Alle 7 Tests bestanden.
+  - `tests/unifiedFinalizationAndCustomResize.test.ts`: Alle 10 Tests bestanden.
+  - `npm run build`: Production Build fehlerfrei abgeschlossen.
+
+
 

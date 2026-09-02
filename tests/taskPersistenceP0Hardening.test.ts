@@ -10,6 +10,7 @@ import {
   setFileFailSafe
 } from '../src/server/utils/atomicFileStorage';
 import { TaskLogService, DesignTaskLog, SessionEvent } from '../src/server/services/taskLogService';
+import { TaskRepository } from '../src/server/storage/taskRepository';
 import { FinalizationService } from '../src/server/services/finalizationService';
 
 async function runPersistenceP0Tests() {
@@ -186,9 +187,8 @@ async function runPersistenceP0Tests() {
       events: []
     };
 
-    // Inject into TaskLogService in-memory logs
-    const existingLogs = TaskLogService.loadLogs();
-    (TaskLogService as any).inMemoryLogs = [loopTask, ...existingLogs];
+    // Register task in TaskLogService
+    TaskRepository.createTask(loopTask);
 
     // Attempt 1: Should fail validation and record attempt 1
     const attempt1 = await FinalizationService.finalizeForQueue({
@@ -198,7 +198,8 @@ async function runPersistenceP0Tests() {
       title: 'Valid Title Under Sixty Chars'
     });
     assert.strictEqual(attempt1.success, false);
-    assert.strictEqual((loopTask as any).validationAttempts, 1);
+    const taskAfter1 = TaskLogService.getTaskLogById(loopTaskId);
+    assert.strictEqual((taskAfter1 as any).validationAttempts, 1);
 
     // Attempt 2: Should fail validation and record attempt 2
     const attempt2 = await FinalizationService.finalizeForQueue({
@@ -208,7 +209,8 @@ async function runPersistenceP0Tests() {
       title: 'Valid Title Under Sixty Chars'
     });
     assert.strictEqual(attempt2.success, false);
-    assert.strictEqual((loopTask as any).validationAttempts, 2);
+    const taskAfter2 = TaskLogService.getTaskLogById(loopTaskId);
+    assert.strictEqual((taskAfter2 as any).validationAttempts, 2);
 
     // Attempt 3: Must reach the retry limit and set status to ERROR with LISTING_VALIDATION_RETRY_LIMIT_REACHED
     const attempt3 = await FinalizationService.finalizeForQueue({
@@ -219,14 +221,16 @@ async function runPersistenceP0Tests() {
     });
     assert.strictEqual(attempt3.success, false);
     assert.strictEqual(attempt3.error?.includes('LISTING_VALIDATION_RETRY_LIMIT_REACHED'), true);
-    assert.strictEqual(loopTask.status, 'ERROR', 'Task status must be set to ERROR after 3 failed attempts');
-    assert.strictEqual(loopTask.hasError, true);
-    assert.strictEqual(loopTask.errorDetails?.includes('LISTING_VALIDATION_RETRY_LIMIT_REACHED'), true);
+    const taskAfter3 = TaskLogService.getTaskLogById(loopTaskId);
+    assert.strictEqual(taskAfter3!.status, 'ERROR', 'Task status must be set to ERROR after 3 failed attempts');
+    assert.strictEqual(taskAfter3!.hasError, true);
+    assert.strictEqual(taskAfter3!.errorDetails?.includes('LISTING_VALIDATION_RETRY_LIMIT_REACHED'), true);
 
     // Verify the task did NOT generate an unbounded number of events (12 events for 3 attempts instead of 5,000+)
-    const finalizationEvents = loopTask.events.filter(e => e.type === 'FINALIZATION_EVENT');
+    const finalizationEvents = taskAfter3!.events.filter(e => e.type === 'FINALIZATION_EVENT');
     assert.strictEqual(finalizationEvents.length <= 15, true, `Event count must be bounded (was ${finalizationEvents.length})`);
     console.log('✅ Test G Passed: Validation loop terminates deterministically after 3 attempts with LISTING_VALIDATION_RETRY_LIMIT_REACHED.\n');
+    TaskRepository.deleteTask(loopTaskId);
 
     // --------------------------------------------------------------------------
     // TEST H: No Silent Task Drop (>2,000 Tasks)
@@ -269,7 +273,7 @@ async function runPersistenceP0Tests() {
       events: []
     };
 
-    (TaskLogService as any).inMemoryLogs = [compactTask, ...((TaskLogService as any).inMemoryLogs || [])];
+    TaskRepository.createTask(compactTask);
 
     const duplicateEvent: SessionEvent = {
       timestamp: new Date().toISOString(),
@@ -295,7 +299,9 @@ async function runPersistenceP0Tests() {
       title: 'Different Event',
       content: { phase: 'DONE' }
     });
-    assert.strictEqual(taskAfterEvents?.events.length, 2, 'Different event must create a separate entry');
+    const taskAfterDiff = TaskLogService.getTask(compactTaskId);
+    assert.strictEqual(taskAfterDiff?.events.length, 2, 'Different event must create a separate entry');
+    TaskRepository.deleteTask(compactTaskId);
     console.log('✅ Test I Passed: Consecutive identical events are cleanly compacted.\n');
 
     console.log('====================================================');

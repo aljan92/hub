@@ -16,8 +16,7 @@ export class DesignPipelineService {
    * Helper to retrieve task safely
    */
   private static getTask(taskId: string): DesignTaskLog | undefined {
-    const logs = TaskLogService.loadLogs();
-    return logs.find(t => t.id === taskId);
+    return TaskLogService.getTaskLogById(taskId);
   }
 
   /**

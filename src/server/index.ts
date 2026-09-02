@@ -18,6 +18,7 @@ import { SyncEngine } from './services/syncEngine';
 import { BrowserSessionService } from './services/browserSessionService';
 import { getMcpSchema } from './services/mcpSchemaService';
 import { TaskLogService } from './services/taskLogService';
+import { TaskRepository } from './storage/taskRepository';
 import { SystemPromptService } from './services/systemPromptService';
 import { ProductCatalogService } from './services/productCatalogService';
 import { ProductScannerService } from './services/productScannerService';
@@ -2034,6 +2035,9 @@ if (fs.existsSync(staticPath)) {
   });
 }
 
+// Initialize SQLite Task Storage
+TaskRepository.init();
+
 // Start Server
 server.listen(Number(PORT), HOST, () => {
   console.log(`🚀 MBA HUB Core Server running on http://${HOST}:${PORT}`);
@@ -2052,7 +2056,6 @@ server.listen(Number(PORT), HOST, () => {
   } catch (err: any) {
     console.warn('[MBA Hub] ProductScannerService.init warning:', err.message);
   }
-
 
   // Initialize UpdateBackfillService background scheduler
   try {
@@ -2074,3 +2077,21 @@ server.listen(Number(PORT), HOST, () => {
     }
   }, 1000);
 });
+
+// Graceful Shutdown Hooks
+const handleGracefulShutdown = (signal: string) => {
+  console.log(`[MBA Hub] Received ${signal}. Starting graceful shutdown...`);
+  try {
+    TaskRepository.close();
+  } catch (e: any) {
+    console.warn('[MBA Hub] Error during TaskRepository close:', e.message);
+  }
+  server.close(() => {
+    console.log('[MBA Hub] HTTP & WebSocket server closed.');
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 4000);
+};
+
+process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));

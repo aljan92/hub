@@ -6,6 +6,7 @@ import { ListingValidationService } from '../src/server/services/listingValidati
 import { FinalizationService } from '../src/server/services/finalizationService';
 import { ProductCatalogService, ARTWORK_VARIANT_REGISTRY } from '../src/server/services/productCatalogService';
 import { TaskLogService, DesignTaskLog } from '../src/server/services/taskLogService';
+import { TaskRepository } from '../src/server/storage/taskRepository';
 import { QueueService } from '../src/server/services/queueService';
 
 console.log('====================================================');
@@ -203,7 +204,7 @@ async function runTests() {
       drinkwareBrushPath: dummyMasterPng
     }
   };
-  (TaskLogService as any).inMemoryLogs = [...((TaskLogService as any).inMemoryLogs || []), successTask];
+  TaskRepository.createTask(successTask as any);
 
   const successResult = await FinalizationService.finalizeForQueue({
     taskId: successTask.id,
@@ -216,6 +217,7 @@ async function runTests() {
     masterPngPath: dummyMasterPng
   });
   assert.strictEqual(successResult.success, true, `Finalization must succeed without ReferenceError: ${successResult.error}`);
+  TaskRepository.deleteTask(successTask.id);
   console.log('✅ Test 6b Passed: Task is correctly accessible in Phase 3 without ReferenceError.\n');
 
   // --------------------------------------------------------------------------

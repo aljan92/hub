@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { loadSettings, saveSettings } from './settingsService';
 import { QueueService } from './queueService';
+import { TaskRepository } from '../storage/taskRepository';
 
 export interface CostStatsBreakdown {
   openRouterUsageTotal: number;
@@ -75,49 +76,11 @@ export class CostTrackingService {
     const currentTotalUsage = await this.fetchOpenRouterUsage();
     let openRouterCost = Math.max(0, currentTotalUsage - baselineUsage);
 
-    // 2. Count image generations & vectorizations from tasks_log.json
-    let imageGenerationsCount = 0;
-    let vectorizationsCount = 0;
-    let taskEventOpenRouterCost = 0;
-
-    try {
-      const tasksLogFile = path.resolve(process.cwd(), 'data', 'tasks_log.json');
-      if (fs.existsSync(tasksLogFile)) {
-        const raw = fs.readFileSync(tasksLogFile, 'utf-8');
-        const tasks = JSON.parse(raw);
-        if (Array.isArray(tasks)) {
-          for (const task of tasks) {
-            const taskTime = task.receivedAt ? new Date(task.receivedAt).getTime() : 0;
-            if (resetTimestamp > 0 && taskTime < resetTimestamp) {
-              continue;
-            }
-
-            // Check events in task
-            if (Array.isArray(task.events)) {
-              for (const ev of task.events) {
-                const evTime = ev.timestamp ? new Date(ev.timestamp).getTime() : taskTime;
-                if (resetTimestamp > 0 && evTime < resetTimestamp) continue;
-
-                if (ev.type === 'IDEOGRAM_RESPONSE' || ev.type === 'IDEOGRAM_REQUEST') {
-                  if (ev.type === 'IDEOGRAM_RESPONSE') imageGenerationsCount++;
-                }
-                if (ev.type === 'VECTORIZE_RESPONSE') {
-                  vectorizationsCount++;
-                }
-                if (ev.metadata?.costUsd) {
-                  taskEventOpenRouterCost += Number(ev.metadata.costUsd);
-                }
-              }
-            } else {
-              if (task.imageUrl) imageGenerationsCount++;
-              if (task.svgContent || task.localMbaPngPath) vectorizationsCount++;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
+    // 2. Count image generations & vectorizations directly from TaskRepository SQLite metrics
+    const metrics = TaskRepository.getTaskUsageMetrics(resetTimestamp);
+    const imageGenerationsCount = metrics.imageGenerationsCount;
+    const vectorizationsCount = metrics.vectorizationsCount;
+    let taskEventOpenRouterCost = metrics.taskEventOpenRouterCost;
 
     // If OpenRouter live key is unavailable, use accumulated token cost from task events
     if (openRouterCost === 0 && taskEventOpenRouterCost > 0) {
