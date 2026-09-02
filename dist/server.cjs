@@ -1294,8 +1294,8 @@ var require_node = __commonJS2({
           }
           break;
         case "FILE":
-          var fs18 = require("fs");
-          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
+          var fs17 = require("fs");
+          stream2 = new fs17.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -17727,8 +17727,8 @@ var require_node2 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs18 = require("fs");
-          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
+          var fs17 = require("fs");
+          stream2 = new fs17.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18446,8 +18446,8 @@ var require_node3 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs18 = require("fs");
-          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
+          var fs17 = require("fs");
+          stream2 = new fs17.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -19341,7 +19341,7 @@ var require_view = __commonJS2({
     "use strict";
     var debug17 = require_src3()("express:view");
     var path16 = require("path");
-    var fs18 = require("fs");
+    var fs17 = require("fs");
     var dirname = path16.dirname;
     var basename = path16.basename;
     var extname = path16.extname;
@@ -19407,7 +19407,7 @@ var require_view = __commonJS2({
     function tryStat(path17) {
       debug17('stat "%s"', path17);
       try {
-        return fs18.statSync(path17);
+        return fs17.statSync(path17);
       } catch (e) {
         return void 0;
       }
@@ -20012,8 +20012,8 @@ var require_node4 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs18 = require("fs");
-          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
+          var fs17 = require("fs");
+          stream2 = new fs17.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -20186,7 +20186,7 @@ var require_types = __commonJS2({
 var require_mime = __commonJS2({
   "node_modules/mime/mime.js"(exports2, module3) {
     var path16 = require("path");
-    var fs18 = require("fs");
+    var fs17 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -20207,7 +20207,7 @@ var require_mime = __commonJS2({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs18.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs17.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -20445,7 +20445,7 @@ var require_send = __commonJS2({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs18 = require("fs");
+    var fs17 = require("fs");
     var mime8 = require_mime();
     var ms = require_ms5();
     var onFinished = require_on_finished();
@@ -20778,7 +20778,7 @@ var require_send = __commonJS2({
       var i = 0;
       var self2 = this;
       debug17('stat "%s"', path17);
-      fs18.stat(path17, function onstat(err, stat) {
+      fs17.stat(path17, function onstat(err, stat) {
         if (err && err.code === "ENOENT" && !extname(path17) && path17[path17.length - 1] !== sep) {
           return next(err);
         }
@@ -20793,7 +20793,7 @@ var require_send = __commonJS2({
         }
         var p = path17 + "." + self2._extensions[i++];
         debug17('stat "%s"', p);
-        fs18.stat(p, function(err2, stat) {
+        fs17.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20811,7 +20811,7 @@ var require_send = __commonJS2({
         }
         var p = join(path17, self2._index[i]);
         debug17('stat "%s"', p);
-        fs18.stat(p, function(err2, stat) {
+        fs17.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20823,7 +20823,7 @@ var require_send = __commonJS2({
     SendStream.prototype.stream = function stream(path17, options2) {
       var self2 = this;
       var res = this.res;
-      var stream2 = fs18.createReadStream(path17, options2);
+      var stream2 = fs17.createReadStream(path17, options2);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -27965,7 +27965,7 @@ var require_package = __commonJS2({
 // node_modules/dotenv/lib/main.js
 var require_main = __commonJS2({
   "node_modules/dotenv/lib/main.js"(exports2, module3) {
-    var fs18 = require("fs");
+    var fs17 = require("fs");
     var path16 = require("path");
     var os = require("os");
     var crypto3 = require("crypto");
@@ -28074,7 +28074,7 @@ var require_main = __commonJS2({
       if (options2 && options2.path && options2.path.length > 0) {
         if (Array.isArray(options2.path)) {
           for (const filepath of options2.path) {
-            if (fs18.existsSync(filepath)) {
+            if (fs17.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -28084,7 +28084,7 @@ var require_main = __commonJS2({
       } else {
         possibleVaultPath = path16.resolve(process.cwd(), ".env.vault");
       }
-      if (fs18.existsSync(possibleVaultPath)) {
+      if (fs17.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
@@ -28133,7 +28133,7 @@ var require_main = __commonJS2({
       const parsedAll = {};
       for (const path17 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs18.readFileSync(path17, { encoding }));
+          const parsed = DotenvModule.parse(fs17.readFileSync(path17, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options2);
         } catch (e) {
           if (debug17) {
@@ -53598,8 +53598,8 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
         let imagePayload = fourPanelImageBase64OrPath;
         if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
           try {
-            const fs18 = await import("fs");
-            const buffer = fs18.readFileSync(imagePayload);
+            const fs17 = await import("fs");
+            const buffer = fs17.readFileSync(imagePayload);
             imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
           } catch (e) {
           }
@@ -223246,7 +223246,6 @@ var init_updatePipelineService = __esm2({
     init_llmService();
     init_trademarkService();
     init_visionOptimizationService();
-    init_artworkResizeService();
     init_listingValidationService();
     UpdatePipelineService = class {
       /**
@@ -223828,46 +223827,6 @@ Bullets: ${oldBullets}`
         }
       }
       /**
-       * Step U6.5: Generate Resized Artworks (Trimmed, Mug Standard & Brush, Drinkware Standard)
-       */
-      static async stepU6_5_ResizeArtworks(taskId) {
-        console.log(`[UpdatePipeline] \u{1F4D0} Starte Step U6.5 (Resize Artworks) f\xFCr Task ${taskId}...`);
-        const task = this.getTask(taskId);
-        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        const mbaPngPath = task.localMbaPngPath || task.localImagePath;
-        if (!mbaPngPath || !import_fs80.default.existsSync(mbaPngPath)) {
-          console.warn(`[UpdatePipeline] \u26A0\uFE0F Kein lokales Master-Artwork f\xFCr Resize bei Task ${taskId} vorhanden.`);
-          return { success: false, error: "Kein Master-Artwork vorhanden" };
-        }
-        const existing = task.resizedAssets;
-        if (existing && existing.trimmedPath && import_fs80.default.existsSync(existing.trimmedPath) && existing.mugStandardPath && import_fs80.default.existsSync(existing.mugStandardPath) && existing.mugBrushPath && import_fs80.default.existsSync(existing.mugBrushPath) && existing.drinkwareStandardPath && import_fs80.default.existsSync(existing.drinkwareStandardPath) && existing.drinkwareBrushPath && import_fs80.default.existsSync(existing.drinkwareBrushPath)) {
-          console.log(`[UpdatePipeline] \u26A1 Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
-          return { success: true, resizedAssets: existing };
-        }
-        try {
-          const resized = await ArtworkResizeService.generateResizedArtworks(taskId, mbaPngPath);
-          task.resizedAssets = resized;
-          TaskLogService2.updateTaskStatus(taskId, { resizedAssets: resized });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "RESIZE_RESPONSE",
-            title: `\u{1F4D0} Two-Sided & Brush Varianten generiert \u2713`,
-            content: {
-              trimmedPath: resized.trimmedPath,
-              mugStandardPath: resized.mugStandardPath,
-              mugBrushPath: resized.mugBrushPath,
-              drinkwareStandardPath: resized.drinkwareStandardPath,
-              drinkwareBrushPath: resized.drinkwareBrushPath,
-              message: "Two-Sided Varianten f\xFCr Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt."
-            }
-          });
-          return { success: true, resizedAssets: resized };
-        } catch (err) {
-          console.error(`[UpdatePipeline] \u274C Fehler in Step U6.5:`, err);
-          return { success: false, error: err.message };
-        }
-      }
-      /**
        * Step U7: Enqueue into Update Tab in Queue
        */
       static async stepU7_Enqueue(taskId) {
@@ -223950,10 +223909,7 @@ Bullets: ${oldBullets}`
           const u6 = await this.stepU6_TranslateListing(taskId);
           if (!u6.success) return { success: false, error: u6.error };
         }
-        if (startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U6_5") {
-          await this.stepU6_5_ResizeArtworks(taskId);
-        }
-        if (startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U6_5" || startStep === "U7") {
+        if (startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U7") {
           const u7 = await this.stepU7_Enqueue(taskId);
           if (!u7.success) return { success: false, error: u7.error };
         }
@@ -224045,10 +224001,6 @@ Bullets: ${oldBullets}`
             return await this.stepU5_TrademarkCheck(taskId);
           case "U6":
             return await this.stepU6_TranslateListing(taskId);
-          case "U6_5":
-          case "RESIZE":
-          case "UPDATE_U6_5_RESIZE":
-            return await this.stepU6_5_ResizeArtworks(taskId);
           case "U7":
             return await this.stepU7_Enqueue(taskId);
           case "RESUME":
@@ -224450,33 +224402,16 @@ var init_queueService = __esm2({
           if (!Array.isArray(tasks)) return;
           const tasksMap = new Map(tasks.map((t) => [t.id, t]));
           let hasChanges = false;
-          const cleanStr = (txt) => ListingSanitizationService.sanitizeText(txt);
           for (const item of this.items) {
-            if (item.title) item.title = cleanStr(item.title);
-            if (item.brand) item.brand = cleanStr(item.brand);
-            if (item.bullet1) item.bullet1 = cleanStr(item.bullet1);
-            if (item.bullet2) item.bullet2 = cleanStr(item.bullet2);
-            if (item.description) item.description = cleanStr(item.description);
-            if (item.listings) {
-              for (const langObj of Object.values(item.listings)) {
-                if (langObj && typeof langObj === "object") {
-                  if (langObj.title) langObj.title = cleanStr(langObj.title);
-                  if (langObj.brand) langObj.brand = cleanStr(langObj.brand);
-                  if (langObj.bullet1) langObj.bullet1 = cleanStr(langObj.bullet1);
-                  if (langObj.bullet2) langObj.bullet2 = cleanStr(langObj.bullet2);
-                  if (langObj.description) langObj.description = cleanStr(langObj.description);
-                }
-              }
-            }
             const task = tasksMap.get(item.taskId);
             if (task) {
               const listing = task.listingResult || task.trademarkRefineResult || {};
               const enListing = listing.en || (listing.title || listing.brand ? listing : {});
-              if (!item.brand || item.brand === "\u2014") item.brand = cleanStr(enListing.brand || task.payload?.brand || "");
-              if (!item.title || item.title === "Neues Design") item.title = cleanStr(enListing.title || task.payload?.title || task.payload?.quote || "");
-              if (!item.bullet1) item.bullet1 = cleanStr(enListing.bullet1 || enListing.bullet_1 || "");
-              if (!item.bullet2) item.bullet2 = cleanStr(enListing.bullet2 || enListing.bullet_2 || "");
-              if (!item.description) item.description = cleanStr(enListing.description || "");
+              if (!item.brand || item.brand === "\u2014") item.brand = enListing.brand || task.payload?.brand || "";
+              if (!item.title || item.title === "Neues Design") item.title = enListing.title || task.payload?.title || task.payload?.quote || "";
+              if (!item.bullet1) item.bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
+              if (!item.bullet2) item.bullet2 = enListing.bullet2 || enListing.bullet_2 || "";
+              if (!item.description) item.description = enListing.description || "";
               if (!item.niche && task.payload?.niche) item.niche = task.payload.niche;
               if (!item.listings || Object.keys(item.listings).length === 0) {
                 const listings = {};
@@ -224485,22 +224420,22 @@ var init_queueService = __esm2({
                     if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
                       const langContent = val;
                       listings[key.toLowerCase()] = {
-                        brand: cleanStr(langContent.brand || item.brand),
-                        title: cleanStr(langContent.title || item.title),
-                        bullet1: cleanStr(langContent.bullet1 || langContent.bullet_1 || ""),
-                        bullet2: cleanStr(langContent.bullet2 || langContent.bullet_2 || ""),
-                        description: cleanStr(langContent.description || "")
+                        brand: langContent.brand || item.brand,
+                        title: langContent.title || item.title,
+                        bullet1: langContent.bullet1 || langContent.bullet_1 || "",
+                        bullet2: langContent.bullet2 || langContent.bullet_2 || "",
+                        description: langContent.description || ""
                       };
                     }
                   }
                 }
                 if (!listings.en && (item.title || item.brand)) {
                   listings.en = {
-                    brand: cleanStr(item.brand),
-                    title: cleanStr(item.title),
-                    bullet1: cleanStr(item.bullet1),
-                    bullet2: cleanStr(item.bullet2),
-                    description: cleanStr(item.description)
+                    brand: item.brand,
+                    title: item.title,
+                    bullet1: item.bullet1,
+                    bullet2: item.bullet2,
+                    description: item.description
                   };
                 }
                 item.listings = listings;
@@ -224721,11 +224656,11 @@ var init_queueService = __esm2({
         if (existing) {
           existing.status = "WAITING";
           existing.errorMessage = void 0;
-          if (item.title) existing.title = cleanStr(item.title);
-          if (item.brand) existing.brand = cleanStr(item.brand);
-          if (item.bullet1) existing.bullet1 = cleanStr(item.bullet1);
-          if (item.bullet2) existing.bullet2 = cleanStr(item.bullet2);
-          if (item.description) existing.description = cleanStr(item.description);
+          if (item.title) existing.title = item.title;
+          if (item.brand) existing.brand = item.brand;
+          if (item.bullet1) existing.bullet1 = item.bullet1;
+          if (item.bullet2) existing.bullet2 = item.bullet2;
+          if (item.description) existing.description = item.description;
           if (item.listings) existing.listings = item.listings;
           if (item.fitTypes !== void 0) existing.fitTypes = normalizeFitTypes(item.fitTypes);
           if (item.avoidColor !== void 0) existing.avoidColor = normalizeAvoidColor(item.avoidColor);
@@ -224788,20 +224723,20 @@ var init_queueService = __esm2({
         const newItem = {
           id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           taskId: item.taskId,
-          designTitle: cleanStr(item.designTitle),
-          niche: cleanStr(item.niche || ""),
-          brand: cleanStr(item.brand || "MBA Hub Studio"),
-          title: cleanStr(item.title || item.designTitle),
-          bullet1: cleanStr(item.bullet1 || ""),
-          bullet2: cleanStr(item.bullet2 || ""),
-          description: cleanStr(item.description || ""),
+          designTitle: item.designTitle,
+          niche: item.niche || "",
+          brand: item.brand || "MBA Hub Studio",
+          title: item.title || item.designTitle,
+          bullet1: item.bullet1 || "",
+          bullet2: item.bullet2 || "",
+          description: item.description || "",
           listings: item.listings || {
             en: {
-              brand: cleanStr(item.brand || "MBA Hub Studio"),
-              title: cleanStr(item.title || item.designTitle),
-              bullet1: cleanStr(item.bullet1 || ""),
-              bullet2: cleanStr(item.bullet2 || ""),
-              description: cleanStr(item.description || "")
+              brand: item.brand || "MBA Hub Studio",
+              title: item.title || item.designTitle,
+              bullet1: item.bullet1 || "",
+              bullet2: item.bullet2 || "",
+              description: item.description || ""
             }
           },
           fitTypes: normalizeFitTypes(item.fitTypes),
@@ -227793,7 +227728,7 @@ var import_websocket_server = __toESM2(require_websocket_server(), 1);
 // src/server/index.ts
 var import_cors = __toESM2(require_lib3(), 1);
 var import_path80 = __toESM2(require("path"), 1);
-var import_fs87 = __toESM2(require("fs"), 1);
+var import_fs86 = __toESM2(require("fs"), 1);
 var import_dotenv = __toESM2(require_main(), 1);
 var import_url3 = require("url");
 var import_child_process8 = require("child_process");
@@ -228572,7 +228507,7 @@ init_queueService();
 init_productCatalogService();
 init_listingSanitizationService();
 init_syncEngine();
-var UploadWorkerService = class _UploadWorkerService {
+var UploadWorkerService = class {
   static isUploading = false;
   static isPausedBeforePublish = false;
   static pauseBeforePublishRequested = false;
@@ -229576,17 +229511,37 @@ var UploadWorkerService = class _UploadWorkerService {
         });
       }
       await page.waitForTimeout(1e3);
-      this.log(`\u{1F4DD} Trage ${hasLocalizedListings ? "mehrsprachige" : "englisches"} SEO-Listing ein (inkl. Zeichen-Bereinigung)...`, "Bef\xFClle Listings...", 85, 100);
-      const sanitizedListings = {};
+      this.log(`\u{1F4DD} Trage ${hasLocalizedListings ? "mehrsprachige" : "englisches"} SEO-Listing ein (Integrit\xE4tspr\xFCfung)...`, "Pr\xFCfe Listings...", 85, 100);
+      const immutableListings = {};
+      const integrityViolations = [];
       for (const [loc, content] of Object.entries(rawListings)) {
         if (!content) continue;
-        sanitizedListings[loc] = {
-          brand: _UploadWorkerService.sanitizeListingText(content.brand || "", loc),
-          title: _UploadWorkerService.sanitizeListingText(content.title || "", loc),
-          bullet1: _UploadWorkerService.sanitizeListingText(content.bullet1 || content.bullet_1 || "", loc),
-          bullet2: _UploadWorkerService.sanitizeListingText(content.bullet2 || content.bullet_2 || "", loc),
-          description: _UploadWorkerService.sanitizeListingText(content.description || "", loc)
+        const checkField = (field, val) => {
+          if (!val) return "";
+          const sanitized = ListingSanitizationService.sanitizeText(val);
+          if (sanitized !== val) {
+            integrityViolations.push(`[${loc}] ${field} enth\xE4lt unbereinigte Zeichen (Sanitized !== Original)`);
+          }
+          return val;
         };
+        immutableListings[loc] = {
+          brand: checkField("brand", content.brand || ""),
+          title: checkField("title", content.title || ""),
+          bullet1: checkField("bullet1", content.bullet1 || content.bullet_1 || ""),
+          bullet2: checkField("bullet2", content.bullet2 || content.bullet_2 || ""),
+          description: checkField("description", content.description || "")
+        };
+      }
+      if (integrityViolations.length > 0) {
+        const errorMsg = `Listing-Integrit\xE4tsverletzung in QueueItem: ${integrityViolations.join("; ")}`;
+        this.log(`\u{1F6D1} ${errorMsg}`, "Listing Integrity Fehler \u{1F6D1}", 85, 100);
+        productUploadResults.push({
+          productId: "LISTING_INTEGRITY",
+          amazonKey: "ALL",
+          status: "FAILED_LISTING_INTEGRITY",
+          reason: errorMsg
+        });
+        throw new Error(errorMsg);
       }
       const fillResult = await page.evaluate(async ({ listingMap, hasTranslations }) => {
         const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -229610,8 +229565,7 @@ var UploadWorkerService = class _UploadWorkerService {
           }
           const setVal = (fieldKey, rawVal, maxLen = 2e3) => {
             if (!rawVal) return;
-            let val = rawVal.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'").replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/\u2026/g, "...").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/\s+/g, " ");
-            const clamped = val.substring(0, maxLen).trim();
+            const clamped = rawVal.substring(0, maxLen).trim();
             const selectors2 = loc === "en" ? [
               `#en #designCreator-productEditor-${fieldKey}`,
               `[id="en"] #designCreator-productEditor-${fieldKey}`,
@@ -229646,9 +229600,8 @@ var UploadWorkerService = class _UploadWorkerService {
           if (!rawVal) return;
           const el = document.getElementById(id);
           if (el) {
-            let val = rawVal.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
             el.focus();
-            el.value = val.substring(0, maxLen).trim();
+            el.value = rawVal.substring(0, maxLen).trim();
             el.dispatchEvent(new Event("input", { bubbles: true }));
             el.dispatchEvent(new Event("change", { bubbles: true }));
             el.dispatchEvent(new Event("blur", { bubbles: true }));
@@ -229660,7 +229613,7 @@ var UploadWorkerService = class _UploadWorkerService {
         setRootVal("designCreator-productEditor-featureBullet2", enContent.bullet2 || enContent.bullet_2 || "", 256);
         setRootVal("designCreator-productEditor-description", enContent.description || "", 2e3);
         return { success: true, filledLocales };
-      }, { listingMap: sanitizedListings, hasTranslations: hasLocalizedListings });
+      }, { listingMap: immutableListings, hasTranslations: hasLocalizedListings });
       this.log(`\u2705 Listings f\xFCr Sprachen [${fillResult.filledLocales.join(", ")}] eingetragen!`, "Listings fertig \u2713", 90, 100);
       await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
       await page.waitForTimeout(1500);
@@ -229924,12 +229877,10 @@ init_amazonInspectService();
 init_updatePipelineService();
 
 // src/server/services/designPipelineService.ts
-var import_fs86 = __toESM2(require("fs"), 1);
 init_taskLogService();
 init_settingsService();
 init_trademarkService();
 init_llmService();
-init_artworkResizeService();
 var DesignPipelineService = class {
   /**
    * Helper to retrieve task safely
@@ -230064,30 +230015,6 @@ var DesignPipelineService = class {
     }
   }
   /**
-   * Step D7.5: Resize Artworks (Trimmed, Mug Standard & Brush, Drinkware Standard)
-   */
-  static async stepD7_5_ResizeArtworks(taskId) {
-    console.log(`[DesignPipeline] \u{1F4D0} Starte Step D7.5 (Resize Artworks) f\xFCr Task ${taskId}...`);
-    try {
-      const task = this.getTask(taskId);
-      if (!task || !task.localMbaPngPath) {
-        throw new Error(`Task #${taskId} hat kein lokales Master MBA-PNG.`);
-      }
-      const existing = task.resizedAssets;
-      if (existing && existing.trimmedPath && import_fs86.default.existsSync(existing.trimmedPath) && existing.mugStandardPath && import_fs86.default.existsSync(existing.mugStandardPath) && existing.mugBrushPath && import_fs86.default.existsSync(existing.mugBrushPath) && existing.drinkwareStandardPath && import_fs86.default.existsSync(existing.drinkwareStandardPath) && existing.drinkwareBrushPath && import_fs86.default.existsSync(existing.drinkwareBrushPath)) {
-        console.log(`[DesignPipeline] \u26A1 Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
-        return { success: true, resizedAssets: existing };
-      }
-      const resized = await ArtworkResizeService.generateResizedArtworks(taskId, task.localMbaPngPath);
-      task.resizedAssets = resized;
-      TaskLogService2.updateTaskStatus(taskId, { resizedAssets: resized });
-      return { success: true, resizedAssets: resized };
-    } catch (err) {
-      console.error(`[DesignPipeline] \u274C Fehler in Step D7.5:`, err);
-      return { success: false, error: err.message };
-    }
-  }
-  /**
    * Step D8: Hand-off to Upload Queue (106 Slots)
    */
   static async stepD8_Enqueue(taskId) {
@@ -230140,10 +230067,6 @@ var DesignPipelineService = class {
       case "VECTORIZE_REQUEST":
       case "SVG_AUDIT_REQUEST":
         return await this.stepD7_VectorizeAndAudit(taskId);
-      case "D7_5":
-      case "RESIZE":
-      case "RESIZE_REQUEST":
-        return await this.stepD7_5_ResizeArtworks(taskId);
       case "D8":
       case "QUEUE":
       case "ENQUEUE":
@@ -230486,25 +230409,25 @@ app.post("/api/v1/system/update", async (req, res) => {
     const arrayBuffer = await response2.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const tempTarPath = import_path80.default.resolve(process.cwd(), ".temp_update.tar.gz");
-    import_fs87.default.writeFileSync(tempTarPath, buffer);
+    import_fs86.default.writeFileSync(tempTarPath, buffer);
     (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
     try {
-      import_fs87.default.unlinkSync(tempTarPath);
+      import_fs86.default.unlinkSync(tempTarPath);
     } catch (e) {
     }
     const hostRepoPath = import_path80.default.resolve(process.cwd(), "host_repo");
-    if (import_fs87.default.existsSync(hostRepoPath)) {
+    if (import_fs86.default.existsSync(hostRepoPath)) {
       try {
-        import_fs87.default.writeFileSync(tempTarPath, buffer);
+        import_fs86.default.writeFileSync(tempTarPath, buffer);
         (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });
         try {
-          import_fs87.default.unlinkSync(tempTarPath);
+          import_fs86.default.unlinkSync(tempTarPath);
         } catch (e) {
         }
       } catch (e) {
@@ -230783,8 +230706,8 @@ app.post("/api/v1/design-pipeline/run", async (req, res) => {
 var heartbeatFile = import_path80.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
 function loadHeartbeatState() {
   try {
-    if (import_fs87.default.existsSync(heartbeatFile)) {
-      const data = JSON.parse(import_fs87.default.readFileSync(heartbeatFile, "utf-8"));
+    if (import_fs86.default.existsSync(heartbeatFile)) {
+      const data = JSON.parse(import_fs86.default.readFileSync(heartbeatFile, "utf-8"));
       return {
         lastPingTime: Number(data.lastPingTime) || 0,
         lastPingIp: data.lastPingIp || "",
@@ -230808,8 +230731,8 @@ function recordHermesHeartbeat(req, metadata) {
   console.log(`[MCP Heartbeat] \u{1F7E2} Heartbeat #${hermesHeartbeat.totalPings} von IP ${clientIp} registriert (Server-Zeit: ${(/* @__PURE__ */ new Date()).toLocaleTimeString()})`);
   try {
     const dataDir = import_path80.default.resolve(process.cwd(), "data");
-    if (!import_fs87.default.existsSync(dataDir)) import_fs87.default.mkdirSync(dataDir, { recursive: true });
-    import_fs87.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
+    if (!import_fs86.default.existsSync(dataDir)) import_fs86.default.mkdirSync(dataDir, { recursive: true });
+    import_fs86.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
   } catch (e) {
   }
   const currentHermes = {
@@ -231208,31 +231131,31 @@ app.get("/api/v1/designs/image/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(mbaFilePath)) {
+  if (import_fs86.default.existsSync(mbaFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(mbaFilePath).pipe(res);
+    return import_fs86.default.createReadStream(mbaFilePath).pipe(res);
   }
-  if (import_fs87.default.existsSync(rawFilePath)) {
+  if (import_fs86.default.existsSync(rawFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(rawFilePath).pipe(res);
+    return import_fs86.default.createReadStream(rawFilePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  if (task?.localImagePath && import_fs87.default.existsSync(task.localImagePath)) {
+  if (task?.localImagePath && import_fs86.default.existsSync(task.localImagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(task.localImagePath).pipe(res);
+    return import_fs86.default.createReadStream(task.localImagePath).pipe(res);
   }
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
   }
   const queueItems = QueueService.loadQueue();
   const qItem = queueItems.find((q) => q.id === req.params.taskId || q.taskId === req.params.taskId || q.designId === req.params.taskId);
-  if (qItem?.pngPath && import_fs87.default.existsSync(qItem.pngPath)) {
+  if (qItem?.pngPath && import_fs86.default.existsSync(qItem.pngPath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(qItem.pngPath).pipe(res);
+    return import_fs86.default.createReadStream(qItem.pngPath).pipe(res);
   }
-  if (qItem?.imagePath && import_fs87.default.existsSync(qItem.imagePath)) {
+  if (qItem?.imagePath && import_fs86.default.existsSync(qItem.imagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(qItem.imagePath).pipe(res);
+    return import_fs86.default.createReadStream(qItem.imagePath).pipe(res);
   }
   res.status(404).send("Design image not found");
 });
@@ -231242,12 +231165,12 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(gridFilePath)) {
+  if (import_fs86.default.existsSync(gridFilePath)) {
     try {
-      const stats2 = import_fs87.default.statSync(gridFilePath);
+      const stats2 = import_fs86.default.statSync(gridFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs87.default.createReadStream(gridFilePath).pipe(res);
+        return import_fs86.default.createReadStream(gridFilePath).pipe(res);
       }
     } catch (e) {
     }
@@ -231255,14 +231178,14 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   const mbaFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   const rawFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs87.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs87.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs87.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs87.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs86.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs86.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs86.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs86.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge 2x2 Grid f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
-      if (savedPath && import_fs87.default.existsSync(savedPath)) {
+      if (savedPath && import_fs86.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs87.default.createReadStream(savedPath).pipe(res);
+        return import_fs86.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -231276,12 +231199,12 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(previewFilePath)) {
+  if (import_fs86.default.existsSync(previewFilePath)) {
     try {
-      const stats2 = import_fs87.default.statSync(previewFilePath);
+      const stats2 = import_fs86.default.statSync(previewFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs87.default.createReadStream(previewFilePath).pipe(res);
+        return import_fs86.default.createReadStream(previewFilePath).pipe(res);
       }
     } catch (e) {
     }
@@ -231289,14 +231212,14 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   const mbaFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   const rawFilePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs87.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs87.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs87.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs87.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs86.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs86.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs86.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs86.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge U4 Preview f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
-      if (savedPath && import_fs87.default.existsSync(savedPath)) {
+      if (savedPath && import_fs86.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs87.default.createReadStream(savedPath).pipe(res);
+        return import_fs86.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] U4-Preview Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -231310,9 +231233,9 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(filePath)) {
+  if (import_fs86.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs87.default.createReadStream(filePath).pipe(res);
+    return import_fs86.default.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -231327,14 +231250,14 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(filePath)) {
+  if (import_fs86.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs87.default.createReadStream(filePath).pipe(res);
+    return import_fs86.default.createReadStream(filePath).pipe(res);
   }
   const fallbackPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
-  if (import_fs87.default.existsSync(fallbackPath)) {
+  if (import_fs86.default.existsSync(fallbackPath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs87.default.createReadStream(fallbackPath).pipe(res);
+    return import_fs86.default.createReadStream(fallbackPath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -231349,9 +231272,9 @@ app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(filePath)) {
+  if (import_fs86.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(filePath).pipe(res);
+    return import_fs86.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("MBA PNG not found");
 });
@@ -231361,9 +231284,9 @@ app.get("/api/v1/designs/4panel/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(filePath)) {
+  if (import_fs86.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(filePath).pipe(res);
+    return import_fs86.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("4-Panel image not found");
 });
@@ -231814,8 +231737,8 @@ app.delete("/api/v1/products/catalog", async (req, res) => {
 });
 var clientDistPath = import_path80.default.resolve(currentDir2, "client");
 var fallbackDistPath = import_path80.default.resolve(process.cwd(), "dist/client");
-var staticPath = import_fs87.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
-if (import_fs87.default.existsSync(staticPath)) {
+var staticPath = import_fs86.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
+if (import_fs86.default.existsSync(staticPath)) {
   console.log(`\u{1F4C2} Serving static frontend from ${staticPath}`);
   app.use(import_express.default.static(staticPath));
   app.get("*", (req, res) => {

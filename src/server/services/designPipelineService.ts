@@ -10,7 +10,6 @@ import { BannedWordsService } from './bannedWordsService';
 import { VectorizerService } from './vectorizerService';
 import { SvgRenderService } from './svgRenderService';
 import { LLMService } from './llmService';
-import { ArtworkResizeService } from './artworkResizeService';
 
 export class DesignPipelineService {
   /**
@@ -161,34 +160,6 @@ export class DesignPipelineService {
     }
   }
 
-  /**
-   * Step D7.5: Resize Artworks (Trimmed, Mug Standard & Brush, Drinkware Standard)
-   */
-  static async stepD7_5_ResizeArtworks(taskId: string): Promise<{ success: boolean; resizedAssets?: any; error?: string }> {
-    console.log(`[DesignPipeline] 📐 Starte Step D7.5 (Resize Artworks) für Task ${taskId}...`);
-    try {
-      const task = this.getTask(taskId);
-      if (!task || !task.localMbaPngPath) {
-        throw new Error(`Task #${taskId} hat kein lokales Master MBA-PNG.`);
-      }
-      const existing = task.resizedAssets;
-      if (existing && existing.trimmedPath && fs.existsSync(existing.trimmedPath) &&
-          existing.mugStandardPath && fs.existsSync(existing.mugStandardPath) &&
-          existing.mugBrushPath && fs.existsSync(existing.mugBrushPath) &&
-          existing.drinkwareStandardPath && fs.existsSync(existing.drinkwareStandardPath) &&
-          existing.drinkwareBrushPath && fs.existsSync(existing.drinkwareBrushPath)) {
-        console.log(`[DesignPipeline] ⚡ Resized Assets für Task #${taskId} bereits vorhanden. Überspringe doppelten Resize.`);
-        return { success: true, resizedAssets: existing };
-      }
-      const resized = await ArtworkResizeService.generateResizedArtworks(taskId, task.localMbaPngPath);
-      task.resizedAssets = resized;
-      TaskLogService.updateTaskStatus(taskId, { resizedAssets: resized });
-      return { success: true, resizedAssets: resized };
-    } catch (err: any) {
-      console.error(`[DesignPipeline] ❌ Fehler in Step D7.5:`, err);
-      return { success: false, error: err.message };
-    }
-  }
 
   /**
    * Step D8: Hand-off to Upload Queue (106 Slots)
@@ -244,10 +215,6 @@ export class DesignPipelineService {
       case 'VECTORIZE_REQUEST':
       case 'SVG_AUDIT_REQUEST':
         return await this.stepD7_VectorizeAndAudit(taskId);
-      case 'D7_5':
-      case 'RESIZE':
-      case 'RESIZE_REQUEST':
-        return await this.stepD7_5_ResizeArtworks(taskId);
       case 'D8':
       case 'QUEUE':
       case 'ENQUEUE':

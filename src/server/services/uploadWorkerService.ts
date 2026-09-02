@@ -1347,20 +1347,42 @@ export class UploadWorkerService {
       }
       await page.waitForTimeout(1000);
 
-      // 8. Listings Injection (with Length Clamping & Angular Events)
-      this.log(`📝 Trage ${hasLocalizedListings ? 'mehrsprachige' : 'englisches'} SEO-Listing ein (inkl. Zeichen-Bereinigung)...`, 'Befülle Listings...', 85, 100);
+      // 8. Listings Injection (Read-Only with Integrity Assertion)
+      this.log(`📝 Trage ${hasLocalizedListings ? 'mehrsprachige' : 'englisches'} SEO-Listing ein (Integritätsprüfung)...`, 'Prüfe Listings...', 85, 100);
 
-      // Sanitize all listings on server first
-      const sanitizedListings: Record<string, any> = {};
+      const immutableListings: Record<string, any> = {};
+      const integrityViolations: string[] = [];
+
       for (const [loc, content] of Object.entries(rawListings)) {
         if (!content) continue;
-        sanitizedListings[loc] = {
-          brand: UploadWorkerService.sanitizeListingText(content.brand || '', loc),
-          title: UploadWorkerService.sanitizeListingText(content.title || '', loc),
-          bullet1: UploadWorkerService.sanitizeListingText(content.bullet1 || (content as any).bullet_1 || '', loc),
-          bullet2: UploadWorkerService.sanitizeListingText(content.bullet2 || (content as any).bullet_2 || '', loc),
-          description: UploadWorkerService.sanitizeListingText(content.description || '', loc),
+        const checkField = (field: string, val: string) => {
+          if (!val) return '';
+          const sanitized = ListingSanitizationService.sanitizeText(val);
+          if (sanitized !== val) {
+            integrityViolations.push(`[${loc}] ${field} enthält unbereinigte Zeichen (Sanitized !== Original)`);
+          }
+          return val; // READ-ONLY: use exact immutable string from queue
         };
+
+        immutableListings[loc] = {
+          brand: checkField('brand', content.brand || ''),
+          title: checkField('title', content.title || ''),
+          bullet1: checkField('bullet1', content.bullet1 || (content as any).bullet_1 || ''),
+          bullet2: checkField('bullet2', content.bullet2 || (content as any).bullet_2 || ''),
+          description: checkField('description', content.description || ''),
+        };
+      }
+
+      if (integrityViolations.length > 0) {
+        const errorMsg = `Listing-Integritätsverletzung in QueueItem: ${integrityViolations.join('; ')}`;
+        this.log(`🛑 ${errorMsg}`, 'Listing Integrity Fehler 🛑', 85, 100);
+        productUploadResults.push({
+          productId: 'LISTING_INTEGRITY',
+          amazonKey: 'ALL',
+          status: 'FAILED_LISTING_INTEGRITY',
+          reason: errorMsg
+        });
+        throw new Error(errorMsg);
       }
 
       const fillResult = await page.evaluate(async ({ listingMap, hasTranslations }: { listingMap: Record<string, any>; hasTranslations: boolean }) => {
@@ -1391,16 +1413,7 @@ export class UploadWorkerService {
 
           const setVal = (fieldKey: string, rawVal: string, maxLen = 2000) => {
             if (!rawVal) return;
-            // Clean quotes and special chars inside browser as well
-            let val = rawVal
-              .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
-              .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'")
-              .replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
-              .replace(/\u2026/g, '...')
-              .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
-              .replace(/\s+/g, ' ');
-
-            const clamped = val.substring(0, maxLen).trim();
+            const clamped = rawVal.substring(0, maxLen).trim();
             const selectors = loc === 'en' ? [
               `#en #designCreator-productEditor-${fieldKey}`,
               `[id="en"] #designCreator-productEditor-${fieldKey}`,
@@ -1441,11 +1454,8 @@ export class UploadWorkerService {
           if (!rawVal) return;
           const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement;
           if (el) {
-            let val = rawVal
-              .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"')
-              .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
             el.focus();
-            el.value = val.substring(0, maxLen).trim();
+            el.value = rawVal.substring(0, maxLen).trim();
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
             el.dispatchEvent(new Event('blur', { bubbles: true }));
@@ -1459,7 +1469,7 @@ export class UploadWorkerService {
         setRootVal('designCreator-productEditor-description', enContent.description || '', 2000);
 
         return { success: true, filledLocales };
-      }, { listingMap: sanitizedListings, hasTranslations: hasLocalizedListings });
+      }, { listingMap: immutableListings, hasTranslations: hasLocalizedListings });
 
       this.log(`✅ Listings für Sprachen [${fillResult.filledLocales.join(', ')}] eingetragen!`, 'Listings fertig ✓', 90, 100);
 

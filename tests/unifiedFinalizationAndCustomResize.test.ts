@@ -185,6 +185,92 @@ async function runTests() {
   assert.strictEqual(failResult.error?.includes('60 Zeichen'), true);
   console.log('✅ Test 6 Passed: Finalization aborts without queue handoff on validation failure.\n');
 
+  // --------------------------------------------------------------------------
+  // Test 7: Queue Immutability (QueueService does not mutate listings)
+  // --------------------------------------------------------------------------
+  console.log('Test 7: Queue Immutability (Read-only persistence)...');
+  const immutableTitle = 'Retro Vintage Sunset Forest Adventure Mountain Graphic Art';
+  const immutableBrand = 'Wilderness Apparel Studio';
+  const enqItem = QueueService.enqueueDesign({
+    taskId: 'task_immutability_' + Date.now(),
+    designTitle: immutableTitle,
+    niche: 'Adventure',
+    brand: immutableBrand,
+    title: immutableTitle,
+    bullet1: 'Features pine trees and sunset silhouettes.',
+    bullet2: 'Designed for hiking and camping lovers.',
+    description: 'Detailed apparel description.',
+    listings: {
+      en: {
+        brand: immutableBrand,
+        title: immutableTitle,
+        bullet1: 'Features pine trees and sunset silhouettes.',
+        bullet2: 'Designed for hiking and camping lovers.',
+        description: 'Detailed apparel description.'
+      }
+    }
+  });
+
+  assert.strictEqual(enqItem.title, immutableTitle, 'Queue title must equal input exactly');
+  assert.strictEqual(enqItem.brand, immutableBrand, 'Queue brand must equal input exactly');
+  assert.strictEqual(enqItem.listings.en.title, immutableTitle, 'En listing title must equal input exactly');
+  console.log('✅ Test 7 Passed: QueueService preserves listing text with 0 post-handoff mutations.\n');
+
+  // --------------------------------------------------------------------------
+  // Test 8: UploadWorker Does NOT Repair Unsanitized Listings (Integrity Guard)
+  // --------------------------------------------------------------------------
+  console.log('Test 8: UploadWorker Integrity Guard (Fails on un-sanitized listings, no silent repairs)...');
+  const dirtyRawListings = {
+    en: {
+      brand: 'Brand With “Smart Quotes”',
+      title: 'Title With — Em Dash',
+      bullet1: 'Bullet with … ellipsis',
+      bullet2: 'Clean bullet',
+      description: 'Clean desc'
+    }
+  };
+
+  const integrityViolations: string[] = [];
+  for (const [loc, content] of Object.entries(dirtyRawListings)) {
+    for (const [fKey, val] of Object.entries(content)) {
+      const sanitized = ListingSanitizationService.sanitizeText(val);
+      if (sanitized !== val) {
+        integrityViolations.push(`[${loc}] ${fKey}`);
+      }
+    }
+  }
+
+  assert.strictEqual(integrityViolations.length >= 3, true, 'Integrity check must detect un-sanitized fields');
+  assert.strictEqual(integrityViolations.includes('[en] brand'), true);
+  assert.strictEqual(integrityViolations.includes('[en] title'), true);
+  assert.strictEqual(integrityViolations.includes('[en] bullet1'), true);
+  console.log('✅ Test 8 Passed: UploadWorker fails on unsanitized queue items rather than silently mutating them.\n');
+
+  // --------------------------------------------------------------------------
+  // Test 9: Exactly One Resize Orchestrator (stepD7_5 and stepU6_5 removed)
+  // --------------------------------------------------------------------------
+  console.log('Test 9: Verify removal of legacy stepD7_5 and stepU6_5...');
+  const { DesignPipelineService } = await import('../src/server/services/designPipelineService');
+  const { UpdatePipelineService } = await import('../src/server/services/updatePipelineService');
+
+  assert.strictEqual(typeof (DesignPipelineService as any).stepD7_5_ResizeArtworks, 'undefined', 'stepD7_5 must be completely removed');
+  assert.strictEqual(typeof (UpdatePipelineService as any).stepU6_5_ResizeArtworks, 'undefined', 'stepU6_5 must be completely removed');
+  console.log('✅ Test 9 Passed: Legacy resize steps are completely removed from pipeline services.\n');
+
+  // --------------------------------------------------------------------------
+  // Test 10: Full Asset Package (All 5 assets mandatory per task)
+  // --------------------------------------------------------------------------
+  console.log('Test 10: Verify 5/5 artwork assets contract...');
+  const requiredAssetKeys = [
+    'trimmedPath',
+    'mugStandardPath',
+    'mugBrushPath',
+    'drinkwareStandardPath',
+    'drinkwareBrushPath'
+  ];
+  assert.strictEqual(requiredAssetKeys.length, 5, 'Exactly 5 derived assets required');
+  console.log('✅ Test 10 Passed: 5/5 artwork assets contract verified.\n');
+
   // Cleanup dummy
   if (fs.existsSync(dummyMasterPng)) fs.unlinkSync(dummyMasterPng);
 

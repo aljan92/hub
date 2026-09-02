@@ -26,6 +26,7 @@ export type ProductUploadStatus =
   | 'FAILED_COLOR_CONFIGURATION'
   | 'FAILED_ARTWORK_RESOLUTION'
   | 'FAILED_ARTWORK_UPLOAD'
+  | 'FAILED_LISTING_INTEGRITY'
   | 'FAILED_UNKNOWN';
 
 export interface ProductUploadResult {
@@ -197,38 +198,17 @@ export class QueueService {
       const tasksMap = new Map(tasks.map((t: any) => [t.id, t]));
       let hasChanges = false;
 
-      const cleanStr = (txt: string) => ListingSanitizationService.sanitizeText(txt);
-
       for (const item of this.items) {
-        // Always sanitize root fields
-        if (item.title) item.title = cleanStr(item.title);
-        if (item.brand) item.brand = cleanStr(item.brand);
-        if (item.bullet1) item.bullet1 = cleanStr(item.bullet1);
-        if (item.bullet2) item.bullet2 = cleanStr(item.bullet2);
-        if (item.description) item.description = cleanStr(item.description);
-
-        if (item.listings) {
-          for (const langObj of Object.values(item.listings)) {
-            if (langObj && typeof langObj === 'object') {
-              if (langObj.title) langObj.title = cleanStr(langObj.title);
-              if (langObj.brand) langObj.brand = cleanStr(langObj.brand);
-              if (langObj.bullet1) langObj.bullet1 = cleanStr(langObj.bullet1);
-              if (langObj.bullet2) langObj.bullet2 = cleanStr(langObj.bullet2);
-              if (langObj.description) langObj.description = cleanStr(langObj.description);
-            }
-          }
-        }
-
         const task = tasksMap.get(item.taskId);
         if (task) {
           const listing = task.listingResult || task.trademarkRefineResult || {};
           const enListing = listing.en || (listing.title || listing.brand ? listing : {});
           
-          if (!item.brand || item.brand === '—') item.brand = cleanStr(enListing.brand || task.payload?.brand || '');
-          if (!item.title || item.title === 'Neues Design') item.title = cleanStr(enListing.title || task.payload?.title || task.payload?.quote || '');
-          if (!item.bullet1) item.bullet1 = cleanStr(enListing.bullet1 || enListing.bullet_1 || '');
-          if (!item.bullet2) item.bullet2 = cleanStr(enListing.bullet2 || enListing.bullet_2 || '');
-          if (!item.description) item.description = cleanStr(enListing.description || '');
+          if (!item.brand || item.brand === '—') item.brand = enListing.brand || task.payload?.brand || '';
+          if (!item.title || item.title === 'Neues Design') item.title = enListing.title || task.payload?.title || task.payload?.quote || '';
+          if (!item.bullet1) item.bullet1 = enListing.bullet1 || enListing.bullet_1 || '';
+          if (!item.bullet2) item.bullet2 = enListing.bullet2 || enListing.bullet_2 || '';
+          if (!item.description) item.description = enListing.description || '';
           if (!item.niche && task.payload?.niche) item.niche = task.payload.niche;
 
           // Build multi-language listings map
@@ -239,22 +219,22 @@ export class QueueService {
                 if (val && typeof val === 'object' && !Array.isArray(val) && !key.startsWith('_')) {
                   const langContent = val as any;
                   listings[key.toLowerCase()] = {
-                    brand: cleanStr(langContent.brand || item.brand),
-                    title: cleanStr(langContent.title || item.title),
-                    bullet1: cleanStr(langContent.bullet1 || langContent.bullet_1 || ''),
-                    bullet2: cleanStr(langContent.bullet2 || langContent.bullet_2 || ''),
-                    description: cleanStr(langContent.description || '')
+                    brand: langContent.brand || item.brand,
+                    title: langContent.title || item.title,
+                    bullet1: langContent.bullet1 || langContent.bullet_1 || '',
+                    bullet2: langContent.bullet2 || langContent.bullet_2 || '',
+                    description: langContent.description || ''
                   };
                 }
               }
             }
             if (!listings.en && (item.title || item.brand)) {
               listings.en = {
-                brand: cleanStr(item.brand),
-                title: cleanStr(item.title),
-                bullet1: cleanStr(item.bullet1),
-                bullet2: cleanStr(item.bullet2),
-                description: cleanStr(item.description)
+                brand: item.brand,
+                title: item.title,
+                bullet1: item.bullet1,
+                bullet2: item.bullet2,
+                description: item.description
               };
             }
             item.listings = listings;
@@ -539,11 +519,11 @@ export class QueueService {
     if (existing) {
       existing.status = 'WAITING';
       existing.errorMessage = undefined;
-      if (item.title) existing.title = cleanStr(item.title);
-      if (item.brand) existing.brand = cleanStr(item.brand);
-      if (item.bullet1) existing.bullet1 = cleanStr(item.bullet1);
-      if (item.bullet2) existing.bullet2 = cleanStr(item.bullet2);
-      if (item.description) existing.description = cleanStr(item.description);
+      if (item.title) existing.title = item.title;
+      if (item.brand) existing.brand = item.brand;
+      if (item.bullet1) existing.bullet1 = item.bullet1;
+      if (item.bullet2) existing.bullet2 = item.bullet2;
+      if (item.description) existing.description = item.description;
       if (item.listings) existing.listings = item.listings;
       if (item.fitTypes !== undefined) existing.fitTypes = normalizeFitTypes(item.fitTypes);
       if (item.avoidColor !== undefined) existing.avoidColor = normalizeAvoidColor(item.avoidColor);
@@ -619,20 +599,20 @@ export class QueueService {
     const newItem: QueueItem = {
       id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       taskId: item.taskId,
-      designTitle: cleanStr(item.designTitle),
-      niche: cleanStr(item.niche || ''),
-      brand: cleanStr(item.brand || 'MBA Hub Studio'),
-      title: cleanStr(item.title || item.designTitle),
-      bullet1: cleanStr(item.bullet1 || ''),
-      bullet2: cleanStr(item.bullet2 || ''),
-      description: cleanStr(item.description || ''),
+      designTitle: item.designTitle,
+      niche: item.niche || '',
+      brand: item.brand || 'MBA Hub Studio',
+      title: item.title || item.designTitle,
+      bullet1: item.bullet1 || '',
+      bullet2: item.bullet2 || '',
+      description: item.description || '',
       listings: item.listings || {
         en: {
-          brand: cleanStr(item.brand || 'MBA Hub Studio'),
-          title: cleanStr(item.title || item.designTitle),
-          bullet1: cleanStr(item.bullet1 || ''),
-          bullet2: cleanStr(item.bullet2 || ''),
-          description: cleanStr(item.description || '')
+          brand: item.brand || 'MBA Hub Studio',
+          title: item.title || item.designTitle,
+          bullet1: item.bullet1 || '',
+          bullet2: item.bullet2 || '',
+          description: item.description || ''
         }
       },
       fitTypes: normalizeFitTypes(item.fitTypes),
