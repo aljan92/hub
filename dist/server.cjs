@@ -222695,14 +222695,12 @@ var init_taskRepository = __esm2({
       static legacyJsonPath = import_path75.default.resolve(process.cwd(), "data", "tasks_log.json");
       static legacyCounterPath = import_path75.default.resolve(process.cwd(), "data", "tasks_counter.json");
       static isInitialized = false;
-      /**
-       * Ensure Node.js engine compatibility (requires node:sqlite from Node 22.5.0+)
-       */
       static verifyNodeEngine() {
         const [majorStr, minorStr] = process.versions.node.split(".");
         const major2 = parseInt(majorStr, 10);
         const minor = parseInt(minorStr, 10);
-        if (major2 < 22 || major2 === 22 && minor < 5) {
+        const isSupported = major2 > 22 || major2 === 22 && minor >= 5;
+        if (!isSupported) {
           throw new Error(`[TaskRepository] node:sqlite requires Node.js >= 22.5.0. Current runtime is ${process.version}`);
         }
       }
@@ -223003,13 +223001,30 @@ var init_taskRepository = __esm2({
           if (countRow.count !== seenIds.size) {
             throw new Error(`[TaskRepository] Migration integrity error: Expected ${seenIds.size} rows, but found ${countRow.count} in database.`);
           }
+          const checkpointRow = tempDb.prepare("PRAGMA wal_checkpoint(TRUNCATE);").get();
+          if (checkpointRow && checkpointRow.busy === 1) {
+            throw new Error(`[TaskRepository] PRAGMA wal_checkpoint(TRUNCATE) failed with busy status: ${JSON.stringify(checkpointRow)}`);
+          }
           const integrityRow = tempDb.prepare("PRAGMA integrity_check;").get();
           if (!integrityRow || integrityRow.integrity_check !== "ok") {
             throw new Error(`[TaskRepository] PRAGMA integrity_check failed: ${JSON.stringify(integrityRow)}`);
           }
-          tempDb.exec("PRAGMA wal_checkpoint(TRUNCATE);");
           tempDb.close();
           tempDb = null;
+          const tempWalPath = `${tempDbPath}-wal`;
+          const tempShmPath = `${tempDbPath}-shm`;
+          if (import_fs80.default.existsSync(tempWalPath)) {
+            try {
+              import_fs80.default.unlinkSync(tempWalPath);
+            } catch {
+            }
+          }
+          if (import_fs80.default.existsSync(tempShmPath)) {
+            try {
+              import_fs80.default.unlinkSync(tempShmPath);
+            } catch {
+            }
+          }
           import_fs80.default.renameSync(tempDbPath, targetDbPath);
           console.log(`[TaskRepository] \u2705 Migration complete! Created ${targetDbPath} with ${countRow.count} tasks.`);
           const backupJsonPath = import_path75.default.resolve(import_path75.default.dirname(jsonPath), "tasks_log.pre-sqlite-backup.json");

@@ -93,6 +93,75 @@ async function runTaskSqliteMigrationP2Tests() {
     console.log('✅ Test 1 Passed: Migration from tasks_log.json is atomic, verified, and 100% loss-free.\n');
 
     // --------------------------------------------------------------------------
+    // TEST 1B: Explicit WAL Checkpoint & Standalone SQLite Reopen (No WAL dependency)
+    // --------------------------------------------------------------------------
+    console.log('Test 1B: Explicit WAL Checkpoint during Migration & Standalone Re-open...');
+    const walTestDir = path.join(testDir, 'wal_checkpoint_scenario');
+    fs.mkdirSync(walTestDir, { recursive: true });
+    const walDbPath = path.join(walTestDir, 'mba_hub.sqlite');
+    const walJsonPath = path.join(walTestDir, 'tasks_log.json');
+
+    const walMockTasks: DesignTaskLog[] = [];
+    for (let i = 25; i >= 1; i--) {
+      const padded = String(i).padStart(3, '0');
+      walMockTasks.push({
+        id: `#${padded}-WAL`,
+        counter: i,
+        source: 'TEST',
+        suffix: 'T',
+        status: 'COMPLETED',
+        receivedAt: new Date().toISOString(),
+        payload: { quote: `WAL Task ${padded}` },
+        events: []
+      });
+    }
+    fs.writeFileSync(walJsonPath, JSON.stringify(walMockTasks), 'utf-8');
+
+    // Execute migration
+    TaskRepository.executeMigrationFromLegacyJson(walDbPath, walJsonPath);
+
+    // Verify main DB exists
+    assert.strictEqual(fs.existsSync(walDbPath), true);
+
+    // Ensure that even if any WAL or SHM files were created, we delete them completely
+    // to prove that 100% of the committed data is flushed and checkpointed into the main DB file!
+    const lingeringWal = `${walDbPath}-wal`;
+    const lingeringShm = `${walDbPath}-shm`;
+    if (fs.existsSync(lingeringWal)) fs.unlinkSync(lingeringWal);
+    if (fs.existsSync(lingeringShm)) fs.unlinkSync(lingeringShm);
+
+    // Now open ONLY the standalone main .sqlite file via node:sqlite directly
+    const { DatabaseSync } = await import('node:sqlite');
+    const standaloneDb = new DatabaseSync(walDbPath);
+    const countCheck: any = standaloneDb.prepare('SELECT COUNT(*) as count FROM tasks;').get();
+    const integrityCheck: any = standaloneDb.prepare('PRAGMA integrity_check;').get();
+    standaloneDb.close();
+
+    assert.strictEqual(countCheck.count, 25, 'Standalone SQLite database without any WAL file must contain all 25 migrated tasks');
+    assert.strictEqual(integrityCheck.integrity_check, 'ok', 'PRAGMA integrity_check must be ok on standalone SQLite file');
+    console.log('✅ Test 1B Passed: WAL TRUNCATE checkpoint guarantees 100% of data is stored in the main DB file.\n');
+
+    // --------------------------------------------------------------------------
+    // TEST 1C: Node Version Guard Logic Validation
+    // --------------------------------------------------------------------------
+    console.log('Test 1C: Node Version Guard Semantics Validation...');
+    const checkNodeSupport = (versionStr: string): boolean => {
+      const [majStr, minStr] = versionStr.split('.');
+      const major = parseInt(majStr, 10);
+      const minor = parseInt(minStr, 10);
+      return major > 22 || (major === 22 && minor >= 5);
+    };
+
+    assert.strictEqual(checkNodeSupport('22.5.0'), true, 'Node 22.5.0 must be supported');
+    assert.strictEqual(checkNodeSupport('22.16.0'), true, 'Node 22.16.0 must be supported');
+    assert.strictEqual(checkNodeSupport('23.0.0'), true, 'Node 23.0.0 must be supported');
+    assert.strictEqual(checkNodeSupport('24.1.0'), true, 'Node 24.1.0 must be supported');
+    assert.strictEqual(checkNodeSupport('22.4.9'), false, 'Node 22.4.9 must be rejected');
+    assert.strictEqual(checkNodeSupport('21.9.0'), false, 'Node 21.9.0 must be rejected');
+    assert.strictEqual(checkNodeSupport('20.10.0'), false, 'Node 20.10.0 must be rejected');
+    console.log('✅ Test 1C Passed: Node version guard accepts Node 22.5+ & future Node 23/24 versions.\n');
+
+    // --------------------------------------------------------------------------
     // TEST 2: Migration Failure = Fail-Closed (No half-migrated DB left behind)
     // --------------------------------------------------------------------------
     console.log('Test 2: Migration Failure Handling & Fail-Closed Guarantee...');

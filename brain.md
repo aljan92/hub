@@ -981,7 +981,7 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - **Implementierte Architektur & Lösungen:**
   1. **SQLite Storage Engine (`src/server/storage/taskRepository.ts`):**
      - Basiert auf `node:sqlite` (`DatabaseSync`), integriert in Node.js >= 22.5.0 (Container nutzt Node 22.16.0).
-     - Engine-Version-Guard prüft beim Start strikt `nodeMajor >= 22 && nodeMinor >= 5`.
+     - Engine-Version-Guard prüft beim Start: `major > 22 || (major === 22 && minor >= 5)` (saubere Zukunftsfähigkeit für Node 23+, 24+).
      - Zero Native Dependency: Keine C++ Bindings via `node-gyp` erforderlich, reibungsloser `esbuild`-Build für Linux-Docker-Container.
   2. **Durability & Crash Safety (NAS-Power-Cut-Proof):**
      - `PRAGMA journal_mode = WAL;` (Concurrent reads + single sequential writer).
@@ -992,10 +992,13 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
      - Tabelle `tasks`: Enthält sowohl indexierte Projektionsspalten (`id`, `counter`, `source`, `suffix`, `status`, `checkpoint`, `received_at`, `updated_at`, `quote`, `niche1`, `niche2`, `subniche`, `image_url`, `has_error`, `error_details`, `design_id`, `in_queue`, `events_count`, `client_ip`, `image_generations_count`, `vectorizations_count`, `openrouter_cost_usd`) als auch `payload_json` für den vollständigen kanonischen `DesignTaskLog`.
      - Tabelle `metadata`: Speichert Key-Value-Metadaten wie den atomaren `task_counter`.
      - Strikte Invariante: Spalten und `payload_json` werden immer atomar in derselben Transaktion synchronisiert.
-  4. **Atomare Migration via `.migrating`:**
+  4. **Atomare Migration via `.migrating` & Expliziter WAL TRUNCATE Checkpoint:**
      - Bestehende `tasks_log.json` wird über eine temporäre Datenbank (`mba_hub.sqlite.migrating`) importiert.
-     - Nach vollständigem Import in einer Transaktion werden Zeilenanzahl und IDs 1:1 validiert und `PRAGMA integrity_check` ausgeführt.
-     - Erst nach erfolgreichem Integrity Check: Schließen der DB, atomarer Rename zu `mba_hub.sqlite` und Archivierung der JSON-Datei zu `tasks_log.pre-sqlite-backup.json`.
+     - Nach vollständigem Import in einer Transaktion werden Zeilenanzahl und IDs 1:1 validiert.
+     - **Expliziter WAL-Checkpoint:** Vor dem Integrity Check wird `PRAGMA wal_checkpoint(TRUNCATE);` ausgeführt und dessen Status (`busy === 0`) verifiziert.
+     - `PRAGMA integrity_check` prüft anschließend die vollständig geflushte Datenbank.
+     - Nach dem Schließen der DB wird sichergestellt, dass keine temporären WAL-/SHM-Dateien verbleiben, bevor `mba_hub.sqlite.migrating` atomar zu `mba_hub.sqlite` umbenannt wird. 100% der Daten befinden sich garantiert in der Hauptdatei.
+     - Archivierung der JSON-Datei zu `tasks_log.pre-sqlite-backup.json`.
      - Fail-Closed: Bei Fehler Rollback, Löschen der `.migrating`-Datei, `tasks_log.json` bleibt unangetastet.
   5. **Beseitigung von `inMemoryLogs` & O(1) Startup:**
      - `inMemoryLogs` im `TaskLogService` wurde vollständig eliminiert.

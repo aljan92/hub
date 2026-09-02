@@ -60,14 +60,12 @@ export class TaskRepository {
   private static legacyCounterPath = path.resolve(process.cwd(), 'data', 'tasks_counter.json');
   private static isInitialized = false;
 
-  /**
-   * Ensure Node.js engine compatibility (requires node:sqlite from Node 22.5.0+)
-   */
   private static verifyNodeEngine() {
     const [majorStr, minorStr] = process.versions.node.split('.');
     const major = parseInt(majorStr, 10);
     const minor = parseInt(minorStr, 10);
-    if (major < 22 || (major === 22 && minor < 5)) {
+    const isSupported = major > 22 || (major === 22 && minor >= 5);
+    if (!isSupported) {
       throw new Error(`[TaskRepository] node:sqlite requires Node.js >= 22.5.0. Current runtime is ${process.version}`);
     }
   }
@@ -389,18 +387,33 @@ export class TaskRepository {
         throw new Error(`[TaskRepository] Migration integrity error: Expected ${seenIds.size} rows, but found ${countRow.count} in database.`);
       }
 
-      // Check PRAGMA integrity_check
+      // 3. Explicit WAL Checkpoint TRUNCATE & result verification
+      const checkpointRow: any = tempDb.prepare('PRAGMA wal_checkpoint(TRUNCATE);').get();
+      if (checkpointRow && checkpointRow.busy === 1) {
+        throw new Error(`[TaskRepository] PRAGMA wal_checkpoint(TRUNCATE) failed with busy status: ${JSON.stringify(checkpointRow)}`);
+      }
+
+      // 4. Verify integrity on the fully checkpointed database
       const integrityRow: any = tempDb.prepare('PRAGMA integrity_check;').get();
       if (!integrityRow || integrityRow.integrity_check !== 'ok') {
         throw new Error(`[TaskRepository] PRAGMA integrity_check failed: ${JSON.stringify(integrityRow)}`);
       }
 
-      // 3. Close temp DB with checkpoint
-      tempDb.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      // 5. Close temp DB connection
       tempDb.close();
       tempDb = null;
 
-      // 4. Atomically rename .migrating to final database
+      // 6. Ensure no lingering .migrating-wal or .migrating-shm remains before renaming
+      const tempWalPath = `${tempDbPath}-wal`;
+      const tempShmPath = `${tempDbPath}-shm`;
+      if (fs.existsSync(tempWalPath)) {
+        try { fs.unlinkSync(tempWalPath); } catch {}
+      }
+      if (fs.existsSync(tempShmPath)) {
+        try { fs.unlinkSync(tempShmPath); } catch {}
+      }
+
+      // 7. Atomically rename .migrating to final database
       fs.renameSync(tempDbPath, targetDbPath);
       console.log(`[TaskRepository] ✅ Migration complete! Created ${targetDbPath} with ${countRow.count} tasks.`);
 
