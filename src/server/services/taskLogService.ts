@@ -158,7 +158,7 @@ export class TaskLogService {
     this.ensureDataDir();
     try {
       const trimmed = logs.slice(0, 2000);
-      fs.writeFileSync(this.logsFile, JSON.stringify(trimmed, null, 2), 'utf-8');
+      fs.writeFileSync(this.logsFile, JSON.stringify(trimmed), 'utf-8');
     } catch (e) {
       console.error('[TaskLogService] Failed to persist tasks_log.json:', e);
     }

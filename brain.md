@@ -761,6 +761,20 @@ MBA HUB/
   - Gesamtergebnis: **115/115 Tests bestanden (100% Pass Rate)**.
   - Production Build (`npm run build`) fehlerfrei abgeschlossen.
 
-
-
-
+### 10.31 🛡️ Resize Concurrency Guard & NAS Memory Optimierung (`ArtworkResizeService`)
+- **Problem & NAS-Stabilitätsanalyse:**
+  - Bei gleichzeitiger Ausführung von Resize (z.B. Hintergrund-Update U6.5 + manuelles Freigeben im UI) erzeugten parallele Chromium Canvas-Operationen 1GB+ RAM-Spitzen, was auf 2GB/4GB NAS-Servern zum Hängen oder OOM-Crash führte.
+  - Das speicherhungrige `removeSpecks` in Chromium erzeugte Millionen von Array-Objekten (`[nx, ny]`) im V8-Heap für nicht-isolierte Hauptmotive.
+  - `tasks_log.json` wurde bei jedem Statuswechsel synchron mit Einrückungen (`null, 2`) auf die NAS-Platte geschrieben.
+- **Lösung & Architektur:**
+  1. **Strikter Concurrency Lock (Mutex = 1) in `ArtworkResizeService`:**
+     - Alle Resize-Jobs laufen sequentiell hinter einem Promise-Lock ab. Kein gleichzeitiges Rendern mehrerer 4500x5400 Artworks mehr möglich.
+  2. **Zero-Allocation `removeSpecks`:**
+     - Feste `Int32Array`-Puffer und Early-Cutoff: Sobald eine Komponente $\ge 25$ Pixel erreicht, stoppt die Erfassung sofort. Keine Millionen Heap-Objekte mehr.
+  3. **Kompakte Persistenz & Neuer Single-Task Endpunkt:**
+     - `taskLogService.saveLogs` speichert nun kompaktes JSON ohne Leerzeilen/Indents (halbiert Dateigröße und I/O-Blockadezeit).
+     - Neuer REST-Endpunkt `GET /api/v1/tasks/:taskId` für gezieltes Nachladen vollständiger Task-Details.
+- **Tests & Validierung:**
+  - `tests/resizeService.test.ts`: 20/20 Tests bestanden (100%).
+  - `tests/circuitBreaker.test.ts`: 11/11 Tests bestanden (100%).
+  - Production Build (`npm run build`) fehlerfrei abgeschlossen.

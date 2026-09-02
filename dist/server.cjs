@@ -221626,7 +221626,23 @@ var init_artworkResizeService = __esm2({
        * 4. ${cleanId}_two_sided_drinkware_standard.png - 3000x1400 px, 300 DPI for Tumbler & Water Bottle
        * 5. ${cleanId}_two_sided_drinkware_brush.png - 3000x1400 px, 300 DPI with black brush contour for Travel Tumbler
        */
+      static resizeLock = Promise.resolve();
       static async generateResizedArtworks(taskId, mbaPngPath) {
+        const previousLock = this.resizeLock;
+        let releaseLock = () => {
+        };
+        this.resizeLock = new Promise((resolve) => {
+          releaseLock = resolve;
+        });
+        await previousLock;
+        try {
+          return await this.executeResizedArtworksInternal(taskId, mbaPngPath);
+        } finally {
+          releaseLock();
+        }
+      }
+      static async executeResizedArtworksInternal(taskId, mbaPngPath) {
+        const memBefore = process.memoryUsage();
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const designsDir = import_path73.default.resolve(process.cwd(), "data", "designs");
         if (!import_fs78.default.existsSync(designsDir)) {
@@ -221827,69 +221843,71 @@ var init_artworkResizeService = __esm2({
             const removeSpecks = async (canvas, minSize = 25) => {
               const ctx = canvas.getContext("2d", { willReadFrequently: true });
               if (!ctx) return;
-              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const data = imgData.data;
               const width = canvas.width;
               const height = canvas.height;
-              const visited = new Uint8Array(width * height);
-              const components = [];
-              const neighbors = [
-                [-1, -1],
-                [-1, 0],
-                [-1, 1],
-                [0, -1],
-                [0, 1],
-                [1, -1],
-                [1, 0],
-                [1, 1]
-              ];
-              const floodFill = (startX, startY) => {
-                const queue = [[startX, startY]];
-                const pixels = [];
-                visited[startY * width + startX] = 1;
-                while (queue.length > 0) {
-                  const [cx, cy] = queue.pop();
-                  const idx = cy * width + cx;
-                  const pixelOffset = 4 * idx;
-                  if (data[pixelOffset + 3] > 0) {
-                    pixels.push(pixelOffset);
-                    for (const [dx, dy] of neighbors) {
-                      const nx = cx + dx;
+              const totalPixels = width * height;
+              const imgData = ctx.getImageData(0, 0, width, height);
+              const data = imgData.data;
+              const visited = new Uint8Array(totalPixels);
+              let modified = false;
+              const queue = new Int32Array(Math.min(totalPixels, 1e5));
+              const speckOffsets = new Int32Array(minSize);
+              for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                  const startIdx = y * width + x;
+                  if (visited[startIdx] || data[4 * startIdx + 3] === 0) continue;
+                  let head2 = 0;
+                  let tail = 0;
+                  queue[tail++] = startIdx;
+                  visited[startIdx] = 1;
+                  let componentSize = 0;
+                  let isSpeck = true;
+                  while (head2 < tail) {
+                    const curIdx = queue[head2++];
+                    const cx = curIdx % width;
+                    const cy = curIdx / width | 0;
+                    if (isSpeck) {
+                      if (componentSize < minSize) {
+                        speckOffsets[componentSize] = 4 * curIdx;
+                      }
+                      componentSize++;
+                      if (componentSize >= minSize) {
+                        isSpeck = false;
+                      }
+                    }
+                    for (let dy = -1; dy <= 1; dy++) {
                       const ny = cy + dy;
-                      if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                        const nIdx = ny * width + nx;
+                      if (ny < 0 || ny >= height) continue;
+                      const rowOffset = ny * width;
+                      for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const nx = cx + dx;
+                        if (nx < 0 || nx >= width) continue;
+                        const nIdx = rowOffset + nx;
                         if (!visited[nIdx] && data[4 * nIdx + 3] > 0) {
                           visited[nIdx] = 1;
-                          queue.push([nx, ny]);
+                          if (tail < queue.length) {
+                            queue[tail++] = nIdx;
+                          }
                         }
                       }
                     }
                   }
-                }
-                return pixels;
-              };
-              for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                  const idx = y * width + x;
-                  if (!visited[idx] && data[4 * idx + 3] > 0) {
-                    const pixels = floodFill(x, y);
-                    if (pixels.length > 0) {
-                      components.push(pixels);
+                  if (isSpeck && componentSize < minSize) {
+                    for (let i = 0; i < componentSize; i++) {
+                      const offset = speckOffsets[i];
+                      data[offset] = 0;
+                      data[offset + 1] = 0;
+                      data[offset + 2] = 0;
+                      data[offset + 3] = 0;
                     }
+                    modified = true;
                   }
                 }
               }
-              for (const comp of components) {
-                if (comp.length < minSize) {
-                  for (const pixelOffset of comp) {
-                    data[pixelOffset] = 0;
-                    data[pixelOffset + 1] = 0;
-                    data[pixelOffset + 2] = 0;
-                    data[pixelOffset + 3] = 0;
-                  }
-                }
+              if (modified) {
+                ctx.putImageData(imgData, 0, 0);
               }
-              ctx.putImageData(imgData, 0, 0);
             };
             const applyBlackBrush = async (sourceCanvas, brushP) => {
               await removeSpecks(sourceCanvas);
@@ -222043,7 +222061,10 @@ var init_artworkResizeService = __esm2({
           import_fs78.default.writeFileSync(drinkwareStandardFilePath, drinkwareBuf);
           const drinkwareBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareBrushDataUri.split(",")[1], "base64"));
           import_fs78.default.writeFileSync(drinkwareBrushFilePath, drinkwareBrushBuf);
-          console.log(`[ArtworkResizeService] \u2705 Alle 5 Resized Varianten f\xFCr Task #${taskId} erfolgreich gespeichert \u2713`);
+          const memAfter = process.memoryUsage();
+          const rssDiffMb = ((memAfter.rss - memBefore.rss) / (1024 * 1024)).toFixed(1);
+          const totalRssMb = (memAfter.rss / (1024 * 1024)).toFixed(1);
+          console.log(`[ArtworkResizeService] \u2705 Alle 5 Resized Varianten f\xFCr Task #${taskId} erfolgreich gespeichert \u2713 (Node RSS: ${totalRssMb}MB, Delta: ${Number(rssDiffMb) >= 0 ? "+" : ""}${rssDiffMb}MB)`);
           return {
             trimmedPath: trimmedFilePath,
             mugStandardPath: mugStandardFilePath,
@@ -225060,7 +225081,7 @@ var init_taskLogService = __esm2({
         this.ensureDataDir();
         try {
           const trimmed = logs.slice(0, 2e3);
-          import_fs82.default.writeFileSync(this.logsFile, JSON.stringify(trimmed, null, 2), "utf-8");
+          import_fs82.default.writeFileSync(this.logsFile, JSON.stringify(trimmed), "utf-8");
         } catch (e) {
           console.error("[TaskLogService] Failed to persist tasks_log.json:", e);
         }
@@ -230392,6 +230413,13 @@ app.post("/api/v1/designer/generate", async (req, res) => {
 app.get("/api/v1/tasks", (req, res) => {
   const awaiting = TaskLogService2.getAwaitingTasks();
   res.json({ success: true, tasks: awaiting });
+});
+app.get("/api/v1/tasks/:taskId", (req, res) => {
+  const task = TaskLogService2.getTaskLogById(req.params.taskId);
+  if (!task) {
+    return res.status(404).json({ success: false, error: `Task ${req.params.taskId} nicht gefunden` });
+  }
+  res.json({ success: true, task });
 });
 app.post("/api/v1/tasks/:taskId/submit-design-review", async (req, res) => {
   const { taskId } = req.params;

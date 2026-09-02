@@ -1005,6 +1005,14 @@ app.get('/api/v1/tasks', (req, res) => {
   res.json({ success: true, tasks: awaiting });
 });
 
+app.get('/api/v1/tasks/:taskId', (req, res) => {
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (!task) {
+    return res.status(404).json({ success: false, error: `Task ${req.params.taskId} nicht gefunden` });
+  }
+  res.json({ success: true, task });
+});
+
 app.post('/api/v1/tasks/:taskId/submit-design-review', async (req, res) => {
   const { taskId } = req.params;
   const { action, answers, updatedPrompt } = req.body;
