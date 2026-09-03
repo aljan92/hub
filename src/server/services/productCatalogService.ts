@@ -19,6 +19,13 @@ export interface MerchFitTypeDef {
   domIdentifier?: string;
 }
 
+/** Only a completed fit scan may authoritatively replace previous data with []. */
+export function mergeScannedFits(previous: MerchFitTypeDef[], scanned: MerchFitTypeDef[] | undefined, status?: 'SUCCESS' | 'FAILED'): MerchFitTypeDef[] {
+  if (status === 'FAILED') return previous;
+  if (status === 'SUCCESS' && Array.isArray(scanned)) return scanned;
+  return scanned?.length ? scanned : previous;
+}
+
 export interface MerchMarketplace {
   id: string;          // e.g. "US", "GB", "DE", "FR", "IT", "ES", "JP"
   displayName: string; // e.g. ".com", ".co.uk", ".de"
@@ -212,6 +219,7 @@ export interface MerchProduct {
   niceClass?: number | null;           // Nice Trademark Class or null
   colorMode: ColorMode;                // 'predefined', 'customPicker', or 'none'
   colorDiscoveryStatus?: 'SUCCESS' | 'FAILED'; // Status of color discovery for this product
+  fitDiscoveryStatus?: 'SUCCESS' | 'FAILED';
   colors: MerchColorDef[];             // Available swatches
   fitTypes: MerchFitTypeDef[];         // Available fit types
   availableMarketplaces: string[];     // Marketplace IDs
@@ -612,7 +620,8 @@ export class ProductCatalogService {
             colorMode: mergedColorMode,
             colorDiscoveryStatus,
             colors: mergedColors,
-            fitTypes: scanned.fitTypes && scanned.fitTypes.length > 0 ? scanned.fitTypes : matched.fitTypes,
+            fitTypes: mergeScannedFits(matched.fitTypes, scanned.fitTypes, scanned.fitDiscoveryStatus),
+            fitDiscoveryStatus: scanned.fitDiscoveryStatus ?? matched.fitDiscoveryStatus,
             availableMarketplaces: scanned.availableMarketplaces && scanned.availableMarketplaces.length > 0 ? scanned.availableMarketplaces : matched.availableMarketplaces,
             amazonSortOrder: amazonSort,
             amazon: scanned.amazon || {
@@ -657,6 +666,7 @@ export class ProductCatalogService {
             colorDiscoveryStatus: isColorScanValid ? 'SUCCESS' : 'FAILED',
             colors: (scanned.colors || []).map(c => ({ ...c, avoidRule: 'none' })),
             fitTypes: scanned.fitTypes || [],
+            fitDiscoveryStatus: scanned.fitDiscoveryStatus,
             availableMarketplaces: scanned.availableMarketplaces || ['US'],
             sortOrder: overrides[newStableId]?.uiSortOrder ?? (updatedProducts.length + 1),
             amazonSortOrder: amazonSort,

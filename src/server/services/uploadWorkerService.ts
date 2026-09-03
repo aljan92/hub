@@ -770,6 +770,16 @@ export class UploadWorkerService {
           continue;
         }
 
+        if (product.fitDiscoveryStatus === 'FAILED') {
+          productUploadResults.push({
+            productId: product.id,
+            amazonKey: product.amazon?.key || product.id,
+            status: 'FAILED_FIT_TYPE',
+            reason: 'Fit-Scan unvollständig; Produkt erneut vollständig scannen.'
+          });
+          continue;
+        }
+
         if (product.colorDiscoveryStatus === 'FAILED') {
           this.log(`❌ Farbentdeckung für "${product.displayName}" war fehlgeschlagen (colorDiscoveryStatus = FAILED)!`);
           productUploadResults.push({

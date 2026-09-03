@@ -1230,3 +1230,11 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Verschachtelte Wrapper werden nun auf einen Root reduziert. Die Identität wird über das exakte `${amazonKey}-container`-Klassentoken des enthaltenen `.asset-container` geprüft; `amazonKey` stammt ausschließlich aus dem dynamischen Katalog (gemäß `extra.md`). Keine konkreten Produktkennungen im Runtime-Code.
 - Tatsächlich mehrere passende Roots bleiben mehrdeutig und werden nicht freigegeben. Kein `proceed_anyway` und kein beliebiger sichtbarer Editor als Ersatz.
 - `tests/uploadEditorIdentity.test.ts` führt den tatsächlichen Worker-Resolver in lokalem Chromium aus: verschachtelte Wrapper, geteilte Reihe, falsches Produkt, neue dynamische Kennung, Mehrdeutigkeit und versteckte Editoren bestanden.
+
+### 10.49 Fit-Scan: feste Labels sind keine Auswahl
+
+- Der Scanner erfasst nur Checkboxen innerhalb von `fit-type`/`.fit-type-container`. `.default-fit-type-label` (z. B. Adult Unisex) erzeugt keinen auswählbaren Fit.
+- Editor-Erkennung erfolgt auch beim Scan über die dynamische Artwork-Produktkennung, deduplizierte Editor-Roots und einen sichtbaren `dimension-editor`, nicht mehr über Bildschirmpositionen.
+- `fitDiscoveryStatus=SUCCESS` erlaubt ausdrücklich das Überschreiben veralteter Fits durch `[]`. Bei `FAILED` oder unbestätigten leeren Legacy-Scans bleiben alte Daten erhalten; ein explizit fehlgeschlagener Fit-Scan blockiert den Upload.
+- Keine Produkt-Ausnahmeliste, keine manuellen Katalogänderungen, keine Änderung an Overrides. Nach Deployment ist ein vollständiger Produkt-Scan nötig, um alte Fit-Einträge zu korrigieren.
+- Chromium-Test `tests/fitScanSemantics.test.ts`: festes Label, echte Checkboxen, fremde Checkboxen, unbekannte Checkbox-Typen sowie erfolgreiche/leere und fehlgeschlagene Merge-Fälle bestanden.

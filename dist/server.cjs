@@ -49931,8 +49931,14 @@ __export2(productCatalogService_exports, {
   ProductCatalogService: () => ProductCatalogService,
   RESIZE_BACKGROUND_PROFILES: () => RESIZE_BACKGROUND_PROFILES,
   getGeneratableVariants: () => getGeneratableVariants,
+  mergeScannedFits: () => mergeScannedFits,
   resolveBackgroundColor: () => resolveBackgroundColor
 });
+function mergeScannedFits(previous, scanned, status) {
+  if (status === "FAILED") return previous;
+  if (status === "SUCCESS" && Array.isArray(scanned)) return scanned;
+  return scanned?.length ? scanned : previous;
+}
 function resolveBackgroundColor(config) {
   const profile = RESIZE_BACKGROUND_PROFILES[config.backgroundProfile];
   if (!profile || profile.type !== "solid") {
@@ -50358,7 +50364,8 @@ var init_productCatalogService = __esm2({
                 colorMode: mergedColorMode,
                 colorDiscoveryStatus,
                 colors: mergedColors,
-                fitTypes: scanned.fitTypes && scanned.fitTypes.length > 0 ? scanned.fitTypes : matched.fitTypes,
+                fitTypes: mergeScannedFits(matched.fitTypes, scanned.fitTypes, scanned.fitDiscoveryStatus),
+                fitDiscoveryStatus: scanned.fitDiscoveryStatus ?? matched.fitDiscoveryStatus,
                 availableMarketplaces: scanned.availableMarketplaces && scanned.availableMarketplaces.length > 0 ? scanned.availableMarketplaces : matched.availableMarketplaces,
                 amazonSortOrder: amazonSort,
                 amazon: scanned.amazon || {
@@ -50398,6 +50405,7 @@ var init_productCatalogService = __esm2({
                 colorDiscoveryStatus: isColorScanValid ? "SUCCESS" : "FAILED",
                 colors: (scanned.colors || []).map((c) => ({ ...c, avoidRule: "none" })),
                 fitTypes: scanned.fitTypes || [],
+                fitDiscoveryStatus: scanned.fitDiscoveryStatus,
                 availableMarketplaces: scanned.availableMarketplaces || ["US"],
                 sortOrder: overrides[newStableId]?.uiSortOrder ?? updatedProducts.length + 1,
                 amazonSortOrder: amazonSort,
@@ -231492,17 +231500,19 @@ var ProductScannerService = class {
             continue;
           }
           editBtn.click();
-          const cardRect = card.getBoundingClientRect();
           let activeEditor = null;
           for (let attempt = 0; attempt < 25; attempt++) {
             await sleep2(120);
             const eds = Array.from(document.querySelectorAll("product-editor, .product-editor"));
-            const found = eds.find((ed) => {
+            const roots = eds.filter((ed) => !eds.some((other) => other !== ed && other.contains(ed)));
+            const matches = roots.filter((ed) => {
               const r = ed.getBoundingClientRect();
-              return ed.offsetHeight > 50 && r.top >= cardRect.top - 50;
+              const dimensions = ed.querySelector("dimension-editor");
+              const belongsToProduct = Array.from(ed.querySelectorAll(".asset-container")).some((asset) => asset.classList.contains(`${amazonKey}-container`));
+              return r.height > 50 && r.width > 0 && belongsToProduct && dimensions !== null && dimensions.getBoundingClientRect().height > 0;
             });
-            if (found) {
-              activeEditor = found;
+            if (matches.length === 1) {
+              activeEditor = matches[0];
               break;
             }
           }
@@ -231514,17 +231524,22 @@ var ProductScannerService = class {
           if (headerTitle && headerTitle.length > 2) {
             catalog[amazonKey].name = headerTitle;
           }
-          const fitElements = Array.from(activeEditor.querySelectorAll('flowcheckbox, input[type="checkbox"]'));
+          const fitElements = Array.from(activeEditor.querySelectorAll(
+            'fit-type flowcheckbox, fit-type input[type="checkbox"], .fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"]'
+          )).filter((el) => !el.closest(".default-fit-type-label"));
           const detectedFits = [];
+          let unknownFitControl = false;
           for (const fe of fitElements) {
-            const labelText = (fe.textContent || fe.closest("label")?.textContent || fe.getAttribute("aria-label") || "").toLowerCase().trim();
+            const labelText = [fe.textContent, fe.closest("label")?.textContent, fe.getAttribute("aria-label"), fe.getAttribute("class"), fe.closest("flowcheckbox")?.getAttribute("class")].filter(Boolean).join(" ").toLowerCase().trim();
             if (labelText.includes("men") && !labelText.includes("women")) detectedFits.push("men");
             else if (labelText.includes("women")) detectedFits.push("women");
             else if (labelText.includes("youth") || labelText.includes("kids")) detectedFits.push("youth");
             else if (labelText.includes("girls")) detectedFits.push("girls");
             else if (labelText.includes("unisex") || labelText.includes("adult") || labelText.includes("standard")) detectedFits.push("standard");
+            else unknownFitControl = true;
           }
           catalog[amazonKey].fits = Array.from(new Set(detectedFits));
+          catalog[amazonKey].fitDiscoveryStatus = unknownFitControl ? "FAILED" : "SUCCESS";
           const colorCheckboxes = Array.from(activeEditor.querySelectorAll("colorcheckbox"));
           const detectedColors = [];
           for (const cb of colorCheckboxes) {
@@ -231605,6 +231620,7 @@ var ProductScannerService = class {
           colorDiscoveryStatus: item.colorDiscoveryStatus,
           colors: colorDefs,
           fitTypes: fitDefs,
+          fitDiscoveryStatus: item.fitDiscoveryStatus || "FAILED",
           availableMarketplaces: item.marketplaces.length > 0 ? item.marketplaces : ["US"],
           sortOrder: index,
           amazonSortOrder: amazonSort,
@@ -232245,6 +232261,15 @@ var UploadWorkerService = class _UploadWorkerService {
             amazonKey: product.amazon?.key || product.id,
             status: "FAILED_EDITOR_OPEN",
             reason: `Editor f\xFCr ${product.displayName} konnte nicht ge\xF6ffnet werden: ${lastOpenReason}`
+          });
+          continue;
+        }
+        if (product.fitDiscoveryStatus === "FAILED") {
+          productUploadResults.push({
+            productId: product.id,
+            amazonKey: product.amazon?.key || product.id,
+            status: "FAILED_FIT_TYPE",
+            reason: "Fit-Scan unvollst\xE4ndig; Produkt erneut vollst\xE4ndig scannen."
           });
           continue;
         }

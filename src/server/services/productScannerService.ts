@@ -260,6 +260,7 @@ export class ProductScannerService {
           name: string;
           marketplaces: string[];
           fits: string[];
+          fitDiscoveryStatus?: 'SUCCESS' | 'FAILED';
           colorType: 'predefined' | 'customPicker' | 'none' | 'failed';
           colorDiscoveryStatus: 'SUCCESS' | 'FAILED';
           colors: string[];
@@ -364,18 +365,22 @@ export class ProductScannerService {
           editBtn.click();
 
           // Wait for this card's product-editor to expand
-          const cardRect = card.getBoundingClientRect();
           let activeEditor: HTMLElement | null = null;
 
           for (let attempt = 0; attempt < 25; attempt++) {
             await sleep(120);
             const eds = Array.from(document.querySelectorAll('product-editor, .product-editor')) as HTMLElement[];
-            const found = eds.find(ed => {
+            const roots = eds.filter(ed => !eds.some(other => other !== ed && other.contains(ed)));
+            const matches = roots.filter(ed => {
               const r = ed.getBoundingClientRect();
-              return ed.offsetHeight > 50 && r.top >= cardRect.top - 50;
+              const dimensions = ed.querySelector('dimension-editor');
+              const belongsToProduct = Array.from(ed.querySelectorAll('.asset-container'))
+                .some(asset => asset.classList.contains(`${amazonKey}-container`));
+              return r.height > 50 && r.width > 0 && belongsToProduct
+                && dimensions !== null && dimensions.getBoundingClientRect().height > 0;
             });
-            if (found) {
-              activeEditor = found;
+            if (matches.length === 1) {
+              activeEditor = matches[0];
               break;
             }
           }
@@ -392,17 +397,24 @@ export class ProductScannerService {
           }
 
           // B. Fit Types
-          const fitElements = Array.from(activeEditor.querySelectorAll('flowcheckbox, input[type="checkbox"]'));
+          // A default-fit-type-label describes a fixed variant, not a choice.
+          // Only real checkbox controls inside the fit component are catalog fits.
+          const fitElements = Array.from(activeEditor.querySelectorAll(
+            'fit-type flowcheckbox, fit-type input[type="checkbox"], .fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"]'
+          )).filter(el => !el.closest('.default-fit-type-label'));
           const detectedFits: string[] = [];
+          let unknownFitControl = false;
           for (const fe of fitElements) {
-            const labelText = (fe.textContent || fe.closest('label')?.textContent || fe.getAttribute('aria-label') || '').toLowerCase().trim();
+            const labelText = [fe.textContent, fe.closest('label')?.textContent, fe.getAttribute('aria-label'), fe.getAttribute('class'), fe.closest('flowcheckbox')?.getAttribute('class')].filter(Boolean).join(' ').toLowerCase().trim();
             if (labelText.includes('men') && !labelText.includes('women')) detectedFits.push('men');
             else if (labelText.includes('women')) detectedFits.push('women');
             else if (labelText.includes('youth') || labelText.includes('kids')) detectedFits.push('youth');
             else if (labelText.includes('girls')) detectedFits.push('girls');
             else if (labelText.includes('unisex') || labelText.includes('adult') || labelText.includes('standard')) detectedFits.push('standard');
+            else unknownFitControl = true;
           }
           catalog[amazonKey].fits = Array.from(new Set(detectedFits));
+          catalog[amazonKey].fitDiscoveryStatus = unknownFitControl ? 'FAILED' : 'SUCCESS';
 
           // C. Swatches (<colorcheckbox>)
           const colorCheckboxes = Array.from(activeEditor.querySelectorAll('colorcheckbox'));
@@ -489,6 +501,7 @@ export class ProductScannerService {
           colorDiscoveryStatus: item.colorDiscoveryStatus,
           colors: colorDefs,
           fitTypes: fitDefs,
+          fitDiscoveryStatus: item.fitDiscoveryStatus || 'FAILED',
           availableMarketplaces: item.marketplaces.length > 0 ? item.marketplaces : ['US'],
           sortOrder: index,
           amazonSortOrder: amazonSort,
