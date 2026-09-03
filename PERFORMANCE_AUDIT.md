@@ -136,6 +136,7 @@ Lokal war der warme Pfad schnell. Auf NAS/bei Event-Loop-Blockade wurde seine ge
 - Screencast-Frames werden nur an Clients der betrachteten Session gesendet; bei mehr als 512 KiB Sendepuffer werden Frames fallengelassen.
 - Der Client verwendet eine Ein-Frame-Dekodierpipeline mit einem einzigen Latest-Frame-Slot. Langsame Dekodierung erzeugt dadurch keinen anwachsenden Zeitversatz mehr.
 - Stream-Telemetrie zeigt gerenderte FPS und Frame-Alter; JPEG-Qualität 72 reduziert Bandbreite bei unveränderter 1440×900-Kontrollauflösung.
+- Nachkorrektur: Beim Wiederöffnen muss die Subscription vor dem Standbild-Replay registriert werden. Sonst bleibt eine statische Session trotz laufendem Chrome unsichtbar. Der entsprechende Regressionstest erhält beide Hintergrund-Pages unverändert; der Client verbindet unterbrochene WebSockets automatisch neu.
 
 ### P1.1 WebSocket-Broadcasts deduplizieren – empfohlen als nächster Schritt
 

@@ -1205,3 +1205,12 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - Der React-Client dekodiert höchstens ein Bild gleichzeitig und hält währenddessen nur den neuesten eingegangenen Frame. Veraltete Zwischenframes werden bewusst verworfen.
   - JPEG-Qualität wurde moderat von 80 auf 72 reduziert; die 1440×900-Auflösung bleibt für lesbare Kontrolle erhalten.
   - Die Anzeige zeigt reale gerenderte FPS und das Alter des zuletzt dargestellten Frames in Millisekunden; die Drop-Zahl ist als Tooltip verfügbar.
+
+### 10.46 Screencast Reopen Regression – Subscription vor Frame-Replay
+
+- Ursache: `BROWSER_INIT` lieferte das Standbild vor `BROWSER_WATCH`; der neue Session-Filter verwarf es. Bei statischer Seite folgte kein weiterer CDP-Frame und die Ansicht blieb auf „Verbinde“.
+- `subscribeBrowserStream` registriert die betrachtete Session vor dem Replay über `getSession`. Wiederöffnen und Sessionwechsel benötigen keine neue Bildänderung und starten bestehende Pages nicht neu.
+- Der Client verbindet einen abgerissenen WebSocket mit begrenztem Backoff (1–10 s) erneut. Schließen der Ansicht beendet ausschließlich deren WebSocket, niemals Chrome oder Hintergrundarbeit.
+- Noch dekodierende Frames einer alten Session/Verbindung dürfen die neue Ansicht nicht überschreiben.
+- Regressionstest `tests/browserStreamReconnect.test.ts`: Erstverbindung, Wiederöffnen ohne CDP-Event, Wechsel zwischen beiden Sessions und Erhalt beider Hintergrund-Pages bestanden. Production Build erfolgreich.
+- Nutzerbeobachtung: Anzeige kam nach Upload-Abbruch wieder. Eine zusätzliche Chrome-Auslastung unter Upload-Last ist damit nicht ausgeschlossen; der Reopen-Test ersetzt keinen NAS-Live-Test.

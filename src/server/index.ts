@@ -16,6 +16,7 @@ import { VectorizerService } from './services/vectorizerService';
 import { SupabaseService } from './services/supabaseService';
 import { SyncEngine } from './services/syncEngine';
 import { BrowserSessionService } from './services/browserSessionService';
+import { subscribeBrowserStream } from './services/browserStreamSubscription';
 import { getMcpSchema } from './services/mcpSchemaService';
 import { TaskLogService } from './services/taskLogService';
 import { TaskRepository } from './storage/taskRepository';
@@ -166,7 +167,9 @@ wss.on('connection', (ws) => {
       if (type === 'BROWSER_INIT') {
         await BrowserSessionService.getSession(session || 'sync');
       } else if (type === 'BROWSER_WATCH') {
-        browserWatchSessions.set(ws, session === 'upload' ? 'upload' : 'sync');
+        // Register BEFORE replaying the cached frame. Static pages may never emit
+        // another CDP frame, so subscribing alone can leave the viewer blank forever.
+        await subscribeBrowserStream(browserWatchSessions, ws, session, type => BrowserSessionService.getSession(type));
       } else if (type === 'BROWSER_MOUSE') {
         await BrowserSessionService.dispatchMouseEvent(session || 'sync', payload);
       } else if (type === 'BROWSER_KEY') {

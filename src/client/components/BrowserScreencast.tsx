@@ -38,8 +38,9 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
   const latestStreamLagRef = useRef<number>(0);
   const lastFpsCheckRef = useRef<number>(Date.now());
   const activeSessionRef = useRef<BrowserSessionType>(activeSession);
-  const pendingFrameRef = useRef<{ data: string; sentAt?: number } | null>(null);
+  const pendingFrameRef = useRef<{ data: string; session: BrowserSessionType; sentAt?: number } | null>(null);
   const isDecodingFrameRef = useRef(false);
+  const streamGenerationRef = useRef(0);
 
   // Keep ref synchronized
   useEffect(() => {
@@ -57,6 +58,7 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
 
     pendingFrameRef.current = null;
     isDecodingFrameRef.current = true;
+    const generation = streamGenerationRef.current;
     const img = new Image();
     const finish = () => {
       isDecodingFrameRef.current = false;
@@ -64,7 +66,7 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
     };
     img.onload = () => {
       const ctx = canvas.getContext('2d');
-      if (ctx) {
+      if (ctx && generation === streamGenerationRef.current && nextFrame.session === activeSessionRef.current) {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         setHasReceivedFrame(true);
         frameCountRef.current += 1;
@@ -107,17 +109,27 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconnectDelay = 1000;
+    let activeSocket: WebSocket | null = null;
+
+    const connect = () => {
+    if (disposed) return;
     const ws = new WebSocket(wsUrl);
+    activeSocket = ws;
     wsRef.current = ws;
 
     ws.onopen = () => {
-      // Trigger session initialization for both sessions
-      sendWsEvent('BROWSER_INIT', {}, 'sync');
-      sendWsEvent('BROWSER_INIT', {}, 'upload');
-      sendWsEvent('BROWSER_WATCH', {}, activeSessionRef.current);
+      if (disposed || activeSocket !== ws) return;
+      reconnectDelay = 1000;
+      // WATCH also replays the current frame after registering the subscription.
+      // Background sessions belong to the workers, not to this viewer's lifecycle.
+      ws.send(JSON.stringify({ type: 'BROWSER_WATCH', session: activeSessionRef.current, payload: {} }));
     };
 
     ws.onmessage = (event) => {
+      if (disposed || activeSocket !== ws) return;
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'BROWSER_FRAME') {
@@ -127,7 +139,7 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
           }
           if (session === activeSessionRef.current && canvasRef.current) {
             if (pendingFrameRef.current) droppedFrameCountRef.current += 1;
-            pendingFrameRef.current = { data, sentAt };
+            pendingFrameRef.current = { data, session, sentAt };
             renderLatestFrame();
           }
         }
@@ -136,32 +148,43 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
       }
     };
 
-    return () => {
-      ws.close();
+    ws.onclose = () => {
+      if (disposed || activeSocket !== ws) return;
+      wsRef.current = null;
+      streamGenerationRef.current += 1;
+      pendingFrameRef.current = null;
+      setHasReceivedFrame(false);
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000);
     };
-  }, [renderLatestFrame, sendWsEvent]);
+    ws.onerror = () => ws.close();
+    };
+    connect();
+
+    return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      streamGenerationRef.current += 1;
+      pendingFrameRef.current = null;
+      wsRef.current = null;
+      activeSocket?.close();
+    };
+  }, [renderLatestFrame]);
 
   // Switch session tab instantly with cached frame rendering
   const handleSessionChange = (newSession: BrowserSessionType) => {
     setActiveSession(newSession);
     activeSessionRef.current = newSession;
+    streamGenerationRef.current += 1;
+    pendingFrameRef.current = null;
 
     const cached = cachedFramesRef.current[newSession];
     if (cached && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const img = new Image();
-        img.onload = () => {
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          setHasReceivedFrame(true);
-        };
-        img.src = 'data:image/jpeg;base64,' + cached;
-      }
+      pendingFrameRef.current = { data: cached, session: newSession };
+      renderLatestFrame();
     } else {
       setHasReceivedFrame(false);
     }
-    sendWsEvent('BROWSER_INIT', {}, newSession);
     sendWsEvent('BROWSER_WATCH', {}, newSession);
   };
 

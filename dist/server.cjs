@@ -231022,6 +231022,13 @@ var SupabaseService = class {
 init_syncEngine();
 init_browserSessionService();
 
+// src/server/services/browserStreamSubscription.ts
+async function subscribeBrowserStream(subscriptions, client, requestedSession, replaySession) {
+  const session2 = requestedSession === "upload" ? "upload" : "sync";
+  subscriptions.set(client, session2);
+  await replaySession(session2);
+}
+
 // src/server/services/mcpSchemaService.ts
 var MBA_HUB_TOOLS = [
   {
@@ -233337,7 +233344,7 @@ wss.on("connection", (ws4) => {
       if (type3 === "BROWSER_INIT") {
         await BrowserSessionService.getSession(session2 || "sync");
       } else if (type3 === "BROWSER_WATCH") {
-        browserWatchSessions.set(ws4, session2 === "upload" ? "upload" : "sync");
+        await subscribeBrowserStream(browserWatchSessions, ws4, session2, (type4) => BrowserSessionService.getSession(type4));
       } else if (type3 === "BROWSER_MOUSE") {
         await BrowserSessionService.dispatchMouseEvent(session2 || "sync", payload);
       } else if (type3 === "BROWSER_KEY") {
