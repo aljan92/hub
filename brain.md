@@ -1134,3 +1134,17 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - `tests/taskRecoveryP3_3.test.ts`: Alle 12 Tests bestanden (R0A Publish Pre-Remote Reset, R0B Draft Unknown State, R0C Unified Intent Boundary, R1/R2 Response ID Capture & Exact Recovery, R3 Missing ID Review Escalation, R4 UPDATE Fingerprint Match, R5 Baseline Unchanged Pending, R6 Ambiguous State, R7 Pre-existing Under Review Guard, R8/R9 Cross-Storage Saga, R10 Human Review Actions, R11 Auth/Rate Limits).
   - Regression: `tests/taskRecoveryP3_1.test.ts` (10/10 PASS), `tests/taskRecoveryP3_2.test.ts` (12/12 PASS), `tests/taskSqliteMigrationP2.test.ts` (PASS).
   - `npm run build`: Vollständiger Client- und Server-Build fehlerfrei.
+
+### 10.41 Performance Regression Fix P0.1 – Prompt Log Live Refresh
+- **Ursache:** Seit P1 löste jedes `TASK_UPDATED` für den geöffneten Task sofort einen Full-Detail-Request aus. `loadingDetail=true` ersetzte dabei die gesamte Timeline durch einen Loader, wodurch der Scroll-Container seinen Inhalt und seine Position verlor. Schnelle Events brachen laufende Requests wiederholt ab.
+- **Umsetzung:**
+  - WebSocket-Updates werden für 150 ms gebündelt.
+  - Pro Task ist maximal ein Detail-Request aktiv; währenddessen eintreffende Updates erzeugen genau einen nachlaufenden Refresh.
+  - Requests werden nur noch bei einem echten Taskwechsel abgebrochen.
+  - Der Full-Page-Loader erscheint nur beim initialen Laden beziehungsweise Taskwechsel. Bei Background-Refresh bleibt die Timeline gemountet und die Scrollposition erhalten.
+  - Status, Checkpoint, Fehlerzustand und Queue-Flag werden sofort aus der aktuellen `TaskSummary` in das sichtbare Detail gepatcht.
+  - HTTP-Detailantworten, deren `updatedAt` älter als die zuletzt empfangene WebSocket-Summary ist, werden verworfen und erneut angefordert.
+- **Verifikation:**
+  - `tests/taskPaginationAndPerformanceP1.test.ts`: Alle 7 Tests bestanden.
+  - `npm run build`: Client- und Server-Build erfolgreich.
+  - Die globale `tsc --noEmit`-Prüfung bleibt wegen zahlreicher bereits bestehender, unabhängiger Typfehler rot; für diese Änderung erschien kein neuer Fehler.

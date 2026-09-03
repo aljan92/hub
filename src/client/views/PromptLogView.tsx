@@ -504,28 +504,54 @@ export const PromptLogView: React.FC = () => {
   const selectedTask = selectedTaskDetail;
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const detailRequestTaskIdRef = useRef<string | null>(null);
+  const detailRefreshPendingRef = useRef(false);
+  const detailRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestSummaryUpdatedAtRef = useRef<Record<string, string>>({});
   const selectedTaskIdRef = useRef<string | null>(null);
+  const selectedTaskDetailRef = useRef<DesignTaskLog | null>(null);
   selectedTaskIdRef.current = selectedTaskId;
+  selectedTaskDetailRef.current = selectedTaskDetail;
 
-  const fetchTaskDetail = useCallback(async (taskId: string) => {
+  const fetchTaskDetail = useCallback(async (taskId: string, showInitialLoader = false) => {
     if (!taskId) {
       setSelectedTaskDetail(null);
       return;
     }
 
-    if (abortControllerRef.current) {
+    // Coalesce updates for the same task instead of aborting and restarting the
+    // request for every WebSocket event. One trailing refresh picks up mutations
+    // that arrived while the current request was in flight.
+    if (detailRequestTaskIdRef.current === taskId) {
+      detailRefreshPendingRef.current = true;
+      return;
+    }
+
+    if (abortControllerRef.current && detailRequestTaskIdRef.current !== taskId) {
       abortControllerRef.current.abort();
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    detailRequestTaskIdRef.current = taskId;
 
-    setLoadingDetail(true);
+    const isInitialLoad = showInitialLoader || selectedTaskDetailRef.current?.id !== taskId;
+    if (isInitialLoad) setLoadingDetail(true);
     try {
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
         signal: controller.signal
       });
       const data = await res.json();
-      if (data.success && data.task) {
+      if (data.success && data.task && selectedTaskIdRef.current === taskId) {
+        const latestSummaryUpdatedAt = latestSummaryUpdatedAtRef.current[taskId];
+        const responseUpdatedAt = data.task.updatedAt;
+        const responseIsCurrent = !latestSummaryUpdatedAt ||
+          !responseUpdatedAt ||
+          responseUpdatedAt >= latestSummaryUpdatedAt;
+
+        if (!responseIsCurrent) {
+          detailRefreshPendingRef.current = true;
+          return;
+        }
         setSelectedTaskDetail(data.task);
       }
     } catch (err: any) {
@@ -534,18 +560,48 @@ export const PromptLogView: React.FC = () => {
       }
     } finally {
       if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+        detailRequestTaskIdRef.current = null;
         setLoadingDetail(false);
+
+        if (detailRefreshPendingRef.current && selectedTaskIdRef.current === taskId) {
+          detailRefreshPendingRef.current = false;
+          window.setTimeout(() => fetchTaskDetail(taskId), 0);
+        }
       }
     }
   }, []);
 
+  const scheduleTaskDetailRefresh = useCallback((taskId: string) => {
+    if (detailRefreshTimerRef.current) {
+      clearTimeout(detailRefreshTimerRef.current);
+    }
+    detailRefreshTimerRef.current = setTimeout(() => {
+      detailRefreshTimerRef.current = null;
+      fetchTaskDetail(taskId);
+    }, 150);
+  }, [fetchTaskDetail]);
+
   useEffect(() => {
     if (selectedTaskId) {
-      fetchTaskDetail(selectedTaskId);
+      if (detailRefreshTimerRef.current) {
+        clearTimeout(detailRefreshTimerRef.current);
+        detailRefreshTimerRef.current = null;
+      }
+      detailRefreshPendingRef.current = false;
+      if (selectedTaskDetailRef.current?.id !== selectedTaskId) {
+        setSelectedTaskDetail(null);
+      }
+      fetchTaskDetail(selectedTaskId, true);
     } else {
       setSelectedTaskDetail(null);
     }
   }, [selectedTaskId, fetchTaskDetail]);
+
+  useEffect(() => () => {
+    if (detailRefreshTimerRef.current) clearTimeout(detailRefreshTimerRef.current);
+    abortControllerRef.current?.abort();
+  }, []);
 
   const fetchTasks = useCallback(async (source = filterSource, search = searchQuery) => {
     setLoading(true);
@@ -607,6 +663,9 @@ export const PromptLogView: React.FC = () => {
 
   const { isConnected } = useTaskWebSocket({
     onTaskUpdated: (updatedSummary) => {
+      if (updatedSummary.updatedAt) {
+        latestSummaryUpdatedAtRef.current[updatedSummary.id] = updatedSummary.updatedAt;
+      }
       setTasks(prev => {
         const exists = prev.some(t => t.id === updatedSummary.id);
         if (exists) {
@@ -619,7 +678,18 @@ export const PromptLogView: React.FC = () => {
       });
 
       if (selectedTaskIdRef.current === updatedSummary.id) {
-        fetchTaskDetail(updatedSummary.id);
+        // Status/checkpoint are summary fields and can be shown immediately.
+        // Heavy fields/events arrive through the coalesced background refresh.
+        setSelectedTaskDetail(prev => prev?.id === updatedSummary.id ? {
+          ...prev,
+          status: updatedSummary.status,
+          checkpoint: updatedSummary.checkpoint,
+          hasError: updatedSummary.hasError,
+          errorDetails: updatedSummary.errorDetails,
+          inQueue: updatedSummary.inQueue,
+          updatedAt: updatedSummary.updatedAt || prev.updatedAt
+        } : prev);
+        scheduleTaskDetailRefresh(updatedSummary.id);
       }
     },
     onTaskCreated: (newSummary) => {
