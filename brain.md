@@ -1148,3 +1148,18 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - `tests/taskPaginationAndPerformanceP1.test.ts`: Alle 7 Tests bestanden.
   - `npm run build`: Client- und Server-Build erfolgreich.
   - Die globale `tsc --noEmit`-Prüfung bleibt wegen zahlreicher bereits bestehender, unabhängiger Typfehler rot; für diese Änderung erschien kein neuer Fehler.
+
+### 10.42 Performance Regression Fix P0.2 – Status-Synchronisation
+- **Ursache:** Die Tasks-View pflegte eine eigene unvollständige Awaiting-Liste. `AWAITING_RECOVERY_REVIEW` wurde bei WebSocket-Updates deshalb aus dem Review-Inbox-State entfernt; `UPDATE_ANALYZED` war zwar im UI-Filter, fehlte aber in der initialen SQLite-Abfrage. Full-Task-HTTP-Antworten konnten außerdem neuere Summary-Statuswerte wieder überschreiben.
+- **Umsetzung:**
+  - Zentrale Projektion `TASK_STATUSES_AWAITING_USER_ACTION` und Helper `isTaskAwaitingUserAction` in `src/types/tasks.ts` eingeführt.
+  - SQLite-Awaiting-Abfrage und Tasks-WebSocket-Handler verwenden dieselbe Statusliste.
+  - Recovery Review und Update Design Review erscheinen damit sowohl beim initialen Laden als auch bei Realtime-Updates zuverlässig.
+  - Status, Checkpoint, Fehlerzustand und Queue-Flag werden im sichtbaren Full Task sofort aus der WebSocket-Summary aktualisiert.
+  - Detail-Requests sind abbrechbar und sequenziert; Responses für einen alten Task beziehungsweise mit älterem `updatedAt` werden nicht angewendet.
+  - Background-Statusupdates ersetzen den bestehenden Review-Inhalt nicht mehr durch den Full-Page-Loader.
+- **Verifikation:**
+  - Neuer Test `tests/taskAwaitingStatusProjection.test.ts`: zentrale Statusklassifikation und SQLite-Projektion vollständig bestanden.
+  - `tests/taskPaginationAndPerformanceP1.test.ts`: 7/7 bestanden.
+  - `tests/taskRecoveryP3_1.test.ts`: 10/10 bestanden.
+  - `npm run build`: Client- und Server-Build erfolgreich.

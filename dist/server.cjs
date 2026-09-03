@@ -219621,6 +219621,56 @@ var init_listingSanitizationService = __esm2({
   }
 });
 
+// src/types/tasks.ts
+function isTaskAwaitingUserAction(status) {
+  return TASK_STATUSES_AWAITING_USER_ACTION_SET.has(status);
+}
+function toTaskSummary(task) {
+  const quote5 = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || void 0;
+  const niche1 = task.niche1 || task.payload?.niche1 || void 0;
+  const niche2 = task.niche2 || task.payload?.niche2 || void 0;
+  const subniche = task.subniche || task.payload?.subniche || void 0;
+  const designId = task.payload?.designId || void 0;
+  const imageUrl = task.imageUrl || task.u4PreviewUrl || task.mbaPngUrl || void 0;
+  const lastEvent = task.events && task.events.length > 0 ? task.events[task.events.length - 1] : void 0;
+  return {
+    id: task.id,
+    counter: task.counter,
+    source: task.source,
+    suffix: task.suffix,
+    status: task.status,
+    checkpoint: task.checkpoint,
+    receivedAt: task.receivedAt,
+    updatedAt: lastEvent?.timestamp || task.receivedAt,
+    quote: quote5,
+    niche1,
+    niche2,
+    subniche,
+    imageUrl,
+    hasError: Boolean(task.hasError),
+    errorDetails: task.errorDetails,
+    eventsCount: Array.isArray(task.events) ? task.events.length : 0,
+    clientIp: task.clientIp,
+    designId,
+    inQueue: task.inQueue
+  };
+}
+var TASK_STATUSES_AWAITING_USER_ACTION, TASK_STATUSES_AWAITING_USER_ACTION_SET;
+var init_tasks = __esm2({
+  "src/types/tasks.ts"() {
+    "use strict";
+    TASK_STATUSES_AWAITING_USER_ACTION = [
+      "AWAITING_PRE_FLIGHT_REVIEW",
+      "AWAITING_DESIGN_REVIEW",
+      "AWAITING_TM_REVIEW",
+      "AWAITING_SVG_REVIEW",
+      "AWAITING_RECOVERY_REVIEW",
+      "UPDATE_ANALYZED"
+    ];
+    TASK_STATUSES_AWAITING_USER_ACTION_SET = new Set(TASK_STATUSES_AWAITING_USER_ACTION);
+  }
+});
+
 // src/server/utils/atomicFileStorage.ts
 function isFileInFailSafe(filePath) {
   return failSafeRegistry.has(import_path72.default.resolve(filePath));
@@ -219802,6 +219852,7 @@ var init_taskRepository = __esm2({
     import_fs78 = __toESM2(require("fs"), 1);
     import_path73 = __toESM2(require("path"), 1);
     import_node_sqlite = require("node:sqlite");
+    init_tasks();
     init_atomicFileStorage();
     TaskRepository = class {
       static db = null;
@@ -220512,19 +220563,15 @@ var init_taskRepository = __esm2({
        */
       static getAwaitingTaskSummaries() {
         const db = this.getDb();
+        const placeholders = TASK_STATUSES_AWAITING_USER_ACTION.map(() => "?").join(", ");
         const rows = db.prepare(`
       SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
              quote, niche1, niche2, subniche, image_url, has_error, error_details,
              design_id, in_queue, events_count, client_ip
       FROM tasks
-      WHERE status IN (
-        'AWAITING_PRE_FLIGHT_REVIEW',
-        'AWAITING_DESIGN_REVIEW',
-        'AWAITING_TM_REVIEW',
-        'AWAITING_SVG_REVIEW'
-      )
+      WHERE status IN (${placeholders})
       ORDER BY counter DESC
-    `).all();
+    `).all(...TASK_STATUSES_AWAITING_USER_ACTION);
         return rows.map((r) => this.rowToSummary(r));
       }
       /**
@@ -220664,43 +220711,6 @@ var init_taskRepository = __esm2({
         return row ? Number(row.count) : 0;
       }
     };
-  }
-});
-
-// src/types/tasks.ts
-function toTaskSummary(task) {
-  const quote5 = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || void 0;
-  const niche1 = task.niche1 || task.payload?.niche1 || void 0;
-  const niche2 = task.niche2 || task.payload?.niche2 || void 0;
-  const subniche = task.subniche || task.payload?.subniche || void 0;
-  const designId = task.payload?.designId || void 0;
-  const imageUrl = task.imageUrl || task.u4PreviewUrl || task.mbaPngUrl || void 0;
-  const lastEvent = task.events && task.events.length > 0 ? task.events[task.events.length - 1] : void 0;
-  return {
-    id: task.id,
-    counter: task.counter,
-    source: task.source,
-    suffix: task.suffix,
-    status: task.status,
-    checkpoint: task.checkpoint,
-    receivedAt: task.receivedAt,
-    updatedAt: lastEvent?.timestamp || task.receivedAt,
-    quote: quote5,
-    niche1,
-    niche2,
-    subniche,
-    imageUrl,
-    hasError: Boolean(task.hasError),
-    errorDetails: task.errorDetails,
-    eventsCount: Array.isArray(task.events) ? task.events.length : 0,
-    clientIp: task.clientIp,
-    designId,
-    inQueue: task.inQueue
-  };
-}
-var init_tasks = __esm2({
-  "src/types/tasks.ts"() {
-    "use strict";
   }
 });
 
@@ -227376,7 +227386,9 @@ var init_finalizationService = __esm2({
 // src/server/services/taskLogService.ts
 var taskLogService_exports = {};
 __export2(taskLogService_exports, {
+  TASK_STATUSES_AWAITING_USER_ACTION: () => TASK_STATUSES_AWAITING_USER_ACTION,
   TaskLogService: () => TaskLogService2,
+  isTaskAwaitingUserAction: () => isTaskAwaitingUserAction,
   toTaskSummary: () => toTaskSummary
 });
 var import_fs86, import_path80, TaskLogService2;

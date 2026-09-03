@@ -25,7 +25,7 @@ import {
   Layers
 } from 'lucide-react';
 
-import { DesignTaskLog, TaskSummary } from '../../types/tasks';
+import { DesignTaskLog, TaskSummary, isTaskAwaitingUserAction } from '../../types/tasks';
 import { SvgEditor } from '../components/SvgEditor';
 import { TaskStatusBadge } from '../components/TaskStatusBadge';
 import { useTaskWebSocket } from '../hooks/useTaskWebSocket';
@@ -294,24 +294,48 @@ export const TasksView: React.FC = () => {
   };
 
   const selectedTaskIdRef = useRef<string>('');
+  const activeTaskDetailRef = useRef<DesignTaskLog | null>(null);
+  const detailAbortControllerRef = useRef<AbortController | null>(null);
+  const detailRequestSequenceRef = useRef(0);
+  const latestSummaryUpdatedAtRef = useRef<Record<string, string>>({});
   selectedTaskIdRef.current = selectedTaskId;
+  activeTaskDetailRef.current = activeTaskDetail;
 
   const fetchActiveTaskDetail = useCallback(async (taskId: string) => {
     if (!taskId) {
       setActiveTaskDetail(null);
       return;
     }
-    setLoadingDetail(true);
+    detailAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    detailAbortControllerRef.current = controller;
+    const requestSequence = ++detailRequestSequenceRef.current;
+    const isInitialLoad = activeTaskDetailRef.current?.id !== taskId;
+    if (isInitialLoad) setLoadingDetail(true);
     try {
-      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+        signal: controller.signal
+      });
       const data = await res.json();
-      if (data.success && data.task) {
+      if (data.success && data.task &&
+          selectedTaskIdRef.current === taskId &&
+          detailRequestSequenceRef.current === requestSequence) {
+        const latestSummaryUpdatedAt = latestSummaryUpdatedAtRef.current[taskId];
+        const responseUpdatedAt = data.task.updatedAt;
+        if (latestSummaryUpdatedAt && responseUpdatedAt && responseUpdatedAt < latestSummaryUpdatedAt) {
+          return;
+        }
         setActiveTaskDetail(data.task);
       }
-    } catch (err) {
-      console.warn('[TasksView] Error loading task detail:', err);
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.warn('[TasksView] Error loading task detail:', err);
+      }
     } finally {
-      setLoadingDetail(false);
+      if (detailRequestSequenceRef.current === requestSequence) {
+        detailAbortControllerRef.current = null;
+        setLoadingDetail(false);
+      }
     }
   }, []);
 
@@ -322,6 +346,8 @@ export const TasksView: React.FC = () => {
       setActiveTaskDetail(null);
     }
   }, [selectedTaskId, fetchActiveTaskDetail]);
+
+  useEffect(() => () => detailAbortControllerRef.current?.abort(), []);
 
   // Fetch Tasks
   const fetchTasks = async (isBackground = false) => {
@@ -350,11 +376,11 @@ export const TasksView: React.FC = () => {
 
   const { isConnected } = useTaskWebSocket({
     onTaskUpdated: (updatedSummary) => {
+      if (updatedSummary.updatedAt) {
+        latestSummaryUpdatedAtRef.current[updatedSummary.id] = updatedSummary.updatedAt;
+      }
       setTasks(prev => {
-        const isAwaiting = updatedSummary.status === 'AWAITING_PRE_FLIGHT_REVIEW' ||
-                           updatedSummary.status === 'AWAITING_DESIGN_REVIEW' ||
-                           updatedSummary.status === 'AWAITING_TM_REVIEW' ||
-                           updatedSummary.status === 'AWAITING_SVG_REVIEW';
+        const isAwaiting = isTaskAwaitingUserAction(updatedSummary.status);
         const exists = prev.some(t => t.id === updatedSummary.id);
         if (isAwaiting) {
           if (exists) {
@@ -368,11 +394,20 @@ export const TasksView: React.FC = () => {
       });
 
       if (selectedTaskIdRef.current === updatedSummary.id) {
+        setActiveTaskDetail(prev => prev?.id === updatedSummary.id ? {
+          ...prev,
+          status: updatedSummary.status,
+          checkpoint: updatedSummary.checkpoint,
+          hasError: updatedSummary.hasError,
+          errorDetails: updatedSummary.errorDetails,
+          inQueue: updatedSummary.inQueue,
+          updatedAt: updatedSummary.updatedAt || prev.updatedAt
+        } : prev);
         fetchActiveTaskDetail(updatedSummary.id);
       }
     },
     onTaskCreated: (newSummary) => {
-      if (newSummary.status.startsWith('AWAITING_')) {
+      if (isTaskAwaitingUserAction(newSummary.status)) {
         setTasks(prev => [newSummary, ...prev]);
       }
     },

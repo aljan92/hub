@@ -1,7 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import { DatabaseSync } from 'node:sqlite';
-import { DesignTaskLog, SessionEvent, TaskSummary } from '../../types/tasks';
+import {
+  DesignTaskLog,
+  SessionEvent,
+  TaskSummary,
+  TASK_STATUSES_AWAITING_USER_ACTION
+} from '../../types/tasks';
 import { loadJsonWithBackupRecovery } from '../utils/atomicFileStorage';
 
 export interface TaskPageOptions {
@@ -784,19 +789,15 @@ export class TaskRepository {
    */
   public static getAwaitingTaskSummaries(): TaskSummary[] {
     const db = this.getDb();
+    const placeholders = TASK_STATUSES_AWAITING_USER_ACTION.map(() => '?').join(', ');
     const rows: any[] = db.prepare(`
       SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
              quote, niche1, niche2, subniche, image_url, has_error, error_details,
              design_id, in_queue, events_count, client_ip
       FROM tasks
-      WHERE status IN (
-        'AWAITING_PRE_FLIGHT_REVIEW',
-        'AWAITING_DESIGN_REVIEW',
-        'AWAITING_TM_REVIEW',
-        'AWAITING_SVG_REVIEW'
-      )
+      WHERE status IN (${placeholders})
       ORDER BY counter DESC
-    `).all();
+    `).all(...TASK_STATUSES_AWAITING_USER_ACTION);
 
     return rows.map(r => this.rowToSummary(r));
   }

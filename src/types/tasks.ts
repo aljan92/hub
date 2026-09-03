@@ -29,6 +29,26 @@ export type TaskStatus =
   | 'REJECTED'
   | 'ERROR';
 
+/**
+ * Statuses that require a user decision and therefore belong in the Tasks
+ * review inbox. Keep this projection centralized so API queries and realtime
+ * clients cannot silently disagree when a new review state is introduced.
+ */
+export const TASK_STATUSES_AWAITING_USER_ACTION: readonly TaskStatus[] = [
+  'AWAITING_PRE_FLIGHT_REVIEW',
+  'AWAITING_DESIGN_REVIEW',
+  'AWAITING_TM_REVIEW',
+  'AWAITING_SVG_REVIEW',
+  'AWAITING_RECOVERY_REVIEW',
+  'UPDATE_ANALYZED'
+] as const;
+
+const TASK_STATUSES_AWAITING_USER_ACTION_SET = new Set<TaskStatus>(TASK_STATUSES_AWAITING_USER_ACTION);
+
+export function isTaskAwaitingUserAction(status: TaskStatus): boolean {
+  return TASK_STATUSES_AWAITING_USER_ACTION_SET.has(status);
+}
+
 export type EventCategory = 'SYSTEM' | 'OPENROUTER' | 'TRADEMARK' | 'IDEOGRAM' | 'VECTORIZE' | 'ERROR';
 
 export type CheckpointType = 'PRE_FLIGHT' | 'DESIGN_REVIEW' | 'TM_REVIEW' | 'SVG_REVIEW' | 'UPDATE_REVIEW' | 'RECOVERY_REVIEW';
