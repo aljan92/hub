@@ -128,6 +128,7 @@ Lokal war der warme Pfad schnell. Auf NAS/bei Event-Loop-Blockade wurde seine ge
 - Fit- und Farbselektoren sind auf den verifizierten Editor begrenzt; Fit-Abweichungen werden als technischer Fehler an den Publish Guard übergeben.
 - Zeitbudgets sind zustandsbasiert (Checkbox bis 3 s, Editor bis 3 × 5 s) statt über pauschale Langzeit-Sleeps gelöst.
 - Noch offen: exakte Resize-Upload-Bestätigung, Listing-Readback, finaler Soll-Ist-Audit und fail-closed Save-Draft-Bestätigung.
+- Update-Korrektur: Checkbox-Soll = veröffentlichte Kombinationen plus Queue-Ergänzungen. Die Slot-Berechnung bleibt ausschließlich das Delta. Der vorherige Vergleich gegen das Delta versuchte Bestandsprodukte abzuwählen und verursachte pro Abweichung bis zu 3 Sekunden Wartezeit. Regressionstest: `tests/uploadProductSelection.test.ts`.
 
 ### Upload-Pipeline: Sofortabbruch & Screencast-Backpressure umgesetzt (3. September 2026)
 

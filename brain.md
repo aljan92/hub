@@ -1214,3 +1214,11 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Noch dekodierende Frames einer alten Session/Verbindung dürfen die neue Ansicht nicht überschreiben.
 - Regressionstest `tests/browserStreamReconnect.test.ts`: Erstverbindung, Wiederöffnen ohne CDP-Event, Wechsel zwischen beiden Sessions und Erhalt beider Hintergrund-Pages bestanden. Production Build erfolgreich.
 - Nutzerbeobachtung: Anzeige kam nach Upload-Abbruch wieder. Eine zusätzliche Chrome-Auslastung unter Upload-Last ist damit nicht ausgeschlossen; der Reopen-Test ersetzt keinen NAS-Live-Test.
+
+### 10.47 Update-Upload – Bestandsauswahl und Slot-Delta getrennt
+
+- `activeProductsMap` enthält bei Updates nur zusätzliche Marktplätze. Es darf nicht direkt als vollständiger Checkbox-Sollzustand verwendet werden.
+- `buildUploadProductSelection` vereinigt ausschließlich für die Modal-Prüfung das Queue-Delta mit `liveProductSummary` (Fallback `liveStats.productSummary`), einschließlich reiner Bestandsprodukte. Produkt- und Marktplatz-Aliasse werden normalisiert, doppelte Einträge entfernt.
+- Queue-Delta, Slot-Berechnung und Auswahl der neu zu konfigurierenden Produkte bleiben unverändert. Neue Designs übernehmen keine Bestandsauswahl.
+- Fehlende oder ungültige Update-Bestandsdaten bleiben fail-closed; die Prüfung akzeptiert nicht pauschal alle aktiven Checkboxen.
+- `tests/uploadProductSelection.test.ts`, Architektur-Guard und Production Build bestanden. Amazon-Live-Verifikation ist noch erforderlich.

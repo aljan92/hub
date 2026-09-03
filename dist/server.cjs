@@ -231667,6 +231667,34 @@ init_syncEngine();
 init_amazonInspectService();
 init_amazonRecoveryVerificationService();
 init_taskRepository();
+
+// src/server/services/uploadProductSelection.ts
+init_queueService();
+function buildUploadProductSelection(plannedAdditions, isUpdate, liveSummary) {
+  const selected = {};
+  const merge = (product, marketplaces) => {
+    if (!Array.isArray(marketplaces) || marketplaces.some((mp) => typeof mp !== "string" && typeof mp !== "number")) {
+      throw new Error(`FAILED_PRODUCT_SELECTION: Ung\xFCltige Marktplatzdaten f\xFCr ${product}`);
+    }
+    const id = normalizeCatalogProductId(product);
+    const normalized = marketplaces.map((mp) => normalizeMarketplaceCode(String(mp)));
+    if (normalized.some((mp) => !["US", "GB", "DE", "FR", "IT", "ES", "JP"].includes(mp))) {
+      throw new Error(`FAILED_PRODUCT_SELECTION: Unbekannter Marktplatz f\xFCr ${product}`);
+    }
+    selected[id] = [.../* @__PURE__ */ new Set([...selected[id] || [], ...normalized])];
+  };
+  for (const [product, marketplaces] of Object.entries(plannedAdditions)) merge(product, marketplaces);
+  if (!isUpdate) return selected;
+  if (!liveSummary || typeof liveSummary !== "object" || Array.isArray(liveSummary)) {
+    throw new Error("FAILED_PRODUCT_SELECTION: Live-Marktplatzdaten f\xFCr Update fehlen; bestehende Produkte k\xF6nnen nicht sicher erhalten werden.");
+  }
+  for (const [product, info] of Object.entries(liveSummary)) {
+    merge(product, Array.isArray(info) ? info : info?.marketplaces);
+  }
+  return selected;
+}
+
+// src/server/services/uploadWorkerService.ts
 var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
   static isPausedBeforePublish = false;
@@ -231978,6 +232006,11 @@ var UploadWorkerService = class _UploadWorkerService {
         for (const p of catalog2.products) {
           productAmazonKeys[p.id] = p.amazon?.key || p.amazon?.checkboxClass || p.id;
         }
+        const selectionMap = buildUploadProductSelection(
+          item.activeProductsMap,
+          isUpdate,
+          item.liveProductSummary || item.liveStats?.productSummary
+        );
         const modalResult = await page.evaluate(async (params2) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const modal = Array.from(document.querySelectorAll(".modal-content, .modal-dialog, merch-modal, .modal")).find((el) => {
@@ -232077,7 +232110,7 @@ var UploadWorkerService = class _UploadWorkerService {
             return { success: true, modifiedCount };
           }
           return { success: false, error: "Continue button in modal not found" };
-        }, { activeMap: item.activeProductsMap, productAmazonKeys });
+        }, { activeMap: selectionMap, productAmazonKeys });
         if (!modalResult.success) {
           throw new Error(`FAILED_PRODUCT_SELECTION: ${modalResult.error || "Marktplatz-Matrix konnte nicht verifiziert werden"}`);
         }

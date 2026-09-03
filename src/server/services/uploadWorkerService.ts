@@ -11,6 +11,7 @@ import { AmazonRecoveryVerificationService } from './amazonRecoveryVerificationS
 import { TaskRepository } from '../storage/taskRepository';
 import { RemoteBaselineInfo } from '../../types/tasks';
 import { Page } from 'playwright';
+import { buildUploadProductSelection } from './uploadProductSelection';
 
 export interface UploadProgressState {
   isUploading: boolean;
@@ -445,6 +446,14 @@ export class UploadWorkerService {
           productAmazonKeys[p.id] = p.amazon?.key || p.amazon?.checkboxClass || p.id;
         }
 
+        // Preserve published combinations without changing queue slot allocation
+        // or the list of products requiring new configuration/artwork.
+        const selectionMap = buildUploadProductSelection(
+          item.activeProductsMap,
+          isUpdate,
+          item.liveProductSummary || item.liveStats?.productSummary
+        );
+
         // Perform fast double-check state synchronization inside the modal
         const modalResult = await page.evaluate(async (params: { activeMap: Record<string, string[]>; productAmazonKeys: Record<string, string> }) => {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -563,7 +572,7 @@ export class UploadWorkerService {
           }
 
           return { success: false, error: 'Continue button in modal not found' };
-        }, { activeMap: item.activeProductsMap, productAmazonKeys });
+        }, { activeMap: selectionMap, productAmazonKeys });
 
         if (!modalResult.success) {
           throw new Error(`FAILED_PRODUCT_SELECTION: ${modalResult.error || 'Marktplatz-Matrix konnte nicht verifiziert werden'}`);
