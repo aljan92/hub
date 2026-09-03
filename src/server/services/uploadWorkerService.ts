@@ -13,6 +13,7 @@ import { RemoteBaselineInfo } from '../../types/tasks';
 import { Page } from 'playwright';
 import { buildUploadProductSelection } from './uploadProductSelection';
 import { getUploadFitPolicy } from './uploadFitPolicy';
+import { buildListingExpectations, verifyListingReadback } from './listingReadback';
 
 export interface UploadProgressState {
   isUploading: boolean;
@@ -1572,6 +1573,7 @@ export class UploadWorkerService {
         throw new Error(errorMsg);
       }
 
+      const listingExpectations = buildListingExpectations(immutableListings, hasLocalizedListings);
       const fillResult = await page.evaluate(async ({ listingMap, hasTranslations }: { listingMap: Record<string, any>; hasTranslations: boolean }) => {
         const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
         const locales = hasTranslations ? ['en', 'de', 'fr', 'it', 'es', 'ja'] : ['en'];
@@ -1599,8 +1601,7 @@ export class UploadWorkerService {
           }
 
           const setVal = (fieldKey: string, rawVal: string, maxLen = 2000) => {
-            if (!rawVal) return;
-            const clamped = rawVal.substring(0, maxLen).trim();
+            const clamped = rawVal;
             const selectors = loc === 'en' ? [
               `#en #designCreator-productEditor-${fieldKey}`,
               `[id="en"] #designCreator-productEditor-${fieldKey}`,
@@ -1638,11 +1639,12 @@ export class UploadWorkerService {
         // Also ensure root default English fields are populated to satisfy Angular Form validity
         const enContent = listingMap['en'] || listingMap['de'] || {};
         const setRootVal = (id: string, rawVal: string, maxLen = 2000) => {
-          if (!rawVal) return;
-          const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement;
+          const el = Array.from(document.querySelectorAll(`[id="${id}"]`)).find(candidate =>
+            !['en', 'de', 'fr', 'it', 'es', 'ja', 'jp'].some(locale => candidate.closest(`[id="${locale}"]`))
+          ) as HTMLInputElement | HTMLTextAreaElement | undefined;
           if (el) {
             el.focus();
-            el.value = rawVal.substring(0, maxLen).trim();
+            el.value = rawVal;
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
             el.dispatchEvent(new Event('blur', { bubbles: true }));
@@ -1658,7 +1660,14 @@ export class UploadWorkerService {
         return { success: true, filledLocales };
       }, { listingMap: immutableListings, hasTranslations: hasLocalizedListings });
 
-      this.log(`✅ Listings für Sprachen [${fillResult.filledLocales.join(', ')}] eingetragen!`, 'Listings fertig ✓', 90, 100);
+      this.log('🔎 Lese Listing-Felder zurück und prüfe den Sollzustand...', 'Verifiziere Listing-Texte...', 89, 100);
+      const readback = await page.evaluate(verifyListingReadback, { expectations: listingExpectations });
+      if (!readback.success) {
+        const reason = readback.errors.join('; ');
+        productUploadResults.push({ productId: 'LISTING_INTEGRITY', amazonKey: 'ALL', status: 'FAILED_LISTING_INTEGRITY', reason });
+        throw new Error(`FAILED_LISTING_INTEGRITY: ${reason}`);
+      }
+      this.log(`✅ Listings [${fillResult.filledLocales.join(', ')}]: ${readback.verifiedFields} Felder zurückgelesen und bestätigt.`, 'Listings verifiziert ✓', 90, 100);
 
       // Scroll to bottom so action buttons are visible in screencast
       await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));

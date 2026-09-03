@@ -1252,3 +1252,11 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Gemäß Nutzerregel bedeutet `fitTypes: []`: keine Fit-Konfiguration. Der Upload überspringt dann Fit-DOM-Abfragen und den Fit-Discovery-Guard, auch bei `fitDiscoveryStatus=FAILED`. Der Scanstatus selbst wird nicht nachträglich als erfolgreich umgeschrieben.
 - Bei vorhandenen Katalog-Fits bleiben der Discovery-Guard und die Sollzustandsprüfung aktiv. Farb-/Editor-/Artwork-Prüfungen bleiben unverändert.
 - Generischer Helper `getUploadFitPolicy`, keine Produkt-Ausnahmeliste. `tests/uploadFitPolicy.test.ts`, Architektur-Guard und Build bestanden.
+
+### 10.52 Listing-Readback vor Save/Publish
+
+- Nach dem Befüllen werden Brand, Titel, Bullets und Beschreibung je erwarteter Sprache erneut aus dem DOM gelesen. Zwei übereinstimmende Prüfungen im Abstand von 150 ms sind nötig; bei verzögerten Updates wird bis zu 5 s gewartet.
+- Fehlende nichtleere Felder, mehrdeutige Inputs und abweichende Werte erzeugen `FAILED_LISTING_INTEGRITY` und stoppen vor dem Remote-Request. Leere optionale Felder dürfen fehlen, vorhandene müssen leer sein (keine Alttexte bei Updates).
+- Erwartungswerte stammen aus den integritätsgeprüften Queue-Listings; EN-Fallback und JP→JA entsprechen der bisherigen Befüllung. Zeilenenden werden verglichen normalisiert, sonst exakter Textvergleich.
+- Kein stilles Kürzen/Trimmen beim Schreiben: Überschrittene Feldlimits werden vorab gemeldet. Der englische Root-Fallback darf keine fremden Sprachfelder überschreiben.
+- `tests/listingReadback.test.ts` prüft den tatsächlichen Browser-Verifier in isoliertem Chromium. Kein Live-Amazon-Submit im Test; Remote-Persistenz wird dadurch nicht nachgewiesen.

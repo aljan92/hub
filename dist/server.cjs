@@ -231722,6 +231722,63 @@ function getUploadFitPolicy(product) {
   return { required, blocked: required && product.fitDiscoveryStatus === "FAILED" };
 }
 
+// src/server/services/listingReadback.ts
+function buildListingExpectations(listings, translated) {
+  const fields = [
+    ["brandName", "brand", 50],
+    ["title", "title", 60],
+    ["featureBullet1", "bullet1", 256],
+    ["featureBullet2", "bullet2", 256],
+    ["description", "description", 2e3]
+  ];
+  return (translated ? ["en", "de", "fr", "it", "es", "ja"] : ["en"]).flatMap((locale) => {
+    const content = listings[locale] || (locale === "ja" ? listings.jp : null) || listings.en;
+    if (!content) throw new Error(`FAILED_LISTING_INTEGRITY: ${locale}: Listing fehlt`);
+    return fields.map(([field, source12, limit]) => {
+      const value2 = String(content[source12] ?? "");
+      if (value2.length > limit) throw new Error(`FAILED_LISTING_INTEGRITY: ${locale}/${field}: ${value2.length} Zeichen \xFCberschreiten Limit ${limit}; kein stilles K\xFCrzen.`);
+      return { locale, field, value: value2 };
+    });
+  });
+}
+async function verifyListingReadback({ expectations, timeoutMs = 5e3 }) {
+  const deadline = Date.now() + timeoutMs;
+  let stablePasses = 0;
+  let errors2 = [];
+  let verifiedFields = 0;
+  do {
+    errors2 = [];
+    verifiedFields = 0;
+    for (const expected of expectations) {
+      const id = `designCreator-productEditor-${expected.field}`;
+      const locales = ["en", "de", "fr", "it", "es", "ja", "jp"];
+      let candidates = Array.from(document.querySelectorAll(`[id="${expected.locale}"] [id="${id}"]`));
+      if (!candidates.length && expected.locale === "en") {
+        candidates = Array.from(document.querySelectorAll(`[id="${id}"]`)).filter(
+          (el) => !locales.some((locale) => el.closest(`[id="${locale}"]`))
+        );
+      }
+      const inputs = candidates.filter(
+        (el) => el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+      );
+      const name = `${expected.locale.toUpperCase()}/${expected.field}`;
+      if (inputs.length === 0) {
+        if (expected.value !== "") errors2.push(`${name}: Feld fehlt`);
+      } else if (inputs.length !== 1) {
+        errors2.push(`${name}: Feld nicht eindeutig (${inputs.length} Treffer)`);
+      } else {
+        if (inputs[0].value.replace(/\r\n?/g, "\n") !== expected.value.replace(/\r\n?/g, "\n")) {
+          errors2.push(`${name}: Text weicht vom Soll ab (Soll ${expected.value.length}, Ist ${inputs[0].value.length} Zeichen)`);
+        } else verifiedFields++;
+      }
+    }
+    stablePasses = errors2.length === 0 ? stablePasses + 1 : 0;
+    if (stablePasses >= 2) return { success: true, errors: [], verifiedFields };
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  } while (Date.now() < deadline);
+  return { success: false, errors: errors2.length ? errors2 : ["Listing-Zustand noch nicht stabil best\xE4tigt"], verifiedFields };
+}
+
 // src/server/services/uploadWorkerService.ts
 var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
@@ -232886,6 +232943,7 @@ var UploadWorkerService = class _UploadWorkerService {
         });
         throw new Error(errorMsg);
       }
+      const listingExpectations = buildListingExpectations(immutableListings, hasLocalizedListings);
       const fillResult = await page.evaluate(async ({ listingMap, hasTranslations }) => {
         const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
         const locales = hasTranslations ? ["en", "de", "fr", "it", "es", "ja"] : ["en"];
@@ -232907,8 +232965,7 @@ var UploadWorkerService = class _UploadWorkerService {
             }
           }
           const setVal = (fieldKey, rawVal, maxLen = 2e3) => {
-            if (!rawVal) return;
-            const clamped = rawVal.substring(0, maxLen).trim();
+            const clamped = rawVal;
             const selectors2 = loc === "en" ? [
               `#en #designCreator-productEditor-${fieldKey}`,
               `[id="en"] #designCreator-productEditor-${fieldKey}`,
@@ -232940,11 +232997,12 @@ var UploadWorkerService = class _UploadWorkerService {
         }
         const enContent = listingMap["en"] || listingMap["de"] || {};
         const setRootVal = (id, rawVal, maxLen = 2e3) => {
-          if (!rawVal) return;
-          const el = document.getElementById(id);
+          const el = Array.from(document.querySelectorAll(`[id="${id}"]`)).find(
+            (candidate) => !["en", "de", "fr", "it", "es", "ja", "jp"].some((locale) => candidate.closest(`[id="${locale}"]`))
+          );
           if (el) {
             el.focus();
-            el.value = rawVal.substring(0, maxLen).trim();
+            el.value = rawVal;
             el.dispatchEvent(new Event("input", { bubbles: true }));
             el.dispatchEvent(new Event("change", { bubbles: true }));
             el.dispatchEvent(new Event("blur", { bubbles: true }));
@@ -232957,7 +233015,14 @@ var UploadWorkerService = class _UploadWorkerService {
         setRootVal("designCreator-productEditor-description", enContent.description || "", 2e3);
         return { success: true, filledLocales };
       }, { listingMap: immutableListings, hasTranslations: hasLocalizedListings });
-      this.log(`\u2705 Listings f\xFCr Sprachen [${fillResult.filledLocales.join(", ")}] eingetragen!`, "Listings fertig \u2713", 90, 100);
+      this.log("\u{1F50E} Lese Listing-Felder zur\xFCck und pr\xFCfe den Sollzustand...", "Verifiziere Listing-Texte...", 89, 100);
+      const readback = await page.evaluate(verifyListingReadback, { expectations: listingExpectations });
+      if (!readback.success) {
+        const reason = readback.errors.join("; ");
+        productUploadResults.push({ productId: "LISTING_INTEGRITY", amazonKey: "ALL", status: "FAILED_LISTING_INTEGRITY", reason });
+        throw new Error(`FAILED_LISTING_INTEGRITY: ${reason}`);
+      }
+      this.log(`\u2705 Listings [${fillResult.filledLocales.join(", ")}]: ${readback.verifiedFields} Felder zur\xFCckgelesen und best\xE4tigt.`, "Listings verifiziert \u2713", 90, 100);
       await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
       await page.waitForTimeout(1500);
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
