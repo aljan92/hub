@@ -60,6 +60,13 @@ export type EventType =
   | 'SVG_AUDIT_RESPONSE'
   | 'RESIZE_REQUEST'
   | 'RESIZE_RESPONSE'
+  | 'RECOVERY_DETECTED'
+  | 'RECOVERY_STARTED'
+  | 'RECOVERY_ASSET_REUSED'
+  | 'RECOVERY_STEP_RESTARTED'
+  | 'RECOVERY_COMPLETED'
+  | 'RECOVERY_ESCALATED'
+  | 'RECOVERY_FAILED'
   | 'ERROR';
 
 export interface EventMetadata {
@@ -80,6 +87,8 @@ export interface SessionEvent {
   title: string;
   content: any;
   metadata?: EventMetadata;
+  repeatCount?: number;
+  lastRepeatedAt?: string;
 }
 
 export interface DesignTaskLog {
@@ -90,7 +99,12 @@ export interface DesignTaskLog {
   status: TaskStatus;
   checkpoint?: CheckpointType;
   receivedAt: string;
+  updatedAt?: string;
   clientIp?: string;
+  designId?: string;
+  quote?: string;
+  inQueue?: boolean;
+  eventsCount?: number;
   payload: Record<string, any>;
   events: SessionEvent[];
   niche1?: string;
@@ -144,6 +158,54 @@ export interface DesignTaskLog {
     interruptedStatus?: TaskStatus;
     interruptedStep?: string;
     recoveryReason?: string;
+    recoveredAt?: string;
+    recoveredSuccessfully?: boolean;
+  };
+  trademarkWorkflowState?: TrademarkWorkflowState;
+}
+
+export type TrademarkWorkflowPhase =
+  | 'INITIAL_SCAN'
+  | 'REFEREE'
+  | 'REWRITE'
+  | 'VERIFY'
+  | 'COMPLETED'
+  | 'ESCALATED';
+
+export interface TrademarkWorkflowState {
+  phase: TrademarkWorkflowPhase;
+  rewriteAttemptsCompleted: number; // 0, 1, 2, 3 (strictly max 3 rewrites)
+  currentListing: {
+    brand: string;
+    title: string;
+    bullet1: string;
+    bullet2: string;
+    description: string;
+  };
+  forbiddenTermsForTask: string[];
+  rewriteIterations: Array<{
+    iteration: number;
+    actionsTaken: string[];
+    listing: {
+      brand: string;
+      title: string;
+      bullet1: string;
+      bullet2: string;
+      description: string;
+    };
+    hitsFound: number;
+  }>;
+  lastRefereeResult?: any;
+  lastVerifierResult?: any;
+  blockedProducts?: string[];
+  blockedNiceClasses?: number[];
+  initialTrademarkHits?: any[];
+  lastCheckedListing?: {
+    brand: string;
+    title: string;
+    bullet1: string;
+    bullet2: string;
+    description: string;
   };
 }
 

@@ -10,6 +10,7 @@ import { BannedWordsService } from './bannedWordsService';
 import { VectorizerService } from './vectorizerService';
 import { SvgRenderService } from './svgRenderService';
 import { LLMService } from './llmService';
+import { TaskExecutionLock } from './taskExecutionLock';
 
 export class DesignPipelineService {
   /**
@@ -224,42 +225,86 @@ export class DesignPipelineService {
   }
 
   /**
+   * Runs Design Creation Pipeline sequentially from a specific step forward
+   */
+  static async runFromStep(
+    taskId: string, 
+    startStep: 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6' | 'D7' | 'D8' = 'D1',
+    owner: 'NORMAL' | 'RECOVERY' | 'USER_ACTION' = 'NORMAL'
+  ): Promise<{ success: boolean; currentStep?: string; pausedAtCheckpoint?: string; error?: string }> {
+    console.log(`[DesignPipeline] 🚀 Führe Design Pipeline ab Step ${startStep} für Task ${taskId} aus (Owner: ${owner})...`);
+
+    if (!TaskExecutionLock.acquire(taskId, owner)) {
+      console.warn(`[DesignPipeline] ⚠️ Task ${taskId} wird bereits ausgeführt (${JSON.stringify(TaskExecutionLock.getLockInfo(taskId))}). Abgebrochen.`);
+      return { success: false, error: `Task ${taskId} is currently executing.` };
+    }
+
+    try {
+      const stepOrder: Array<'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6' | 'D7' | 'D8'> = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'];
+      const startIndex = stepOrder.indexOf(startStep);
+
+      for (let i = startIndex; i < stepOrder.length; i++) {
+        const step = stepOrder[i];
+        if (step === 'D1') {
+          await this.stepD1_PreflightTrademark(taskId);
+        } else if (step === 'D2') {
+          const r2 = await this.stepD2_GeneratePrompt(taskId);
+          if (!r2.success) return { success: false, currentStep: 'D2', error: r2.error };
+        } else if (step === 'D3') {
+          const r3 = await this.stepD3_GenerateImage(taskId);
+          if (!r3.success) return { success: false, currentStep: 'D3', error: r3.error };
+        } else if (step === 'D4') {
+          const r4 = await this.stepD4_AnalyzeDesign(taskId);
+          if (!r4.success) return { success: false, currentStep: 'D4', error: r4.error };
+
+          // Post-Analysis Decision Gate: Check for defective design or manual review requirement
+          const task = this.getTask(taskId);
+          const isDefective = task?.analysisResult?.design_quality?.quality_verdict === 'DEFECTIVE' || task?.analysisResult?.overall_verdict === 'REJECTED';
+          if (isDefective) {
+            const reason = task?.analysisResult?.design_quality?.quality_issues || 'Defective design quality detected';
+            TaskLogService.updateTaskStatus(taskId, {
+              status: 'AWAITING_DESIGN_REVIEW',
+              checkpoint: 'DESIGN_REVIEW',
+              hasError: true,
+              errorDetails: reason
+            });
+            return { success: true, currentStep: 'D4', pausedAtCheckpoint: 'DESIGN_REVIEW' };
+          }
+        } else if (step === 'D5') {
+          const r5 = await this.stepD5_GenerateListing(taskId);
+          if (!r5.success) return { success: false, currentStep: 'D5', error: r5.error };
+        } else if (step === 'D6') {
+          const r6 = await this.stepD6_TrademarkCheck(taskId);
+          if (!r6.success) return { success: false, currentStep: 'D6', error: r6.error };
+
+          const task = this.getTask(taskId);
+          if (task?.status === 'AWAITING_TM_REVIEW') {
+            return { success: true, currentStep: 'D6', pausedAtCheckpoint: 'TM_REVIEW' };
+          }
+        } else if (step === 'D7') {
+          const r7 = await this.stepD7_VectorizeAndAudit(taskId);
+          if (!r7.success) return { success: false, currentStep: 'D7', error: r7.error };
+
+          const task = this.getTask(taskId);
+          if (task?.status === 'AWAITING_SVG_REVIEW') {
+            return { success: true, currentStep: 'D7', pausedAtCheckpoint: 'SVG_REVIEW' };
+          }
+        } else if (step === 'D8') {
+          const r8 = await this.stepD8_Enqueue(taskId);
+          if (!r8.success) return { success: false, currentStep: 'D8', error: r8.error };
+        }
+      }
+
+      return { success: true, currentStep: 'D8' };
+    } finally {
+      TaskExecutionLock.release(taskId);
+    }
+  }
+
+  /**
    * Runs the full Design Creation Pipeline end-to-end
    */
   static async runDesignPipeline(taskId: string): Promise<{ success: boolean; currentStep?: string; error?: string }> {
-    console.log(`[DesignPipeline] 🚀 Starte Full Design Creation Pipeline für Task ${taskId}...`);
-    
-    // Step D1: Pre-Flight TM
-    await this.stepD1_PreflightTrademark(taskId);
-
-    // Step D2: Generate Prompt
-    const r2 = await this.stepD2_GeneratePrompt(taskId);
-    if (!r2.success) return { success: false, currentStep: 'D2', error: r2.error };
-
-    // Step D3: Generate Image (Ideogram)
-    const r3 = await this.stepD3_GenerateImage(taskId);
-    if (!r3.success) return { success: false, currentStep: 'D3', error: r3.error };
-
-    // Step D4: Analyze Design (Vision QA)
-    const r4 = await this.stepD4_AnalyzeDesign(taskId);
-    if (!r4.success) return { success: false, currentStep: 'D4', error: r4.error };
-
-    // Step D5: Generate Listing
-    const r5 = await this.stepD5_GenerateListing(taskId);
-    if (!r5.success) return { success: false, currentStep: 'D5', error: r5.error };
-
-    // Step D6: TM Check & Refine
-    const r6 = await this.stepD6_TrademarkCheck(taskId);
-    if (!r6.success) return { success: false, currentStep: 'D6', error: r6.error };
-
-    // Step D7: Vectorize & SVG Audit
-    const r7 = await this.stepD7_VectorizeAndAudit(taskId);
-    if (!r7.success) return { success: false, currentStep: 'D7', error: r7.error };
-
-    // Step D8: Enqueue
-    const r8 = await this.stepD8_Enqueue(taskId);
-    if (!r8.success) return { success: false, currentStep: 'D8', error: r8.error };
-
-    return { success: true, currentStep: 'D8' };
+    return await this.runFromStep(taskId, 'D1', 'NORMAL');
   }
 }

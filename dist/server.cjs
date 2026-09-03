@@ -1294,8 +1294,8 @@ var require_node = __commonJS2({
           }
           break;
         case "FILE":
-          var fs18 = require("fs");
-          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
+          var fs20 = require("fs");
+          stream2 = new fs20.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -14082,11 +14082,11 @@ var require_mime_types = __commonJS2({
       }
       return exts[0];
     }
-    function lookup(path17) {
-      if (!path17 || typeof path17 !== "string") {
+    function lookup(path19) {
+      if (!path19 || typeof path19 !== "string") {
         return false;
       }
-      var extension3 = extname("x." + path17).toLowerCase().substr(1);
+      var extension3 = extname("x." + path19).toLowerCase().substr(1);
       if (!extension3) {
         return false;
       }
@@ -17727,8 +17727,8 @@ var require_node2 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs18 = require("fs");
-          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
+          var fs20 = require("fs");
+          stream2 = new fs20.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18446,8 +18446,8 @@ var require_node3 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs18 = require("fs");
-          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
+          var fs20 = require("fs");
+          stream2 = new fs20.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18535,7 +18535,7 @@ var require_path_to_regexp = __commonJS2({
   "node_modules/path-to-regexp/index.js"(exports2, module3) {
     module3.exports = pathToRegexp;
     var MATCHING_GROUP_REGEXP = /\\.|\((?:\?<(.*?)>)?(?!\?)/g;
-    function pathToRegexp(path17, keys, options2) {
+    function pathToRegexp(path19, keys, options2) {
       options2 = options2 || {};
       keys = keys || [];
       var strict = options2.strict;
@@ -18549,8 +18549,8 @@ var require_path_to_regexp = __commonJS2({
       var pos = 0;
       var backtrack = "";
       var m;
-      if (path17 instanceof RegExp) {
-        while (m = MATCHING_GROUP_REGEXP.exec(path17.source)) {
+      if (path19 instanceof RegExp) {
+        while (m = MATCHING_GROUP_REGEXP.exec(path19.source)) {
           if (m[0][0] === "\\") continue;
           keys.push({
             name: m[1] || name++,
@@ -18558,18 +18558,18 @@ var require_path_to_regexp = __commonJS2({
             offset: m.index
           });
         }
-        return path17;
+        return path19;
       }
-      if (Array.isArray(path17)) {
-        path17 = path17.map(function(value2) {
+      if (Array.isArray(path19)) {
+        path19 = path19.map(function(value2) {
           return pathToRegexp(value2, keys, options2).source;
         });
-        return new RegExp(path17.join("|"), flags);
+        return new RegExp(path19.join("|"), flags);
       }
-      if (typeof path17 !== "string") {
+      if (typeof path19 !== "string") {
         throw new TypeError("path must be a string, array of strings, or regular expression");
       }
-      path17 = path17.replace(
+      path19 = path19.replace(
         /\\.|(\/)?(\.)?:(\w+)(\(.*?\))?(\*)?(\?)?|[.*]|\/\(/g,
         function(match, slash, format, key, capture, star, optional, offset) {
           if (match[0] === "\\") {
@@ -18586,7 +18586,7 @@ var require_path_to_regexp = __commonJS2({
           if (slash || format) {
             backtrack = "";
           } else {
-            backtrack += path17.slice(pos, offset);
+            backtrack += path19.slice(pos, offset);
           }
           pos = offset + match.length;
           if (match === "*") {
@@ -18616,7 +18616,7 @@ var require_path_to_regexp = __commonJS2({
           return result2;
         }
       );
-      while (m = MATCHING_GROUP_REGEXP.exec(path17)) {
+      while (m = MATCHING_GROUP_REGEXP.exec(path19)) {
         if (m[0][0] === "\\") continue;
         if (keysOffset + i === keys.length || keys[keysOffset + i].offset > m.index) {
           keys.splice(keysOffset + i, 0, {
@@ -18628,13 +18628,13 @@ var require_path_to_regexp = __commonJS2({
         }
         i++;
       }
-      path17 += strict ? "" : path17[path17.length - 1] === "/" ? "?" : "/?";
+      path19 += strict ? "" : path19[path19.length - 1] === "/" ? "?" : "/?";
       if (end) {
-        path17 += "$";
-      } else if (path17[path17.length - 1] !== "/") {
-        path17 += lookahead ? "(?=/|$)" : "(?:/|$)";
+        path19 += "$";
+      } else if (path19[path19.length - 1] !== "/") {
+        path19 += lookahead ? "(?=/|$)" : "(?:/|$)";
       }
-      return new RegExp("^" + path17, flags);
+      return new RegExp("^" + path19, flags);
     }
   }
 });
@@ -18647,19 +18647,19 @@ var require_layer = __commonJS2({
     var debug17 = require_src3()("express:router:layer");
     var hasOwnProperty2 = Object.prototype.hasOwnProperty;
     module3.exports = Layer;
-    function Layer(path17, options2, fn) {
+    function Layer(path19, options2, fn) {
       if (!(this instanceof Layer)) {
-        return new Layer(path17, options2, fn);
+        return new Layer(path19, options2, fn);
       }
-      debug17("new %o", path17);
+      debug17("new %o", path19);
       var opts = options2 || {};
       this.handle = fn;
       this.name = fn.name || "<anonymous>";
       this.params = void 0;
       this.path = void 0;
-      this.regexp = pathRegexp(path17, this.keys = [], opts);
-      this.regexp.fast_star = path17 === "*";
-      this.regexp.fast_slash = path17 === "/" && opts.end === false;
+      this.regexp = pathRegexp(path19, this.keys = [], opts);
+      this.regexp.fast_star = path19 === "*";
+      this.regexp.fast_slash = path19 === "/" && opts.end === false;
     }
     Layer.prototype.handle_error = function handle_error(error, req, res, next) {
       var fn = this.handle;
@@ -18683,20 +18683,20 @@ var require_layer = __commonJS2({
         next(err);
       }
     };
-    Layer.prototype.match = function match(path17) {
+    Layer.prototype.match = function match(path19) {
       var match2;
-      if (path17 != null) {
+      if (path19 != null) {
         if (this.regexp.fast_slash) {
           this.params = {};
           this.path = "";
           return true;
         }
         if (this.regexp.fast_star) {
-          this.params = { "0": decode_param(path17) };
-          this.path = path17;
+          this.params = { "0": decode_param(path19) };
+          this.path = path19;
           return true;
         }
-        match2 = this.regexp.exec(path17);
+        match2 = this.regexp.exec(path19);
       }
       if (!match2) {
         this.params = void 0;
@@ -18789,10 +18789,10 @@ var require_route = __commonJS2({
     var slice = Array.prototype.slice;
     var toString = Object.prototype.toString;
     module3.exports = Route3;
-    function Route3(path17) {
-      this.path = path17;
+    function Route3(path19) {
+      this.path = path19;
       this.stack = [];
-      debug17("new %o", path17);
+      debug17("new %o", path19);
       this.methods = {};
     }
     Route3.prototype._handles_method = function _handles_method(method) {
@@ -19004,8 +19004,8 @@ var require_router = __commonJS2({
         if (++sync > 100) {
           return setImmediate(next, err);
         }
-        var path17 = getPathname(req);
-        if (path17 == null) {
+        var path19 = getPathname(req);
+        if (path19 == null) {
           return done(layerError);
         }
         var layer;
@@ -19013,7 +19013,7 @@ var require_router = __commonJS2({
         var route2;
         while (match !== true && idx < stack.length) {
           layer = stack[idx++];
-          match = matchLayer(layer, path17);
+          match = matchLayer(layer, path19);
           route2 = layer.route;
           if (typeof match !== "boolean") {
             layerError = layerError || match;
@@ -19051,18 +19051,18 @@ var require_router = __commonJS2({
           } else if (route2) {
             layer.handle_request(req, res, next);
           } else {
-            trim_prefix(layer, layerError, layerPath, path17);
+            trim_prefix(layer, layerError, layerPath, path19);
           }
           sync = 0;
         });
       }
-      function trim_prefix(layer, layerError, layerPath, path17) {
+      function trim_prefix(layer, layerError, layerPath, path19) {
         if (layerPath.length !== 0) {
-          if (layerPath !== path17.slice(0, layerPath.length)) {
+          if (layerPath !== path19.slice(0, layerPath.length)) {
             next(layerError);
             return;
           }
-          var c = path17[layerPath.length];
+          var c = path19[layerPath.length];
           if (c && c !== "/" && c !== ".") return next(layerError);
           debug17("trim prefix (%s) from url %s", layerPath, req.url);
           removed = layerPath;
@@ -19140,7 +19140,7 @@ var require_router = __commonJS2({
     };
     proto.use = function use(fn) {
       var offset = 0;
-      var path17 = "/";
+      var path19 = "/";
       if (typeof fn !== "function") {
         var arg = fn;
         while (Array.isArray(arg) && arg.length !== 0) {
@@ -19148,7 +19148,7 @@ var require_router = __commonJS2({
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path17 = fn;
+          path19 = fn;
         }
       }
       var callbacks = flatten(slice.call(arguments, offset));
@@ -19160,8 +19160,8 @@ var require_router = __commonJS2({
         if (typeof fn !== "function") {
           throw new TypeError("Router.use() requires a middleware function but got a " + gettype(fn));
         }
-        debug17("use %o %s", path17, fn.name || "<anonymous>");
-        var layer = new Layer(path17, {
+        debug17("use %o %s", path19, fn.name || "<anonymous>");
+        var layer = new Layer(path19, {
           sensitive: this.caseSensitive,
           strict: false,
           end: false
@@ -19171,9 +19171,9 @@ var require_router = __commonJS2({
       }
       return this;
     };
-    proto.route = function route2(path17) {
-      var route3 = new Route3(path17);
-      var layer = new Layer(path17, {
+    proto.route = function route2(path19) {
+      var route3 = new Route3(path19);
+      var layer = new Layer(path19, {
         sensitive: this.caseSensitive,
         strict: this.strict,
         end: true
@@ -19183,8 +19183,8 @@ var require_router = __commonJS2({
       return route3;
     };
     methods.concat("all").forEach(function(method) {
-      proto[method] = function(path17) {
-        var route2 = this.route(path17);
+      proto[method] = function(path19) {
+        var route2 = this.route(path19);
         route2[method].apply(route2, slice.call(arguments, 1));
         return this;
       };
@@ -19220,9 +19220,9 @@ var require_router = __commonJS2({
       }
       return toString.call(obj).replace(objectRegExp, "$1");
     }
-    function matchLayer(layer, path17) {
+    function matchLayer(layer, path19) {
       try {
-        return layer.match(path17);
+        return layer.match(path19);
       } catch (err) {
         return err;
       }
@@ -19340,13 +19340,13 @@ var require_view = __commonJS2({
   "node_modules/express/lib/view.js"(exports2, module3) {
     "use strict";
     var debug17 = require_src3()("express:view");
-    var path17 = require("path");
-    var fs18 = require("fs");
-    var dirname = path17.dirname;
-    var basename = path17.basename;
-    var extname = path17.extname;
-    var join = path17.join;
-    var resolve = path17.resolve;
+    var path19 = require("path");
+    var fs20 = require("fs");
+    var dirname = path19.dirname;
+    var basename = path19.basename;
+    var extname = path19.extname;
+    var join = path19.join;
+    var resolve = path19.resolve;
     module3.exports = View;
     function View(name, options2) {
       var opts = options2 || {};
@@ -19375,17 +19375,17 @@ var require_view = __commonJS2({
       this.path = this.lookup(fileName);
     }
     View.prototype.lookup = function lookup(name) {
-      var path18;
+      var path20;
       var roots = [].concat(this.root);
       debug17('lookup "%s"', name);
-      for (var i = 0; i < roots.length && !path18; i++) {
+      for (var i = 0; i < roots.length && !path20; i++) {
         var root = roots[i];
         var loc = resolve(root, name);
         var dir = dirname(loc);
         var file = basename(loc);
-        path18 = this.resolve(dir, file);
+        path20 = this.resolve(dir, file);
       }
-      return path18;
+      return path20;
     };
     View.prototype.render = function render(options2, callback) {
       debug17('render "%s"', this.path);
@@ -19393,21 +19393,21 @@ var require_view = __commonJS2({
     };
     View.prototype.resolve = function resolve2(dir, file) {
       var ext = this.ext;
-      var path18 = join(dir, file);
-      var stat = tryStat(path18);
+      var path20 = join(dir, file);
+      var stat = tryStat(path20);
       if (stat && stat.isFile()) {
-        return path18;
+        return path20;
       }
-      path18 = join(dir, basename(file, ext), "index" + ext);
-      stat = tryStat(path18);
+      path20 = join(dir, basename(file, ext), "index" + ext);
+      stat = tryStat(path20);
       if (stat && stat.isFile()) {
-        return path18;
+        return path20;
       }
     };
-    function tryStat(path18) {
-      debug17('stat "%s"', path18);
+    function tryStat(path20) {
+      debug17('stat "%s"', path20);
       try {
-        return fs18.statSync(path18);
+        return fs20.statSync(path20);
       } catch (e) {
         return void 0;
       }
@@ -20012,8 +20012,8 @@ var require_node4 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs18 = require("fs");
-          stream2 = new fs18.SyncWriteStream(fd2, { autoClose: false });
+          var fs20 = require("fs");
+          stream2 = new fs20.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -20185,8 +20185,8 @@ var require_types = __commonJS2({
 // node_modules/mime/mime.js
 var require_mime = __commonJS2({
   "node_modules/mime/mime.js"(exports2, module3) {
-    var path17 = require("path");
-    var fs18 = require("fs");
+    var path19 = require("path");
+    var fs20 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -20207,7 +20207,7 @@ var require_mime = __commonJS2({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs18.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs20.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -20215,8 +20215,8 @@ var require_mime = __commonJS2({
       this.define(map);
       this._loading = null;
     };
-    Mime.prototype.lookup = function(path18, fallback) {
-      var ext = path18.replace(/^.*[\.\/\\]/, "").toLowerCase();
+    Mime.prototype.lookup = function(path20, fallback) {
+      var ext = path20.replace(/^.*[\.\/\\]/, "").toLowerCase();
       return this.types[ext] || fallback || this.default_type;
     };
     Mime.prototype.extension = function(mimeType) {
@@ -20445,33 +20445,33 @@ var require_send = __commonJS2({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs18 = require("fs");
+    var fs20 = require("fs");
     var mime8 = require_mime();
     var ms = require_ms5();
     var onFinished = require_on_finished();
     var parseRange = require_range_parser();
-    var path17 = require("path");
+    var path19 = require("path");
     var statuses = require_statuses();
     var Stream2 = require("stream");
     var util2 = require("util");
-    var extname = path17.extname;
-    var join = path17.join;
-    var normalize = path17.normalize;
-    var resolve = path17.resolve;
-    var sep = path17.sep;
+    var extname = path19.extname;
+    var join = path19.join;
+    var normalize = path19.normalize;
+    var resolve = path19.resolve;
+    var sep = path19.sep;
     var BYTES_RANGE_REGEXP = /^ *bytes=/;
     var MAX_MAXAGE = 60 * 60 * 24 * 365 * 1e3;
     var UP_PATH_REGEXP = /(?:^|[\\/])\.\.(?:[\\/]|$)/;
     module3.exports = send;
     module3.exports.mime = mime8;
-    function send(req, path18, options2) {
-      return new SendStream(req, path18, options2);
+    function send(req, path20, options2) {
+      return new SendStream(req, path20, options2);
     }
-    function SendStream(req, path18, options2) {
+    function SendStream(req, path20, options2) {
       Stream2.call(this);
       var opts = options2 || {};
       this.options = opts;
-      this.path = path18;
+      this.path = path20;
       this.req = req;
       this._acceptRanges = opts.acceptRanges !== void 0 ? Boolean(opts.acceptRanges) : true;
       this._cacheControl = opts.cacheControl !== void 0 ? Boolean(opts.cacheControl) : true;
@@ -20517,8 +20517,8 @@ var require_send = __commonJS2({
       this._index = index2;
       return this;
     }, "send.index: pass index as option");
-    SendStream.prototype.root = function root(path18) {
-      this._root = resolve(String(path18));
+    SendStream.prototype.root = function root(path20) {
+      this._root = resolve(String(path20));
       debug17("root %s", this._root);
       return this;
     };
@@ -20631,10 +20631,10 @@ var require_send = __commonJS2({
       var lastModified = this.res.getHeader("Last-Modified");
       return parseHttpDate(lastModified) <= parseHttpDate(ifRange);
     };
-    SendStream.prototype.redirect = function redirect(path18) {
+    SendStream.prototype.redirect = function redirect(path20) {
       var res = this.res;
       if (hasListeners(this, "directory")) {
-        this.emit("directory", res, path18);
+        this.emit("directory", res, path20);
         return;
       }
       if (this.hasTrailingSlash()) {
@@ -20654,42 +20654,42 @@ var require_send = __commonJS2({
     SendStream.prototype.pipe = function pipe(res) {
       var root = this._root;
       this.res = res;
-      var path18 = decode(this.path);
-      if (path18 === -1) {
+      var path20 = decode(this.path);
+      if (path20 === -1) {
         this.error(400);
         return res;
       }
-      if (~path18.indexOf("\0")) {
+      if (~path20.indexOf("\0")) {
         this.error(400);
         return res;
       }
       var parts;
       if (root !== null) {
-        if (path18) {
-          path18 = normalize("." + sep + path18);
+        if (path20) {
+          path20 = normalize("." + sep + path20);
         }
-        if (UP_PATH_REGEXP.test(path18)) {
-          debug17('malicious path "%s"', path18);
+        if (UP_PATH_REGEXP.test(path20)) {
+          debug17('malicious path "%s"', path20);
           this.error(403);
           return res;
         }
-        parts = path18.split(sep);
-        path18 = normalize(join(root, path18));
+        parts = path20.split(sep);
+        path20 = normalize(join(root, path20));
       } else {
-        if (UP_PATH_REGEXP.test(path18)) {
-          debug17('malicious path "%s"', path18);
+        if (UP_PATH_REGEXP.test(path20)) {
+          debug17('malicious path "%s"', path20);
           this.error(403);
           return res;
         }
-        parts = normalize(path18).split(sep);
-        path18 = resolve(path18);
+        parts = normalize(path20).split(sep);
+        path20 = resolve(path20);
       }
       if (containsDotFile(parts)) {
         var access = this._dotfiles;
         if (access === void 0) {
           access = parts[parts.length - 1][0] === "." ? this._hidden ? "allow" : "ignore" : "allow";
         }
-        debug17('%s dotfile "%s"', access, path18);
+        debug17('%s dotfile "%s"', access, path20);
         switch (access) {
           case "allow":
             break;
@@ -20703,13 +20703,13 @@ var require_send = __commonJS2({
         }
       }
       if (this._index.length && this.hasTrailingSlash()) {
-        this.sendIndex(path18);
+        this.sendIndex(path20);
         return res;
       }
-      this.sendFile(path18);
+      this.sendFile(path20);
       return res;
     };
-    SendStream.prototype.send = function send2(path18, stat) {
+    SendStream.prototype.send = function send2(path20, stat) {
       var len = stat.size;
       var options2 = this.options;
       var opts = {};
@@ -20721,9 +20721,9 @@ var require_send = __commonJS2({
         this.headersAlreadySent();
         return;
       }
-      debug17('pipe "%s"', path18);
-      this.setHeader(path18, stat);
-      this.type(path18);
+      debug17('pipe "%s"', path20);
+      this.setHeader(path20, stat);
+      this.type(path20);
       if (this.isConditionalGET()) {
         if (this.isPreconditionFailure()) {
           this.error(412);
@@ -20772,28 +20772,28 @@ var require_send = __commonJS2({
         res.end();
         return;
       }
-      this.stream(path18, opts);
+      this.stream(path20, opts);
     };
-    SendStream.prototype.sendFile = function sendFile(path18) {
+    SendStream.prototype.sendFile = function sendFile(path20) {
       var i = 0;
       var self2 = this;
-      debug17('stat "%s"', path18);
-      fs18.stat(path18, function onstat(err, stat) {
-        if (err && err.code === "ENOENT" && !extname(path18) && path18[path18.length - 1] !== sep) {
+      debug17('stat "%s"', path20);
+      fs20.stat(path20, function onstat(err, stat) {
+        if (err && err.code === "ENOENT" && !extname(path20) && path20[path20.length - 1] !== sep) {
           return next(err);
         }
         if (err) return self2.onStatError(err);
-        if (stat.isDirectory()) return self2.redirect(path18);
-        self2.emit("file", path18, stat);
-        self2.send(path18, stat);
+        if (stat.isDirectory()) return self2.redirect(path20);
+        self2.emit("file", path20, stat);
+        self2.send(path20, stat);
       });
       function next(err) {
         if (self2._extensions.length <= i) {
           return err ? self2.onStatError(err) : self2.error(404);
         }
-        var p = path18 + "." + self2._extensions[i++];
+        var p = path20 + "." + self2._extensions[i++];
         debug17('stat "%s"', p);
-        fs18.stat(p, function(err2, stat) {
+        fs20.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20801,7 +20801,7 @@ var require_send = __commonJS2({
         });
       }
     };
-    SendStream.prototype.sendIndex = function sendIndex(path18) {
+    SendStream.prototype.sendIndex = function sendIndex(path20) {
       var i = -1;
       var self2 = this;
       function next(err) {
@@ -20809,9 +20809,9 @@ var require_send = __commonJS2({
           if (err) return self2.onStatError(err);
           return self2.error(404);
         }
-        var p = join(path18, self2._index[i]);
+        var p = join(path20, self2._index[i]);
         debug17('stat "%s"', p);
-        fs18.stat(p, function(err2, stat) {
+        fs20.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20820,10 +20820,10 @@ var require_send = __commonJS2({
       }
       next();
     };
-    SendStream.prototype.stream = function stream(path18, options2) {
+    SendStream.prototype.stream = function stream(path20, options2) {
       var self2 = this;
       var res = this.res;
-      var stream2 = fs18.createReadStream(path18, options2);
+      var stream2 = fs20.createReadStream(path20, options2);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -20838,10 +20838,10 @@ var require_send = __commonJS2({
         self2.emit("end");
       });
     };
-    SendStream.prototype.type = function type3(path18) {
+    SendStream.prototype.type = function type3(path20) {
       var res = this.res;
       if (res.getHeader("Content-Type")) return;
-      var type4 = mime8.lookup(path18);
+      var type4 = mime8.lookup(path20);
       if (!type4) {
         debug17("no content-type");
         return;
@@ -20850,9 +20850,9 @@ var require_send = __commonJS2({
       debug17("content-type %s", type4);
       res.setHeader("Content-Type", type4 + (charset ? "; charset=" + charset : ""));
     };
-    SendStream.prototype.setHeader = function setHeader3(path18, stat) {
+    SendStream.prototype.setHeader = function setHeader3(path20, stat) {
       var res = this.res;
-      this.emit("headers", res, path18, stat);
+      this.emit("headers", res, path20, stat);
       if (this._acceptRanges && !res.getHeader("Accept-Ranges")) {
         debug17("accept ranges");
         res.setHeader("Accept-Ranges", "bytes");
@@ -20911,9 +20911,9 @@ var require_send = __commonJS2({
       }
       return err instanceof Error ? createError(status, err, { expose: false }) : createError(status, err);
     }
-    function decode(path18) {
+    function decode(path20) {
       try {
-        return decodeURIComponent(path18);
+        return decodeURIComponent(path20);
       } catch (err) {
         return -1;
       }
@@ -21822,10 +21822,10 @@ var require_utils2 = __commonJS2({
     var querystring = require("querystring");
     exports2.etag = createETagGenerator({ weak: false });
     exports2.wetag = createETagGenerator({ weak: true });
-    exports2.isAbsolute = function(path17) {
-      if ("/" === path17[0]) return true;
-      if (":" === path17[1] && ("\\" === path17[2] || "/" === path17[2])) return true;
-      if ("\\\\" === path17.substring(0, 2)) return true;
+    exports2.isAbsolute = function(path19) {
+      if ("/" === path19[0]) return true;
+      if (":" === path19[1] && ("\\" === path19[2] || "/" === path19[2])) return true;
+      if ("\\\\" === path19.substring(0, 2)) return true;
     };
     exports2.flatten = deprecate.function(
       flatten,
@@ -22037,7 +22037,7 @@ var require_application = __commonJS2({
     };
     app2.use = function use(fn) {
       var offset = 0;
-      var path17 = "/";
+      var path19 = "/";
       if (typeof fn !== "function") {
         var arg = fn;
         while (Array.isArray(arg) && arg.length !== 0) {
@@ -22045,7 +22045,7 @@ var require_application = __commonJS2({
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path17 = fn;
+          path19 = fn;
         }
       }
       var fns = flatten(slice.call(arguments, offset));
@@ -22056,12 +22056,12 @@ var require_application = __commonJS2({
       var router = this._router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router.use(path17, fn2);
+          return router.use(path19, fn2);
         }
-        debug17(".use app under %s", path17);
-        fn2.mountpath = path17;
+        debug17(".use app under %s", path19);
+        fn2.mountpath = path19;
         fn2.parent = this;
-        router.use(path17, function mounted_app(req, res, next) {
+        router.use(path19, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             setPrototypeOf(req, orig.request);
@@ -22073,9 +22073,9 @@ var require_application = __commonJS2({
       }, this);
       return this;
     };
-    app2.route = function route2(path17) {
+    app2.route = function route2(path19) {
       this.lazyrouter();
-      return this._router.route(path17);
+      return this._router.route(path19);
     };
     app2.engine = function engine(ext, fn) {
       if (typeof fn !== "function") {
@@ -22126,7 +22126,7 @@ var require_application = __commonJS2({
       }
       return this;
     };
-    app2.path = function path17() {
+    app2.path = function path19() {
       return this.parent ? this.parent.path() + this.mountpath : "";
     };
     app2.enabled = function enabled(setting) {
@@ -22142,19 +22142,19 @@ var require_application = __commonJS2({
       return this.set(setting, false);
     };
     methods.forEach(function(method) {
-      app2[method] = function(path17) {
+      app2[method] = function(path19) {
         if (method === "get" && arguments.length === 1) {
-          return this.set(path17);
+          return this.set(path19);
         }
         this.lazyrouter();
-        var route2 = this._router.route(path17);
+        var route2 = this._router.route(path19);
         route2[method].apply(route2, slice.call(arguments, 1));
         return this;
       };
     });
-    app2.all = function all(path17) {
+    app2.all = function all(path19) {
       this.lazyrouter();
-      var route2 = this._router.route(path17);
+      var route2 = this._router.route(path19);
       var args = slice.call(arguments, 1);
       for (var i = 0; i < methods.length; i++) {
         route2[methods[i]].apply(route2, args);
@@ -22913,7 +22913,7 @@ var require_request = __commonJS2({
       var subdomains2 = !isIP(hostname) ? hostname.split(".").reverse() : [hostname];
       return subdomains2.slice(offset);
     });
-    defineGetter(req, "path", function path17() {
+    defineGetter(req, "path", function path19() {
       return parse(this).pathname;
     });
     defineGetter(req, "hostname", function hostname() {
@@ -23235,7 +23235,7 @@ var require_response = __commonJS2({
     var http2 = require("http");
     var isAbsolute = require_utils2().isAbsolute;
     var onFinished = require_on_finished();
-    var path17 = require("path");
+    var path19 = require("path");
     var statuses = require_statuses();
     var merge = require_utils_merge();
     var sign = require_cookie_signature().sign;
@@ -23244,9 +23244,9 @@ var require_response = __commonJS2({
     var setCharset = require_utils2().setCharset;
     var cookie = require_cookie();
     var send = require_send();
-    var extname = path17.extname;
+    var extname = path19.extname;
     var mime8 = send.mime;
-    var resolve = path17.resolve;
+    var resolve = path19.resolve;
     var vary = require_vary();
     var res = Object.create(http2.ServerResponse.prototype);
     module3.exports = res;
@@ -23423,26 +23423,26 @@ var require_response = __commonJS2({
       this.type("txt");
       return this.send(body);
     };
-    res.sendFile = function sendFile(path18, options2, callback) {
+    res.sendFile = function sendFile(path20, options2, callback) {
       var done = callback;
       var req = this.req;
       var res2 = this;
       var next = req.next;
       var opts = options2 || {};
-      if (!path18) {
+      if (!path20) {
         throw new TypeError("path argument is required to res.sendFile");
       }
-      if (typeof path18 !== "string") {
+      if (typeof path20 !== "string") {
         throw new TypeError("path must be a string to res.sendFile");
       }
       if (typeof options2 === "function") {
         done = options2;
         opts = {};
       }
-      if (!opts.root && !isAbsolute(path18)) {
+      if (!opts.root && !isAbsolute(path20)) {
         throw new TypeError("path must be absolute or specify root to res.sendFile");
       }
-      var pathname = encodeURI(path18);
+      var pathname = encodeURI(path20);
       var file = send(req, pathname, opts);
       sendfile(res2, file, opts, function(err) {
         if (done) return done(err);
@@ -23452,7 +23452,7 @@ var require_response = __commonJS2({
         }
       });
     };
-    res.sendfile = function(path18, options2, callback) {
+    res.sendfile = function(path20, options2, callback) {
       var done = callback;
       var req = this.req;
       var res2 = this;
@@ -23462,7 +23462,7 @@ var require_response = __commonJS2({
         done = options2;
         opts = {};
       }
-      var file = send(req, path18, opts);
+      var file = send(req, path20, opts);
       sendfile(res2, file, opts, function(err) {
         if (done) return done(err);
         if (err && err.code === "EISDIR") return next();
@@ -23475,7 +23475,7 @@ var require_response = __commonJS2({
       res.sendfile,
       "res.sendfile: Use res.sendFile instead"
     );
-    res.download = function download(path18, filename, options2, callback) {
+    res.download = function download(path20, filename, options2, callback) {
       var done = callback;
       var name = filename;
       var opts = options2 || null;
@@ -23492,7 +23492,7 @@ var require_response = __commonJS2({
         opts = filename;
       }
       var headers = {
-        "Content-Disposition": contentDisposition(name || path18)
+        "Content-Disposition": contentDisposition(name || path20)
       };
       if (opts && opts.headers) {
         var keys = Object.keys(opts.headers);
@@ -23505,7 +23505,7 @@ var require_response = __commonJS2({
       }
       opts = Object.create(opts);
       opts.headers = headers;
-      var fullPath = !opts.root ? resolve(path18) : path18;
+      var fullPath = !opts.root ? resolve(path20) : path20;
       return this.sendFile(fullPath, opts, done);
     };
     res.contentType = res.type = function contentType(type3) {
@@ -23806,11 +23806,11 @@ var require_serve_static = __commonJS2({
         }
         var forwardError = !fallthrough;
         var originalUrl = parseUrl.original(req);
-        var path17 = parseUrl(req).pathname;
-        if (path17 === "/" && originalUrl.pathname.substr(-1) !== "/") {
-          path17 = "";
+        var path19 = parseUrl(req).pathname;
+        if (path19 === "/" && originalUrl.pathname.substr(-1) !== "/") {
+          path19 = "";
         }
-        var stream = send(req, path17, opts);
+        var stream = send(req, path19, opts);
         stream.on("directory", onDirectory);
         if (setHeaders) {
           stream.on("headers", setHeaders);
@@ -27965,8 +27965,8 @@ var require_package = __commonJS2({
 // node_modules/dotenv/lib/main.js
 var require_main = __commonJS2({
   "node_modules/dotenv/lib/main.js"(exports2, module3) {
-    var fs18 = require("fs");
-    var path17 = require("path");
+    var fs20 = require("fs");
+    var path19 = require("path");
     var os = require("os");
     var crypto3 = require("crypto");
     var packageJson = require_package();
@@ -28074,7 +28074,7 @@ var require_main = __commonJS2({
       if (options2 && options2.path && options2.path.length > 0) {
         if (Array.isArray(options2.path)) {
           for (const filepath of options2.path) {
-            if (fs18.existsSync(filepath)) {
+            if (fs20.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -28082,15 +28082,15 @@ var require_main = __commonJS2({
           possibleVaultPath = options2.path.endsWith(".vault") ? options2.path : `${options2.path}.vault`;
         }
       } else {
-        possibleVaultPath = path17.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path19.resolve(process.cwd(), ".env.vault");
       }
-      if (fs18.existsSync(possibleVaultPath)) {
+      if (fs20.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path17.join(os.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path19.join(os.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options2) {
       const debug17 = Boolean(options2 && options2.debug);
@@ -28107,7 +28107,7 @@ var require_main = __commonJS2({
       return { parsed };
     }
     function configDotenv(options2) {
-      const dotenvPath = path17.resolve(process.cwd(), ".env");
+      const dotenvPath = path19.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug17 = Boolean(options2 && options2.debug);
       const quiet = options2 && "quiet" in options2 ? options2.quiet : true;
@@ -28131,13 +28131,13 @@ var require_main = __commonJS2({
       }
       let lastError;
       const parsedAll = {};
-      for (const path18 of optionPaths) {
+      for (const path20 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs18.readFileSync(path18, { encoding }));
+          const parsed = DotenvModule.parse(fs20.readFileSync(path20, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options2);
         } catch (e) {
           if (debug17) {
-            _debug(`Failed to load ${path18} ${e.message}`);
+            _debug(`Failed to load ${path20} ${e.message}`);
           }
           lastError = e;
         }
@@ -28152,7 +28152,7 @@ var require_main = __commonJS2({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative = path17.relative(process.cwd(), filePath);
+            const relative = path19.relative(process.cwd(), filePath);
             shortPaths.push(relative);
           } catch (e) {
             if (debug17) {
@@ -28692,13 +28692,13 @@ function __disposeResources(env) {
   }
   return next();
 }
-function __rewriteRelativeImportExtension(path17, preserveJsx) {
-  if (typeof path17 === "string" && /^\.\.?\//.test(path17)) {
-    return path17.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext, cm) {
+function __rewriteRelativeImportExtension(path19, preserveJsx) {
+  if (typeof path19 === "string" && /^\.\.?\//.test(path19)) {
+    return path19.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext, cm) {
       return tsx ? preserveJsx ? ".jsx" : ".js" : d && (!ext || !cm) ? m : d + ext + "." + cm.toLowerCase() + "js";
     });
   }
-  return path17;
+  return path19;
 }
 var extendStatics, __assign, __createBinding, __setModuleDefault, ownKeys, _SuppressedError, tslib_es6_default;
 var init_tslib_es6 = __esm2({
@@ -37301,8 +37301,8 @@ var require_main3 = __commonJS2({
 });
 
 // node_modules/iceberg-js/dist/index.mjs
-function buildUrl(baseUrl, path17, query) {
-  const url = new URL(path17, baseUrl);
+function buildUrl(baseUrl, path19, query) {
+  const url = new URL(path19, baseUrl);
   if (query) {
     for (const [key, value2] of Object.entries(query)) {
       if (value2 !== void 0) {
@@ -37332,12 +37332,12 @@ function createFetchClient(options2) {
   return {
     async request({
       method,
-      path: path17,
+      path: path19,
       query,
       body,
       headers
     }) {
-      const url = buildUrl(options2.baseUrl, path17, query);
+      const url = buildUrl(options2.baseUrl, path19, query);
       const authHeaders = await buildAuthHeaders(options2.auth);
       const res = await fetchFn(url, {
         method,
@@ -38005,7 +38005,7 @@ var init_dist3 = __esm2({
       if (bucketName.includes("/") || bucketName.includes("\\")) return false;
       return /^[\w!.\*'() &$@=;:+,?-]+$/.test(bucketName);
     };
-    encodeStoragePath = (path17) => path17.split("/").map(encodeURIComponent).join("/");
+    encodeStoragePath = (path19) => path19.split("/").map(encodeURIComponent).join("/");
     _getErrorMessage = (err) => {
       if (typeof err === "object" && err !== null) {
         const e = err;
@@ -38237,7 +38237,7 @@ var init_dist3 = __esm2({
       * @param path The relative file path. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
       * @param fileBody The body of the file to be stored in the bucket.
       */
-      async uploadOrUpdate(method, path17, fileBody, fileOptions) {
+      async uploadOrUpdate(method, path19, fileBody, fileOptions) {
         var _this = this;
         return _this.handleOperation(async () => {
           let body;
@@ -38261,7 +38261,7 @@ var init_dist3 = __esm2({
             if ((typeof ReadableStream !== "undefined" && body instanceof ReadableStream || body && typeof body === "object" && "pipe" in body && typeof body.pipe === "function") && !options2.duplex) options2.duplex = "half";
           }
           if (fileOptions === null || fileOptions === void 0 ? void 0 : fileOptions.headers) for (const [key, value2] of Object.entries(fileOptions.headers)) headers = setHeader2(headers, key, value2);
-          const cleanPath = _this._removeEmptyFolders(path17);
+          const cleanPath = _this._removeEmptyFolders(path19);
           const _path = _this._getFinalPath(cleanPath);
           const data = await (method == "PUT" ? put : post)(_this.fetch, `${_this.url}/object/${_path}`, body, _objectSpread22({ headers }, (options2 === null || options2 === void 0 ? void 0 : options2.duplex) ? { duplex: options2.duplex } : {}));
           return {
@@ -38338,8 +38338,8 @@ var init_dist3 = __esm2({
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Upload file using `ArrayBuffer` from base64 file data instead, see example below.
       */
-      async upload(path17, fileBody, fileOptions) {
-        return this.uploadOrUpdate("POST", path17, fileBody, fileOptions);
+      async upload(path19, fileBody, fileOptions) {
+        return this.uploadOrUpdate("POST", path19, fileBody, fileOptions);
       }
       /**
       * Upload a file with a token generated from `createSignedUploadUrl`.
@@ -38379,9 +38379,9 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: none
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async uploadToSignedUrl(path17, token, fileBody, fileOptions) {
+      async uploadToSignedUrl(path19, token, fileBody, fileOptions) {
         var _this3 = this;
-        const cleanPath = _this3._removeEmptyFolders(path17);
+        const cleanPath = _this3._removeEmptyFolders(path19);
         const _path = _this3._getFinalPath(cleanPath);
         const url = new URL(_this3.url + `/object/upload/sign/${_path}`);
         url.searchParams.set("token", token);
@@ -38450,10 +38450,10 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `insert`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async createSignedUploadUrl(path17, options2) {
+      async createSignedUploadUrl(path19, options2) {
         var _this4 = this;
         return _this4.handleOperation(async () => {
-          let _path = _this4._getFinalPath(path17);
+          let _path = _this4._getFinalPath(path19);
           const headers = _objectSpread22({}, _this4.headers);
           if (options2 === null || options2 === void 0 ? void 0 : options2.upsert) headers["x-upsert"] = "true";
           const data = await post(_this4.fetch, `${_this4.url}/object/upload/sign/${_path}`, {}, { headers });
@@ -38462,7 +38462,7 @@ var init_dist3 = __esm2({
           if (!token) throw new StorageError("No token returned by API");
           return {
             signedUrl: url.toString(),
-            path: path17,
+            path: path19,
             token
           };
         });
@@ -38522,8 +38522,8 @@ var init_dist3 = __esm2({
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Update file using `ArrayBuffer` from base64 file data instead, see example below.
       */
-      async update(path17, fileBody, fileOptions) {
-        return this.uploadOrUpdate("PUT", path17, fileBody, fileOptions);
+      async update(path19, fileBody, fileOptions) {
+        return this.uploadOrUpdate("PUT", path19, fileBody, fileOptions);
       }
       /**
       * Moves an existing file to a new path in the same bucket.
@@ -38674,10 +38674,10 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async createSignedUrl(path17, expiresIn, options2) {
+      async createSignedUrl(path19, expiresIn, options2) {
         var _this8 = this;
         return _this8.handleOperation(async () => {
-          let _path = _this8._getFinalPath(path17);
+          let _path = _this8._getFinalPath(path19);
           const hasTransform = typeof (options2 === null || options2 === void 0 ? void 0 : options2.transform) === "object" && options2.transform !== null && Object.keys(options2.transform).length > 0;
           let data = await post(_this8.fetch, `${_this8.url}/object/sign/${_path}`, _objectSpread22({ expiresIn }, hasTransform ? { transform: options2.transform } : {}), { headers: _this8.headers });
           const query = new URLSearchParams();
@@ -38812,13 +38812,13 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      download(path17, options2, parameters) {
+      download(path19, options2, parameters) {
         const renderPath = typeof (options2 === null || options2 === void 0 ? void 0 : options2.transform) === "object" && options2.transform !== null && Object.keys(options2.transform).length > 0 ? "render/image/authenticated" : "object";
         const query = new URLSearchParams();
         if (options2 === null || options2 === void 0 ? void 0 : options2.transform) this.applyTransformOptsToQuery(query, options2.transform);
         if ((options2 === null || options2 === void 0 ? void 0 : options2.cacheNonce) != null) query.set("cacheNonce", String(options2.cacheNonce));
         const queryString = query.toString();
-        const _path = this._getFinalPath(path17);
+        const _path = this._getFinalPath(path19);
         const downloadFn = () => get(this.fetch, `${this.url}/${renderPath}/${_path}${queryString ? `?${queryString}` : ""}`, {
           headers: this.headers,
           noResolveJson: true
@@ -38849,9 +38849,9 @@ var init_dist3 = __esm2({
       * }
       * ```
       */
-      async info(path17) {
+      async info(path19) {
         var _this10 = this;
-        const _path = _this10._getFinalPath(path17);
+        const _path = _this10._getFinalPath(path19);
         return _this10.handleOperation(async () => {
           return recursiveToCamel(await get(_this10.fetch, `${_this10.url}/object/info/${_path}`, { headers: _this10.headers }));
         });
@@ -38872,9 +38872,9 @@ var init_dist3 = __esm2({
       *   .exists('folder/avatar1.png')
       * ```
       */
-      async exists(path17) {
+      async exists(path19) {
         var _this11 = this;
-        const _path = _this11._getFinalPath(path17);
+        const _path = _this11._getFinalPath(path19);
         try {
           await head(_this11.fetch, `${_this11.url}/object/${_path}`, { headers: _this11.headers });
           return {
@@ -38953,8 +38953,8 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: none
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      getPublicUrl(path17, options2) {
-        const _path = this._getFinalPath(path17);
+      getPublicUrl(path19, options2) {
+        const _path = this._getFinalPath(path19);
         const query = new URLSearchParams();
         if (options2 === null || options2 === void 0 ? void 0 : options2.download) query.set("download", options2.download === true ? "" : options2.download);
         if (options2 === null || options2 === void 0 ? void 0 : options2.transform) this.applyTransformOptsToQuery(query, options2.transform);
@@ -39043,10 +39043,10 @@ var init_dist3 = __esm2({
       *   .purgeCache('folder/avatar1.png', { transformations: true })
       * ```
       */
-      async purgeCache(path17, options2, parameters) {
+      async purgeCache(path19, options2, parameters) {
         var _this13 = this;
         return _this13.handleOperation(async () => {
-          const _path = encodeStoragePath(_this13._getFinalPath(path17));
+          const _path = encodeStoragePath(_this13._getFinalPath(path19));
           const query = new URLSearchParams();
           if (options2 === null || options2 === void 0 ? void 0 : options2.transformations) query.set("transformations", "true");
           const queryString = query.toString();
@@ -39144,13 +39144,13 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async list(path17, options2, parameters) {
+      async list(path19, options2, parameters) {
         var _this14 = this;
         return _this14.handleOperation(async () => {
           const sortBy = (options2 === null || options2 === void 0 ? void 0 : options2.sortBy) ? _objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS.sortBy), options2.sortBy) : DEFAULT_SEARCH_OPTIONS.sortBy;
           const body = _objectSpread22(_objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS), options2), {}, {
             sortBy,
-            prefix: path17 || ""
+            prefix: path19 || ""
           });
           return await post(_this14.fetch, `${_this14.url}/object/list/${_this14.bucketId}`, body, { headers: _this14.headers }, parameters);
         });
@@ -39216,11 +39216,11 @@ var init_dist3 = __esm2({
         if (typeof Buffer !== "undefined") return Buffer.from(data).toString("base64");
         return btoa(data);
       }
-      _getFinalPath(path17) {
-        return `${this.bucketId}/${path17.replace(/^\/+/, "")}`;
+      _getFinalPath(path19) {
+        return `${this.bucketId}/${path19.replace(/^\/+/, "")}`;
       }
-      _removeEmptyFolders(path17) {
-        return path17.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
+      _removeEmptyFolders(path19) {
+        return path19.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
       }
       /** Modifies the `query`, appending values the from `transform` */
       applyTransformOptsToQuery(query, transform2) {
@@ -41322,9 +41322,9 @@ var require_helpers = __commonJS2({
       const fragment = hashIndex === -1 ? "" : redirectTo.slice(hashIndex);
       const queryIndex = base.indexOf("?");
       if (queryIndex !== -1) {
-        const path17 = base.slice(0, queryIndex);
+        const path19 = base.slice(0, queryIndex);
         const remaining = base.slice(queryIndex + 1).split("&").filter((pair) => pair !== "" && pair !== constants_1.PKCE_FLOW_ID_PARAM && !pair.startsWith(`${constants_1.PKCE_FLOW_ID_PARAM}=`));
-        base = remaining.length > 0 ? `${path17}?${remaining.join("&")}` : path17;
+        base = remaining.length > 0 ? `${path19}?${remaining.join("&")}` : path19;
       }
       const separator = base.includes("?") ? "&" : "?";
       return `${base}${separator}${constants_1.PKCE_FLOW_ID_PARAM}=${encodeURIComponent(flowId)}${fragment}`;
@@ -53598,8 +53598,8 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
         let imagePayload = fourPanelImageBase64OrPath;
         if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
           try {
-            const fs18 = await import("fs");
-            const buffer = fs18.readFileSync(imagePayload);
+            const fs20 = await import("fs");
+            const buffer = fs20.readFileSync(imagePayload);
             imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
           } catch (e) {
           }
@@ -53681,1240 +53681,6 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
             latencyMs: Date.now() - start3
           };
         }
-      }
-    };
-  }
-});
-
-// src/server/services/trademarkService.ts
-var COMMON_STOP_WORDS, TrademarkService;
-var init_trademarkService = __esm2({
-  "src/server/services/trademarkService.ts"() {
-    "use strict";
-    init_settingsService();
-    init_productCatalogService();
-    init_trademarkWhitelistService();
-    init_llmService();
-    init_listingValidationService();
-    COMMON_STOP_WORDS = /* @__PURE__ */ new Set([
-      "the",
-      "and",
-      "for",
-      "with",
-      "this",
-      "that",
-      "from",
-      "your",
-      "have",
-      "are",
-      "was",
-      "were",
-      "will",
-      "been",
-      "each",
-      "when",
-      "into",
-      "just",
-      "more",
-      "some",
-      "than",
-      "them",
-      "then",
-      "they",
-      "what",
-      "which",
-      "who",
-      "will",
-      "shirt",
-      "tshirt",
-      "t-shirt",
-      "apparel",
-      "gift",
-      "ideas",
-      "great",
-      "cool",
-      "love",
-      "lovers",
-      "graphic",
-      "design",
-      "men",
-      "women",
-      "kids",
-      "boys",
-      "girls",
-      "youth",
-      "funny",
-      "retro",
-      "vintage",
-      "classic"
-    ]);
-    TrademarkService = class _TrademarkService {
-      /**
-       * Test connection to Productor Trademark APIs
-       */
-      static async testConnection() {
-        const settings2 = loadSettings();
-        const start3 = Date.now();
-        try {
-          const fd = new FormData();
-          fd.append("trademarks", JSON.stringify(["nike"]));
-          const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
-            method: "POST",
-            headers: {
-              "Authorization": settings2.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
-              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-              "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
-            },
-            body: fd,
-            signal: AbortSignal.timeout(6e3)
-          });
-          const latencyMs = Date.now() - start3;
-          if (res.ok) {
-            return { success: true, latencyMs };
-          }
-          return { success: false, latencyMs, error: `USPTO API antwortet mit HTTP ${res.status}` };
-        } catch (err) {
-          return { success: false, latencyMs: Date.now() - start3, error: err.message || "Verbindungs-Timeout" };
-        }
-      }
-      /**
-       * Parse office inputs (e.g. 'USPTO', 'EUIPO', 'DPMA' or fallback 'US', 'DE', 'EU')
-       */
-      static normalizeOffices(input, marketplace) {
-        const rawList = [];
-        if (Array.isArray(input)) {
-          rawList.push(...input);
-        } else if (typeof input === "string" && input.trim()) {
-          rawList.push(...input.split(",").map((s) => s.trim()));
-        } else if (marketplace && typeof marketplace === "string") {
-          rawList.push(marketplace.trim());
-        }
-        const offices = /* @__PURE__ */ new Set();
-        for (const raw of rawList) {
-          const up = raw.toUpperCase();
-          if (up === "USPTO" || up === "US" || up === "COM") {
-            offices.add("USPTO");
-          } else if (up === "EUIPO" || up === "EU" || up === "UK" || up === "GB" || up === "FR" || up === "IT" || up === "ES") {
-            offices.add("EUIPO");
-          } else if (up === "DPMA" || up === "DE") {
-            offices.add("DPMA");
-            offices.add("EUIPO");
-          }
-        }
-        if (offices.size === 0) {
-          offices.add("USPTO");
-        }
-        return Array.from(offices);
-      }
-      /**
-       * Extract search terms from text: full phrase + n-grams + individual significant keywords
-       */
-      static extractTermsFromText(text2) {
-        if (!text2 || typeof text2 !== "string") return [];
-        const trimmed = text2.trim();
-        if (trimmed.length < 2) return [];
-        const terms = /* @__PURE__ */ new Set();
-        if (trimmed.length <= 60) {
-          terms.add(trimmed.toLowerCase());
-        }
-        const words = trimmed.split(/[\s,.;:!?/()"\-+]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter((w) => w.length >= 3);
-        for (const w of words) {
-          if (w.length >= 4 && !COMMON_STOP_WORDS.has(w)) {
-            terms.add(w);
-          }
-        }
-        for (let i = 0; i < words.length - 1; i++) {
-          const twoGram = `${words[i]} ${words[i + 1]}`;
-          terms.add(twoGram);
-          if (i < words.length - 2) {
-            const threeGram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
-            terms.add(threeGram);
-          }
-        }
-        return Array.from(terms);
-      }
-      /**
-       * Extract and normalize Nice Classification numbers (e.g. '041' -> '41', '009,042' -> ['9', '42'])
-       */
-      static extractNiceClasses(r) {
-        if (!r) return [];
-        const raw = r.classification || r.Classification || r.classes || r.class_id || r.class || r.international_class || "";
-        if (!raw) return [];
-        if (Array.isArray(raw)) {
-          return raw.map((c) => String(c).replace(/^0+/, "").trim()).filter(Boolean);
-        }
-        return String(raw).split(/[,;\s]+/).map((c) => c.replace(/[^0-9]/g, "").replace(/^0+/, "").trim()).filter(Boolean);
-      }
-      /**
-       * Check if a trademark status string or code represents an active/live registered trademark
-       * Strictly filters out PENDING, DEAD, ABANDONED, CANCELLED, EXPIRED, REFUSED
-       */
-      static isLiveStatus(rawStatus) {
-        if (rawStatus === void 0 || rawStatus === null || rawStatus === "") {
-          return false;
-        }
-        const s = String(rawStatus).trim().toUpperCase();
-        if (s.includes("DEAD") || s.includes("PENDING") || s.includes("CANCEL") || s.includes("ABANDON") || s.includes("EXPIRE") || s.includes("REFUSE") || s.includes("SUSPEND")) {
-          return false;
-        }
-        return s.includes("LIVE") || s.includes("REGISTERED") || s.includes("ACTIVE") || s.includes("EINGETRAGEN") || s === "REG" || s === "700" || s === "701";
-      }
-      /**
-       * Check terms across specified trademark offices
-       */
-      static async queryOffices(uniqueTerms, offices) {
-        const settings2 = loadSettings();
-        const allHits = {};
-        if (uniqueTerms.length === 0 || offices.length === 0) {
-          return allHits;
-        }
-        const defaultHeaders = {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
-        };
-        const promises = [];
-        if (offices.includes("USPTO")) {
-          promises.push((async () => {
-            try {
-              const usptoFd = new FormData();
-              usptoFd.append("trademarks", JSON.stringify(uniqueTerms));
-              const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
-                method: "POST",
-                headers: {
-                  ...defaultHeaders,
-                  "Authorization": settings2.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
-                },
-                body: usptoFd,
-                signal: AbortSignal.timeout(9e3)
-              });
-              if (res.ok) {
-                const data = await res.json();
-                for (const [term, records] of Object.entries(data)) {
-                  if (Array.isArray(records) && records.length > 0) {
-                    records.forEach((r) => {
-                      const rawStatus = r.status || r.status_code || "LIVE";
-                      if (this.isLiveStatus(rawStatus)) {
-                        const classes = this.extractNiceClasses(r);
-                        allHits[term] = allHits[term] || [];
-                        allHits[term].push({
-                          term,
-                          trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
-                          classNumber: classes.join(", ") || "N/A",
-                          classes,
-                          status: "LIVE",
-                          registrationNumber: r.registration_number || r.registration_date,
-                          serialNumber: r.serial_number || r.applicationNumber,
-                          goodsAndServices: r.goods_and_services || r.goods_services,
-                          source: "USPTO"
-                        });
-                      }
-                    });
-                  }
-                }
-              }
-            } catch (err) {
-              console.warn("[TrademarkService] USPTO query error:", err.message || err);
-            }
-          })());
-        }
-        if (offices.includes("EUIPO")) {
-          promises.push((async () => {
-            try {
-              const euFd = new FormData();
-              euFd.append("trademarks", JSON.stringify(uniqueTerms));
-              const res = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
-                method: "POST",
-                headers: {
-                  ...defaultHeaders,
-                  "Authorization": settings2.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
-                },
-                body: euFd,
-                signal: AbortSignal.timeout(9e3)
-              });
-              if (res.ok) {
-                const data = await res.json();
-                for (const [term, records] of Object.entries(data)) {
-                  if (Array.isArray(records) && records.length > 0) {
-                    records.forEach((r) => {
-                      const rawStatus = r.markCurrentStatusCode || r.status || "LIVE";
-                      if (this.isLiveStatus(rawStatus)) {
-                        const classes = this.extractNiceClasses(r);
-                        allHits[term] = allHits[term] || [];
-                        allHits[term].push({
-                          term,
-                          trademark: r.trademark || r.mark_identification || term,
-                          classNumber: classes.join(", ") || "N/A",
-                          classes,
-                          status: "LIVE",
-                          serialNumber: r.applicationNumber,
-                          source: "EUIPO"
-                        });
-                      }
-                    });
-                  }
-                }
-              }
-            } catch (err) {
-              console.warn("[TrademarkService] EUIPO query error:", err.message || err);
-            }
-          })());
-        }
-        if (offices.includes("DPMA")) {
-          promises.push((async () => {
-            try {
-              const dpmaFd = new FormData();
-              dpmaFd.append("trademarks", JSON.stringify(uniqueTerms));
-              const res = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
-                method: "POST",
-                headers: {
-                  ...defaultHeaders,
-                  "Authorization": settings2.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
-                },
-                body: dpmaFd,
-                signal: AbortSignal.timeout(9e3)
-              });
-              if (res.ok) {
-                const data = await res.json();
-                for (const [term, records] of Object.entries(data)) {
-                  if (Array.isArray(records) && records.length > 0) {
-                    records.forEach((r) => {
-                      const rawStatus = r.MarkCurrentStatusCode || r.status || "LIVE";
-                      if (this.isLiveStatus(rawStatus)) {
-                        const classes = this.extractNiceClasses(r);
-                        allHits[term] = allHits[term] || [];
-                        allHits[term].push({
-                          term,
-                          trademark: r.MarkVerbalElementText || r.trademark || term,
-                          classNumber: classes.join(", ") || "N/A",
-                          classes,
-                          status: "LIVE",
-                          serialNumber: r.ApplicationNumber,
-                          source: "DPMA"
-                        });
-                      }
-                    });
-                  }
-                }
-              }
-            } catch (err) {
-              console.warn("[TrademarkService] DPMA query error:", err.message || err);
-            }
-          })());
-        }
-        await Promise.all(promises);
-        return allHits;
-      }
-      /**
-       * Analyze hits to calculate blocked products and class 25 status
-       */
-      static analyzeHits(hitsRecord) {
-        let hasInfringementClass25 = false;
-        const blockedClassesSet = /* @__PURE__ */ new Set();
-        let totalHits = 0;
-        for (const [term, records] of Object.entries(hitsRecord)) {
-          for (const rec of records) {
-            if (!this.isLiveStatus(rec.status)) continue;
-            const hitTerm = rec.term || term || "";
-            const hitMark = rec.trademark || "";
-            const source12 = rec.source || "GLOBAL";
-            if (TrademarkWhitelistService.isWhitelisted(hitTerm, source12) || TrademarkWhitelistService.isWhitelisted(hitMark, source12)) {
-              continue;
-            }
-            totalHits++;
-            const classes = rec.classes && rec.classes.length > 0 ? rec.classes : this.extractNiceClasses({ classification: rec.classNumber });
-            for (const c of classes) {
-              const num = parseInt(c, 10);
-              if (!isNaN(num)) {
-                blockedClassesSet.add(num);
-                if (num === 25) {
-                  hasInfringementClass25 = true;
-                }
-              }
-            }
-          }
-        }
-        const blockedClasses = Array.from(blockedClassesSet);
-        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
-          blockedClasses.filter((c) => c !== 25)
-          // Clothing 25 is handled separately via hard-reject / rewrite
-        );
-        return {
-          hasInfringementClass25,
-          blockedClasses,
-          blockedProducts,
-          totalHits
-        };
-      }
-      /**
-       * Comprehensive Audit for Listing + Niche Metadata (Hard-Reject, Product Blocking, Fair-Use)
-       */
-      static async auditListingAndMetadata(params2) {
-        const offices = params2.offices && params2.offices.length > 0 ? params2.offices : ["USPTO", "EUIPO", "DPMA"];
-        const termsToFieldMap = {
-          quote: params2.quote ? this.extractTermsFromText(params2.quote) : [],
-          niche1: params2.niche1 ? this.extractTermsFromText(params2.niche1) : [],
-          niche2: params2.niche2 && params2.niche2.toLowerCase() !== "none" ? this.extractTermsFromText(params2.niche2) : [],
-          subniche: params2.subniche && params2.subniche.toLowerCase() !== "none" ? this.extractTermsFromText(params2.subniche) : [],
-          brand: this.extractTermsFromText(params2.listing.brand),
-          title: this.extractTermsFromText(params2.listing.title),
-          bullet1: this.extractTermsFromText(params2.listing.bullet1),
-          bullet2: this.extractTermsFromText(params2.listing.bullet2)
-        };
-        const allUniqueTerms = /* @__PURE__ */ new Set();
-        for (const terms of Object.values(termsToFieldMap)) {
-          terms.forEach((t) => allUniqueTerms.add(t));
-        }
-        const termList = Array.from(allUniqueTerms);
-        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
-        let isHardReject = false;
-        let hardRejectReason = null;
-        let brandConflict = false;
-        let titleConflict = false;
-        let needsRewrite = false;
-        const blockedClassesSet = /* @__PURE__ */ new Set();
-        const allHitsList = [];
-        const coreFields = ["quote", "niche1", "niche2", "subniche"];
-        for (const f of coreFields) {
-          const terms = termsToFieldMap[f] || [];
-          for (const t of terms) {
-            const hits = globalHits[t] || [];
-            for (const h of hits) {
-              if (!this.isLiveStatus(h.status)) continue;
-              allHitsList.push(h);
-              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
-              if (classes.includes("25")) {
-                isHardReject = true;
-                hardRejectReason = `Core ${f} "${t}" is an active Class 25 trademark (${h.source}: ${h.trademark}).`;
-                break;
-              }
-            }
-            if (isHardReject) break;
-          }
-          if (isHardReject) break;
-        }
-        if (isHardReject) {
-          return {
-            isHardReject: true,
-            hardRejectReason,
-            isSafe: false,
-            needsRewrite: false,
-            brandConflict: true,
-            titleConflict: true,
-            blockedNiceClasses: [25],
-            blockedProducts: [],
-            allHits: allHitsList,
-            hitDetails: globalHits
-          };
-        }
-        const brandTerms = termsToFieldMap.brand || [];
-        for (const t of brandTerms) {
-          const hits = globalHits[t] || [];
-          for (const h of hits) {
-            if (!this.isLiveStatus(h.status)) continue;
-            allHitsList.push(h);
-            const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
-            if (classes.includes("25")) {
-              brandConflict = true;
-              needsRewrite = true;
-            } else {
-              classes.forEach((c) => {
-                const num = parseInt(c, 10);
-                if (!isNaN(num)) blockedClassesSet.add(num);
-              });
-            }
-          }
-        }
-        const listingFields = ["title", "bullet1", "bullet2"];
-        for (const f of listingFields) {
-          const terms = termsToFieldMap[f] || [];
-          for (const t of terms) {
-            const hits = globalHits[t] || [];
-            for (const h of hits) {
-              if (!this.isLiveStatus(h.status)) continue;
-              allHitsList.push(h);
-              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
-              if (classes.includes("25")) {
-                if (f === "title") {
-                  if (!COMMON_STOP_WORDS.has(t)) {
-                    titleConflict = true;
-                    needsRewrite = true;
-                  }
-                } else {
-                  if (!COMMON_STOP_WORDS.has(t) && t.includes(" ")) {
-                    needsRewrite = true;
-                  }
-                }
-              } else {
-                classes.forEach((c) => {
-                  const num = parseInt(c, 10);
-                  if (!isNaN(num)) blockedClassesSet.add(num);
-                });
-              }
-            }
-          }
-        }
-        const blockedNiceClasses = Array.from(blockedClassesSet);
-        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
-          blockedNiceClasses.filter((c) => c !== 25)
-        );
-        const isSafe = !brandConflict && !titleConflict && !needsRewrite;
-        return {
-          isHardReject: false,
-          hardRejectReason: null,
-          isSafe,
-          needsRewrite,
-          brandConflict,
-          titleConflict,
-          blockedNiceClasses,
-          blockedProducts,
-          allHits: allHitsList,
-          hitDetails: globalHits
-        };
-      }
-      /**
-       * Legacy check method for single term array (used by UI Designer)
-       */
-      static async checkTrademarks(terms, locale = "en") {
-        const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
-        const uniqueTerms = Array.from(new Set(cleanTerms));
-        if (uniqueTerms.length === 0) {
-          return {
-            hasInfringementClass25: false,
-            blockedProducts: [],
-            hits: {},
-            totalHits: 0,
-            message: "No terms to check."
-          };
-        }
-        const offices = locale === "de" ? ["USPTO", "EUIPO", "DPMA"] : ["USPTO", "EUIPO"];
-        const hits = await this.queryOffices(uniqueTerms, offices);
-        const analysis = this.analyzeHits(hits);
-        return {
-          hasInfringementClass25: analysis.hasInfringementClass25,
-          blockedProducts: analysis.blockedProducts,
-          hits,
-          totalHits: analysis.totalHits,
-          message: analysis.hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : analysis.totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${analysis.blockedProducts.length} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
-        };
-      }
-      /**
-       * Comprehensive Multi-Field Batch Check for Hermes Agent & MCP Integration
-       */
-      static async checkBatchFields(input) {
-        const offices = this.normalizeOffices(input.offices, input.marketplace);
-        const fields = input.fields || {};
-        const fieldTermsMap = {};
-        const allUniqueTerms = /* @__PURE__ */ new Set();
-        for (const [fieldName, rawValue] of Object.entries(fields)) {
-          if (rawValue && typeof rawValue === "string") {
-            const terms = this.extractTermsFromText(rawValue);
-            fieldTermsMap[fieldName] = terms;
-            terms.forEach((t) => allUniqueTerms.add(t));
-          }
-        }
-        const termList = Array.from(allUniqueTerms);
-        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
-        const fieldResults = {};
-        let totalGlobalHits = 0;
-        let globalHasInfringementClass25 = false;
-        const globalBlockedProducts = /* @__PURE__ */ new Set();
-        for (const [fieldName, terms] of Object.entries(fieldTermsMap)) {
-          const fieldHits = {};
-          for (const t of terms) {
-            if (globalHits[t] && globalHits[t].length > 0) {
-              fieldHits[t] = globalHits[t];
-            }
-          }
-          const analysis = this.analyzeHits(fieldHits);
-          if (analysis.hasInfringementClass25) globalHasInfringementClass25 = true;
-          analysis.blockedProducts.forEach((p) => globalBlockedProducts.add(p));
-          totalGlobalHits += analysis.totalHits;
-          fieldResults[fieldName] = {
-            safe: !analysis.hasInfringementClass25,
-            hasInfringementClass25: analysis.hasInfringementClass25,
-            totalHits: analysis.totalHits,
-            blockedProducts: analysis.blockedProducts,
-            hits: fieldHits
-          };
-        }
-        const isCompletelySafe = !globalHasInfringementClass25 && globalBlockedProducts.size === 0;
-        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
-        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
-        const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
-        const hasBrandTitleClass25 = brandHasClass25 || titleHasClass25 || quoteHasClass25;
-        let verdict;
-        let message;
-        if (hasBrandTitleClass25) {
-          verdict = "REJECTED_CLASS_25";
-          const affected = [brandHasClass25 && "Brand", titleHasClass25 && "Title", quoteHasClass25 && "Quote"].filter(Boolean);
-          message = `Klasse 25 Konflikt in Identifikatoren (${affected.join(", ")}). Automatisches Umschreiben erforderlich.`;
-        } else if (globalHasInfringementClass25) {
-          verdict = "NEEDS_AUDIT";
-          message = `Treffer in Bullets/Description gefunden (${totalGlobalHits} Treffer). Fair-Use-Pr\xFCfung durch Trademark Auditor.`;
-        } else if (globalBlockedProducts.size > 0) {
-          verdict = "SAFE_FOR_APPAREL";
-          message = `Keine Treffer in Klasse 25 (Bekleidung sicher). ${globalBlockedProducts.size} Nebenprodukte gesperrt.`;
-        } else {
-          verdict = "SAFE_ALL";
-          message = "Keine aktiven Schutzrechte gefunden. Listing ist sauber \u2713";
-        }
-        const rawInputPhrases = /* @__PURE__ */ new Set();
-        for (const rawValue of Object.values(fields)) {
-          if (rawValue && typeof rawValue === "string") {
-            const tr = rawValue.trim().toLowerCase();
-            if (tr.length > 0) rawInputPhrases.add(tr);
-          }
-        }
-        const exactPhraseHits = [];
-        const keywordHits = [];
-        const affectedClassesSet = /* @__PURE__ */ new Set();
-        const seenHitKeys = /* @__PURE__ */ new Set();
-        for (const [term, hits] of Object.entries(globalHits)) {
-          for (const hit of hits) {
-            const uniqueKey = `${hit.source}-${hit.trademark}-${hit.classNumber}-${hit.term}`;
-            if (seenHitKeys.has(uniqueKey)) continue;
-            seenHitKeys.add(uniqueKey);
-            (hit.classes || []).forEach((c) => affectedClassesSet.add(c));
-            if (rawInputPhrases.has(term.toLowerCase())) {
-              exactPhraseHits.push(hit);
-            } else {
-              keywordHits.push(hit);
-            }
-          }
-        }
-        return {
-          success: true,
-          safe: !hasBrandTitleClass25,
-          hasInfringementClass25: globalHasInfringementClass25,
-          affectedClasses: Array.from(affectedClassesSet).sort((a, b) => Number(a) - Number(b)),
-          blockedProducts: Array.from(globalBlockedProducts),
-          officesChecked: offices,
-          summary: {
-            totalHits: totalGlobalHits,
-            verdict,
-            message,
-            exactPhraseHitsCount: exactPhraseHits.length,
-            keywordHitsCount: keywordHits.length
-          },
-          exactPhraseHits,
-          keywordHits,
-          fieldResults
-        };
-      }
-      /**
-       * =========================================================================
-       * TRADEMARK WORKFLOW V2 METHODS (USPTO Focus, 1-5 Grams, Multi-Round Loop)
-       * =========================================================================
-       */
-      /**
-       * V2 Term Extraction: 1-5 Grams + Full Quote, Stopword preservation in phrases
-       */
-      static extractTermsFromTextV2(params2) {
-        const stopWords = /* @__PURE__ */ new Set([
-          "the",
-          "a",
-          "an",
-          "and",
-          "or",
-          "to",
-          "of",
-          "in",
-          "for",
-          "with",
-          "on",
-          "at",
-          "by",
-          "from",
-          "up",
-          "about",
-          "into",
-          "over",
-          "after",
-          "is",
-          "are",
-          "was",
-          "were",
-          "be",
-          "been",
-          "being",
-          "this",
-          "that",
-          "your",
-          "my",
-          "its",
-          "their",
-          "our",
-          "all",
-          "any",
-          "each",
-          "shirt",
-          "tshirt",
-          "t-shirt"
-        ]);
-        const termToFieldsMap = {};
-        const addTerm = (term, field) => {
-          const clean = term.trim().toLowerCase();
-          if (clean.length < 2) return;
-          if (!termToFieldsMap[clean]) termToFieldsMap[clean] = /* @__PURE__ */ new Set();
-          termToFieldsMap[clean].add(field);
-        };
-        const fields = [
-          ["brand", params2.listing.brand],
-          ["title", params2.listing.title],
-          ["bullet1", params2.listing.bullet1],
-          ["bullet2", params2.listing.bullet2],
-          ["description", params2.listing.description],
-          ["quote", params2.quote]
-        ];
-        for (const [field, text2] of fields) {
-          if (!text2 || typeof text2 !== "string") continue;
-          const trimmed = text2.trim();
-          if (!trimmed) continue;
-          const rawTokens = trimmed.split(/[\s,.;:!?/()"\-+–—[\]{}#*~`^|\\]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter(Boolean);
-          if (field === "quote" && rawTokens.length > 0) {
-            addTerm(rawTokens.join(" "), "quote");
-          }
-          for (const w of rawTokens) {
-            if (w.length >= 3 && !stopWords.has(w)) {
-              addTerm(w, field);
-            }
-          }
-          for (let len = 2; len <= 5; len++) {
-            for (let i = 0; i <= rawTokens.length - len; i++) {
-              const nGramTokens = rawTokens.slice(i, i + len);
-              const hasSubstantialWord = nGramTokens.some((tok) => !stopWords.has(tok) && tok.length >= 3);
-              if (hasSubstantialWord) {
-                addTerm(nGramTokens.join(" "), field);
-              }
-            }
-          }
-        }
-        const result2 = {};
-        for (const [t, set] of Object.entries(termToFieldsMap)) {
-          result2[t] = Array.from(set);
-        }
-        return {
-          terms: Object.keys(result2),
-          termToFieldsMap: result2
-        };
-      }
-      /**
-       * Query USPTO batch endpoint (batching up to 50 terms per request)
-       */
-      static async queryUsptoBatch(terms) {
-        const settings2 = loadSettings();
-        const allResults = {};
-        if (terms.length === 0) return allResults;
-        const defaultHeaders = {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk",
-          "Authorization": settings2.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
-        };
-        const chunkSize = 50;
-        for (let i = 0; i < terms.length; i += chunkSize) {
-          const chunk = terms.slice(i, i + chunkSize);
-          try {
-            const fd = new FormData();
-            fd.append("trademarks", JSON.stringify(chunk));
-            const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
-              method: "POST",
-              headers: defaultHeaders,
-              body: fd,
-              signal: AbortSignal.timeout(1e4)
-            });
-            if (res.ok) {
-              const data = await res.json();
-              for (const [k, v] of Object.entries(data)) {
-                if (Array.isArray(v) && v.length > 0) {
-                  allResults[k.toLowerCase()] = v;
-                }
-              }
-            }
-          } catch (err) {
-            console.warn("[TrademarkService] USPTO query error chunk:", err.message || err);
-          }
-        }
-        return allResults;
-      }
-      /**
-       * Deterministic Match Normalization & Classification before LLM
-       */
-      static normalizeAndClassifyMatches(rawHits, termToFieldsMap, quote5) {
-        const normalizedHits = [];
-        const cleanQuote = quote5 ? quote5.trim().toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, "") : "";
-        const seenKeys = /* @__PURE__ */ new Set();
-        for (const [term, records] of Object.entries(rawHits)) {
-          const termLower = term.toLowerCase().trim();
-          const fields = termToFieldsMap[termLower] || ["listing"];
-          for (const r of records) {
-            const rawStatus = r.status || r.status_code || "LIVE";
-            if (!this.isLiveStatus(rawStatus)) continue;
-            const registeredMark = String(r.mark_identification || r.trademark || r.MarkVerbalElementText || term).trim();
-            const regMarkClean = registeredMark.toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, "").trim();
-            const rawClasses = this.extractNiceClasses(r);
-            const classes = rawClasses.map((c) => parseInt(c, 10)).filter((n) => !isNaN(n));
-            const wordCount = regMarkClean.split(/\s+/).filter(Boolean).length;
-            let matchType = "FUZZY_OR_SIMILAR";
-            if (regMarkClean === termLower) {
-              if (cleanQuote && termLower === cleanQuote) {
-                matchType = "FULL_EXACT";
-              } else if (wordCount === 1) {
-                matchType = "SINGLE_WORD_EXACT";
-              } else {
-                matchType = "EXACT_NGRAM";
-              }
-            } else if (termLower.includes(regMarkClean)) {
-              matchType = "CONTAINS_REGISTERED_MARK";
-            } else if (regMarkClean.includes(termLower)) {
-              matchType = "QUERY_INSIDE_LONGER_MARK";
-            }
-            const isFullQuoteMatch = Boolean(cleanQuote && (regMarkClean === cleanQuote || matchType === "FULL_EXACT"));
-            const isKnownPhraseMatch = wordCount >= 2 && (matchType === "EXACT_NGRAM" || matchType === "FULL_EXACT" || matchType === "CONTAINS_REGISTERED_MARK");
-            const drawing = String(r.mark_drawing || r.MarkFeature || r.markFeature || "").toUpperCase();
-            let markFeature = "Word";
-            if (drawing.includes("DESIGN") || drawing.includes("COMBINED") || drawing.includes("BILD") || drawing.includes("FIGURATIVE")) {
-              markFeature = "Combined";
-            }
-            for (const f of fields) {
-              const uniqueKey = `USPTO-${registeredMark}-${classes.join(",")}-${termLower}-${f}`;
-              if (seenKeys.has(uniqueKey)) continue;
-              seenKeys.add(uniqueKey);
-              normalizedHits.push({
-                searchedTerm: termLower,
-                registeredMark,
-                field: f,
-                office: "USPTO",
-                status: "LIVE",
-                markFeature,
-                classes,
-                classNumber: classes.join(", ") || "N/A",
-                wordCount,
-                matchType,
-                isFullQuoteMatch,
-                isKnownPhraseMatch,
-                serialNumber: r.serial_number || r.ApplicationNumber || r.applicationNumber,
-                registrationNumber: r.registration_number || r.registration_date,
-                filingDate: r.filing_date || r.ApplicationDate,
-                registrationDate: r.registration_date || r.RegistrationDate
-              });
-            }
-          }
-        }
-        return normalizedHits;
-      }
-      /**
-       * Compact, deduplicated representation of trademark hits specifically tailored for LLM evaluation.
-       * Strips internal registration numbers, dates, and duplicate entries, aggregating by registered mark.
-       */
-      /**
-       * Helper to retrieve the current text of a listing field (for fingerprinting & logging)
-       */
-      static getFieldText(listing = {}, field, quote5) {
-        if (field === "brand") return listing.brand || "";
-        if (field === "title") return listing.title || "";
-        if (field === "bullet1") return listing.bullet1 || "";
-        if (field === "bullet2") return listing.bullet2 || "";
-        if (field === "description") return listing.description || "";
-        if (field === "quote") return quote5 || "";
-        return "";
-      }
-      /**
-       * Compacts hundreds of raw/normalized hits into deduplicated mark entities.
-       * Significantly reduces token payload by omitting full field text repetition
-       * while preserving exact field locations and actual matched terms.
-       */
-      static buildCompactTrademarkHits(normalizedHits, listing, quote5) {
-        const markMap = /* @__PURE__ */ new Map();
-        for (const h of normalizedHits) {
-          const cleanMark = (h.registeredMark || h.searchedTerm || "").trim().toUpperCase();
-          if (!cleanMark) continue;
-          let entry = markMap.get(cleanMark);
-          if (!entry) {
-            entry = {
-              mark: cleanMark,
-              status: h.status || "ACTIVE",
-              features: /* @__PURE__ */ new Set(),
-              classes: /* @__PURE__ */ new Set(),
-              offices: /* @__PURE__ */ new Set(),
-              matchTypes: /* @__PURE__ */ new Set(),
-              fullQuoteMatch: false,
-              occurrencesMap: /* @__PURE__ */ new Map()
-            };
-            markMap.set(cleanMark, entry);
-          }
-          if (h.markFeature) entry.features.add(h.markFeature);
-          if (Array.isArray(h.classes)) {
-            h.classes.forEach((c) => entry.classes.add(c));
-          }
-          if (h.office) entry.offices.add(h.office);
-          if (h.matchType) entry.matchTypes.add(h.matchType);
-          if (h.isFullQuoteMatch) entry.fullQuoteMatch = true;
-          const field = h.field || "listing";
-          const rawMatched = String(h.matchedTerm || h.searchedTerm || "").trim();
-          const matchedTerm = rawMatched.length > 0 ? rawMatched : void 0;
-          const occKey = `${field.toLowerCase()}|${matchedTerm ? matchedTerm.toLowerCase() : ""}`;
-          if (!entry.occurrencesMap.has(occKey)) {
-            const occ = { field };
-            if (matchedTerm) {
-              occ.matchedTerm = matchedTerm;
-            }
-            entry.occurrencesMap.set(occKey, occ);
-          }
-        }
-        const matchTypePriority = [
-          "FULL_EXACT",
-          "EXACT_NGRAM",
-          "SINGLE_WORD_EXACT",
-          "CONTAINS_REGISTERED_MARK",
-          "QUERY_INSIDE_LONGER_MARK",
-          "FUZZY_OR_SIMILAR"
-        ];
-        const compactList = [];
-        let idx = 1;
-        for (const [_, entry] of markMap.entries()) {
-          let bestMatchType = "FUZZY_OR_SIMILAR";
-          for (const p of matchTypePriority) {
-            if (entry.matchTypes.has(p)) {
-              bestMatchType = p;
-              break;
-            }
-          }
-          const feature = entry.features.has("Combined") ? "Combined" : entry.features.values().next().value || "Word";
-          compactList.push({
-            id: `tm_${idx++}`,
-            mark: entry.mark,
-            status: entry.status,
-            feature,
-            classes: Array.from(entry.classes).sort((a, b) => a - b),
-            offices: Array.from(entry.offices).sort(),
-            matchType: bestMatchType,
-            fullQuoteMatch: entry.fullQuoteMatch,
-            occurrences: Array.from(entry.occurrencesMap.values())
-          });
-        }
-        return compactList;
-      }
-      /**
-       * Complete V2 Trademark Audit Orchestrator:
-       * Scan ➔ Match Normalization ➔ Compact LLM Payload ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) ➔ Final Verifier Gate
-       */
-      static async executeTrademarkAuditV2(params2) {
-        const normN1 = ListingValidationService.normalizeOptionalText(params2.niche1);
-        const normN2 = ListingValidationService.normalizeOptionalText(params2.niche2);
-        const normSub = ListingValidationService.normalizeOptionalText(params2.subniche);
-        const initialValidation = ListingValidationService.validateAndRepairListing({
-          listing: params2.listing,
-          niche1: normN1,
-          niche2: normN2,
-          subniche: normSub
-        });
-        let currentListing = { ...initialValidation.listing };
-        const forbiddenTermsForTask = [];
-        const rewriteIterations = [];
-        const tmSessionId = params2.sessionId || (params2.taskId ? `tm:${params2.taskId}` : `tm:${Date.now()}`);
-        const approvedHitContexts = /* @__PURE__ */ new Set();
-        const getHitContextKey = (mark, markFeature, classes, matchType, field, text2) => {
-          const normText = (text2 || "").trim().toLowerCase().replace(/\s+/g, " ");
-          const normFeature = (markFeature || "word").trim().toLowerCase();
-          return `${mark.toLowerCase()}|${normFeature}|${classes.slice().sort((a, b) => a - b).join(",")}|${matchType}|${field}|${normText}`;
-        };
-        let initialTrademarkHits = [];
-        let finalRefereeResult = null;
-        let finalVerifierResult = null;
-        let blockedProducts = [];
-        let blockedNiceClasses = [];
-        const maxCycles = params2.maxRewriteCycles ?? 3;
-        for (let cycle = 0; cycle <= maxCycles; cycle++) {
-          console.log(`[TrademarkServiceV2] \u{1F50D} Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles}, Session: ${tmSessionId})...`);
-          const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
-            listing: currentListing,
-            quote: params2.quote
-          });
-          const rawHits = await this.queryUsptoBatch(terms);
-          const normalizedHits = this.normalizeAndClassifyMatches(rawHits, termToFieldsMap, params2.quote);
-          if (cycle === 0) {
-            initialTrademarkHits = [...normalizedHits];
-          }
-          const compactHits = this.buildCompactTrademarkHits(normalizedHits, currentListing, params2.quote);
-          params2.onEvent?.({
-            type: "TM_SCAN_RESPONSE",
-            title: cycle === 0 ? `USPTO TM Scan abgeschlossen (${normalizedHits.length} Treffer, ${compactHits.length} kompakt)` : `USPTO TM Scan (Runde ${cycle}: ${normalizedHits.length} Treffer, ${compactHits.length} kompakt)`,
-            content: { cycle, totalHits: normalizedHits.length, compactHitsCount: compactHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
-          });
-          const hitsToReview = cycle === 0 ? compactHits : compactHits.filter((h) => {
-            return h.occurrences.some((occ) => {
-              const fieldText = _TrademarkService.getFieldText(currentListing, occ.field, params2.quote);
-              return !approvedHitContexts.has(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, fieldText));
-            });
-          });
-          let refereeRes;
-          if (cycle > 0 && hitsToReview.length === 0) {
-            console.log(`[TrademarkServiceV2] \u26A1 Alle ${compactHits.length} Treffer wurden in diesem Task bereits als KEEP gepr\xFCft und sind im Kontext unver\xE4ndert. \xDCberspringe erneuten Referee-Call.`);
-            refereeRes = {
-              decision: "APPROVE",
-              canBeFixedByListingRewrite: true,
-              reasonCode: null,
-              recommendedAction: null,
-              hits: [],
-              blockedProducts,
-              rewriteRequired: false,
-              rewriteInstructions: []
-            };
-          } else {
-            refereeRes = await LLMService.evaluateTrademarkReferee({
-              currentListing,
-              niche1: normN1,
-              niche2: normN2,
-              subniche: normSub,
-              quote: params2.quote,
-              compactHits: hitsToReview,
-              normalizedHits,
-              rewriteIteration: cycle,
-              forbiddenTermsForTask,
-              blockedProducts,
-              sessionId: tmSessionId
-            });
-          }
-          finalRefereeResult = refereeRes;
-          const problematicMarks = new Set(
-            (refereeRes.hits || []).filter((h) => h.decision === "REWRITE" || h.action === "REWRITE" || h.decision === "ESCALATE" || h.action === "ESCALATE").map((h) => (h.registeredMark || h.mark || h.searchedTerm || "").trim().toLowerCase())
-          );
-          for (const h of hitsToReview) {
-            if (!problematicMarks.has(h.mark.trim().toLowerCase())) {
-              for (const occ of h.occurrences) {
-                const fieldText = _TrademarkService.getFieldText(currentListing, occ.field, params2.quote);
-                approvedHitContexts.add(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, fieldText));
-              }
-            }
-          }
-          if (Array.isArray(refereeRes.blockedProducts) && refereeRes.blockedProducts.length > 0) {
-            blockedProducts = Array.from(/* @__PURE__ */ new Set([...blockedProducts, ...refereeRes.blockedProducts]));
-          }
-          params2.onEvent?.({
-            type: "TM_REFEREE_RESPONSE",
-            title: `Trademark Referee: ${refereeRes.decision} (Zyklus ${cycle})`,
-            content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits },
-            metadata: { provider: "OpenRouter", model: refereeRes._rawRequest?.model }
-          });
-          if (refereeRes.decision === "ESCALATE" || refereeRes.decision === "REWRITE" && refereeRes.canBeFixedByListingRewrite === false) {
-            const reasonCode = refereeRes.reasonCode || (refereeRes.decision === "ESCALATE" ? "CORE_QUOTE_CLASS25_CONFLICT" : "UNFIXABLE_TRADEMARK_CONFLICT");
-            console.warn(`[TrademarkServiceV2] \u{1F6A8} Eskalation ausgel\xF6st: ${reasonCode}`);
-            return {
-              finalDecision: "ESCALATE",
-              isSafe: false,
-              canBeFixedByListingRewrite: false,
-              reasonCode,
-              recommendedAction: refereeRes.recommendedAction || "DO_NOT_SUBMIT",
-              initialTrademarkHits,
-              finalTrademarkHits: normalizedHits,
-              rewriteIterations,
-              refereeResult: refereeRes,
-              verifierResult: null,
-              forbiddenTermsForTask,
-              blockedProducts,
-              blockedNiceClasses,
-              finalListing: ListingValidationService.validateAndRepairListing({
-                listing: currentListing,
-                niche1: normN1,
-                niche2: normN2,
-                subniche: normSub,
-                forbiddenTerms: forbiddenTermsForTask
-              }).listing
-            };
-          }
-          if (refereeRes.decision === "APPROVE" || refereeRes.decision === "APPROVE_WITH_BLOCKED_PRODUCTS") {
-            console.log(`[TrademarkServiceV2] \u{1F6E1}\uFE0F Referee hat genehmigt (${refereeRes.decision}). Starte Verifier als Final Gate...`);
-            const verifierRes = await LLMService.evaluateTrademarkVerifier({
-              currentListing,
-              niche1: normN1,
-              niche2: normN2,
-              subniche: normSub,
-              quote: params2.quote,
-              compactHits,
-              // Final Verifier receives the FULL compact hits of the candidate
-              normalizedHits,
-              refereeDecision: refereeRes.decision,
-              blockedProducts,
-              sessionId: tmSessionId
-            });
-            finalVerifierResult = verifierRes;
-            params2.onEvent?.({
-              type: "TM_VERIFIER_RESPONSE",
-              title: `Amazon Rejection Verifier: ${verifierRes.verdict}`,
-              content: { verdict: verifierRes.verdict, recommendation: verifierRes.recommendation, risks: verifierRes.identifiedRisks },
-              metadata: { provider: "OpenRouter", model: verifierRes._rawRequest?.model }
-            });
-            if (verifierRes.verdict === "SAFE") {
-              console.log(`[TrademarkServiceV2] \u2705 Verifier best\xE4tigt SAFE. Listing endg\xFCltig freigegeben!`);
-              return {
-                finalDecision: refereeRes.decision,
-                isSafe: true,
-                canBeFixedByListingRewrite: true,
-                reasonCode: null,
-                recommendedAction: null,
-                initialTrademarkHits,
-                finalTrademarkHits: normalizedHits,
-                rewriteIterations,
-                refereeResult: refereeRes,
-                verifierResult: verifierRes,
-                forbiddenTermsForTask,
-                blockedProducts,
-                blockedNiceClasses,
-                finalListing: ListingValidationService.validateAndRepairListing({
-                  listing: currentListing,
-                  niche1: normN1,
-                  niche2: normN2,
-                  subniche: normSub,
-                  forbiddenTerms: forbiddenTermsForTask
-                }).listing
-              };
-            }
-            console.warn(`[TrademarkServiceV2] \u26A0\uFE0F Verifier hat HIGH_RISK gemeldet (${verifierRes.identifiedRisks.length} Risiken).`);
-            const hasInvalidAi = verifierRes.identifiedRisks?.some((r) => r.riskType === "INVALID_AI_RESPONSE");
-            if (!verifierRes.canBeFixedByListingRewrite || hasInvalidAi) {
-              const reasonCode = hasInvalidAi ? "INVALID_AI_RESPONSE" : "VERIFIER_UNFIXABLE_RISK";
-              return {
-                finalDecision: "ESCALATE",
-                isSafe: false,
-                canBeFixedByListingRewrite: false,
-                reasonCode,
-                recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
-                initialTrademarkHits,
-                finalTrademarkHits: normalizedHits,
-                rewriteIterations,
-                refereeResult: refereeRes,
-                verifierResult: verifierRes,
-                forbiddenTermsForTask,
-                blockedProducts,
-                blockedNiceClasses,
-                finalListing: ListingValidationService.validateAndRepairListing({
-                  listing: currentListing,
-                  niche1: normN1,
-                  niche2: normN2,
-                  subniche: normSub,
-                  forbiddenTerms: forbiddenTermsForTask
-                }).listing
-              };
-            }
-            if (cycle >= maxCycles) {
-              return {
-                finalDecision: "ESCALATE",
-                isSafe: false,
-                canBeFixedByListingRewrite: true,
-                reasonCode: "REWRITE_LIMIT_REACHED",
-                recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
-                initialTrademarkHits,
-                finalTrademarkHits: normalizedHits,
-                rewriteIterations,
-                refereeResult: refereeRes,
-                verifierResult: verifierRes,
-                forbiddenTermsForTask,
-                blockedProducts,
-                blockedNiceClasses,
-                finalListing: ListingValidationService.validateAndRepairListing({
-                  listing: currentListing,
-                  niche1: normN1,
-                  niche2: normN2,
-                  subniche: normSub,
-                  forbiddenTerms: forbiddenTermsForTask
-                }).listing
-              };
-            }
-            if (!refereeRes.rewriteInstructions) refereeRes.rewriteInstructions = [];
-            const verifierInstructions = verifierRes.identifiedRisks.map((r) => `Resolve ${r.riskType} in ${r.field}: "${r.term}" - ${r.explanation}`);
-            refereeRes.rewriteInstructions.push(...verifierInstructions);
-            verifierRes.identifiedRisks.forEach((r) => {
-              if (r.term && r.term.length > 2) forbiddenTermsForTask.push(r.term.toLowerCase());
-            });
-          }
-          if (cycle >= maxCycles) {
-            console.warn(`[TrademarkServiceV2] \u{1F6A8} Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
-            return {
-              finalDecision: "ESCALATE",
-              isSafe: false,
-              canBeFixedByListingRewrite: true,
-              reasonCode: "REWRITE_LIMIT_REACHED",
-              recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
-              initialTrademarkHits,
-              finalTrademarkHits: normalizedHits,
-              rewriteIterations,
-              refereeResult: refereeRes,
-              verifierResult: finalVerifierResult,
-              forbiddenTermsForTask,
-              blockedProducts,
-              blockedNiceClasses,
-              finalListing: ListingValidationService.validateAndRepairListing({
-                listing: currentListing,
-                niche1: normN1,
-                niche2: normN2,
-                subniche: normSub,
-                forbiddenTerms: forbiddenTermsForTask
-              }).listing
-            };
-          }
-          for (const h of refereeRes.hits) {
-            if (h.decision === "REWRITE" || h.action === "REWRITE" || h.amazonRejectionRisk === "HIGH" || h.amazonRejectionRisk === "VERY_HIGH") {
-              if (h.searchedTerm) forbiddenTermsForTask.push(h.searchedTerm.toLowerCase());
-              if (h.registeredMark) forbiddenTermsForTask.push(h.registeredMark.toLowerCase());
-            }
-          }
-          console.log(`[TrademarkServiceV2] \u270D\uFE0F F\xFChre SEO-Rewrite durch (Runde ${cycle + 1}). Verbotene Begriffe: [${forbiddenTermsForTask.join(", ")}]`);
-          const rewriteRes = await LLMService.rewriteListingForTrademarkV2({
-            currentListing,
-            niche1: normN1,
-            niche2: normN2,
-            subniche: normSub,
-            quote: params2.quote,
-            rewriteIteration: cycle + 1,
-            forbiddenTermsForTask: Array.from(new Set(forbiddenTermsForTask)),
-            rewriteInstructions: refereeRes.rewriteInstructions || [],
-            hitsToFix: refereeRes.hits,
-            sessionId: tmSessionId
-          });
-          currentListing = rewriteRes.refinedListing;
-          const postRewriteValidation = ListingValidationService.validateAndRepairListing({
-            listing: currentListing,
-            niche1: normN1,
-            niche2: normN2,
-            subniche: normSub,
-            forbiddenTerms: forbiddenTermsForTask
-          });
-          currentListing = postRewriteValidation.listing;
-          rewriteIterations.push({
-            iteration: cycle + 1,
-            actionsTaken: rewriteRes.actionsTaken,
-            listing: { ...currentListing },
-            hitsFound: normalizedHits.length
-          });
-          params2.onEvent?.({
-            type: "TM_REWRITE_RESPONSE",
-            title: `SEO-Rewrite Runde ${cycle + 1} abgeschlossen`,
-            content: { iteration: cycle + 1, actionsTaken: rewriteRes.actionsTaken, listing: currentListing },
-            metadata: { provider: "OpenRouter", model: rewriteRes._rawRequest?.model }
-          });
-        }
-        return {
-          finalDecision: "ESCALATE",
-          isSafe: false,
-          canBeFixedByListingRewrite: true,
-          reasonCode: "REWRITE_LIMIT_REACHED",
-          recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
-          initialTrademarkHits,
-          finalTrademarkHits: [],
-          rewriteIterations,
-          refereeResult: finalRefereeResult,
-          verifierResult: finalVerifierResult,
-          forbiddenTermsForTask,
-          blockedProducts,
-          blockedNiceClasses,
-          finalListing: ListingValidationService.validateAndRepairListing({
-            listing: currentListing,
-            niche1: normN1,
-            niche2: normN2,
-            subniche: normSub,
-            forbiddenTerms: forbiddenTermsForTask
-          }).listing
-        };
       }
     };
   }
@@ -111916,11 +110682,11 @@ ${end.comment}` : end.comment;
       return (f) => f.length === len && f !== "." && f !== "..";
     };
     var defaultPlatform = typeof process === "object" && process ? typeof process.env === "object" && process.env && process.env.__MINIMATCH_TESTING_PLATFORM__ || process.platform : "posix";
-    var path17 = {
+    var path19 = {
       win32: { sep: "\\" },
       posix: { sep: "/" }
     };
-    var sep = defaultPlatform === "win32" ? path17.win32.sep : path17.posix.sep;
+    var sep = defaultPlatform === "win32" ? path19.win32.sep : path19.posix.sep;
     minimatch.sep = sep;
     var GLOBSTAR = /* @__PURE__ */ Symbol("globstar **");
     minimatch.GLOBSTAR = GLOBSTAR;
@@ -219688,23 +218454,23 @@ var init_playwright3 = __esm2({
 
 // src/server/services/browserSessionService.ts
 function findChromiumExecutable() {
-  if (process.env.CHROME_BIN && import_fs76.default.existsSync(process.env.CHROME_BIN)) {
+  if (process.env.CHROME_BIN && import_fs75.default.existsSync(process.env.CHROME_BIN)) {
     return process.env.CHROME_BIN;
   }
   const candidateDirs = [
     process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright",
-    import_path71.default.join(process.env.HOME || "/root", ".cache", "ms-playwright"),
-    import_path71.default.join(process.env.HOME || "/root", "Library", "Caches", "ms-playwright")
+    import_path70.default.join(process.env.HOME || "/root", ".cache", "ms-playwright"),
+    import_path70.default.join(process.env.HOME || "/root", "Library", "Caches", "ms-playwright")
   ];
   for (const dir of candidateDirs) {
-    if (import_fs76.default.existsSync(dir)) {
+    if (import_fs75.default.existsSync(dir)) {
       try {
         const files = [];
         const scan = (d, depth = 0) => {
           if (depth > 4) return;
-          const items = import_fs76.default.readdirSync(d, { withFileTypes: true });
+          const items = import_fs75.default.readdirSync(d, { withFileTypes: true });
           for (const item of items) {
-            const p = import_path71.default.join(d, item.name);
+            const p = import_path70.default.join(d, item.name);
             if (item.isDirectory()) scan(p, depth + 1);
             else files.push(p);
           }
@@ -219725,17 +218491,17 @@ function findChromiumExecutable() {
     "/usr/bin/chromium-browser"
   ];
   for (const sc of systemCandidates) {
-    if (import_fs76.default.existsSync(sc)) return sc;
+    if (import_fs75.default.existsSync(sc)) return sc;
   }
   return void 0;
 }
-var import_path71, import_fs76, BrowserSessionService;
+var import_path70, import_fs75, BrowserSessionService;
 var init_browserSessionService = __esm2({
   "src/server/services/browserSessionService.ts"() {
     "use strict";
     init_playwright3();
-    import_path71 = __toESM2(require("path"), 1);
-    import_fs76 = __toESM2(require("fs"), 1);
+    import_path70 = __toESM2(require("path"), 1);
+    import_fs75 = __toESM2(require("fs"), 1);
     BrowserSessionService = class _BrowserSessionService {
       static context = null;
       static sessions = /* @__PURE__ */ new Map();
@@ -219743,9 +218509,9 @@ var init_browserSessionService = __esm2({
       static frameBroadcasters = [];
       static isInitializing = false;
       static getProfileDir() {
-        const dir = import_path71.default.resolve(process.cwd(), "data", "chrome-profile");
-        if (!import_fs76.default.existsSync(dir)) {
-          import_fs76.default.mkdirSync(dir, { recursive: true });
+        const dir = import_path70.default.resolve(process.cwd(), "data", "chrome-profile");
+        if (!import_fs75.default.existsSync(dir)) {
+          import_fs75.default.mkdirSync(dir, { recursive: true });
         }
         return dir;
       }
@@ -220114,6 +218880,2304 @@ var init_browserSessionService = __esm2({
         };
       }
     };
+  }
+});
+
+// src/server/services/svgRenderService.ts
+async function getBrowser() {
+  if (!sharedBrowser || !sharedBrowser.isConnected()) {
+    const executablePath = findChromiumExecutable();
+    const launchOptions = {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
+      ]
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    sharedBrowser = await chromium.launch(launchOptions);
+  }
+  return sharedBrowser;
+}
+var sharedBrowser, SvgRenderService;
+var init_svgRenderService = __esm2({
+  "src/server/services/svgRenderService.ts"() {
+    "use strict";
+    init_playwright3();
+    init_browserSessionService();
+    sharedBrowser = null;
+    SvgRenderService = class {
+      /**
+       * Cleans XML declarations, doctypes, and whitespace noise from SVG strings
+       */
+      static cleanSvg(raw) {
+        if (!raw) return "";
+        return raw.replace(/<\?xml[^>]*\?>/gi, "").replace(/<!DOCTYPE[^>]*>/gi, "").trim();
+      }
+      /**
+       * Executes server-side Auto BG Remove (Corner Background detection & deletion)
+       */
+      static async autoRemoveCornerBackground(svgText) {
+        const clean = this.cleanSvg(svgText);
+        if (!clean) return { success: false, modifiedSvg: svgText, removedCount: 0 };
+        const browser = await getBrowser();
+        const context2 = await browser.newContext();
+        const page = await context2.newPage();
+        try {
+          await page.setContent(`
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8" /></head>
+        <body style="margin: 0; padding: 0;">
+          <div id="container">${clean}</div>
+        </body>
+        </html>
+      `);
+          const result2 = await page.evaluate(() => {
+            const parseColorToRGB = (colorStr) => {
+              if (!colorStr || colorStr === "none" || colorStr === "transparent") return null;
+              let s = colorStr.trim().toLowerCase();
+              if (s.startsWith("#")) {
+                let hex = s.substring(1);
+                if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+                if (hex.length === 6) {
+                  return {
+                    r: parseInt(hex.substring(0, 2), 16),
+                    g: parseInt(hex.substring(2, 4), 16),
+                    b: parseInt(hex.substring(4, 6), 16)
+                  };
+                }
+              }
+              const rgbMatch = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+              if (rgbMatch) {
+                return {
+                  r: parseInt(rgbMatch[1], 10),
+                  g: parseInt(rgbMatch[2], 10),
+                  b: parseInt(rgbMatch[3], 10)
+                };
+              }
+              return null;
+            };
+            const colorsMatch = (color1, color2, tolerance = 25) => {
+              if (!color1 || !color2) return false;
+              if (color1 === color2) return true;
+              const p1 = parseColorToRGB(color1);
+              const p2 = parseColorToRGB(color2);
+              if (p1 && p2) {
+                return Math.abs(p1.r - p2.r) <= tolerance && Math.abs(p1.g - p2.g) <= tolerance && Math.abs(p1.b - p2.b) <= tolerance;
+              }
+              return color1.toLowerCase() === color2.toLowerCase();
+            };
+            const getElementFill = (el) => {
+              if (el.hasAttribute("fill")) {
+                const f = el.getAttribute("fill");
+                if (f && f !== "none" && f !== "transparent" && f !== "rgba(0, 0, 0, 0)") return f;
+              }
+              const styleAttr = el.getAttribute("style");
+              if (styleAttr) {
+                const match = styleAttr.match(/fill\s*:\s*([^;]+)/);
+                if (match && match[1] && match[1].trim() !== "none") return match[1].trim();
+              }
+              try {
+                const comp = window.getComputedStyle(el).fill;
+                if (comp && comp !== "none" && comp !== "transparent" && comp !== "rgba(0, 0, 0, 0)") return comp;
+              } catch {
+              }
+              return null;
+            };
+            const isElementSafeToRemove = (el) => {
+              if (!el) return false;
+              const tag = el.tagName.toLowerCase();
+              if (["svg", "html", "body", "head", "script", "style", "defs", "clippath"].includes(tag)) return false;
+              return true;
+            };
+            const svg = document.querySelector("svg");
+            if (!svg) return { success: false, modifiedSvg: "", removedCount: 0 };
+            const svgBBox = svg.getBBox();
+            let topLeftElement = null;
+            let minDistance = Infinity;
+            svg.querySelectorAll("*").forEach((el) => {
+              if (!isElementSafeToRemove(el)) return;
+              try {
+                const bbox = el.getBBox();
+                if (bbox.width > 0 || bbox.height > 0) {
+                  const dist = Math.sqrt(Math.pow(bbox.x - svgBBox.x, 2) + Math.pow(bbox.y - svgBBox.y, 2));
+                  if (dist < minDistance) {
+                    topLeftElement = el;
+                    minDistance = dist;
+                  }
+                }
+              } catch {
+              }
+            });
+            if (!topLeftElement) {
+              return { success: false, modifiedSvg: svg.outerHTML, removedCount: 0 };
+            }
+            const targetColor = getElementFill(topLeftElement);
+            if (!targetColor) {
+              return { success: false, modifiedSvg: svg.outerHTML, removedCount: 0 };
+            }
+            let removedCount = 0;
+            svg.querySelectorAll("*").forEach((el) => {
+              if (!isElementSafeToRemove(el)) return;
+              const fill2 = getElementFill(el);
+              if (fill2 && colorsMatch(fill2, targetColor, 25)) {
+                if (el.hasAttribute("fill")) {
+                  el.setAttribute("fill", "none");
+                } else {
+                  el.remove();
+                }
+                removedCount++;
+              }
+            });
+            return {
+              success: true,
+              modifiedSvg: svg.outerHTML,
+              removedCount
+            };
+          });
+          return result2;
+        } catch (err) {
+          console.error("[SvgRenderService] Auto BG remove error:", err);
+          return { success: false, modifiedSvg: svgText, removedCount: 0 };
+        } finally {
+          await context2.close().catch(() => {
+          });
+        }
+      }
+      /**
+       * Renders the 4-Panel Verification Image (2048x2048 px: White, Black, Red, Slate)
+       */
+      static async render4PanelTestImage(svgText) {
+        const clean = this.cleanSvg(svgText);
+        const browser = await getBrowser();
+        const context2 = await browser.newContext({
+          viewport: { width: 2048, height: 2048 },
+          deviceScaleFactor: 1
+        });
+        const page = await context2.newPage();
+        try {
+          const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+            html, body {
+              width: 2048px;
+              height: 2048px;
+              background: #0f172a;
+              overflow: hidden;
+            }
+            .grid-container {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              grid-template-rows: 1fr 1fr;
+              width: 2048px;
+              height: 2048px;
+              gap: 12px;
+              background: #020617;
+              padding: 12px;
+            }
+            .panel {
+              position: relative;
+              width: 100%;
+              height: 100%;
+              border-radius: 20px;
+              overflow: hidden;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 60px;
+            }
+            .panel-1 { background-color: #ffffff; }
+            .panel-2 { background-color: #000000; }
+            .panel-3 { background-color: #d32f2f; }
+            .panel-4 { background-color: #1e293b; }
+
+            .panel-label {
+              position: absolute;
+              top: 20px;
+              left: 20px;
+              font-size: 26px;
+              font-weight: 800;
+              letter-spacing: 0.5px;
+              padding: 8px 20px;
+              border-radius: 10px;
+              text-transform: uppercase;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            }
+            .panel-1 .panel-label { background: rgba(15, 23, 42, 0.9); color: #ffffff; border: 1px solid rgba(255,255,255,0.2); }
+            .panel-2 .panel-label { background: rgba(255, 255, 255, 0.95); color: #000000; }
+            .panel-3 .panel-label { background: rgba(15, 23, 42, 0.9); color: #ffffff; border: 1px solid rgba(255,255,255,0.2); }
+            .panel-4 .panel-label { background: rgba(255, 255, 255, 0.95); color: #0f172a; }
+
+            .svg-wrapper {
+              width: 100%;
+              height: 100%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .svg-wrapper svg {
+              width: 100%;
+              height: 100%;
+              max-width: 92%;
+              max-height: 92%;
+              object-fit: contain;
+              display: block;
+              margin: auto;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="grid-container">
+            <div class="panel panel-1">
+              <span class="panel-label">1. White BG</span>
+              <div class="svg-wrapper">${clean}</div>
+            </div>
+            <div class="panel panel-2">
+              <span class="panel-label">2. Black BG</span>
+              <div class="svg-wrapper">${clean}</div>
+            </div>
+            <div class="panel panel-3">
+              <span class="panel-label">3. Red BG</span>
+              <div class="svg-wrapper">${clean}</div>
+            </div>
+            <div class="panel panel-4">
+              <span class="panel-label">4. Slate / Dark Grey BG</span>
+              <div class="svg-wrapper">${clean}</div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+          await page.setContent(htmlContent);
+          await page.waitForTimeout(50);
+          const buffer = await page.screenshot({ type: "png" });
+          return buffer;
+        } finally {
+          await context2.close().catch(() => {
+          });
+        }
+      }
+      /**
+       * Renders the optimal Merch by Amazon Print PNG (4500 x 5400 px, 300 DPI, Transparent Background)
+       */
+      static async renderSvgToMbaPng(svgText, width = 4500, height = 5400) {
+        const clean = this.cleanSvg(svgText);
+        const browser = await getBrowser();
+        const context2 = await browser.newContext({
+          viewport: { width, height },
+          deviceScaleFactor: 1
+        });
+        const page = await context2.newPage();
+        try {
+          const containerWidth = Math.round(width * 0.9);
+          const containerHeight = Math.round(height * 0.9);
+          const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            html, body {
+              width: ${width}px;
+              height: ${height}px;
+              background: transparent;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              overflow: hidden;
+            }
+            .design-container {
+              width: ${containerWidth}px;
+              height: ${containerHeight}px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            svg {
+              width: 100%;
+              height: 100%;
+              max-width: 100%;
+              max-height: 100%;
+              object-fit: contain;
+              display: block;
+              margin: auto;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="design-container">
+            ${clean}
+          </div>
+        </body>
+        </html>
+      `;
+          await page.setContent(htmlContent);
+          await page.waitForTimeout(60);
+          const buffer = await page.screenshot({ type: "png", omitBackground: true });
+          return buffer;
+        } finally {
+          await context2.close().catch(() => {
+          });
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/visionOptimizationService.ts
+async function getBrowser2() {
+  if (!sharedBrowser2 || !sharedBrowser2.isConnected()) {
+    const executablePath = findChromiumExecutable();
+    const launchOptions = {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
+      ]
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    sharedBrowser2 = await chromium.launch(launchOptions);
+  }
+  return sharedBrowser2;
+}
+var import_fs76, import_path71, sharedBrowser2, VisionOptimizationService;
+var init_visionOptimizationService = __esm2({
+  "src/server/services/visionOptimizationService.ts"() {
+    "use strict";
+    init_playwright3();
+    import_fs76 = __toESM2(require("fs"), 1);
+    import_path71 = __toESM2(require("path"), 1);
+    init_browserSessionService();
+    sharedBrowser2 = null;
+    VisionOptimizationService = class {
+      /**
+       * Generates a 4-color 2x2 Grid (1024x1024) preview for Vision LLMs (OpenRouter/Claude/Gemini)
+       * using the container's built-in Playwright Chromium engine (zero native C++ dependencies).
+       * - Top-Left: Black (#111827) - checks white/bright graphics & edge halos
+       * - Top-Right: White (#ffffff) - checks black/dark graphics & contrast
+       * - Bottom-Left: Red / Cranberry (#c53030) - checks color clashes & vibrancy
+       * - Bottom-Right: Asphalt (#383E42) - checks midtone legibility & subtle artifacts
+       */
+      static async prepareVisionImage(input, outputPath) {
+        try {
+          let dataUri;
+          if (typeof input === "string") {
+            if (input.startsWith("data:image")) {
+              dataUri = input;
+            } else if (import_fs76.default.existsSync(input)) {
+              const fileBuf = import_fs76.default.readFileSync(input);
+              dataUri = `data:image/png;base64,${fileBuf.toString("base64")}`;
+            } else {
+              throw new Error(`File not found: ${input}`);
+            }
+          } else if (Buffer.isBuffer(input)) {
+            dataUri = `data:image/png;base64,${input.toString("base64")}`;
+          } else {
+            return { base64DataUrl: "", is4Panel: false };
+          }
+          const browser = await getBrowser2();
+          const context2 = await browser.newContext({
+            viewport: { width: 1024, height: 1024 },
+            deviceScaleFactor: 1
+          });
+          const page = await context2.newPage();
+          try {
+            const html = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              body {
+                width: 1024px;
+                height: 1024px;
+                background: #0f172a;
+                display: grid;
+                grid-template-columns: 512px 512px;
+                grid-template-rows: 512px 512px;
+                overflow: hidden;
+              }
+              .panel {
+                width: 512px;
+                height: 512px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                padding: 24px;
+              }
+              .p-black { background: #111827; }
+              .p-white { background: #ffffff; }
+              .p-red { background: #c53030; }
+              .p-asphalt { background: #383E42; }
+              .panel img {
+                max-width: 464px;
+                max-height: 464px;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                display: block;
+              }
+              .label {
+                position: absolute;
+                bottom: 8px;
+                left: 12px;
+                font-family: system-ui, -apple-system, sans-serif;
+                font-size: 11px;
+                font-weight: 700;
+                padding: 2px 8px;
+                border-radius: 4px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+              }
+              .label-dark { background: rgba(255,255,255,0.15); color: #f8fafc; }
+              .label-light { background: rgba(0,0,0,0.15); color: #0f172a; }
+            </style>
+          </head>
+          <body>
+            <div class="panel p-black">
+              <img src="${dataUri}" />
+              <span class="label label-dark">1. Black (#111827)</span>
+            </div>
+            <div class="panel p-white">
+              <img src="${dataUri}" />
+              <span class="label label-light">2. White (#ffffff)</span>
+            </div>
+            <div class="panel p-red">
+              <img src="${dataUri}" />
+              <span class="label label-dark">3. Red (#c53030)</span>
+            </div>
+            <div class="panel p-asphalt">
+              <img src="${dataUri}" />
+              <span class="label label-dark">4. Asphalt (#383E42)</span>
+            </div>
+          </body>
+          </html>
+        `;
+            await page.setContent(html);
+            await page.waitForTimeout(30);
+            const screenshotBuf = await page.screenshot({ type: "jpeg", quality: 88 });
+            if (outputPath) {
+              try {
+                const dir = import_path71.default.dirname(outputPath);
+                if (!import_fs76.default.existsSync(dir)) import_fs76.default.mkdirSync(dir, { recursive: true });
+                import_fs76.default.writeFileSync(outputPath, screenshotBuf);
+              } catch (e) {
+                console.warn("[VisionOptimizationService] Failed to save preview file:", e.message);
+              }
+            }
+            return {
+              base64DataUrl: `data:image/jpeg;base64,${screenshotBuf.toString("base64")}`,
+              is4Panel: true,
+              savedPath: outputPath && import_fs76.default.existsSync(outputPath) ? outputPath : void 0
+            };
+          } finally {
+            await context2.close().catch(() => {
+            });
+          }
+        } catch (err) {
+          console.warn("[VisionOptimizationService] Playwright render fallback:", err.message);
+          if (typeof input === "string" && input.startsWith("data:image")) {
+            return { base64DataUrl: input, is4Panel: false };
+          }
+          return { base64DataUrl: "", is4Panel: false };
+        }
+      }
+      /**
+       * Generates a single, high-contrast, centered 1125x1350 preview image on flat neutral mid-gray (#B8B8B8)
+       * specifically designed for Step U4 Master English Listing creation.
+       * - Resolution: exactly 1125x1350 (1/4 width, 1/4 height of 4500x5400)
+       * - Background: #B8B8B8 (neutral mid-gray, no gradients, no textures, no borders, no text, no watermarks)
+       * - Centers transparent PNG, composites alpha seamlessly, preserves aspect ratio
+       * - Drastically reduces vision token usage while ensuring both white and dark designs remain legible
+       */
+      static async prepareU4PreviewImage(input, outputPath) {
+        try {
+          let dataUri;
+          if (typeof input === "string") {
+            if (input.startsWith("data:image")) {
+              dataUri = input;
+            } else if (import_fs76.default.existsSync(input)) {
+              const fileBuf = import_fs76.default.readFileSync(input);
+              dataUri = `data:image/png;base64,${fileBuf.toString("base64")}`;
+            } else {
+              throw new Error(`File not found: ${input}`);
+            }
+          } else if (Buffer.isBuffer(input)) {
+            dataUri = `data:image/png;base64,${input.toString("base64")}`;
+          } else {
+            return { base64DataUrl: "" };
+          }
+          const browser = await getBrowser2();
+          const context2 = await browser.newContext({
+            viewport: { width: 1125, height: 1350 },
+            deviceScaleFactor: 1
+          });
+          const page = await context2.newPage();
+          try {
+            const html = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              body {
+                width: 1125px;
+                height: 1350px;
+                background-color: #B8B8B8;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+              }
+              img {
+                max-width: 1125px;
+                max-height: 1350px;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                display: block;
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${dataUri}" />
+          </body>
+          </html>
+        `;
+            await page.setContent(html);
+            await page.waitForTimeout(30);
+            const screenshotBuf = await page.screenshot({ type: "png" });
+            if (outputPath) {
+              try {
+                const dir = import_path71.default.dirname(outputPath);
+                if (!import_fs76.default.existsSync(dir)) import_fs76.default.mkdirSync(dir, { recursive: true });
+                import_fs76.default.writeFileSync(outputPath, screenshotBuf);
+              } catch (e) {
+                console.warn("[VisionOptimizationService] Failed to save U4 preview file:", e.message);
+              }
+            }
+            return {
+              base64DataUrl: `data:image/png;base64,${screenshotBuf.toString("base64")}`,
+              savedPath: outputPath && import_fs76.default.existsSync(outputPath) ? outputPath : void 0
+            };
+          } finally {
+            await context2.close().catch(() => {
+            });
+          }
+        } catch (err) {
+          console.warn("[VisionOptimizationService] U4 preview generation fallback:", err.message);
+          return { base64DataUrl: "" };
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/artworkResizeService.ts
+async function getBrowser3() {
+  if (!sharedBrowser3 || !sharedBrowser3.isConnected()) {
+    const executablePath = findChromiumExecutable();
+    const launchOptions = {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
+      ]
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    sharedBrowser3 = await chromium.launch(launchOptions);
+  }
+  return sharedBrowser3;
+}
+function crc32(buf) {
+  let crc = -1;
+  for (let i = 0; i < buf.length; i++) {
+    crc = crc >>> 8 ^ crcTable[(crc ^ buf[i]) & 255];
+  }
+  return (crc ^ -1) >>> 0;
+}
+function inject300Dpi(pngBuffer) {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i = 0; i < 8; i++) {
+    if (pngBuffer[i] !== sig[i]) return pngBuffer;
+  }
+  const dpi = 300;
+  const ppm = Math.round(dpi * 39.3701);
+  const physData = Buffer.alloc(9);
+  physData.writeUInt32BE(ppm, 0);
+  physData.writeUInt32BE(ppm, 4);
+  physData.writeUInt8(1, 8);
+  const typeAndData = Buffer.concat([Buffer.from("pHYs", "ascii"), physData]);
+  const crc = crc32(typeAndData);
+  const chunkHeader = Buffer.alloc(4);
+  chunkHeader.writeUInt32BE(9, 0);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crc, 0);
+  const physChunk = Buffer.concat([chunkHeader, typeAndData, crcBuf]);
+  return Buffer.concat([
+    pngBuffer.subarray(0, 33),
+    physChunk,
+    pngBuffer.subarray(33)
+  ]);
+}
+var import_fs77, import_path72, currentDir, sharedBrowser3, crcTable, ArtworkResizeService;
+var init_artworkResizeService = __esm2({
+  "src/server/services/artworkResizeService.ts"() {
+    "use strict";
+    init_playwright3();
+    import_fs77 = __toESM2(require("fs"), 1);
+    import_path72 = __toESM2(require("path"), 1);
+    init_browserSessionService();
+    currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
+    sharedBrowser3 = null;
+    crcTable = (() => {
+      const table = [];
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) {
+          c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+        }
+        table[n] = c;
+      }
+      return table;
+    })();
+    ArtworkResizeService = class {
+      /**
+       * Resolves the brush_tip.png asset from multiple candidate paths
+       */
+      static getBrushTipPath() {
+        const candidates = [
+          import_path72.default.resolve(process.cwd(), "assets", "brush_tip.png"),
+          import_path72.default.resolve(process.cwd(), "dist", "assets", "brush_tip.png"),
+          import_path72.default.resolve(currentDir, "../../assets", "brush_tip.png"),
+          import_path72.default.resolve(currentDir, "../assets", "brush_tip.png"),
+          import_path72.default.resolve(process.cwd(), "Erweiterungen und Programme /Listing Optimizer/assets", "brush_tip.png")
+        ];
+        for (const c of candidates) {
+          if (import_fs77.default.existsSync(c)) {
+            return c;
+          }
+        }
+        return candidates[0];
+      }
+      /**
+       * Generates all resized variants from the master 4500x5400px MBA PNG:
+       * 1. ${cleanId}_trimmed.png - Bounding box of artwork with transparent margins trimmed
+       * 2. ${cleanId}_two_sided_mug_standard.png - 2700x1050 px, 300 DPI, centered on front/back
+       * 3. ${cleanId}_two_sided_mug_brush.png - 2700x1050 px, 300 DPI with black brush contour
+       * 4. ${cleanId}_two_sided_drinkware_standard.png - 3000x1400 px, 300 DPI for Tumbler & Water Bottle
+       * 5. ${cleanId}_two_sided_drinkware_brush.png - 3000x1400 px, 300 DPI with black brush contour for Travel Tumbler
+       */
+      static resizeLock = Promise.resolve();
+      static async generateResizedArtworks(taskId, mbaPngPath) {
+        const previousLock = this.resizeLock;
+        let releaseLock = () => {
+        };
+        this.resizeLock = new Promise((resolve) => {
+          releaseLock = resolve;
+        });
+        await previousLock;
+        try {
+          return await this.executeResizedArtworksInternal(taskId, mbaPngPath);
+        } finally {
+          releaseLock();
+        }
+      }
+      static async executeResizedArtworksInternal(taskId, mbaPngPath) {
+        const memBefore = process.memoryUsage();
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
+        if (!import_fs77.default.existsSync(designsDir)) {
+          try {
+            import_fs77.default.mkdirSync(designsDir, { recursive: true });
+          } catch (e) {
+          }
+        }
+        const trimmedFilePath = import_path72.default.join(designsDir, `${cleanId}_trimmed.png`);
+        const mugStandardFilePath = import_path72.default.join(designsDir, `${cleanId}_two_sided_mug_standard.png`);
+        const mugBrushFilePath = import_path72.default.join(designsDir, `${cleanId}_two_sided_mug_brush.png`);
+        const drinkwareStandardFilePath = import_path72.default.join(designsDir, `${cleanId}_two_sided_drinkware_standard.png`);
+        const drinkwareBrushFilePath = import_path72.default.join(designsDir, `${cleanId}_two_sided_drinkware_brush.png`);
+        if (!import_fs77.default.existsSync(mbaPngPath)) {
+          throw new Error(`Master MBA PNG not found at path: ${mbaPngPath}`);
+        }
+        const masterPngBuffer = import_fs77.default.readFileSync(mbaPngPath);
+        const masterPngDataUri = `data:image/png;base64,${masterPngBuffer.toString("base64")}`;
+        const brushTipPath = this.getBrushTipPath();
+        let brushTipDataUri = "";
+        if (import_fs77.default.existsSync(brushTipPath)) {
+          const brushBuffer = import_fs77.default.readFileSync(brushTipPath);
+          brushTipDataUri = `data:image/png;base64,${brushBuffer.toString("base64")}`;
+        } else {
+          console.warn(`[ArtworkResizeService] \u26A0\uFE0F brush_tip.png not found at ${brushTipPath}. Falling back without brush tip.`);
+        }
+        console.log(`[ArtworkResizeService] \u{1F4D0} Starte Resize-Generierung f\xFCr Task #${taskId} (Chromium Engine)...`);
+        const browser = await getBrowser3();
+        const context2 = await browser.newContext({
+          viewport: { width: 3e3, height: 2e3 },
+          deviceScaleFactor: 1
+        });
+        const page = await context2.newPage();
+        try {
+          await page.addInitScript(() => {
+            window.__name = (target) => target;
+          });
+          await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
+          const evaluatedResults = await page.evaluate(async (params2) => {
+            const loadImage = (src) => {
+              return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => resolve(img);
+                img.onerror = (e) => reject(e);
+                img.src = src;
+              });
+            };
+            const masterImg = await loadImage(params2.masterUri);
+            let brushImg = null;
+            if (params2.brushUri) {
+              try {
+                brushImg = await loadImage(params2.brushUri);
+              } catch (e) {
+                console.warn("Failed to load brush tip image in browser context", e);
+              }
+            }
+            const trimCanvas = (img) => {
+              const width = img.naturalWidth || img.width;
+              const height = img.naturalHeight || img.height;
+              const canvas = document.createElement("canvas");
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext("2d", { willReadFrequently: true });
+              if (!ctx) return canvas;
+              ctx.drawImage(img, 0, 0);
+              const imgData = ctx.getImageData(0, 0, width, height);
+              const data = imgData.data;
+              let top = 0;
+              let bottom = height - 1;
+              let left = 0;
+              let right = width - 1;
+              let found = false;
+              for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                  if (data[4 * (y * width + x) + 3] > 0) {
+                    top = y;
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              if (!found) {
+                return canvas;
+              }
+              found = false;
+              for (let y = height - 1; y >= top; y--) {
+                for (let x = 0; x < width; x++) {
+                  if (data[4 * (y * width + x) + 3] > 0) {
+                    bottom = y;
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              found = false;
+              for (let x = 0; x < width; x++) {
+                for (let y = top; y <= bottom; y++) {
+                  if (data[4 * (y * width + x) + 3] > 0) {
+                    left = x;
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              found = false;
+              for (let x = width - 1; x >= left; x--) {
+                for (let y = top; y <= bottom; y++) {
+                  if (data[4 * (y * width + x) + 3] > 0) {
+                    right = x;
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              const croppedWidth = right - left + 1;
+              const croppedHeight = bottom - top + 1;
+              const trimmed = document.createElement("canvas");
+              trimmed.width = croppedWidth;
+              trimmed.height = croppedHeight;
+              const trimmedCtx = trimmed.getContext("2d");
+              if (trimmedCtx) {
+                trimmedCtx.drawImage(img, left, top, croppedWidth, croppedHeight, 0, 0, croppedWidth, croppedHeight);
+              }
+              return trimmed;
+            };
+            const trimmedCanvas = trimCanvas(masterImg);
+            const drawCentered = (ctx, source12, destX, destY, targetWidth, targetHeight) => {
+              const sw = source12.width;
+              const sh = source12.height;
+              const scale = Math.min(targetWidth / sw, targetHeight / sh, 1);
+              const dw = sw * scale;
+              const dh = sh * scale;
+              const x = destX + (targetWidth - dw) / 2;
+              const y = destY + (targetHeight - dh) / 2;
+              ctx.drawImage(source12, x, y, dw, dh);
+            };
+            const scaleDesignForProduct = (sourceCanvas, finalWidth, finalHeight, margin = 0.075) => {
+              const sw = sourceCanvas.width;
+              const sh = sourceCanvas.height;
+              const mt = finalHeight * margin;
+              const mb = finalHeight * margin;
+              const ml = finalWidth * margin;
+              const mr = finalWidth * margin;
+              const safeW = finalWidth - ml - mr;
+              const safeH = finalHeight - mt - mb;
+              const scale = Math.min(safeW / sw, safeH / sh);
+              const dw = sw * scale;
+              const dh = sh * scale;
+              const ox = ml + (safeW - dw) / 2;
+              const oy = mt + (safeH - dh) / 2;
+              const canvas = document.createElement("canvas");
+              canvas.width = finalWidth;
+              canvas.height = finalHeight;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = "high";
+                ctx.clearRect(0, 0, finalWidth, finalHeight);
+                ctx.drawImage(sourceCanvas, ox, oy, dw, dh);
+              }
+              return canvas;
+            };
+            const createMugCanvas = (scaledSideDesign) => {
+              const canvas = document.createElement("canvas");
+              canvas.width = 2700;
+              canvas.height = 1050;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.clearRect(0, 0, 2700, 1050);
+                const w = 1050;
+                const h = 1045.646;
+                const y = (1050 - h) / 2;
+                drawCentered(ctx, scaledSideDesign, 59, y, w, h);
+                drawCentered(ctx, scaledSideDesign, 1591, y, w, h);
+              }
+              return canvas;
+            };
+            const createDrinkwareCanvas = (scaledSideDesign) => {
+              const canvas = document.createElement("canvas");
+              canvas.width = 3e3;
+              canvas.height = 1400;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.clearRect(0, 0, 3e3, 1400);
+                const w = 1400;
+                const h = 1400;
+                const y = 0;
+                drawCentered(ctx, scaledSideDesign, 31, y, w, h);
+                drawCentered(ctx, scaledSideDesign, 1566.6667, y, w, h);
+              }
+              return canvas;
+            };
+            const removeSpecks = async (canvas, minSize = 25) => {
+              const ctx = canvas.getContext("2d", { willReadFrequently: true });
+              if (!ctx) return;
+              const width = canvas.width;
+              const height = canvas.height;
+              const totalPixels = width * height;
+              const imgData = ctx.getImageData(0, 0, width, height);
+              const data = imgData.data;
+              const visited = new Uint8Array(totalPixels);
+              let modified = false;
+              const queue = new Int32Array(Math.min(totalPixels, 1e5));
+              const speckOffsets = new Int32Array(minSize);
+              for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                  const startIdx = y * width + x;
+                  if (visited[startIdx] || data[4 * startIdx + 3] === 0) continue;
+                  let head2 = 0;
+                  let tail = 0;
+                  queue[tail++] = startIdx;
+                  visited[startIdx] = 1;
+                  let componentSize = 0;
+                  let isSpeck = true;
+                  while (head2 < tail) {
+                    const curIdx = queue[head2++];
+                    const cx = curIdx % width;
+                    const cy = curIdx / width | 0;
+                    if (isSpeck) {
+                      if (componentSize < minSize) {
+                        speckOffsets[componentSize] = 4 * curIdx;
+                      }
+                      componentSize++;
+                      if (componentSize >= minSize) {
+                        isSpeck = false;
+                      }
+                    }
+                    for (let dy = -1; dy <= 1; dy++) {
+                      const ny = cy + dy;
+                      if (ny < 0 || ny >= height) continue;
+                      const rowOffset = ny * width;
+                      for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const nx = cx + dx;
+                        if (nx < 0 || nx >= width) continue;
+                        const nIdx = rowOffset + nx;
+                        if (!visited[nIdx] && data[4 * nIdx + 3] > 0) {
+                          visited[nIdx] = 1;
+                          if (tail < queue.length) {
+                            queue[tail++] = nIdx;
+                          }
+                        }
+                      }
+                    }
+                  }
+                  if (isSpeck && componentSize < minSize) {
+                    for (let i = 0; i < componentSize; i++) {
+                      const offset = speckOffsets[i];
+                      data[offset] = 0;
+                      data[offset + 1] = 0;
+                      data[offset + 2] = 0;
+                      data[offset + 3] = 0;
+                    }
+                    modified = true;
+                  }
+                }
+              }
+              if (modified) {
+                ctx.putImageData(imgData, 0, 0);
+              }
+            };
+            const applyBlackBrush = async (sourceCanvas, brushP) => {
+              await removeSpecks(sourceCanvas);
+              const n = sourceCanvas.width;
+              const o = sourceCanvas.height;
+              const r = document.createElement("canvas");
+              const s = 0.15 * Math.max(n, o);
+              r.width = Math.ceil(n + 2 * s);
+              r.height = Math.ceil(o + 2 * s);
+              const a = r.getContext("2d");
+              if (!a) return sourceCanvas;
+              if (!brushP) {
+                a.drawImage(sourceCanvas, s, s);
+                return r;
+              }
+              const u = 16;
+              const m = 3;
+              const h = [0.6, 0.9, 1.2];
+              const g = [];
+              for (let e = 0; e < m; e++) {
+                const t = h[e];
+                const bw = Math.ceil(brushP.width * t);
+                const bh = Math.ceil(brushP.height * t);
+                const br = Math.ceil(Math.sqrt(bw * bw + bh * bh));
+                for (let k = 0; k < u; k++) {
+                  const rot = k / u * Math.PI * 2;
+                  const bc = document.createElement("canvas");
+                  bc.width = br;
+                  bc.height = br;
+                  const bctx = bc.getContext("2d");
+                  if (bctx) {
+                    bctx.translate(br / 2, br / 2);
+                    bctx.rotate(rot);
+                    bctx.scale(t, t);
+                    bctx.drawImage(brushP, -brushP.width / 2, -brushP.height / 2);
+                    g.push({
+                      canvas: bc,
+                      halfW: br / 2,
+                      halfH: br / 2
+                    });
+                  }
+                }
+              }
+              const b = g.length;
+              const f = 0.1;
+              const y = document.createElement("canvas");
+              y.width = Math.ceil(n * f);
+              y.height = Math.ceil(o * f);
+              const v = y.getContext("2d", { willReadFrequently: true });
+              if (!v) return sourceCanvas;
+              v.drawImage(sourceCanvas, 0, 0, y.width, y.height);
+              for (let e = 0; e < 2; e++) {
+                v.drawImage(y, 1, 0);
+                v.drawImage(y, -1, 0);
+                v.drawImage(y, 0, 1);
+                v.drawImage(y, 0, -1);
+              }
+              const w = v.getImageData(0, 0, y.width, y.height);
+              for (let e = 0; e < w.data.length; e += 4) {
+                if (w.data[e + 3] > 0) {
+                  w.data[e] = 0;
+                  w.data[e + 1] = 0;
+                  w.data[e + 2] = 0;
+                  w.data[e + 3] = 255;
+                }
+              }
+              v.putImageData(w, 0, 0);
+              const xPts = [];
+              const kw = y.width;
+              const ch = y.height;
+              const ed = v.getImageData(0, 0, kw, ch).data;
+              const S = 2;
+              for (let e = 1; e < ch - 1; e += S) {
+                for (let t = 1; t < kw - 1; t += S) {
+                  if (ed[4 * (e * kw + t) + 3] > 0) {
+                    if (ed[4 * ((e - 1) * kw + t) + 3] !== 0 && ed[4 * ((e + 1) * kw + t) + 3] !== 0 && ed[4 * (e * kw + (t - 1)) + 3] !== 0 && ed[4 * (e * kw + (t + 1)) + 3] !== 0) {
+                    } else {
+                      xPts.push({
+                        x: t / f + s,
+                        y: e / f + s
+                      });
+                    }
+                  }
+                }
+              }
+              const P = document.createElement("canvas");
+              P.width = r.width;
+              P.height = r.height;
+              const A = P.getContext("2d");
+              if (A) {
+                A.drawImage(sourceCanvas, s, s);
+                A.globalCompositeOperation = "source-in";
+                A.fillStyle = "black";
+                A.fillRect(0, 0, P.width, P.height);
+              }
+              a.drawImage(P, 0, 0);
+              for (let e = 0; e < 10; e++) {
+                a.drawImage(r, 1, 0);
+                a.drawImage(r, -1, 0);
+                a.drawImage(r, 0, 1);
+                a.drawImage(r, 0, -1);
+              }
+              const L = 0.5;
+              const TPts = [];
+              for (let e = 0; e < xPts.length; e++) {
+                if (Math.random() < L) {
+                  TPts.push(xPts[e]);
+                }
+              }
+              for (let e = 0; e < TPts.length; e++) {
+                const pt = TPts[e];
+                const stamp = g[Math.floor(Math.random() * b)];
+                a.drawImage(stamp.canvas, pt.x - stamp.halfW, pt.y - stamp.halfH);
+              }
+              a.globalCompositeOperation = "source-over";
+              a.drawImage(sourceCanvas, s, s);
+              return r;
+            };
+            const trimmedDataUri = trimmedCanvas.toDataURL("image/png");
+            const mugStandardScaled = scaleDesignForProduct(trimmedCanvas, 1050, 1050, 0.075);
+            const mugStandardCanvas = createMugCanvas(mugStandardScaled);
+            const mugStandardDataUri = mugStandardCanvas.toDataURL("image/png");
+            const brushCanvas = await applyBlackBrush(trimmedCanvas, brushImg);
+            const mugBrushScaled = scaleDesignForProduct(brushCanvas, 1050, 1050, 0.075);
+            const mugBrushCanvas = createMugCanvas(mugBrushScaled);
+            const mugBrushDataUri = mugBrushCanvas.toDataURL("image/png");
+            const drinkwareScaled = scaleDesignForProduct(trimmedCanvas, 1400, 1400, 0.075);
+            const drinkwareCanvas = createDrinkwareCanvas(drinkwareScaled);
+            const drinkwareStandardDataUri = drinkwareCanvas.toDataURL("image/png");
+            const drinkwareBrushScaled = scaleDesignForProduct(brushCanvas, 1400, 1400, 0.075);
+            const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
+            const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL("image/png");
+            return {
+              trimmedDataUri,
+              mugStandardDataUri,
+              mugBrushDataUri,
+              drinkwareStandardDataUri,
+              drinkwareBrushDataUri
+            };
+          }, {
+            masterUri: masterPngDataUri,
+            brushUri: brushTipDataUri
+          });
+          const trimmedBuf = inject300Dpi(Buffer.from(evaluatedResults.trimmedDataUri.split(",")[1], "base64"));
+          import_fs77.default.writeFileSync(trimmedFilePath, trimmedBuf);
+          const mugStandardBuf = inject300Dpi(Buffer.from(evaluatedResults.mugStandardDataUri.split(",")[1], "base64"));
+          import_fs77.default.writeFileSync(mugStandardFilePath, mugStandardBuf);
+          const mugBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.mugBrushDataUri.split(",")[1], "base64"));
+          import_fs77.default.writeFileSync(mugBrushFilePath, mugBrushBuf);
+          const drinkwareBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareStandardDataUri.split(",")[1], "base64"));
+          import_fs77.default.writeFileSync(drinkwareStandardFilePath, drinkwareBuf);
+          const drinkwareBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareBrushDataUri.split(",")[1], "base64"));
+          import_fs77.default.writeFileSync(drinkwareBrushFilePath, drinkwareBrushBuf);
+          const memAfter = process.memoryUsage();
+          const rssDiffMb = ((memAfter.rss - memBefore.rss) / (1024 * 1024)).toFixed(1);
+          const totalRssMb = (memAfter.rss / (1024 * 1024)).toFixed(1);
+          console.log(`[ArtworkResizeService] \u2705 Alle 5 Resized Varianten f\xFCr Task #${taskId} erfolgreich gespeichert \u2713 (Node RSS: ${totalRssMb}MB, Delta: ${Number(rssDiffMb) >= 0 ? "+" : ""}${rssDiffMb}MB)`);
+          return {
+            trimmedPath: trimmedFilePath,
+            mugStandardPath: mugStandardFilePath,
+            mugBrushPath: mugBrushFilePath,
+            drinkwareStandardPath: drinkwareStandardFilePath,
+            drinkwareBrushPath: drinkwareBrushFilePath
+          };
+        } finally {
+          await context2.close();
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/listingSanitizationService.ts
+var ListingSanitizationService;
+var init_listingSanitizationService = __esm2({
+  "src/server/services/listingSanitizationService.ts"() {
+    "use strict";
+    ListingSanitizationService = class {
+      // Amazon Merch allowed charset regex (preserves Latin, European accents, Japanese scripts, punctuation)
+      static PROHIBITED_CHARS_REGEX = /[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g;
+      /**
+       * Sanitize an individual string field according to Amazon Merch rules
+       */
+      static sanitizeText(text2) {
+        if (!text2) return "";
+        let cleaned = String(text2);
+        cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"');
+        cleaned = cleaned.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
+        cleaned = cleaned.replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
+        cleaned = cleaned.replace(/\u2026/g, "...");
+        cleaned = cleaned.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
+        cleaned = cleaned.replace(this.PROHIBITED_CHARS_REGEX, "");
+        cleaned = cleaned.replace(/\s+/g, " ").trim();
+        return cleaned;
+      }
+      /**
+       * Sanitize an entire listing object (title, brand, bullet1, bullet2, description)
+       */
+      static sanitizeListing(listing) {
+        if (!listing || typeof listing !== "object") return listing;
+        const result2 = { ...listing };
+        for (const [k, v] of Object.entries(listing)) {
+          if (typeof v === "string") {
+            result2[k] = this.sanitizeText(v);
+          } else if (v && typeof v === "object" && !Array.isArray(v)) {
+            result2[k] = this.sanitizeListing(v);
+          }
+        }
+        return result2;
+      }
+      /**
+       * Sanitize all localized listings in a listings record (e.g. { en: {...}, de: {...}, fr: {...} })
+       */
+      static sanitizeAllListings(listings) {
+        if (!listings || typeof listings !== "object") return {};
+        const sanitized = {};
+        for (const [locale, data] of Object.entries(listings)) {
+          if (data && typeof data === "object") {
+            sanitized[locale.toLowerCase()] = this.sanitizeListing(data);
+          }
+        }
+        return sanitized;
+      }
+    };
+  }
+});
+
+// src/server/utils/atomicFileStorage.ts
+function isFileInFailSafe(filePath) {
+  return failSafeRegistry.has(import_path73.default.resolve(filePath));
+}
+function atomicWriteFile(filePath, content, options2 = {}) {
+  const resolvedPath = import_path73.default.resolve(filePath);
+  const dir = import_path73.default.dirname(resolvedPath);
+  const backupExt = options2.backupExt || ".bak";
+  const shouldBackup = options2.backup !== false;
+  if (failSafeRegistry.has(resolvedPath)) {
+    throw new Error(
+      `[AtomicStorage] \u{1F6A8} REFUSED: File '${resolvedPath}' is in FAIL-SAFE (CORRUPTED) mode. Writes are blocked to prevent destructive data loss.`
+    );
+  }
+  if (!import_fs78.default.existsSync(dir)) {
+    import_fs78.default.mkdirSync(dir, { recursive: true });
+  }
+  const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const tmpPath = `${resolvedPath}.tmp.${nonce}`;
+  try {
+    const fd = import_fs78.default.openSync(tmpPath, "w");
+    try {
+      if (typeof content === "string") {
+        import_fs78.default.writeSync(fd, content, 0, "utf-8");
+      } else {
+        import_fs78.default.writeSync(fd, content);
+      }
+      import_fs78.default.fsyncSync(fd);
+    } finally {
+      import_fs78.default.closeSync(fd);
+    }
+    if (shouldBackup && import_fs78.default.existsSync(resolvedPath)) {
+      try {
+        const currentStats = import_fs78.default.statSync(resolvedPath);
+        if (currentStats.size > 0) {
+          const bakPath = `${resolvedPath}${backupExt}`;
+          const bakTmpPath = `${bakPath}.tmp.${nonce}`;
+          import_fs78.default.copyFileSync(resolvedPath, bakTmpPath);
+          const bakFd = import_fs78.default.openSync(bakTmpPath, "r");
+          try {
+            import_fs78.default.fsyncSync(bakFd);
+          } finally {
+            import_fs78.default.closeSync(bakFd);
+          }
+          import_fs78.default.renameSync(bakTmpPath, bakPath);
+        }
+      } catch (backupErr) {
+        console.warn(`[AtomicStorage] Warning: Failed to create backup for ${resolvedPath}:`, backupErr.message);
+      }
+    }
+    import_fs78.default.renameSync(tmpPath, resolvedPath);
+    try {
+      const dirFd = import_fs78.default.openSync(dir, "r");
+      try {
+        import_fs78.default.fsyncSync(dirFd);
+      } finally {
+        import_fs78.default.closeSync(dirFd);
+      }
+    } catch {
+    }
+  } catch (err) {
+    if (import_fs78.default.existsSync(tmpPath)) {
+      try {
+        import_fs78.default.unlinkSync(tmpPath);
+      } catch {
+      }
+    }
+    throw err;
+  }
+}
+function atomicWriteJson(filePath, data, options2 = {}) {
+  const space = options2.space !== void 0 ? options2.space : void 0;
+  const jsonStr = space !== void 0 ? JSON.stringify(data, null, space) : JSON.stringify(data);
+  if (!jsonStr) {
+    throw new Error(`[AtomicStorage] JSON serialization produced empty string for '${filePath}'`);
+  }
+  atomicWriteFile(filePath, jsonStr, options2);
+}
+function loadJsonWithBackupRecovery(filePath, options2 = {}) {
+  const resolvedPath = import_path73.default.resolve(filePath);
+  const backupExt = options2.backupExt || ".bak";
+  const bakPath = `${resolvedPath}${backupExt}`;
+  const validate2 = options2.validate || (() => true);
+  if (!import_fs78.default.existsSync(resolvedPath) && !import_fs78.default.existsSync(bakPath)) {
+    failSafeRegistry.delete(resolvedPath);
+    return {
+      success: true,
+      data: options2.defaultValue,
+      recoveredFromBackup: false,
+      corrupted: false
+    };
+  }
+  let mainValid = false;
+  let mainData = null;
+  let mainError = null;
+  if (import_fs78.default.existsSync(resolvedPath)) {
+    try {
+      const content = import_fs78.default.readFileSync(resolvedPath, "utf-8").trim();
+      if (content.length === 0) {
+        throw new Error("File is 0 bytes (empty/truncated)");
+      }
+      const parsed = JSON.parse(content);
+      if (!validate2(parsed)) {
+        throw new Error("Data validation check failed");
+      }
+      mainValid = true;
+      mainData = parsed;
+    } catch (err) {
+      mainError = err.message || "JSON parse error";
+    }
+  } else {
+    mainError = "Main file does not exist, but backup exists";
+  }
+  if (mainValid) {
+    failSafeRegistry.delete(resolvedPath);
+    return {
+      success: true,
+      data: mainData,
+      recoveredFromBackup: false,
+      corrupted: false
+    };
+  }
+  console.warn(`[AtomicStorage] \u26A0\uFE0F Corrupted or invalid JSON detected in '${resolvedPath}' (${mainError}). Checking backup '${bakPath}'...`);
+  if (import_fs78.default.existsSync(bakPath)) {
+    try {
+      const bakContent = import_fs78.default.readFileSync(bakPath, "utf-8").trim();
+      if (bakContent.length === 0) {
+        throw new Error("Backup file is 0 bytes (empty/truncated)");
+      }
+      const parsedBak = JSON.parse(bakContent);
+      if (!validate2(parsedBak)) {
+        throw new Error("Backup data validation check failed");
+      }
+      console.warn(`[AtomicStorage] \u{1F6E1}\uFE0F Valid backup found! Restoring '${resolvedPath}' from '${bakPath}'...`);
+      atomicWriteJson(resolvedPath, parsedBak, { backup: false, space: options2.defaultValue ? 2 : 0 });
+      failSafeRegistry.delete(resolvedPath);
+      return {
+        success: true,
+        data: parsedBak,
+        recoveredFromBackup: true,
+        corrupted: false
+      };
+    } catch (bakErr) {
+      console.error(`[AtomicStorage] \u274C Backup '${bakPath}' is ALSO corrupt or invalid:`, bakErr.message);
+    }
+  } else {
+    console.error(`[AtomicStorage] \u274C No backup file exists at '${bakPath}'!`);
+  }
+  console.error(
+    `[AtomicStorage] \u{1F6A8} CRITICAL: Main file '${resolvedPath}' and backup could not be parsed!`
+  );
+  console.error(
+    `[AtomicStorage] \u{1F6A8} TASK STORAGE WRITES HAVE BEEN DISABLED (FAIL-SAFE) TO PREVENT DESTRUCTIVE OVERWRITE.`
+  );
+  failSafeRegistry.add(resolvedPath);
+  return {
+    success: false,
+    data: null,
+    recoveredFromBackup: false,
+    corrupted: true,
+    error: `Both '${resolvedPath}' and backup are corrupt or unreadable (${mainError})`
+  };
+}
+var import_fs78, import_path73, failSafeRegistry;
+var init_atomicFileStorage = __esm2({
+  "src/server/utils/atomicFileStorage.ts"() {
+    "use strict";
+    import_fs78 = __toESM2(require("fs"), 1);
+    import_path73 = __toESM2(require("path"), 1);
+    failSafeRegistry = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/server/storage/taskRepository.ts
+var import_fs79, import_path74, import_node_sqlite, TaskRepository;
+var init_taskRepository = __esm2({
+  "src/server/storage/taskRepository.ts"() {
+    "use strict";
+    import_fs79 = __toESM2(require("fs"), 1);
+    import_path74 = __toESM2(require("path"), 1);
+    import_node_sqlite = require("node:sqlite");
+    init_atomicFileStorage();
+    TaskRepository = class {
+      static db = null;
+      static dbPath = import_path74.default.resolve(process.cwd(), "data", "mba_hub.sqlite");
+      static legacyJsonPath = import_path74.default.resolve(process.cwd(), "data", "tasks_log.json");
+      static legacyCounterPath = import_path74.default.resolve(process.cwd(), "data", "tasks_counter.json");
+      static isInitialized = false;
+      static verifyNodeEngine() {
+        const [majorStr, minorStr] = process.versions.node.split(".");
+        const major2 = parseInt(majorStr, 10);
+        const minor = parseInt(minorStr, 10);
+        const isSupported = major2 > 22 || major2 === 22 && minor >= 5;
+        if (!isSupported) {
+          throw new Error(`[TaskRepository] node:sqlite requires Node.js >= 22.5.0. Current runtime is ${process.version}`);
+        }
+      }
+      /**
+       * Initializes the SQLite Database, sets WAL & FULL durability, applies schemas,
+       * and runs atomic migration from tasks_log.json if necessary.
+       */
+      static init(customDbPath) {
+        if (this.isInitialized && this.db && !customDbPath) return;
+        this.verifyNodeEngine();
+        const targetDbPath = customDbPath || this.dbPath;
+        const dbDir = import_path74.default.dirname(targetDbPath);
+        if (!import_fs79.default.existsSync(dbDir)) {
+          import_fs79.default.mkdirSync(dbDir, { recursive: true });
+        }
+        if (!import_fs79.default.existsSync(targetDbPath) && !customDbPath && import_fs79.default.existsSync(this.legacyJsonPath)) {
+          console.log("[TaskRepository] \u{1F4E6} Discovered existing tasks_log.json with no SQLite database. Starting atomic migration...");
+          this.executeMigrationFromLegacyJson(targetDbPath);
+        }
+        this.db = new import_node_sqlite.DatabaseSync(targetDbPath);
+        this.configurePragmas(this.db);
+        this.createSchema(this.db);
+        this.isInitialized = true;
+        console.log(`[TaskRepository] \u{1F6E1}\uFE0F SQLite Task Storage initialized at ${targetDbPath} (WAL Mode, synchronous=FULL).`);
+      }
+      /**
+       * Closes the database with a clean checkpoint.
+       */
+      static close() {
+        if (this.db) {
+          try {
+            console.log("[TaskRepository] \u{1F6D1} Checkpointing and closing SQLite database...");
+            this.db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+            this.db.close();
+          } catch (err) {
+            console.warn("[TaskRepository] Error during close:", err.message);
+          } finally {
+            this.db = null;
+            this.isInitialized = false;
+          }
+        }
+      }
+      /**
+       * Configures SQLite PRAGMAs for high durability & concurrency on NAS / Docker
+       */
+      static configurePragmas(db) {
+        db.exec("PRAGMA journal_mode = WAL;");
+        db.exec("PRAGMA synchronous = FULL;");
+        db.exec("PRAGMA busy_timeout = 5000;");
+        db.exec("PRAGMA foreign_keys = ON;");
+      }
+      /**
+       * Creates the application metadata and tasks tables with composite indexes
+       */
+      static createSchema(db) {
+        db.exec(`
+      CREATE TABLE IF NOT EXISTS metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        counter INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        suffix TEXT,
+        status TEXT NOT NULL,
+        checkpoint TEXT,
+        received_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        quote TEXT,
+        niche1 TEXT,
+        niche2 TEXT,
+        subniche TEXT,
+        image_url TEXT,
+        has_error INTEGER NOT NULL DEFAULT 0,
+        error_details TEXT,
+        design_id TEXT,
+        in_queue INTEGER NOT NULL DEFAULT 0,
+        events_count INTEGER NOT NULL DEFAULT 0,
+        client_ip TEXT,
+        image_generations_count INTEGER NOT NULL DEFAULT 0,
+        vectorizations_count INTEGER NOT NULL DEFAULT 0,
+        openrouter_cost_usd REAL NOT NULL DEFAULT 0.0,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tasks_counter ON tasks(counter DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_source_counter ON tasks(source, counter DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_status_counter ON tasks(status, counter DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_design_id ON tasks(design_id);
+      CREATE INDEX IF NOT EXISTS idx_tasks_received_at ON tasks(received_at DESC);
+    `);
+        const versionRow = db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get();
+        if (!versionRow) {
+          db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', '1')").run();
+          db.exec("PRAGMA user_version = 1;");
+        }
+      }
+      /**
+       * Central mapper: Converts canonical DesignTaskLog to strongly-typed projection columns.
+       */
+      static taskToColumns(task) {
+        const quote5 = task.quote || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || task.payload?.title || null;
+        const niche1 = task.niche1 || task.payload?.niche1 || null;
+        const niche2 = task.niche2 || task.payload?.niche2 || null;
+        const subniche = task.subniche || task.payload?.subniche || null;
+        const designId = task.payload?.designId || task.designId || null;
+        const imageUrl = task.imageUrl || null;
+        const errorDetails = task.errorDetails || null;
+        const clientIp = task.clientIp || null;
+        const eventsCount = Array.isArray(task.events) ? task.events.length : task.eventsCount || 0;
+        let imageGenCount = 0;
+        let vectorCount = 0;
+        let openRouterCost = 0;
+        if (Array.isArray(task.events)) {
+          for (const ev of task.events) {
+            if (ev.type === "IDEOGRAM_RESPONSE") imageGenCount++;
+            if (ev.type === "VECTORIZE_RESPONSE") vectorCount++;
+            if (ev.metadata?.costUsd) openRouterCost += Number(ev.metadata.costUsd) || 0;
+          }
+        } else {
+          if (imageUrl) imageGenCount++;
+          if (task.svgContent || task.localMbaPngPath) vectorCount++;
+        }
+        const payloadJson = JSON.stringify(task);
+        return {
+          id: task.id,
+          counter: task.counter || 0,
+          source: task.source || "HERMES",
+          suffix: task.suffix || null,
+          status: task.status || "RECEIVED",
+          checkpoint: task.checkpoint || null,
+          received_at: task.receivedAt || (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: task.updatedAt || task.receivedAt || (/* @__PURE__ */ new Date()).toISOString(),
+          quote: quote5,
+          niche1,
+          niche2,
+          subniche,
+          image_url: imageUrl,
+          has_error: task.hasError ? 1 : 0,
+          error_details: errorDetails,
+          design_id: designId,
+          in_queue: task.inQueue ? 1 : 0,
+          events_count: eventsCount,
+          client_ip: clientIp,
+          image_generations_count: imageGenCount,
+          vectorizations_count: vectorCount,
+          openrouter_cost_usd: openRouterCost,
+          payload_json: payloadJson
+        };
+      }
+      /**
+       * Central mapper: Reconstructs canonical DesignTaskLog from a database row.
+       */
+      static rowToTask(row) {
+        if (!row || !row.payload_json) {
+          throw new Error("[TaskRepository] Invalid row: payload_json is missing");
+        }
+        const task = JSON.parse(row.payload_json);
+        task.id = row.id;
+        task.counter = row.counter;
+        task.source = row.source;
+        task.suffix = row.suffix;
+        task.status = row.status;
+        task.checkpoint = row.checkpoint;
+        task.receivedAt = row.received_at;
+        task.updatedAt = row.updated_at;
+        task.quote = row.quote || task.quote;
+        task.niche1 = row.niche1 || task.niche1;
+        task.niche2 = row.niche2 || task.niche2;
+        task.subniche = row.subniche || task.subniche;
+        task.imageUrl = row.image_url || task.imageUrl;
+        task.hasError = Boolean(row.has_error);
+        task.errorDetails = row.error_details || task.errorDetails;
+        task.inQueue = Boolean(row.in_queue);
+        task.eventsCount = row.events_count;
+        task.clientIp = row.client_ip || task.clientIp;
+        return task;
+      }
+      /**
+       * Central mapper: Converts database row directly into lightweight TaskSummary without payload_json parsing.
+       */
+      static rowToSummary(row) {
+        return {
+          id: row.id,
+          counter: row.counter,
+          source: row.source,
+          suffix: row.suffix || void 0,
+          status: row.status,
+          checkpoint: row.checkpoint || void 0,
+          receivedAt: row.received_at,
+          updatedAt: row.updated_at,
+          quote: row.quote || void 0,
+          niche1: row.niche1 || void 0,
+          niche2: row.niche2 || void 0,
+          subniche: row.subniche || void 0,
+          imageUrl: row.image_url || void 0,
+          hasError: Boolean(row.has_error),
+          errorDetails: row.error_details || void 0,
+          eventsCount: row.events_count,
+          clientIp: row.client_ip || void 0,
+          designId: row.design_id || void 0,
+          inQueue: Boolean(row.in_queue)
+        };
+      }
+      /**
+       * Atomic migration of tasks_log.json using a separate temporary database (mba_hub.sqlite.migrating).
+       * If any error occurs, rolls back, discards temporary files, leaves tasks_log.json untouched,
+       * and throws error (Fail-Closed).
+       */
+      static executeMigrationFromLegacyJson(targetDbPath, customJsonPath) {
+        const jsonPath = customJsonPath || this.legacyJsonPath;
+        const tempDbPath = `${targetDbPath}.migrating`;
+        if (import_fs79.default.existsSync(tempDbPath)) import_fs79.default.unlinkSync(tempDbPath);
+        if (import_fs79.default.existsSync(`${tempDbPath}-wal`)) import_fs79.default.unlinkSync(`${tempDbPath}-wal`);
+        if (import_fs79.default.existsSync(`${tempDbPath}-shm`)) import_fs79.default.unlinkSync(`${tempDbPath}-shm`);
+        console.log(`[TaskRepository] \u23F3 Reading legacy JSON from ${jsonPath}...`);
+        const recovery = loadJsonWithBackupRecovery(jsonPath, {
+          backupExt: ".bak",
+          validate: (data) => Array.isArray(data),
+          defaultValue: []
+        });
+        if (!recovery.success || !Array.isArray(recovery.data)) {
+          throw new Error(`[TaskRepository] Failed to read or parse ${jsonPath}. Migration aborted.`);
+        }
+        const legacyTasks = recovery.data;
+        console.log(`[TaskRepository] \u{1F4C4} Found ${legacyTasks.length} legacy tasks to migrate.`);
+        let tempDb = null;
+        try {
+          tempDb = new import_node_sqlite.DatabaseSync(tempDbPath);
+          this.configurePragmas(tempDb);
+          this.createSchema(tempDb);
+          tempDb.exec("BEGIN IMMEDIATE;");
+          const insertStmt = tempDb.prepare(`
+        INSERT INTO tasks (
+          id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+          quote, niche1, niche2, subniche, image_url, has_error, error_details,
+          design_id, in_queue, events_count, client_ip,
+          image_generations_count, vectorizations_count, openrouter_cost_usd,
+          payload_json
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?,
+          ?
+        )
+      `);
+          let maxCounter = 0;
+          const seenIds = /* @__PURE__ */ new Set();
+          for (const task of legacyTasks) {
+            if (!task || !task.id) continue;
+            seenIds.add(task.id);
+            const counter = task.counter || 0;
+            if (counter > maxCounter) maxCounter = counter;
+            const cols = this.taskToColumns(task);
+            insertStmt.run(
+              cols.id,
+              cols.counter,
+              cols.source,
+              cols.suffix,
+              cols.status,
+              cols.checkpoint,
+              cols.received_at,
+              cols.updated_at,
+              cols.quote,
+              cols.niche1,
+              cols.niche2,
+              cols.subniche,
+              cols.image_url,
+              cols.has_error,
+              cols.error_details,
+              cols.design_id,
+              cols.in_queue,
+              cols.events_count,
+              cols.client_ip,
+              cols.image_generations_count,
+              cols.vectorizations_count,
+              cols.openrouter_cost_usd,
+              cols.payload_json
+            );
+          }
+          let counterToStore = maxCounter;
+          if (import_fs79.default.existsSync(this.legacyCounterPath)) {
+            try {
+              const rawCounter = JSON.parse(import_fs79.default.readFileSync(this.legacyCounterPath, "utf-8"));
+              if (rawCounter && typeof rawCounter.counter === "number") {
+                counterToStore = Math.max(counterToStore, rawCounter.counter);
+              }
+            } catch {
+            }
+          }
+          tempDb.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(counterToStore));
+          tempDb.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '1')").run();
+          tempDb.exec("COMMIT;");
+          const countRow = tempDb.prepare("SELECT COUNT(*) as count FROM tasks").get();
+          if (countRow.count !== seenIds.size) {
+            throw new Error(`[TaskRepository] Migration integrity error: Expected ${seenIds.size} rows, but found ${countRow.count} in database.`);
+          }
+          const checkpointRow = tempDb.prepare("PRAGMA wal_checkpoint(TRUNCATE);").get();
+          if (checkpointRow && checkpointRow.busy === 1) {
+            throw new Error(`[TaskRepository] PRAGMA wal_checkpoint(TRUNCATE) failed with busy status: ${JSON.stringify(checkpointRow)}`);
+          }
+          const integrityRow = tempDb.prepare("PRAGMA integrity_check;").get();
+          if (!integrityRow || integrityRow.integrity_check !== "ok") {
+            throw new Error(`[TaskRepository] PRAGMA integrity_check failed: ${JSON.stringify(integrityRow)}`);
+          }
+          tempDb.close();
+          tempDb = null;
+          const tempWalPath = `${tempDbPath}-wal`;
+          const tempShmPath = `${tempDbPath}-shm`;
+          if (import_fs79.default.existsSync(tempWalPath)) {
+            try {
+              import_fs79.default.unlinkSync(tempWalPath);
+            } catch {
+            }
+          }
+          if (import_fs79.default.existsSync(tempShmPath)) {
+            try {
+              import_fs79.default.unlinkSync(tempShmPath);
+            } catch {
+            }
+          }
+          import_fs79.default.renameSync(tempDbPath, targetDbPath);
+          console.log(`[TaskRepository] \u2705 Migration complete! Created ${targetDbPath} with ${countRow.count} tasks.`);
+          const backupJsonPath = import_path74.default.resolve(import_path74.default.dirname(jsonPath), "tasks_log.pre-sqlite-backup.json");
+          import_fs79.default.renameSync(jsonPath, backupJsonPath);
+          console.log(`[TaskRepository] \u{1F6E1}\uFE0F Original tasks_log.json preserved as ${backupJsonPath}.`);
+          if (import_fs79.default.existsSync(this.legacyCounterPath)) {
+            const backupCounterPath = import_path74.default.resolve(import_path74.default.dirname(this.legacyCounterPath), "tasks_counter.pre-sqlite-backup.json");
+            try {
+              import_fs79.default.renameSync(this.legacyCounterPath, backupCounterPath);
+            } catch {
+            }
+          }
+        } catch (err) {
+          if (tempDb) {
+            try {
+              tempDb.exec("ROLLBACK;");
+              tempDb.close();
+            } catch {
+            }
+          }
+          try {
+            if (import_fs79.default.existsSync(tempDbPath)) import_fs79.default.unlinkSync(tempDbPath);
+          } catch {
+          }
+          try {
+            if (import_fs79.default.existsSync(`${tempDbPath}-wal`)) import_fs79.default.unlinkSync(`${tempDbPath}-wal`);
+          } catch {
+          }
+          try {
+            if (import_fs79.default.existsSync(`${tempDbPath}-shm`)) import_fs79.default.unlinkSync(`${tempDbPath}-shm`);
+          } catch {
+          }
+          console.error("[TaskRepository] \u{1F6A8} CRITICAL MIGRATION FAILURE. Original JSON files left untouched:", err.message);
+          throw err;
+        }
+      }
+      static getDb() {
+        if (!this.db) {
+          this.init();
+        }
+        return this.db;
+      }
+      /**
+       * Atomically increments and returns the next sequential task counter.
+       */
+      static getNextCounter() {
+        const db = this.getDb();
+        db.exec("BEGIN IMMEDIATE;");
+        try {
+          let current = 0;
+          const row = db.prepare("SELECT value FROM metadata WHERE key = 'task_counter'").get();
+          if (row && row.value) {
+            current = parseInt(row.value, 10) || 0;
+          } else {
+            const maxRow = db.prepare("SELECT COALESCE(MAX(counter), 0) as maxCounter FROM tasks").get();
+            current = maxRow.maxCounter || 0;
+          }
+          current += 1;
+          db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(current));
+          db.exec("COMMIT;");
+          return current;
+        } catch (err) {
+          try {
+            db.exec("ROLLBACK;");
+          } catch {
+          }
+          throw err;
+        }
+      }
+      /**
+       * Inserts a new task atomically.
+       */
+      static createTask(task) {
+        const db = this.getDb();
+        db.exec("BEGIN IMMEDIATE;");
+        try {
+          if (!task.counter) {
+            let current = 0;
+            const row = db.prepare("SELECT value FROM metadata WHERE key = 'task_counter'").get();
+            if (row && row.value) {
+              current = parseInt(row.value, 10) || 0;
+            } else {
+              const maxRow = db.prepare("SELECT COALESCE(MAX(counter), 0) as maxCounter FROM tasks").get();
+              current = maxRow.maxCounter || 0;
+            }
+            current += 1;
+            task.counter = current;
+            db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(current));
+          }
+          if (!task.id) {
+            const padded = String(task.counter).padStart(3, "0");
+            task.id = task.suffix ? `#${padded}-${task.suffix}` : `#${padded}`;
+          }
+          task.receivedAt = task.receivedAt || (/* @__PURE__ */ new Date()).toISOString();
+          task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+          const cols = this.taskToColumns(task);
+          db.prepare(`
+        INSERT INTO tasks (
+          id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+          quote, niche1, niche2, subniche, image_url, has_error, error_details,
+          design_id, in_queue, events_count, client_ip,
+          image_generations_count, vectorizations_count, openrouter_cost_usd,
+          payload_json
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?,
+          ?
+        )
+      `).run(
+            cols.id,
+            cols.counter,
+            cols.source,
+            cols.suffix,
+            cols.status,
+            cols.checkpoint,
+            cols.received_at,
+            cols.updated_at,
+            cols.quote,
+            cols.niche1,
+            cols.niche2,
+            cols.subniche,
+            cols.image_url,
+            cols.has_error,
+            cols.error_details,
+            cols.design_id,
+            cols.in_queue,
+            cols.events_count,
+            cols.client_ip,
+            cols.image_generations_count,
+            cols.vectorizations_count,
+            cols.openrouter_cost_usd,
+            cols.payload_json
+          );
+          db.exec("COMMIT;");
+          return task;
+        } catch (err) {
+          try {
+            db.exec("ROLLBACK;");
+          } catch {
+          }
+          throw err;
+        }
+      }
+      /**
+       * Updates only the targeted task row. Loads existing task, merges partial updates,
+       * updates payload_json and indexed columns atomically.
+       */
+      static updateTask(taskId, updates) {
+        const db = this.getDb();
+        db.exec("BEGIN IMMEDIATE;");
+        try {
+          const row = db.prepare("SELECT payload_json FROM tasks WHERE id = ?").get(taskId);
+          if (!row || !row.payload_json) {
+            db.exec("ROLLBACK;");
+            return null;
+          }
+          const existingTask = JSON.parse(row.payload_json);
+          if (updates.payload) {
+            existingTask.payload = {
+              ...existingTask.payload,
+              ...updates.payload
+            };
+          }
+          for (const [key, value2] of Object.entries(updates)) {
+            if (key === "payload") continue;
+            existingTask[key] = value2;
+          }
+          existingTask.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+          const cols = this.taskToColumns(existingTask);
+          db.prepare(`
+        UPDATE tasks SET
+          counter = ?,
+          source = ?,
+          suffix = ?,
+          status = ?,
+          checkpoint = ?,
+          received_at = ?,
+          updated_at = ?,
+          quote = ?,
+          niche1 = ?,
+          niche2 = ?,
+          subniche = ?,
+          image_url = ?,
+          has_error = ?,
+          error_details = ?,
+          design_id = ?,
+          in_queue = ?,
+          events_count = ?,
+          client_ip = ?,
+          image_generations_count = ?,
+          vectorizations_count = ?,
+          openrouter_cost_usd = ?,
+          payload_json = ?
+        WHERE id = ?
+      `).run(
+            cols.counter,
+            cols.source,
+            cols.suffix,
+            cols.status,
+            cols.checkpoint,
+            cols.received_at,
+            cols.updated_at,
+            cols.quote,
+            cols.niche1,
+            cols.niche2,
+            cols.subniche,
+            cols.image_url,
+            cols.has_error,
+            cols.error_details,
+            cols.design_id,
+            cols.in_queue,
+            cols.events_count,
+            cols.client_ip,
+            cols.image_generations_count,
+            cols.vectorizations_count,
+            cols.openrouter_cost_usd,
+            cols.payload_json,
+            taskId
+          );
+          db.exec("COMMIT;");
+          return existingTask;
+        } catch (err) {
+          try {
+            db.exec("ROLLBACK;");
+          } catch {
+          }
+          throw err;
+        }
+      }
+      /**
+       * Appends an event to a single task atomically with duplicate event compaction.
+       */
+      static addEvent(taskId, event) {
+        const db = this.getDb();
+        db.exec("BEGIN IMMEDIATE;");
+        try {
+          const row = db.prepare("SELECT payload_json FROM tasks WHERE id = ?").get(taskId);
+          if (!row || !row.payload_json) {
+            db.exec("ROLLBACK;");
+            return null;
+          }
+          const task = JSON.parse(row.payload_json);
+          if (!Array.isArray(task.events)) {
+            task.events = [];
+          }
+          const lastEvent = task.events.length > 0 ? task.events[task.events.length - 1] : null;
+          const isConsecutiveDuplicate = lastEvent && lastEvent.type === event.type && lastEvent.title === event.title && JSON.stringify(lastEvent.content ?? null) === JSON.stringify(event.content ?? null);
+          if (isConsecutiveDuplicate && lastEvent) {
+            lastEvent.repeatCount = (lastEvent.repeatCount || 1) + 1;
+            lastEvent.lastRepeatedAt = event.timestamp || (/* @__PURE__ */ new Date()).toISOString();
+          } else {
+            task.events.push(event);
+          }
+          task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+          const cols = this.taskToColumns(task);
+          db.prepare(`
+        UPDATE tasks SET
+          updated_at = ?,
+          events_count = ?,
+          image_generations_count = ?,
+          vectorizations_count = ?,
+          openrouter_cost_usd = ?,
+          payload_json = ?
+        WHERE id = ?
+      `).run(
+            cols.updated_at,
+            cols.events_count,
+            cols.image_generations_count,
+            cols.vectorizations_count,
+            cols.openrouter_cost_usd,
+            cols.payload_json,
+            taskId
+          );
+          db.exec("COMMIT;");
+          return task;
+        } catch (err) {
+          try {
+            db.exec("ROLLBACK;");
+          } catch {
+          }
+          throw err;
+        }
+      }
+      /**
+       * Full reconstruction of DesignTaskLog from SQLite.
+       */
+      static getTaskById(taskId) {
+        const db = this.getDb();
+        const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+        if (!row) return null;
+        return this.rowToTask(row);
+      }
+      /**
+       * Fast summary retrieval without parsing payload_json.
+       */
+      static getTaskSummaryById(taskId) {
+        const db = this.getDb();
+        const row = db.prepare(`
+      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+             quote, niche1, niche2, subniche, image_url, has_error, error_details,
+             design_id, in_queue, events_count, client_ip
+      FROM tasks
+      WHERE id = ?
+    `).get(taskId);
+        if (!row) return null;
+        return this.rowToSummary(row);
+      }
+      /**
+       * Keyset pagination query directly from SQLite (WHERE counter < ? ORDER BY counter DESC LIMIT 21).
+       */
+      static getTaskSummariesPage(options2 = {}) {
+        const db = this.getDb();
+        const limit = Math.max(1, Math.min(100, options2.limit || 20));
+        const queryLimit = limit + 1;
+        const conditions = [];
+        const params2 = [];
+        if (options2.cursor) {
+          const cursorRow = db.prepare("SELECT counter FROM tasks WHERE id = ?").get(options2.cursor);
+          if (cursorRow && typeof cursorRow.counter === "number") {
+            conditions.push("counter < ?");
+            params2.push(cursorRow.counter);
+          }
+        }
+        if (options2.source && options2.source !== "ALL") {
+          conditions.push("source = ?");
+          params2.push(options2.source);
+        }
+        if (options2.status) {
+          conditions.push("status = ?");
+          params2.push(options2.status);
+        }
+        if (options2.checkpoint) {
+          conditions.push("checkpoint = ?");
+          params2.push(options2.checkpoint);
+        }
+        if (options2.search && options2.search.trim()) {
+          const q = `%${options2.search.trim()}%`;
+          conditions.push("(id LIKE ? OR quote LIKE ? OR niche1 LIKE ? OR niche2 LIKE ? OR design_id LIKE ?)");
+          params2.push(q, q, q, q, q);
+        }
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const sql = `
+      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+             quote, niche1, niche2, subniche, image_url, has_error, error_details,
+             design_id, in_queue, events_count, client_ip
+      FROM tasks
+      ${whereClause}
+      ORDER BY counter DESC
+      LIMIT ?
+    `;
+        const rows = db.prepare(sql).all(...params2, queryLimit);
+        const countSql = `SELECT COUNT(*) as total FROM tasks ${whereClause}`;
+        const totalRow = db.prepare(countSql).get(...params2);
+        const totalCount = totalRow ? totalRow.total : rows.length;
+        const hasMore = rows.length > limit;
+        const pageRows = hasMore ? rows.slice(0, limit) : rows;
+        const tasks = pageRows.map((r) => this.rowToSummary(r));
+        const nextCursor = hasMore && tasks.length > 0 ? tasks[tasks.length - 1].id : null;
+        return {
+          success: true,
+          tasks,
+          totalCount,
+          hasMore,
+          nextCursor
+        };
+      }
+      /**
+       * Retrieves all awaiting tasks for review sidebar directly via index.
+       */
+      static getAwaitingTaskSummaries() {
+        const db = this.getDb();
+        const rows = db.prepare(`
+      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+             quote, niche1, niche2, subniche, image_url, has_error, error_details,
+             design_id, in_queue, events_count, client_ip
+      FROM tasks
+      WHERE status IN (
+        'AWAITING_PRE_FLIGHT_REVIEW',
+        'AWAITING_DESIGN_REVIEW',
+        'AWAITING_TM_REVIEW',
+        'AWAITING_SVG_REVIEW'
+      )
+      ORDER BY counter DESC
+    `).all();
+        return rows.map((r) => this.rowToSummary(r));
+      }
+      /**
+       * Fast query for active update design IDs (used by UpdateBackfillService).
+       */
+      static getActiveUpdateDesignIds() {
+        const db = this.getDb();
+        const rows = db.prepare(`
+      SELECT id, design_id
+      FROM tasks
+      WHERE (source = 'UPDATE' OR suffix = 'U')
+        AND status NOT IN ('REJECTED', 'CANCELLED', 'ERROR')
+        AND has_error = 0
+    `).all();
+        const ids = /* @__PURE__ */ new Set();
+        for (const r of rows) {
+          if (r.design_id) ids.add(r.design_id.trim());
+          if (r.id) {
+            const clean = r.id.replace(/^#/, "").replace(/-U$/, "").trim();
+            ids.add(clean);
+          }
+        }
+        return ids;
+      }
+      /**
+       * Fast query for active update tasks in review (used by UpdateBackfillService.getActiveUpdateCount).
+       */
+      static getActiveReviewUpdateTasks() {
+        const db = this.getDb();
+        const rows = db.prepare(`
+      SELECT id, design_id
+      FROM tasks
+      WHERE (source = 'UPDATE' OR suffix = 'U')
+        AND status NOT IN ('COMPLETED', 'UPDATE_QUEUED', 'REJECTED', 'CANCELLED', 'ERROR')
+    `).all();
+        return rows.map((r) => ({
+          id: r.id,
+          designId: r.design_id || void 0
+        }));
+      }
+      /**
+       * Fast cancellation of matching update tasks (used by QueueService & UpdateBackfillService).
+       */
+      static cancelTasksByTarget(targetTaskId, targetDesignId) {
+        const db = this.getDb();
+        let query = `
+      UPDATE tasks
+      SET status = 'CANCELLED', updated_at = ?
+      WHERE (id = ? OR id = ?)
+        AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
+    `;
+        const params2 = [(/* @__PURE__ */ new Date()).toISOString(), targetTaskId, `#${targetTaskId}`];
+        if (targetDesignId) {
+          query = `
+        UPDATE tasks
+        SET status = 'CANCELLED', updated_at = ?
+        WHERE (id = ? OR id = ? OR design_id = ?)
+          AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
+      `;
+          params2.push(targetDesignId);
+        }
+        const info = db.prepare(query).run(...params2);
+        return Number(info.changes);
+      }
+      /**
+       * Cancels all hanging/stale update tasks (used by UpdateBackfillService.resetInFlightLocks).
+       */
+      static cancelActiveUpdateTasks() {
+        const db = this.getDb();
+        const info = db.prepare(`
+      UPDATE tasks
+      SET status = 'CANCELLED', updated_at = ?
+      WHERE (source = 'UPDATE' OR suffix = 'U')
+        AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
+    `).run((/* @__PURE__ */ new Date()).toISOString());
+        return Number(info.changes);
+      }
+      /**
+       * Direct aggregated query for CostTracking metrics (avoids parsing thousands of JSON payloads).
+       */
+      static getTaskUsageMetrics(resetTimestamp) {
+        const db = this.getDb();
+        const isoThreshold = resetTimestamp > 0 ? new Date(resetTimestamp).toISOString() : "1970-01-01T00:00:00.000Z";
+        const row = db.prepare(`
+      SELECT
+        COALESCE(SUM(image_generations_count), 0) as imageGenerationsCount,
+        COALESCE(SUM(vectorizations_count), 0) as vectorizationsCount,
+        COALESCE(SUM(openrouter_cost_usd), 0.0) as taskEventOpenRouterCost
+      FROM tasks
+      WHERE received_at >= ?
+    `).get(isoThreshold);
+        return {
+          imageGenerationsCount: Number(row.imageGenerationsCount) || 0,
+          vectorizationsCount: Number(row.vectorizationsCount) || 0,
+          taskEventOpenRouterCost: Number(row.taskEventOpenRouterCost) || 0
+        };
+      }
+      /**
+       * Deletes a single task row.
+       */
+      static deleteTask(taskId) {
+        const db = this.getDb();
+        const info = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+        return Number(info.changes) > 0;
+      }
+      /**
+       * Clears all tasks (for test suites or manual log clearing).
+       */
+      static clearAllTasks() {
+        const db = this.getDb();
+        db.exec("DELETE FROM tasks;");
+      }
+      /**
+       * Returns all tasks currently marked with in_queue = 1.
+       */
+      static getInQueueTasks() {
+        const db = this.getDb();
+        const rows = db.prepare("SELECT * FROM tasks WHERE in_queue = 1").all();
+        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
+      }
+      /**
+       * Returns tasks matching any of the specified statuses.
+       */
+      static getTasksByStatuses(statuses) {
+        if (!statuses || statuses.length === 0) return [];
+        const db = this.getDb();
+        const placeholders = statuses.map(() => "?").join(", ");
+        const rows = db.prepare(`SELECT * FROM tasks WHERE status IN (${placeholders})`).all(...statuses);
+        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
+      }
+      /**
+       * Returns total task count in SQLite.
+       */
+      static getTotalTaskCount() {
+        const db = this.getDb();
+        const row = db.prepare("SELECT COUNT(*) as count FROM tasks").get();
+        return row ? Number(row.count) : 0;
+      }
+    };
+  }
+});
+
+// src/types/tasks.ts
+function toTaskSummary(task) {
+  const quote5 = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || void 0;
+  const niche1 = task.niche1 || task.payload?.niche1 || void 0;
+  const niche2 = task.niche2 || task.payload?.niche2 || void 0;
+  const subniche = task.subniche || task.payload?.subniche || void 0;
+  const designId = task.payload?.designId || void 0;
+  const imageUrl = task.imageUrl || task.u4PreviewUrl || task.mbaPngUrl || void 0;
+  const lastEvent = task.events && task.events.length > 0 ? task.events[task.events.length - 1] : void 0;
+  return {
+    id: task.id,
+    counter: task.counter,
+    source: task.source,
+    suffix: task.suffix,
+    status: task.status,
+    checkpoint: task.checkpoint,
+    receivedAt: task.receivedAt,
+    updatedAt: lastEvent?.timestamp || task.receivedAt,
+    quote: quote5,
+    niche1,
+    niche2,
+    subniche,
+    imageUrl,
+    hasError: Boolean(task.hasError),
+    errorDetails: task.errorDetails,
+    eventsCount: Array.isArray(task.events) ? task.events.length : 0,
+    clientIp: task.clientIp,
+    designId,
+    inQueue: task.inQueue
+  };
+}
+var init_tasks = __esm2({
+  "src/types/tasks.ts"() {
+    "use strict";
   }
 });
 
@@ -221295,2312 +222359,13 @@ var init_syncEngine = __esm2({
   }
 });
 
-// src/server/services/svgRenderService.ts
-async function getBrowser() {
-  if (!sharedBrowser || !sharedBrowser.isConnected()) {
-    const executablePath = findChromiumExecutable();
-    const launchOptions = {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu"
-      ]
-    };
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-    }
-    sharedBrowser = await chromium.launch(launchOptions);
-  }
-  return sharedBrowser;
-}
-var sharedBrowser, SvgRenderService;
-var init_svgRenderService = __esm2({
-  "src/server/services/svgRenderService.ts"() {
-    "use strict";
-    init_playwright3();
-    init_browserSessionService();
-    sharedBrowser = null;
-    SvgRenderService = class {
-      /**
-       * Cleans XML declarations, doctypes, and whitespace noise from SVG strings
-       */
-      static cleanSvg(raw) {
-        if (!raw) return "";
-        return raw.replace(/<\?xml[^>]*\?>/gi, "").replace(/<!DOCTYPE[^>]*>/gi, "").trim();
-      }
-      /**
-       * Executes server-side Auto BG Remove (Corner Background detection & deletion)
-       */
-      static async autoRemoveCornerBackground(svgText) {
-        const clean = this.cleanSvg(svgText);
-        if (!clean) return { success: false, modifiedSvg: svgText, removedCount: 0 };
-        const browser = await getBrowser();
-        const context2 = await browser.newContext();
-        const page = await context2.newPage();
-        try {
-          await page.setContent(`
-        <!DOCTYPE html>
-        <html>
-        <head><meta charset="utf-8" /></head>
-        <body style="margin: 0; padding: 0;">
-          <div id="container">${clean}</div>
-        </body>
-        </html>
-      `);
-          const result2 = await page.evaluate(() => {
-            const parseColorToRGB = (colorStr) => {
-              if (!colorStr || colorStr === "none" || colorStr === "transparent") return null;
-              let s = colorStr.trim().toLowerCase();
-              if (s.startsWith("#")) {
-                let hex = s.substring(1);
-                if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-                if (hex.length === 6) {
-                  return {
-                    r: parseInt(hex.substring(0, 2), 16),
-                    g: parseInt(hex.substring(2, 4), 16),
-                    b: parseInt(hex.substring(4, 6), 16)
-                  };
-                }
-              }
-              const rgbMatch = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-              if (rgbMatch) {
-                return {
-                  r: parseInt(rgbMatch[1], 10),
-                  g: parseInt(rgbMatch[2], 10),
-                  b: parseInt(rgbMatch[3], 10)
-                };
-              }
-              return null;
-            };
-            const colorsMatch = (color1, color2, tolerance = 25) => {
-              if (!color1 || !color2) return false;
-              if (color1 === color2) return true;
-              const p1 = parseColorToRGB(color1);
-              const p2 = parseColorToRGB(color2);
-              if (p1 && p2) {
-                return Math.abs(p1.r - p2.r) <= tolerance && Math.abs(p1.g - p2.g) <= tolerance && Math.abs(p1.b - p2.b) <= tolerance;
-              }
-              return color1.toLowerCase() === color2.toLowerCase();
-            };
-            const getElementFill = (el) => {
-              if (el.hasAttribute("fill")) {
-                const f = el.getAttribute("fill");
-                if (f && f !== "none" && f !== "transparent" && f !== "rgba(0, 0, 0, 0)") return f;
-              }
-              const styleAttr = el.getAttribute("style");
-              if (styleAttr) {
-                const match = styleAttr.match(/fill\s*:\s*([^;]+)/);
-                if (match && match[1] && match[1].trim() !== "none") return match[1].trim();
-              }
-              try {
-                const comp = window.getComputedStyle(el).fill;
-                if (comp && comp !== "none" && comp !== "transparent" && comp !== "rgba(0, 0, 0, 0)") return comp;
-              } catch {
-              }
-              return null;
-            };
-            const isElementSafeToRemove = (el) => {
-              if (!el) return false;
-              const tag = el.tagName.toLowerCase();
-              if (["svg", "html", "body", "head", "script", "style", "defs", "clippath"].includes(tag)) return false;
-              return true;
-            };
-            const svg = document.querySelector("svg");
-            if (!svg) return { success: false, modifiedSvg: "", removedCount: 0 };
-            const svgBBox = svg.getBBox();
-            let topLeftElement = null;
-            let minDistance = Infinity;
-            svg.querySelectorAll("*").forEach((el) => {
-              if (!isElementSafeToRemove(el)) return;
-              try {
-                const bbox = el.getBBox();
-                if (bbox.width > 0 || bbox.height > 0) {
-                  const dist = Math.sqrt(Math.pow(bbox.x - svgBBox.x, 2) + Math.pow(bbox.y - svgBBox.y, 2));
-                  if (dist < minDistance) {
-                    topLeftElement = el;
-                    minDistance = dist;
-                  }
-                }
-              } catch {
-              }
-            });
-            if (!topLeftElement) {
-              return { success: false, modifiedSvg: svg.outerHTML, removedCount: 0 };
-            }
-            const targetColor = getElementFill(topLeftElement);
-            if (!targetColor) {
-              return { success: false, modifiedSvg: svg.outerHTML, removedCount: 0 };
-            }
-            let removedCount = 0;
-            svg.querySelectorAll("*").forEach((el) => {
-              if (!isElementSafeToRemove(el)) return;
-              const fill2 = getElementFill(el);
-              if (fill2 && colorsMatch(fill2, targetColor, 25)) {
-                if (el.hasAttribute("fill")) {
-                  el.setAttribute("fill", "none");
-                } else {
-                  el.remove();
-                }
-                removedCount++;
-              }
-            });
-            return {
-              success: true,
-              modifiedSvg: svg.outerHTML,
-              removedCount
-            };
-          });
-          return result2;
-        } catch (err) {
-          console.error("[SvgRenderService] Auto BG remove error:", err);
-          return { success: false, modifiedSvg: svgText, removedCount: 0 };
-        } finally {
-          await context2.close().catch(() => {
-          });
-        }
-      }
-      /**
-       * Renders the 4-Panel Verification Image (2048x2048 px: White, Black, Red, Slate)
-       */
-      static async render4PanelTestImage(svgText) {
-        const clean = this.cleanSvg(svgText);
-        const browser = await getBrowser();
-        const context2 = await browser.newContext({
-          viewport: { width: 2048, height: 2048 },
-          deviceScaleFactor: 1
-        });
-        const page = await context2.newPage();
-        try {
-          const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-            html, body {
-              width: 2048px;
-              height: 2048px;
-              background: #0f172a;
-              overflow: hidden;
-            }
-            .grid-container {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              grid-template-rows: 1fr 1fr;
-              width: 2048px;
-              height: 2048px;
-              gap: 12px;
-              background: #020617;
-              padding: 12px;
-            }
-            .panel {
-              position: relative;
-              width: 100%;
-              height: 100%;
-              border-radius: 20px;
-              overflow: hidden;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 60px;
-            }
-            .panel-1 { background-color: #ffffff; }
-            .panel-2 { background-color: #000000; }
-            .panel-3 { background-color: #d32f2f; }
-            .panel-4 { background-color: #1e293b; }
-
-            .panel-label {
-              position: absolute;
-              top: 20px;
-              left: 20px;
-              font-size: 26px;
-              font-weight: 800;
-              letter-spacing: 0.5px;
-              padding: 8px 20px;
-              border-radius: 10px;
-              text-transform: uppercase;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            }
-            .panel-1 .panel-label { background: rgba(15, 23, 42, 0.9); color: #ffffff; border: 1px solid rgba(255,255,255,0.2); }
-            .panel-2 .panel-label { background: rgba(255, 255, 255, 0.95); color: #000000; }
-            .panel-3 .panel-label { background: rgba(15, 23, 42, 0.9); color: #ffffff; border: 1px solid rgba(255,255,255,0.2); }
-            .panel-4 .panel-label { background: rgba(255, 255, 255, 0.95); color: #0f172a; }
-
-            .svg-wrapper {
-              width: 100%;
-              height: 100%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            .svg-wrapper svg {
-              width: 100%;
-              height: 100%;
-              max-width: 92%;
-              max-height: 92%;
-              object-fit: contain;
-              display: block;
-              margin: auto;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="grid-container">
-            <div class="panel panel-1">
-              <span class="panel-label">1. White BG</span>
-              <div class="svg-wrapper">${clean}</div>
-            </div>
-            <div class="panel panel-2">
-              <span class="panel-label">2. Black BG</span>
-              <div class="svg-wrapper">${clean}</div>
-            </div>
-            <div class="panel panel-3">
-              <span class="panel-label">3. Red BG</span>
-              <div class="svg-wrapper">${clean}</div>
-            </div>
-            <div class="panel panel-4">
-              <span class="panel-label">4. Slate / Dark Grey BG</span>
-              <div class="svg-wrapper">${clean}</div>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-          await page.setContent(htmlContent);
-          await page.waitForTimeout(50);
-          const buffer = await page.screenshot({ type: "png" });
-          return buffer;
-        } finally {
-          await context2.close().catch(() => {
-          });
-        }
-      }
-      /**
-       * Renders the optimal Merch by Amazon Print PNG (4500 x 5400 px, 300 DPI, Transparent Background)
-       */
-      static async renderSvgToMbaPng(svgText, width = 4500, height = 5400) {
-        const clean = this.cleanSvg(svgText);
-        const browser = await getBrowser();
-        const context2 = await browser.newContext({
-          viewport: { width, height },
-          deviceScaleFactor: 1
-        });
-        const page = await context2.newPage();
-        try {
-          const containerWidth = Math.round(width * 0.9);
-          const containerHeight = Math.round(height * 0.9);
-          const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            html, body {
-              width: ${width}px;
-              height: ${height}px;
-              background: transparent;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              overflow: hidden;
-            }
-            .design-container {
-              width: ${containerWidth}px;
-              height: ${containerHeight}px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            svg {
-              width: 100%;
-              height: 100%;
-              max-width: 100%;
-              max-height: 100%;
-              object-fit: contain;
-              display: block;
-              margin: auto;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="design-container">
-            ${clean}
-          </div>
-        </body>
-        </html>
-      `;
-          await page.setContent(htmlContent);
-          await page.waitForTimeout(60);
-          const buffer = await page.screenshot({ type: "png", omitBackground: true });
-          return buffer;
-        } finally {
-          await context2.close().catch(() => {
-          });
-        }
-      }
-    };
-  }
-});
-
-// src/server/services/visionOptimizationService.ts
-async function getBrowser2() {
-  if (!sharedBrowser2 || !sharedBrowser2.isConnected()) {
-    const executablePath = findChromiumExecutable();
-    const launchOptions = {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu"
-      ]
-    };
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-    }
-    sharedBrowser2 = await chromium.launch(launchOptions);
-  }
-  return sharedBrowser2;
-}
-var import_fs77, import_path72, sharedBrowser2, VisionOptimizationService;
-var init_visionOptimizationService = __esm2({
-  "src/server/services/visionOptimizationService.ts"() {
-    "use strict";
-    init_playwright3();
-    import_fs77 = __toESM2(require("fs"), 1);
-    import_path72 = __toESM2(require("path"), 1);
-    init_browserSessionService();
-    sharedBrowser2 = null;
-    VisionOptimizationService = class {
-      /**
-       * Generates a 4-color 2x2 Grid (1024x1024) preview for Vision LLMs (OpenRouter/Claude/Gemini)
-       * using the container's built-in Playwright Chromium engine (zero native C++ dependencies).
-       * - Top-Left: Black (#111827) - checks white/bright graphics & edge halos
-       * - Top-Right: White (#ffffff) - checks black/dark graphics & contrast
-       * - Bottom-Left: Red / Cranberry (#c53030) - checks color clashes & vibrancy
-       * - Bottom-Right: Asphalt (#383E42) - checks midtone legibility & subtle artifacts
-       */
-      static async prepareVisionImage(input, outputPath) {
-        try {
-          let dataUri;
-          if (typeof input === "string") {
-            if (input.startsWith("data:image")) {
-              dataUri = input;
-            } else if (import_fs77.default.existsSync(input)) {
-              const fileBuf = import_fs77.default.readFileSync(input);
-              dataUri = `data:image/png;base64,${fileBuf.toString("base64")}`;
-            } else {
-              throw new Error(`File not found: ${input}`);
-            }
-          } else if (Buffer.isBuffer(input)) {
-            dataUri = `data:image/png;base64,${input.toString("base64")}`;
-          } else {
-            return { base64DataUrl: "", is4Panel: false };
-          }
-          const browser = await getBrowser2();
-          const context2 = await browser.newContext({
-            viewport: { width: 1024, height: 1024 },
-            deviceScaleFactor: 1
-          });
-          const page = await context2.newPage();
-          try {
-            const html = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8" />
-            <style>
-              * { box-sizing: border-box; margin: 0; padding: 0; }
-              body {
-                width: 1024px;
-                height: 1024px;
-                background: #0f172a;
-                display: grid;
-                grid-template-columns: 512px 512px;
-                grid-template-rows: 512px 512px;
-                overflow: hidden;
-              }
-              .panel {
-                width: 512px;
-                height: 512px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                position: relative;
-                padding: 24px;
-              }
-              .p-black { background: #111827; }
-              .p-white { background: #ffffff; }
-              .p-red { background: #c53030; }
-              .p-asphalt { background: #383E42; }
-              .panel img {
-                max-width: 464px;
-                max-height: 464px;
-                width: auto;
-                height: auto;
-                object-fit: contain;
-                display: block;
-              }
-              .label {
-                position: absolute;
-                bottom: 8px;
-                left: 12px;
-                font-family: system-ui, -apple-system, sans-serif;
-                font-size: 11px;
-                font-weight: 700;
-                padding: 2px 8px;
-                border-radius: 4px;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-              }
-              .label-dark { background: rgba(255,255,255,0.15); color: #f8fafc; }
-              .label-light { background: rgba(0,0,0,0.15); color: #0f172a; }
-            </style>
-          </head>
-          <body>
-            <div class="panel p-black">
-              <img src="${dataUri}" />
-              <span class="label label-dark">1. Black (#111827)</span>
-            </div>
-            <div class="panel p-white">
-              <img src="${dataUri}" />
-              <span class="label label-light">2. White (#ffffff)</span>
-            </div>
-            <div class="panel p-red">
-              <img src="${dataUri}" />
-              <span class="label label-dark">3. Red (#c53030)</span>
-            </div>
-            <div class="panel p-asphalt">
-              <img src="${dataUri}" />
-              <span class="label label-dark">4. Asphalt (#383E42)</span>
-            </div>
-          </body>
-          </html>
-        `;
-            await page.setContent(html);
-            await page.waitForTimeout(30);
-            const screenshotBuf = await page.screenshot({ type: "jpeg", quality: 88 });
-            if (outputPath) {
-              try {
-                const dir = import_path72.default.dirname(outputPath);
-                if (!import_fs77.default.existsSync(dir)) import_fs77.default.mkdirSync(dir, { recursive: true });
-                import_fs77.default.writeFileSync(outputPath, screenshotBuf);
-              } catch (e) {
-                console.warn("[VisionOptimizationService] Failed to save preview file:", e.message);
-              }
-            }
-            return {
-              base64DataUrl: `data:image/jpeg;base64,${screenshotBuf.toString("base64")}`,
-              is4Panel: true,
-              savedPath: outputPath && import_fs77.default.existsSync(outputPath) ? outputPath : void 0
-            };
-          } finally {
-            await context2.close().catch(() => {
-            });
-          }
-        } catch (err) {
-          console.warn("[VisionOptimizationService] Playwright render fallback:", err.message);
-          if (typeof input === "string" && input.startsWith("data:image")) {
-            return { base64DataUrl: input, is4Panel: false };
-          }
-          return { base64DataUrl: "", is4Panel: false };
-        }
-      }
-      /**
-       * Generates a single, high-contrast, centered 1125x1350 preview image on flat neutral mid-gray (#B8B8B8)
-       * specifically designed for Step U4 Master English Listing creation.
-       * - Resolution: exactly 1125x1350 (1/4 width, 1/4 height of 4500x5400)
-       * - Background: #B8B8B8 (neutral mid-gray, no gradients, no textures, no borders, no text, no watermarks)
-       * - Centers transparent PNG, composites alpha seamlessly, preserves aspect ratio
-       * - Drastically reduces vision token usage while ensuring both white and dark designs remain legible
-       */
-      static async prepareU4PreviewImage(input, outputPath) {
-        try {
-          let dataUri;
-          if (typeof input === "string") {
-            if (input.startsWith("data:image")) {
-              dataUri = input;
-            } else if (import_fs77.default.existsSync(input)) {
-              const fileBuf = import_fs77.default.readFileSync(input);
-              dataUri = `data:image/png;base64,${fileBuf.toString("base64")}`;
-            } else {
-              throw new Error(`File not found: ${input}`);
-            }
-          } else if (Buffer.isBuffer(input)) {
-            dataUri = `data:image/png;base64,${input.toString("base64")}`;
-          } else {
-            return { base64DataUrl: "" };
-          }
-          const browser = await getBrowser2();
-          const context2 = await browser.newContext({
-            viewport: { width: 1125, height: 1350 },
-            deviceScaleFactor: 1
-          });
-          const page = await context2.newPage();
-          try {
-            const html = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8" />
-            <style>
-              * { box-sizing: border-box; margin: 0; padding: 0; }
-              body {
-                width: 1125px;
-                height: 1350px;
-                background-color: #B8B8B8;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                overflow: hidden;
-              }
-              img {
-                max-width: 1125px;
-                max-height: 1350px;
-                width: auto;
-                height: auto;
-                object-fit: contain;
-                display: block;
-              }
-            </style>
-          </head>
-          <body>
-            <img src="${dataUri}" />
-          </body>
-          </html>
-        `;
-            await page.setContent(html);
-            await page.waitForTimeout(30);
-            const screenshotBuf = await page.screenshot({ type: "png" });
-            if (outputPath) {
-              try {
-                const dir = import_path72.default.dirname(outputPath);
-                if (!import_fs77.default.existsSync(dir)) import_fs77.default.mkdirSync(dir, { recursive: true });
-                import_fs77.default.writeFileSync(outputPath, screenshotBuf);
-              } catch (e) {
-                console.warn("[VisionOptimizationService] Failed to save U4 preview file:", e.message);
-              }
-            }
-            return {
-              base64DataUrl: `data:image/png;base64,${screenshotBuf.toString("base64")}`,
-              savedPath: outputPath && import_fs77.default.existsSync(outputPath) ? outputPath : void 0
-            };
-          } finally {
-            await context2.close().catch(() => {
-            });
-          }
-        } catch (err) {
-          console.warn("[VisionOptimizationService] U4 preview generation fallback:", err.message);
-          return { base64DataUrl: "" };
-        }
-      }
-    };
-  }
-});
-
-// src/server/services/artworkResizeService.ts
-async function getBrowser3() {
-  if (!sharedBrowser3 || !sharedBrowser3.isConnected()) {
-    const executablePath = findChromiumExecutable();
-    const launchOptions = {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu"
-      ]
-    };
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-    }
-    sharedBrowser3 = await chromium.launch(launchOptions);
-  }
-  return sharedBrowser3;
-}
-function crc32(buf) {
-  let crc = -1;
-  for (let i = 0; i < buf.length; i++) {
-    crc = crc >>> 8 ^ crcTable[(crc ^ buf[i]) & 255];
-  }
-  return (crc ^ -1) >>> 0;
-}
-function inject300Dpi(pngBuffer) {
-  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
-  for (let i = 0; i < 8; i++) {
-    if (pngBuffer[i] !== sig[i]) return pngBuffer;
-  }
-  const dpi = 300;
-  const ppm = Math.round(dpi * 39.3701);
-  const physData = Buffer.alloc(9);
-  physData.writeUInt32BE(ppm, 0);
-  physData.writeUInt32BE(ppm, 4);
-  physData.writeUInt8(1, 8);
-  const typeAndData = Buffer.concat([Buffer.from("pHYs", "ascii"), physData]);
-  const crc = crc32(typeAndData);
-  const chunkHeader = Buffer.alloc(4);
-  chunkHeader.writeUInt32BE(9, 0);
-  const crcBuf = Buffer.alloc(4);
-  crcBuf.writeUInt32BE(crc, 0);
-  const physChunk = Buffer.concat([chunkHeader, typeAndData, crcBuf]);
-  return Buffer.concat([
-    pngBuffer.subarray(0, 33),
-    physChunk,
-    pngBuffer.subarray(33)
-  ]);
-}
-var import_fs78, import_path73, currentDir, sharedBrowser3, crcTable, ArtworkResizeService;
-var init_artworkResizeService = __esm2({
-  "src/server/services/artworkResizeService.ts"() {
-    "use strict";
-    init_playwright3();
-    import_fs78 = __toESM2(require("fs"), 1);
-    import_path73 = __toESM2(require("path"), 1);
-    init_browserSessionService();
-    currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
-    sharedBrowser3 = null;
-    crcTable = (() => {
-      const table = [];
-      for (let n = 0; n < 256; n++) {
-        let c = n;
-        for (let k = 0; k < 8; k++) {
-          c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
-        }
-        table[n] = c;
-      }
-      return table;
-    })();
-    ArtworkResizeService = class {
-      /**
-       * Resolves the brush_tip.png asset from multiple candidate paths
-       */
-      static getBrushTipPath() {
-        const candidates = [
-          import_path73.default.resolve(process.cwd(), "assets", "brush_tip.png"),
-          import_path73.default.resolve(process.cwd(), "dist", "assets", "brush_tip.png"),
-          import_path73.default.resolve(currentDir, "../../assets", "brush_tip.png"),
-          import_path73.default.resolve(currentDir, "../assets", "brush_tip.png"),
-          import_path73.default.resolve(process.cwd(), "Erweiterungen und Programme /Listing Optimizer/assets", "brush_tip.png")
-        ];
-        for (const c of candidates) {
-          if (import_fs78.default.existsSync(c)) {
-            return c;
-          }
-        }
-        return candidates[0];
-      }
-      /**
-       * Generates all resized variants from the master 4500x5400px MBA PNG:
-       * 1. ${cleanId}_trimmed.png - Bounding box of artwork with transparent margins trimmed
-       * 2. ${cleanId}_two_sided_mug_standard.png - 2700x1050 px, 300 DPI, centered on front/back
-       * 3. ${cleanId}_two_sided_mug_brush.png - 2700x1050 px, 300 DPI with black brush contour
-       * 4. ${cleanId}_two_sided_drinkware_standard.png - 3000x1400 px, 300 DPI for Tumbler & Water Bottle
-       * 5. ${cleanId}_two_sided_drinkware_brush.png - 3000x1400 px, 300 DPI with black brush contour for Travel Tumbler
-       */
-      static resizeLock = Promise.resolve();
-      static async generateResizedArtworks(taskId, mbaPngPath) {
-        const previousLock = this.resizeLock;
-        let releaseLock = () => {
-        };
-        this.resizeLock = new Promise((resolve) => {
-          releaseLock = resolve;
-        });
-        await previousLock;
-        try {
-          return await this.executeResizedArtworksInternal(taskId, mbaPngPath);
-        } finally {
-          releaseLock();
-        }
-      }
-      static async executeResizedArtworksInternal(taskId, mbaPngPath) {
-        const memBefore = process.memoryUsage();
-        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path73.default.resolve(process.cwd(), "data", "designs");
-        if (!import_fs78.default.existsSync(designsDir)) {
-          try {
-            import_fs78.default.mkdirSync(designsDir, { recursive: true });
-          } catch (e) {
-          }
-        }
-        const trimmedFilePath = import_path73.default.join(designsDir, `${cleanId}_trimmed.png`);
-        const mugStandardFilePath = import_path73.default.join(designsDir, `${cleanId}_two_sided_mug_standard.png`);
-        const mugBrushFilePath = import_path73.default.join(designsDir, `${cleanId}_two_sided_mug_brush.png`);
-        const drinkwareStandardFilePath = import_path73.default.join(designsDir, `${cleanId}_two_sided_drinkware_standard.png`);
-        const drinkwareBrushFilePath = import_path73.default.join(designsDir, `${cleanId}_two_sided_drinkware_brush.png`);
-        if (!import_fs78.default.existsSync(mbaPngPath)) {
-          throw new Error(`Master MBA PNG not found at path: ${mbaPngPath}`);
-        }
-        const masterPngBuffer = import_fs78.default.readFileSync(mbaPngPath);
-        const masterPngDataUri = `data:image/png;base64,${masterPngBuffer.toString("base64")}`;
-        const brushTipPath = this.getBrushTipPath();
-        let brushTipDataUri = "";
-        if (import_fs78.default.existsSync(brushTipPath)) {
-          const brushBuffer = import_fs78.default.readFileSync(brushTipPath);
-          brushTipDataUri = `data:image/png;base64,${brushBuffer.toString("base64")}`;
-        } else {
-          console.warn(`[ArtworkResizeService] \u26A0\uFE0F brush_tip.png not found at ${brushTipPath}. Falling back without brush tip.`);
-        }
-        console.log(`[ArtworkResizeService] \u{1F4D0} Starte Resize-Generierung f\xFCr Task #${taskId} (Chromium Engine)...`);
-        const browser = await getBrowser3();
-        const context2 = await browser.newContext({
-          viewport: { width: 3e3, height: 2e3 },
-          deviceScaleFactor: 1
-        });
-        const page = await context2.newPage();
-        try {
-          await page.addInitScript(() => {
-            window.__name = (target) => target;
-          });
-          await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
-          const evaluatedResults = await page.evaluate(async (params2) => {
-            const loadImage = (src) => {
-              return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.crossOrigin = "anonymous";
-                img.onload = () => resolve(img);
-                img.onerror = (e) => reject(e);
-                img.src = src;
-              });
-            };
-            const masterImg = await loadImage(params2.masterUri);
-            let brushImg = null;
-            if (params2.brushUri) {
-              try {
-                brushImg = await loadImage(params2.brushUri);
-              } catch (e) {
-                console.warn("Failed to load brush tip image in browser context", e);
-              }
-            }
-            const trimCanvas = (img) => {
-              const width = img.naturalWidth || img.width;
-              const height = img.naturalHeight || img.height;
-              const canvas = document.createElement("canvas");
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext("2d", { willReadFrequently: true });
-              if (!ctx) return canvas;
-              ctx.drawImage(img, 0, 0);
-              const imgData = ctx.getImageData(0, 0, width, height);
-              const data = imgData.data;
-              let top = 0;
-              let bottom = height - 1;
-              let left = 0;
-              let right = width - 1;
-              let found = false;
-              for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    top = y;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              if (!found) {
-                return canvas;
-              }
-              found = false;
-              for (let y = height - 1; y >= top; y--) {
-                for (let x = 0; x < width; x++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    bottom = y;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              found = false;
-              for (let x = 0; x < width; x++) {
-                for (let y = top; y <= bottom; y++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    left = x;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              found = false;
-              for (let x = width - 1; x >= left; x--) {
-                for (let y = top; y <= bottom; y++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    right = x;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              const croppedWidth = right - left + 1;
-              const croppedHeight = bottom - top + 1;
-              const trimmed = document.createElement("canvas");
-              trimmed.width = croppedWidth;
-              trimmed.height = croppedHeight;
-              const trimmedCtx = trimmed.getContext("2d");
-              if (trimmedCtx) {
-                trimmedCtx.drawImage(img, left, top, croppedWidth, croppedHeight, 0, 0, croppedWidth, croppedHeight);
-              }
-              return trimmed;
-            };
-            const trimmedCanvas = trimCanvas(masterImg);
-            const drawCentered = (ctx, source12, destX, destY, targetWidth, targetHeight) => {
-              const sw = source12.width;
-              const sh = source12.height;
-              const scale = Math.min(targetWidth / sw, targetHeight / sh, 1);
-              const dw = sw * scale;
-              const dh = sh * scale;
-              const x = destX + (targetWidth - dw) / 2;
-              const y = destY + (targetHeight - dh) / 2;
-              ctx.drawImage(source12, x, y, dw, dh);
-            };
-            const scaleDesignForProduct = (sourceCanvas, finalWidth, finalHeight, margin = 0.075) => {
-              const sw = sourceCanvas.width;
-              const sh = sourceCanvas.height;
-              const mt = finalHeight * margin;
-              const mb = finalHeight * margin;
-              const ml = finalWidth * margin;
-              const mr = finalWidth * margin;
-              const safeW = finalWidth - ml - mr;
-              const safeH = finalHeight - mt - mb;
-              const scale = Math.min(safeW / sw, safeH / sh);
-              const dw = sw * scale;
-              const dh = sh * scale;
-              const ox = ml + (safeW - dw) / 2;
-              const oy = mt + (safeH - dh) / 2;
-              const canvas = document.createElement("canvas");
-              canvas.width = finalWidth;
-              canvas.height = finalHeight;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = "high";
-                ctx.clearRect(0, 0, finalWidth, finalHeight);
-                ctx.drawImage(sourceCanvas, ox, oy, dw, dh);
-              }
-              return canvas;
-            };
-            const createMugCanvas = (scaledSideDesign) => {
-              const canvas = document.createElement("canvas");
-              canvas.width = 2700;
-              canvas.height = 1050;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.clearRect(0, 0, 2700, 1050);
-                const w = 1050;
-                const h = 1045.646;
-                const y = (1050 - h) / 2;
-                drawCentered(ctx, scaledSideDesign, 59, y, w, h);
-                drawCentered(ctx, scaledSideDesign, 1591, y, w, h);
-              }
-              return canvas;
-            };
-            const createDrinkwareCanvas = (scaledSideDesign) => {
-              const canvas = document.createElement("canvas");
-              canvas.width = 3e3;
-              canvas.height = 1400;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.clearRect(0, 0, 3e3, 1400);
-                const w = 1400;
-                const h = 1400;
-                const y = 0;
-                drawCentered(ctx, scaledSideDesign, 31, y, w, h);
-                drawCentered(ctx, scaledSideDesign, 1566.6667, y, w, h);
-              }
-              return canvas;
-            };
-            const removeSpecks = async (canvas, minSize = 25) => {
-              const ctx = canvas.getContext("2d", { willReadFrequently: true });
-              if (!ctx) return;
-              const width = canvas.width;
-              const height = canvas.height;
-              const totalPixels = width * height;
-              const imgData = ctx.getImageData(0, 0, width, height);
-              const data = imgData.data;
-              const visited = new Uint8Array(totalPixels);
-              let modified = false;
-              const queue = new Int32Array(Math.min(totalPixels, 1e5));
-              const speckOffsets = new Int32Array(minSize);
-              for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                  const startIdx = y * width + x;
-                  if (visited[startIdx] || data[4 * startIdx + 3] === 0) continue;
-                  let head2 = 0;
-                  let tail = 0;
-                  queue[tail++] = startIdx;
-                  visited[startIdx] = 1;
-                  let componentSize = 0;
-                  let isSpeck = true;
-                  while (head2 < tail) {
-                    const curIdx = queue[head2++];
-                    const cx = curIdx % width;
-                    const cy = curIdx / width | 0;
-                    if (isSpeck) {
-                      if (componentSize < minSize) {
-                        speckOffsets[componentSize] = 4 * curIdx;
-                      }
-                      componentSize++;
-                      if (componentSize >= minSize) {
-                        isSpeck = false;
-                      }
-                    }
-                    for (let dy = -1; dy <= 1; dy++) {
-                      const ny = cy + dy;
-                      if (ny < 0 || ny >= height) continue;
-                      const rowOffset = ny * width;
-                      for (let dx = -1; dx <= 1; dx++) {
-                        if (dx === 0 && dy === 0) continue;
-                        const nx = cx + dx;
-                        if (nx < 0 || nx >= width) continue;
-                        const nIdx = rowOffset + nx;
-                        if (!visited[nIdx] && data[4 * nIdx + 3] > 0) {
-                          visited[nIdx] = 1;
-                          if (tail < queue.length) {
-                            queue[tail++] = nIdx;
-                          }
-                        }
-                      }
-                    }
-                  }
-                  if (isSpeck && componentSize < minSize) {
-                    for (let i = 0; i < componentSize; i++) {
-                      const offset = speckOffsets[i];
-                      data[offset] = 0;
-                      data[offset + 1] = 0;
-                      data[offset + 2] = 0;
-                      data[offset + 3] = 0;
-                    }
-                    modified = true;
-                  }
-                }
-              }
-              if (modified) {
-                ctx.putImageData(imgData, 0, 0);
-              }
-            };
-            const applyBlackBrush = async (sourceCanvas, brushP) => {
-              await removeSpecks(sourceCanvas);
-              const n = sourceCanvas.width;
-              const o = sourceCanvas.height;
-              const r = document.createElement("canvas");
-              const s = 0.15 * Math.max(n, o);
-              r.width = Math.ceil(n + 2 * s);
-              r.height = Math.ceil(o + 2 * s);
-              const a = r.getContext("2d");
-              if (!a) return sourceCanvas;
-              if (!brushP) {
-                a.drawImage(sourceCanvas, s, s);
-                return r;
-              }
-              const u = 16;
-              const m = 3;
-              const h = [0.6, 0.9, 1.2];
-              const g = [];
-              for (let e = 0; e < m; e++) {
-                const t = h[e];
-                const bw = Math.ceil(brushP.width * t);
-                const bh = Math.ceil(brushP.height * t);
-                const br = Math.ceil(Math.sqrt(bw * bw + bh * bh));
-                for (let k = 0; k < u; k++) {
-                  const rot = k / u * Math.PI * 2;
-                  const bc = document.createElement("canvas");
-                  bc.width = br;
-                  bc.height = br;
-                  const bctx = bc.getContext("2d");
-                  if (bctx) {
-                    bctx.translate(br / 2, br / 2);
-                    bctx.rotate(rot);
-                    bctx.scale(t, t);
-                    bctx.drawImage(brushP, -brushP.width / 2, -brushP.height / 2);
-                    g.push({
-                      canvas: bc,
-                      halfW: br / 2,
-                      halfH: br / 2
-                    });
-                  }
-                }
-              }
-              const b = g.length;
-              const f = 0.1;
-              const y = document.createElement("canvas");
-              y.width = Math.ceil(n * f);
-              y.height = Math.ceil(o * f);
-              const v = y.getContext("2d", { willReadFrequently: true });
-              if (!v) return sourceCanvas;
-              v.drawImage(sourceCanvas, 0, 0, y.width, y.height);
-              for (let e = 0; e < 2; e++) {
-                v.drawImage(y, 1, 0);
-                v.drawImage(y, -1, 0);
-                v.drawImage(y, 0, 1);
-                v.drawImage(y, 0, -1);
-              }
-              const w = v.getImageData(0, 0, y.width, y.height);
-              for (let e = 0; e < w.data.length; e += 4) {
-                if (w.data[e + 3] > 0) {
-                  w.data[e] = 0;
-                  w.data[e + 1] = 0;
-                  w.data[e + 2] = 0;
-                  w.data[e + 3] = 255;
-                }
-              }
-              v.putImageData(w, 0, 0);
-              const xPts = [];
-              const kw = y.width;
-              const ch = y.height;
-              const ed = v.getImageData(0, 0, kw, ch).data;
-              const S = 2;
-              for (let e = 1; e < ch - 1; e += S) {
-                for (let t = 1; t < kw - 1; t += S) {
-                  if (ed[4 * (e * kw + t) + 3] > 0) {
-                    if (ed[4 * ((e - 1) * kw + t) + 3] !== 0 && ed[4 * ((e + 1) * kw + t) + 3] !== 0 && ed[4 * (e * kw + (t - 1)) + 3] !== 0 && ed[4 * (e * kw + (t + 1)) + 3] !== 0) {
-                    } else {
-                      xPts.push({
-                        x: t / f + s,
-                        y: e / f + s
-                      });
-                    }
-                  }
-                }
-              }
-              const P = document.createElement("canvas");
-              P.width = r.width;
-              P.height = r.height;
-              const A = P.getContext("2d");
-              if (A) {
-                A.drawImage(sourceCanvas, s, s);
-                A.globalCompositeOperation = "source-in";
-                A.fillStyle = "black";
-                A.fillRect(0, 0, P.width, P.height);
-              }
-              a.drawImage(P, 0, 0);
-              for (let e = 0; e < 10; e++) {
-                a.drawImage(r, 1, 0);
-                a.drawImage(r, -1, 0);
-                a.drawImage(r, 0, 1);
-                a.drawImage(r, 0, -1);
-              }
-              const L = 0.5;
-              const TPts = [];
-              for (let e = 0; e < xPts.length; e++) {
-                if (Math.random() < L) {
-                  TPts.push(xPts[e]);
-                }
-              }
-              for (let e = 0; e < TPts.length; e++) {
-                const pt = TPts[e];
-                const stamp = g[Math.floor(Math.random() * b)];
-                a.drawImage(stamp.canvas, pt.x - stamp.halfW, pt.y - stamp.halfH);
-              }
-              a.globalCompositeOperation = "source-over";
-              a.drawImage(sourceCanvas, s, s);
-              return r;
-            };
-            const trimmedDataUri = trimmedCanvas.toDataURL("image/png");
-            const mugStandardScaled = scaleDesignForProduct(trimmedCanvas, 1050, 1050, 0.075);
-            const mugStandardCanvas = createMugCanvas(mugStandardScaled);
-            const mugStandardDataUri = mugStandardCanvas.toDataURL("image/png");
-            const brushCanvas = await applyBlackBrush(trimmedCanvas, brushImg);
-            const mugBrushScaled = scaleDesignForProduct(brushCanvas, 1050, 1050, 0.075);
-            const mugBrushCanvas = createMugCanvas(mugBrushScaled);
-            const mugBrushDataUri = mugBrushCanvas.toDataURL("image/png");
-            const drinkwareScaled = scaleDesignForProduct(trimmedCanvas, 1400, 1400, 0.075);
-            const drinkwareCanvas = createDrinkwareCanvas(drinkwareScaled);
-            const drinkwareStandardDataUri = drinkwareCanvas.toDataURL("image/png");
-            const drinkwareBrushScaled = scaleDesignForProduct(brushCanvas, 1400, 1400, 0.075);
-            const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
-            const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL("image/png");
-            return {
-              trimmedDataUri,
-              mugStandardDataUri,
-              mugBrushDataUri,
-              drinkwareStandardDataUri,
-              drinkwareBrushDataUri
-            };
-          }, {
-            masterUri: masterPngDataUri,
-            brushUri: brushTipDataUri
-          });
-          const trimmedBuf = inject300Dpi(Buffer.from(evaluatedResults.trimmedDataUri.split(",")[1], "base64"));
-          import_fs78.default.writeFileSync(trimmedFilePath, trimmedBuf);
-          const mugStandardBuf = inject300Dpi(Buffer.from(evaluatedResults.mugStandardDataUri.split(",")[1], "base64"));
-          import_fs78.default.writeFileSync(mugStandardFilePath, mugStandardBuf);
-          const mugBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.mugBrushDataUri.split(",")[1], "base64"));
-          import_fs78.default.writeFileSync(mugBrushFilePath, mugBrushBuf);
-          const drinkwareBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareStandardDataUri.split(",")[1], "base64"));
-          import_fs78.default.writeFileSync(drinkwareStandardFilePath, drinkwareBuf);
-          const drinkwareBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareBrushDataUri.split(",")[1], "base64"));
-          import_fs78.default.writeFileSync(drinkwareBrushFilePath, drinkwareBrushBuf);
-          const memAfter = process.memoryUsage();
-          const rssDiffMb = ((memAfter.rss - memBefore.rss) / (1024 * 1024)).toFixed(1);
-          const totalRssMb = (memAfter.rss / (1024 * 1024)).toFixed(1);
-          console.log(`[ArtworkResizeService] \u2705 Alle 5 Resized Varianten f\xFCr Task #${taskId} erfolgreich gespeichert \u2713 (Node RSS: ${totalRssMb}MB, Delta: ${Number(rssDiffMb) >= 0 ? "+" : ""}${rssDiffMb}MB)`);
-          return {
-            trimmedPath: trimmedFilePath,
-            mugStandardPath: mugStandardFilePath,
-            mugBrushPath: mugBrushFilePath,
-            drinkwareStandardPath: drinkwareStandardFilePath,
-            drinkwareBrushPath: drinkwareBrushFilePath
-          };
-        } finally {
-          await context2.close();
-        }
-      }
-    };
-  }
-});
-
-// src/server/services/listingSanitizationService.ts
-var ListingSanitizationService;
-var init_listingSanitizationService = __esm2({
-  "src/server/services/listingSanitizationService.ts"() {
-    "use strict";
-    ListingSanitizationService = class {
-      // Amazon Merch allowed charset regex (preserves Latin, European accents, Japanese scripts, punctuation)
-      static PROHIBITED_CHARS_REGEX = /[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g;
-      /**
-       * Sanitize an individual string field according to Amazon Merch rules
-       */
-      static sanitizeText(text2) {
-        if (!text2) return "";
-        let cleaned = String(text2);
-        cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"');
-        cleaned = cleaned.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
-        cleaned = cleaned.replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
-        cleaned = cleaned.replace(/\u2026/g, "...");
-        cleaned = cleaned.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
-        cleaned = cleaned.replace(this.PROHIBITED_CHARS_REGEX, "");
-        cleaned = cleaned.replace(/\s+/g, " ").trim();
-        return cleaned;
-      }
-      /**
-       * Sanitize an entire listing object (title, brand, bullet1, bullet2, description)
-       */
-      static sanitizeListing(listing) {
-        if (!listing || typeof listing !== "object") return listing;
-        const result2 = { ...listing };
-        for (const [k, v] of Object.entries(listing)) {
-          if (typeof v === "string") {
-            result2[k] = this.sanitizeText(v);
-          } else if (v && typeof v === "object" && !Array.isArray(v)) {
-            result2[k] = this.sanitizeListing(v);
-          }
-        }
-        return result2;
-      }
-      /**
-       * Sanitize all localized listings in a listings record (e.g. { en: {...}, de: {...}, fr: {...} })
-       */
-      static sanitizeAllListings(listings) {
-        if (!listings || typeof listings !== "object") return {};
-        const sanitized = {};
-        for (const [locale, data] of Object.entries(listings)) {
-          if (data && typeof data === "object") {
-            sanitized[locale.toLowerCase()] = this.sanitizeListing(data);
-          }
-        }
-        return sanitized;
-      }
-    };
-  }
-});
-
-// src/server/utils/atomicFileStorage.ts
-function isFileInFailSafe(filePath) {
-  return failSafeRegistry.has(import_path74.default.resolve(filePath));
-}
-function atomicWriteFile(filePath, content, options2 = {}) {
-  const resolvedPath = import_path74.default.resolve(filePath);
-  const dir = import_path74.default.dirname(resolvedPath);
-  const backupExt = options2.backupExt || ".bak";
-  const shouldBackup = options2.backup !== false;
-  if (failSafeRegistry.has(resolvedPath)) {
-    throw new Error(
-      `[AtomicStorage] \u{1F6A8} REFUSED: File '${resolvedPath}' is in FAIL-SAFE (CORRUPTED) mode. Writes are blocked to prevent destructive data loss.`
-    );
-  }
-  if (!import_fs79.default.existsSync(dir)) {
-    import_fs79.default.mkdirSync(dir, { recursive: true });
-  }
-  const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const tmpPath = `${resolvedPath}.tmp.${nonce}`;
-  try {
-    const fd = import_fs79.default.openSync(tmpPath, "w");
-    try {
-      if (typeof content === "string") {
-        import_fs79.default.writeSync(fd, content, 0, "utf-8");
-      } else {
-        import_fs79.default.writeSync(fd, content);
-      }
-      import_fs79.default.fsyncSync(fd);
-    } finally {
-      import_fs79.default.closeSync(fd);
-    }
-    if (shouldBackup && import_fs79.default.existsSync(resolvedPath)) {
-      try {
-        const currentStats = import_fs79.default.statSync(resolvedPath);
-        if (currentStats.size > 0) {
-          const bakPath = `${resolvedPath}${backupExt}`;
-          const bakTmpPath = `${bakPath}.tmp.${nonce}`;
-          import_fs79.default.copyFileSync(resolvedPath, bakTmpPath);
-          const bakFd = import_fs79.default.openSync(bakTmpPath, "r");
-          try {
-            import_fs79.default.fsyncSync(bakFd);
-          } finally {
-            import_fs79.default.closeSync(bakFd);
-          }
-          import_fs79.default.renameSync(bakTmpPath, bakPath);
-        }
-      } catch (backupErr) {
-        console.warn(`[AtomicStorage] Warning: Failed to create backup for ${resolvedPath}:`, backupErr.message);
-      }
-    }
-    import_fs79.default.renameSync(tmpPath, resolvedPath);
-    try {
-      const dirFd = import_fs79.default.openSync(dir, "r");
-      try {
-        import_fs79.default.fsyncSync(dirFd);
-      } finally {
-        import_fs79.default.closeSync(dirFd);
-      }
-    } catch {
-    }
-  } catch (err) {
-    if (import_fs79.default.existsSync(tmpPath)) {
-      try {
-        import_fs79.default.unlinkSync(tmpPath);
-      } catch {
-      }
-    }
-    throw err;
-  }
-}
-function atomicWriteJson(filePath, data, options2 = {}) {
-  const space = options2.space !== void 0 ? options2.space : void 0;
-  const jsonStr = space !== void 0 ? JSON.stringify(data, null, space) : JSON.stringify(data);
-  if (!jsonStr) {
-    throw new Error(`[AtomicStorage] JSON serialization produced empty string for '${filePath}'`);
-  }
-  atomicWriteFile(filePath, jsonStr, options2);
-}
-function loadJsonWithBackupRecovery(filePath, options2 = {}) {
-  const resolvedPath = import_path74.default.resolve(filePath);
-  const backupExt = options2.backupExt || ".bak";
-  const bakPath = `${resolvedPath}${backupExt}`;
-  const validate2 = options2.validate || (() => true);
-  if (!import_fs79.default.existsSync(resolvedPath) && !import_fs79.default.existsSync(bakPath)) {
-    failSafeRegistry.delete(resolvedPath);
-    return {
-      success: true,
-      data: options2.defaultValue,
-      recoveredFromBackup: false,
-      corrupted: false
-    };
-  }
-  let mainValid = false;
-  let mainData = null;
-  let mainError = null;
-  if (import_fs79.default.existsSync(resolvedPath)) {
-    try {
-      const content = import_fs79.default.readFileSync(resolvedPath, "utf-8").trim();
-      if (content.length === 0) {
-        throw new Error("File is 0 bytes (empty/truncated)");
-      }
-      const parsed = JSON.parse(content);
-      if (!validate2(parsed)) {
-        throw new Error("Data validation check failed");
-      }
-      mainValid = true;
-      mainData = parsed;
-    } catch (err) {
-      mainError = err.message || "JSON parse error";
-    }
-  } else {
-    mainError = "Main file does not exist, but backup exists";
-  }
-  if (mainValid) {
-    failSafeRegistry.delete(resolvedPath);
-    return {
-      success: true,
-      data: mainData,
-      recoveredFromBackup: false,
-      corrupted: false
-    };
-  }
-  console.warn(`[AtomicStorage] \u26A0\uFE0F Corrupted or invalid JSON detected in '${resolvedPath}' (${mainError}). Checking backup '${bakPath}'...`);
-  if (import_fs79.default.existsSync(bakPath)) {
-    try {
-      const bakContent = import_fs79.default.readFileSync(bakPath, "utf-8").trim();
-      if (bakContent.length === 0) {
-        throw new Error("Backup file is 0 bytes (empty/truncated)");
-      }
-      const parsedBak = JSON.parse(bakContent);
-      if (!validate2(parsedBak)) {
-        throw new Error("Backup data validation check failed");
-      }
-      console.warn(`[AtomicStorage] \u{1F6E1}\uFE0F Valid backup found! Restoring '${resolvedPath}' from '${bakPath}'...`);
-      atomicWriteJson(resolvedPath, parsedBak, { backup: false, space: options2.defaultValue ? 2 : 0 });
-      failSafeRegistry.delete(resolvedPath);
-      return {
-        success: true,
-        data: parsedBak,
-        recoveredFromBackup: true,
-        corrupted: false
-      };
-    } catch (bakErr) {
-      console.error(`[AtomicStorage] \u274C Backup '${bakPath}' is ALSO corrupt or invalid:`, bakErr.message);
-    }
-  } else {
-    console.error(`[AtomicStorage] \u274C No backup file exists at '${bakPath}'!`);
-  }
-  console.error(
-    `[AtomicStorage] \u{1F6A8} CRITICAL: Main file '${resolvedPath}' and backup could not be parsed!`
-  );
-  console.error(
-    `[AtomicStorage] \u{1F6A8} TASK STORAGE WRITES HAVE BEEN DISABLED (FAIL-SAFE) TO PREVENT DESTRUCTIVE OVERWRITE.`
-  );
-  failSafeRegistry.add(resolvedPath);
-  return {
-    success: false,
-    data: null,
-    recoveredFromBackup: false,
-    corrupted: true,
-    error: `Both '${resolvedPath}' and backup are corrupt or unreadable (${mainError})`
-  };
-}
-var import_fs79, import_path74, failSafeRegistry;
-var init_atomicFileStorage = __esm2({
-  "src/server/utils/atomicFileStorage.ts"() {
-    "use strict";
-    import_fs79 = __toESM2(require("fs"), 1);
-    import_path74 = __toESM2(require("path"), 1);
-    failSafeRegistry = /* @__PURE__ */ new Set();
-  }
-});
-
-// src/server/storage/taskRepository.ts
-var import_fs80, import_path75, import_node_sqlite, TaskRepository;
-var init_taskRepository = __esm2({
-  "src/server/storage/taskRepository.ts"() {
-    "use strict";
-    import_fs80 = __toESM2(require("fs"), 1);
-    import_path75 = __toESM2(require("path"), 1);
-    import_node_sqlite = require("node:sqlite");
-    init_atomicFileStorage();
-    TaskRepository = class {
-      static db = null;
-      static dbPath = import_path75.default.resolve(process.cwd(), "data", "mba_hub.sqlite");
-      static legacyJsonPath = import_path75.default.resolve(process.cwd(), "data", "tasks_log.json");
-      static legacyCounterPath = import_path75.default.resolve(process.cwd(), "data", "tasks_counter.json");
-      static isInitialized = false;
-      static verifyNodeEngine() {
-        const [majorStr, minorStr] = process.versions.node.split(".");
-        const major2 = parseInt(majorStr, 10);
-        const minor = parseInt(minorStr, 10);
-        const isSupported = major2 > 22 || major2 === 22 && minor >= 5;
-        if (!isSupported) {
-          throw new Error(`[TaskRepository] node:sqlite requires Node.js >= 22.5.0. Current runtime is ${process.version}`);
-        }
-      }
-      /**
-       * Initializes the SQLite Database, sets WAL & FULL durability, applies schemas,
-       * and runs atomic migration from tasks_log.json if necessary.
-       */
-      static init(customDbPath) {
-        if (this.isInitialized && this.db && !customDbPath) return;
-        this.verifyNodeEngine();
-        const targetDbPath = customDbPath || this.dbPath;
-        const dbDir = import_path75.default.dirname(targetDbPath);
-        if (!import_fs80.default.existsSync(dbDir)) {
-          import_fs80.default.mkdirSync(dbDir, { recursive: true });
-        }
-        if (!import_fs80.default.existsSync(targetDbPath) && !customDbPath && import_fs80.default.existsSync(this.legacyJsonPath)) {
-          console.log("[TaskRepository] \u{1F4E6} Discovered existing tasks_log.json with no SQLite database. Starting atomic migration...");
-          this.executeMigrationFromLegacyJson(targetDbPath);
-        }
-        this.db = new import_node_sqlite.DatabaseSync(targetDbPath);
-        this.configurePragmas(this.db);
-        this.createSchema(this.db);
-        this.isInitialized = true;
-        console.log(`[TaskRepository] \u{1F6E1}\uFE0F SQLite Task Storage initialized at ${targetDbPath} (WAL Mode, synchronous=FULL).`);
-      }
-      /**
-       * Closes the database with a clean checkpoint.
-       */
-      static close() {
-        if (this.db) {
-          try {
-            console.log("[TaskRepository] \u{1F6D1} Checkpointing and closing SQLite database...");
-            this.db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
-            this.db.close();
-          } catch (err) {
-            console.warn("[TaskRepository] Error during close:", err.message);
-          } finally {
-            this.db = null;
-            this.isInitialized = false;
-          }
-        }
-      }
-      /**
-       * Configures SQLite PRAGMAs for high durability & concurrency on NAS / Docker
-       */
-      static configurePragmas(db) {
-        db.exec("PRAGMA journal_mode = WAL;");
-        db.exec("PRAGMA synchronous = FULL;");
-        db.exec("PRAGMA busy_timeout = 5000;");
-        db.exec("PRAGMA foreign_keys = ON;");
-      }
-      /**
-       * Creates the application metadata and tasks tables with composite indexes
-       */
-      static createSchema(db) {
-        db.exec(`
-      CREATE TABLE IF NOT EXISTS metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS tasks (
-        id TEXT PRIMARY KEY,
-        counter INTEGER NOT NULL,
-        source TEXT NOT NULL,
-        suffix TEXT,
-        status TEXT NOT NULL,
-        checkpoint TEXT,
-        received_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        quote TEXT,
-        niche1 TEXT,
-        niche2 TEXT,
-        subniche TEXT,
-        image_url TEXT,
-        has_error INTEGER NOT NULL DEFAULT 0,
-        error_details TEXT,
-        design_id TEXT,
-        in_queue INTEGER NOT NULL DEFAULT 0,
-        events_count INTEGER NOT NULL DEFAULT 0,
-        client_ip TEXT,
-        image_generations_count INTEGER NOT NULL DEFAULT 0,
-        vectorizations_count INTEGER NOT NULL DEFAULT 0,
-        openrouter_cost_usd REAL NOT NULL DEFAULT 0.0,
-        payload_json TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_tasks_counter ON tasks(counter DESC);
-      CREATE INDEX IF NOT EXISTS idx_tasks_source_counter ON tasks(source, counter DESC);
-      CREATE INDEX IF NOT EXISTS idx_tasks_status_counter ON tasks(status, counter DESC);
-      CREATE INDEX IF NOT EXISTS idx_tasks_design_id ON tasks(design_id);
-      CREATE INDEX IF NOT EXISTS idx_tasks_received_at ON tasks(received_at DESC);
-    `);
-        const versionRow = db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get();
-        if (!versionRow) {
-          db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', '1')").run();
-          db.exec("PRAGMA user_version = 1;");
-        }
-      }
-      /**
-       * Central mapper: Converts canonical DesignTaskLog to strongly-typed projection columns.
-       */
-      static taskToColumns(task) {
-        const quote5 = task.quote || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || task.payload?.title || null;
-        const niche1 = task.niche1 || task.payload?.niche1 || null;
-        const niche2 = task.niche2 || task.payload?.niche2 || null;
-        const subniche = task.subniche || task.payload?.subniche || null;
-        const designId = task.payload?.designId || task.designId || null;
-        const imageUrl = task.imageUrl || null;
-        const errorDetails = task.errorDetails || null;
-        const clientIp = task.clientIp || null;
-        const eventsCount = Array.isArray(task.events) ? task.events.length : task.eventsCount || 0;
-        let imageGenCount = 0;
-        let vectorCount = 0;
-        let openRouterCost = 0;
-        if (Array.isArray(task.events)) {
-          for (const ev of task.events) {
-            if (ev.type === "IDEOGRAM_RESPONSE") imageGenCount++;
-            if (ev.type === "VECTORIZE_RESPONSE") vectorCount++;
-            if (ev.metadata?.costUsd) openRouterCost += Number(ev.metadata.costUsd) || 0;
-          }
-        } else {
-          if (imageUrl) imageGenCount++;
-          if (task.svgContent || task.localMbaPngPath) vectorCount++;
-        }
-        const payloadJson = JSON.stringify(task);
-        return {
-          id: task.id,
-          counter: task.counter || 0,
-          source: task.source || "HERMES",
-          suffix: task.suffix || null,
-          status: task.status || "RECEIVED",
-          checkpoint: task.checkpoint || null,
-          received_at: task.receivedAt || (/* @__PURE__ */ new Date()).toISOString(),
-          updated_at: task.updatedAt || task.receivedAt || (/* @__PURE__ */ new Date()).toISOString(),
-          quote: quote5,
-          niche1,
-          niche2,
-          subniche,
-          image_url: imageUrl,
-          has_error: task.hasError ? 1 : 0,
-          error_details: errorDetails,
-          design_id: designId,
-          in_queue: task.inQueue ? 1 : 0,
-          events_count: eventsCount,
-          client_ip: clientIp,
-          image_generations_count: imageGenCount,
-          vectorizations_count: vectorCount,
-          openrouter_cost_usd: openRouterCost,
-          payload_json: payloadJson
-        };
-      }
-      /**
-       * Central mapper: Reconstructs canonical DesignTaskLog from a database row.
-       */
-      static rowToTask(row) {
-        if (!row || !row.payload_json) {
-          throw new Error("[TaskRepository] Invalid row: payload_json is missing");
-        }
-        const task = JSON.parse(row.payload_json);
-        task.id = row.id;
-        task.counter = row.counter;
-        task.source = row.source;
-        task.suffix = row.suffix;
-        task.status = row.status;
-        task.checkpoint = row.checkpoint;
-        task.receivedAt = row.received_at;
-        task.updatedAt = row.updated_at;
-        task.quote = row.quote || task.quote;
-        task.niche1 = row.niche1 || task.niche1;
-        task.niche2 = row.niche2 || task.niche2;
-        task.subniche = row.subniche || task.subniche;
-        task.imageUrl = row.image_url || task.imageUrl;
-        task.hasError = Boolean(row.has_error);
-        task.errorDetails = row.error_details || task.errorDetails;
-        task.inQueue = Boolean(row.in_queue);
-        task.eventsCount = row.events_count;
-        task.clientIp = row.client_ip || task.clientIp;
-        return task;
-      }
-      /**
-       * Central mapper: Converts database row directly into lightweight TaskSummary without payload_json parsing.
-       */
-      static rowToSummary(row) {
-        return {
-          id: row.id,
-          counter: row.counter,
-          source: row.source,
-          suffix: row.suffix || void 0,
-          status: row.status,
-          checkpoint: row.checkpoint || void 0,
-          receivedAt: row.received_at,
-          updatedAt: row.updated_at,
-          quote: row.quote || void 0,
-          niche1: row.niche1 || void 0,
-          niche2: row.niche2 || void 0,
-          subniche: row.subniche || void 0,
-          imageUrl: row.image_url || void 0,
-          hasError: Boolean(row.has_error),
-          errorDetails: row.error_details || void 0,
-          eventsCount: row.events_count,
-          clientIp: row.client_ip || void 0,
-          designId: row.design_id || void 0,
-          inQueue: Boolean(row.in_queue)
-        };
-      }
-      /**
-       * Atomic migration of tasks_log.json using a separate temporary database (mba_hub.sqlite.migrating).
-       * If any error occurs, rolls back, discards temporary files, leaves tasks_log.json untouched,
-       * and throws error (Fail-Closed).
-       */
-      static executeMigrationFromLegacyJson(targetDbPath, customJsonPath) {
-        const jsonPath = customJsonPath || this.legacyJsonPath;
-        const tempDbPath = `${targetDbPath}.migrating`;
-        if (import_fs80.default.existsSync(tempDbPath)) import_fs80.default.unlinkSync(tempDbPath);
-        if (import_fs80.default.existsSync(`${tempDbPath}-wal`)) import_fs80.default.unlinkSync(`${tempDbPath}-wal`);
-        if (import_fs80.default.existsSync(`${tempDbPath}-shm`)) import_fs80.default.unlinkSync(`${tempDbPath}-shm`);
-        console.log(`[TaskRepository] \u23F3 Reading legacy JSON from ${jsonPath}...`);
-        const recovery = loadJsonWithBackupRecovery(jsonPath, {
-          backupExt: ".bak",
-          validate: (data) => Array.isArray(data),
-          defaultValue: []
-        });
-        if (!recovery.success || !Array.isArray(recovery.data)) {
-          throw new Error(`[TaskRepository] Failed to read or parse ${jsonPath}. Migration aborted.`);
-        }
-        const legacyTasks = recovery.data;
-        console.log(`[TaskRepository] \u{1F4C4} Found ${legacyTasks.length} legacy tasks to migrate.`);
-        let tempDb = null;
-        try {
-          tempDb = new import_node_sqlite.DatabaseSync(tempDbPath);
-          this.configurePragmas(tempDb);
-          this.createSchema(tempDb);
-          tempDb.exec("BEGIN IMMEDIATE;");
-          const insertStmt = tempDb.prepare(`
-        INSERT INTO tasks (
-          id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-          quote, niche1, niche2, subniche, image_url, has_error, error_details,
-          design_id, in_queue, events_count, client_ip,
-          image_generations_count, vectorizations_count, openrouter_cost_usd,
-          payload_json
-        ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?,
-          ?
-        )
-      `);
-          let maxCounter = 0;
-          const seenIds = /* @__PURE__ */ new Set();
-          for (const task of legacyTasks) {
-            if (!task || !task.id) continue;
-            seenIds.add(task.id);
-            const counter = task.counter || 0;
-            if (counter > maxCounter) maxCounter = counter;
-            const cols = this.taskToColumns(task);
-            insertStmt.run(
-              cols.id,
-              cols.counter,
-              cols.source,
-              cols.suffix,
-              cols.status,
-              cols.checkpoint,
-              cols.received_at,
-              cols.updated_at,
-              cols.quote,
-              cols.niche1,
-              cols.niche2,
-              cols.subniche,
-              cols.image_url,
-              cols.has_error,
-              cols.error_details,
-              cols.design_id,
-              cols.in_queue,
-              cols.events_count,
-              cols.client_ip,
-              cols.image_generations_count,
-              cols.vectorizations_count,
-              cols.openrouter_cost_usd,
-              cols.payload_json
-            );
-          }
-          let counterToStore = maxCounter;
-          if (import_fs80.default.existsSync(this.legacyCounterPath)) {
-            try {
-              const rawCounter = JSON.parse(import_fs80.default.readFileSync(this.legacyCounterPath, "utf-8"));
-              if (rawCounter && typeof rawCounter.counter === "number") {
-                counterToStore = Math.max(counterToStore, rawCounter.counter);
-              }
-            } catch {
-            }
-          }
-          tempDb.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(counterToStore));
-          tempDb.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '1')").run();
-          tempDb.exec("COMMIT;");
-          const countRow = tempDb.prepare("SELECT COUNT(*) as count FROM tasks").get();
-          if (countRow.count !== seenIds.size) {
-            throw new Error(`[TaskRepository] Migration integrity error: Expected ${seenIds.size} rows, but found ${countRow.count} in database.`);
-          }
-          const checkpointRow = tempDb.prepare("PRAGMA wal_checkpoint(TRUNCATE);").get();
-          if (checkpointRow && checkpointRow.busy === 1) {
-            throw new Error(`[TaskRepository] PRAGMA wal_checkpoint(TRUNCATE) failed with busy status: ${JSON.stringify(checkpointRow)}`);
-          }
-          const integrityRow = tempDb.prepare("PRAGMA integrity_check;").get();
-          if (!integrityRow || integrityRow.integrity_check !== "ok") {
-            throw new Error(`[TaskRepository] PRAGMA integrity_check failed: ${JSON.stringify(integrityRow)}`);
-          }
-          tempDb.close();
-          tempDb = null;
-          const tempWalPath = `${tempDbPath}-wal`;
-          const tempShmPath = `${tempDbPath}-shm`;
-          if (import_fs80.default.existsSync(tempWalPath)) {
-            try {
-              import_fs80.default.unlinkSync(tempWalPath);
-            } catch {
-            }
-          }
-          if (import_fs80.default.existsSync(tempShmPath)) {
-            try {
-              import_fs80.default.unlinkSync(tempShmPath);
-            } catch {
-            }
-          }
-          import_fs80.default.renameSync(tempDbPath, targetDbPath);
-          console.log(`[TaskRepository] \u2705 Migration complete! Created ${targetDbPath} with ${countRow.count} tasks.`);
-          const backupJsonPath = import_path75.default.resolve(import_path75.default.dirname(jsonPath), "tasks_log.pre-sqlite-backup.json");
-          import_fs80.default.renameSync(jsonPath, backupJsonPath);
-          console.log(`[TaskRepository] \u{1F6E1}\uFE0F Original tasks_log.json preserved as ${backupJsonPath}.`);
-          if (import_fs80.default.existsSync(this.legacyCounterPath)) {
-            const backupCounterPath = import_path75.default.resolve(import_path75.default.dirname(this.legacyCounterPath), "tasks_counter.pre-sqlite-backup.json");
-            try {
-              import_fs80.default.renameSync(this.legacyCounterPath, backupCounterPath);
-            } catch {
-            }
-          }
-        } catch (err) {
-          if (tempDb) {
-            try {
-              tempDb.exec("ROLLBACK;");
-              tempDb.close();
-            } catch {
-            }
-          }
-          try {
-            if (import_fs80.default.existsSync(tempDbPath)) import_fs80.default.unlinkSync(tempDbPath);
-          } catch {
-          }
-          try {
-            if (import_fs80.default.existsSync(`${tempDbPath}-wal`)) import_fs80.default.unlinkSync(`${tempDbPath}-wal`);
-          } catch {
-          }
-          try {
-            if (import_fs80.default.existsSync(`${tempDbPath}-shm`)) import_fs80.default.unlinkSync(`${tempDbPath}-shm`);
-          } catch {
-          }
-          console.error("[TaskRepository] \u{1F6A8} CRITICAL MIGRATION FAILURE. Original JSON files left untouched:", err.message);
-          throw err;
-        }
-      }
-      static getDb() {
-        if (!this.db) {
-          this.init();
-        }
-        return this.db;
-      }
-      /**
-       * Atomically increments and returns the next sequential task counter.
-       */
-      static getNextCounter() {
-        const db = this.getDb();
-        db.exec("BEGIN IMMEDIATE;");
-        try {
-          let current = 0;
-          const row = db.prepare("SELECT value FROM metadata WHERE key = 'task_counter'").get();
-          if (row && row.value) {
-            current = parseInt(row.value, 10) || 0;
-          } else {
-            const maxRow = db.prepare("SELECT COALESCE(MAX(counter), 0) as maxCounter FROM tasks").get();
-            current = maxRow.maxCounter || 0;
-          }
-          current += 1;
-          db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(current));
-          db.exec("COMMIT;");
-          return current;
-        } catch (err) {
-          try {
-            db.exec("ROLLBACK;");
-          } catch {
-          }
-          throw err;
-        }
-      }
-      /**
-       * Inserts a new task atomically.
-       */
-      static createTask(task) {
-        const db = this.getDb();
-        db.exec("BEGIN IMMEDIATE;");
-        try {
-          if (!task.counter) {
-            let current = 0;
-            const row = db.prepare("SELECT value FROM metadata WHERE key = 'task_counter'").get();
-            if (row && row.value) {
-              current = parseInt(row.value, 10) || 0;
-            } else {
-              const maxRow = db.prepare("SELECT COALESCE(MAX(counter), 0) as maxCounter FROM tasks").get();
-              current = maxRow.maxCounter || 0;
-            }
-            current += 1;
-            task.counter = current;
-            db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(current));
-          }
-          if (!task.id) {
-            const padded = String(task.counter).padStart(3, "0");
-            task.id = task.suffix ? `#${padded}-${task.suffix}` : `#${padded}`;
-          }
-          task.receivedAt = task.receivedAt || (/* @__PURE__ */ new Date()).toISOString();
-          task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-          const cols = this.taskToColumns(task);
-          db.prepare(`
-        INSERT INTO tasks (
-          id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-          quote, niche1, niche2, subniche, image_url, has_error, error_details,
-          design_id, in_queue, events_count, client_ip,
-          image_generations_count, vectorizations_count, openrouter_cost_usd,
-          payload_json
-        ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?,
-          ?
-        )
-      `).run(
-            cols.id,
-            cols.counter,
-            cols.source,
-            cols.suffix,
-            cols.status,
-            cols.checkpoint,
-            cols.received_at,
-            cols.updated_at,
-            cols.quote,
-            cols.niche1,
-            cols.niche2,
-            cols.subniche,
-            cols.image_url,
-            cols.has_error,
-            cols.error_details,
-            cols.design_id,
-            cols.in_queue,
-            cols.events_count,
-            cols.client_ip,
-            cols.image_generations_count,
-            cols.vectorizations_count,
-            cols.openrouter_cost_usd,
-            cols.payload_json
-          );
-          db.exec("COMMIT;");
-          return task;
-        } catch (err) {
-          try {
-            db.exec("ROLLBACK;");
-          } catch {
-          }
-          throw err;
-        }
-      }
-      /**
-       * Updates only the targeted task row. Loads existing task, merges partial updates,
-       * updates payload_json and indexed columns atomically.
-       */
-      static updateTask(taskId, updates) {
-        const db = this.getDb();
-        db.exec("BEGIN IMMEDIATE;");
-        try {
-          const row = db.prepare("SELECT payload_json FROM tasks WHERE id = ?").get(taskId);
-          if (!row || !row.payload_json) {
-            db.exec("ROLLBACK;");
-            return null;
-          }
-          const existingTask = JSON.parse(row.payload_json);
-          if (updates.payload) {
-            existingTask.payload = {
-              ...existingTask.payload,
-              ...updates.payload
-            };
-          }
-          for (const [key, value2] of Object.entries(updates)) {
-            if (key === "payload") continue;
-            existingTask[key] = value2;
-          }
-          existingTask.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-          const cols = this.taskToColumns(existingTask);
-          db.prepare(`
-        UPDATE tasks SET
-          counter = ?,
-          source = ?,
-          suffix = ?,
-          status = ?,
-          checkpoint = ?,
-          received_at = ?,
-          updated_at = ?,
-          quote = ?,
-          niche1 = ?,
-          niche2 = ?,
-          subniche = ?,
-          image_url = ?,
-          has_error = ?,
-          error_details = ?,
-          design_id = ?,
-          in_queue = ?,
-          events_count = ?,
-          client_ip = ?,
-          image_generations_count = ?,
-          vectorizations_count = ?,
-          openrouter_cost_usd = ?,
-          payload_json = ?
-        WHERE id = ?
-      `).run(
-            cols.counter,
-            cols.source,
-            cols.suffix,
-            cols.status,
-            cols.checkpoint,
-            cols.received_at,
-            cols.updated_at,
-            cols.quote,
-            cols.niche1,
-            cols.niche2,
-            cols.subniche,
-            cols.image_url,
-            cols.has_error,
-            cols.error_details,
-            cols.design_id,
-            cols.in_queue,
-            cols.events_count,
-            cols.client_ip,
-            cols.image_generations_count,
-            cols.vectorizations_count,
-            cols.openrouter_cost_usd,
-            cols.payload_json,
-            taskId
-          );
-          db.exec("COMMIT;");
-          return existingTask;
-        } catch (err) {
-          try {
-            db.exec("ROLLBACK;");
-          } catch {
-          }
-          throw err;
-        }
-      }
-      /**
-       * Appends an event to a single task atomically with duplicate event compaction.
-       */
-      static addEvent(taskId, event) {
-        const db = this.getDb();
-        db.exec("BEGIN IMMEDIATE;");
-        try {
-          const row = db.prepare("SELECT payload_json FROM tasks WHERE id = ?").get(taskId);
-          if (!row || !row.payload_json) {
-            db.exec("ROLLBACK;");
-            return null;
-          }
-          const task = JSON.parse(row.payload_json);
-          if (!Array.isArray(task.events)) {
-            task.events = [];
-          }
-          const lastEvent = task.events.length > 0 ? task.events[task.events.length - 1] : null;
-          const isConsecutiveDuplicate = lastEvent && lastEvent.type === event.type && lastEvent.title === event.title && JSON.stringify(lastEvent.content ?? null) === JSON.stringify(event.content ?? null);
-          if (isConsecutiveDuplicate && lastEvent) {
-            lastEvent.repeatCount = (lastEvent.repeatCount || 1) + 1;
-            lastEvent.lastRepeatedAt = event.timestamp || (/* @__PURE__ */ new Date()).toISOString();
-          } else {
-            task.events.push(event);
-          }
-          task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-          const cols = this.taskToColumns(task);
-          db.prepare(`
-        UPDATE tasks SET
-          updated_at = ?,
-          events_count = ?,
-          image_generations_count = ?,
-          vectorizations_count = ?,
-          openrouter_cost_usd = ?,
-          payload_json = ?
-        WHERE id = ?
-      `).run(
-            cols.updated_at,
-            cols.events_count,
-            cols.image_generations_count,
-            cols.vectorizations_count,
-            cols.openrouter_cost_usd,
-            cols.payload_json,
-            taskId
-          );
-          db.exec("COMMIT;");
-          return task;
-        } catch (err) {
-          try {
-            db.exec("ROLLBACK;");
-          } catch {
-          }
-          throw err;
-        }
-      }
-      /**
-       * Full reconstruction of DesignTaskLog from SQLite.
-       */
-      static getTaskById(taskId) {
-        const db = this.getDb();
-        const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-        if (!row) return null;
-        return this.rowToTask(row);
-      }
-      /**
-       * Fast summary retrieval without parsing payload_json.
-       */
-      static getTaskSummaryById(taskId) {
-        const db = this.getDb();
-        const row = db.prepare(`
-      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-             quote, niche1, niche2, subniche, image_url, has_error, error_details,
-             design_id, in_queue, events_count, client_ip
-      FROM tasks
-      WHERE id = ?
-    `).get(taskId);
-        if (!row) return null;
-        return this.rowToSummary(row);
-      }
-      /**
-       * Keyset pagination query directly from SQLite (WHERE counter < ? ORDER BY counter DESC LIMIT 21).
-       */
-      static getTaskSummariesPage(options2 = {}) {
-        const db = this.getDb();
-        const limit = Math.max(1, Math.min(100, options2.limit || 20));
-        const queryLimit = limit + 1;
-        const conditions = [];
-        const params2 = [];
-        if (options2.cursor) {
-          const cursorRow = db.prepare("SELECT counter FROM tasks WHERE id = ?").get(options2.cursor);
-          if (cursorRow && typeof cursorRow.counter === "number") {
-            conditions.push("counter < ?");
-            params2.push(cursorRow.counter);
-          }
-        }
-        if (options2.source && options2.source !== "ALL") {
-          conditions.push("source = ?");
-          params2.push(options2.source);
-        }
-        if (options2.status) {
-          conditions.push("status = ?");
-          params2.push(options2.status);
-        }
-        if (options2.checkpoint) {
-          conditions.push("checkpoint = ?");
-          params2.push(options2.checkpoint);
-        }
-        if (options2.search && options2.search.trim()) {
-          const q = `%${options2.search.trim()}%`;
-          conditions.push("(id LIKE ? OR quote LIKE ? OR niche1 LIKE ? OR niche2 LIKE ? OR design_id LIKE ?)");
-          params2.push(q, q, q, q, q);
-        }
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-        const sql = `
-      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-             quote, niche1, niche2, subniche, image_url, has_error, error_details,
-             design_id, in_queue, events_count, client_ip
-      FROM tasks
-      ${whereClause}
-      ORDER BY counter DESC
-      LIMIT ?
-    `;
-        const rows = db.prepare(sql).all(...params2, queryLimit);
-        const countSql = `SELECT COUNT(*) as total FROM tasks ${whereClause}`;
-        const totalRow = db.prepare(countSql).get(...params2);
-        const totalCount = totalRow ? totalRow.total : rows.length;
-        const hasMore = rows.length > limit;
-        const pageRows = hasMore ? rows.slice(0, limit) : rows;
-        const tasks = pageRows.map((r) => this.rowToSummary(r));
-        const nextCursor = hasMore && tasks.length > 0 ? tasks[tasks.length - 1].id : null;
-        return {
-          success: true,
-          tasks,
-          totalCount,
-          hasMore,
-          nextCursor
-        };
-      }
-      /**
-       * Retrieves all awaiting tasks for review sidebar directly via index.
-       */
-      static getAwaitingTaskSummaries() {
-        const db = this.getDb();
-        const rows = db.prepare(`
-      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-             quote, niche1, niche2, subniche, image_url, has_error, error_details,
-             design_id, in_queue, events_count, client_ip
-      FROM tasks
-      WHERE status IN (
-        'AWAITING_PRE_FLIGHT_REVIEW',
-        'AWAITING_DESIGN_REVIEW',
-        'AWAITING_TM_REVIEW',
-        'AWAITING_SVG_REVIEW'
-      )
-      ORDER BY counter DESC
-    `).all();
-        return rows.map((r) => this.rowToSummary(r));
-      }
-      /**
-       * Fast query for active update design IDs (used by UpdateBackfillService).
-       */
-      static getActiveUpdateDesignIds() {
-        const db = this.getDb();
-        const rows = db.prepare(`
-      SELECT id, design_id
-      FROM tasks
-      WHERE (source = 'UPDATE' OR suffix = 'U')
-        AND status NOT IN ('REJECTED', 'CANCELLED', 'ERROR')
-        AND has_error = 0
-    `).all();
-        const ids = /* @__PURE__ */ new Set();
-        for (const r of rows) {
-          if (r.design_id) ids.add(r.design_id.trim());
-          if (r.id) {
-            const clean = r.id.replace(/^#/, "").replace(/-U$/, "").trim();
-            ids.add(clean);
-          }
-        }
-        return ids;
-      }
-      /**
-       * Fast query for active update tasks in review (used by UpdateBackfillService.getActiveUpdateCount).
-       */
-      static getActiveReviewUpdateTasks() {
-        const db = this.getDb();
-        const rows = db.prepare(`
-      SELECT id, design_id
-      FROM tasks
-      WHERE (source = 'UPDATE' OR suffix = 'U')
-        AND status IN ('AWAITING_DESIGN_REVIEW', 'UPDATE_ANALYZED', 'AWAITING_TM_REVIEW')
-        AND has_error = 0
-    `).all();
-        return rows.map((r) => ({
-          id: r.id,
-          designId: r.design_id || void 0
-        }));
-      }
-      /**
-       * Fast cancellation of matching update tasks (used by QueueService & UpdateBackfillService).
-       */
-      static cancelTasksByTarget(targetTaskId, targetDesignId) {
-        const db = this.getDb();
-        let query = `
-      UPDATE tasks
-      SET status = 'CANCELLED', updated_at = ?
-      WHERE (id = ? OR id = ?)
-        AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
-    `;
-        const params2 = [(/* @__PURE__ */ new Date()).toISOString(), targetTaskId, `#${targetTaskId}`];
-        if (targetDesignId) {
-          query = `
-        UPDATE tasks
-        SET status = 'CANCELLED', updated_at = ?
-        WHERE (id = ? OR id = ? OR design_id = ?)
-          AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
-      `;
-          params2.push(targetDesignId);
-        }
-        const info = db.prepare(query).run(...params2);
-        return Number(info.changes);
-      }
-      /**
-       * Cancels all hanging/stale update tasks (used by UpdateBackfillService.resetInFlightLocks).
-       */
-      static cancelActiveUpdateTasks() {
-        const db = this.getDb();
-        const info = db.prepare(`
-      UPDATE tasks
-      SET status = 'CANCELLED', updated_at = ?
-      WHERE (source = 'UPDATE' OR suffix = 'U')
-        AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
-    `).run((/* @__PURE__ */ new Date()).toISOString());
-        return Number(info.changes);
-      }
-      /**
-       * Direct aggregated query for CostTracking metrics (avoids parsing thousands of JSON payloads).
-       */
-      static getTaskUsageMetrics(resetTimestamp) {
-        const db = this.getDb();
-        const isoThreshold = resetTimestamp > 0 ? new Date(resetTimestamp).toISOString() : "1970-01-01T00:00:00.000Z";
-        const row = db.prepare(`
-      SELECT
-        COALESCE(SUM(image_generations_count), 0) as imageGenerationsCount,
-        COALESCE(SUM(vectorizations_count), 0) as vectorizationsCount,
-        COALESCE(SUM(openrouter_cost_usd), 0.0) as taskEventOpenRouterCost
-      FROM tasks
-      WHERE received_at >= ?
-    `).get(isoThreshold);
-        return {
-          imageGenerationsCount: Number(row.imageGenerationsCount) || 0,
-          vectorizationsCount: Number(row.vectorizationsCount) || 0,
-          taskEventOpenRouterCost: Number(row.taskEventOpenRouterCost) || 0
-        };
-      }
-      /**
-       * Deletes a single task row.
-       */
-      static deleteTask(taskId) {
-        const db = this.getDb();
-        const info = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
-        return Number(info.changes) > 0;
-      }
-      /**
-       * Clears all tasks (for test suites or manual log clearing).
-       */
-      static clearAllTasks() {
-        const db = this.getDb();
-        db.exec("DELETE FROM tasks;");
-      }
-      /**
-       * Returns all tasks currently marked with in_queue = 1.
-       */
-      static getInQueueTasks() {
-        const db = this.getDb();
-        const rows = db.prepare("SELECT * FROM tasks WHERE in_queue = 1").all();
-        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
-      }
-      /**
-       * Returns tasks matching any of the specified statuses.
-       */
-      static getTasksByStatuses(statuses) {
-        if (!statuses || statuses.length === 0) return [];
-        const db = this.getDb();
-        const placeholders = statuses.map(() => "?").join(", ");
-        const rows = db.prepare(`SELECT * FROM tasks WHERE status IN (${placeholders})`).all(...statuses);
-        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
-      }
-      /**
-       * Returns total task count in SQLite.
-       */
-      static getTotalTaskCount() {
-        const db = this.getDb();
-        const row = db.prepare("SELECT COUNT(*) as count FROM tasks").get();
-        return row ? Number(row.count) : 0;
-      }
-    };
-  }
-});
-
-// src/types/tasks.ts
-function toTaskSummary(task) {
-  const quote5 = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || void 0;
-  const niche1 = task.niche1 || task.payload?.niche1 || void 0;
-  const niche2 = task.niche2 || task.payload?.niche2 || void 0;
-  const subniche = task.subniche || task.payload?.subniche || void 0;
-  const designId = task.payload?.designId || void 0;
-  const imageUrl = task.imageUrl || task.u4PreviewUrl || task.mbaPngUrl || void 0;
-  const lastEvent = task.events && task.events.length > 0 ? task.events[task.events.length - 1] : void 0;
-  return {
-    id: task.id,
-    counter: task.counter,
-    source: task.source,
-    suffix: task.suffix,
-    status: task.status,
-    checkpoint: task.checkpoint,
-    receivedAt: task.receivedAt,
-    updatedAt: lastEvent?.timestamp || task.receivedAt,
-    quote: quote5,
-    niche1,
-    niche2,
-    subniche,
-    imageUrl,
-    hasError: Boolean(task.hasError),
-    errorDetails: task.errorDetails,
-    eventsCount: Array.isArray(task.events) ? task.events.length : 0,
-    clientIp: task.clientIp,
-    designId,
-    inQueue: task.inQueue
-  };
-}
-var init_tasks = __esm2({
-  "src/types/tasks.ts"() {
-    "use strict";
-  }
-});
-
 // src/server/services/amazonInspectService.ts
-var import_fs81, import_path76, FIND_LISTINGS_URL2, PRODUCT_CONFIG_URL2, ALL_STATUSES2, AmazonInspectService;
+var import_fs80, import_path75, FIND_LISTINGS_URL2, PRODUCT_CONFIG_URL2, ALL_STATUSES2, AmazonInspectService;
 var init_amazonInspectService = __esm2({
   "src/server/services/amazonInspectService.ts"() {
     "use strict";
-    import_fs81 = __toESM2(require("fs"), 1);
-    import_path76 = __toESM2(require("path"), 1);
+    import_fs80 = __toESM2(require("fs"), 1);
+    import_path75 = __toESM2(require("path"), 1);
     init_browserSessionService();
     init_syncEngine();
     init_taskLogService();
@@ -223979,13 +222744,13 @@ var init_amazonInspectService = __esm2({
         if (!cleanDesignId || !cleanTaskId) {
           return { success: false, error: "Task-ID oder Design-ID fehlt." };
         }
-        const designsDir = import_path76.default.resolve(process.cwd(), "data", "designs");
-        if (!import_fs81.default.existsSync(designsDir)) {
-          import_fs81.default.mkdirSync(designsDir, { recursive: true });
+        const designsDir = import_path75.default.resolve(process.cwd(), "data", "designs");
+        if (!import_fs80.default.existsSync(designsDir)) {
+          import_fs80.default.mkdirSync(designsDir, { recursive: true });
         }
         const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const filename = `${safeId}.png`;
-        const filePath = import_path76.default.join(designsDir, filename);
+        const filePath = import_path75.default.join(designsDir, filename);
         const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
         console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download & DOM-Live-Inspektion f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
         TaskLogService2.updateTaskStatus(cleanTaskId, {
@@ -224035,14 +222800,14 @@ var init_amazonInspectService = __esm2({
           }, extractResult.fullResUrl);
           const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
           const buffer = Buffer.from(base64Clean, "base64");
-          const designsDir2 = import_path76.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs81.default.existsSync(designsDir2)) {
-            import_fs81.default.mkdirSync(designsDir2, { recursive: true });
+          const designsDir2 = import_path75.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs80.default.existsSync(designsDir2)) {
+            import_fs80.default.mkdirSync(designsDir2, { recursive: true });
           }
           const safeId2 = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const filename2 = `${safeId2}.png`;
-          const filePath2 = import_path76.default.join(designsDir2, filename2);
-          import_fs81.default.writeFileSync(filePath2, buffer);
+          const filePath2 = import_path75.default.join(designsDir2, filename2);
+          import_fs80.default.writeFileSync(filePath2, buffer);
           console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
           const pageRejectionInfo = await newTab.evaluate(() => {
@@ -224305,6 +223070,137 @@ var init_amazonInspectService = __esm2({
   }
 });
 
+// src/server/services/assetValidationService.ts
+var import_fs81, import_path76, AssetValidationService;
+var init_assetValidationService = __esm2({
+  "src/server/services/assetValidationService.ts"() {
+    "use strict";
+    import_fs81 = __toESM2(require("fs"), 1);
+    import_path76 = __toESM2(require("path"), 1);
+    AssetValidationService = class {
+      /**
+       * Validates whether a given file path is a valid, readable PNG (or JPG) image.
+       * Checks existence, minimum file size, and header magic bytes.
+       */
+      static isValidPngImage(filePath, minSizeBytes = 1e4) {
+        if (!filePath) return false;
+        try {
+          const resolved = import_path76.default.resolve(filePath);
+          if (!import_fs81.default.existsSync(resolved)) return false;
+          const stats2 = import_fs81.default.statSync(resolved);
+          if (!stats2.isFile() || stats2.size < minSizeBytes) return false;
+          const fd = import_fs81.default.openSync(resolved, "r");
+          const buffer = Buffer.alloc(8);
+          import_fs81.default.readSync(fd, buffer, 0, 8, 0);
+          import_fs81.default.closeSync(fd);
+          const isPng = buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71;
+          const isJpg = buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255;
+          return isPng || isJpg;
+        } catch {
+          return false;
+        }
+      }
+      /**
+       * Validates whether a given file path contains a valid, well-formed SVG.
+       */
+      static isValidSvgFile(filePath, minSizeBytes = 20) {
+        if (!filePath) return false;
+        try {
+          const resolved = import_path76.default.resolve(filePath);
+          if (!import_fs81.default.existsSync(resolved)) return false;
+          const stats2 = import_fs81.default.statSync(resolved);
+          if (!stats2.isFile() || stats2.size < minSizeBytes) return false;
+          const content = import_fs81.default.readFileSync(resolved, "utf-8");
+          const trimmed = content.trim();
+          const hasOpeningTag = trimmed.includes("<svg") || trimmed.includes("<?xml");
+          const hasClosingTag = trimmed.includes("</svg>");
+          return hasOpeningTag && hasClosingTag;
+        } catch {
+          return false;
+        }
+      }
+      /**
+       * Validates if existing resized assets on a task are intact.
+       * Only checks assets that are defined on the task.
+       */
+      static areResizeAssetsComplete(task) {
+        if (!task.resizedAssets) return false;
+        const { trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath } = task.resizedAssets;
+        const paths = [trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath].filter(Boolean);
+        if (paths.length === 0) return false;
+        for (const p of paths) {
+          if (!this.isValidPngImage(p, 1e3)) {
+            return false;
+          }
+        }
+        return true;
+      }
+    };
+  }
+});
+
+// src/server/services/taskExecutionLock.ts
+var TaskExecutionLock;
+var init_taskExecutionLock = __esm2({
+  "src/server/services/taskExecutionLock.ts"() {
+    "use strict";
+    TaskExecutionLock = class {
+      static activeLocks = /* @__PURE__ */ new Map();
+      /**
+       * Attempts to acquire execution lock for a given taskId.
+       * Re-entrant: If already acquired by the same owner, increments depth and returns true.
+       * Returns false if task is already running under a DIFFERENT owner.
+       */
+      static acquire(taskId, owner) {
+        const cleanId = taskId.trim();
+        const existing = this.activeLocks.get(cleanId);
+        if (existing) {
+          if (existing.owner === owner) {
+            existing.depth++;
+            return true;
+          }
+          return false;
+        }
+        this.activeLocks.set(cleanId, { owner, depth: 1, acquiredAt: (/* @__PURE__ */ new Date()).toISOString() });
+        return true;
+      }
+      /**
+       * Releases execution lock for a given taskId.
+       * Decrements depth and removes lock when depth reaches 0.
+       */
+      static release(taskId) {
+        const cleanId = taskId.trim();
+        const existing = this.activeLocks.get(cleanId);
+        if (existing) {
+          existing.depth--;
+          if (existing.depth <= 0) {
+            this.activeLocks.delete(cleanId);
+          }
+        }
+      }
+      /**
+       * Checks whether a task is currently executing.
+       */
+      static isLocked(taskId) {
+        return this.activeLocks.has(taskId.trim());
+      }
+      /**
+       * Returns current lock owner info if locked.
+       */
+      static getLockInfo(taskId) {
+        const existing = this.activeLocks.get(taskId.trim());
+        return existing ? { owner: existing.owner, acquiredAt: existing.acquiredAt } : void 0;
+      }
+      /**
+       * Clears all locks (used in tests or system resets).
+       */
+      static clear() {
+        this.activeLocks.clear();
+      }
+    };
+  }
+});
+
 // src/server/services/updatePipelineService.ts
 var updatePipelineService_exports = {};
 __export2(updatePipelineService_exports, {
@@ -224324,6 +223220,8 @@ var init_updatePipelineService = __esm2({
     init_trademarkService();
     init_visionOptimizationService();
     init_listingValidationService();
+    init_assetValidationService();
+    init_taskExecutionLock();
     UpdatePipelineService = class {
       /**
        * Helper to retrieve a task safely
@@ -224359,6 +223257,19 @@ var init_updatePipelineService = __esm2({
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
         const designId = task.payload?.designId;
         if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+        const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const existingValidPath = task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 5e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(mbaPath, 5e4) ? mbaPath : AssetValidationService.isValidPngImage(rawPath, 5e4) ? rawPath : null;
+        if (existingValidPath) {
+          console.log(`[UpdatePipeline] \u267B\uFE0F G\xFCltiges Master Artwork existiert bereits lokal (${existingValidPath}). \xDCberspringe Download.`);
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_ARTWORK_READY",
+            localMbaPngPath: existingValidPath,
+            hasError: false
+          });
+          return { success: true, localUrl: `/api/v1/designs/artwork/${encodeURIComponent(taskId)}` };
+        }
         TaskLogService2.updateTaskStatus(taskId, { status: "UPDATE_DOWNLOADING_ARTWORK", hasError: false });
         const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
         if (!res.success) {
@@ -224369,9 +223280,6 @@ var init_updatePipelineService = __esm2({
           });
           return { success: false, error: res.error };
         }
-        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
         const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
         const u4PreviewPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
         if (targetPath && import_fs82.default.existsSync(targetPath)) {
@@ -224850,6 +223758,14 @@ Bullets: ${oldBullets}`
         const quote5 = task.payload?.quote || "";
         const niche1 = task.niche1 || task.customAnswers?.niche1 || "";
         const subniche = task.subniche || task.customAnswers?.subniche || "";
+        if (task.listingResult?.de && task.listingResult?.fr && task.listingResult?.es && task.listingResult?.it && task.listingResult?.ja) {
+          console.log(`[UpdatePipeline] \u267B\uFE0F G\xFCltige \xDCbersetzungen f\xFCr alle 5 Sprachen bereits im Task vorhanden. Wiederverwendung.`);
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_TRANSLATED",
+            hasError: false
+          });
+          return { success: true, fullListings: task.listingResult };
+        }
         const settings2 = loadSettings();
         if (settings2.translationUpdateEnabled === false) {
           console.log(`[UpdatePipeline] \u23E9 \xDCbersetzung deaktiviert (Settings). Verwende englisches Master-Listing f\xFCr Amazon Auto-Translate.`);
@@ -224969,28 +223885,68 @@ Bullets: ${oldBullets}`
         }
       }
       /**
-       * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval)
+       * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval or crash recovery)
        */
-      static async runFromStep(taskId, startStep = "U4") {
-        console.log(`[UpdatePipeline] \u{1F680} F\xFChre Pipeline ab Step ${startStep} f\xFCr Task ${taskId} aus...`);
-        if (startStep === "U4") {
-          const u4 = await this.stepU4_RewriteListing(taskId);
-          if (!u4.success) return { success: false, error: u4.error };
+      static async runFromStep(taskId, startStep = "U4", owner = "NORMAL") {
+        console.log(`[UpdatePipeline] \u{1F680} F\xFChre Pipeline ab Step ${startStep} f\xFCr Task ${taskId} aus (Owner: ${owner})...`);
+        if (!TaskExecutionLock.acquire(taskId, owner)) {
+          console.warn(`[UpdatePipeline] \u26A0\uFE0F Task ${taskId} wird bereits ausgef\xFChrt (${JSON.stringify(TaskExecutionLock.getLockInfo(taskId))}). Abgebrochen.`);
+          return { success: false, error: `Task ${taskId} is currently executing.` };
         }
-        if (startStep === "U4" || startStep === "U5") {
-          const u5 = await this.stepU5_TrademarkCheck(taskId);
-          if (!u5.success) return { success: false, error: u5.error };
+        try {
+          if (startStep === "U2") {
+            const u2 = await this.stepU2_DownloadArtwork(taskId);
+            if (!u2.success) return { success: false, error: u2.error };
+          }
+          if (startStep === "U2" || startStep === "U3") {
+            const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
+            if (!u3.success) return { success: false, error: u3.error };
+            const task = this.getTask(taskId);
+            const settings2 = loadSettings();
+            const autonomyUpdate = settings2.aiAutonomyUpdateEnabled ?? settings2.aiAutonomyEnabled;
+            const isDefective = task?.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || task?.analysisResult?.overall_verdict === "REJECTED";
+            const hasRejection = Boolean(task?.payload?.hasRejection);
+            if (!autonomyUpdate || isDefective || hasRejection) {
+              let pauseReason = "Manuelle Freigabe nach Vision Analyse erforderlich";
+              if (isDefective) {
+                pauseReason = `Design-Qualit\xE4t mangelhaft (${task?.analysisResult?.design_quality?.quality_issues || "Defekt"})`;
+              } else if (hasRejection) {
+                pauseReason = "Amazon Rejection erkannt \u2013 Manuelle \xDCberpr\xFCfung empfohlen";
+              }
+              TaskLogService2.updateTaskStatus(taskId, {
+                status: "AWAITING_DESIGN_REVIEW",
+                checkpoint: "DESIGN_REVIEW",
+                hasError: isDefective || hasRejection,
+                errorDetails: isDefective || hasRejection ? pauseReason : void 0
+              });
+              return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: "DESIGN_REVIEW" };
+            }
+          }
+          if (startStep === "U2" || startStep === "U3" || startStep === "U4") {
+            const u4 = await this.stepU4_RewriteListing(taskId);
+            if (!u4.success) return { success: false, error: u4.error };
+          }
+          if (startStep === "U2" || startStep === "U3" || startStep === "U4" || startStep === "U5") {
+            const u5 = await this.stepU5_TrademarkCheck(taskId);
+            if (!u5.success) return { success: false, error: u5.error };
+            const task = this.getTask(taskId);
+            if (task?.status === "AWAITING_TM_REVIEW") {
+              return { success: true, task, pausedAtCheckpoint: "TM_REVIEW" };
+            }
+          }
+          if (startStep === "U2" || startStep === "U3" || startStep === "U4" || startStep === "U5" || startStep === "U6") {
+            const u6 = await this.stepU6_TranslateListing(taskId);
+            if (!u6.success) return { success: false, error: u6.error };
+          }
+          if (startStep === "U2" || startStep === "U3" || startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U7") {
+            const u7 = await this.stepU7_Enqueue(taskId);
+            if (!u7.success) return { success: false, error: u7.error };
+          }
+          const finalTask = this.getTask(taskId);
+          return { success: true, task: finalTask };
+        } finally {
+          TaskExecutionLock.release(taskId);
         }
-        if (startStep === "U4" || startStep === "U5" || startStep === "U6") {
-          const u6 = await this.stepU6_TranslateListing(taskId);
-          if (!u6.success) return { success: false, error: u6.error };
-        }
-        if (startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U7") {
-          const u7 = await this.stepU7_Enqueue(taskId);
-          if (!u7.success) return { success: false, error: u7.error };
-        }
-        const finalTask = this.getTask(taskId);
-        return { success: true, task: finalTask };
       }
       /**
        * Run entire pipeline sequentially from a Design-ID
@@ -225090,6 +224046,912 @@ Bullets: ${oldBullets}`
   }
 });
 
+// src/server/services/designPipelineService.ts
+var DesignPipelineService;
+var init_designPipelineService = __esm2({
+  "src/server/services/designPipelineService.ts"() {
+    "use strict";
+    init_taskLogService();
+    init_settingsService();
+    init_trademarkService();
+    init_llmService();
+    init_taskExecutionLock();
+    DesignPipelineService = class {
+      /**
+       * Helper to retrieve task safely
+       */
+      static getTask(taskId) {
+        return TaskLogService2.getTaskLogById(taskId);
+      }
+      /**
+       * Step D1: Pre-Flight Trademark Check on Quote / Slogan
+       */
+      static async stepD1_PreflightTrademark(taskId) {
+        console.log(`[DesignPipeline] \u{1F50D} Starte Step D1 (Pre-Flight TM Check) f\xFCr Task ${taskId}...`);
+        const task = this.getTask(taskId);
+        if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        const quote5 = task.quote || task.payload?.quote || "";
+        if (!quote5.trim()) {
+          console.log(`[DesignPipeline] Kein Quote vorhanden, \xFCberspringe Pre-Flight TM.`);
+          return { success: true };
+        }
+        try {
+          const tmResult = await TrademarkService.checkText(quote5, ["25"]);
+          const isInfringing = tmResult.totalHits > 0 && tmResult.hasInfringementClass25;
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TM_CHECK_RESPONSE",
+            title: isInfringing ? `Pre-Flight USPTO Treffer (${tmResult.totalHits} Treffer)` : "Pre-Flight USPTO sauber (0 Treffer)",
+            content: { ...tmResult, isPreFlight: true },
+            metadata: { provider: "Productor / USPTO" }
+          });
+          if (isInfringing) {
+            console.warn(`[DesignPipeline] \u26A0\uFE0F Pre-Flight TM Treffer f\xFCr Quote "${quote5}"`);
+          }
+          return { success: true, tmResult };
+        } catch (err) {
+          console.warn(`[DesignPipeline] Pre-Flight TM Check Fehler:`, err.message);
+          return { success: true, tmResult: { skipped: true, reason: err.message } };
+        }
+      }
+      /**
+       * Step D2: Generate Ideogram Prompt via OpenRouter
+       */
+      static async stepD2_GeneratePrompt(taskId) {
+        console.log(`[DesignPipeline] \u{1F9E0} Starte Step D2 (Ideogram Prompt Generation) f\xFCr Task ${taskId}...`);
+        const circuit = LLMService.isCircuitBroken();
+        if (circuit.broken) {
+          return { success: false, error: `Design-Pipeline pausiert: ${circuit.reason}` };
+        }
+        const balance = await LLMService.getAvailableBalance();
+        const settings2 = loadSettings();
+        const threshold = settings2.openRouterMinBalanceThreshold ?? 1;
+        if (balance !== null && balance < threshold) {
+          return { success: false, error: `Design-Pipeline pausiert: OpenRouter Guthaben ($${balance.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})` };
+        }
+        try {
+          await TaskLogService2.generatePromptWithOpenRouter(taskId);
+          const updated = this.getTask(taskId);
+          return { success: true, prompt: updated?.resultPrompt };
+        } catch (err) {
+          console.error(`[DesignPipeline] \u274C Fehler in Step D2:`, err);
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step D3: Image Generation via Ideogram API (V_3)
+       */
+      static async stepD3_GenerateImage(taskId) {
+        console.log(`[DesignPipeline] \u{1F3A8} Starte Step D3 (Ideogram Bild-Generierung) f\xFCr Task ${taskId}...`);
+        try {
+          await TaskLogService2.processTaskWithIdeogram(taskId);
+          const updated = this.getTask(taskId);
+          return { success: true, imageUrl: updated?.imageUrl, localPath: updated?.localImagePath };
+        } catch (err) {
+          console.error(`[DesignPipeline] \u274C Fehler in Step D3:`, err);
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step D4: Vision QA & Color Count Analysis (OpenRouter)
+       */
+      static async stepD4_AnalyzeDesign(taskId) {
+        console.log(`[DesignPipeline] \u{1F441}\uFE0F Starte Step D4 (Design QA Analyse) f\xFCr Task ${taskId}...`);
+        try {
+          await TaskLogService2.analyzeDesignWithOpenRouter(taskId);
+          const updated = this.getTask(taskId);
+          return { success: true, analysisResult: updated?.analysisResult };
+        } catch (err) {
+          console.error(`[DesignPipeline] \u274C Fehler in Step D4:`, err);
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step D5: Multi-Marketplace MBA SEO Listing Generation (OpenRouter)
+       */
+      static async stepD5_GenerateListing(taskId) {
+        console.log(`[DesignPipeline] \u{1F4DD} Starte Step D5 (Listing Erstellung) f\xFCr Task ${taskId}...`);
+        try {
+          await TaskLogService2.generateListingWithOpenRouter(taskId);
+          const updated = this.getTask(taskId);
+          return { success: true, listingResult: updated?.listingResult };
+        } catch (err) {
+          console.error(`[DesignPipeline] \u274C Fehler in Step D5:`, err);
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step D6: Trademark Validation & Refinement Loop
+       */
+      static async stepD6_TrademarkCheck(taskId) {
+        console.log(`[DesignPipeline] \u2696\uFE0F Starte Step D6 (Trademark Check & Refine Loop) f\xFCr Task ${taskId}...`);
+        try {
+          await TaskLogService2.performTrademarkCheck(taskId);
+          const updated = this.getTask(taskId);
+          return { success: true, tmResult: updated?.trademarkCheckResult };
+        } catch (err) {
+          console.error(`[DesignPipeline] \u274C Fehler in Step D6:`, err);
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step D7: Vectorization & 4-Panel Cutout Audit
+       */
+      static async stepD7_VectorizeAndAudit(taskId) {
+        console.log(`[DesignPipeline] \u26A1 Starte Step D7 (Vektorisierung & Cutout-Audit) f\xFCr Task ${taskId}...`);
+        try {
+          await TaskLogService2.vectorizeDesignTask(taskId);
+          const updated = this.getTask(taskId);
+          return { success: true, svgUrl: updated?.svgUrl };
+        } catch (err) {
+          console.error(`[DesignPipeline] \u274C Fehler in Step D7:`, err);
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Step D8: Hand-off to Upload Queue (106 Slots)
+       */
+      static async stepD8_Enqueue(taskId) {
+        console.log(`[DesignPipeline] \u{1F4E6} Starte Step D8 (Upload Queue Handoff) f\xFCr Task ${taskId}...`);
+        try {
+          await TaskLogService2.completeTaskAndEnqueue(taskId);
+          return { success: true };
+        } catch (err) {
+          console.error(`[DesignPipeline] \u274C Fehler in Step D8:`, err);
+          return { success: false, error: err.message };
+        }
+      }
+      /**
+       * Executes a single specific step
+       */
+      static async runStep(taskId, stepName) {
+        const norm = stepName.toUpperCase().trim();
+        switch (norm) {
+          case "D1":
+          case "PREFLIGHT":
+          case "PREFLIGHT_TM_REQUEST":
+            return await this.stepD1_PreflightTrademark(taskId);
+          case "D2":
+          case "PROMPT":
+          case "LLM_REQUEST":
+            return await this.stepD2_GeneratePrompt(taskId);
+          case "D3":
+          case "IMAGE":
+          case "IDEOGRAM":
+          case "IDEOGRAM_REQUEST":
+            return await this.stepD3_GenerateImage(taskId);
+          case "D4":
+          case "ANALYZE":
+          case "VISION":
+          case "ANALYSIS_REQUEST":
+            return await this.stepD4_AnalyzeDesign(taskId);
+          case "D5":
+          case "LISTING":
+          case "LISTING_REQUEST":
+            return await this.stepD5_GenerateListing(taskId);
+          case "D6":
+          case "TRADEMARK":
+          case "TM":
+          case "TM_CHECK_REQUEST":
+          case "TM_REFINE_REQUEST":
+            return await this.stepD6_TrademarkCheck(taskId);
+          case "D7":
+          case "VECTORIZE":
+          case "SVG":
+          case "VECTORIZE_REQUEST":
+          case "SVG_AUDIT_REQUEST":
+            return await this.stepD7_VectorizeAndAudit(taskId);
+          case "D8":
+          case "QUEUE":
+          case "ENQUEUE":
+            return await this.stepD8_Enqueue(taskId);
+          default:
+            return { success: false, error: `Unbekannter Step: ${stepName}` };
+        }
+      }
+      /**
+       * Runs Design Creation Pipeline sequentially from a specific step forward
+       */
+      static async runFromStep(taskId, startStep = "D1", owner = "NORMAL") {
+        console.log(`[DesignPipeline] \u{1F680} F\xFChre Design Pipeline ab Step ${startStep} f\xFCr Task ${taskId} aus (Owner: ${owner})...`);
+        if (!TaskExecutionLock.acquire(taskId, owner)) {
+          console.warn(`[DesignPipeline] \u26A0\uFE0F Task ${taskId} wird bereits ausgef\xFChrt (${JSON.stringify(TaskExecutionLock.getLockInfo(taskId))}). Abgebrochen.`);
+          return { success: false, error: `Task ${taskId} is currently executing.` };
+        }
+        try {
+          const stepOrder = ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"];
+          const startIndex = stepOrder.indexOf(startStep);
+          for (let i = startIndex; i < stepOrder.length; i++) {
+            const step = stepOrder[i];
+            if (step === "D1") {
+              await this.stepD1_PreflightTrademark(taskId);
+            } else if (step === "D2") {
+              const r2 = await this.stepD2_GeneratePrompt(taskId);
+              if (!r2.success) return { success: false, currentStep: "D2", error: r2.error };
+            } else if (step === "D3") {
+              const r3 = await this.stepD3_GenerateImage(taskId);
+              if (!r3.success) return { success: false, currentStep: "D3", error: r3.error };
+            } else if (step === "D4") {
+              const r4 = await this.stepD4_AnalyzeDesign(taskId);
+              if (!r4.success) return { success: false, currentStep: "D4", error: r4.error };
+              const task = this.getTask(taskId);
+              const isDefective = task?.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || task?.analysisResult?.overall_verdict === "REJECTED";
+              if (isDefective) {
+                const reason = task?.analysisResult?.design_quality?.quality_issues || "Defective design quality detected";
+                TaskLogService2.updateTaskStatus(taskId, {
+                  status: "AWAITING_DESIGN_REVIEW",
+                  checkpoint: "DESIGN_REVIEW",
+                  hasError: true,
+                  errorDetails: reason
+                });
+                return { success: true, currentStep: "D4", pausedAtCheckpoint: "DESIGN_REVIEW" };
+              }
+            } else if (step === "D5") {
+              const r5 = await this.stepD5_GenerateListing(taskId);
+              if (!r5.success) return { success: false, currentStep: "D5", error: r5.error };
+            } else if (step === "D6") {
+              const r6 = await this.stepD6_TrademarkCheck(taskId);
+              if (!r6.success) return { success: false, currentStep: "D6", error: r6.error };
+              const task = this.getTask(taskId);
+              if (task?.status === "AWAITING_TM_REVIEW") {
+                return { success: true, currentStep: "D6", pausedAtCheckpoint: "TM_REVIEW" };
+              }
+            } else if (step === "D7") {
+              const r7 = await this.stepD7_VectorizeAndAudit(taskId);
+              if (!r7.success) return { success: false, currentStep: "D7", error: r7.error };
+              const task = this.getTask(taskId);
+              if (task?.status === "AWAITING_SVG_REVIEW") {
+                return { success: true, currentStep: "D7", pausedAtCheckpoint: "SVG_REVIEW" };
+              }
+            } else if (step === "D8") {
+              const r8 = await this.stepD8_Enqueue(taskId);
+              if (!r8.success) return { success: false, currentStep: "D8", error: r8.error };
+            }
+          }
+          return { success: true, currentStep: "D8" };
+        } finally {
+          TaskExecutionLock.release(taskId);
+        }
+      }
+      /**
+       * Runs the full Design Creation Pipeline end-to-end
+       */
+      static async runDesignPipeline(taskId) {
+        return await this.runFromStep(taskId, "D1", "NORMAL");
+      }
+    };
+  }
+});
+
+// src/server/services/taskRecoveryService.ts
+var import_fs83, import_path78, TaskRecoveryService;
+var init_taskRecoveryService = __esm2({
+  "src/server/services/taskRecoveryService.ts"() {
+    "use strict";
+    import_fs83 = __toESM2(require("fs"), 1);
+    import_path78 = __toESM2(require("path"), 1);
+    init_queueService();
+    init_taskRepository();
+    init_taskLogService();
+    init_taskExecutionLock();
+    init_assetValidationService();
+    init_designPipelineService();
+    init_updatePipelineService();
+    init_svgRenderService();
+    init_settingsService();
+    init_llmService();
+    TaskRecoveryService = class {
+      static reservedRecoveryJobs = [];
+      static reservedDesignIds = /* @__PURE__ */ new Set();
+      static isWorkerRunning = false;
+      static CANDIDATE_ZOMBIE_STATUSES = [
+        "RECEIVED",
+        "PROCESSING",
+        "PROMPT_READY",
+        "GENERATING_IMAGE",
+        "ANALYZING_DESIGN",
+        "GENERATING_LISTING",
+        "CHECKING_TRADEMARKS",
+        "UPDATE_EXTRACTED",
+        "UPDATE_DOWNLOADING_ARTWORK",
+        "UPDATE_ARTWORK_READY",
+        "UPDATE_ANALYZED",
+        "UPDATE_REWRITING",
+        "UPDATE_REWRITTEN",
+        "UPDATE_TM_CHECKED",
+        "TRANSLATING_LISTING",
+        "VECTORIZING_DESIGN",
+        "UPDATE_TRANSLATED"
+      ];
+      /**
+       * Main recovery and reconciliation entrypoint.
+       * MUST run during server startup before any background schedulers, upload workers, or mutating APIs are allowed.
+       */
+      static initAndReconcile() {
+        const report = {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          queueCorrupted: false,
+          preRemoteUploadsReset: 0,
+          unsafeUploadsEscalated: 0,
+          confirmedUploadsCompleted: 0,
+          legacyUploadsEscalated: 0,
+          tasksLinkedToQueue: 0,
+          orphanQueueItemsWaiting: 0,
+          orphanQueueItemsUploading: 0,
+          tasksWithMissingQueueItem: 0,
+          detectedZombieTasks: 0,
+          candidateZombieTasks: 0,
+          reservedRecoveryJobs: 0,
+          attemptLimitEscalatedTasks: 0,
+          details: []
+        };
+        console.log("[TaskRecovery] \u{1F6E1}\uFE0F Starting Phase P3.1/P3.2 Crash Recovery & Storage Reconciliation...");
+        QueueService.ensureLoaded();
+        if (QueueService.isCorrupted()) {
+          report.queueCorrupted = true;
+          const msg = "CRITICAL: Queue storage is in fail-safe corrupted mode. Auto-recovery and uploads are blocked.";
+          report.details.push(msg);
+          console.error(`[TaskRecovery] \u{1F6A8} ${msg}`);
+          return report;
+        }
+        const queueItems = QueueService.loadQueue();
+        let hasQueueChanges = false;
+        for (const item of queueItems) {
+          if (item.status === "UPLOADING") {
+            const recovery = item.uploadRecovery;
+            if (recovery && recovery.phase) {
+              const preRemotePhases = ["STARTING", "NAVIGATING", "CONFIGURING", "VALIDATING", "READY_TO_SUBMIT"];
+              if (preRemotePhases.includes(recovery.phase)) {
+                item.status = "WAITING";
+                item.uploadRecovery = {
+                  ...recovery,
+                  phase: "STARTING",
+                  attempt: (recovery.attempt || 1) + 1,
+                  recoveryReason: `Recovered from pre-remote interruption in phase ${recovery.phase} (safe to retry)`
+                };
+                hasQueueChanges = true;
+                report.preRemoteUploadsReset++;
+                report.details.push(`Reset pre-remote item ${item.id} (${item.title || item.designTitle}) to WAITING`);
+                console.log(`[TaskRecovery] \u{1F504} Pre-Remote Recovery: Reset item ${item.id} (${recovery.phase}) back to WAITING.`);
+              } else if (recovery.phase === "REMOTE_ACTION_INTENT" || recovery.phase === "AWAITING_AMAZON_CONFIRMATION") {
+                item.status = "ERROR";
+                item.errorMessage = "Upload wurde w\xE4hrend oder nach dem Remote-Submit-Intent unterbrochen. Human Review erforderlich.";
+                item.uploadRecovery = {
+                  ...recovery,
+                  recoveryReason: `Interrupted during/after ${recovery.phase}. Automated retry blocked to prevent duplicate submission.`
+                };
+                hasQueueChanges = true;
+                report.unsafeUploadsEscalated++;
+                report.details.push(`Escalated unsafe item ${item.id} (${item.title || item.designTitle}) in phase ${recovery.phase} to Human Review`);
+                console.warn(`[TaskRecovery] \u26A0\uFE0F Unsafe Remote Intent: Item ${item.id} was in ${recovery.phase}. Escalating to Human Review.`);
+                if (item.taskId) {
+                  const task = TaskRepository.getTaskById(item.taskId);
+                  if (task) {
+                    TaskLogService2.updateTaskStatus(task.id, {
+                      status: "AWAITING_RECOVERY_REVIEW",
+                      checkpoint: "RECOVERY_REVIEW",
+                      hasError: true,
+                      errorDetails: "Upload wurde nach dem Absenden des Remote-Intents an Amazon unterbrochen. Bitte in Amazon Manage pr\xFCfen, ob das Produkt ver\xF6ffentlicht wurde, bevor erneut hochgeladen wird."
+                    });
+                  }
+                }
+              } else if (recovery.phase === "AMAZON_CONFIRMED") {
+                item.status = "COMPLETED";
+                item.uploadRecovery = {
+                  ...recovery,
+                  recoveryReason: "Reconciled to COMPLETED: Amazon confirmation was persisted prior to crash"
+                };
+                hasQueueChanges = true;
+                report.confirmedUploadsCompleted++;
+                report.details.push(`Marked confirmed item ${item.id} (${item.title || item.designTitle}) as COMPLETED`);
+                console.log(`[TaskRecovery] \u2705 Confirmed Recovery: Item ${item.id} was already confirmed by Amazon. Reconciled to COMPLETED.`);
+                if (item.taskId) {
+                  const task = TaskRepository.getTaskById(item.taskId);
+                  if (task && task.status !== "COMPLETED" && task.status !== "UPDATE_QUEUED") {
+                    TaskLogService2.updateTaskStatus(task.id, {
+                      status: task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED",
+                      inQueue: true,
+                      hasError: false
+                    });
+                  }
+                }
+              }
+            } else {
+              item.status = "ERROR";
+              item.errorMessage = "Legacy-Upload ohne Phaseninformation unterbrochen. Human Review erforderlich.";
+              item.uploadRecovery = {
+                phase: "REMOTE_ACTION_INTENT",
+                attempt: 1,
+                recoveryReason: "Legacy item in UPLOADING state without phase metadata. Auto-retry blocked."
+              };
+              hasQueueChanges = true;
+              report.legacyUploadsEscalated++;
+              report.details.push(`Legacy item ${item.id} without phase metadata escalated to Human Review`);
+              console.warn(`[TaskRecovery] \u26A0\uFE0F Legacy Upload Item: ${item.id} has no phase metadata. Escalating to Human Review.`);
+              if (item.taskId) {
+                const task = TaskRepository.getTaskById(item.taskId);
+                if (task) {
+                  TaskLogService2.updateTaskStatus(task.id, {
+                    status: "AWAITING_RECOVERY_REVIEW",
+                    checkpoint: "RECOVERY_REVIEW",
+                    hasError: true,
+                    errorDetails: "Legacy-Task im Status UPLOADING ohne Phaseninformation unterbrochen. Bitte vor erneutem Upload den Amazon-Zustand manuell pr\xFCfen."
+                  });
+                }
+              }
+            }
+          }
+        }
+        const queueTaskIdSet = /* @__PURE__ */ new Set();
+        for (const item of queueItems) {
+          if (item.taskId) {
+            queueTaskIdSet.add(item.taskId);
+            const task = TaskRepository.getTaskById(item.taskId);
+            if (task) {
+              if (!task.inQueue) {
+                const targetStatus = task.status === "COMPLETED" || task.status === "UPDATE_QUEUED" ? task.status : task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED";
+                TaskLogService2.updateTaskStatus(task.id, {
+                  inQueue: true,
+                  status: targetStatus
+                });
+                report.tasksLinkedToQueue++;
+                report.details.push(`Reconciled task ${task.id}: set inQueue=true and status=${targetStatus}`);
+                console.log(`[TaskRecovery] \u{1F517} Reconciled task ${task.id}: linked to existing queue item.`);
+              }
+            } else {
+              if (item.status === "WAITING") {
+                report.orphanQueueItemsWaiting++;
+                report.details.push(`Orphan WAITING queue item found: ${item.id} (task ${item.taskId} not found)`);
+                console.warn(`[TaskRecovery] \u26A0\uFE0F Orphan WAITING queue item: ${item.id} (Task ${item.taskId} missing).`);
+              } else if (item.status === "UPLOADING") {
+                report.orphanQueueItemsUploading++;
+                report.details.push(`Orphan UPLOADING queue item found: ${item.id} (task ${item.taskId} not found)`);
+                console.warn(`[TaskRecovery] \u{1F6A8} Orphan UPLOADING queue item: ${item.id} (preserved without deletion).`);
+              }
+            }
+          }
+        }
+        const inQueueTasks = TaskRepository.getInQueueTasks();
+        for (const task of inQueueTasks) {
+          if (!queueTaskIdSet.has(task.id)) {
+            if (task.status !== "COMPLETED" && task.status !== "UPDATE_QUEUED") {
+              report.tasksWithMissingQueueItem++;
+              report.details.push(`Task ${task.id} has inQueue=true, status=${task.status}, but queue item is missing`);
+              console.warn(`[TaskRecovery] \u26A0\uFE0F Task ${task.id} flagged inQueue=true, but missing from upload_queue.json.`);
+            }
+          }
+        }
+        this.classifyAndPrepareRecoveryJobs(report);
+        if (hasQueueChanges) {
+          try {
+            QueueService.saveQueue();
+            console.log("[TaskRecovery] \u{1F4BE} Queue changes successfully saved to disk.");
+          } catch (err) {
+            console.error("[TaskRecovery] \u274C Failed to save reconciled queue:", err.message);
+            report.details.push(`Failed to save reconciled queue: ${err.message}`);
+          }
+        }
+        console.log(`[TaskRecovery] \u2705 Phase P3.1/P3.2 Reconciliation complete. (${report.reservedRecoveryJobs} reserved jobs, ${report.attemptLimitEscalatedTasks} attempt escalations).`);
+        return report;
+      }
+      /**
+       * Phase P3.2: Classify candidate zombie tasks and reserve them in memory before system becomes ready.
+       * Does NOT increment recoveryAttempts here (increment happens when worker actually starts the task).
+       */
+      static classifyAndPrepareRecoveryJobs(report) {
+        this.reservedRecoveryJobs = [];
+        this.reservedDesignIds.clear();
+        const candidateTasks = TaskRepository.getTasksByStatuses(this.CANDIDATE_ZOMBIE_STATUSES);
+        report.candidateZombieTasks = candidateTasks.length;
+        report.detectedZombieTasks = candidateTasks.length;
+        for (const task of candidateTasks) {
+          if (task.hasError || task.status === "ERROR" || task.status === "COMPLETED" || task.status === "UPDATE_QUEUED" || task.status === "REJECTED") {
+            continue;
+          }
+          if (task.status.startsWith("AWAITING_")) {
+            continue;
+          }
+          const designId = (task.designId || task.payload?.designId || "").trim();
+          const currentAttempts = task.recovery?.recoveryAttempts || 0;
+          if (currentAttempts >= 2) {
+            console.warn(`[TaskRecovery] \u{1F6A8} Task ${task.id} exceeded max recovery attempts (${currentAttempts}). Escalating to AWAITING_RECOVERY_REVIEW.`);
+            TaskLogService2.updateTaskStatus(task.id, {
+              status: "AWAITING_RECOVERY_REVIEW",
+              checkpoint: "RECOVERY_REVIEW",
+              hasError: true,
+              errorDetails: `Maximales Recovery-Limit von 2 Versuchen erreicht. Automatischer Neustart blockiert.`
+            });
+            TaskLogService2.addEvent(task.id, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "RECOVERY_ESCALATED",
+              title: "Recovery-Limit erreicht \u2794 Human Review",
+              content: { attempts: currentAttempts, reason: "RECOVERY_ATTEMPT_LIMIT_REACHED" }
+            });
+            report.attemptLimitEscalatedTasks++;
+            report.details.push(`Task ${task.id} escalated to AWAITING_RECOVERY_REVIEW (attempts: ${currentAttempts})`);
+            continue;
+          }
+          this.reservedRecoveryJobs.push({
+            taskId: task.id,
+            source: task.source,
+            status: task.status,
+            designId: designId || void 0
+          });
+          if (designId) {
+            this.reservedDesignIds.add(designId.toLowerCase());
+          }
+          TaskLogService2.addEvent(task.id, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "RECOVERY_DETECTED",
+            title: "Unterbrochener Pipeline-Task f\xFCr Recovery vorgemerkt",
+            content: { status: task.status, source: task.source, attemptsAlreadyMade: currentAttempts }
+          });
+          report.reservedRecoveryJobs++;
+          report.details.push(`Reserved recovery job for task ${task.id} (${task.source} / ${task.status})`);
+        }
+        console.log(`[TaskRecovery] \u{1F4CB} Reserved ${this.reservedRecoveryJobs.length} recovery jobs (${this.reservedDesignIds.size} unique designs).`);
+      }
+      /**
+       * Returns whether a designId is currently reserved for recovery.
+       * Used by UpdateBackfillService to prevent creating duplicate UPDATE tasks.
+       */
+      static isDesignReserved(designId) {
+        if (!designId) return false;
+        return this.reservedDesignIds.has(designId.trim().toLowerCase());
+      }
+      /**
+       * Returns list of currently reserved design IDs.
+       */
+      static getReservedDesignIds() {
+        return Array.from(this.reservedDesignIds);
+      }
+      /**
+       * Returns list of currently reserved recovery jobs.
+       */
+      static getReservedJobs() {
+        return [...this.reservedRecoveryJobs];
+      }
+      /**
+       * Starts the controlled background recovery worker.
+       * Runs asynchronously after server is ready (isSystemReady = true).
+       */
+      static async startRecoveryQueueWorker(concurrency = 1) {
+        if (this.isWorkerRunning) {
+          console.log("[TaskRecovery] \u2139\uFE0F Recovery Worker is already running.");
+          return;
+        }
+        if (this.reservedRecoveryJobs.length === 0) {
+          console.log("[TaskRecovery] \u2139\uFE0F No reserved recovery jobs to process.");
+          return;
+        }
+        this.isWorkerRunning = true;
+        console.log(`[TaskRecovery] \u2699\uFE0F Starting background recovery worker (${this.reservedRecoveryJobs.length} jobs queued, concurrency: ${concurrency})...`);
+        (async () => {
+          try {
+            while (this.reservedRecoveryJobs.length > 0) {
+              const job = this.reservedRecoveryJobs.shift();
+              if (!job) break;
+              await this.processSingleRecoveryJob(job);
+            }
+          } catch (err) {
+            console.error("[TaskRecovery] \u274C Unhandled error in recovery worker:", err);
+          } finally {
+            this.isWorkerRunning = false;
+            console.log("[TaskRecovery] \u{1F3C1} Recovery worker finished all queued jobs.");
+          }
+        })();
+      }
+      /**
+       * Resets worker state (used in testing).
+       */
+      static resetWorkerStateForTest() {
+        this.isWorkerRunning = false;
+        this.reservedRecoveryJobs = [];
+        this.reservedDesignIds.clear();
+      }
+      /**
+       * Executes recovery for a single reserved task.
+       * Increments recoveryAttempts ONLY here when execution actually starts.
+       */
+      static async processSingleRecoveryJob(job) {
+        const { taskId, source: source12, status } = job;
+        console.log(`[TaskRecovery] \u{1F504} Processing recovery for task ${taskId} (${source12}, ${status})...`);
+        if (!TaskExecutionLock.acquire(taskId, "RECOVERY")) {
+          console.warn(`[TaskRecovery] \u26A0\uFE0F Task ${taskId} is currently locked. Skipping.`);
+          if (job.designId) this.reservedDesignIds.delete(job.designId.toLowerCase());
+          return;
+        }
+        try {
+          const task = TaskLogService2.getTaskLogById(taskId);
+          if (!task) {
+            console.warn(`[TaskRecovery] Task ${taskId} no longer exists. Skipping.`);
+            return;
+          }
+          if (task.status.startsWith("AWAITING_") || task.status === "COMPLETED" || task.status === "UPDATE_QUEUED" || task.status === "ERROR") {
+            console.log(`[TaskRecovery] Task ${taskId} is already in state ${task.status}. No action.`);
+            return;
+          }
+          const currentAttempts = task.recovery?.recoveryAttempts || 0;
+          if (currentAttempts >= 2) {
+            console.warn(`[TaskRecovery] Task ${taskId} reached attempt limit right before execution. Escalating.`);
+            TaskLogService2.updateTaskStatus(taskId, {
+              status: "AWAITING_RECOVERY_REVIEW",
+              checkpoint: "RECOVERY_REVIEW",
+              hasError: true,
+              errorDetails: "Maximales Recovery-Limit von 2 Versuchen erreicht."
+            });
+            return;
+          }
+          const nextAttempt = currentAttempts + 1;
+          const now = (/* @__PURE__ */ new Date()).toISOString();
+          TaskLogService2.updateTaskStatus(taskId, {
+            recovery: {
+              recoveryAttempts: nextAttempt,
+              lastAttemptAt: now,
+              interruptedStatus: task.status,
+              recoveryReason: `Automated recovery attempt ${nextAttempt} started`
+            }
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: now,
+            type: "RECOVERY_STARTED",
+            title: `Recovery-Versuch ${nextAttempt} von 2 gestartet`,
+            content: { previousStatus: task.status, attempt: nextAttempt }
+          });
+          const result2 = await this.executeRecoveryPolicy(task);
+          if (result2.success) {
+            const completedNow = (/* @__PURE__ */ new Date()).toISOString();
+            TaskLogService2.updateTaskStatus(taskId, {
+              recovery: {
+                recoveryAttempts: nextAttempt,
+                lastAttemptAt: now,
+                interruptedStatus: task.status,
+                recoveredAt: completedNow,
+                recoveredSuccessfully: true,
+                recoveryReason: "Automated recovery completed successfully"
+              }
+            });
+            TaskLogService2.addEvent(taskId, {
+              timestamp: completedNow,
+              type: "RECOVERY_COMPLETED",
+              title: `Recovery f\xFCr Task ${taskId} erfolgreich abgeschlossen`,
+              content: { pausedAtCheckpoint: result2.pausedAtCheckpoint }
+            });
+          } else {
+            const failedNow = (/* @__PURE__ */ new Date()).toISOString();
+            TaskLogService2.addEvent(taskId, {
+              timestamp: failedNow,
+              type: "RECOVERY_FAILED",
+              title: `Recovery f\xFCr Task ${taskId} fehlgeschlagen`,
+              content: { error: result2.error }
+            });
+          }
+        } catch (err) {
+          console.error(`[TaskRecovery] \u274C Exception during recovery of task ${taskId}:`, err);
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "RECOVERY_FAILED",
+            title: `Unerwarteter Fehler bei Task-Recovery`,
+            content: { error: err.message }
+          });
+        } finally {
+          TaskExecutionLock.release(taskId);
+          if (job.designId) {
+            this.reservedDesignIds.delete(job.designId.toLowerCase());
+          }
+        }
+      }
+      /**
+       * Evaluates the recovery policy based on (source, status).
+       * Reuses valid existing assets while executing normal decision/review gates.
+       */
+      static async executeRecoveryPolicy(task) {
+        const taskId = task.id;
+        const isUpdate = task.source === "UPDATE" || task.id && task.id.endsWith("-U");
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        console.log(`[TaskRecovery] \u{1F9ED} Policy dispatch for ${taskId} (isUpdate: ${isUpdate}, status: ${task.status})...`);
+        if (isUpdate) {
+          switch (task.status) {
+            case "UPDATE_EXTRACTED":
+              return await UpdatePipelineService.runFromStep(taskId, "U2", "RECOVERY");
+            case "UPDATE_DOWNLOADING_ARTWORK": {
+              const mbaPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+              const rawPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+              const existingPath = task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 5e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(mbaPath, 5e4) ? mbaPath : AssetValidationService.isValidPngImage(rawPath, 5e4) ? rawPath : null;
+              if (existingPath) {
+                TaskLogService2.addEvent(taskId, {
+                  timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                  type: "RECOVERY_ASSET_REUSED",
+                  title: "Master Artwork wiederverwendet",
+                  content: { path: existingPath }
+                });
+                return await UpdatePipelineService.runFromStep(taskId, "U3", "RECOVERY");
+              }
+              return await UpdatePipelineService.runFromStep(taskId, "U2", "RECOVERY");
+            }
+            case "UPDATE_ARTWORK_READY":
+              return await UpdatePipelineService.runFromStep(taskId, "U3", "RECOVERY");
+            case "ANALYZING_DESIGN":
+            case "UPDATE_ANALYZED": {
+              if (task.analysisResult) {
+                TaskLogService2.addEvent(taskId, {
+                  timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                  type: "RECOVERY_ASSET_REUSED",
+                  title: "Analyse-Ergebnis wiederverwendet \u2794 Post-Analysis Gate ausf\xFChren",
+                  content: { analysisResult: task.analysisResult }
+                });
+                const settings2 = loadSettings();
+                const autonomyUpdate = settings2.aiAutonomyUpdateEnabled ?? settings2.aiAutonomyEnabled;
+                const isDefective = task.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || task.analysisResult?.overall_verdict === "REJECTED";
+                const hasRejection = Boolean(task.payload?.hasRejection);
+                if (!autonomyUpdate || isDefective || hasRejection) {
+                  let pauseReason = "Manuelle Freigabe nach Vision Analyse erforderlich";
+                  if (isDefective) {
+                    pauseReason = `Design-Qualit\xE4t mangelhaft (${task.analysisResult?.design_quality?.quality_issues || "Defekt"})`;
+                  } else if (hasRejection) {
+                    pauseReason = "Amazon Rejection erkannt \u2013 Manuelle \xDCberpr\xFCfung empfohlen";
+                  }
+                  TaskLogService2.updateTaskStatus(taskId, {
+                    status: "AWAITING_DESIGN_REVIEW",
+                    checkpoint: "DESIGN_REVIEW",
+                    hasError: isDefective || hasRejection,
+                    errorDetails: isDefective || hasRejection ? pauseReason : void 0
+                  });
+                  return { success: true, pausedAtCheckpoint: "DESIGN_REVIEW" };
+                }
+                return await UpdatePipelineService.runFromStep(taskId, "U4", "RECOVERY");
+              }
+              return await UpdatePipelineService.runFromStep(taskId, "U3", "RECOVERY");
+            }
+            case "GENERATING_LISTING":
+            case "UPDATE_REWRITING":
+            case "UPDATE_REWRITTEN": {
+              if (task.listingResult?.en?.title && task.listingResult?.en?.brand) {
+                TaskLogService2.addEvent(taskId, {
+                  timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                  type: "RECOVERY_ASSET_REUSED",
+                  title: "Rewritten Listing wiederverwendet",
+                  content: { listing: task.listingResult.en }
+                });
+                return await UpdatePipelineService.runFromStep(taskId, "U5", "RECOVERY");
+              }
+              return await UpdatePipelineService.runFromStep(taskId, "U4", "RECOVERY");
+            }
+            case "CHECKING_TRADEMARKS":
+            case "UPDATE_TM_CHECKED": {
+              if (task.status === "UPDATE_TM_CHECKED") {
+                const settings2 = loadSettings();
+                const translationEnabled = settings2.translationUpdateEnabled !== false;
+                return await UpdatePipelineService.runFromStep(taskId, translationEnabled ? "U6" : "U7", "RECOVERY");
+              }
+              return await UpdatePipelineService.runFromStep(taskId, "U5", "RECOVERY");
+            }
+            case "TRANSLATING_LISTING":
+            case "UPDATE_TRANSLATED": {
+              if (task.listingResult?.de && task.listingResult?.fr && task.listingResult?.es && task.listingResult?.it && task.listingResult?.ja) {
+                TaskLogService2.addEvent(taskId, {
+                  timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                  type: "RECOVERY_ASSET_REUSED",
+                  title: "\xDCbersetzungen wiederverwendet",
+                  content: { languages: ["de", "fr", "es", "it", "ja"] }
+                });
+                return await UpdatePipelineService.runFromStep(taskId, "U7", "RECOVERY");
+              }
+              return await UpdatePipelineService.runFromStep(taskId, "U6", "RECOVERY");
+            }
+            default:
+              console.warn(`[TaskRecovery] No automated recovery policy for UPDATE task in status: ${task.status}.`);
+              return { success: false, error: `Unsupported UPDATE status: ${task.status}` };
+          }
+        }
+        switch (task.status) {
+          case "RECEIVED":
+          case "PROCESSING":
+            return await DesignPipelineService.runFromStep(taskId, "D1", "RECOVERY");
+          case "PROMPT_READY":
+            return await DesignPipelineService.runFromStep(taskId, "D3", "RECOVERY");
+          case "GENERATING_IMAGE": {
+            const rawPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+            const targetPng = task.localImagePath && AssetValidationService.isValidPngImage(task.localImagePath, 1e4) ? task.localImagePath : task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 1e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(rawPath, 1e4) ? rawPath : null;
+            if (targetPng) {
+              TaskLogService2.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "RECOVERY_ASSET_REUSED",
+                title: "Vorhandenes Design-Bild wiederverwendet",
+                content: { path: targetPng }
+              });
+              return await DesignPipelineService.runFromStep(taskId, "D4", "RECOVERY");
+            }
+            return await DesignPipelineService.runFromStep(taskId, "D3", "RECOVERY");
+          }
+          case "ANALYZING_DESIGN": {
+            if (task.analysisResult) {
+              TaskLogService2.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "RECOVERY_ASSET_REUSED",
+                title: "Analyse-Ergebnis wiederverwendet \u2794 Post-Analysis Gate ausf\xFChren",
+                content: { analysisResult: task.analysisResult }
+              });
+              const isDefective = task.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || task.analysisResult?.overall_verdict === "REJECTED";
+              if (isDefective) {
+                const reason = task.analysisResult?.design_quality?.quality_issues || "Defective design quality detected";
+                TaskLogService2.updateTaskStatus(taskId, {
+                  status: "AWAITING_DESIGN_REVIEW",
+                  checkpoint: "DESIGN_REVIEW",
+                  hasError: true,
+                  errorDetails: reason
+                });
+                return { success: true, pausedAtCheckpoint: "DESIGN_REVIEW" };
+              }
+              return await DesignPipelineService.runFromStep(taskId, "D5", "RECOVERY");
+            }
+            return await DesignPipelineService.runFromStep(taskId, "D4", "RECOVERY");
+          }
+          case "GENERATING_LISTING": {
+            if (task.listingResult?.en?.title && task.listingResult?.en?.brand) {
+              TaskLogService2.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "RECOVERY_ASSET_REUSED",
+                title: "Generiertes Listing wiederverwendet",
+                content: { listing: task.listingResult.en }
+              });
+              return await DesignPipelineService.runFromStep(taskId, "D6", "RECOVERY");
+            }
+            return await DesignPipelineService.runFromStep(taskId, "D5", "RECOVERY");
+          }
+          case "CHECKING_TRADEMARKS": {
+            return await DesignPipelineService.runFromStep(taskId, "D6", "RECOVERY");
+          }
+          case "VECTORIZING_DESIGN": {
+            const svgPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+            const targetSvg = task.localSvgPath && AssetValidationService.isValidSvgFile(task.localSvgPath, 20) ? task.localSvgPath : AssetValidationService.isValidSvgFile(svgPath, 20) ? svgPath : null;
+            if (targetSvg) {
+              TaskLogService2.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "RECOVERY_ASSET_REUSED",
+                title: "SVG-Vektordatei wiederverwendet \u2794 Post-Vectorization Audit ausf\xFChren",
+                content: { path: targetSvg }
+              });
+              try {
+                const svgContent = import_fs83.default.readFileSync(targetSvg, "utf-8");
+                const fourPanelFilename = `${cleanId}_4panel.png`;
+                const fourPanelFilePath = import_path78.default.resolve(process.cwd(), "data", "designs", fourPanelFilename);
+                const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgContent);
+                import_fs83.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+                const auditRes = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
+                if (auditRes.cutout_verdict === "REJECTED") {
+                  console.log(`[TaskRecovery] \u23F8\uFE0F SVG Audit verlangt manuelle \xDCberpr\xFCfung f\xFCr Task ${taskId}. Pausiere bei AWAITING_SVG_REVIEW.`);
+                  TaskLogService2.updateTaskStatus(taskId, {
+                    status: "AWAITING_SVG_REVIEW",
+                    checkpoint: "SVG_REVIEW",
+                    hasError: true,
+                    errorDetails: auditRes.explanation || auditRes.detected_issues?.join(", ") || "Cutout audit requires human review"
+                  });
+                  return { success: true, pausedAtCheckpoint: "SVG_REVIEW" };
+                }
+                const mbaFilename = `${cleanId}_mba.png`;
+                const mbaFilePath = import_path78.default.resolve(process.cwd(), "data", "designs", mbaFilename);
+                if (!AssetValidationService.isValidPngImage(mbaFilePath, 5e4)) {
+                  const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgContent);
+                  import_fs83.default.writeFileSync(mbaFilePath, mbaBuffer);
+                  TaskLogService2.updateTaskStatus(taskId, { localMbaPngPath: mbaFilePath });
+                }
+                return await DesignPipelineService.stepD8_Enqueue(taskId);
+              } catch (err) {
+                console.warn(`[TaskRecovery] Cutout-Audit f\xFCr wiederverwendetes SVG fehlgeschlagen:`, err.message);
+              }
+            }
+            return await DesignPipelineService.runFromStep(taskId, "D7", "RECOVERY");
+          }
+          default:
+            console.warn(`[TaskRecovery] No automated recovery policy for DESIGN task in status: ${task.status}.`);
+            return { success: false, error: `Unsupported DESIGN status: ${task.status}` };
+        }
+      }
+    };
+  }
+});
+
 // src/server/services/updateBackfillService.ts
 var updateBackfillService_exports = {};
 __export2(updateBackfillService_exports, {
@@ -225105,6 +224967,7 @@ var init_updateBackfillService = __esm2({
     init_taskLogService();
     init_updatePipelineService();
     init_llmService();
+    init_taskRecoveryService();
     UpdateBackfillService = class {
       static inFlightDesigns = /* @__PURE__ */ new Set();
       static isRunningLoop = false;
@@ -225114,7 +224977,7 @@ var init_updateBackfillService = __esm2({
       // 5 Minuten Drosselung
       /**
        * Collect all design IDs that must NOT be pulled again
-       * (Already in Queue, active in Tasks, or currently in flight)
+       * (Already in Queue, active in Tasks, currently in flight, or reserved for recovery)
        */
       static getExcludedDesignIds(extraExcludedIds) {
         const excluded = /* @__PURE__ */ new Set();
@@ -225137,6 +225000,9 @@ var init_updateBackfillService = __esm2({
         const activeIds = TaskLogService2.getActiveUpdateDesignIds();
         for (const id of activeIds) {
           excluded.add(id);
+        }
+        for (const resId of TaskRecoveryService.getReservedDesignIds()) {
+          if (resId) excluded.add(resId.trim());
         }
         return excluded;
       }
@@ -225241,6 +225107,9 @@ var init_updateBackfillService = __esm2({
         }
         for (const inflightId of this.inFlightDesigns) {
           if (inflightId) uniqueDesignIds.add(inflightId.trim().toLowerCase());
+        }
+        for (const resId of TaskRecoveryService.getReservedDesignIds()) {
+          if (resId) uniqueDesignIds.add(resId.trim().toLowerCase());
         }
         return {
           currentCount: uniqueDesignIds.size,
@@ -225397,12 +225266,12 @@ function normalizeCatalogProductId(raw) {
   const matched = ProductCatalogService.findProductByAmazonKey(s);
   return matched ? matched.id : s;
 }
-var import_fs83, import_path78, NON_US_DROP_ORDER, QueueService;
+var import_fs84, import_path79, NON_US_DROP_ORDER, QueueService;
 var init_queueService = __esm2({
   "src/server/services/queueService.ts"() {
     "use strict";
-    import_fs83 = __toESM2(require("fs"), 1);
-    import_path78 = __toESM2(require("path"), 1);
+    import_fs84 = __toESM2(require("fs"), 1);
+    import_path79 = __toESM2(require("path"), 1);
     init_productCatalogService();
     init_listingSanitizationService();
     init_settingsService();
@@ -225410,16 +225279,16 @@ var init_queueService = __esm2({
     init_atomicFileStorage();
     NON_US_DROP_ORDER = ["JP", "ES", "IT", "FR", "DE", "GB"];
     QueueService = class {
-      static queueFilePath = import_path78.default.resolve(process.cwd(), "data", "upload_queue.json");
+      static queueFilePath = import_path79.default.resolve(process.cwd(), "data", "upload_queue.json");
       static items = [];
       static isLoaded = false;
       static isStorageCorrupted = false;
       static dailySlotsInfo = { free: 200, used: 0, total: 200 };
       static setCustomQueuePath(customPath) {
         if (customPath) {
-          this.queueFilePath = import_path78.default.resolve(customPath);
+          this.queueFilePath = import_path79.default.resolve(customPath);
         } else {
-          this.queueFilePath = import_path78.default.resolve(process.cwd(), "data", "upload_queue.json");
+          this.queueFilePath = import_path79.default.resolve(process.cwd(), "data", "upload_queue.json");
         }
         this.isLoaded = false;
         this.isStorageCorrupted = false;
@@ -225437,7 +225306,7 @@ var init_queueService = __esm2({
        */
       static loadQueue() {
         try {
-          if (import_fs83.default.existsSync(this.queueFilePath)) {
+          if (import_fs84.default.existsSync(this.queueFilePath)) {
             const recovery = loadJsonWithBackupRecovery(this.queueFilePath, {
               backupExt: ".bak",
               validate: (data) => Array.isArray(data),
@@ -226327,11 +226196,11 @@ var finalizationService_exports = {};
 __export2(finalizationService_exports, {
   FinalizationService: () => FinalizationService
 });
-var import_fs84, FinalizationService;
+var import_fs85, FinalizationService;
 var init_finalizationService = __esm2({
   "src/server/services/finalizationService.ts"() {
     "use strict";
-    import_fs84 = __toESM2(require("fs"), 1);
+    import_fs85 = __toESM2(require("fs"), 1);
     init_taskLogService();
     init_queueService();
     init_listingSanitizationService();
@@ -226446,7 +226315,7 @@ var init_finalizationService = __esm2({
           title: "\u{1F4D0} Artwork-Vorbereitung (Alpha Trim & Two-Sided Resizes)...",
           content: { phase: "ARTWORK_PREPARATION", status: "RUNNING" }
         });
-        if (!masterPngPath || !import_fs84.default.existsSync(masterPngPath)) {
+        if (!masterPngPath || !import_fs85.default.existsSync(masterPngPath)) {
           const err = `Master-Artwork nicht gefunden unter: ${masterPngPath}`;
           console.error(`[FinalizationService] \u274C ${err}`);
           TaskLogService2.addEvent(taskId, {
@@ -226459,7 +226328,7 @@ var init_finalizationService = __esm2({
           return { success: false, error: err };
         }
         let resizedAssets = task?.resizedAssets;
-        const areAssetsValid = resizedAssets && resizedAssets.trimmedPath && import_fs84.default.existsSync(resizedAssets.trimmedPath) && resizedAssets.mugStandardPath && import_fs84.default.existsSync(resizedAssets.mugStandardPath) && resizedAssets.mugBrushPath && import_fs84.default.existsSync(resizedAssets.mugBrushPath) && resizedAssets.drinkwareStandardPath && import_fs84.default.existsSync(resizedAssets.drinkwareStandardPath) && resizedAssets.drinkwareBrushPath && import_fs84.default.existsSync(resizedAssets.drinkwareBrushPath);
+        const areAssetsValid = resizedAssets && resizedAssets.trimmedPath && import_fs85.default.existsSync(resizedAssets.trimmedPath) && resizedAssets.mugStandardPath && import_fs85.default.existsSync(resizedAssets.mugStandardPath) && resizedAssets.mugBrushPath && import_fs85.default.existsSync(resizedAssets.mugBrushPath) && resizedAssets.drinkwareStandardPath && import_fs85.default.existsSync(resizedAssets.drinkwareStandardPath) && resizedAssets.drinkwareBrushPath && import_fs85.default.existsSync(resizedAssets.drinkwareBrushPath);
         if (areAssetsValid) {
           console.log(`[FinalizationService] \u26A1 Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
         } else {
@@ -226486,7 +226355,7 @@ var init_finalizationService = __esm2({
           { name: "Drinkware Brush", path: resizedAssets.drinkwareBrushPath }
         ];
         for (const f of requiredFiles) {
-          if (!f.path || !import_fs84.default.existsSync(f.path)) {
+          if (!f.path || !import_fs85.default.existsSync(f.path)) {
             const err = `Generiertes Asset "${f.name}" nicht auf Disk gefunden: ${f.path}`;
             console.error(`[FinalizationService] \u274C ${err}`);
             TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
@@ -226610,12 +226479,17 @@ var init_finalizationService = __esm2({
 });
 
 // src/server/services/taskLogService.ts
-var import_fs85, import_path79, TaskLogService2;
+var taskLogService_exports = {};
+__export2(taskLogService_exports, {
+  TaskLogService: () => TaskLogService2,
+  toTaskSummary: () => toTaskSummary
+});
+var import_fs86, import_path80, TaskLogService2;
 var init_taskLogService = __esm2({
   "src/server/services/taskLogService.ts"() {
     "use strict";
-    import_fs85 = __toESM2(require("fs"), 1);
-    import_path79 = __toESM2(require("path"), 1);
+    import_fs86 = __toESM2(require("fs"), 1);
+    import_path80 = __toESM2(require("path"), 1);
     init_settingsService();
     init_systemPromptService();
     init_ideogramService();
@@ -226632,7 +226506,7 @@ var init_taskLogService = __esm2({
     init_tasks();
     init_tasks();
     TaskLogService2 = class {
-      static dataDir = import_path79.default.resolve(process.cwd(), "data");
+      static dataDir = import_path80.default.resolve(process.cwd(), "data");
       static eventBroadcaster = null;
       static setBroadcaster(fn) {
         this.eventBroadcaster = fn;
@@ -227105,23 +226979,23 @@ ${JSON.stringify(task.payload, null, 2)}`;
           });
           const latencyMs = Date.now() - start3;
           const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-          const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs85.default.existsSync(designsDir)) {
+          const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs86.default.existsSync(designsDir)) {
             try {
-              import_fs85.default.mkdirSync(designsDir, { recursive: true });
+              import_fs86.default.mkdirSync(designsDir, { recursive: true });
             } catch (e) {
             }
           }
           const localFilename = `${cleanId}.png`;
-          const localFilePath = import_path79.default.join(designsDir, localFilename);
+          const localFilePath = import_path80.default.join(designsDir, localFilename);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
           try {
             const imgRes = await fetch(result2.imageUrl);
             if (imgRes.ok) {
               const arrayBuffer = await imgRes.arrayBuffer();
-              import_fs85.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
+              import_fs86.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
               console.log(`[TaskLogService] \u{1F4BE} Bild f\xFCr Task ${taskId} lokal gespeichert: ${localFilePath}`);
-              const previewFilePath = import_path79.default.join(designsDir, `${cleanId}.u4-preview.png`);
+              const previewFilePath = import_path80.default.join(designsDir, `${cleanId}.u4-preview.png`);
               VisionOptimizationService.prepareU4PreviewImage(localFilePath, previewFilePath).catch((err) => {
                 console.warn(`[TaskLogService] Background preview pre-generation failed for ${taskId}:`, err.message);
               });
@@ -227215,7 +227089,7 @@ Beantworte die Analysefragen streng als JSON!`;
           }
         });
         let imageSource = imageUrl;
-        if (import_fs85.default.existsSync(localFilePath)) {
+        if (import_fs86.default.existsSync(localFilePath)) {
           try {
             const { base64DataUrl } = await VisionOptimizationService.prepareVisionImage(localFilePath);
             imageSource = base64DataUrl || imageSource;
@@ -227362,18 +227236,18 @@ Beantworte die Analysefragen streng als JSON!`;
         const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "Men, Women, Youth";
         const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || "None";
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-        const previewFilePath = import_path79.default.join(designsDir, `${cleanId}.u4-preview.png`);
-        const mbaFilePath = import_path79.default.join(designsDir, `${cleanId}_mba.png`);
-        const rawFilePath = import_path79.default.join(designsDir, `${cleanId}.png`);
-        const targetOriginalPath = task.localMbaPngPath && import_fs85.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs85.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs85.default.existsSync(rawFilePath) ? rawFilePath : void 0;
+        const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+        const previewFilePath = import_path80.default.join(designsDir, `${cleanId}.u4-preview.png`);
+        const mbaFilePath = import_path80.default.join(designsDir, `${cleanId}_mba.png`);
+        const rawFilePath = import_path80.default.join(designsDir, `${cleanId}.png`);
+        const targetOriginalPath = task.localMbaPngPath && import_fs86.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task.localImagePath && import_fs86.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs86.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs86.default.existsSync(rawFilePath) ? rawFilePath : void 0;
         let listingImageBase64 = void 0;
         let listingImageSourceType = "NONE";
         let optimizationMeta = void 0;
         if (targetOriginalPath) {
-          if (import_fs85.default.existsSync(previewFilePath)) {
+          if (import_fs86.default.existsSync(previewFilePath)) {
             try {
-              const previewBuf = import_fs85.default.readFileSync(previewFilePath);
+              const previewBuf = import_fs86.default.readFileSync(previewFilePath);
               if (previewBuf.length > 500) {
                 listingImageBase64 = `data:image/png;base64,${previewBuf.toString("base64")}`;
                 listingImageSourceType = "PREVIEW_1125x1350";
@@ -227410,7 +227284,7 @@ Beantworte die Analysefragen streng als JSON!`;
           if (!listingImageBase64) {
             try {
               console.warn(`[TaskLogService] \u{1F504} FALLBACK: Verwende Originalbild f\xFCr Listing-Vision-Call (${targetOriginalPath})...`);
-              const origBuf = import_fs85.default.readFileSync(targetOriginalPath);
+              const origBuf = import_fs86.default.readFileSync(targetOriginalPath);
               listingImageBase64 = `data:image/png;base64,${origBuf.toString("base64")}`;
               listingImageSourceType = "ORIGINAL_FALLBACK";
               optimizationMeta = {
@@ -227729,8 +227603,8 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         const maxColors = task.customAnswers?.maxColors ?? task.analysisResult?.color_analysis?.color_count ?? 2;
         const cleanId = task.id.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const localImagePath = task.localImagePath || import_path79.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const hasLocalImage = import_fs85.default.existsSync(localImagePath);
+        const localImagePath = task.localImagePath || import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const hasLocalImage = import_fs86.default.existsSync(localImagePath);
         if (!hasLocalImage && !task.imageUrl) {
           console.warn(`[TaskLogService] \u26A0\uFE0F Kein Bild f\xFCr Vektorisierung bei Task ${taskId} gefunden.`);
           this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
@@ -227761,25 +227635,25 @@ Beantworte die Analysefragen streng als JSON!`;
         try {
           let svgText = "";
           if (hasLocalImage) {
-            const buffer = import_fs85.default.readFileSync(localImagePath);
+            const buffer = import_fs86.default.readFileSync(localImagePath);
             svgText = await VectorizerService.vectorizeBuffer(buffer, "image/png", false, { maxColors });
           } else if (task.imageUrl) {
             svgText = await VectorizerService.vectorizeImage(task.imageUrl, false, { maxColors });
           }
           const latencyMs = Date.now() - start3;
-          const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs85.default.existsSync(designsDir)) {
+          const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs86.default.existsSync(designsDir)) {
             try {
-              import_fs85.default.mkdirSync(designsDir, { recursive: true });
+              import_fs86.default.mkdirSync(designsDir, { recursive: true });
             } catch (e) {
             }
           }
           const origFilename = `${cleanId}_original.svg`;
-          const origFilePath = import_path79.default.join(designsDir, origFilename);
-          import_fs85.default.writeFileSync(origFilePath, svgText, "utf-8");
+          const origFilePath = import_path80.default.join(designsDir, origFilename);
+          import_fs86.default.writeFileSync(origFilePath, svgText, "utf-8");
           const svgFilename = `${cleanId}.svg`;
-          const svgFilePath = import_path79.default.join(designsDir, svgFilename);
-          import_fs85.default.writeFileSync(svgFilePath, svgText, "utf-8");
+          const svgFilePath = import_path80.default.join(designsDir, svgFilename);
+          import_fs86.default.writeFileSync(svgFilePath, svgText, "utf-8");
           const ts = Date.now();
           const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}?t=${ts}`;
           const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${ts}`;
@@ -227813,7 +227687,7 @@ Beantworte die Analysefragen streng als JSON!`;
             const bgResult = await SvgRenderService.autoRemoveCornerBackground(svgText);
             if (bgResult.success && bgResult.removedCount > 0) {
               svgText = bgResult.modifiedSvg;
-              import_fs85.default.writeFileSync(svgFilePath, svgText, "utf-8");
+              import_fs86.default.writeFileSync(svgFilePath, svgText, "utf-8");
               task.svgContent = svgText;
               this.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -227827,9 +227701,9 @@ Beantworte die Analysefragen streng als JSON!`;
             }
             console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Multifarben-Testbild f\xFCr Task ${taskId}...`);
             const fourPanelFilename = `${cleanId}_4panel.png`;
-            const fourPanelFilePath = import_path79.default.join(designsDir, fourPanelFilename);
+            const fourPanelFilePath = import_path80.default.join(designsDir, fourPanelFilename);
             const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-            import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+            import_fs86.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
             const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${Date.now()}`;
             task.localFourPanelImagePath = fourPanelFilePath;
             task.fourPanelImageUrl = fourPanelUrl;
@@ -227868,9 +227742,9 @@ Beantworte die Analysefragen streng als JSON!`;
             if (auditResult.cutout_verdict === "APPROVED") {
               console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
               const mbaFilename = `${cleanId}_mba.png`;
-              const mbaFilePath = import_path79.default.join(designsDir, mbaFilename);
+              const mbaFilePath = import_path80.default.join(designsDir, mbaFilename);
               const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgText);
-              import_fs85.default.writeFileSync(mbaFilePath, mbaBuffer);
+              import_fs86.default.writeFileSync(mbaFilePath, mbaBuffer);
               const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
               task.localMbaPngPath = mbaFilePath;
               task.mbaPngUrl = mbaUrl;
@@ -227922,9 +227796,9 @@ Beantworte die Analysefragen streng als JSON!`;
           } else {
             try {
               const fourPanelFilename = `${cleanId}_4panel.png`;
-              const fourPanelFilePath = import_path79.default.join(designsDir, fourPanelFilename);
+              const fourPanelFilePath = import_path80.default.join(designsDir, fourPanelFilename);
               const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-              import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+              import_fs86.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
               task.localFourPanelImagePath = fourPanelFilePath;
               task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
             } catch (e) {
@@ -228202,15 +228076,15 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         let deletedFiles = 0;
         try {
-          const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-          if (import_fs85.default.existsSync(designsDir)) {
-            const files = import_fs85.default.readdirSync(designsDir);
+          const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+          if (import_fs86.default.existsSync(designsDir)) {
+            const files = import_fs86.default.readdirSync(designsDir);
             for (const file of files) {
               if (file === ".gitkeep") continue;
               try {
-                const filePath = import_path79.default.join(designsDir, file);
-                if (import_fs85.default.statSync(filePath).isFile()) {
-                  import_fs85.default.unlinkSync(filePath);
+                const filePath = import_path80.default.join(designsDir, file);
+                if (import_fs86.default.statSync(filePath).isFile()) {
+                  import_fs86.default.unlinkSync(filePath);
                   deletedFiles++;
                 }
               } catch (e) {
@@ -228221,15 +228095,15 @@ Beantworte die Analysefragen streng als JSON!`;
           console.warn("[TaskLogService] Konnte data/designs/ nicht leeren:", err);
         }
         try {
-          const dataDir = import_path79.default.resolve(process.cwd(), "data");
-          if (import_fs85.default.existsSync(dataDir)) {
-            const files = import_fs85.default.readdirSync(dataDir);
+          const dataDir = import_path80.default.resolve(process.cwd(), "data");
+          if (import_fs86.default.existsSync(dataDir)) {
+            const files = import_fs86.default.readdirSync(dataDir);
             for (const file of files) {
               if (file.endsWith("_grid2x2.jpg") || file.endsWith(".u4-preview.png") || file.endsWith("_mba.png") || file.endsWith("_orig.svg") || file.endsWith("_4panel.jpg") || file.endsWith(".svg") || file.startsWith("test_")) {
                 try {
-                  const filePath = import_path79.default.join(dataDir, file);
-                  if (import_fs85.default.statSync(filePath).isFile()) {
-                    import_fs85.default.unlinkSync(filePath);
+                  const filePath = import_path80.default.join(dataDir, file);
+                  if (import_fs86.default.statSync(filePath).isFile()) {
+                    import_fs86.default.unlinkSync(filePath);
                     deletedFiles++;
                   }
                 } catch (e) {
@@ -228253,10 +228127,10 @@ Beantworte die Analysefragen streng als JSON!`;
         if (deleted) {
           try {
             const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-            const imgPath = import_path79.default.resolve(process.cwd(), "data", "designs", `${safeId}.png`);
-            if (import_fs85.default.existsSync(imgPath)) import_fs85.default.unlinkSync(imgPath);
-            const previewPath = import_path79.default.resolve(process.cwd(), "data", "designs", `${safeId}.u4-preview.png`);
-            if (import_fs85.default.existsSync(previewPath)) import_fs85.default.unlinkSync(previewPath);
+            const imgPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${safeId}.png`);
+            if (import_fs86.default.existsSync(imgPath)) import_fs86.default.unlinkSync(imgPath);
+            const previewPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${safeId}.u4-preview.png`);
+            if (import_fs86.default.existsSync(previewPath)) import_fs86.default.unlinkSync(previewPath);
           } catch (e) {
           }
           if (this.eventBroadcaster) {
@@ -228608,17 +228482,17 @@ Beantworte die Analysefragen streng als JSON!`;
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
+        const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
         if (params2.action === "APPROVE") {
           if (params2.editedSvgContent) {
-            if (!import_fs85.default.existsSync(designsDir)) {
+            if (!import_fs86.default.existsSync(designsDir)) {
               try {
-                import_fs85.default.mkdirSync(designsDir, { recursive: true });
+                import_fs86.default.mkdirSync(designsDir, { recursive: true });
               } catch (e) {
               }
             }
-            const svgFilePath = import_path79.default.join(designsDir, `${cleanId}.svg`);
-            import_fs85.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
+            const svgFilePath = import_path80.default.join(designsDir, `${cleanId}.svg`);
+            import_fs86.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
             task.svgContent = params2.editedSvgContent;
             task.localSvgPath = svgFilePath;
             task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
@@ -228627,8 +228501,8 @@ Beantworte die Analysefragen streng als JSON!`;
           const ts = Date.now();
           console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Testbild nach SVG-Freigabe f\xFCr Task ${taskId}...`);
           const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
-          const fourPanelFilePath = import_path79.default.join(designsDir, `${cleanId}_4panel.png`);
-          import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+          const fourPanelFilePath = import_path80.default.join(designsDir, `${cleanId}_4panel.png`);
+          import_fs86.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
           task.localFourPanelImagePath = fourPanelFilePath;
           const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
           task.fourPanelImageUrl = fourPanelUrl;
@@ -228667,8 +228541,8 @@ Beantworte die Analysefragen streng als JSON!`;
           if (auditResult.cutout_verdict === "APPROVED") {
             console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
             const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
-            const mbaFilePath = import_path79.default.join(designsDir, `${cleanId}_mba.png`);
-            import_fs85.default.writeFileSync(mbaFilePath, mbaBuffer);
+            const mbaFilePath = import_path80.default.join(designsDir, `${cleanId}_mba.png`);
+            import_fs86.default.writeFileSync(mbaFilePath, mbaBuffer);
             task.localMbaPngPath = mbaFilePath;
             task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
             this.addEvent(taskId, {
@@ -228776,14 +228650,14 @@ Beantworte die Analysefragen streng als JSON!`;
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-        const origFilePath = import_path79.default.join(designsDir, `${cleanId}_original.svg`);
-        const svgFilePath = import_path79.default.join(designsDir, `${cleanId}.svg`);
-        if (!import_fs85.default.existsSync(origFilePath)) {
+        const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+        const origFilePath = import_path80.default.join(designsDir, `${cleanId}_original.svg`);
+        const svgFilePath = import_path80.default.join(designsDir, `${cleanId}.svg`);
+        if (!import_fs86.default.existsSync(origFilePath)) {
           throw new Error(`Original-SVG f\xFCr Task ${taskId} nicht gefunden.`);
         }
-        const originalSvgContent = import_fs85.default.readFileSync(origFilePath, "utf-8");
-        import_fs85.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
+        const originalSvgContent = import_fs86.default.readFileSync(origFilePath, "utf-8");
+        import_fs86.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
         task.svgContent = originalSvgContent;
         task.localSvgPath = svgFilePath;
         task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
@@ -228793,6 +228667,1312 @@ Beantworte die Analysefragen streng als JSON!`;
           success: true,
           svgContent: originalSvgContent,
           message: "SVG erfolgreich auf Originalzustand zur\xFCckgesetzt."
+        };
+      }
+    };
+  }
+});
+
+// src/server/services/trademarkService.ts
+var COMMON_STOP_WORDS, TrademarkService;
+var init_trademarkService = __esm2({
+  "src/server/services/trademarkService.ts"() {
+    "use strict";
+    init_settingsService();
+    init_productCatalogService();
+    init_trademarkWhitelistService();
+    init_llmService();
+    init_listingValidationService();
+    COMMON_STOP_WORDS = /* @__PURE__ */ new Set([
+      "the",
+      "and",
+      "for",
+      "with",
+      "this",
+      "that",
+      "from",
+      "your",
+      "have",
+      "are",
+      "was",
+      "were",
+      "will",
+      "been",
+      "each",
+      "when",
+      "into",
+      "just",
+      "more",
+      "some",
+      "than",
+      "them",
+      "then",
+      "they",
+      "what",
+      "which",
+      "who",
+      "will",
+      "shirt",
+      "tshirt",
+      "t-shirt",
+      "apparel",
+      "gift",
+      "ideas",
+      "great",
+      "cool",
+      "love",
+      "lovers",
+      "graphic",
+      "design",
+      "men",
+      "women",
+      "kids",
+      "boys",
+      "girls",
+      "youth",
+      "funny",
+      "retro",
+      "vintage",
+      "classic"
+    ]);
+    TrademarkService = class _TrademarkService {
+      /**
+       * Test connection to Productor Trademark APIs
+       */
+      static async testConnection() {
+        const settings2 = loadSettings();
+        const start3 = Date.now();
+        try {
+          const fd = new FormData();
+          fd.append("trademarks", JSON.stringify(["nike"]));
+          const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
+            method: "POST",
+            headers: {
+              "Authorization": settings2.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+              "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
+            },
+            body: fd,
+            signal: AbortSignal.timeout(6e3)
+          });
+          const latencyMs = Date.now() - start3;
+          if (res.ok) {
+            return { success: true, latencyMs };
+          }
+          return { success: false, latencyMs, error: `USPTO API antwortet mit HTTP ${res.status}` };
+        } catch (err) {
+          return { success: false, latencyMs: Date.now() - start3, error: err.message || "Verbindungs-Timeout" };
+        }
+      }
+      /**
+       * Parse office inputs (e.g. 'USPTO', 'EUIPO', 'DPMA' or fallback 'US', 'DE', 'EU')
+       */
+      static normalizeOffices(input, marketplace) {
+        const rawList = [];
+        if (Array.isArray(input)) {
+          rawList.push(...input);
+        } else if (typeof input === "string" && input.trim()) {
+          rawList.push(...input.split(",").map((s) => s.trim()));
+        } else if (marketplace && typeof marketplace === "string") {
+          rawList.push(marketplace.trim());
+        }
+        const offices = /* @__PURE__ */ new Set();
+        for (const raw of rawList) {
+          const up = raw.toUpperCase();
+          if (up === "USPTO" || up === "US" || up === "COM") {
+            offices.add("USPTO");
+          } else if (up === "EUIPO" || up === "EU" || up === "UK" || up === "GB" || up === "FR" || up === "IT" || up === "ES") {
+            offices.add("EUIPO");
+          } else if (up === "DPMA" || up === "DE") {
+            offices.add("DPMA");
+            offices.add("EUIPO");
+          }
+        }
+        if (offices.size === 0) {
+          offices.add("USPTO");
+        }
+        return Array.from(offices);
+      }
+      /**
+       * Extract search terms from text: full phrase + n-grams + individual significant keywords
+       */
+      static extractTermsFromText(text2) {
+        if (!text2 || typeof text2 !== "string") return [];
+        const trimmed = text2.trim();
+        if (trimmed.length < 2) return [];
+        const terms = /* @__PURE__ */ new Set();
+        if (trimmed.length <= 60) {
+          terms.add(trimmed.toLowerCase());
+        }
+        const words = trimmed.split(/[\s,.;:!?/()"\-+]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter((w) => w.length >= 3);
+        for (const w of words) {
+          if (w.length >= 4 && !COMMON_STOP_WORDS.has(w)) {
+            terms.add(w);
+          }
+        }
+        for (let i = 0; i < words.length - 1; i++) {
+          const twoGram = `${words[i]} ${words[i + 1]}`;
+          terms.add(twoGram);
+          if (i < words.length - 2) {
+            const threeGram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
+            terms.add(threeGram);
+          }
+        }
+        return Array.from(terms);
+      }
+      /**
+       * Extract and normalize Nice Classification numbers (e.g. '041' -> '41', '009,042' -> ['9', '42'])
+       */
+      static extractNiceClasses(r) {
+        if (!r) return [];
+        const raw = r.classification || r.Classification || r.classes || r.class_id || r.class || r.international_class || "";
+        if (!raw) return [];
+        if (Array.isArray(raw)) {
+          return raw.map((c) => String(c).replace(/^0+/, "").trim()).filter(Boolean);
+        }
+        return String(raw).split(/[,;\s]+/).map((c) => c.replace(/[^0-9]/g, "").replace(/^0+/, "").trim()).filter(Boolean);
+      }
+      /**
+       * Check if a trademark status string or code represents an active/live registered trademark
+       * Strictly filters out PENDING, DEAD, ABANDONED, CANCELLED, EXPIRED, REFUSED
+       */
+      static isLiveStatus(rawStatus) {
+        if (rawStatus === void 0 || rawStatus === null || rawStatus === "") {
+          return false;
+        }
+        const s = String(rawStatus).trim().toUpperCase();
+        if (s.includes("DEAD") || s.includes("PENDING") || s.includes("CANCEL") || s.includes("ABANDON") || s.includes("EXPIRE") || s.includes("REFUSE") || s.includes("SUSPEND")) {
+          return false;
+        }
+        return s.includes("LIVE") || s.includes("REGISTERED") || s.includes("ACTIVE") || s.includes("EINGETRAGEN") || s === "REG" || s === "700" || s === "701";
+      }
+      /**
+       * Check terms across specified trademark offices
+       */
+      static async queryOffices(uniqueTerms, offices) {
+        const settings2 = loadSettings();
+        const allHits = {};
+        if (uniqueTerms.length === 0 || offices.length === 0) {
+          return allHits;
+        }
+        const defaultHeaders = {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
+        };
+        const promises = [];
+        if (offices.includes("USPTO")) {
+          promises.push((async () => {
+            try {
+              const usptoFd = new FormData();
+              usptoFd.append("trademarks", JSON.stringify(uniqueTerms));
+              const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
+                method: "POST",
+                headers: {
+                  ...defaultHeaders,
+                  "Authorization": settings2.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
+                },
+                body: usptoFd,
+                signal: AbortSignal.timeout(9e3)
+              });
+              if (res.ok) {
+                const data = await res.json();
+                for (const [term, records] of Object.entries(data)) {
+                  if (Array.isArray(records) && records.length > 0) {
+                    records.forEach((r) => {
+                      const rawStatus = r.status || r.status_code || "LIVE";
+                      if (this.isLiveStatus(rawStatus)) {
+                        const classes = this.extractNiceClasses(r);
+                        allHits[term] = allHits[term] || [];
+                        allHits[term].push({
+                          term,
+                          trademark: r.trademark || r.mark_identification || r.MarkVerbalElementText || term,
+                          classNumber: classes.join(", ") || "N/A",
+                          classes,
+                          status: "LIVE",
+                          registrationNumber: r.registration_number || r.registration_date,
+                          serialNumber: r.serial_number || r.applicationNumber,
+                          goodsAndServices: r.goods_and_services || r.goods_services,
+                          source: "USPTO"
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn("[TrademarkService] USPTO query error:", err.message || err);
+            }
+          })());
+        }
+        if (offices.includes("EUIPO")) {
+          promises.push((async () => {
+            try {
+              const euFd = new FormData();
+              euFd.append("trademarks", JSON.stringify(uniqueTerms));
+              const res = await fetch("https://euipo-tm-api1.productor.io/search-batch?classes=25,9,16,41,21", {
+                method: "POST",
+                headers: {
+                  ...defaultHeaders,
+                  "Authorization": settings2.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
+                },
+                body: euFd,
+                signal: AbortSignal.timeout(9e3)
+              });
+              if (res.ok) {
+                const data = await res.json();
+                for (const [term, records] of Object.entries(data)) {
+                  if (Array.isArray(records) && records.length > 0) {
+                    records.forEach((r) => {
+                      const rawStatus = r.markCurrentStatusCode || r.status || "LIVE";
+                      if (this.isLiveStatus(rawStatus)) {
+                        const classes = this.extractNiceClasses(r);
+                        allHits[term] = allHits[term] || [];
+                        allHits[term].push({
+                          term,
+                          trademark: r.trademark || r.mark_identification || term,
+                          classNumber: classes.join(", ") || "N/A",
+                          classes,
+                          status: "LIVE",
+                          serialNumber: r.applicationNumber,
+                          source: "EUIPO"
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn("[TrademarkService] EUIPO query error:", err.message || err);
+            }
+          })());
+        }
+        if (offices.includes("DPMA")) {
+          promises.push((async () => {
+            try {
+              const dpmaFd = new FormData();
+              dpmaFd.append("trademarks", JSON.stringify(uniqueTerms));
+              const res = await fetch("https://dpma-tm-api2.productor.io/search-batch?classes=25,9,16,41,21", {
+                method: "POST",
+                headers: {
+                  ...defaultHeaders,
+                  "Authorization": settings2.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
+                },
+                body: dpmaFd,
+                signal: AbortSignal.timeout(9e3)
+              });
+              if (res.ok) {
+                const data = await res.json();
+                for (const [term, records] of Object.entries(data)) {
+                  if (Array.isArray(records) && records.length > 0) {
+                    records.forEach((r) => {
+                      const rawStatus = r.MarkCurrentStatusCode || r.status || "LIVE";
+                      if (this.isLiveStatus(rawStatus)) {
+                        const classes = this.extractNiceClasses(r);
+                        allHits[term] = allHits[term] || [];
+                        allHits[term].push({
+                          term,
+                          trademark: r.MarkVerbalElementText || r.trademark || term,
+                          classNumber: classes.join(", ") || "N/A",
+                          classes,
+                          status: "LIVE",
+                          serialNumber: r.ApplicationNumber,
+                          source: "DPMA"
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn("[TrademarkService] DPMA query error:", err.message || err);
+            }
+          })());
+        }
+        await Promise.all(promises);
+        return allHits;
+      }
+      /**
+       * Analyze hits to calculate blocked products and class 25 status
+       */
+      static analyzeHits(hitsRecord) {
+        let hasInfringementClass25 = false;
+        const blockedClassesSet = /* @__PURE__ */ new Set();
+        let totalHits = 0;
+        for (const [term, records] of Object.entries(hitsRecord)) {
+          for (const rec of records) {
+            if (!this.isLiveStatus(rec.status)) continue;
+            const hitTerm = rec.term || term || "";
+            const hitMark = rec.trademark || "";
+            const source12 = rec.source || "GLOBAL";
+            if (TrademarkWhitelistService.isWhitelisted(hitTerm, source12) || TrademarkWhitelistService.isWhitelisted(hitMark, source12)) {
+              continue;
+            }
+            totalHits++;
+            const classes = rec.classes && rec.classes.length > 0 ? rec.classes : this.extractNiceClasses({ classification: rec.classNumber });
+            for (const c of classes) {
+              const num = parseInt(c, 10);
+              if (!isNaN(num)) {
+                blockedClassesSet.add(num);
+                if (num === 25) {
+                  hasInfringementClass25 = true;
+                }
+              }
+            }
+          }
+        }
+        const blockedClasses = Array.from(blockedClassesSet);
+        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
+          blockedClasses.filter((c) => c !== 25)
+          // Clothing 25 is handled separately via hard-reject / rewrite
+        );
+        return {
+          hasInfringementClass25,
+          blockedClasses,
+          blockedProducts,
+          totalHits
+        };
+      }
+      /**
+       * Comprehensive Audit for Listing + Niche Metadata (Hard-Reject, Product Blocking, Fair-Use)
+       */
+      static async auditListingAndMetadata(params2) {
+        const offices = params2.offices && params2.offices.length > 0 ? params2.offices : ["USPTO", "EUIPO", "DPMA"];
+        const termsToFieldMap = {
+          quote: params2.quote ? this.extractTermsFromText(params2.quote) : [],
+          niche1: params2.niche1 ? this.extractTermsFromText(params2.niche1) : [],
+          niche2: params2.niche2 && params2.niche2.toLowerCase() !== "none" ? this.extractTermsFromText(params2.niche2) : [],
+          subniche: params2.subniche && params2.subniche.toLowerCase() !== "none" ? this.extractTermsFromText(params2.subniche) : [],
+          brand: this.extractTermsFromText(params2.listing.brand),
+          title: this.extractTermsFromText(params2.listing.title),
+          bullet1: this.extractTermsFromText(params2.listing.bullet1),
+          bullet2: this.extractTermsFromText(params2.listing.bullet2)
+        };
+        const allUniqueTerms = /* @__PURE__ */ new Set();
+        for (const terms of Object.values(termsToFieldMap)) {
+          terms.forEach((t) => allUniqueTerms.add(t));
+        }
+        const termList = Array.from(allUniqueTerms);
+        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
+        let isHardReject = false;
+        let hardRejectReason = null;
+        let brandConflict = false;
+        let titleConflict = false;
+        let needsRewrite = false;
+        const blockedClassesSet = /* @__PURE__ */ new Set();
+        const allHitsList = [];
+        const coreFields = ["quote", "niche1", "niche2", "subniche"];
+        for (const f of coreFields) {
+          const terms = termsToFieldMap[f] || [];
+          for (const t of terms) {
+            const hits = globalHits[t] || [];
+            for (const h of hits) {
+              if (!this.isLiveStatus(h.status)) continue;
+              allHitsList.push(h);
+              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+              if (classes.includes("25")) {
+                isHardReject = true;
+                hardRejectReason = `Core ${f} "${t}" is an active Class 25 trademark (${h.source}: ${h.trademark}).`;
+                break;
+              }
+            }
+            if (isHardReject) break;
+          }
+          if (isHardReject) break;
+        }
+        if (isHardReject) {
+          return {
+            isHardReject: true,
+            hardRejectReason,
+            isSafe: false,
+            needsRewrite: false,
+            brandConflict: true,
+            titleConflict: true,
+            blockedNiceClasses: [25],
+            blockedProducts: [],
+            allHits: allHitsList,
+            hitDetails: globalHits
+          };
+        }
+        const brandTerms = termsToFieldMap.brand || [];
+        for (const t of brandTerms) {
+          const hits = globalHits[t] || [];
+          for (const h of hits) {
+            if (!this.isLiveStatus(h.status)) continue;
+            allHitsList.push(h);
+            const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+            if (classes.includes("25")) {
+              brandConflict = true;
+              needsRewrite = true;
+            } else {
+              classes.forEach((c) => {
+                const num = parseInt(c, 10);
+                if (!isNaN(num)) blockedClassesSet.add(num);
+              });
+            }
+          }
+        }
+        const listingFields = ["title", "bullet1", "bullet2"];
+        for (const f of listingFields) {
+          const terms = termsToFieldMap[f] || [];
+          for (const t of terms) {
+            const hits = globalHits[t] || [];
+            for (const h of hits) {
+              if (!this.isLiveStatus(h.status)) continue;
+              allHitsList.push(h);
+              const classes = h.classes && h.classes.length > 0 ? h.classes : this.extractNiceClasses({ classification: h.classNumber });
+              if (classes.includes("25")) {
+                if (f === "title") {
+                  if (!COMMON_STOP_WORDS.has(t)) {
+                    titleConflict = true;
+                    needsRewrite = true;
+                  }
+                } else {
+                  if (!COMMON_STOP_WORDS.has(t) && t.includes(" ")) {
+                    needsRewrite = true;
+                  }
+                }
+              } else {
+                classes.forEach((c) => {
+                  const num = parseInt(c, 10);
+                  if (!isNaN(num)) blockedClassesSet.add(num);
+                });
+              }
+            }
+          }
+        }
+        const blockedNiceClasses = Array.from(blockedClassesSet);
+        const blockedProducts = ProductCatalogService.getBlockedProductIdsForNiceClasses(
+          blockedNiceClasses.filter((c) => c !== 25)
+        );
+        const isSafe = !brandConflict && !titleConflict && !needsRewrite;
+        return {
+          isHardReject: false,
+          hardRejectReason: null,
+          isSafe,
+          needsRewrite,
+          brandConflict,
+          titleConflict,
+          blockedNiceClasses,
+          blockedProducts,
+          allHits: allHitsList,
+          hitDetails: globalHits
+        };
+      }
+      /**
+       * Legacy check method for single term array (used by UI Designer)
+       */
+      static async checkTrademarks(terms, locale = "en") {
+        const cleanTerms = terms.map((t) => t.trim()).filter((t) => t.length > 1).map((t) => t.toLowerCase());
+        const uniqueTerms = Array.from(new Set(cleanTerms));
+        if (uniqueTerms.length === 0) {
+          return {
+            hasInfringementClass25: false,
+            blockedProducts: [],
+            hits: {},
+            totalHits: 0,
+            message: "No terms to check."
+          };
+        }
+        const offices = locale === "de" ? ["USPTO", "EUIPO", "DPMA"] : ["USPTO", "EUIPO"];
+        const hits = await this.queryOffices(uniqueTerms, offices);
+        const analysis = this.analyzeHits(hits);
+        return {
+          hasInfringementClass25: analysis.hasInfringementClass25,
+          blockedProducts: analysis.blockedProducts,
+          hits,
+          totalHits: analysis.totalHits,
+          message: analysis.hasInfringementClass25 ? "Achtung: Live-Treffer in Klasse 25 (Bekleidung) gefunden!" : analysis.totalHits > 0 ? `Treffer in Nebenklassen gefunden. ${analysis.blockedProducts.length} Produkte werden gesperrt.` : "Keine aktiven Schutzrechte gefunden. Quote ist sauber \u2713"
+        };
+      }
+      /**
+       * Comprehensive Multi-Field Batch Check for Hermes Agent & MCP Integration
+       */
+      static async checkBatchFields(input) {
+        const offices = this.normalizeOffices(input.offices, input.marketplace);
+        const fields = input.fields || {};
+        const fieldTermsMap = {};
+        const allUniqueTerms = /* @__PURE__ */ new Set();
+        for (const [fieldName, rawValue] of Object.entries(fields)) {
+          if (rawValue && typeof rawValue === "string") {
+            const terms = this.extractTermsFromText(rawValue);
+            fieldTermsMap[fieldName] = terms;
+            terms.forEach((t) => allUniqueTerms.add(t));
+          }
+        }
+        const termList = Array.from(allUniqueTerms);
+        const globalHits = termList.length > 0 ? await this.queryOffices(termList, offices) : {};
+        const fieldResults = {};
+        let totalGlobalHits = 0;
+        let globalHasInfringementClass25 = false;
+        const globalBlockedProducts = /* @__PURE__ */ new Set();
+        for (const [fieldName, terms] of Object.entries(fieldTermsMap)) {
+          const fieldHits = {};
+          for (const t of terms) {
+            if (globalHits[t] && globalHits[t].length > 0) {
+              fieldHits[t] = globalHits[t];
+            }
+          }
+          const analysis = this.analyzeHits(fieldHits);
+          if (analysis.hasInfringementClass25) globalHasInfringementClass25 = true;
+          analysis.blockedProducts.forEach((p) => globalBlockedProducts.add(p));
+          totalGlobalHits += analysis.totalHits;
+          fieldResults[fieldName] = {
+            safe: !analysis.hasInfringementClass25,
+            hasInfringementClass25: analysis.hasInfringementClass25,
+            totalHits: analysis.totalHits,
+            blockedProducts: analysis.blockedProducts,
+            hits: fieldHits
+          };
+        }
+        const isCompletelySafe = !globalHasInfringementClass25 && globalBlockedProducts.size === 0;
+        const brandHasClass25 = Boolean(fieldResults.brand?.hasInfringementClass25);
+        const titleHasClass25 = Boolean(fieldResults.title?.hasInfringementClass25);
+        const quoteHasClass25 = Boolean(fieldResults.quote?.hasInfringementClass25);
+        const hasBrandTitleClass25 = brandHasClass25 || titleHasClass25 || quoteHasClass25;
+        let verdict;
+        let message;
+        if (hasBrandTitleClass25) {
+          verdict = "REJECTED_CLASS_25";
+          const affected = [brandHasClass25 && "Brand", titleHasClass25 && "Title", quoteHasClass25 && "Quote"].filter(Boolean);
+          message = `Klasse 25 Konflikt in Identifikatoren (${affected.join(", ")}). Automatisches Umschreiben erforderlich.`;
+        } else if (globalHasInfringementClass25) {
+          verdict = "NEEDS_AUDIT";
+          message = `Treffer in Bullets/Description gefunden (${totalGlobalHits} Treffer). Fair-Use-Pr\xFCfung durch Trademark Auditor.`;
+        } else if (globalBlockedProducts.size > 0) {
+          verdict = "SAFE_FOR_APPAREL";
+          message = `Keine Treffer in Klasse 25 (Bekleidung sicher). ${globalBlockedProducts.size} Nebenprodukte gesperrt.`;
+        } else {
+          verdict = "SAFE_ALL";
+          message = "Keine aktiven Schutzrechte gefunden. Listing ist sauber \u2713";
+        }
+        const rawInputPhrases = /* @__PURE__ */ new Set();
+        for (const rawValue of Object.values(fields)) {
+          if (rawValue && typeof rawValue === "string") {
+            const tr = rawValue.trim().toLowerCase();
+            if (tr.length > 0) rawInputPhrases.add(tr);
+          }
+        }
+        const exactPhraseHits = [];
+        const keywordHits = [];
+        const affectedClassesSet = /* @__PURE__ */ new Set();
+        const seenHitKeys = /* @__PURE__ */ new Set();
+        for (const [term, hits] of Object.entries(globalHits)) {
+          for (const hit of hits) {
+            const uniqueKey = `${hit.source}-${hit.trademark}-${hit.classNumber}-${hit.term}`;
+            if (seenHitKeys.has(uniqueKey)) continue;
+            seenHitKeys.add(uniqueKey);
+            (hit.classes || []).forEach((c) => affectedClassesSet.add(c));
+            if (rawInputPhrases.has(term.toLowerCase())) {
+              exactPhraseHits.push(hit);
+            } else {
+              keywordHits.push(hit);
+            }
+          }
+        }
+        return {
+          success: true,
+          safe: !hasBrandTitleClass25,
+          hasInfringementClass25: globalHasInfringementClass25,
+          affectedClasses: Array.from(affectedClassesSet).sort((a, b) => Number(a) - Number(b)),
+          blockedProducts: Array.from(globalBlockedProducts),
+          officesChecked: offices,
+          summary: {
+            totalHits: totalGlobalHits,
+            verdict,
+            message,
+            exactPhraseHitsCount: exactPhraseHits.length,
+            keywordHitsCount: keywordHits.length
+          },
+          exactPhraseHits,
+          keywordHits,
+          fieldResults
+        };
+      }
+      /**
+       * =========================================================================
+       * TRADEMARK WORKFLOW V2 METHODS (USPTO Focus, 1-5 Grams, Multi-Round Loop)
+       * =========================================================================
+       */
+      /**
+       * V2 Term Extraction: 1-5 Grams + Full Quote, Stopword preservation in phrases
+       */
+      static extractTermsFromTextV2(params2) {
+        const stopWords = /* @__PURE__ */ new Set([
+          "the",
+          "a",
+          "an",
+          "and",
+          "or",
+          "to",
+          "of",
+          "in",
+          "for",
+          "with",
+          "on",
+          "at",
+          "by",
+          "from",
+          "up",
+          "about",
+          "into",
+          "over",
+          "after",
+          "is",
+          "are",
+          "was",
+          "were",
+          "be",
+          "been",
+          "being",
+          "this",
+          "that",
+          "your",
+          "my",
+          "its",
+          "their",
+          "our",
+          "all",
+          "any",
+          "each",
+          "shirt",
+          "tshirt",
+          "t-shirt"
+        ]);
+        const termToFieldsMap = {};
+        const addTerm = (term, field) => {
+          const clean = term.trim().toLowerCase();
+          if (clean.length < 2) return;
+          if (!termToFieldsMap[clean]) termToFieldsMap[clean] = /* @__PURE__ */ new Set();
+          termToFieldsMap[clean].add(field);
+        };
+        const fields = [
+          ["brand", params2.listing.brand],
+          ["title", params2.listing.title],
+          ["bullet1", params2.listing.bullet1],
+          ["bullet2", params2.listing.bullet2],
+          ["description", params2.listing.description],
+          ["quote", params2.quote]
+        ];
+        for (const [field, text2] of fields) {
+          if (!text2 || typeof text2 !== "string") continue;
+          const trimmed = text2.trim();
+          if (!trimmed) continue;
+          const rawTokens = trimmed.split(/[\s,.;:!?/()"\-+–—[\]{}#*~`^|\\]+/).map((w) => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "").trim().toLowerCase()).filter(Boolean);
+          if (field === "quote" && rawTokens.length > 0) {
+            addTerm(rawTokens.join(" "), "quote");
+          }
+          for (const w of rawTokens) {
+            if (w.length >= 3 && !stopWords.has(w)) {
+              addTerm(w, field);
+            }
+          }
+          for (let len = 2; len <= 5; len++) {
+            for (let i = 0; i <= rawTokens.length - len; i++) {
+              const nGramTokens = rawTokens.slice(i, i + len);
+              const hasSubstantialWord = nGramTokens.some((tok) => !stopWords.has(tok) && tok.length >= 3);
+              if (hasSubstantialWord) {
+                addTerm(nGramTokens.join(" "), field);
+              }
+            }
+          }
+        }
+        const result2 = {};
+        for (const [t, set] of Object.entries(termToFieldsMap)) {
+          result2[t] = Array.from(set);
+        }
+        return {
+          terms: Object.keys(result2),
+          termToFieldsMap: result2
+        };
+      }
+      /**
+       * Query USPTO batch endpoint (batching up to 50 terms per request)
+       */
+      static async queryUsptoBatch(terms) {
+        const settings2 = loadSettings();
+        const allResults = {};
+        if (terms.length === 0) return allResults;
+        const defaultHeaders = {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk",
+          "Authorization": settings2.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
+        };
+        const chunkSize = 50;
+        for (let i = 0; i < terms.length; i += chunkSize) {
+          const chunk = terms.slice(i, i + chunkSize);
+          try {
+            const fd = new FormData();
+            fd.append("trademarks", JSON.stringify(chunk));
+            const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21", {
+              method: "POST",
+              headers: defaultHeaders,
+              body: fd,
+              signal: AbortSignal.timeout(1e4)
+            });
+            if (res.ok) {
+              const data = await res.json();
+              for (const [k, v] of Object.entries(data)) {
+                if (Array.isArray(v) && v.length > 0) {
+                  allResults[k.toLowerCase()] = v;
+                }
+              }
+            }
+          } catch (err) {
+            console.warn("[TrademarkService] USPTO query error chunk:", err.message || err);
+          }
+        }
+        return allResults;
+      }
+      /**
+       * Deterministic Match Normalization & Classification before LLM
+       */
+      static normalizeAndClassifyMatches(rawHits, termToFieldsMap, quote5) {
+        const normalizedHits = [];
+        const cleanQuote = quote5 ? quote5.trim().toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, "") : "";
+        const seenKeys = /* @__PURE__ */ new Set();
+        for (const [term, records] of Object.entries(rawHits)) {
+          const termLower = term.toLowerCase().trim();
+          const fields = termToFieldsMap[termLower] || ["listing"];
+          for (const r of records) {
+            const rawStatus = r.status || r.status_code || "LIVE";
+            if (!this.isLiveStatus(rawStatus)) continue;
+            const registeredMark = String(r.mark_identification || r.trademark || r.MarkVerbalElementText || term).trim();
+            const regMarkClean = registeredMark.toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, "").trim();
+            const rawClasses = this.extractNiceClasses(r);
+            const classes = rawClasses.map((c) => parseInt(c, 10)).filter((n) => !isNaN(n));
+            const wordCount = regMarkClean.split(/\s+/).filter(Boolean).length;
+            let matchType = "FUZZY_OR_SIMILAR";
+            if (regMarkClean === termLower) {
+              if (cleanQuote && termLower === cleanQuote) {
+                matchType = "FULL_EXACT";
+              } else if (wordCount === 1) {
+                matchType = "SINGLE_WORD_EXACT";
+              } else {
+                matchType = "EXACT_NGRAM";
+              }
+            } else if (termLower.includes(regMarkClean)) {
+              matchType = "CONTAINS_REGISTERED_MARK";
+            } else if (regMarkClean.includes(termLower)) {
+              matchType = "QUERY_INSIDE_LONGER_MARK";
+            }
+            const isFullQuoteMatch = Boolean(cleanQuote && (regMarkClean === cleanQuote || matchType === "FULL_EXACT"));
+            const isKnownPhraseMatch = wordCount >= 2 && (matchType === "EXACT_NGRAM" || matchType === "FULL_EXACT" || matchType === "CONTAINS_REGISTERED_MARK");
+            const drawing = String(r.mark_drawing || r.MarkFeature || r.markFeature || "").toUpperCase();
+            let markFeature = "Word";
+            if (drawing.includes("DESIGN") || drawing.includes("COMBINED") || drawing.includes("BILD") || drawing.includes("FIGURATIVE")) {
+              markFeature = "Combined";
+            }
+            for (const f of fields) {
+              const uniqueKey = `USPTO-${registeredMark}-${classes.join(",")}-${termLower}-${f}`;
+              if (seenKeys.has(uniqueKey)) continue;
+              seenKeys.add(uniqueKey);
+              normalizedHits.push({
+                searchedTerm: termLower,
+                registeredMark,
+                field: f,
+                office: "USPTO",
+                status: "LIVE",
+                markFeature,
+                classes,
+                classNumber: classes.join(", ") || "N/A",
+                wordCount,
+                matchType,
+                isFullQuoteMatch,
+                isKnownPhraseMatch,
+                serialNumber: r.serial_number || r.ApplicationNumber || r.applicationNumber,
+                registrationNumber: r.registration_number || r.registration_date,
+                filingDate: r.filing_date || r.ApplicationDate,
+                registrationDate: r.registration_date || r.RegistrationDate
+              });
+            }
+          }
+        }
+        return normalizedHits;
+      }
+      /**
+       * Compact, deduplicated representation of trademark hits specifically tailored for LLM evaluation.
+       * Strips internal registration numbers, dates, and duplicate entries, aggregating by registered mark.
+       */
+      /**
+       * Helper to retrieve the current text of a listing field (for fingerprinting & logging)
+       */
+      static getFieldText(listing = {}, field, quote5) {
+        if (field === "brand") return listing.brand || "";
+        if (field === "title") return listing.title || "";
+        if (field === "bullet1") return listing.bullet1 || "";
+        if (field === "bullet2") return listing.bullet2 || "";
+        if (field === "description") return listing.description || "";
+        if (field === "quote") return quote5 || "";
+        return "";
+      }
+      /**
+       * Compacts hundreds of raw/normalized hits into deduplicated mark entities.
+       * Significantly reduces token payload by omitting full field text repetition
+       * while preserving exact field locations and actual matched terms.
+       */
+      static buildCompactTrademarkHits(normalizedHits, listing, quote5) {
+        const markMap = /* @__PURE__ */ new Map();
+        for (const h of normalizedHits) {
+          const cleanMark = (h.registeredMark || h.searchedTerm || "").trim().toUpperCase();
+          if (!cleanMark) continue;
+          let entry = markMap.get(cleanMark);
+          if (!entry) {
+            entry = {
+              mark: cleanMark,
+              status: h.status || "ACTIVE",
+              features: /* @__PURE__ */ new Set(),
+              classes: /* @__PURE__ */ new Set(),
+              offices: /* @__PURE__ */ new Set(),
+              matchTypes: /* @__PURE__ */ new Set(),
+              fullQuoteMatch: false,
+              occurrencesMap: /* @__PURE__ */ new Map()
+            };
+            markMap.set(cleanMark, entry);
+          }
+          if (h.markFeature) entry.features.add(h.markFeature);
+          if (Array.isArray(h.classes)) {
+            h.classes.forEach((c) => entry.classes.add(c));
+          }
+          if (h.office) entry.offices.add(h.office);
+          if (h.matchType) entry.matchTypes.add(h.matchType);
+          if (h.isFullQuoteMatch) entry.fullQuoteMatch = true;
+          const field = h.field || "listing";
+          const rawMatched = String(h.matchedTerm || h.searchedTerm || "").trim();
+          const matchedTerm = rawMatched.length > 0 ? rawMatched : void 0;
+          const occKey = `${field.toLowerCase()}|${matchedTerm ? matchedTerm.toLowerCase() : ""}`;
+          if (!entry.occurrencesMap.has(occKey)) {
+            const occ = { field };
+            if (matchedTerm) {
+              occ.matchedTerm = matchedTerm;
+            }
+            entry.occurrencesMap.set(occKey, occ);
+          }
+        }
+        const matchTypePriority = [
+          "FULL_EXACT",
+          "EXACT_NGRAM",
+          "SINGLE_WORD_EXACT",
+          "CONTAINS_REGISTERED_MARK",
+          "QUERY_INSIDE_LONGER_MARK",
+          "FUZZY_OR_SIMILAR"
+        ];
+        const compactList = [];
+        let idx = 1;
+        for (const [_, entry] of markMap.entries()) {
+          let bestMatchType = "FUZZY_OR_SIMILAR";
+          for (const p of matchTypePriority) {
+            if (entry.matchTypes.has(p)) {
+              bestMatchType = p;
+              break;
+            }
+          }
+          const feature = entry.features.has("Combined") ? "Combined" : entry.features.values().next().value || "Word";
+          compactList.push({
+            id: `tm_${idx++}`,
+            mark: entry.mark,
+            status: entry.status,
+            feature,
+            classes: Array.from(entry.classes).sort((a, b) => a - b),
+            offices: Array.from(entry.offices).sort(),
+            matchType: bestMatchType,
+            fullQuoteMatch: entry.fullQuoteMatch,
+            occurrences: Array.from(entry.occurrencesMap.values())
+          });
+        }
+        return compactList;
+      }
+      /**
+       * Complete V2 Trademark Audit Orchestrator:
+       * Scan ➔ Match Normalization ➔ Compact LLM Payload ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) ➔ Final Verifier Gate
+       */
+      static async executeTrademarkAuditV2(params2) {
+        const normN1 = ListingValidationService.normalizeOptionalText(params2.niche1);
+        const normN2 = ListingValidationService.normalizeOptionalText(params2.niche2);
+        const normSub = ListingValidationService.normalizeOptionalText(params2.subniche);
+        const initState = params2.initialWorkflowState;
+        const initialValidation = ListingValidationService.validateAndRepairListing({
+          listing: initState?.currentListing ? initState.currentListing : params2.listing,
+          niche1: normN1,
+          niche2: normN2,
+          subniche: normSub
+        });
+        let currentListing = { ...initialValidation.listing };
+        const forbiddenTermsForTask = initState?.forbiddenTermsForTask ? [...initState.forbiddenTermsForTask] : [];
+        const rewriteIterations = initState?.rewriteIterations ? [...initState.rewriteIterations] : [];
+        const tmSessionId = params2.sessionId || (params2.taskId ? `tm:${params2.taskId}` : `tm:${Date.now()}`);
+        const approvedHitContexts = /* @__PURE__ */ new Set();
+        const getHitContextKey = (mark, markFeature, classes, matchType, field, text2) => {
+          const normText = (text2 || "").trim().toLowerCase().replace(/\s+/g, " ");
+          const normFeature = (markFeature || "word").trim().toLowerCase();
+          return `${mark.toLowerCase()}|${normFeature}|${classes.slice().sort((a, b) => a - b).join(",")}|${matchType}|${field}|${normText}`;
+        };
+        let initialTrademarkHits = initState?.initialTrademarkHits || [];
+        let finalRefereeResult = initState?.lastRefereeResult || null;
+        let finalVerifierResult = initState?.lastVerifierResult || null;
+        let blockedProducts = initState?.blockedProducts ? [...initState.blockedProducts] : [];
+        let blockedNiceClasses = initState?.blockedNiceClasses ? [...initState.blockedNiceClasses] : [];
+        const maxCycles = params2.maxRewriteCycles ?? 3;
+        const saveState = (phase) => {
+          const state = {
+            phase,
+            rewriteAttemptsCompleted: rewriteIterations.length,
+            currentListing: { ...currentListing },
+            forbiddenTermsForTask: [...forbiddenTermsForTask],
+            rewriteIterations: [...rewriteIterations],
+            lastRefereeResult: finalRefereeResult,
+            lastVerifierResult: finalVerifierResult,
+            blockedProducts: [...blockedProducts],
+            blockedNiceClasses: [...blockedNiceClasses],
+            initialTrademarkHits: [...initialTrademarkHits]
+          };
+          if (params2.onPersistState) {
+            params2.onPersistState(state);
+          } else if (params2.taskId) {
+            try {
+              const { TaskLogService: TaskLogService3 } = (init_taskLogService(), __toCommonJS2(taskLogService_exports));
+              TaskLogService3.updateTaskStatus(params2.taskId, { trademarkWorkflowState: state });
+            } catch {
+            }
+          }
+        };
+        const startCycle = rewriteIterations.length;
+        let resumePhase = initState?.phase || null;
+        let skipToVerifier = resumePhase === "VERIFY";
+        saveState(resumePhase || "INITIAL_SCAN");
+        if (resumePhase === "REWRITE" && rewriteIterations.length >= maxCycles) {
+          console.warn(`[TrademarkServiceV2] \u{1F6A8} Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
+          saveState("ESCALATED");
+          return {
+            finalDecision: "ESCALATE",
+            isSafe: false,
+            canBeFixedByListingRewrite: true,
+            reasonCode: "REWRITE_LIMIT_REACHED",
+            recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+            initialTrademarkHits,
+            finalTrademarkHits: [],
+            rewriteIterations,
+            refereeResult: finalRefereeResult,
+            verifierResult: finalVerifierResult,
+            forbiddenTermsForTask,
+            blockedProducts,
+            blockedNiceClasses,
+            finalListing: ListingValidationService.validateAndRepairListing({
+              listing: currentListing,
+              niche1: normN1,
+              niche2: normN2,
+              subniche: normSub,
+              forbiddenTerms: forbiddenTermsForTask
+            }).listing
+          };
+        }
+        for (let cycle = startCycle; cycle <= maxCycles; cycle++) {
+          console.log(`[TrademarkServiceV2] \u{1F50D} Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles}, Session: ${tmSessionId}, Completed Rewrites: ${rewriteIterations.length})...`);
+          const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
+            listing: currentListing,
+            quote: params2.quote
+          });
+          const rawHits = await this.queryUsptoBatch(terms);
+          const normalizedHits = this.normalizeAndClassifyMatches(rawHits, termToFieldsMap, params2.quote);
+          if (cycle === 0) {
+            initialTrademarkHits = [...normalizedHits];
+          }
+          const compactHits = this.buildCompactTrademarkHits(normalizedHits, currentListing, params2.quote);
+          params2.onEvent?.({
+            type: "TM_SCAN_RESPONSE",
+            title: cycle === 0 ? `USPTO TM Scan abgeschlossen (${normalizedHits.length} Treffer, ${compactHits.length} kompakt)` : `USPTO TM Scan (Runde ${cycle}: ${normalizedHits.length} Treffer, ${compactHits.length} kompakt)`,
+            content: { cycle, totalHits: normalizedHits.length, compactHitsCount: compactHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
+          });
+          const hitsToReview = cycle === 0 ? compactHits : compactHits.filter((h) => {
+            return h.occurrences.some((occ) => {
+              const fieldText = _TrademarkService.getFieldText(currentListing, occ.field, params2.quote);
+              return !approvedHitContexts.has(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, fieldText));
+            });
+          });
+          let refereeRes;
+          if (skipToVerifier) {
+            console.log(`[TrademarkServiceV2] \u26A1 Resuming directly at VERIFY phase for rewrite iteration ${rewriteIterations.length}. Skipping scan/referee.`);
+            skipToVerifier = false;
+            refereeRes = finalRefereeResult || {
+              decision: "APPROVE",
+              canBeFixedByListingRewrite: true,
+              hits: [],
+              blockedProducts
+            };
+          } else if (cycle > 0 && hitsToReview.length === 0) {
+            console.log(`[TrademarkServiceV2] \u26A1 Alle ${compactHits.length} Treffer wurden in diesem Task bereits als KEEP gepr\xFCft und sind im Kontext unver\xE4ndert. \xDCberspringe erneuten Referee-Call.`);
+            refereeRes = {
+              decision: "APPROVE",
+              canBeFixedByListingRewrite: true,
+              reasonCode: null,
+              recommendedAction: null,
+              hits: [],
+              blockedProducts,
+              rewriteRequired: false,
+              rewriteInstructions: []
+            };
+          } else {
+            saveState("REFEREE");
+            refereeRes = await LLMService.evaluateTrademarkReferee({
+              currentListing,
+              niche1: normN1,
+              niche2: normN2,
+              subniche: normSub,
+              quote: params2.quote,
+              compactHits: hitsToReview,
+              normalizedHits,
+              rewriteIteration: cycle,
+              forbiddenTermsForTask,
+              blockedProducts,
+              sessionId: tmSessionId
+            });
+          }
+          finalRefereeResult = refereeRes;
+          const problematicMarks = new Set(
+            (refereeRes.hits || []).filter((h) => h.decision === "REWRITE" || h.action === "REWRITE" || h.decision === "ESCALATE" || h.action === "ESCALATE").map((h) => (h.registeredMark || h.mark || h.searchedTerm || "").trim().toLowerCase())
+          );
+          for (const h of hitsToReview) {
+            if (!problematicMarks.has(h.mark.trim().toLowerCase())) {
+              for (const occ of h.occurrences) {
+                const fieldText = _TrademarkService.getFieldText(currentListing, occ.field, params2.quote);
+                approvedHitContexts.add(getHitContextKey(h.mark, h.feature, h.classes, h.matchType, occ.field, fieldText));
+              }
+            }
+          }
+          if (Array.isArray(refereeRes.blockedProducts) && refereeRes.blockedProducts.length > 0) {
+            blockedProducts = Array.from(/* @__PURE__ */ new Set([...blockedProducts, ...refereeRes.blockedProducts]));
+          }
+          params2.onEvent?.({
+            type: "TM_REFEREE_RESPONSE",
+            title: `Trademark Referee: ${refereeRes.decision} (Zyklus ${cycle})`,
+            content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits },
+            metadata: { provider: "OpenRouter", model: refereeRes._rawRequest?.model }
+          });
+          if (refereeRes.decision === "ESCALATE" || refereeRes.decision === "REWRITE" && refereeRes.canBeFixedByListingRewrite === false) {
+            const reasonCode = refereeRes.reasonCode || (refereeRes.decision === "ESCALATE" ? "CORE_QUOTE_CLASS25_CONFLICT" : "UNFIXABLE_TRADEMARK_CONFLICT");
+            console.warn(`[TrademarkServiceV2] \u{1F6A8} Eskalation ausgel\xF6st: ${reasonCode}`);
+            saveState("ESCALATED");
+            return {
+              finalDecision: "ESCALATE",
+              isSafe: false,
+              canBeFixedByListingRewrite: false,
+              reasonCode,
+              recommendedAction: refereeRes.recommendedAction || "DO_NOT_SUBMIT",
+              initialTrademarkHits,
+              finalTrademarkHits: normalizedHits,
+              rewriteIterations,
+              refereeResult: refereeRes,
+              verifierResult: null,
+              forbiddenTermsForTask,
+              blockedProducts,
+              blockedNiceClasses,
+              finalListing: ListingValidationService.validateAndRepairListing({
+                listing: currentListing,
+                niche1: normN1,
+                niche2: normN2,
+                subniche: normSub,
+                forbiddenTerms: forbiddenTermsForTask
+              }).listing
+            };
+          }
+          if (refereeRes.decision === "APPROVE" || refereeRes.decision === "APPROVE_WITH_BLOCKED_PRODUCTS") {
+            console.log(`[TrademarkServiceV2] \u{1F6E1}\uFE0F Referee hat genehmigt (${refereeRes.decision}). Starte Verifier als Final Gate...`);
+            saveState("VERIFY");
+            const verifierRes = await LLMService.evaluateTrademarkVerifier({
+              currentListing,
+              niche1: normN1,
+              niche2: normN2,
+              subniche: normSub,
+              quote: params2.quote,
+              compactHits,
+              // Final Verifier receives the FULL compact hits of the candidate
+              normalizedHits,
+              refereeDecision: refereeRes.decision,
+              blockedProducts,
+              sessionId: tmSessionId
+            });
+            finalVerifierResult = verifierRes;
+            params2.onEvent?.({
+              type: "TM_VERIFIER_RESPONSE",
+              title: `Amazon Rejection Verifier: ${verifierRes.verdict}`,
+              content: { verdict: verifierRes.verdict, recommendation: verifierRes.recommendation, risks: verifierRes.identifiedRisks },
+              metadata: { provider: "OpenRouter", model: verifierRes._rawRequest?.model }
+            });
+            if (verifierRes.verdict === "SAFE") {
+              console.log(`[TrademarkServiceV2] \u2705 Verifier best\xE4tigt SAFE. Listing endg\xFCltig freigegeben!`);
+              saveState("COMPLETED");
+              return {
+                finalDecision: refereeRes.decision,
+                isSafe: true,
+                canBeFixedByListingRewrite: true,
+                reasonCode: null,
+                recommendedAction: null,
+                initialTrademarkHits,
+                finalTrademarkHits: normalizedHits,
+                rewriteIterations,
+                refereeResult: refereeRes,
+                verifierResult: verifierRes,
+                forbiddenTermsForTask,
+                blockedProducts,
+                blockedNiceClasses,
+                finalListing: ListingValidationService.validateAndRepairListing({
+                  listing: currentListing,
+                  niche1: normN1,
+                  niche2: normN2,
+                  subniche: normSub,
+                  forbiddenTerms: forbiddenTermsForTask
+                }).listing
+              };
+            }
+            console.warn(`[TrademarkServiceV2] \u26A0\uFE0F Verifier hat HIGH_RISK gemeldet (${verifierRes.identifiedRisks.length} Risiken).`);
+            const hasInvalidAi = verifierRes.identifiedRisks?.some((r) => r.riskType === "INVALID_AI_RESPONSE");
+            if (!verifierRes.canBeFixedByListingRewrite || hasInvalidAi) {
+              const reasonCode = hasInvalidAi ? "INVALID_AI_RESPONSE" : "VERIFIER_UNFIXABLE_RISK";
+              saveState("ESCALATED");
+              return {
+                finalDecision: "ESCALATE",
+                isSafe: false,
+                canBeFixedByListingRewrite: false,
+                reasonCode,
+                recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+                initialTrademarkHits,
+                finalTrademarkHits: normalizedHits,
+                rewriteIterations,
+                refereeResult: refereeRes,
+                verifierResult: verifierRes,
+                forbiddenTermsForTask,
+                blockedProducts,
+                blockedNiceClasses,
+                finalListing: ListingValidationService.validateAndRepairListing({
+                  listing: currentListing,
+                  niche1: normN1,
+                  niche2: normN2,
+                  subniche: normSub,
+                  forbiddenTerms: forbiddenTermsForTask
+                }).listing
+              };
+            }
+            if (rewriteIterations.length >= maxCycles) {
+              saveState("ESCALATED");
+              return {
+                finalDecision: "ESCALATE",
+                isSafe: false,
+                canBeFixedByListingRewrite: true,
+                reasonCode: "REWRITE_LIMIT_REACHED",
+                recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+                initialTrademarkHits,
+                finalTrademarkHits: normalizedHits,
+                rewriteIterations,
+                refereeResult: refereeRes,
+                verifierResult: verifierRes,
+                forbiddenTermsForTask,
+                blockedProducts,
+                blockedNiceClasses,
+                finalListing: ListingValidationService.validateAndRepairListing({
+                  listing: currentListing,
+                  niche1: normN1,
+                  niche2: normN2,
+                  subniche: normSub,
+                  forbiddenTerms: forbiddenTermsForTask
+                }).listing
+              };
+            }
+            if (!refereeRes.rewriteInstructions) refereeRes.rewriteInstructions = [];
+            const verifierInstructions = verifierRes.identifiedRisks.map((r) => `Resolve ${r.riskType} in ${r.field}: "${r.term}" - ${r.explanation}`);
+            refereeRes.rewriteInstructions.push(...verifierInstructions);
+            verifierRes.identifiedRisks.forEach((r) => {
+              if (r.term && r.term.length > 2) forbiddenTermsForTask.push(r.term.toLowerCase());
+            });
+          }
+          if (rewriteIterations.length >= maxCycles) {
+            console.warn(`[TrademarkServiceV2] \u{1F6A8} Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
+            saveState("ESCALATED");
+            return {
+              finalDecision: "ESCALATE",
+              isSafe: false,
+              canBeFixedByListingRewrite: true,
+              reasonCode: "REWRITE_LIMIT_REACHED",
+              recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+              initialTrademarkHits,
+              finalTrademarkHits: normalizedHits,
+              rewriteIterations,
+              refereeResult: refereeRes,
+              verifierResult: finalVerifierResult,
+              forbiddenTermsForTask,
+              blockedProducts,
+              blockedNiceClasses,
+              finalListing: ListingValidationService.validateAndRepairListing({
+                listing: currentListing,
+                niche1: normN1,
+                niche2: normN2,
+                subniche: normSub,
+                forbiddenTerms: forbiddenTermsForTask
+              }).listing
+            };
+          }
+          for (const h of refereeRes.hits) {
+            if (h.decision === "REWRITE" || h.action === "REWRITE" || h.amazonRejectionRisk === "HIGH" || h.amazonRejectionRisk === "VERY_HIGH") {
+              if (h.searchedTerm) forbiddenTermsForTask.push(h.searchedTerm.toLowerCase());
+              if (h.registeredMark) forbiddenTermsForTask.push(h.registeredMark.toLowerCase());
+            }
+          }
+          console.log(`[TrademarkServiceV2] \u270D\uFE0F F\xFChre SEO-Rewrite durch (Runde ${rewriteIterations.length + 1}). Verbotene Begriffe: [${forbiddenTermsForTask.join(", ")}]`);
+          saveState("REWRITE");
+          const rewriteRes = await LLMService.rewriteListingForTrademarkV2({
+            currentListing,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
+            quote: params2.quote,
+            rewriteIteration: rewriteIterations.length + 1,
+            forbiddenTermsForTask: Array.from(new Set(forbiddenTermsForTask)),
+            rewriteInstructions: refereeRes.rewriteInstructions || [],
+            hitsToFix: refereeRes.hits,
+            sessionId: tmSessionId
+          });
+          currentListing = rewriteRes.refinedListing;
+          const postRewriteValidation = ListingValidationService.validateAndRepairListing({
+            listing: currentListing,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
+            forbiddenTerms: forbiddenTermsForTask
+          });
+          currentListing = postRewriteValidation.listing;
+          rewriteIterations.push({
+            iteration: rewriteIterations.length + 1,
+            actionsTaken: rewriteRes.actionsTaken,
+            listing: { ...currentListing },
+            hitsFound: normalizedHits.length
+          });
+          saveState("VERIFY");
+          params2.onEvent?.({
+            type: "TM_REWRITE_RESPONSE",
+            title: `SEO-Rewrite Runde ${rewriteIterations.length} abgeschlossen`,
+            content: { iteration: rewriteIterations.length, actionsTaken: rewriteRes.actionsTaken, listing: currentListing },
+            metadata: { provider: "OpenRouter", model: rewriteRes._rawRequest?.model }
+          });
+        }
+        return {
+          finalDecision: "ESCALATE",
+          isSafe: false,
+          canBeFixedByListingRewrite: true,
+          reasonCode: "REWRITE_LIMIT_REACHED",
+          recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
+          initialTrademarkHits,
+          finalTrademarkHits: [],
+          rewriteIterations,
+          refereeResult: finalRefereeResult,
+          verifierResult: finalVerifierResult,
+          forbiddenTermsForTask,
+          blockedProducts,
+          blockedNiceClasses,
+          finalListing: ListingValidationService.validateAndRepairListing({
+            listing: currentListing,
+            niche1: normN1,
+            niche2: normN2,
+            subniche: normSub,
+            forbiddenTerms: forbiddenTermsForTask
+          }).listing
         };
       }
     };
@@ -228820,8 +230000,8 @@ var import_websocket_server = __toESM2(require_websocket_server(), 1);
 
 // src/server/index.ts
 var import_cors = __toESM2(require_lib3(), 1);
-var import_path81 = __toESM2(require("path"), 1);
-var import_fs87 = __toESM2(require("fs"), 1);
+var import_path83 = __toESM2(require("path"), 1);
+var import_fs89 = __toESM2(require("fs"), 1);
 var import_dotenv = __toESM2(require_main(), 1);
 var import_url3 = require("url");
 var import_child_process8 = require("child_process");
@@ -228832,8 +230012,8 @@ init_ideogramService();
 init_vectorizerService();
 
 // src/server/services/supabaseService.ts
-var import_fs75 = __toESM2(require("fs"), 1);
-var import_path70 = __toESM2(require("path"), 1);
+var import_fs87 = __toESM2(require("fs"), 1);
+var import_path81 = __toESM2(require("path"), 1);
 init_dist4();
 init_settingsService();
 var SupabaseService = class {
@@ -228901,11 +230081,11 @@ var SupabaseService = class {
     if (this.cachedStats && now - this.lastStatsFetch < 15e3) {
       return this.cachedStats;
     }
-    const statsFile = import_path70.default.resolve(process.cwd(), "data", "supabase_stats.json");
+    const statsFile = import_path81.default.resolve(process.cwd(), "data", "supabase_stats.json");
     const loadPersisted = () => {
       try {
-        if (import_fs75.default.existsSync(statsFile)) {
-          return JSON.parse(import_fs75.default.readFileSync(statsFile, "utf-8"));
+        if (import_fs87.default.existsSync(statsFile)) {
+          return JSON.parse(import_fs87.default.readFileSync(statsFile, "utf-8"));
         }
       } catch (e) {
       }
@@ -228947,9 +230127,9 @@ var SupabaseService = class {
       };
       if (result2.totalDesigns > 0 || result2.liveDesigns > 0) {
         try {
-          const dataDir = import_path70.default.resolve(process.cwd(), "data");
-          if (!import_fs75.default.existsSync(dataDir)) import_fs75.default.mkdirSync(dataDir, { recursive: true });
-          import_fs75.default.writeFileSync(statsFile, JSON.stringify(result2, null, 2), "utf-8");
+          const dataDir = import_path81.default.resolve(process.cwd(), "data");
+          if (!import_fs87.default.existsSync(dataDir)) import_fs87.default.mkdirSync(dataDir, { recursive: true });
+          import_fs87.default.writeFileSync(statsFile, JSON.stringify(result2, null, 2), "utf-8");
         } catch (e) {
         }
       }
@@ -229594,8 +230774,8 @@ var ProductScannerService = class {
 init_queueService();
 
 // src/server/services/uploadWorkerService.ts
-var import_path80 = __toESM2(require("path"), 1);
-var import_fs86 = __toESM2(require("fs"), 1);
+var import_path82 = __toESM2(require("path"), 1);
+var import_fs88 = __toESM2(require("fs"), 1);
 init_browserSessionService();
 init_queueService();
 init_productCatalogService();
@@ -229784,19 +230964,19 @@ var UploadWorkerService = class {
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       let pngAbsolutePath = "";
-      if (item.pngPath && import_fs86.default.existsSync(item.pngPath)) {
-        pngAbsolutePath = import_path80.default.resolve(item.pngPath);
+      if (item.pngPath && import_fs88.default.existsSync(item.pngPath)) {
+        pngAbsolutePath = import_path82.default.resolve(item.pngPath);
       } else {
         const candidatePaths = [
-          import_path80.default.resolve(process.cwd(), "data", "designs", `${item.taskId}.png`),
-          import_path80.default.resolve(process.cwd(), "data", "designs", `${item.taskId.replace("#", "")}.png`),
-          import_path80.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`),
-          import_path80.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_master.png`),
-          import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}.png`),
-          import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}_master.png`)
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId}.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId.replace("#", "")}.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_master.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}_master.png`)
         ];
         for (const cp of candidatePaths) {
-          if (import_fs86.default.existsSync(cp)) {
+          if (import_fs88.default.existsSync(cp)) {
             pngAbsolutePath = cp;
             break;
           }
@@ -229805,10 +230985,10 @@ var UploadWorkerService = class {
       if (isUpdate) {
         this.log(`\u2139\uFE0F [UPDATE-MODUS] Bestehendes Listing wird bearbeitet \u2013 Artwork ist bereits auf Amazon vorhanden.`, "Update Modus", 25, 100);
       } else {
-        if (!pngAbsolutePath || !import_fs86.default.existsSync(pngAbsolutePath)) {
+        if (!pngAbsolutePath || !import_fs88.default.existsSync(pngAbsolutePath)) {
           throw new Error(`Druckfertige 4500x5400px PNG-Datei f\xFCr Task #${item.taskId} nicht gefunden.`);
         }
-        this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path80.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
+        this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path82.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
         const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', {
           state: "attached",
           timeout: 2e4
@@ -230414,14 +231594,14 @@ var UploadWorkerService = class {
               continue;
             }
             const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-            const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+            const designsDir = import_path82.default.resolve(process.cwd(), "data", "designs");
             let targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey];
             if (!targetArtworkPath) {
               const expectedFilename = `${cleanTaskId}_${selectedVariant.id.toLowerCase()}.png`;
-              const candidatePath = import_path80.default.join(designsDir, expectedFilename);
-              if (import_fs86.default.existsSync(candidatePath)) targetArtworkPath = candidatePath;
+              const candidatePath = import_path82.default.join(designsDir, expectedFilename);
+              if (import_fs88.default.existsSync(candidatePath)) targetArtworkPath = candidatePath;
             }
-            if (!targetArtworkPath || !import_fs86.default.existsSync(targetArtworkPath)) {
+            if (!targetArtworkPath || !import_fs88.default.existsSync(targetArtworkPath)) {
               const err = `FAILED_ARTWORK_RESOLUTION: Resized Datei "${selectedVariant.artifactKey}" f\xFCr ${product.displayName} (${selectedVariant.id}) nicht auf Disk gefunden`;
               currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
               currentProductFailureReason = err;
@@ -230536,7 +231716,7 @@ var UploadWorkerService = class {
                     }
                   }, locateInputResult.inputId);
                 }
-                this.log(`\u23F3 ${product.displayName}: Artwork zugewiesen (${import_path80.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
+                this.log(`\u23F3 ${product.displayName}: Artwork zugewiesen (${import_path82.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
                 let uploadDone = false;
                 const pollStart = Date.now();
                 const amazonKey = product.amazon?.key || product.id;
@@ -230977,427 +232157,14 @@ var CostTrackingService = class {
 // src/server/index.ts
 init_amazonInspectService();
 init_updatePipelineService();
-
-// src/server/services/designPipelineService.ts
-init_taskLogService();
-init_settingsService();
-init_trademarkService();
-init_llmService();
-var DesignPipelineService = class {
-  /**
-   * Helper to retrieve task safely
-   */
-  static getTask(taskId) {
-    return TaskLogService2.getTaskLogById(taskId);
-  }
-  /**
-   * Step D1: Pre-Flight Trademark Check on Quote / Slogan
-   */
-  static async stepD1_PreflightTrademark(taskId) {
-    console.log(`[DesignPipeline] \u{1F50D} Starte Step D1 (Pre-Flight TM Check) f\xFCr Task ${taskId}...`);
-    const task = this.getTask(taskId);
-    if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-    const quote5 = task.quote || task.payload?.quote || "";
-    if (!quote5.trim()) {
-      console.log(`[DesignPipeline] Kein Quote vorhanden, \xFCberspringe Pre-Flight TM.`);
-      return { success: true };
-    }
-    try {
-      const tmResult = await TrademarkService.checkText(quote5, ["25"]);
-      const isInfringing = tmResult.totalHits > 0 && tmResult.hasInfringementClass25;
-      TaskLogService2.addEvent(taskId, {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        type: "TM_CHECK_RESPONSE",
-        title: isInfringing ? `Pre-Flight USPTO Treffer (${tmResult.totalHits} Treffer)` : "Pre-Flight USPTO sauber (0 Treffer)",
-        content: { ...tmResult, isPreFlight: true },
-        metadata: { provider: "Productor / USPTO" }
-      });
-      if (isInfringing) {
-        console.warn(`[DesignPipeline] \u26A0\uFE0F Pre-Flight TM Treffer f\xFCr Quote "${quote5}"`);
-      }
-      return { success: true, tmResult };
-    } catch (err) {
-      console.warn(`[DesignPipeline] Pre-Flight TM Check Fehler:`, err.message);
-      return { success: true, tmResult: { skipped: true, reason: err.message } };
-    }
-  }
-  /**
-   * Step D2: Generate Ideogram Prompt via OpenRouter
-   */
-  static async stepD2_GeneratePrompt(taskId) {
-    console.log(`[DesignPipeline] \u{1F9E0} Starte Step D2 (Ideogram Prompt Generation) f\xFCr Task ${taskId}...`);
-    const circuit = LLMService.isCircuitBroken();
-    if (circuit.broken) {
-      return { success: false, error: `Design-Pipeline pausiert: ${circuit.reason}` };
-    }
-    const balance = await LLMService.getAvailableBalance();
-    const settings2 = loadSettings();
-    const threshold = settings2.openRouterMinBalanceThreshold ?? 1;
-    if (balance !== null && balance < threshold) {
-      return { success: false, error: `Design-Pipeline pausiert: OpenRouter Guthaben ($${balance.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})` };
-    }
-    try {
-      await TaskLogService2.generatePromptWithOpenRouter(taskId);
-      const updated = this.getTask(taskId);
-      return { success: true, prompt: updated?.resultPrompt };
-    } catch (err) {
-      console.error(`[DesignPipeline] \u274C Fehler in Step D2:`, err);
-      return { success: false, error: err.message };
-    }
-  }
-  /**
-   * Step D3: Image Generation via Ideogram API (V_3)
-   */
-  static async stepD3_GenerateImage(taskId) {
-    console.log(`[DesignPipeline] \u{1F3A8} Starte Step D3 (Ideogram Bild-Generierung) f\xFCr Task ${taskId}...`);
-    try {
-      await TaskLogService2.processTaskWithIdeogram(taskId);
-      const updated = this.getTask(taskId);
-      return { success: true, imageUrl: updated?.imageUrl, localPath: updated?.localImagePath };
-    } catch (err) {
-      console.error(`[DesignPipeline] \u274C Fehler in Step D3:`, err);
-      return { success: false, error: err.message };
-    }
-  }
-  /**
-   * Step D4: Vision QA & Color Count Analysis (OpenRouter)
-   */
-  static async stepD4_AnalyzeDesign(taskId) {
-    console.log(`[DesignPipeline] \u{1F441}\uFE0F Starte Step D4 (Design QA Analyse) f\xFCr Task ${taskId}...`);
-    try {
-      await TaskLogService2.analyzeDesignWithOpenRouter(taskId);
-      const updated = this.getTask(taskId);
-      return { success: true, analysisResult: updated?.analysisResult };
-    } catch (err) {
-      console.error(`[DesignPipeline] \u274C Fehler in Step D4:`, err);
-      return { success: false, error: err.message };
-    }
-  }
-  /**
-   * Step D5: Multi-Marketplace MBA SEO Listing Generation (OpenRouter)
-   */
-  static async stepD5_GenerateListing(taskId) {
-    console.log(`[DesignPipeline] \u{1F4DD} Starte Step D5 (Listing Erstellung) f\xFCr Task ${taskId}...`);
-    try {
-      await TaskLogService2.generateListingWithOpenRouter(taskId);
-      const updated = this.getTask(taskId);
-      return { success: true, listingResult: updated?.listingResult };
-    } catch (err) {
-      console.error(`[DesignPipeline] \u274C Fehler in Step D5:`, err);
-      return { success: false, error: err.message };
-    }
-  }
-  /**
-   * Step D6: Trademark Validation & Refinement Loop
-   */
-  static async stepD6_TrademarkCheck(taskId) {
-    console.log(`[DesignPipeline] \u2696\uFE0F Starte Step D6 (Trademark Check & Refine Loop) f\xFCr Task ${taskId}...`);
-    try {
-      await TaskLogService2.performTrademarkCheck(taskId);
-      const updated = this.getTask(taskId);
-      return { success: true, tmResult: updated?.trademarkCheckResult };
-    } catch (err) {
-      console.error(`[DesignPipeline] \u274C Fehler in Step D6:`, err);
-      return { success: false, error: err.message };
-    }
-  }
-  /**
-   * Step D7: Vectorization & 4-Panel Cutout Audit
-   */
-  static async stepD7_VectorizeAndAudit(taskId) {
-    console.log(`[DesignPipeline] \u26A1 Starte Step D7 (Vektorisierung & Cutout-Audit) f\xFCr Task ${taskId}...`);
-    try {
-      await TaskLogService2.vectorizeDesignTask(taskId);
-      const updated = this.getTask(taskId);
-      return { success: true, svgUrl: updated?.svgUrl };
-    } catch (err) {
-      console.error(`[DesignPipeline] \u274C Fehler in Step D7:`, err);
-      return { success: false, error: err.message };
-    }
-  }
-  /**
-   * Step D8: Hand-off to Upload Queue (106 Slots)
-   */
-  static async stepD8_Enqueue(taskId) {
-    console.log(`[DesignPipeline] \u{1F4E6} Starte Step D8 (Upload Queue Handoff) f\xFCr Task ${taskId}...`);
-    try {
-      await TaskLogService2.completeTaskAndEnqueue(taskId);
-      return { success: true };
-    } catch (err) {
-      console.error(`[DesignPipeline] \u274C Fehler in Step D8:`, err);
-      return { success: false, error: err.message };
-    }
-  }
-  /**
-   * Executes a single specific step
-   */
-  static async runStep(taskId, stepName) {
-    const norm = stepName.toUpperCase().trim();
-    switch (norm) {
-      case "D1":
-      case "PREFLIGHT":
-      case "PREFLIGHT_TM_REQUEST":
-        return await this.stepD1_PreflightTrademark(taskId);
-      case "D2":
-      case "PROMPT":
-      case "LLM_REQUEST":
-        return await this.stepD2_GeneratePrompt(taskId);
-      case "D3":
-      case "IMAGE":
-      case "IDEOGRAM":
-      case "IDEOGRAM_REQUEST":
-        return await this.stepD3_GenerateImage(taskId);
-      case "D4":
-      case "ANALYZE":
-      case "VISION":
-      case "ANALYSIS_REQUEST":
-        return await this.stepD4_AnalyzeDesign(taskId);
-      case "D5":
-      case "LISTING":
-      case "LISTING_REQUEST":
-        return await this.stepD5_GenerateListing(taskId);
-      case "D6":
-      case "TRADEMARK":
-      case "TM":
-      case "TM_CHECK_REQUEST":
-      case "TM_REFINE_REQUEST":
-        return await this.stepD6_TrademarkCheck(taskId);
-      case "D7":
-      case "VECTORIZE":
-      case "SVG":
-      case "VECTORIZE_REQUEST":
-      case "SVG_AUDIT_REQUEST":
-        return await this.stepD7_VectorizeAndAudit(taskId);
-      case "D8":
-      case "QUEUE":
-      case "ENQUEUE":
-        return await this.stepD8_Enqueue(taskId);
-      default:
-        return { success: false, error: `Unbekannter Step: ${stepName}` };
-    }
-  }
-  /**
-   * Runs the full Design Creation Pipeline end-to-end
-   */
-  static async runDesignPipeline(taskId) {
-    console.log(`[DesignPipeline] \u{1F680} Starte Full Design Creation Pipeline f\xFCr Task ${taskId}...`);
-    await this.stepD1_PreflightTrademark(taskId);
-    const r2 = await this.stepD2_GeneratePrompt(taskId);
-    if (!r2.success) return { success: false, currentStep: "D2", error: r2.error };
-    const r3 = await this.stepD3_GenerateImage(taskId);
-    if (!r3.success) return { success: false, currentStep: "D3", error: r3.error };
-    const r4 = await this.stepD4_AnalyzeDesign(taskId);
-    if (!r4.success) return { success: false, currentStep: "D4", error: r4.error };
-    const r5 = await this.stepD5_GenerateListing(taskId);
-    if (!r5.success) return { success: false, currentStep: "D5", error: r5.error };
-    const r6 = await this.stepD6_TrademarkCheck(taskId);
-    if (!r6.success) return { success: false, currentStep: "D6", error: r6.error };
-    const r7 = await this.stepD7_VectorizeAndAudit(taskId);
-    if (!r7.success) return { success: false, currentStep: "D7", error: r7.error };
-    const r8 = await this.stepD8_Enqueue(taskId);
-    if (!r8.success) return { success: false, currentStep: "D8", error: r8.error };
-    return { success: true, currentStep: "D8" };
-  }
-};
-
-// src/server/index.ts
+init_designPipelineService();
 init_trademarkWhitelistService();
 init_updateBackfillService();
 init_visionOptimizationService();
-
-// src/server/services/taskRecoveryService.ts
-init_queueService();
-init_taskRepository();
-init_taskLogService();
-var TaskRecoveryService = class {
-  /**
-   * Main recovery and reconciliation entrypoint.
-   * MUST run during server startup before any background schedulers, upload workers, or mutating APIs are allowed.
-   */
-  static initAndReconcile() {
-    const report = {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      queueCorrupted: false,
-      preRemoteUploadsReset: 0,
-      unsafeUploadsEscalated: 0,
-      confirmedUploadsCompleted: 0,
-      legacyUploadsEscalated: 0,
-      tasksLinkedToQueue: 0,
-      orphanQueueItemsWaiting: 0,
-      orphanQueueItemsUploading: 0,
-      tasksWithMissingQueueItem: 0,
-      detectedZombieTasks: 0,
-      details: []
-    };
-    console.log("[TaskRecovery] \u{1F6E1}\uFE0F Starting Phase P3.1 Crash Recovery & Storage Reconciliation...");
-    QueueService.ensureLoaded();
-    if (QueueService.isCorrupted()) {
-      report.queueCorrupted = true;
-      const msg = "CRITICAL: Queue storage is in fail-safe corrupted mode. Auto-recovery and uploads are blocked.";
-      report.details.push(msg);
-      console.error(`[TaskRecovery] \u{1F6A8} ${msg}`);
-      return report;
-    }
-    const queueItems = QueueService.loadQueue();
-    let hasQueueChanges = false;
-    for (const item of queueItems) {
-      if (item.status === "UPLOADING") {
-        const recovery = item.uploadRecovery;
-        if (recovery && recovery.phase) {
-          const preRemotePhases = ["STARTING", "NAVIGATING", "CONFIGURING", "VALIDATING", "READY_TO_SUBMIT"];
-          if (preRemotePhases.includes(recovery.phase)) {
-            item.status = "WAITING";
-            item.uploadRecovery = {
-              ...recovery,
-              phase: "STARTING",
-              attempt: (recovery.attempt || 1) + 1,
-              recoveryReason: `Recovered from pre-remote interruption in phase ${recovery.phase} (safe to retry)`
-            };
-            hasQueueChanges = true;
-            report.preRemoteUploadsReset++;
-            report.details.push(`Reset pre-remote item ${item.id} (${item.title || item.designTitle}) to WAITING`);
-            console.log(`[TaskRecovery] \u{1F504} Pre-Remote Recovery: Reset item ${item.id} (${recovery.phase}) back to WAITING.`);
-          } else if (recovery.phase === "REMOTE_ACTION_INTENT" || recovery.phase === "AWAITING_AMAZON_CONFIRMATION") {
-            item.status = "ERROR";
-            item.errorMessage = "Upload wurde w\xE4hrend oder nach dem Remote-Submit-Intent unterbrochen. Human Review erforderlich.";
-            item.uploadRecovery = {
-              ...recovery,
-              recoveryReason: `Interrupted during/after ${recovery.phase}. Automated retry blocked to prevent duplicate submission.`
-            };
-            hasQueueChanges = true;
-            report.unsafeUploadsEscalated++;
-            report.details.push(`Escalated unsafe item ${item.id} (${item.title || item.designTitle}) in phase ${recovery.phase} to Human Review`);
-            console.warn(`[TaskRecovery] \u26A0\uFE0F Unsafe Remote Intent: Item ${item.id} was in ${recovery.phase}. Escalating to Human Review.`);
-            if (item.taskId) {
-              const task = TaskRepository.getTaskById(item.taskId);
-              if (task) {
-                TaskLogService2.updateTaskStatus(task.id, {
-                  status: "AWAITING_RECOVERY_REVIEW",
-                  checkpoint: "RECOVERY_REVIEW",
-                  hasError: true,
-                  errorDetails: "Upload wurde nach dem Absenden des Remote-Intents an Amazon unterbrochen. Bitte in Amazon Manage pr\xFCfen, ob das Produkt ver\xF6ffentlicht wurde, bevor erneut hochgeladen wird."
-                });
-              }
-            }
-          } else if (recovery.phase === "AMAZON_CONFIRMED") {
-            item.status = "COMPLETED";
-            item.uploadRecovery = {
-              ...recovery,
-              recoveryReason: "Reconciled to COMPLETED: Amazon confirmation was persisted prior to crash"
-            };
-            hasQueueChanges = true;
-            report.confirmedUploadsCompleted++;
-            report.details.push(`Marked confirmed item ${item.id} (${item.title || item.designTitle}) as COMPLETED`);
-            console.log(`[TaskRecovery] \u2705 Confirmed Recovery: Item ${item.id} was already confirmed by Amazon. Reconciled to COMPLETED.`);
-            if (item.taskId) {
-              const task = TaskRepository.getTaskById(item.taskId);
-              if (task && task.status !== "COMPLETED" && task.status !== "UPDATE_QUEUED") {
-                TaskLogService2.updateTaskStatus(task.id, {
-                  status: task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED",
-                  inQueue: true,
-                  hasError: false
-                });
-              }
-            }
-          }
-        } else {
-          item.status = "ERROR";
-          item.errorMessage = "Legacy-Upload ohne Phaseninformation unterbrochen. Human Review erforderlich.";
-          item.uploadRecovery = {
-            phase: "REMOTE_ACTION_INTENT",
-            attempt: 1,
-            recoveryReason: "Legacy item in UPLOADING state without phase metadata. Auto-retry blocked."
-          };
-          hasQueueChanges = true;
-          report.legacyUploadsEscalated++;
-          report.details.push(`Legacy item ${item.id} without phase metadata escalated to Human Review`);
-          console.warn(`[TaskRecovery] \u26A0\uFE0F Legacy Upload Item: ${item.id} has no phase metadata. Escalating to Human Review.`);
-          if (item.taskId) {
-            const task = TaskRepository.getTaskById(item.taskId);
-            if (task) {
-              TaskLogService2.updateTaskStatus(task.id, {
-                status: "AWAITING_RECOVERY_REVIEW",
-                checkpoint: "RECOVERY_REVIEW",
-                hasError: true,
-                errorDetails: "Legacy-Task im Status UPLOADING ohne Phaseninformation unterbrochen. Bitte vor erneutem Upload den Amazon-Zustand manuell pr\xFCfen."
-              });
-            }
-          }
-        }
-      }
-    }
-    const queueTaskIdSet = /* @__PURE__ */ new Set();
-    for (const item of queueItems) {
-      if (item.taskId) {
-        queueTaskIdSet.add(item.taskId);
-        const task = TaskRepository.getTaskById(item.taskId);
-        if (task) {
-          if (!task.inQueue) {
-            const targetStatus = task.status === "COMPLETED" || task.status === "UPDATE_QUEUED" ? task.status : task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED";
-            TaskLogService2.updateTaskStatus(task.id, {
-              inQueue: true,
-              status: targetStatus
-            });
-            report.tasksLinkedToQueue++;
-            report.details.push(`Reconciled task ${task.id}: set inQueue=true and status=${targetStatus}`);
-            console.log(`[TaskRecovery] \u{1F517} Reconciled task ${task.id}: linked to existing queue item.`);
-          }
-        } else {
-          if (item.status === "WAITING") {
-            report.orphanQueueItemsWaiting++;
-            report.details.push(`Orphan WAITING queue item found: ${item.id} (task ${item.taskId} not found)`);
-            console.warn(`[TaskRecovery] \u26A0\uFE0F Orphan WAITING queue item: ${item.id} (Task ${item.taskId} missing).`);
-          } else if (item.status === "UPLOADING") {
-            report.orphanQueueItemsUploading++;
-            report.details.push(`Orphan UPLOADING queue item found: ${item.id} (task ${item.taskId} not found)`);
-            console.warn(`[TaskRecovery] \u{1F6A8} Orphan UPLOADING queue item: ${item.id} (preserved without deletion).`);
-          }
-        }
-      }
-    }
-    const inQueueTasks = TaskRepository.getInQueueTasks();
-    for (const task of inQueueTasks) {
-      if (!queueTaskIdSet.has(task.id)) {
-        if (task.status !== "COMPLETED" && task.status !== "UPDATE_QUEUED") {
-          report.tasksWithMissingQueueItem++;
-          report.details.push(`Task ${task.id} has inQueue=true, status=${task.status}, but queue item is missing`);
-          console.warn(`[TaskRecovery] \u26A0\uFE0F Task ${task.id} flagged inQueue=true, but missing from upload_queue.json.`);
-        }
-      }
-    }
-    const zombieStatuses = [
-      "PROCESSING",
-      "GENERATING_IMAGE",
-      "ANALYZING_DESIGN",
-      "GENERATING_LISTING",
-      "CHECKING_TRADEMARKS",
-      "TRANSLATING_LISTING",
-      "VECTORIZING_DESIGN",
-      "UPDATE_DOWNLOADING_ARTWORK"
-    ];
-    const detectedZombies = TaskRepository.getTasksByStatuses(zombieStatuses);
-    report.detectedZombieTasks = detectedZombies.length;
-    if (detectedZombies.length > 0) {
-      console.log(`[TaskRecovery] \u{1F9DF} Detected ${detectedZombies.length} in-flight zombie tasks (Detection only in P3.1; auto-resume follows in P3.2).`);
-    }
-    if (hasQueueChanges) {
-      try {
-        QueueService.saveQueue();
-        console.log("[TaskRecovery] \u{1F4BE} Queue changes successfully saved to disk.");
-      } catch (err) {
-        console.error("[TaskRecovery] \u274C Failed to save reconciled queue:", err.message);
-        report.details.push(`Failed to save reconciled queue: ${err.message}`);
-      }
-    }
-    console.log(`[TaskRecovery] \u2705 Phase P3.1 Recovery complete. (${report.preRemoteUploadsReset} resets, ${report.unsafeUploadsEscalated} escalations, ${report.confirmedUploadsCompleted} confirmed).`);
-    return report;
-  }
-};
-
-// src/server/index.ts
+init_taskRecoveryService();
 var import_meta = {};
 import_dotenv.default.config();
-var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path81.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
+var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path83.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
 var app = (0, import_express.default)();
 var server2 = import_http4.default.createServer(app);
 var isSystemReady = false;
@@ -231715,26 +232482,26 @@ app.post("/api/v1/system/update", async (req, res) => {
     }
     const arrayBuffer = await response2.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const tempTarPath = import_path81.default.resolve(process.cwd(), ".temp_update.tar.gz");
-    import_fs87.default.writeFileSync(tempTarPath, buffer);
+    const tempTarPath = import_path83.default.resolve(process.cwd(), ".temp_update.tar.gz");
+    import_fs89.default.writeFileSync(tempTarPath, buffer);
     (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
     try {
-      import_fs87.default.unlinkSync(tempTarPath);
+      import_fs89.default.unlinkSync(tempTarPath);
     } catch (e) {
     }
-    const hostRepoPath = import_path81.default.resolve(process.cwd(), "host_repo");
-    if (import_fs87.default.existsSync(hostRepoPath)) {
+    const hostRepoPath = import_path83.default.resolve(process.cwd(), "host_repo");
+    if (import_fs89.default.existsSync(hostRepoPath)) {
       try {
-        import_fs87.default.writeFileSync(tempTarPath, buffer);
+        import_fs89.default.writeFileSync(tempTarPath, buffer);
         (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });
         try {
-          import_fs87.default.unlinkSync(tempTarPath);
+          import_fs89.default.unlinkSync(tempTarPath);
         } catch (e) {
         }
       } catch (e) {
@@ -232010,11 +232777,11 @@ app.post("/api/v1/design-pipeline/run", async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
-var heartbeatFile = import_path81.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
+var heartbeatFile = import_path83.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
 function loadHeartbeatState() {
   try {
-    if (import_fs87.default.existsSync(heartbeatFile)) {
-      const data = JSON.parse(import_fs87.default.readFileSync(heartbeatFile, "utf-8"));
+    if (import_fs89.default.existsSync(heartbeatFile)) {
+      const data = JSON.parse(import_fs89.default.readFileSync(heartbeatFile, "utf-8"));
       return {
         lastPingTime: Number(data.lastPingTime) || 0,
         lastPingIp: data.lastPingIp || "",
@@ -232037,9 +232804,9 @@ function recordHermesHeartbeat(req, metadata) {
   }
   console.log(`[MCP Heartbeat] \u{1F7E2} Heartbeat #${hermesHeartbeat.totalPings} von IP ${clientIp} registriert (Server-Zeit: ${(/* @__PURE__ */ new Date()).toLocaleTimeString()})`);
   try {
-    const dataDir = import_path81.default.resolve(process.cwd(), "data");
-    if (!import_fs87.default.existsSync(dataDir)) import_fs87.default.mkdirSync(dataDir, { recursive: true });
-    import_fs87.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
+    const dataDir = import_path83.default.resolve(process.cwd(), "data");
+    if (!import_fs89.default.existsSync(dataDir)) import_fs89.default.mkdirSync(dataDir, { recursive: true });
+    import_fs89.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
   } catch (e) {
   }
   const currentHermes = {
@@ -232460,66 +233227,66 @@ app.post("/api/v1/systemprompts/reset", (req, res) => {
 });
 app.get("/api/v1/designs/image/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const mbaFilePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(mbaFilePath)) {
+  if (import_fs89.default.existsSync(mbaFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(mbaFilePath).pipe(res);
+    return import_fs89.default.createReadStream(mbaFilePath).pipe(res);
   }
-  if (import_fs87.default.existsSync(rawFilePath)) {
+  if (import_fs89.default.existsSync(rawFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(rawFilePath).pipe(res);
+    return import_fs89.default.createReadStream(rawFilePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  if (task?.localImagePath && import_fs87.default.existsSync(task.localImagePath)) {
+  if (task?.localImagePath && import_fs89.default.existsSync(task.localImagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(task.localImagePath).pipe(res);
+    return import_fs89.default.createReadStream(task.localImagePath).pipe(res);
   }
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
   }
   const queueItems = QueueService.loadQueue();
   const qItem = queueItems.find((q) => q.id === req.params.taskId || q.taskId === req.params.taskId || q.designId === req.params.taskId);
-  if (qItem?.pngPath && import_fs87.default.existsSync(qItem.pngPath)) {
+  if (qItem?.pngPath && import_fs89.default.existsSync(qItem.pngPath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(qItem.pngPath).pipe(res);
+    return import_fs89.default.createReadStream(qItem.pngPath).pipe(res);
   }
-  if (qItem?.imagePath && import_fs87.default.existsSync(qItem.imagePath)) {
+  if (qItem?.imagePath && import_fs89.default.existsSync(qItem.imagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(qItem.imagePath).pipe(res);
+    return import_fs89.default.createReadStream(qItem.imagePath).pipe(res);
   }
   res.status(404).send("Design image not found");
 });
 app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const gridFilePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
+  const gridFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(gridFilePath)) {
+  if (import_fs89.default.existsSync(gridFilePath)) {
     try {
-      const stats2 = import_fs87.default.statSync(gridFilePath);
+      const stats2 = import_fs89.default.statSync(gridFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs87.default.createReadStream(gridFilePath).pipe(res);
+        return import_fs89.default.createReadStream(gridFilePath).pipe(res);
       }
     } catch (e) {
     }
   }
-  const mbaFilePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs87.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs87.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs87.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs87.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs89.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs89.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs89.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs89.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge 2x2 Grid f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
-      if (savedPath && import_fs87.default.existsSync(savedPath)) {
+      if (savedPath && import_fs89.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs87.default.createReadStream(savedPath).pipe(res);
+        return import_fs89.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -232529,31 +233296,31 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
 });
 app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const previewFilePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+  const previewFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(previewFilePath)) {
+  if (import_fs89.default.existsSync(previewFilePath)) {
     try {
-      const stats2 = import_fs87.default.statSync(previewFilePath);
+      const stats2 = import_fs89.default.statSync(previewFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs87.default.createReadStream(previewFilePath).pipe(res);
+        return import_fs89.default.createReadStream(previewFilePath).pipe(res);
       }
     } catch (e) {
     }
   }
-  const mbaFilePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs87.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs87.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs87.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs87.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs89.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs89.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs89.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs89.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge U4 Preview f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
-      if (savedPath && import_fs87.default.existsSync(savedPath)) {
+      if (savedPath && import_fs89.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs87.default.createReadStream(savedPath).pipe(res);
+        return import_fs89.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] U4-Preview Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -232563,13 +233330,13 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
 });
 app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(filePath)) {
+  if (import_fs89.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs87.default.createReadStream(filePath).pipe(res);
+    return import_fs89.default.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -232580,18 +233347,18 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
 });
 app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
+  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(filePath)) {
+  if (import_fs89.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs87.default.createReadStream(filePath).pipe(res);
+    return import_fs89.default.createReadStream(filePath).pipe(res);
   }
-  const fallbackPath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
-  if (import_fs87.default.existsSync(fallbackPath)) {
+  const fallbackPath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  if (import_fs89.default.existsSync(fallbackPath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs87.default.createReadStream(fallbackPath).pipe(res);
+    return import_fs89.default.createReadStream(fallbackPath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -232602,25 +233369,25 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
 });
 app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(filePath)) {
+  if (import_fs89.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(filePath).pipe(res);
+    return import_fs89.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("MBA PNG not found");
 });
 app.get("/api/v1/designs/4panel/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
+  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs87.default.existsSync(filePath)) {
+  if (import_fs89.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs87.default.createReadStream(filePath).pipe(res);
+    return import_fs89.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("4-Panel image not found");
 });
@@ -233069,14 +233836,14 @@ app.delete("/api/v1/products/catalog", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-var clientDistPath = import_path81.default.resolve(currentDir2, "client");
-var fallbackDistPath = import_path81.default.resolve(process.cwd(), "dist/client");
-var staticPath = import_fs87.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
-if (import_fs87.default.existsSync(staticPath)) {
+var clientDistPath = import_path83.default.resolve(currentDir2, "client");
+var fallbackDistPath = import_path83.default.resolve(process.cwd(), "dist/client");
+var staticPath = import_fs89.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
+if (import_fs89.default.existsSync(staticPath)) {
   console.log(`\u{1F4C2} Serving static frontend from ${staticPath}`);
   app.use(import_express.default.static(staticPath));
   app.get("*", (req, res) => {
-    res.sendFile(import_path81.default.join(staticPath, "index.html"));
+    res.sendFile(import_path83.default.join(staticPath, "index.html"));
   });
 }
 TaskRepository.init();
@@ -233105,6 +233872,11 @@ server2.listen(Number(PORT), HOST, () => {
     UpdateBackfillService2.startScheduler();
   } catch (err) {
     console.warn("[MBA Hub] UpdateBackfillService.startScheduler warning:", err.message);
+  }
+  try {
+    TaskRecoveryService.startRecoveryQueueWorker(1);
+  } catch (err) {
+    console.warn("[MBA Hub] TaskRecoveryService.startRecoveryQueueWorker warning:", err.message);
   }
   setTimeout(async () => {
     try {

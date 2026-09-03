@@ -3,6 +3,7 @@ import { ProductCatalogService } from './productCatalogService';
 import { TrademarkWhitelistService } from './trademarkWhitelistService';
 import { LLMService, EnglishListing } from './llmService';
 import { ListingValidationService } from './listingValidationService';
+import { TrademarkWorkflowState, TrademarkWorkflowPhase } from '../../types/tasks';
 
 export type TrademarkOffice = 'USPTO' | 'EUIPO' | 'DPMA';
 
@@ -1186,27 +1187,31 @@ export class TrademarkService {
     maxRewriteCycles?: number;
     taskId?: string;
     sessionId?: string;
+    initialWorkflowState?: TrademarkWorkflowState;
+    onPersistState?: (state: TrademarkWorkflowState) => void;
     onEvent?: (event: { type: string; title: string; content: any; metadata?: any }) => void;
   }): Promise<TrademarkAuditResultV2> {
     const normN1 = ListingValidationService.normalizeOptionalText(params.niche1);
     const normN2 = ListingValidationService.normalizeOptionalText(params.niche2);
     const normSub = ListingValidationService.normalizeOptionalText(params.subniche);
 
+    const initState = params.initialWorkflowState;
+
     // Validate and sanitize incoming candidate listing
     const initialValidation = ListingValidationService.validateAndRepairListing({
-      listing: params.listing,
+      listing: initState?.currentListing ? initState.currentListing : params.listing,
       niche1: normN1,
       niche2: normN2,
       subniche: normSub
     });
     let currentListing: EnglishListing = { ...initialValidation.listing };
-    const forbiddenTermsForTask: string[] = [];
+    const forbiddenTermsForTask: string[] = initState?.forbiddenTermsForTask ? [...initState.forbiddenTermsForTask] : [];
     const rewriteIterations: Array<{
       iteration: number;
       actionsTaken: string[];
       listing: EnglishListing;
       hitsFound: number;
-    }> = [];
+    }> = initState?.rewriteIterations ? [...initState.rewriteIterations] : [];
 
     const tmSessionId = params.sessionId || (params.taskId ? `tm:${params.taskId}` : `tm:${Date.now()}`);
     const approvedHitContexts = new Set<string>();
@@ -1217,15 +1222,73 @@ export class TrademarkService {
       return `${mark.toLowerCase()}|${normFeature}|${classes.slice().sort((a, b) => a - b).join(',')}|${matchType}|${field}|${normText}`;
     };
 
-    let initialTrademarkHits: TrademarkHitV2[] = [];
-    let finalRefereeResult: any = null;
-    let finalVerifierResult: any = null;
-    let blockedProducts: string[] = [];
-    let blockedNiceClasses: number[] = [];
+    let initialTrademarkHits: TrademarkHitV2[] = (initState?.initialTrademarkHits as any) || [];
+    let finalRefereeResult: any = initState?.lastRefereeResult || null;
+    let finalVerifierResult: any = initState?.lastVerifierResult || null;
+    let blockedProducts: string[] = initState?.blockedProducts ? [...initState.blockedProducts] : [];
+    let blockedNiceClasses: number[] = initState?.blockedNiceClasses ? [...initState.blockedNiceClasses] : [];
     const maxCycles = params.maxRewriteCycles ?? 3;
 
-    for (let cycle = 0; cycle <= maxCycles; cycle++) {
-      console.log(`[TrademarkServiceV2] 🔍 Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles}, Session: ${tmSessionId})...`);
+    // Helper to persist state to disk immediately before and after external decisions
+    const saveState = (phase: TrademarkWorkflowPhase) => {
+      const state: TrademarkWorkflowState = {
+        phase,
+        rewriteAttemptsCompleted: rewriteIterations.length,
+        currentListing: { ...currentListing },
+        forbiddenTermsForTask: [...forbiddenTermsForTask],
+        rewriteIterations: [...rewriteIterations],
+        lastRefereeResult: finalRefereeResult,
+        lastVerifierResult: finalVerifierResult,
+        blockedProducts: [...blockedProducts],
+        blockedNiceClasses: [...blockedNiceClasses],
+        initialTrademarkHits: [...initialTrademarkHits]
+      };
+      if (params.onPersistState) {
+        params.onPersistState(state);
+      } else if (params.taskId) {
+        try {
+          const { TaskLogService } = require('./taskLogService');
+          TaskLogService.updateTaskStatus(params.taskId, { trademarkWorkflowState: state });
+        } catch {}
+      }
+    };
+
+    // Determine starting cycle and initial action
+    const startCycle = rewriteIterations.length;
+    let resumePhase: TrademarkWorkflowPhase | null = initState?.phase || null;
+    let skipToVerifier = resumePhase === 'VERIFY';
+
+    saveState(resumePhase || 'INITIAL_SCAN');
+
+    if (resumePhase === 'REWRITE' && rewriteIterations.length >= maxCycles) {
+      console.warn(`[TrademarkServiceV2] 🚨 Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
+      saveState('ESCALATED');
+      return {
+        finalDecision: 'ESCALATE',
+        isSafe: false,
+        canBeFixedByListingRewrite: true,
+        reasonCode: 'REWRITE_LIMIT_REACHED',
+        recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
+        initialTrademarkHits,
+        finalTrademarkHits: [],
+        rewriteIterations,
+        refereeResult: finalRefereeResult,
+        verifierResult: finalVerifierResult,
+        forbiddenTermsForTask,
+        blockedProducts,
+        blockedNiceClasses,
+        finalListing: ListingValidationService.validateAndRepairListing({
+          listing: currentListing,
+          niche1: normN1,
+          niche2: normN2,
+          subniche: normSub,
+          forbiddenTerms: forbiddenTermsForTask
+        }).listing
+      };
+    }
+
+    for (let cycle = startCycle; cycle <= maxCycles; cycle++) {
+      console.log(`[TrademarkServiceV2] 🔍 Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles}, Session: ${tmSessionId}, Completed Rewrites: ${rewriteIterations.length})...`);
 
       // 1. Term extraction V2
       const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
@@ -1262,7 +1325,16 @@ export class TrademarkService {
 
       let refereeRes: any;
 
-      if (cycle > 0 && hitsToReview.length === 0) {
+      if (skipToVerifier) {
+        console.log(`[TrademarkServiceV2] ⚡ Resuming directly at VERIFY phase for rewrite iteration ${rewriteIterations.length}. Skipping scan/referee.`);
+        skipToVerifier = false;
+        refereeRes = finalRefereeResult || {
+          decision: 'APPROVE',
+          canBeFixedByListingRewrite: true,
+          hits: [],
+          blockedProducts
+        };
+      } else if (cycle > 0 && hitsToReview.length === 0) {
         console.log(`[TrademarkServiceV2] ⚡ Alle ${compactHits.length} Treffer wurden in diesem Task bereits als KEEP geprüft und sind im Kontext unverändert. Überspringe erneuten Referee-Call.`);
         refereeRes = {
           decision: 'APPROVE',
@@ -1275,6 +1347,7 @@ export class TrademarkService {
           rewriteInstructions: []
         };
       } else {
+        saveState('REFEREE');
         // 4. GPT-5.6 Sol Trademark Referee Pass (with compact hits & stable session_id)
         refereeRes = await LLMService.evaluateTrademarkReferee({
           currentListing,
@@ -1324,6 +1397,7 @@ export class TrademarkService {
       if (refereeRes.decision === 'ESCALATE' || (refereeRes.decision === 'REWRITE' && refereeRes.canBeFixedByListingRewrite === false)) {
         const reasonCode = refereeRes.reasonCode || (refereeRes.decision === 'ESCALATE' ? 'CORE_QUOTE_CLASS25_CONFLICT' : 'UNFIXABLE_TRADEMARK_CONFLICT');
         console.warn(`[TrademarkServiceV2] 🚨 Eskalation ausgelöst: ${reasonCode}`);
+        saveState('ESCALATED');
         return {
           finalDecision: 'ESCALATE',
           isSafe: false,
@@ -1351,6 +1425,7 @@ export class TrademarkService {
       // B. If Referee approves (APPROVE or APPROVE_WITH_BLOCKED_PRODUCTS) ➔ Run Adversarial Verifier Pass as FINAL GATE!
       if (refereeRes.decision === 'APPROVE' || refereeRes.decision === 'APPROVE_WITH_BLOCKED_PRODUCTS') {
         console.log(`[TrademarkServiceV2] 🛡️ Referee hat genehmigt (${refereeRes.decision}). Starte Verifier als Final Gate...`);
+        saveState('VERIFY');
         
         const verifierRes = await LLMService.evaluateTrademarkVerifier({
           currentListing,
@@ -1376,6 +1451,7 @@ export class TrademarkService {
 
         if (verifierRes.verdict === 'SAFE') {
           console.log(`[TrademarkServiceV2] ✅ Verifier bestätigt SAFE. Listing endgültig freigegeben!`);
+          saveState('COMPLETED');
           return {
             finalDecision: refereeRes.decision,
             isSafe: true,
@@ -1405,6 +1481,7 @@ export class TrademarkService {
         const hasInvalidAi = verifierRes.identifiedRisks?.some((r: any) => r.riskType === 'INVALID_AI_RESPONSE');
         if (!verifierRes.canBeFixedByListingRewrite || hasInvalidAi) {
           const reasonCode = hasInvalidAi ? 'INVALID_AI_RESPONSE' : 'VERIFIER_UNFIXABLE_RISK';
+          saveState('ESCALATED');
           return {
             finalDecision: 'ESCALATE',
             isSafe: false,
@@ -1429,7 +1506,8 @@ export class TrademarkService {
           };
         }
 
-        if (cycle >= maxCycles) {
+        if (rewriteIterations.length >= maxCycles) {
+          saveState('ESCALATED');
           return {
             finalDecision: 'ESCALATE',
             isSafe: false,
@@ -1464,8 +1542,9 @@ export class TrademarkService {
       }
 
       // C. If Rewrite is required (either from Referee or Verifier):
-      if (cycle >= maxCycles) {
+      if (rewriteIterations.length >= maxCycles) {
         console.warn(`[TrademarkServiceV2] 🚨 Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
+        saveState('ESCALATED');
         return {
           finalDecision: 'ESCALATE',
           isSafe: false,
@@ -1498,7 +1577,8 @@ export class TrademarkService {
         }
       }
 
-      console.log(`[TrademarkServiceV2] ✍️ Führe SEO-Rewrite durch (Runde ${cycle + 1}). Verbotene Begriffe: [${forbiddenTermsForTask.join(', ')}]`);
+      console.log(`[TrademarkServiceV2] ✍️ Führe SEO-Rewrite durch (Runde ${rewriteIterations.length + 1}). Verbotene Begriffe: [${forbiddenTermsForTask.join(', ')}]`);
+      saveState('REWRITE');
 
       const rewriteRes = await LLMService.rewriteListingForTrademarkV2({
         currentListing,
@@ -1506,7 +1586,7 @@ export class TrademarkService {
         niche2: normN2,
         subniche: normSub,
         quote: params.quote,
-        rewriteIteration: cycle + 1,
+        rewriteIteration: rewriteIterations.length + 1,
         forbiddenTermsForTask: Array.from(new Set(forbiddenTermsForTask)),
         rewriteInstructions: refereeRes.rewriteInstructions || [],
         hitsToFix: refereeRes.hits,
@@ -1525,16 +1605,18 @@ export class TrademarkService {
       currentListing = postRewriteValidation.listing;
 
       rewriteIterations.push({
-        iteration: cycle + 1,
+        iteration: rewriteIterations.length + 1,
         actionsTaken: rewriteRes.actionsTaken,
         listing: { ...currentListing },
         hitsFound: normalizedHits.length
       });
 
+      saveState('VERIFY');
+
       params.onEvent?.({
         type: 'TM_REWRITE_RESPONSE',
-        title: `SEO-Rewrite Runde ${cycle + 1} abgeschlossen`,
-        content: { iteration: cycle + 1, actionsTaken: rewriteRes.actionsTaken, listing: currentListing },
+        title: `SEO-Rewrite Runde ${rewriteIterations.length} abgeschlossen`,
+        content: { iteration: rewriteIterations.length, actionsTaken: rewriteRes.actionsTaken, listing: currentListing },
         metadata: { provider: 'OpenRouter', model: rewriteRes._rawRequest?.model }
       });
     }

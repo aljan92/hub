@@ -4,6 +4,7 @@ import { QueueService } from './queueService';
 import { TaskLogService } from './taskLogService';
 import { UpdatePipelineService } from './updatePipelineService';
 import { LLMService } from './llmService';
+import { TaskRecoveryService } from './taskRecoveryService';
 
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
@@ -14,7 +15,7 @@ export class UpdateBackfillService {
 
   /**
    * Collect all design IDs that must NOT be pulled again
-   * (Already in Queue, active in Tasks, or currently in flight)
+   * (Already in Queue, active in Tasks, currently in flight, or reserved for recovery)
    */
   public static getExcludedDesignIds(extraExcludedIds?: Set<string>): Set<string> {
     const excluded = new Set<string>();
@@ -45,6 +46,11 @@ export class UpdateBackfillService {
     const activeIds = TaskLogService.getActiveUpdateDesignIds();
     for (const id of activeIds) {
       excluded.add(id);
+    }
+
+    // 5. Designs currently reserved for recovery in TaskRecoveryService
+    for (const resId of TaskRecoveryService.getReservedDesignIds()) {
+      if (resId) excluded.add(resId.trim());
     }
 
     return excluded;
@@ -189,6 +195,10 @@ export class UpdateBackfillService {
 
     for (const inflightId of this.inFlightDesigns) {
       if (inflightId) uniqueDesignIds.add(inflightId.trim().toLowerCase());
+    }
+
+    for (const resId of TaskRecoveryService.getReservedDesignIds()) {
+      if (resId) uniqueDesignIds.add(resId.trim().toLowerCase());
     }
 
     return {

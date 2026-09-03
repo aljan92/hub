@@ -10,6 +10,8 @@ import { LLMService, EnglishListing } from './llmService';
 import { TrademarkService } from './trademarkService';
 import { VisionOptimizationService } from './visionOptimizationService';
 import { ListingValidationService } from './listingValidationService';
+import { AssetValidationService } from './assetValidationService';
+import { TaskExecutionLock } from './taskExecutionLock';
 
 export class UpdatePipelineService {
   /**
@@ -52,6 +54,27 @@ export class UpdatePipelineService {
     const designId = task.payload?.designId;
     if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
 
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const mbaPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+    const rawPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+    const existingValidPath = (task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 50000))
+      ? task.localMbaPngPath
+      : AssetValidationService.isValidPngImage(mbaPath, 50000)
+        ? mbaPath
+        : AssetValidationService.isValidPngImage(rawPath, 50000)
+          ? rawPath
+          : null;
+
+    if (existingValidPath) {
+      console.log(`[UpdatePipeline] ♻️ Gültiges Master Artwork existiert bereits lokal (${existingValidPath}). Überspringe Download.`);
+      TaskLogService.updateTaskStatus(taskId, {
+        status: 'UPDATE_ARTWORK_READY',
+        localMbaPngPath: existingValidPath,
+        hasError: false
+      });
+      return { success: true, localUrl: `/api/v1/designs/artwork/${encodeURIComponent(taskId)}` };
+    }
+
     TaskLogService.updateTaskStatus(taskId, { status: 'UPDATE_DOWNLOADING_ARTWORK', hasError: false });
 
     const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
@@ -64,9 +87,6 @@ export class UpdatePipelineService {
       return { success: false, error: res.error };
     }
 
-    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const mbaPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
-    const rawPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
     const targetPath = (task.localMbaPngPath && fs.existsSync(task.localMbaPngPath))
       ? task.localMbaPngPath
       : fs.existsSync(mbaPath) ? mbaPath : fs.existsSync(rawPath) ? rawPath : null;
@@ -609,6 +629,16 @@ export class UpdatePipelineService {
     const niche1 = task.niche1 || task.customAnswers?.niche1 || '';
     const subniche = task.subniche || task.customAnswers?.subniche || '';
 
+    // Check if valid translations for all 5 languages already exist on task
+    if (task.listingResult?.de && task.listingResult?.fr && task.listingResult?.es && task.listingResult?.it && task.listingResult?.ja) {
+      console.log(`[UpdatePipeline] ♻️ Gültige Übersetzungen für alle 5 Sprachen bereits im Task vorhanden. Wiederverwendung.`);
+      TaskLogService.updateTaskStatus(taskId, {
+        status: 'UPDATE_TRANSLATED',
+        hasError: false
+      });
+      return { success: true, fullListings: task.listingResult };
+    }
+
     const settings = loadSettings();
     if (settings.translationUpdateEnabled === false) {
       console.log(`[UpdatePipeline] ⏩ Übersetzung deaktiviert (Settings). Verwende englisches Master-Listing für Amazon Auto-Translate.`);
@@ -754,33 +784,85 @@ export class UpdatePipelineService {
   }
 
   /**
-   * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval)
+   * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval or crash recovery)
    */
-  static async runFromStep(taskId: string, startStep: 'U4' | 'U5' | 'U6' | 'U7' = 'U4'): Promise<{ success: boolean; task?: DesignTaskLog; error?: string }> {
-    console.log(`[UpdatePipeline] 🚀 Führe Pipeline ab Step ${startStep} für Task ${taskId} aus...`);
+  static async runFromStep(
+    taskId: string, 
+    startStep: 'U2' | 'U3' | 'U4' | 'U5' | 'U6' | 'U7' = 'U4',
+    owner: 'NORMAL' | 'RECOVERY' | 'USER_ACTION' = 'NORMAL'
+  ): Promise<{ success: boolean; task?: DesignTaskLog; pausedAtCheckpoint?: string; error?: string }> {
+    console.log(`[UpdatePipeline] 🚀 Führe Pipeline ab Step ${startStep} für Task ${taskId} aus (Owner: ${owner})...`);
 
-    if (startStep === 'U4') {
-      const u4 = await this.stepU4_RewriteListing(taskId);
-      if (!u4.success) return { success: false, error: u4.error };
+    if (!TaskExecutionLock.acquire(taskId, owner)) {
+      console.warn(`[UpdatePipeline] ⚠️ Task ${taskId} wird bereits ausgeführt (${JSON.stringify(TaskExecutionLock.getLockInfo(taskId))}). Abgebrochen.`);
+      return { success: false, error: `Task ${taskId} is currently executing.` };
     }
 
-    if (startStep === 'U4' || startStep === 'U5') {
-      const u5 = await this.stepU5_TrademarkCheck(taskId);
-      if (!u5.success) return { success: false, error: u5.error };
-    }
+    try {
+      if (startStep === 'U2') {
+        const u2 = await this.stepU2_DownloadArtwork(taskId);
+        if (!u2.success) return { success: false, error: u2.error };
+      }
 
-    if (startStep === 'U4' || startStep === 'U5' || startStep === 'U6') {
-      const u6 = await this.stepU6_TranslateListing(taskId);
-      if (!u6.success) return { success: false, error: u6.error };
-    }
+      if (startStep === 'U2' || startStep === 'U3') {
+        const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
+        if (!u3.success) return { success: false, error: u3.error };
 
-    if (startStep === 'U4' || startStep === 'U5' || startStep === 'U6' || startStep === 'U7') {
-      const u7 = await this.stepU7_Enqueue(taskId);
-      if (!u7.success) return { success: false, error: u7.error };
-    }
+        // Post-Analysis Decision Gate: Check autonomy, defective quality, or rejection
+        const task = this.getTask(taskId);
+        const settings = loadSettings();
+        const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
+        const isDefective = task?.analysisResult?.design_quality?.quality_verdict === 'DEFECTIVE' || task?.analysisResult?.overall_verdict === 'REJECTED';
+        const hasRejection = Boolean(task?.payload?.hasRejection);
 
-    const finalTask = this.getTask(taskId);
-    return { success: true, task: finalTask };
+        if (!autonomyUpdate || isDefective || hasRejection) {
+          let pauseReason = 'Manuelle Freigabe nach Vision Analyse erforderlich';
+          if (isDefective) {
+            pauseReason = `Design-Qualität mangelhaft (${task?.analysisResult?.design_quality?.quality_issues || 'Defekt'})`;
+          } else if (hasRejection) {
+            pauseReason = 'Amazon Rejection erkannt – Manuelle Überprüfung empfohlen';
+          }
+
+          TaskLogService.updateTaskStatus(taskId, {
+            status: 'AWAITING_DESIGN_REVIEW',
+            checkpoint: 'DESIGN_REVIEW',
+            hasError: isDefective || hasRejection,
+            errorDetails: (isDefective || hasRejection) ? pauseReason : undefined
+          });
+          return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: 'DESIGN_REVIEW' };
+        }
+      }
+
+      if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4') {
+        const u4 = await this.stepU4_RewriteListing(taskId);
+        if (!u4.success) return { success: false, error: u4.error };
+      }
+
+      if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5') {
+        const u5 = await this.stepU5_TrademarkCheck(taskId);
+        if (!u5.success) return { success: false, error: u5.error };
+
+        const task = this.getTask(taskId);
+        if (task?.status === 'AWAITING_TM_REVIEW') {
+          return { success: true, task, pausedAtCheckpoint: 'TM_REVIEW' };
+        }
+      }
+
+      if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5' || startStep === 'U6') {
+        const u6 = await this.stepU6_TranslateListing(taskId);
+        if (!u6.success) return { success: false, error: u6.error };
+      }
+
+      if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5' || startStep === 'U6' || startStep === 'U7') {
+        const u7 = await this.stepU7_Enqueue(taskId);
+        if (!u7.success) return { success: false, error: u7.error };
+      }
+
+      const finalTask = this.getTask(taskId);
+      return { success: true, task: finalTask };
+    } finally {
+      TaskExecutionLock.release(taskId);
+    }
   }
 
   /**

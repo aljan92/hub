@@ -2100,6 +2100,13 @@ server.listen(Number(PORT), HOST, () => {
     console.warn('[MBA Hub] UpdateBackfillService.startScheduler warning:', err.message);
   }
 
+  // 6. Launch Phase P3.2 background recovery queue worker
+  try {
+    TaskRecoveryService.startRecoveryQueueWorker(1);
+  } catch (err: any) {
+    console.warn('[MBA Hub] TaskRecoveryService.startRecoveryQueueWorker warning:', err.message);
+  }
+
   // Pre-warm browser sessions in background so they are immediately ready
   setTimeout(async () => {
     try {

@@ -1064,6 +1064,36 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - `tests/taskSqliteMigrationP2.test.ts`: Alle Tests bestanden.
   - `npm run build`: Client- und Server-Builds fehlerfrei kompiliert.
 
-
-
-
+### 10.39 Phase P3.2 – Safe DESIGN & UPDATE Task Resume & Pipeline Recovery
+- **Architektur & Recovery-Prinzipien:**
+  1. **Logische Klassifikation über `(source, status)`:**
+     - Statuswerte wie `ANALYZING_DESIGN`, `GENERATING_LISTING` und `CHECKING_TRADEMARKS` werden von `CREATION` und `UPDATE` Pipelines getrennt geroutet:
+       - `CREATION + GENERATING_LISTING` ➔ D5/D6 Pipeline Flow.
+       - `UPDATE + GENERATING_LISTING` ➔ U4 ➔ `UPDATE_REWRITTEN` ➔ U5 Pipeline Flow.
+       - `CREATION + CHECKING_TRADEMARKS` ➔ D6 ➔ Vectorization.
+       - `UPDATE + CHECKING_TRADEMARKS` ➔ U5 ➔ `UPDATE_TM_CHECKED` ➔ U6/U7 Flow.
+     - Review- und Terminal-Zustände (`COMPLETED`, `UPDATE_QUEUED`, `REJECTED`, `ERROR`, `AWAITING_*`) sind 100% immun gegen automatische Wiederaufnahme.
+  2. **Review- & Decision-Gates bleiben bei Asset-Reuse strikt gewahrt:**
+     - *Invariante:* `reuse expensive artifact !== skip business validation`.
+     - Wiederverwendetes `analysisResult` führt Post-Analysis Decision Code aus: Bei fehlerhafter Design-Qualität (`DEFECTIVE`) wird sofort bei `AWAITING_DESIGN_REVIEW` pausiert.
+     - Vorhandenes valides SVG überspringt den Vectorizer-API-Call, führt jedoch zwingend den 4-Panel Cutout-Audit via `LLMService.auditSvgCutout` aus. Bei Mängeln pausiert der Task bei `AWAITING_SVG_REVIEW`.
+     - Vorhandenes PNG Master Artwork in Update U2 wird per Magic Bytes (`0x89504E47`) validiert und wiederverwendet.
+     - Vollständige Übersetzungen (DE, FR, ES, IT, JA) in U6 werden wiederverwendet.
+  3. **Trademark Continuity & Rewrite-Semantik V2:**
+     - `TrademarkWorkflowState` persistiert Phase (`INITIAL_SCAN`, `REFEREE`, `REWRITE`, `VERIFY`, `COMPLETED`, `ESCALATED`), `rewriteAttemptsCompleted`, verbotene Begriffe und Iterations-Details.
+     - Mid-Cycle Resume: Bei Crash nach Rewrite #2 vor dem Verifier wird direkt in Phase `VERIFY` fortgesetzt, ohne Rewrite #2 redundant zu wiederholen.
+     - Strikte Grenze: Maximal 3 tatsächliche Rewrites (`rewriteAttemptsCompleted >= 3`). Ein weiterer Rewrite-Versuch wird blockiert und der Task eskaliert mit `REWRITE_LIMIT_REACHED` zu `AWAITING_TM_REVIEW`.
+  4. **Attempt-Counting & Escalation Guard:**
+     - `recoveryAttempts` wird erst beim tatsächlichen Start durch den Recovery-Worker inkrementiert, nicht während der Registrierung/Enqueue.
+     - Tasks mit mehr als 2 Recovery-Versuchen eskalieren deterministisch zu `AWAITING_RECOVERY_REVIEW`.
+  5. **Reservierung vor Readiness & Backfill-Schutz:**
+     - Recovery-Jobs werden vor Freigabe von `isSystemReady = true` synchron reserviert.
+     - `UpdateBackfillService` prüft `TaskRecoveryService.getReservedDesignIds()`, wodurch doppelte Update-Erstellungen für in Wiederherstellung befindliche Designs ausgeschlossen sind.
+  6. **Prozessweiter `TaskExecutionLock` (`src/server/services/taskExecutionLock.ts`):**
+     - Einheitlicher Lock-Guard für `NORMAL`, `RECOVERY` und `USER_ACTION` mit Reentrancy-Support für denselben Owner.
+  7. **O(1) Indexed Zombie Query (`src/server/storage/taskRepository.ts`):**
+     - Gezielte Abfrage über `WHERE status IN (...)` scannt nur aktive Zwischenzustände. 10.000 historische Tasks werden ignoriert (Scan-Dauer < 2ms).
+- **Verifikation:**
+  - `tests/taskRecoveryP3_2.test.ts`: Alle 12 Tests bestanden (Immunität, Attempt-Limit, S1 Shared Status, S2 Analysis Gate, S3 SVG Gate, S4 Queued Crash Attempt Invariante, S5 TM Mid-Cycle, S6 TM Rewrite Boundary Max 3, S7 10.000 Historical Tasks Benchmark in 1ms, H1 Asset Heuristics, H2 TaskExecutionLock, H3 Backfill Protection).
+  - Regression: `tests/taskRecoveryP3_1.test.ts` (10/10 PASS), `tests/trademarkV2.test.ts` (115/115 PASS), `tests/unifiedFinalizationAndCustomResize.test.ts` (10/10 PASS), `tests/productCatalogArchitectureGuard.test.ts` (PASS).
+  - `npm run build`: Vollständiger Client- und Server-Build fehlerfrei.

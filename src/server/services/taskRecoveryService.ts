@@ -1,7 +1,24 @@
+import fs from 'fs';
+import path from 'path';
 import { QueueService, QueueItem } from './queueService';
 import { TaskRepository } from '../storage/taskRepository';
 import { TaskLogService } from './taskLogService';
-import { TaskStatus } from '../../types/tasks';
+import { TaskStatus, TaskSource, DesignTaskLog } from '../../types/tasks';
+import { TaskExecutionLock } from './taskExecutionLock';
+import { AssetValidationService } from './assetValidationService';
+import { DesignPipelineService } from './designPipelineService';
+import { UpdatePipelineService } from './updatePipelineService';
+import { SvgRenderService } from './svgRenderService';
+import { TrademarkService } from './trademarkService';
+import { loadSettings } from './settingsService';
+import { LLMService } from './llmService';
+
+export interface ReservedRecoveryJob {
+  taskId: string;
+  source: TaskSource;
+  status: TaskStatus;
+  designId?: string;
+}
 
 export interface TaskRecoveryReport {
   timestamp: string;
@@ -15,10 +32,37 @@ export interface TaskRecoveryReport {
   orphanQueueItemsUploading: number;
   tasksWithMissingQueueItem: number;
   detectedZombieTasks: number;
+  candidateZombieTasks: number;
+  reservedRecoveryJobs: number;
+  attemptLimitEscalatedTasks: number;
   details: string[];
 }
 
 export class TaskRecoveryService {
+  private static reservedRecoveryJobs: ReservedRecoveryJob[] = [];
+  private static reservedDesignIds: Set<string> = new Set();
+  private static isWorkerRunning = false;
+
+  public static readonly CANDIDATE_ZOMBIE_STATUSES: TaskStatus[] = [
+    'RECEIVED',
+    'PROCESSING',
+    'PROMPT_READY',
+    'GENERATING_IMAGE',
+    'ANALYZING_DESIGN',
+    'GENERATING_LISTING',
+    'CHECKING_TRADEMARKS',
+    'UPDATE_EXTRACTED',
+    'UPDATE_DOWNLOADING_ARTWORK',
+    'UPDATE_ARTWORK_READY',
+    'UPDATE_ANALYZED',
+    'UPDATE_REWRITING',
+    'UPDATE_REWRITTEN',
+    'UPDATE_TM_CHECKED',
+    'TRANSLATING_LISTING',
+    'VECTORIZING_DESIGN',
+    'UPDATE_TRANSLATED'
+  ];
+
   /**
    * Main recovery and reconciliation entrypoint.
    * MUST run during server startup before any background schedulers, upload workers, or mutating APIs are allowed.
@@ -36,10 +80,13 @@ export class TaskRecoveryService {
       orphanQueueItemsUploading: 0,
       tasksWithMissingQueueItem: 0,
       detectedZombieTasks: 0,
+      candidateZombieTasks: 0,
+      reservedRecoveryJobs: 0,
+      attemptLimitEscalatedTasks: 0,
       details: []
     };
 
-    console.log('[TaskRecovery] 🛡️ Starting Phase P3.1 Crash Recovery & Storage Reconciliation...');
+    console.log('[TaskRecovery] 🛡️ Starting Phase P3.1/P3.2 Crash Recovery & Storage Reconciliation...');
 
     // 1. Ensure Queue is loaded
     QueueService.ensureLoaded();
@@ -164,7 +211,6 @@ export class TaskRecoveryService {
         const task = TaskRepository.getTaskById(item.taskId);
 
         if (task) {
-          // Case: Queue item exists, but task.inQueue is false
           if (!task.inQueue) {
             const targetStatus = task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED'
               ? task.status
@@ -179,7 +225,6 @@ export class TaskRecoveryService {
             console.log(`[TaskRecovery] 🔗 Reconciled task ${task.id}: linked to existing queue item.`);
           }
         } else {
-          // Case: Orphan queue item without SQLite task
           if (item.status === 'WAITING') {
             report.orphanQueueItemsWaiting++;
             report.details.push(`Orphan WAITING queue item found: ${item.id} (task ${item.taskId} not found)`);
@@ -194,7 +239,6 @@ export class TaskRecoveryService {
     }
 
     // 5. Cross-Storage Reconciliation: Tasks with inQueue=true but missing Queue item
-    // In P3.1: Only detect and warn if task is in an active review/pipeline state
     const inQueueTasks = TaskRepository.getInQueueTasks();
     for (const task of inQueueTasks) {
       if (!queueTaskIdSet.has(task.id)) {
@@ -206,23 +250,8 @@ export class TaskRecoveryService {
       }
     }
 
-    // 6. Scan Zombie Tasks in SQLite (DETECTION ONLY for P3.1 - no auto-resume yet)
-    const zombieStatuses: TaskStatus[] = [
-      'PROCESSING',
-      'GENERATING_IMAGE',
-      'ANALYZING_DESIGN',
-      'GENERATING_LISTING',
-      'CHECKING_TRADEMARKS',
-      'TRANSLATING_LISTING',
-      'VECTORIZING_DESIGN',
-      'UPDATE_DOWNLOADING_ARTWORK'
-    ];
-
-    const detectedZombies = TaskRepository.getTasksByStatuses(zombieStatuses);
-    report.detectedZombieTasks = detectedZombies.length;
-    if (detectedZombies.length > 0) {
-      console.log(`[TaskRecovery] 🧟 Detected ${detectedZombies.length} in-flight zombie tasks (Detection only in P3.1; auto-resume follows in P3.2).`);
-    }
+    // 6. Phase P3.2 Classification & Job Reservation (O(1) Targeted SQLite Query)
+    this.classifyAndPrepareRecoveryJobs(report);
 
     // 7. Atomically save queue if any items were updated
     if (hasQueueChanges) {
@@ -235,7 +264,530 @@ export class TaskRecoveryService {
       }
     }
 
-    console.log(`[TaskRecovery] ✅ Phase P3.1 Recovery complete. (${report.preRemoteUploadsReset} resets, ${report.unsafeUploadsEscalated} escalations, ${report.confirmedUploadsCompleted} confirmed).`);
+    console.log(`[TaskRecovery] ✅ Phase P3.1/P3.2 Reconciliation complete. (${report.reservedRecoveryJobs} reserved jobs, ${report.attemptLimitEscalatedTasks} attempt escalations).`);
     return report;
+  }
+
+  /**
+   * Phase P3.2: Classify candidate zombie tasks and reserve them in memory before system becomes ready.
+   * Does NOT increment recoveryAttempts here (increment happens when worker actually starts the task).
+   */
+  private static classifyAndPrepareRecoveryJobs(report: TaskRecoveryReport): void {
+    this.reservedRecoveryJobs = [];
+    this.reservedDesignIds.clear();
+
+    // Use fast indexed query for candidate statuses only
+    const candidateTasks = TaskRepository.getTasksByStatuses(this.CANDIDATE_ZOMBIE_STATUSES);
+    report.candidateZombieTasks = candidateTasks.length;
+    report.detectedZombieTasks = candidateTasks.length;
+
+    for (const task of candidateTasks) {
+      // Ignore tasks that have error flag set or are in terminal/review state
+      if (task.hasError || task.status === 'ERROR' || task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED' || task.status === 'REJECTED') {
+        continue;
+      }
+
+      // Ignore tasks awaiting human reviews
+      if (task.status.startsWith('AWAITING_')) {
+        continue;
+      }
+
+      const designId = (task.designId || task.payload?.designId || '').trim();
+      const currentAttempts = task.recovery?.recoveryAttempts || 0;
+
+      // Rule: Strictly max 2 automated recovery attempts
+      if (currentAttempts >= 2) {
+        console.warn(`[TaskRecovery] 🚨 Task ${task.id} exceeded max recovery attempts (${currentAttempts}). Escalating to AWAITING_RECOVERY_REVIEW.`);
+        TaskLogService.updateTaskStatus(task.id, {
+          status: 'AWAITING_RECOVERY_REVIEW',
+          checkpoint: 'RECOVERY_REVIEW',
+          hasError: true,
+          errorDetails: `Maximales Recovery-Limit von 2 Versuchen erreicht. Automatischer Neustart blockiert.`
+        });
+        TaskLogService.addEvent(task.id, {
+          timestamp: new Date().toISOString(),
+          type: 'RECOVERY_ESCALATED',
+          title: 'Recovery-Limit erreicht ➔ Human Review',
+          content: { attempts: currentAttempts, reason: 'RECOVERY_ATTEMPT_LIMIT_REACHED' }
+        });
+        report.attemptLimitEscalatedTasks++;
+        report.details.push(`Task ${task.id} escalated to AWAITING_RECOVERY_REVIEW (attempts: ${currentAttempts})`);
+        continue;
+      }
+
+      // Reserve job
+      this.reservedRecoveryJobs.push({
+        taskId: task.id,
+        source: task.source,
+        status: task.status,
+        designId: designId || undefined
+      });
+
+      if (designId) {
+        this.reservedDesignIds.add(designId.toLowerCase());
+      }
+
+      TaskLogService.addEvent(task.id, {
+        timestamp: new Date().toISOString(),
+        type: 'RECOVERY_DETECTED',
+        title: 'Unterbrochener Pipeline-Task für Recovery vorgemerkt',
+        content: { status: task.status, source: task.source, attemptsAlreadyMade: currentAttempts }
+      });
+
+      report.reservedRecoveryJobs++;
+      report.details.push(`Reserved recovery job for task ${task.id} (${task.source} / ${task.status})`);
+    }
+
+    console.log(`[TaskRecovery] 📋 Reserved ${this.reservedRecoveryJobs.length} recovery jobs (${this.reservedDesignIds.size} unique designs).`);
+  }
+
+  /**
+   * Returns whether a designId is currently reserved for recovery.
+   * Used by UpdateBackfillService to prevent creating duplicate UPDATE tasks.
+   */
+  public static isDesignReserved(designId?: string): boolean {
+    if (!designId) return false;
+    return this.reservedDesignIds.has(designId.trim().toLowerCase());
+  }
+
+  /**
+   * Returns list of currently reserved design IDs.
+   */
+  public static getReservedDesignIds(): string[] {
+    return Array.from(this.reservedDesignIds);
+  }
+
+  /**
+   * Returns list of currently reserved recovery jobs.
+   */
+  public static getReservedJobs(): ReservedRecoveryJob[] {
+    return [...this.reservedRecoveryJobs];
+  }
+
+  /**
+   * Starts the controlled background recovery worker.
+   * Runs asynchronously after server is ready (isSystemReady = true).
+   */
+  public static async startRecoveryQueueWorker(concurrency = 1): Promise<void> {
+    if (this.isWorkerRunning) {
+      console.log('[TaskRecovery] ℹ️ Recovery Worker is already running.');
+      return;
+    }
+
+    if (this.reservedRecoveryJobs.length === 0) {
+      console.log('[TaskRecovery] ℹ️ No reserved recovery jobs to process.');
+      return;
+    }
+
+    this.isWorkerRunning = true;
+    console.log(`[TaskRecovery] ⚙️ Starting background recovery worker (${this.reservedRecoveryJobs.length} jobs queued, concurrency: ${concurrency})...`);
+
+    // Process asynchronously so caller is never blocked
+    (async () => {
+      try {
+        while (this.reservedRecoveryJobs.length > 0) {
+          const job = this.reservedRecoveryJobs.shift();
+          if (!job) break;
+
+          await this.processSingleRecoveryJob(job);
+        }
+      } catch (err: any) {
+        console.error('[TaskRecovery] ❌ Unhandled error in recovery worker:', err);
+      } finally {
+        this.isWorkerRunning = false;
+        console.log('[TaskRecovery] 🏁 Recovery worker finished all queued jobs.');
+      }
+    })();
+  }
+
+  /**
+   * Resets worker state (used in testing).
+   */
+  public static resetWorkerStateForTest(): void {
+    this.isWorkerRunning = false;
+    this.reservedRecoveryJobs = [];
+    this.reservedDesignIds.clear();
+  }
+
+  /**
+   * Executes recovery for a single reserved task.
+   * Increments recoveryAttempts ONLY here when execution actually starts.
+   */
+  public static async processSingleRecoveryJob(job: ReservedRecoveryJob): Promise<void> {
+    const { taskId, source, status } = job;
+    console.log(`[TaskRecovery] 🔄 Processing recovery for task ${taskId} (${source}, ${status})...`);
+
+    // Check lock
+    if (!TaskExecutionLock.acquire(taskId, 'RECOVERY')) {
+      console.warn(`[TaskRecovery] ⚠️ Task ${taskId} is currently locked. Skipping.`);
+      if (job.designId) this.reservedDesignIds.delete(job.designId.toLowerCase());
+      return;
+    }
+
+    try {
+      const task = TaskLogService.getTaskLogById(taskId);
+      if (!task) {
+        console.warn(`[TaskRecovery] Task ${taskId} no longer exists. Skipping.`);
+        return;
+      }
+
+      // Check terminal/human review
+      if (task.status.startsWith('AWAITING_') || task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED' || task.status === 'ERROR') {
+        console.log(`[TaskRecovery] Task ${taskId} is already in state ${task.status}. No action.`);
+        return;
+      }
+
+      const currentAttempts = task.recovery?.recoveryAttempts || 0;
+      if (currentAttempts >= 2) {
+        console.warn(`[TaskRecovery] Task ${taskId} reached attempt limit right before execution. Escalating.`);
+        TaskLogService.updateTaskStatus(taskId, {
+          status: 'AWAITING_RECOVERY_REVIEW',
+          checkpoint: 'RECOVERY_REVIEW',
+          hasError: true,
+          errorDetails: 'Maximales Recovery-Limit von 2 Versuchen erreicht.'
+        });
+        return;
+      }
+
+      // Increment attempt counter upon ACTUAL start
+      const nextAttempt = currentAttempts + 1;
+      const now = new Date().toISOString();
+
+      TaskLogService.updateTaskStatus(taskId, {
+        recovery: {
+          recoveryAttempts: nextAttempt,
+          lastAttemptAt: now,
+          interruptedStatus: task.status,
+          recoveryReason: `Automated recovery attempt ${nextAttempt} started`
+        }
+      });
+
+      TaskLogService.addEvent(taskId, {
+        timestamp: now,
+        type: 'RECOVERY_STARTED',
+        title: `Recovery-Versuch ${nextAttempt} von 2 gestartet`,
+        content: { previousStatus: task.status, attempt: nextAttempt }
+      });
+
+      // Dispatch recovery based on (source, status) matrix
+      const result = await this.executeRecoveryPolicy(task);
+
+      if (result.success) {
+        const completedNow = new Date().toISOString();
+        TaskLogService.updateTaskStatus(taskId, {
+          recovery: {
+            recoveryAttempts: nextAttempt,
+            lastAttemptAt: now,
+            interruptedStatus: task.status,
+            recoveredAt: completedNow,
+            recoveredSuccessfully: true,
+            recoveryReason: 'Automated recovery completed successfully'
+          }
+        });
+        TaskLogService.addEvent(taskId, {
+          timestamp: completedNow,
+          type: 'RECOVERY_COMPLETED',
+          title: `Recovery für Task ${taskId} erfolgreich abgeschlossen`,
+          content: { pausedAtCheckpoint: result.pausedAtCheckpoint }
+        });
+      } else {
+        const failedNow = new Date().toISOString();
+        TaskLogService.addEvent(taskId, {
+          timestamp: failedNow,
+          type: 'RECOVERY_FAILED',
+          title: `Recovery für Task ${taskId} fehlgeschlagen`,
+          content: { error: result.error }
+        });
+      }
+    } catch (err: any) {
+      console.error(`[TaskRecovery] ❌ Exception during recovery of task ${taskId}:`, err);
+      TaskLogService.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'RECOVERY_FAILED',
+        title: `Unerwarteter Fehler bei Task-Recovery`,
+        content: { error: err.message }
+      });
+    } finally {
+      TaskExecutionLock.release(taskId);
+      if (job.designId) {
+        this.reservedDesignIds.delete(job.designId.toLowerCase());
+      }
+    }
+  }
+
+  /**
+   * Evaluates the recovery policy based on (source, status).
+   * Reuses valid existing assets while executing normal decision/review gates.
+   */
+  private static async executeRecoveryPolicy(task: DesignTaskLog): Promise<{ success: boolean; pausedAtCheckpoint?: string; error?: string }> {
+    const taskId = task.id;
+    const isUpdate = task.source === 'UPDATE' || (task.id && task.id.endsWith('-U'));
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    console.log(`[TaskRecovery] 🧭 Policy dispatch for ${taskId} (isUpdate: ${isUpdate}, status: ${task.status})...`);
+
+    // ==========================================
+    // 1. UPDATE PIPELINE RECOVERY
+    // ==========================================
+    if (isUpdate) {
+      switch (task.status) {
+        case 'UPDATE_EXTRACTED':
+          return await UpdatePipelineService.runFromStep(taskId, 'U2', 'RECOVERY');
+
+        case 'UPDATE_DOWNLOADING_ARTWORK': {
+          const mbaPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+          const rawPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+          const existingPath = (task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 50000))
+            ? task.localMbaPngPath
+            : AssetValidationService.isValidPngImage(mbaPath, 50000)
+              ? mbaPath
+              : AssetValidationService.isValidPngImage(rawPath, 50000)
+                ? rawPath
+                : null;
+
+          if (existingPath) {
+            TaskLogService.addEvent(taskId, {
+              timestamp: new Date().toISOString(),
+              type: 'RECOVERY_ASSET_REUSED',
+              title: 'Master Artwork wiederverwendet',
+              content: { path: existingPath }
+            });
+            return await UpdatePipelineService.runFromStep(taskId, 'U3', 'RECOVERY');
+          }
+          return await UpdatePipelineService.runFromStep(taskId, 'U2', 'RECOVERY');
+        }
+
+        case 'UPDATE_ARTWORK_READY':
+          return await UpdatePipelineService.runFromStep(taskId, 'U3', 'RECOVERY');
+
+        case 'ANALYZING_DESIGN':
+        case 'UPDATE_ANALYZED': {
+          // Check if analysisResult is already persisted
+          if (task.analysisResult) {
+            TaskLogService.addEvent(taskId, {
+              timestamp: new Date().toISOString(),
+              type: 'RECOVERY_ASSET_REUSED',
+              title: 'Analyse-Ergebnis wiederverwendet ➔ Post-Analysis Gate ausführen',
+              content: { analysisResult: task.analysisResult }
+            });
+
+            // Post-Analysis Decision Gate: Must NOT skip review!
+            const settings = loadSettings();
+            const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
+            const isDefective = task.analysisResult?.design_quality?.quality_verdict === 'DEFECTIVE' || task.analysisResult?.overall_verdict === 'REJECTED';
+            const hasRejection = Boolean(task.payload?.hasRejection);
+
+            if (!autonomyUpdate || isDefective || hasRejection) {
+              let pauseReason = 'Manuelle Freigabe nach Vision Analyse erforderlich';
+              if (isDefective) {
+                pauseReason = `Design-Qualität mangelhaft (${task.analysisResult?.design_quality?.quality_issues || 'Defekt'})`;
+              } else if (hasRejection) {
+                pauseReason = 'Amazon Rejection erkannt – Manuelle Überprüfung empfohlen';
+              }
+
+              TaskLogService.updateTaskStatus(taskId, {
+                status: 'AWAITING_DESIGN_REVIEW',
+                checkpoint: 'DESIGN_REVIEW',
+                hasError: isDefective || hasRejection,
+                errorDetails: (isDefective || hasRejection) ? pauseReason : undefined
+              });
+              return { success: true, pausedAtCheckpoint: 'DESIGN_REVIEW' };
+            }
+
+            // If autonomy allows and no defects: proceed to U4
+            return await UpdatePipelineService.runFromStep(taskId, 'U4', 'RECOVERY');
+          }
+
+          // If analysisResult was not yet completed: retry U3
+          return await UpdatePipelineService.runFromStep(taskId, 'U3', 'RECOVERY');
+        }
+
+        case 'GENERATING_LISTING':
+        case 'UPDATE_REWRITING':
+        case 'UPDATE_REWRITTEN': {
+          if (task.listingResult?.en?.title && task.listingResult?.en?.brand) {
+            TaskLogService.addEvent(taskId, {
+              timestamp: new Date().toISOString(),
+              type: 'RECOVERY_ASSET_REUSED',
+              title: 'Rewritten Listing wiederverwendet',
+              content: { listing: task.listingResult.en }
+            });
+            return await UpdatePipelineService.runFromStep(taskId, 'U5', 'RECOVERY');
+          }
+          return await UpdatePipelineService.runFromStep(taskId, 'U4', 'RECOVERY');
+        }
+
+        case 'CHECKING_TRADEMARKS':
+        case 'UPDATE_TM_CHECKED': {
+          // If TM state exists or TM already checked:
+          if (task.status === 'UPDATE_TM_CHECKED') {
+            const settings = loadSettings();
+            const translationEnabled = settings.translationUpdateEnabled !== false;
+            return await UpdatePipelineService.runFromStep(taskId, translationEnabled ? 'U6' : 'U7', 'RECOVERY');
+          }
+
+          // Resume TM check with preserved trademarkWorkflowState
+          return await UpdatePipelineService.runFromStep(taskId, 'U5', 'RECOVERY');
+        }
+
+        case 'TRANSLATING_LISTING':
+        case 'UPDATE_TRANSLATED': {
+          if (task.listingResult?.de && task.listingResult?.fr && task.listingResult?.es && task.listingResult?.it && task.listingResult?.ja) {
+            TaskLogService.addEvent(taskId, {
+              timestamp: new Date().toISOString(),
+              type: 'RECOVERY_ASSET_REUSED',
+              title: 'Übersetzungen wiederverwendet',
+              content: { languages: ['de', 'fr', 'es', 'it', 'ja'] }
+            });
+            return await UpdatePipelineService.runFromStep(taskId, 'U7', 'RECOVERY');
+          }
+          return await UpdatePipelineService.runFromStep(taskId, 'U6', 'RECOVERY');
+        }
+
+        default:
+          console.warn(`[TaskRecovery] No automated recovery policy for UPDATE task in status: ${task.status}.`);
+          return { success: false, error: `Unsupported UPDATE status: ${task.status}` };
+      }
+    }
+
+    // ==========================================
+    // 2. DESIGN PIPELINE RECOVERY
+    // ==========================================
+    switch (task.status) {
+      case 'RECEIVED':
+      case 'PROCESSING':
+        return await DesignPipelineService.runFromStep(taskId, 'D1', 'RECOVERY');
+
+      case 'PROMPT_READY':
+        return await DesignPipelineService.runFromStep(taskId, 'D3', 'RECOVERY');
+
+      case 'GENERATING_IMAGE': {
+        const rawPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+        const targetPng = (task.localImagePath && AssetValidationService.isValidPngImage(task.localImagePath, 10000))
+          ? task.localImagePath
+          : (task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 10000))
+            ? task.localMbaPngPath
+            : AssetValidationService.isValidPngImage(rawPath, 10000)
+              ? rawPath
+              : null;
+
+        if (targetPng) {
+          TaskLogService.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'RECOVERY_ASSET_REUSED',
+            title: 'Vorhandenes Design-Bild wiederverwendet',
+            content: { path: targetPng }
+          });
+          return await DesignPipelineService.runFromStep(taskId, 'D4', 'RECOVERY');
+        }
+        return await DesignPipelineService.runFromStep(taskId, 'D3', 'RECOVERY');
+      }
+
+      case 'ANALYZING_DESIGN': {
+        if (task.analysisResult) {
+          TaskLogService.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'RECOVERY_ASSET_REUSED',
+            title: 'Analyse-Ergebnis wiederverwendet ➔ Post-Analysis Gate ausführen',
+            content: { analysisResult: task.analysisResult }
+          });
+
+          // Post-Analysis Gate: If defective, pause at AWAITING_DESIGN_REVIEW!
+          const isDefective = task.analysisResult?.design_quality?.quality_verdict === 'DEFECTIVE' || task.analysisResult?.overall_verdict === 'REJECTED';
+          if (isDefective) {
+            const reason = task.analysisResult?.design_quality?.quality_issues || 'Defective design quality detected';
+            TaskLogService.updateTaskStatus(taskId, {
+              status: 'AWAITING_DESIGN_REVIEW',
+              checkpoint: 'DESIGN_REVIEW',
+              hasError: true,
+              errorDetails: reason
+            });
+            return { success: true, pausedAtCheckpoint: 'DESIGN_REVIEW' };
+          }
+
+          return await DesignPipelineService.runFromStep(taskId, 'D5', 'RECOVERY');
+        }
+        return await DesignPipelineService.runFromStep(taskId, 'D4', 'RECOVERY');
+      }
+
+      case 'GENERATING_LISTING': {
+        if (task.listingResult?.en?.title && task.listingResult?.en?.brand) {
+          TaskLogService.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'RECOVERY_ASSET_REUSED',
+            title: 'Generiertes Listing wiederverwendet',
+            content: { listing: task.listingResult.en }
+          });
+          return await DesignPipelineService.runFromStep(taskId, 'D6', 'RECOVERY');
+        }
+        return await DesignPipelineService.runFromStep(taskId, 'D5', 'RECOVERY');
+      }
+
+      case 'CHECKING_TRADEMARKS': {
+        // Step D6 uses preserved trademarkWorkflowState automatically if present
+        return await DesignPipelineService.runFromStep(taskId, 'D6', 'RECOVERY');
+      }
+
+      case 'VECTORIZING_DESIGN': {
+        const svgPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.svg`);
+        const targetSvg = (task.localSvgPath && AssetValidationService.isValidSvgFile(task.localSvgPath, 20))
+          ? task.localSvgPath
+          : AssetValidationService.isValidSvgFile(svgPath, 20)
+            ? svgPath
+            : null;
+
+        if (targetSvg) {
+          TaskLogService.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'RECOVERY_ASSET_REUSED',
+            title: 'SVG-Vektordatei wiederverwendet ➔ Post-Vectorization Audit ausführen',
+            content: { path: targetSvg }
+          });
+
+          // Execute normal Cutout / SVG Audit (Rule 3)
+          try {
+            const svgContent = fs.readFileSync(targetSvg, 'utf-8');
+            const fourPanelFilename = `${cleanId}_4panel.png`;
+            const fourPanelFilePath = path.resolve(process.cwd(), 'data', 'designs', fourPanelFilename);
+            const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgContent);
+            fs.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+
+            const auditRes = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
+
+            if (auditRes.cutout_verdict === 'REJECTED') {
+              console.log(`[TaskRecovery] ⏸️ SVG Audit verlangt manuelle Überprüfung für Task ${taskId}. Pausiere bei AWAITING_SVG_REVIEW.`);
+              TaskLogService.updateTaskStatus(taskId, {
+                status: 'AWAITING_SVG_REVIEW',
+                checkpoint: 'SVG_REVIEW',
+                hasError: true,
+                errorDetails: auditRes.explanation || auditRes.detected_issues?.join(', ') || 'Cutout audit requires human review'
+              });
+              return { success: true, pausedAtCheckpoint: 'SVG_REVIEW' };
+            }
+
+            // Render MBA PNG if missing
+            const mbaFilename = `${cleanId}_mba.png`;
+            const mbaFilePath = path.resolve(process.cwd(), 'data', 'designs', mbaFilename);
+            if (!AssetValidationService.isValidPngImage(mbaFilePath, 50000)) {
+              const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgContent);
+              fs.writeFileSync(mbaFilePath, mbaBuffer);
+              TaskLogService.updateTaskStatus(taskId, { localMbaPngPath: mbaFilePath });
+            }
+
+            // If audit passes: proceed to finalization and enqueue
+            return await DesignPipelineService.stepD8_Enqueue(taskId);
+          } catch (err: any) {
+            console.warn(`[TaskRecovery] Cutout-Audit für wiederverwendetes SVG fehlgeschlagen:`, err.message);
+          }
+        }
+
+        // If SVG missing or invalid: run D7 from start
+        return await DesignPipelineService.runFromStep(taskId, 'D7', 'RECOVERY');
+      }
+
+      default:
+        console.warn(`[TaskRecovery] No automated recovery policy for DESIGN task in status: ${task.status}.`);
+        return { success: false, error: `Unsupported DESIGN status: ${task.status}` };
+    }
   }
 }

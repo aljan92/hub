@@ -834,8 +834,7 @@ export class TaskRepository {
       SELECT id, design_id
       FROM tasks
       WHERE (source = 'UPDATE' OR suffix = 'U')
-        AND status IN ('AWAITING_DESIGN_REVIEW', 'UPDATE_ANALYZED', 'AWAITING_TM_REVIEW')
-        AND has_error = 0
+        AND status NOT IN ('COMPLETED', 'UPDATE_QUEUED', 'REJECTED', 'CANCELLED', 'ERROR')
     `).all();
 
     return rows.map(r => ({
