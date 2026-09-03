@@ -421,7 +421,7 @@ export class UploadWorkerService {
       }
 
       if (!modalOpened) {
-        this.log(`⚠️ 'Select Products' Button konnte nicht geöffnet werden, fahre mit Standard-Auswahl fort...`);
+        throw new Error("FAILED_PRODUCT_SELECTION: 'Select Products' Modal konnte nicht eindeutig geöffnet werden.");
       } else {
         await page.waitForTimeout(300);
 
@@ -439,10 +439,34 @@ export class UploadWorkerService {
               const r = el.getBoundingClientRect();
               return r.height > 0 && r.width > 0;
             });
-          if (!modal) return { success: true, modifiedCount: 0 };
+          if (!modal) return { success: false, modifiedCount: 0, error: 'Select Products Modal ist nicht mehr sichtbar' };
 
           let modifiedCount = 0;
+          const missingRequired: string[] = [];
+          const mismatches: string[] = [];
           const products = Object.keys(params.activeMap);
+
+          const isChecked = (cb: Element): boolean => {
+            const input = cb.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+            if (input) return input.checked;
+            const aria = cb.getAttribute('aria-checked');
+            if (aria === 'true') return true;
+            if (aria === 'false') return false;
+            const icon = cb.querySelector('.sci-icon');
+            const iconClass = String(icon?.className || '').toLowerCase();
+            if (iconClass.includes('blank')) return false;
+            return iconClass.includes('sci-check-box') || iconClass.includes('sci-check')
+              || cb.classList.contains('checked') || cb.classList.contains('selected');
+          };
+
+          const waitForState = async (cb: Element, expected: boolean, timeoutMs = 3000): Promise<boolean> => {
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < timeoutMs) {
+              if (isChecked(cb) === expected) return true;
+              await sleep(100);
+            }
+            return isChecked(cb) === expected;
+          };
 
           for (const pid of products) {
             const desiredMarketplaces = new Set(params.activeMap[pid] || []);
@@ -455,18 +479,33 @@ export class UploadWorkerService {
               if (!cb && targetKey !== pid) {
                 cb = modal.querySelector(`flowcheckbox[class*="${pid}-${mp}"]`) as HTMLElement;
               }
-              if (!cb || cb.classList.contains('ng-hide')) continue;
+              const isVisible = Boolean(cb && !cb.classList.contains('ng-hide') && cb.getBoundingClientRect().width > 0 && cb.getBoundingClientRect().height > 0);
+              if (!cb || !isVisible) {
+                if (desiredMarketplaces.has(mp)) missingRequired.push(`${pid}:${mp}`);
+                continue;
+              }
 
               const shouldBeChecked = desiredMarketplaces.has(mp);
-              const icon = cb.querySelector('.sci-icon');
-              const isChecked = icon ? icon.classList.contains('sci-check-box') : false;
+              let currentState = isChecked(cb);
 
-              if (isChecked !== shouldBeChecked) {
+              if (currentState !== shouldBeChecked) {
                 cb.click();
                 modifiedCount++;
-                await sleep(5);
+                currentState = await waitForState(cb, shouldBeChecked) ? shouldBeChecked : isChecked(cb);
+              }
+
+              if (currentState !== shouldBeChecked) {
+                mismatches.push(`${pid}:${mp} erwartet=${shouldBeChecked ? 'aktiv' : 'inaktiv'} tatsächlich=${currentState ? 'aktiv' : 'inaktiv'}`);
               }
             }
+          }
+
+          if (missingRequired.length > 0 || mismatches.length > 0) {
+            const details = [
+              missingRequired.length > 0 ? `fehlende gewünschte Checkboxen: ${missingRequired.join(', ')}` : '',
+              mismatches.length > 0 ? `abweichende Zustände: ${mismatches.join(', ')}` : ''
+            ].filter(Boolean).join('; ');
+            return { success: false, modifiedCount, error: details };
           }
 
           // Search Continue / Submit button across all known Merch selectors
@@ -496,6 +535,10 @@ export class UploadWorkerService {
           }
 
           if (continueBtn) {
+            const disabled = (continueBtn as HTMLButtonElement).disabled || continueBtn.hasAttribute('disabled') || continueBtn.getAttribute('aria-disabled') === 'true';
+            if (disabled) {
+              return { success: false, modifiedCount, error: 'Continue-Button ist nach der Matrix-Prüfung deaktiviert' };
+            }
             continueBtn.click();
             return { success: true, modifiedCount };
           }
@@ -509,11 +552,11 @@ export class UploadWorkerService {
         }, { activeMap: item.activeProductsMap, productAmazonKeys });
 
         if (!modalResult.success) {
-          this.log(`⚠️ Modal-Hinweis: ${modalResult.error} (versuche fortzufahren)`);
+          throw new Error(`FAILED_PRODUCT_SELECTION: ${modalResult.error || 'Marktplatz-Matrix konnte nicht verifiziert werden'}`);
         }
 
         // Wait for modal backdrop to hide
-        await page.waitForSelector('.modal-backdrop, .modal-dialog', { state: 'hidden', timeout: 8000 }).catch(() => {});
+        await page.waitForSelector('.modal-backdrop, .modal-dialog', { state: 'hidden', timeout: 15000 });
         await page.waitForTimeout(600);
 
         this.log(`✅ Marktplatz-Matrix synchronisiert (${modalResult.modifiedCount} Checkboxen angepasst)`, 'Produkte gewählt ✓', 50, 100);
@@ -593,7 +636,7 @@ export class UploadWorkerService {
             const { pid, amazonKey, cardId } = params;
 
             // 1. Locate the exact product card using Amazon cardId and amazonKey
-            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card')) as HTMLElement[];
+            const allCards = Array.from(document.querySelectorAll('[id*="-card"], .product-card')) as HTMLElement[];
             let card = document.getElementById(cardId) 
               || document.getElementById(`${amazonKey}-card`) 
               || document.getElementById(`${amazonKey.toLowerCase()}-card`)
@@ -603,11 +646,44 @@ export class UploadWorkerService {
               || document.getElementById(`config-${pid}`);
 
             if (!card) {
-              card = allCards.find(c => {
+              const matchingCards = allCards.filter(c => {
                 const idUpper = (c.id || '').toUpperCase();
                 const clsUpper = Array.from(c.classList).join(' ').toUpperCase();
-                return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid) || clsUpper.includes(pid);
-              }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`)) as HTMLElement;
+                const amazonKeyUpper = amazonKey.toUpperCase();
+                const pidUpper = pid.toUpperCase();
+                return idUpper.includes(amazonKeyUpper) || clsUpper.includes(amazonKeyUpper) || idUpper.includes(pidUpper) || clsUpper.includes(pidUpper);
+              });
+              if (matchingCards.length === 1) card = matchingCards[0];
+            }
+
+            if (!card) {
+              return { success: false, reason: `Produktkarte für ${pid} (${amazonKey}) nicht eindeutig im DOM gefunden` };
+            }
+
+            const findMatchingEditors = (): HTMLElement[] => {
+              const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
+              const cardRect = card!.getBoundingClientRect();
+              const nextCardTop = allCards
+                .filter(candidate => candidate !== card && candidate.getBoundingClientRect().top > cardRect.top)
+                .map(candidate => candidate.getBoundingClientRect().top)
+                .sort((a, b) => a - b)[0] ?? Number.POSITIVE_INFINITY;
+              return allEditors.filter(ed => {
+                const rect = ed.getBoundingClientRect();
+                if (rect.height <= 40 || rect.width <= 0 || ed.innerHTML.length <= 20) return false;
+                if (card!.contains(ed) || ed.closest('[id*="-card"], .product-card') === card) return true;
+                return rect.top >= cardRect.top && rect.top < nextCardTop;
+              });
+            };
+
+            const markEditor = (editor: HTMLElement) => {
+              document.querySelectorAll('[data-mba-upload-editor-for]').forEach(el => el.removeAttribute('data-mba-upload-editor-for'));
+              editor.setAttribute('data-mba-upload-editor-for', pid);
+            };
+
+            const alreadyOpenEditors = findMatchingEditors();
+            if (alreadyOpenEditors.length === 1) {
+              markEditor(alreadyOpenEditors[0]);
+              return { success: true, isAlreadyOpen: true };
             }
 
             // 2. Locate the "Edit details" button
@@ -618,16 +694,6 @@ export class UploadWorkerService {
                 || card.querySelector('.edit-details-btn')
                 || card.querySelector('button[class*="edit"]')
                 || Array.from(card.querySelectorAll('button')).find(b => b.textContent?.trim().toLowerCase().includes('edit'))) as HTMLElement;
-            }
-
-            if (!editBtn) {
-              editBtn = (document.querySelector(`.${amazonKey}-edit-btn`) 
-                || document.querySelector(`.${amazonKey.toLowerCase()}-edit-btn`) 
-                || document.querySelector(`#${amazonKey}-card .edit-button`) 
-                || document.querySelector(`#${amazonKey}-card button.edit-btn`)
-                || document.querySelector(`button[class*="${amazonKey}-edit"]`)
-                || document.querySelector(`[id*="${amazonKey}"] button, [class*="${amazonKey}"] button`)
-                || Array.from(document.querySelectorAll(`button`)).find(b => b.textContent?.trim().toLowerCase().includes('edit') && (b.closest(`#${amazonKey}-card`) || (card && b.closest(`#${card.id}`))))) as HTMLElement;
             }
 
             if (!editBtn) {
@@ -643,18 +709,18 @@ export class UploadWorkerService {
             editBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
             editBtn.click();
 
-            // 5. Active polling: Wait up to 2500ms until editor is open
+            // 5. Active polling: allow Angular enough time, but require an exact editor match
             const startWait = Date.now();
-            while (Date.now() - startWait < 2500) {
+            while (Date.now() - startWait < 5000) {
               await sleep(150);
-              const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
-              const openEditor = allEditors.find(ed => ed.offsetHeight > 40 && ed.innerHTML.length > 20);
-              if (openEditor) {
+              const matchingEditors = findMatchingEditors();
+              if (matchingEditors.length === 1) {
+                markEditor(matchingEditors[0]);
                 return { success: true, isAlreadyOpen: false };
               }
             }
 
-            return { success: true, reason: 'proceed_anyway' };
+            return { success: false, reason: `Editor für ${pid} wurde nicht eindeutig geöffnet` };
           }, {
             pid: product.id,
             amazonKey: product.amazon?.key || product.id,
@@ -700,6 +766,7 @@ export class UploadWorkerService {
           fitTypes: string[];
           avoidColor: string;
           customBgColor: string;
+          expectsFitControls: boolean;
           catalogColors: Array<{ id: string; avoidRule?: 'none' | 'white' | 'black' }>;
         }) => {
           const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -714,26 +781,18 @@ export class UploadWorkerService {
             || document.getElementById(`config-${amazonKey}`)
             || document.getElementById(`config-${pid}`);
 
-          if (!card) {
-            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card')) as HTMLElement[];
-            card = allCards.find(c => {
-              const idUpper = (c.id || '').toUpperCase();
-              const clsUpper = Array.from(c.classList).join(' ').toUpperCase();
-              return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid) || clsUpper.includes(pid);
-            }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`)) as HTMLElement;
-          }
-
-          const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
-          let inputContainer: HTMLElement = (card || (allEditors[allEditors.length - 1] as HTMLElement) || document.body) as HTMLElement;
-          if (card) {
-            const cardRect = card.getBoundingClientRect();
-            const validEditors = allEditors.filter(ed => {
-              const edRect = ed.getBoundingClientRect();
-              return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
-            });
-            if (validEditors.length > 0) {
-              inputContainer = validEditors[0];
-            }
+          const inputContainer = Array.from(document.querySelectorAll('[data-mba-upload-editor-for]'))
+            .find(el => el.getAttribute('data-mba-upload-editor-for') === pid) as HTMLElement | undefined;
+          if (!card || !inputContainer || inputContainer.getBoundingClientRect().height <= 40) {
+            return {
+              success: false,
+              error: `FAILED_EDITOR_OPEN: Verifizierter Editor für ${pid} ist vor der Konfiguration nicht mehr verfügbar`,
+              activeColors: [],
+              fitTypesApplied: [],
+              fitDebug: {},
+              selfHealedColor: '',
+              isLocked: false
+            };
           }
 
           // Helper 1: isElementChecked
@@ -805,7 +864,7 @@ export class UploadWorkerService {
           // Rule: Adult Unisex is always active for any product offering it
           desiredFits.push('adult_unisex', 'unisex', 'adult');
 
-          const visibleFitCandidates = Array.from(document.querySelectorAll(
+          const visibleFitCandidates = Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, ' +
             'flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, ' +
             'label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, ' +
@@ -877,6 +936,21 @@ export class UploadWorkerService {
             }
           }
 
+          const failedFitStates = Object.entries(fitDebugSummary)
+            .filter(([, state]) => state.target !== state.final)
+            .map(([fit, state]) => `${fit} erwartet=${state.target ? 'aktiv' : 'inaktiv'} tatsächlich=${state.final ? 'aktiv' : 'inaktiv'}`);
+          if ((params.expectsFitControls && fitElements.length === 0) || failedFitStates.length > 0) {
+            return {
+              success: false,
+              error: `FAILED_FIT_TYPE: ${fitElements.length === 0 ? 'Keine Fit-Controls im verifizierten Produkteditor gefunden' : failedFitStates.join(', ')}`,
+              activeColors: [],
+              fitTypesApplied: activeFitsApplied,
+              fitDebug: fitDebugSummary,
+              selfHealedColor: '',
+              isLocked: false
+            };
+          }
+
           // -------------------------------------------------------------
           // STEP B: Color Selection (Custom Picker vs Swatches)
           // -------------------------------------------------------------
@@ -916,8 +990,7 @@ export class UploadWorkerService {
               cleanHex = params.avoidColor === 'black' ? 'FFFFFF' : '000000';
             }
 
-            const colorBtn = (inputContainer?.querySelector('#color-btn, button[id*="color-btn"], .background-color-picker-button, button.color-btn, .color-picker-button') 
-              || document.querySelector('#color-btn, button[id*="color-btn"]')) as HTMLElement;
+            const colorBtn = inputContainer.querySelector('#color-btn, button[id*="color-btn"], .background-color-picker-button, button.color-btn, .color-picker-button') as HTMLElement;
 
             if (colorBtn) {
               const isPopoverOpen = colorBtn.hasAttribute('aria-describedby');
@@ -999,8 +1072,7 @@ export class UploadWorkerService {
               }
             } else {
               // Direct hex input fallback (Listing Optimizer Zeilen 3200-3206)
-              const directHex = (inputContainer?.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]')
-                || document.querySelector('input[type="text"][id*="hex"]')) as HTMLInputElement;
+              const directHex = inputContainer.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]') as HTMLInputElement;
               if (directHex) {
                 directHex.value = cleanHex;
                 directHex.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1010,7 +1082,7 @@ export class UploadWorkerService {
             }
           } else {
             // Swatches Mode (Predefined Colors) - only visible swatches in open editor
-            const colorCheckboxes = Array.from(document.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]'))
+            const colorCheckboxes = Array.from(inputContainer.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]'))
               .filter(el => {
                 const rect = (el as HTMLElement).getBoundingClientRect();
                 return rect.height > 0 && rect.width > 0;
@@ -1101,6 +1173,7 @@ export class UploadWorkerService {
           fitTypes,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
+          expectsFitControls: Array.isArray(product.fitTypes) && product.fitTypes.length > 0,
           catalogColors: Array.isArray(product.colors) ? product.colors.map(c => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || 'none' })) : []
         });
 
@@ -1120,7 +1193,9 @@ export class UploadWorkerService {
             this.log(`✓ ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}${fitDetails}`);
           }
         } else {
-          if (editResult.error?.includes('FAILED_FIT_TYPE')) {
+          if (editResult.error?.includes('FAILED_EDITOR_OPEN')) {
+            currentProductStatus = 'FAILED_EDITOR_OPEN';
+          } else if (editResult.error?.includes('FAILED_FIT_TYPE')) {
             currentProductStatus = 'FAILED_FIT_TYPE';
           } else if (editResult.error?.includes('FAILED_COLOR_CONFIGURATION')) {
             currentProductStatus = 'FAILED_COLOR_CONFIGURATION';

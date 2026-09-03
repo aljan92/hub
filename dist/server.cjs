@@ -231946,7 +231946,7 @@ var UploadWorkerService = class _UploadWorkerService {
         }
       }
       if (!modalOpened) {
-        this.log(`\u26A0\uFE0F 'Select Products' Button konnte nicht ge\xF6ffnet werden, fahre mit Standard-Auswahl fort...`);
+        throw new Error("FAILED_PRODUCT_SELECTION: 'Select Products' Modal konnte nicht eindeutig ge\xF6ffnet werden.");
       } else {
         await page.waitForTimeout(300);
         const catalog2 = ProductCatalogService.getCatalog();
@@ -231960,9 +231960,30 @@ var UploadWorkerService = class _UploadWorkerService {
             const r = el.getBoundingClientRect();
             return r.height > 0 && r.width > 0;
           });
-          if (!modal) return { success: true, modifiedCount: 0 };
+          if (!modal) return { success: false, modifiedCount: 0, error: "Select Products Modal ist nicht mehr sichtbar" };
           let modifiedCount = 0;
+          const missingRequired = [];
+          const mismatches = [];
           const products = Object.keys(params2.activeMap);
+          const isChecked = (cb) => {
+            const input = cb.querySelector('input[type="checkbox"]');
+            if (input) return input.checked;
+            const aria = cb.getAttribute("aria-checked");
+            if (aria === "true") return true;
+            if (aria === "false") return false;
+            const icon = cb.querySelector(".sci-icon");
+            const iconClass = String(icon?.className || "").toLowerCase();
+            if (iconClass.includes("blank")) return false;
+            return iconClass.includes("sci-check-box") || iconClass.includes("sci-check") || cb.classList.contains("checked") || cb.classList.contains("selected");
+          };
+          const waitForState = async (cb, expected, timeoutMs = 3e3) => {
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < timeoutMs) {
+              if (isChecked(cb) === expected) return true;
+              await sleep2(100);
+            }
+            return isChecked(cb) === expected;
+          };
           for (const pid of products) {
             const desiredMarketplaces = new Set(params2.activeMap[pid] || []);
             const allMarketplaces = ["US", "DE", "GB", "FR", "IT", "ES", "JP"];
@@ -231973,16 +231994,29 @@ var UploadWorkerService = class _UploadWorkerService {
               if (!cb && targetKey !== pid) {
                 cb = modal.querySelector(`flowcheckbox[class*="${pid}-${mp}"]`);
               }
-              if (!cb || cb.classList.contains("ng-hide")) continue;
+              const isVisible = Boolean(cb && !cb.classList.contains("ng-hide") && cb.getBoundingClientRect().width > 0 && cb.getBoundingClientRect().height > 0);
+              if (!cb || !isVisible) {
+                if (desiredMarketplaces.has(mp)) missingRequired.push(`${pid}:${mp}`);
+                continue;
+              }
               const shouldBeChecked = desiredMarketplaces.has(mp);
-              const icon = cb.querySelector(".sci-icon");
-              const isChecked = icon ? icon.classList.contains("sci-check-box") : false;
-              if (isChecked !== shouldBeChecked) {
+              let currentState = isChecked(cb);
+              if (currentState !== shouldBeChecked) {
                 cb.click();
                 modifiedCount++;
-                await sleep2(5);
+                currentState = await waitForState(cb, shouldBeChecked) ? shouldBeChecked : isChecked(cb);
+              }
+              if (currentState !== shouldBeChecked) {
+                mismatches.push(`${pid}:${mp} erwartet=${shouldBeChecked ? "aktiv" : "inaktiv"} tats\xE4chlich=${currentState ? "aktiv" : "inaktiv"}`);
               }
             }
+          }
+          if (missingRequired.length > 0 || mismatches.length > 0) {
+            const details = [
+              missingRequired.length > 0 ? `fehlende gew\xFCnschte Checkboxen: ${missingRequired.join(", ")}` : "",
+              mismatches.length > 0 ? `abweichende Zust\xE4nde: ${mismatches.join(", ")}` : ""
+            ].filter(Boolean).join("; ");
+            return { success: false, modifiedCount, error: details };
           }
           const candidateSelectors = [
             ".modal-footer .btn-submit",
@@ -232007,6 +232041,10 @@ var UploadWorkerService = class _UploadWorkerService {
             }) || null;
           }
           if (continueBtn) {
+            const disabled = continueBtn.disabled || continueBtn.hasAttribute("disabled") || continueBtn.getAttribute("aria-disabled") === "true";
+            if (disabled) {
+              return { success: false, modifiedCount, error: "Continue-Button ist nach der Matrix-Pr\xFCfung deaktiviert" };
+            }
             continueBtn.click();
             return { success: true, modifiedCount };
           }
@@ -232017,10 +232055,9 @@ var UploadWorkerService = class _UploadWorkerService {
           return { success: false, error: "Continue button in modal not found" };
         }, { activeMap: item.activeProductsMap, productAmazonKeys });
         if (!modalResult.success) {
-          this.log(`\u26A0\uFE0F Modal-Hinweis: ${modalResult.error} (versuche fortzufahren)`);
+          throw new Error(`FAILED_PRODUCT_SELECTION: ${modalResult.error || "Marktplatz-Matrix konnte nicht verifiziert werden"}`);
         }
-        await page.waitForSelector(".modal-backdrop, .modal-dialog", { state: "hidden", timeout: 8e3 }).catch(() => {
-        });
+        await page.waitForSelector(".modal-backdrop, .modal-dialog", { state: "hidden", timeout: 15e3 });
         await page.waitForTimeout(600);
         this.log(`\u2705 Marktplatz-Matrix synchronisiert (${modalResult.modifiedCount} Checkboxen angepasst)`, "Produkte gew\xE4hlt \u2713", 50, 100);
       }
@@ -232075,21 +232112,44 @@ var UploadWorkerService = class _UploadWorkerService {
           const openResult = await page.evaluate(async (params2) => {
             const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
             const { pid, amazonKey, cardId } = params2;
-            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
+            const allCards = Array.from(document.querySelectorAll('[id*="-card"], .product-card'));
             let card = document.getElementById(cardId) || document.getElementById(`${amazonKey}-card`) || document.getElementById(`${amazonKey.toLowerCase()}-card`) || document.getElementById(`${pid}-card`) || document.getElementById(`${pid.toLowerCase()}-card`) || document.getElementById(`config-${amazonKey}`) || document.getElementById(`config-${pid}`);
             if (!card) {
-              card = allCards.find((c) => {
+              const matchingCards = allCards.filter((c) => {
                 const idUpper = (c.id || "").toUpperCase();
                 const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-                return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid) || clsUpper.includes(pid);
-              }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
+                const amazonKeyUpper = amazonKey.toUpperCase();
+                const pidUpper = pid.toUpperCase();
+                return idUpper.includes(amazonKeyUpper) || clsUpper.includes(amazonKeyUpper) || idUpper.includes(pidUpper) || clsUpper.includes(pidUpper);
+              });
+              if (matchingCards.length === 1) card = matchingCards[0];
+            }
+            if (!card) {
+              return { success: false, reason: `Produktkarte f\xFCr ${pid} (${amazonKey}) nicht eindeutig im DOM gefunden` };
+            }
+            const findMatchingEditors = () => {
+              const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+              const cardRect = card.getBoundingClientRect();
+              const nextCardTop = allCards.filter((candidate) => candidate !== card && candidate.getBoundingClientRect().top > cardRect.top).map((candidate) => candidate.getBoundingClientRect().top).sort((a, b) => a - b)[0] ?? Number.POSITIVE_INFINITY;
+              return allEditors.filter((ed) => {
+                const rect = ed.getBoundingClientRect();
+                if (rect.height <= 40 || rect.width <= 0 || ed.innerHTML.length <= 20) return false;
+                if (card.contains(ed) || ed.closest('[id*="-card"], .product-card') === card) return true;
+                return rect.top >= cardRect.top && rect.top < nextCardTop;
+              });
+            };
+            const markEditor = (editor) => {
+              document.querySelectorAll("[data-mba-upload-editor-for]").forEach((el) => el.removeAttribute("data-mba-upload-editor-for"));
+              editor.setAttribute("data-mba-upload-editor-for", pid);
+            };
+            const alreadyOpenEditors = findMatchingEditors();
+            if (alreadyOpenEditors.length === 1) {
+              markEditor(alreadyOpenEditors[0]);
+              return { success: true, isAlreadyOpen: true };
             }
             let editBtn = null;
             if (card) {
               editBtn = card.querySelector(".edit-button") || card.querySelector("button.edit-btn") || card.querySelector(".edit-details-btn") || card.querySelector('button[class*="edit"]') || Array.from(card.querySelectorAll("button")).find((b) => b.textContent?.trim().toLowerCase().includes("edit"));
-            }
-            if (!editBtn) {
-              editBtn = document.querySelector(`.${amazonKey}-edit-btn`) || document.querySelector(`.${amazonKey.toLowerCase()}-edit-btn`) || document.querySelector(`#${amazonKey}-card .edit-button`) || document.querySelector(`#${amazonKey}-card button.edit-btn`) || document.querySelector(`button[class*="${amazonKey}-edit"]`) || document.querySelector(`[id*="${amazonKey}"] button, [class*="${amazonKey}"] button`) || Array.from(document.querySelectorAll(`button`)).find((b) => b.textContent?.trim().toLowerCase().includes("edit") && (b.closest(`#${amazonKey}-card`) || card && b.closest(`#${card.id}`)));
             }
             if (!editBtn) {
               return { success: false, reason: `Edit button f\xFCr ${pid} (${amazonKey}) nicht im DOM gefunden` };
@@ -232100,15 +232160,15 @@ var UploadWorkerService = class _UploadWorkerService {
             editBtn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
             editBtn.click();
             const startWait = Date.now();
-            while (Date.now() - startWait < 2500) {
+            while (Date.now() - startWait < 5e3) {
               await sleep2(150);
-              const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-              const openEditor = allEditors.find((ed) => ed.offsetHeight > 40 && ed.innerHTML.length > 20);
-              if (openEditor) {
+              const matchingEditors = findMatchingEditors();
+              if (matchingEditors.length === 1) {
+                markEditor(matchingEditors[0]);
                 return { success: true, isAlreadyOpen: false };
               }
             }
-            return { success: true, reason: "proceed_anyway" };
+            return { success: false, reason: `Editor f\xFCr ${pid} wurde nicht eindeutig ge\xF6ffnet` };
           }, {
             pid: product.id,
             amazonKey: product.amazon?.key || product.id,
@@ -232146,25 +232206,17 @@ var UploadWorkerService = class _UploadWorkerService {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const { productId: pid, amazonKey, cardId } = params2;
           let card = document.getElementById(cardId) || document.getElementById(`${amazonKey}-card`) || document.getElementById(`${amazonKey.toLowerCase()}-card`) || document.getElementById(`${pid}-card`) || document.getElementById(`${pid.toLowerCase()}-card`) || document.getElementById(`config-${amazonKey}`) || document.getElementById(`config-${pid}`);
-          if (!card) {
-            const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
-            card = allCards.find((c) => {
-              const idUpper = (c.id || "").toUpperCase();
-              const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-              return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid) || clsUpper.includes(pid);
-            }) || (document.querySelector(`.${pid}-container`) || document.querySelector(`[id*="${pid}"]`));
-          }
-          const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-          let inputContainer = card || allEditors[allEditors.length - 1] || document.body;
-          if (card) {
-            const cardRect = card.getBoundingClientRect();
-            const validEditors = allEditors.filter((ed) => {
-              const edRect = ed.getBoundingClientRect();
-              return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
-            });
-            if (validEditors.length > 0) {
-              inputContainer = validEditors[0];
-            }
+          const inputContainer = Array.from(document.querySelectorAll("[data-mba-upload-editor-for]")).find((el) => el.getAttribute("data-mba-upload-editor-for") === pid);
+          if (!card || !inputContainer || inputContainer.getBoundingClientRect().height <= 40) {
+            return {
+              success: false,
+              error: `FAILED_EDITOR_OPEN: Verifizierter Editor f\xFCr ${pid} ist vor der Konfiguration nicht mehr verf\xFCgbar`,
+              activeColors: [],
+              fitTypesApplied: [],
+              fitDebug: {},
+              selfHealedColor: "",
+              isLocked: false
+            };
           }
           const isElementChecked = (el) => {
             const icon = el.querySelector(".sci-icon, i, svg");
@@ -232220,7 +232272,7 @@ var UploadWorkerService = class _UploadWorkerService {
             desiredFits.push("girls");
           }
           desiredFits.push("adult_unisex", "unisex", "adult");
-          const visibleFitCandidates = Array.from(document.querySelectorAll(
+          const visibleFitCandidates = Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, flowcheckbox[class*="-checkbox"], label[class*="-label"]'
           )).filter((el) => {
             const rect = el.getBoundingClientRect();
@@ -232276,6 +232328,18 @@ var UploadWorkerService = class _UploadWorkerService {
               activeFitsApplied.push(item2.matchedFit);
             }
           }
+          const failedFitStates = Object.entries(fitDebugSummary).filter(([, state]) => state.target !== state.final).map(([fit, state]) => `${fit} erwartet=${state.target ? "aktiv" : "inaktiv"} tats\xE4chlich=${state.final ? "aktiv" : "inaktiv"}`);
+          if (params2.expectsFitControls && fitElements.length === 0 || failedFitStates.length > 0) {
+            return {
+              success: false,
+              error: `FAILED_FIT_TYPE: ${fitElements.length === 0 ? "Keine Fit-Controls im verifizierten Produkteditor gefunden" : failedFitStates.join(", ")}`,
+              activeColors: [],
+              fitTypesApplied: activeFitsApplied,
+              fitDebug: fitDebugSummary,
+              selfHealedColor: "",
+              isLocked: false
+            };
+          }
           let finalActiveColorNames = [];
           let selfHealedColor = "";
           if (params2.colorMode === "none") {
@@ -232304,7 +232368,7 @@ var UploadWorkerService = class _UploadWorkerService {
             if (!/^[0-9A-F]{6}$/.test(cleanHex)) {
               cleanHex = params2.avoidColor === "black" ? "FFFFFF" : "000000";
             }
-            const colorBtn = inputContainer?.querySelector('#color-btn, button[id*="color-btn"], .background-color-picker-button, button.color-btn, .color-picker-button') || document.querySelector('#color-btn, button[id*="color-btn"]');
+            const colorBtn = inputContainer.querySelector('#color-btn, button[id*="color-btn"], .background-color-picker-button, button.color-btn, .color-picker-button');
             if (colorBtn) {
               const isPopoverOpen = colorBtn.hasAttribute("aria-describedby");
               if (!isPopoverOpen) {
@@ -232372,7 +232436,7 @@ var UploadWorkerService = class _UploadWorkerService {
                 finalActiveColorNames.push(`#${cleanHex}`);
               }
             } else {
-              const directHex = inputContainer?.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]') || document.querySelector('input[type="text"][id*="hex"]');
+              const directHex = inputContainer.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]');
               if (directHex) {
                 directHex.value = cleanHex;
                 directHex.dispatchEvent(new Event("input", { bubbles: true }));
@@ -232381,7 +232445,7 @@ var UploadWorkerService = class _UploadWorkerService {
               }
             }
           } else {
-            const colorCheckboxes = Array.from(document.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]')).filter((el) => {
+            const colorCheckboxes = Array.from(inputContainer.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]')).filter((el) => {
               const rect = el.getBoundingClientRect();
               return rect.height > 0 && rect.width > 0;
             });
@@ -232451,6 +232515,7 @@ var UploadWorkerService = class _UploadWorkerService {
           fitTypes,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
+          expectsFitControls: Array.isArray(product.fitTypes) && product.fitTypes.length > 0,
           catalogColors: Array.isArray(product.colors) ? product.colors.map((c) => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || "none" })) : []
         });
         let currentProductStatus = "SUCCESS";
@@ -232465,7 +232530,9 @@ var UploadWorkerService = class _UploadWorkerService {
             this.log(`\u2713 ${product.displayName}: ${editResult.activeColors?.length || 1} Farben (${colorsList}) | Fit: ${fitsList}${fitDetails}`);
           }
         } else {
-          if (editResult.error?.includes("FAILED_FIT_TYPE")) {
+          if (editResult.error?.includes("FAILED_EDITOR_OPEN")) {
+            currentProductStatus = "FAILED_EDITOR_OPEN";
+          } else if (editResult.error?.includes("FAILED_FIT_TYPE")) {
             currentProductStatus = "FAILED_FIT_TYPE";
           } else if (editResult.error?.includes("FAILED_COLOR_CONFIGURATION")) {
             currentProductStatus = "FAILED_COLOR_CONFIGURATION";

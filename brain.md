@@ -1179,3 +1179,17 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - `tests/taskRecoveryP3_2.test.ts`: 12/12 bestanden.
   - `tests/taskRecoveryP3_3.test.ts`: vollständig bestanden.
   - `npm run build`: Client- und Server-Build erfolgreich.
+
+### 10.44 Upload Reliability P0 – Fail-Closed Product Selection & Editor Binding
+- **Select-Products DOM Contract:**
+  - Ein nicht eindeutig geöffnetes Modal ist ein harter Fehler (`FAILED_PRODUCT_SELECTION`) und kein Warnhinweis mehr.
+  - Jede gewünschte Produkt-/Marktplatz-Checkbox muss sichtbar vorhanden sein.
+  - Nach jeder Zustandsänderung wird bis zu 3 Sekunden auf den tatsächlichen Sollzustand gepollt; Abweichungen stoppen den Upload.
+  - Ein deaktivierter oder fehlender Continue-Button sowie ein nicht geschlossenes Modal stoppen den Upload ebenfalls.
+- **Produkteindeutige Editor-Bindung:**
+  - Produktkarten werden nur noch über eindeutige IDs beziehungsweise genau einen passenden Card-Kandidaten akzeptiert; breite globale Button-Fallbacks wurden entfernt.
+  - Der Worker akzeptiert ausschließlich einen sichtbaren Editor, der geometrisch beziehungsweise strukturell eindeutig zur aktuellen Produktkarte gehört.
+  - Der frühere False-Positive `proceed_anyway` wurde entfernt. Bis zu drei Öffnungsversuche mit je 5 Sekunden DOM-Polling sind erlaubt; danach entsteht `FAILED_EDITOR_OPEN`.
+  - Fit- und Farb-Controls werden ausschließlich innerhalb des verifizierten Editors abgefragt. Fit-Sollzustände werden abschließend verglichen; fehlende erwartete Fit-Controls erzeugen `FAILED_FIT_TYPE`.
+- **Sicherheitsprinzip:** Bei einem unklaren DOM-Zustand wird nicht publiziert. Die bestehende Publish-Guard- sowie P3.3-Recovery-/Write-Ahead-Logik bleibt unverändert.
+- **Verifikation:** `npm run build` und `tests/productCatalogArchitectureGuard.test.ts` erfolgreich. `tests/productCatalogV2.test.ts` besitzt bereits vor dieser Änderung eine veraltete Erwartung von 4 statt aktuell 8 Special-Artwork-Konfigurationen und bricht deshalb in Test 2 ab.

@@ -121,6 +121,14 @@ Lokal war der warme Pfad schnell. Auf NAS/bei Event-Loop-Blockade wurde seine ge
 
 ## 5. Noch sinnvolle Optimierungspakete
 
+### Upload-Pipeline: Reliability P0 umgesetzt (3. September 2026)
+
+- Die Produkt-/Marktplatz-Matrix arbeitet jetzt fail-closed: gewünschte Checkboxen müssen existieren und ihren Sollzustand nachweislich erreichen.
+- Der Produkteditor muss eindeutig zur aktuellen Produktkarte gehören; der frühere `proceed_anyway`-Pfad wurde entfernt.
+- Fit- und Farbselektoren sind auf den verifizierten Editor begrenzt; Fit-Abweichungen werden als technischer Fehler an den Publish Guard übergeben.
+- Zeitbudgets sind zustandsbasiert (Checkbox bis 3 s, Editor bis 3 × 5 s) statt über pauschale Langzeit-Sleeps gelöst.
+- Noch offen: exakte Resize-Upload-Bestätigung, Listing-Readback, finaler Soll-Ist-Audit und fail-closed Save-Draft-Bestätigung.
+
 ### P1.1 WebSocket-Broadcasts deduplizieren – empfohlen als nächster Schritt
 
 Einige API-Routen senden `TASK_UPDATED`, obwohl aufgerufene Services durch `addEvent` oder `updateTaskStatus` bereits senden. Künftig sollte gelten: **genau ein Broadcast pro persistierter Mutation**.
