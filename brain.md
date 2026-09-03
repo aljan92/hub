@@ -1238,3 +1238,11 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - `fitDiscoveryStatus=SUCCESS` erlaubt ausdrücklich das Überschreiben veralteter Fits durch `[]`. Bei `FAILED` oder unbestätigten leeren Legacy-Scans bleiben alte Daten erhalten; ein explizit fehlgeschlagener Fit-Scan blockiert den Upload.
 - Keine Produkt-Ausnahmeliste, keine manuellen Katalogänderungen, keine Änderung an Overrides. Nach Deployment ist ein vollständiger Produkt-Scan nötig, um alte Fit-Einträge zu korrigieren.
 - Chromium-Test `tests/fitScanSemantics.test.ts`: festes Label, echte Checkboxen, fremde Checkboxen, unbekannte Checkbox-Typen sowie erfolgreiche/leere und fehlgeschlagene Merge-Fälle bestanden.
+
+### 10.50 Scan-Ergebnisse ersetzen dynamische Optionen
+
+- Explizit erfolgreiche Fit-/Farbscans ersetzen den bisherigen Bestand vollständig, einschließlich Reduktion und `[]`. Die pauschale Sperre für leere vordefinierte Farblisten wurde entfernt.
+- Fehlende oder fehlgeschlagene Scan-Bestätigung erhält vorhandene Optionen und markiert die Discovery als `FAILED`; keine stillschweigende Bestätigung veralteter Daten.
+- Nicht lesbare Farb-Checkboxen führen zu `FAILED` statt einer irrtümlich erfolgreichen Leerung. Erfolgreicher Farbmoduswechsel entfernt alte dynamische Farben/Presets.
+- Persistente Overrides bleiben unverändert, auch für aktuell nicht mehr angebotene Farben; sie können bei späterer Wiederkehr erneut angewendet werden.
+- Integrationstest `tests/catalogScanReplacement.test.ts` prüft den realen Katalog-Merge mit isoliertem Speicher: Reduktion, Leerung, Fehler/fehlende Bestätigung, Moduswechsel, Presets und Override-Erhalt. Build und Architektur-Guard bestanden. Live-Scan bleibt für die NAS-Daten erforderlich.

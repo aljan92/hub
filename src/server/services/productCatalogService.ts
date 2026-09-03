@@ -21,9 +21,12 @@ export interface MerchFitTypeDef {
 
 /** Only a completed fit scan may authoritatively replace previous data with []. */
 export function mergeScannedFits(previous: MerchFitTypeDef[], scanned: MerchFitTypeDef[] | undefined, status?: 'SUCCESS' | 'FAILED'): MerchFitTypeDef[] {
-  if (status === 'FAILED') return previous;
-  if (status === 'SUCCESS' && Array.isArray(scanned)) return scanned;
-  return scanned?.length ? scanned : previous;
+  return mergeScannedOptions(previous, scanned, status);
+}
+
+/** Confirmed snapshots replace, never append. Unknown/failed scans preserve data. */
+export function mergeScannedOptions<T>(previous: T[], scanned: T[] | undefined, status?: 'SUCCESS' | 'FAILED'): T[] {
+  return status === 'SUCCESS' && Array.isArray(scanned) ? scanned : previous;
 }
 
 export interface MerchMarketplace {
@@ -581,26 +584,27 @@ export class ProductCatalogService {
           matchedExistingIds.add(matched.id);
 
           // Check if color scan was valid for this product
-          const isColorScanValid = scanned.colorDiscoveryStatus !== 'FAILED' && scanned.colorMode !== 'failed';
-          const isSuspectEmptyColor = (scanned.colorMode === 'predefined' && (!scanned.colors || scanned.colors.length === 0) && (matched.colors || []).length > 0);
+          const isColorScanValid = scanned.colorDiscoveryStatus === 'SUCCESS'
+            && ['predefined', 'customPicker', 'none'].includes(scanned.colorMode)
+            && Array.isArray(scanned.colors);
 
           let mergedColors: MerchColorDef[] = [];
           let mergedColorMode: ColorMode = scanned.colorMode || matched.colorMode;
           let colorDiscoveryStatus: 'SUCCESS' | 'FAILED' = isColorScanValid ? 'SUCCESS' : 'FAILED';
 
-          if (!isColorScanValid || isSuspectEmptyColor) {
+          if (!isColorScanValid) {
             // PROTECT PREVIOUS VALID DATA: Keep existing colors and colorMode
             console.log(`[ProductCatalogService] 🛡️ Retaining existing colors for ${matched.id} (${(matched.colors || []).length} colors) due to incomplete color scan`);
             mergedColors = matched.colors || [];
             mergedColorMode = matched.colorMode;
-            colorDiscoveryStatus = !isColorScanValid ? 'FAILED' : 'SUCCESS';
+            colorDiscoveryStatus = 'FAILED';
           } else if (scanned.colorMode === 'customPicker' || scanned.colorMode === 'none') {
             mergedColors = [];
             mergedColorMode = scanned.colorMode;
           } else {
             // Update dynamic fields while merging with persistent avoidRules
             const productOverrides = overrides[matched.id]?.colors || {};
-            mergedColors = (scanned.colors || []).map(sc => {
+            mergedColors = mergeScannedOptions(matched.colors || [], scanned.colors, scanned.colorDiscoveryStatus).map(sc => {
               const rule = productOverrides[sc.id]?.avoidRule ?? 'none';
               return {
                 ...sc,
@@ -621,7 +625,7 @@ export class ProductCatalogService {
             colorDiscoveryStatus,
             colors: mergedColors,
             fitTypes: mergeScannedFits(matched.fitTypes, scanned.fitTypes, scanned.fitDiscoveryStatus),
-            fitDiscoveryStatus: scanned.fitDiscoveryStatus ?? matched.fitDiscoveryStatus,
+            fitDiscoveryStatus: scanned.fitDiscoveryStatus === 'SUCCESS' && Array.isArray(scanned.fitTypes) ? 'SUCCESS' : 'FAILED',
             availableMarketplaces: scanned.availableMarketplaces && scanned.availableMarketplaces.length > 0 ? scanned.availableMarketplaces : matched.availableMarketplaces,
             amazonSortOrder: amazonSort,
             amazon: scanned.amazon || {
@@ -630,14 +634,14 @@ export class ProductCatalogService {
               checkboxClass: scannedAmazonKey,
               sortOrder: amazonSort
             },
-            presetHexColors: scanned.presetHexColors || matched.presetHexColors,
+            presetHexColors: isColorScanValid ? (scanned.presetHexColors || []) : matched.presetHexColors,
             lastUpdated: nowIso
           });
         } else {
           // Brand NEW product detected by Amazon!
           const newStableId = scanned.id || scannedAmazonKey;
           const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? updatedProducts.length;
-          const isColorScanValid = scanned.colorDiscoveryStatus !== 'FAILED';
+          const isColorScanValid = scanned.colorDiscoveryStatus === 'SUCCESS' && scanned.colorMode !== 'failed' && Array.isArray(scanned.colors);
           
           console.log(`[ProductCatalogService] 🌟 New Amazon Product detected: ${newStableId} (${scannedAmazonKey})`);
 

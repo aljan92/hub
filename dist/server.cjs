@@ -49932,12 +49932,14 @@ __export2(productCatalogService_exports, {
   RESIZE_BACKGROUND_PROFILES: () => RESIZE_BACKGROUND_PROFILES,
   getGeneratableVariants: () => getGeneratableVariants,
   mergeScannedFits: () => mergeScannedFits,
+  mergeScannedOptions: () => mergeScannedOptions,
   resolveBackgroundColor: () => resolveBackgroundColor
 });
 function mergeScannedFits(previous, scanned, status) {
-  if (status === "FAILED") return previous;
-  if (status === "SUCCESS" && Array.isArray(scanned)) return scanned;
-  return scanned?.length ? scanned : previous;
+  return mergeScannedOptions(previous, scanned, status);
+}
+function mergeScannedOptions(previous, scanned, status) {
+  return status === "SUCCESS" && Array.isArray(scanned) ? scanned : previous;
 }
 function resolveBackgroundColor(config) {
   const profile = RESIZE_BACKGROUND_PROFILES[config.backgroundProfile];
@@ -50331,22 +50333,21 @@ var init_productCatalogService = __esm2({
             });
             if (matched) {
               matchedExistingIds.add(matched.id);
-              const isColorScanValid = scanned.colorDiscoveryStatus !== "FAILED" && scanned.colorMode !== "failed";
-              const isSuspectEmptyColor = scanned.colorMode === "predefined" && (!scanned.colors || scanned.colors.length === 0) && (matched.colors || []).length > 0;
+              const isColorScanValid = scanned.colorDiscoveryStatus === "SUCCESS" && ["predefined", "customPicker", "none"].includes(scanned.colorMode) && Array.isArray(scanned.colors);
               let mergedColors = [];
               let mergedColorMode = scanned.colorMode || matched.colorMode;
               let colorDiscoveryStatus = isColorScanValid ? "SUCCESS" : "FAILED";
-              if (!isColorScanValid || isSuspectEmptyColor) {
+              if (!isColorScanValid) {
                 console.log(`[ProductCatalogService] \u{1F6E1}\uFE0F Retaining existing colors for ${matched.id} (${(matched.colors || []).length} colors) due to incomplete color scan`);
                 mergedColors = matched.colors || [];
                 mergedColorMode = matched.colorMode;
-                colorDiscoveryStatus = !isColorScanValid ? "FAILED" : "SUCCESS";
+                colorDiscoveryStatus = "FAILED";
               } else if (scanned.colorMode === "customPicker" || scanned.colorMode === "none") {
                 mergedColors = [];
                 mergedColorMode = scanned.colorMode;
               } else {
                 const productOverrides = overrides[matched.id]?.colors || {};
-                mergedColors = (scanned.colors || []).map((sc) => {
+                mergedColors = mergeScannedOptions(matched.colors || [], scanned.colors, scanned.colorDiscoveryStatus).map((sc) => {
                   const rule = productOverrides[sc.id]?.avoidRule ?? "none";
                   return {
                     ...sc,
@@ -50365,7 +50366,7 @@ var init_productCatalogService = __esm2({
                 colorDiscoveryStatus,
                 colors: mergedColors,
                 fitTypes: mergeScannedFits(matched.fitTypes, scanned.fitTypes, scanned.fitDiscoveryStatus),
-                fitDiscoveryStatus: scanned.fitDiscoveryStatus ?? matched.fitDiscoveryStatus,
+                fitDiscoveryStatus: scanned.fitDiscoveryStatus === "SUCCESS" && Array.isArray(scanned.fitTypes) ? "SUCCESS" : "FAILED",
                 availableMarketplaces: scanned.availableMarketplaces && scanned.availableMarketplaces.length > 0 ? scanned.availableMarketplaces : matched.availableMarketplaces,
                 amazonSortOrder: amazonSort,
                 amazon: scanned.amazon || {
@@ -50374,13 +50375,13 @@ var init_productCatalogService = __esm2({
                   checkboxClass: scannedAmazonKey,
                   sortOrder: amazonSort
                 },
-                presetHexColors: scanned.presetHexColors || matched.presetHexColors,
+                presetHexColors: isColorScanValid ? scanned.presetHexColors || [] : matched.presetHexColors,
                 lastUpdated: nowIso
               });
             } else {
               const newStableId = scanned.id || scannedAmazonKey;
               const amazonSort = scanned.amazonSortOrder ?? scanned.amazon?.sortOrder ?? updatedProducts.length;
-              const isColorScanValid = scanned.colorDiscoveryStatus !== "FAILED";
+              const isColorScanValid = scanned.colorDiscoveryStatus === "SUCCESS" && scanned.colorMode !== "failed" && Array.isArray(scanned.colors);
               console.log(`[ProductCatalogService] \u{1F31F} New Amazon Product detected: ${newStableId} (${scannedAmazonKey})`);
               if (!overrides[newStableId]) {
                 overrides[newStableId] = {
@@ -231542,6 +231543,7 @@ var ProductScannerService = class {
           catalog[amazonKey].fitDiscoveryStatus = unknownFitControl ? "FAILED" : "SUCCESS";
           const colorCheckboxes = Array.from(activeEditor.querySelectorAll("colorcheckbox"));
           const detectedColors = [];
+          let unknownColorControl = false;
           for (const cb of colorCheckboxes) {
             let colorId = "";
             const m1 = (cb.className || "").match(/([a-z0-9_]+)-checkbox/i);
@@ -231556,12 +231558,16 @@ var ProductScannerService = class {
             if (colorId && !detectedColors.includes(colorId)) {
               detectedColors.push(colorId);
             }
+            if (!colorId) unknownColorControl = true;
           }
           const pickerBtn = activeEditor.querySelector('#color-btn, button[id*="color-btn"], .color-picker-button, .background-color-picker-button, button.color-btn, [class*="picker"]');
           const directHex = activeEditor.querySelector('input[type="text"][id*="hex"], input[placeholder*="Hex"], input[type="color"]');
           editBtn.click();
           await sleep2(200);
-          if (detectedColors.length > 0) {
+          if (unknownColorControl) {
+            catalog[amazonKey].colorType = "failed";
+            catalog[amazonKey].colorDiscoveryStatus = "FAILED";
+          } else if (detectedColors.length > 0) {
             catalog[amazonKey].colorType = "predefined";
             catalog[amazonKey].colors = detectedColors;
             catalog[amazonKey].colorDiscoveryStatus = "SUCCESS";

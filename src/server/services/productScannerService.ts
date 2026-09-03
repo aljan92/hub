@@ -419,6 +419,7 @@ export class ProductScannerService {
           // C. Swatches (<colorcheckbox>)
           const colorCheckboxes = Array.from(activeEditor.querySelectorAll('colorcheckbox'));
           const detectedColors: string[] = [];
+          let unknownColorControl = false;
           for (const cb of colorCheckboxes) {
             let colorId = '';
             const m1 = (cb.className || '').match(/([a-z0-9_]+)-checkbox/i);
@@ -435,6 +436,7 @@ export class ProductScannerService {
             if (colorId && !detectedColors.includes(colorId)) {
               detectedColors.push(colorId);
             }
+            if (!colorId) unknownColorControl = true;
           }
 
           // D. Custom Color Picker / Hex Mode
@@ -446,7 +448,11 @@ export class ProductScannerService {
           await sleep(200);
 
           // F. Determine exact canonical colorType and colorDiscoveryStatus
-          if (detectedColors.length > 0) {
+          if (unknownColorControl) {
+            // Unreadable swatches are an incomplete scan, not proof of removal.
+            catalog[amazonKey].colorType = 'failed';
+            catalog[amazonKey].colorDiscoveryStatus = 'FAILED';
+          } else if (detectedColors.length > 0) {
             catalog[amazonKey].colorType = 'predefined';
             catalog[amazonKey].colors = detectedColors;
             catalog[amazonKey].colorDiscoveryStatus = 'SUCCESS';
