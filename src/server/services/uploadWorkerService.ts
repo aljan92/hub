@@ -1153,18 +1153,18 @@ export class UploadWorkerService {
               continue;
             }
 
-            const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
-            const designsDir = path.resolve(process.cwd(), 'data', 'designs');
-            
-            let targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey as keyof typeof item.resizedAssets];
-            if (!targetArtworkPath) {
-              const expectedFilename = `${cleanTaskId}_${selectedVariant.id.toLowerCase()}.png`;
-              const candidatePath = path.join(designsDir, expectedFilename);
-              if (fs.existsSync(candidatePath)) targetArtworkPath = candidatePath;
+            // Resolve artwork path based on storageType defined in ARTWORK_VARIANT_REGISTRY
+            let targetArtworkPath: string | undefined;
+            if (selectedVariant.storageType === 'legacy' && selectedVariant.artifactKey) {
+              // Legacy variants: read from fixed resizedAssets fields
+              targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey as keyof typeof item.resizedAssets] as string | undefined;
+            } else if (selectedVariant.storageType === 'productVariants') {
+              // New generic variants: read from productVariants map
+              targetArtworkPath = item.resizedAssets?.productVariants?.[selectedVariant.id];
             }
 
             if (!targetArtworkPath || !fs.existsSync(targetArtworkPath)) {
-              const err = `FAILED_ARTWORK_RESOLUTION: Resized Datei "${selectedVariant.artifactKey}" für ${product.displayName} (${selectedVariant.id}) nicht auf Disk gefunden`;
+              const err = `FAILED_ARTWORK_RESOLUTION: Asset für Variante "${selectedVariant.id}" (${selectedVariant.label}) für ${product.displayName} nicht gefunden (storageType: ${selectedVariant.storageType})`;
               currentProductStatus = 'FAILED_ARTWORK_RESOLUTION';
               currentProductFailureReason = err;
               this.log(`❌ ${err}`);

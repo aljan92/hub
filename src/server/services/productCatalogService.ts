@@ -32,43 +32,152 @@ export interface ProductAmazonIdentity {
   sortOrder: number;        // Dynamic row index in "Select Products" modal
 }
 
+// ─── Resize Background Profiles ────────────────────────────────────────────────
+
+export type ResizeBackground =
+  | { type: 'solid'; color: string }
+  | { type: 'transparent' };
+
+/**
+ * Central background profile registry for product-specific resize variants.
+ * When multiple variants share the same background, they reference the same profile.
+ * To change the background for all variants using DARK_PRODUCT, only this constant needs updating.
+ */
+export const RESIZE_BACKGROUND_PROFILES: Record<string, ResizeBackground> = {
+  DARK_PRODUCT: { type: 'solid', color: '#4E4A46' }
+};
+
+// ─── Product Variant Generator Config ──────────────────────────────────────────
+
+/**
+ * Technical specification for how a resize variant is generated.
+ * This is CODE configuration – it describes a resize capability, not a product.
+ */
+export interface ProductVariantGeneratorConfig {
+  mode: 'CANVAS_BACKGROUND_CONTAIN';
+  source: 'TRIMMED';
+  canvas: { width: number; height: number };
+  paddingShortSidePct: number;
+  backgroundProfile: string;  // Key into RESIZE_BACKGROUND_PROFILES
+}
+
 export interface ArtworkVariantRegistryEntry {
   id: string;
   label: string;
-  artifactKey: 'trimmedPath' | 'mugStandardPath' | 'mugBrushPath' | 'drinkwareStandardPath' | 'drinkwareBrushPath' | 'pngPath';
+  /** Where this variant's path is stored in resizedAssets */
+  storageType: 'legacy' | 'productVariants';
+  /** For storageType 'legacy': the fixed field key in resizedAssets */
+  artifactKey?: 'trimmedPath' | 'mugStandardPath' | 'mugBrushPath' | 'drinkwareStandardPath' | 'drinkwareBrushPath' | 'pngPath';
+  /** For storageType 'productVariants': the key is the variant id itself */
+  /** Technical generator config – if present, Finalization generates this variant */
+  generator?: ProductVariantGeneratorConfig;
 }
 
 export const ARTWORK_VARIANT_REGISTRY: Record<string, ArtworkVariantRegistryEntry> = {
   MASTER: {
     id: 'MASTER',
     label: 'Master Design',
+    storageType: 'legacy',
     artifactKey: 'pngPath'
   },
   TWO_SIDED_MUG_STANDARD: {
     id: 'TWO_SIDED_MUG_STANDARD',
     label: 'Two Sided Mug',
+    storageType: 'legacy',
     artifactKey: 'mugStandardPath'
   },
   TWO_SIDED_MUG_BRUSH: {
     id: 'TWO_SIDED_MUG_BRUSH',
     label: 'Two Sided Mug Brush',
+    storageType: 'legacy',
     artifactKey: 'mugBrushPath'
   },
   TWO_SIDED_DRINKWARE_STANDARD: {
     id: 'TWO_SIDED_DRINKWARE_STANDARD',
     label: 'Two Sided Drinkware',
+    storageType: 'legacy',
     artifactKey: 'drinkwareStandardPath'
   },
   TWO_SIDED_DRINKWARE_BRUSH: {
     id: 'TWO_SIDED_DRINKWARE_BRUSH',
     label: 'Two Sided Drinkware Brush',
+    storageType: 'legacy',
     artifactKey: 'drinkwareBrushPath'
+  },
+  // ─── New CANVAS_BACKGROUND_CONTAIN variants ────────────────────────────────
+  CANVAS_BG_CONTAIN_4452X5292_DARK: {
+    id: 'CANVAS_BG_CONTAIN_4452X5292_DARK',
+    label: 'Blanket Format – 4452 × 5292',
+    storageType: 'productVariants',
+    generator: {
+      mode: 'CANVAS_BACKGROUND_CONTAIN',
+      source: 'TRIMMED',
+      canvas: { width: 4452, height: 5292 },
+      paddingShortSidePct: 0.10,
+      backgroundProfile: 'DARK_PRODUCT'
+    }
+  },
+  CANVAS_BG_CONTAIN_4320X5400_DARK: {
+    id: 'CANVAS_BG_CONTAIN_4320X5400_DARK',
+    label: 'Poster Format – 4320 × 5400',
+    storageType: 'productVariants',
+    generator: {
+      mode: 'CANVAS_BACKGROUND_CONTAIN',
+      source: 'TRIMMED',
+      canvas: { width: 4320, height: 5400 },
+      paddingShortSidePct: 0.08,
+      backgroundProfile: 'DARK_PRODUCT'
+    }
+  },
+  CANVAS_BG_CONTAIN_4480X3472_DARK: {
+    id: 'CANVAS_BG_CONTAIN_4480X3472_DARK',
+    label: 'Laptop Sleeve Format – 4480 × 3472',
+    storageType: 'productVariants',
+    generator: {
+      mode: 'CANVAS_BACKGROUND_CONTAIN',
+      source: 'TRIMMED',
+      canvas: { width: 4480, height: 3472 },
+      paddingShortSidePct: 0.08,
+      backgroundProfile: 'DARK_PRODUCT'
+    }
+  },
+  CANVAS_BG_CONTAIN_4500X3750_DARK: {
+    id: 'CANVAS_BG_CONTAIN_4500X3750_DARK',
+    label: 'Mouse Pad Format – 4500 × 3750',
+    storageType: 'productVariants',
+    generator: {
+      mode: 'CANVAS_BACKGROUND_CONTAIN',
+      source: 'TRIMMED',
+      canvas: { width: 4500, height: 3750 },
+      paddingShortSidePct: 0.09,
+      backgroundProfile: 'DARK_PRODUCT'
+    }
   }
 };
 
+/**
+ * Resolves the concrete background hex color for a generator config.
+ * Looks up the profile in RESIZE_BACKGROUND_PROFILES.
+ */
+export function resolveBackgroundColor(config: ProductVariantGeneratorConfig): string {
+  const profile = RESIZE_BACKGROUND_PROFILES[config.backgroundProfile];
+  if (!profile || profile.type !== 'solid') {
+    throw new Error(`Unknown or non-solid background profile: ${config.backgroundProfile}`);
+  }
+  return profile.color;
+}
+
+/**
+ * Returns all registry entries that have a generator config (i.e. need to be rendered during finalization).
+ */
+export function getGeneratableVariants(): ArtworkVariantRegistryEntry[] {
+  return Object.values(ARTWORK_VARIANT_REGISTRY).filter(v => v.generator != null);
+}
+
 export interface ProductArtworkVariantConfig {
   id: string;
-  artifactKey: 'trimmedPath' | 'mugStandardPath' | 'mugBrushPath' | 'drinkwareStandardPath' | 'drinkwareBrushPath';
+  /** For legacy variants stored in fixed fields */
+  artifactKey?: 'trimmedPath' | 'mugStandardPath' | 'mugBrushPath' | 'drinkwareStandardPath' | 'drinkwareBrushPath';
 }
 
 export interface ProductArtworkConfig {

@@ -191,18 +191,18 @@ export class FinalizationService {
     }
 
     let resizedAssets = task?.resizedAssets;
-    const areAssetsValid = resizedAssets &&
+    const areLegacyAssetsValid = resizedAssets &&
       resizedAssets.trimmedPath && fs.existsSync(resizedAssets.trimmedPath) &&
       resizedAssets.mugStandardPath && fs.existsSync(resizedAssets.mugStandardPath) &&
       resizedAssets.mugBrushPath && fs.existsSync(resizedAssets.mugBrushPath) &&
       resizedAssets.drinkwareStandardPath && fs.existsSync(resizedAssets.drinkwareStandardPath) &&
       resizedAssets.drinkwareBrushPath && fs.existsSync(resizedAssets.drinkwareBrushPath);
 
-    if (areAssetsValid) {
-      console.log(`[FinalizationService] ⚡ Resized Assets für Task #${taskId} bereits vorhanden. Überspringe doppelten Resize.`);
+    if (areLegacyAssetsValid) {
+      console.log(`[FinalizationService] ⚡ Legacy Resized Assets für Task #${taskId} bereits vorhanden. Überspringe doppelten Resize.`);
     } else {
       try {
-        // Execute resize exactly once via ArtworkResizeService mutex
+        // Execute legacy resize exactly once via ArtworkResizeService mutex
         resizedAssets = await ArtworkResizeService.generateResizedArtworks(taskId, masterPngPath);
       } catch (resizeErr: any) {
         const err = `Fehler bei Artwork-Resize: ${resizeErr.message}`;
@@ -220,15 +220,67 @@ export class FinalizationService {
       }
     }
 
+    // ─── PHASE 3b: PRODUCT VARIANT GENERATION (CANVAS_BACKGROUND_CONTAIN) ───
+    // Every task receives ALL registered product variants, regardless of product selection.
+    // Product Catalog only decides which variant is used at upload time.
+    const { getGeneratableVariants: getGenVariants } = await import('./productCatalogService');
+    const generatableVariants = getGenVariants();
+
+    if (generatableVariants.length > 0) {
+      // Check if all product variants are already valid on disk
+      const existingProductVariants = resizedAssets?.productVariants || {};
+      const allProductVariantsValid = generatableVariants.every(v =>
+        existingProductVariants[v.id] && fs.existsSync(existingProductVariants[v.id])
+      );
+
+      if (allProductVariantsValid) {
+        console.log(`[FinalizationService] ⚡ Alle ${generatableVariants.length} Product-Varianten für Task #${taskId} bereits vorhanden.`);
+        // Ensure productVariants is set on resizedAssets
+        if (!resizedAssets!.productVariants) {
+          resizedAssets!.productVariants = existingProductVariants;
+        }
+      } else {
+        try {
+          const trimmedPath = resizedAssets!.trimmedPath;
+          if (!trimmedPath || !fs.existsSync(trimmedPath)) {
+            throw new Error(`Trimmed PNG nicht gefunden für Product-Variant-Generierung: ${trimmedPath}`);
+          }
+
+          TaskLogService.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'FINALIZATION_EVENT' as any,
+            title: `🎨 ${generatableVariants.length} Product-Varianten werden generiert...`,
+            content: { phase: 'PRODUCT_VARIANT_GENERATION', status: 'RUNNING', variants: generatableVariants.map(v => v.id) }
+          });
+
+          const productVariants = await ArtworkResizeService.generateAllProductVariants(taskId, trimmedPath);
+          resizedAssets!.productVariants = productVariants;
+        } catch (pvErr: any) {
+          const err = `Fehler bei Product-Variant-Generierung: ${pvErr.message}`;
+          console.error(`[FinalizationService] ❌ ${err}`);
+
+          TaskLogService.addEvent(taskId, {
+            timestamp: new Date().toISOString(),
+            type: 'FINALIZATION_EVENT' as any,
+            title: '❌ Product-Variant-Generierung fehlgeschlagen',
+            content: { phase: 'PRODUCT_VARIANT_GENERATION', status: 'FAILED', error: err }
+          });
+
+          TaskLogService.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+          return { success: false, error: err };
+        }
+      }
+    }
+
     // =========================================================================
     // PHASE 4: FINAL ASSET VALIDATION (Verifying files on disk)
     // =========================================================================
     const requiredFiles = [
-      { name: 'Trimmed Master', path: resizedAssets.trimmedPath },
-      { name: 'Mug Standard', path: resizedAssets.mugStandardPath },
-      { name: 'Mug Brush', path: resizedAssets.mugBrushPath },
-      { name: 'Drinkware Standard', path: resizedAssets.drinkwareStandardPath },
-      { name: 'Drinkware Brush', path: resizedAssets.drinkwareBrushPath }
+      { name: 'Trimmed Master', path: resizedAssets!.trimmedPath },
+      { name: 'Mug Standard', path: resizedAssets!.mugStandardPath },
+      { name: 'Mug Brush', path: resizedAssets!.mugBrushPath },
+      { name: 'Drinkware Standard', path: resizedAssets!.drinkwareStandardPath },
+      { name: 'Drinkware Brush', path: resizedAssets!.drinkwareBrushPath }
     ];
 
     for (const f of requiredFiles) {
@@ -240,10 +292,23 @@ export class FinalizationService {
       }
     }
 
+    // Validate product variants
+    const productVariants = resizedAssets!.productVariants || {};
+    for (const variant of generatableVariants) {
+      const variantPath = productVariants[variant.id];
+      if (!variantPath || !fs.existsSync(variantPath)) {
+        const err = `Product-Variant "${variant.id}" (${variant.label}) nicht auf Disk gefunden: ${variantPath}`;
+        console.error(`[FinalizationService] ❌ ${err}`);
+        TaskLogService.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+        return { success: false, error: err };
+      }
+    }
+
+    const totalAssets = requiredFiles.length + Object.keys(productVariants).length;
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'FINALIZATION_EVENT' as any,
-      title: '✓ Getrimmtes Master & alle 4 Two-Sided Varianten erfolgreich auf Disk verifiziert',
+      title: `✓ Alle ${totalAssets} Assets (${requiredFiles.length} Legacy + ${Object.keys(productVariants).length} Product-Varianten) auf Disk verifiziert`,
       content: { phase: 'ARTWORK_PREPARATION', status: 'SUCCESS', assets: resizedAssets }
     });
 

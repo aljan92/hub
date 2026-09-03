@@ -110,6 +110,7 @@ export interface QueueItem {
     mugBrushPath?: string;
     drinkwareStandardPath?: string;
     drinkwareBrushPath?: string;
+    productVariants?: Record<string, string>;
   };
   addedAt: string;
   status: QueueItemStatus;
@@ -557,6 +558,7 @@ export class QueueService {
       mugBrushPath?: string;
       drinkwareStandardPath?: string;
       drinkwareBrushPath?: string;
+      productVariants?: Record<string, string>;
     };
     tmBlockedProductIds?: string[];
     source?: string;
@@ -761,6 +763,7 @@ export class QueueService {
       mugBrushPath?: string;
       drinkwareStandardPath?: string;
       drinkwareBrushPath?: string;
+      productVariants?: Record<string, string>;
     };
     tmBlockedProductIds?: string[];
     source?: string;

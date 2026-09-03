@@ -49924,37 +49924,113 @@ var init_settingsService = __esm2({
 });
 
 // src/server/services/productCatalogService.ts
-var import_fs72, import_path67, ARTWORK_VARIANT_REGISTRY, MERCH_COLOR_HEX_MAP, ProductCatalogService;
+var productCatalogService_exports = {};
+__export2(productCatalogService_exports, {
+  ARTWORK_VARIANT_REGISTRY: () => ARTWORK_VARIANT_REGISTRY,
+  MERCH_COLOR_HEX_MAP: () => MERCH_COLOR_HEX_MAP,
+  ProductCatalogService: () => ProductCatalogService,
+  RESIZE_BACKGROUND_PROFILES: () => RESIZE_BACKGROUND_PROFILES,
+  getGeneratableVariants: () => getGeneratableVariants,
+  resolveBackgroundColor: () => resolveBackgroundColor
+});
+function resolveBackgroundColor(config) {
+  const profile = RESIZE_BACKGROUND_PROFILES[config.backgroundProfile];
+  if (!profile || profile.type !== "solid") {
+    throw new Error(`Unknown or non-solid background profile: ${config.backgroundProfile}`);
+  }
+  return profile.color;
+}
+function getGeneratableVariants() {
+  return Object.values(ARTWORK_VARIANT_REGISTRY).filter((v) => v.generator != null);
+}
+var import_fs72, import_path67, RESIZE_BACKGROUND_PROFILES, ARTWORK_VARIANT_REGISTRY, MERCH_COLOR_HEX_MAP, ProductCatalogService;
 var init_productCatalogService = __esm2({
   "src/server/services/productCatalogService.ts"() {
     "use strict";
     import_fs72 = __toESM2(require("fs"), 1);
     import_path67 = __toESM2(require("path"), 1);
+    RESIZE_BACKGROUND_PROFILES = {
+      DARK_PRODUCT: { type: "solid", color: "#4E4A46" }
+    };
     ARTWORK_VARIANT_REGISTRY = {
       MASTER: {
         id: "MASTER",
         label: "Master Design",
+        storageType: "legacy",
         artifactKey: "pngPath"
       },
       TWO_SIDED_MUG_STANDARD: {
         id: "TWO_SIDED_MUG_STANDARD",
         label: "Two Sided Mug",
+        storageType: "legacy",
         artifactKey: "mugStandardPath"
       },
       TWO_SIDED_MUG_BRUSH: {
         id: "TWO_SIDED_MUG_BRUSH",
         label: "Two Sided Mug Brush",
+        storageType: "legacy",
         artifactKey: "mugBrushPath"
       },
       TWO_SIDED_DRINKWARE_STANDARD: {
         id: "TWO_SIDED_DRINKWARE_STANDARD",
         label: "Two Sided Drinkware",
+        storageType: "legacy",
         artifactKey: "drinkwareStandardPath"
       },
       TWO_SIDED_DRINKWARE_BRUSH: {
         id: "TWO_SIDED_DRINKWARE_BRUSH",
         label: "Two Sided Drinkware Brush",
+        storageType: "legacy",
         artifactKey: "drinkwareBrushPath"
+      },
+      // ─── New CANVAS_BACKGROUND_CONTAIN variants ────────────────────────────────
+      CANVAS_BG_CONTAIN_4452X5292_DARK: {
+        id: "CANVAS_BG_CONTAIN_4452X5292_DARK",
+        label: "Blanket Format \u2013 4452 \xD7 5292",
+        storageType: "productVariants",
+        generator: {
+          mode: "CANVAS_BACKGROUND_CONTAIN",
+          source: "TRIMMED",
+          canvas: { width: 4452, height: 5292 },
+          paddingShortSidePct: 0.1,
+          backgroundProfile: "DARK_PRODUCT"
+        }
+      },
+      CANVAS_BG_CONTAIN_4320X5400_DARK: {
+        id: "CANVAS_BG_CONTAIN_4320X5400_DARK",
+        label: "Poster Format \u2013 4320 \xD7 5400",
+        storageType: "productVariants",
+        generator: {
+          mode: "CANVAS_BACKGROUND_CONTAIN",
+          source: "TRIMMED",
+          canvas: { width: 4320, height: 5400 },
+          paddingShortSidePct: 0.08,
+          backgroundProfile: "DARK_PRODUCT"
+        }
+      },
+      CANVAS_BG_CONTAIN_4480X3472_DARK: {
+        id: "CANVAS_BG_CONTAIN_4480X3472_DARK",
+        label: "Laptop Sleeve Format \u2013 4480 \xD7 3472",
+        storageType: "productVariants",
+        generator: {
+          mode: "CANVAS_BACKGROUND_CONTAIN",
+          source: "TRIMMED",
+          canvas: { width: 4480, height: 3472 },
+          paddingShortSidePct: 0.08,
+          backgroundProfile: "DARK_PRODUCT"
+        }
+      },
+      CANVAS_BG_CONTAIN_4500X3750_DARK: {
+        id: "CANVAS_BG_CONTAIN_4500X3750_DARK",
+        label: "Mouse Pad Format \u2013 4500 \xD7 3750",
+        storageType: "productVariants",
+        generator: {
+          mode: "CANVAS_BACKGROUND_CONTAIN",
+          source: "TRIMMED",
+          canvas: { width: 4500, height: 3750 },
+          paddingShortSidePct: 0.09,
+          backgroundProfile: "DARK_PRODUCT"
+        }
       }
     };
     MERCH_COLOR_HEX_MAP = {
@@ -219490,559 +219566,6 @@ var init_visionOptimizationService = __esm2({
   }
 });
 
-// src/server/services/artworkResizeService.ts
-async function getBrowser3() {
-  if (!sharedBrowser3 || !sharedBrowser3.isConnected()) {
-    const executablePath = findChromiumExecutable();
-    const launchOptions = {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu"
-      ]
-    };
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-    }
-    sharedBrowser3 = await chromium.launch(launchOptions);
-  }
-  return sharedBrowser3;
-}
-function crc32(buf) {
-  let crc = -1;
-  for (let i = 0; i < buf.length; i++) {
-    crc = crc >>> 8 ^ crcTable[(crc ^ buf[i]) & 255];
-  }
-  return (crc ^ -1) >>> 0;
-}
-function inject300Dpi(pngBuffer) {
-  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
-  for (let i = 0; i < 8; i++) {
-    if (pngBuffer[i] !== sig[i]) return pngBuffer;
-  }
-  const dpi = 300;
-  const ppm = Math.round(dpi * 39.3701);
-  const physData = Buffer.alloc(9);
-  physData.writeUInt32BE(ppm, 0);
-  physData.writeUInt32BE(ppm, 4);
-  physData.writeUInt8(1, 8);
-  const typeAndData = Buffer.concat([Buffer.from("pHYs", "ascii"), physData]);
-  const crc = crc32(typeAndData);
-  const chunkHeader = Buffer.alloc(4);
-  chunkHeader.writeUInt32BE(9, 0);
-  const crcBuf = Buffer.alloc(4);
-  crcBuf.writeUInt32BE(crc, 0);
-  const physChunk = Buffer.concat([chunkHeader, typeAndData, crcBuf]);
-  return Buffer.concat([
-    pngBuffer.subarray(0, 33),
-    physChunk,
-    pngBuffer.subarray(33)
-  ]);
-}
-var import_fs77, import_path72, currentDir, sharedBrowser3, crcTable, ArtworkResizeService;
-var init_artworkResizeService = __esm2({
-  "src/server/services/artworkResizeService.ts"() {
-    "use strict";
-    init_playwright3();
-    import_fs77 = __toESM2(require("fs"), 1);
-    import_path72 = __toESM2(require("path"), 1);
-    init_browserSessionService();
-    currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
-    sharedBrowser3 = null;
-    crcTable = (() => {
-      const table = [];
-      for (let n = 0; n < 256; n++) {
-        let c = n;
-        for (let k = 0; k < 8; k++) {
-          c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
-        }
-        table[n] = c;
-      }
-      return table;
-    })();
-    ArtworkResizeService = class {
-      /**
-       * Resolves the brush_tip.png asset from multiple candidate paths
-       */
-      static getBrushTipPath() {
-        const candidates = [
-          import_path72.default.resolve(process.cwd(), "assets", "brush_tip.png"),
-          import_path72.default.resolve(process.cwd(), "dist", "assets", "brush_tip.png"),
-          import_path72.default.resolve(currentDir, "../../assets", "brush_tip.png"),
-          import_path72.default.resolve(currentDir, "../assets", "brush_tip.png"),
-          import_path72.default.resolve(process.cwd(), "Erweiterungen und Programme /Listing Optimizer/assets", "brush_tip.png")
-        ];
-        for (const c of candidates) {
-          if (import_fs77.default.existsSync(c)) {
-            return c;
-          }
-        }
-        return candidates[0];
-      }
-      /**
-       * Generates all resized variants from the master 4500x5400px MBA PNG:
-       * 1. ${cleanId}_trimmed.png - Bounding box of artwork with transparent margins trimmed
-       * 2. ${cleanId}_two_sided_mug_standard.png - 2700x1050 px, 300 DPI, centered on front/back
-       * 3. ${cleanId}_two_sided_mug_brush.png - 2700x1050 px, 300 DPI with black brush contour
-       * 4. ${cleanId}_two_sided_drinkware_standard.png - 3000x1400 px, 300 DPI for Tumbler & Water Bottle
-       * 5. ${cleanId}_two_sided_drinkware_brush.png - 3000x1400 px, 300 DPI with black brush contour for Travel Tumbler
-       */
-      static resizeLock = Promise.resolve();
-      static async generateResizedArtworks(taskId, mbaPngPath) {
-        const previousLock = this.resizeLock;
-        let releaseLock = () => {
-        };
-        this.resizeLock = new Promise((resolve) => {
-          releaseLock = resolve;
-        });
-        await previousLock;
-        try {
-          return await this.executeResizedArtworksInternal(taskId, mbaPngPath);
-        } finally {
-          releaseLock();
-        }
-      }
-      static async executeResizedArtworksInternal(taskId, mbaPngPath) {
-        const memBefore = process.memoryUsage();
-        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path72.default.resolve(process.cwd(), "data", "designs");
-        if (!import_fs77.default.existsSync(designsDir)) {
-          try {
-            import_fs77.default.mkdirSync(designsDir, { recursive: true });
-          } catch (e) {
-          }
-        }
-        const trimmedFilePath = import_path72.default.join(designsDir, `${cleanId}_trimmed.png`);
-        const mugStandardFilePath = import_path72.default.join(designsDir, `${cleanId}_two_sided_mug_standard.png`);
-        const mugBrushFilePath = import_path72.default.join(designsDir, `${cleanId}_two_sided_mug_brush.png`);
-        const drinkwareStandardFilePath = import_path72.default.join(designsDir, `${cleanId}_two_sided_drinkware_standard.png`);
-        const drinkwareBrushFilePath = import_path72.default.join(designsDir, `${cleanId}_two_sided_drinkware_brush.png`);
-        if (!import_fs77.default.existsSync(mbaPngPath)) {
-          throw new Error(`Master MBA PNG not found at path: ${mbaPngPath}`);
-        }
-        const masterPngBuffer = import_fs77.default.readFileSync(mbaPngPath);
-        const masterPngDataUri = `data:image/png;base64,${masterPngBuffer.toString("base64")}`;
-        const brushTipPath = this.getBrushTipPath();
-        let brushTipDataUri = "";
-        if (import_fs77.default.existsSync(brushTipPath)) {
-          const brushBuffer = import_fs77.default.readFileSync(brushTipPath);
-          brushTipDataUri = `data:image/png;base64,${brushBuffer.toString("base64")}`;
-        } else {
-          console.warn(`[ArtworkResizeService] \u26A0\uFE0F brush_tip.png not found at ${brushTipPath}. Falling back without brush tip.`);
-        }
-        console.log(`[ArtworkResizeService] \u{1F4D0} Starte Resize-Generierung f\xFCr Task #${taskId} (Chromium Engine)...`);
-        const browser = await getBrowser3();
-        const context2 = await browser.newContext({
-          viewport: { width: 3e3, height: 2e3 },
-          deviceScaleFactor: 1
-        });
-        const page = await context2.newPage();
-        try {
-          await page.addInitScript(() => {
-            window.__name = (target) => target;
-          });
-          await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
-          const evaluatedResults = await page.evaluate(async (params2) => {
-            const loadImage = (src) => {
-              return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.crossOrigin = "anonymous";
-                img.onload = () => resolve(img);
-                img.onerror = (e) => reject(e);
-                img.src = src;
-              });
-            };
-            const masterImg = await loadImage(params2.masterUri);
-            let brushImg = null;
-            if (params2.brushUri) {
-              try {
-                brushImg = await loadImage(params2.brushUri);
-              } catch (e) {
-                console.warn("Failed to load brush tip image in browser context", e);
-              }
-            }
-            const trimCanvas = (img) => {
-              const width = img.naturalWidth || img.width;
-              const height = img.naturalHeight || img.height;
-              const canvas = document.createElement("canvas");
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext("2d", { willReadFrequently: true });
-              if (!ctx) return canvas;
-              ctx.drawImage(img, 0, 0);
-              const imgData = ctx.getImageData(0, 0, width, height);
-              const data = imgData.data;
-              let top = 0;
-              let bottom = height - 1;
-              let left = 0;
-              let right = width - 1;
-              let found = false;
-              for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    top = y;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              if (!found) {
-                return canvas;
-              }
-              found = false;
-              for (let y = height - 1; y >= top; y--) {
-                for (let x = 0; x < width; x++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    bottom = y;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              found = false;
-              for (let x = 0; x < width; x++) {
-                for (let y = top; y <= bottom; y++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    left = x;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              found = false;
-              for (let x = width - 1; x >= left; x--) {
-                for (let y = top; y <= bottom; y++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    right = x;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              const croppedWidth = right - left + 1;
-              const croppedHeight = bottom - top + 1;
-              const trimmed = document.createElement("canvas");
-              trimmed.width = croppedWidth;
-              trimmed.height = croppedHeight;
-              const trimmedCtx = trimmed.getContext("2d");
-              if (trimmedCtx) {
-                trimmedCtx.drawImage(img, left, top, croppedWidth, croppedHeight, 0, 0, croppedWidth, croppedHeight);
-              }
-              return trimmed;
-            };
-            const trimmedCanvas = trimCanvas(masterImg);
-            const drawCentered = (ctx, source12, destX, destY, targetWidth, targetHeight) => {
-              const sw = source12.width;
-              const sh = source12.height;
-              const scale = Math.min(targetWidth / sw, targetHeight / sh, 1);
-              const dw = sw * scale;
-              const dh = sh * scale;
-              const x = destX + (targetWidth - dw) / 2;
-              const y = destY + (targetHeight - dh) / 2;
-              ctx.drawImage(source12, x, y, dw, dh);
-            };
-            const scaleDesignForProduct = (sourceCanvas, finalWidth, finalHeight, margin = 0.075) => {
-              const sw = sourceCanvas.width;
-              const sh = sourceCanvas.height;
-              const mt = finalHeight * margin;
-              const mb = finalHeight * margin;
-              const ml = finalWidth * margin;
-              const mr = finalWidth * margin;
-              const safeW = finalWidth - ml - mr;
-              const safeH = finalHeight - mt - mb;
-              const scale = Math.min(safeW / sw, safeH / sh);
-              const dw = sw * scale;
-              const dh = sh * scale;
-              const ox = ml + (safeW - dw) / 2;
-              const oy = mt + (safeH - dh) / 2;
-              const canvas = document.createElement("canvas");
-              canvas.width = finalWidth;
-              canvas.height = finalHeight;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = "high";
-                ctx.clearRect(0, 0, finalWidth, finalHeight);
-                ctx.drawImage(sourceCanvas, ox, oy, dw, dh);
-              }
-              return canvas;
-            };
-            const createMugCanvas = (scaledSideDesign) => {
-              const canvas = document.createElement("canvas");
-              canvas.width = 2700;
-              canvas.height = 1050;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.clearRect(0, 0, 2700, 1050);
-                const w = 1050;
-                const h = 1045.646;
-                const y = (1050 - h) / 2;
-                drawCentered(ctx, scaledSideDesign, 59, y, w, h);
-                drawCentered(ctx, scaledSideDesign, 1591, y, w, h);
-              }
-              return canvas;
-            };
-            const createDrinkwareCanvas = (scaledSideDesign) => {
-              const canvas = document.createElement("canvas");
-              canvas.width = 3e3;
-              canvas.height = 1400;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.clearRect(0, 0, 3e3, 1400);
-                const w = 1400;
-                const h = 1400;
-                const y = 0;
-                drawCentered(ctx, scaledSideDesign, 31, y, w, h);
-                drawCentered(ctx, scaledSideDesign, 1566.6667, y, w, h);
-              }
-              return canvas;
-            };
-            const removeSpecks = async (canvas, minSize = 25) => {
-              const ctx = canvas.getContext("2d", { willReadFrequently: true });
-              if (!ctx) return;
-              const width = canvas.width;
-              const height = canvas.height;
-              const totalPixels = width * height;
-              const imgData = ctx.getImageData(0, 0, width, height);
-              const data = imgData.data;
-              const visited = new Uint8Array(totalPixels);
-              let modified = false;
-              const queue = new Int32Array(Math.min(totalPixels, 1e5));
-              const speckOffsets = new Int32Array(minSize);
-              for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                  const startIdx = y * width + x;
-                  if (visited[startIdx] || data[4 * startIdx + 3] === 0) continue;
-                  let head2 = 0;
-                  let tail = 0;
-                  queue[tail++] = startIdx;
-                  visited[startIdx] = 1;
-                  let componentSize = 0;
-                  let isSpeck = true;
-                  while (head2 < tail) {
-                    const curIdx = queue[head2++];
-                    const cx = curIdx % width;
-                    const cy = curIdx / width | 0;
-                    if (isSpeck) {
-                      if (componentSize < minSize) {
-                        speckOffsets[componentSize] = 4 * curIdx;
-                      }
-                      componentSize++;
-                      if (componentSize >= minSize) {
-                        isSpeck = false;
-                      }
-                    }
-                    for (let dy = -1; dy <= 1; dy++) {
-                      const ny = cy + dy;
-                      if (ny < 0 || ny >= height) continue;
-                      const rowOffset = ny * width;
-                      for (let dx = -1; dx <= 1; dx++) {
-                        if (dx === 0 && dy === 0) continue;
-                        const nx = cx + dx;
-                        if (nx < 0 || nx >= width) continue;
-                        const nIdx = rowOffset + nx;
-                        if (!visited[nIdx] && data[4 * nIdx + 3] > 0) {
-                          visited[nIdx] = 1;
-                          if (tail < queue.length) {
-                            queue[tail++] = nIdx;
-                          }
-                        }
-                      }
-                    }
-                  }
-                  if (isSpeck && componentSize < minSize) {
-                    for (let i = 0; i < componentSize; i++) {
-                      const offset = speckOffsets[i];
-                      data[offset] = 0;
-                      data[offset + 1] = 0;
-                      data[offset + 2] = 0;
-                      data[offset + 3] = 0;
-                    }
-                    modified = true;
-                  }
-                }
-              }
-              if (modified) {
-                ctx.putImageData(imgData, 0, 0);
-              }
-            };
-            const applyBlackBrush = async (sourceCanvas, brushP) => {
-              await removeSpecks(sourceCanvas);
-              const n = sourceCanvas.width;
-              const o = sourceCanvas.height;
-              const r = document.createElement("canvas");
-              const s = 0.15 * Math.max(n, o);
-              r.width = Math.ceil(n + 2 * s);
-              r.height = Math.ceil(o + 2 * s);
-              const a = r.getContext("2d");
-              if (!a) return sourceCanvas;
-              if (!brushP) {
-                a.drawImage(sourceCanvas, s, s);
-                return r;
-              }
-              const u = 16;
-              const m = 3;
-              const h = [0.6, 0.9, 1.2];
-              const g = [];
-              for (let e = 0; e < m; e++) {
-                const t = h[e];
-                const bw = Math.ceil(brushP.width * t);
-                const bh = Math.ceil(brushP.height * t);
-                const br = Math.ceil(Math.sqrt(bw * bw + bh * bh));
-                for (let k = 0; k < u; k++) {
-                  const rot = k / u * Math.PI * 2;
-                  const bc = document.createElement("canvas");
-                  bc.width = br;
-                  bc.height = br;
-                  const bctx = bc.getContext("2d");
-                  if (bctx) {
-                    bctx.translate(br / 2, br / 2);
-                    bctx.rotate(rot);
-                    bctx.scale(t, t);
-                    bctx.drawImage(brushP, -brushP.width / 2, -brushP.height / 2);
-                    g.push({
-                      canvas: bc,
-                      halfW: br / 2,
-                      halfH: br / 2
-                    });
-                  }
-                }
-              }
-              const b = g.length;
-              const f = 0.1;
-              const y = document.createElement("canvas");
-              y.width = Math.ceil(n * f);
-              y.height = Math.ceil(o * f);
-              const v = y.getContext("2d", { willReadFrequently: true });
-              if (!v) return sourceCanvas;
-              v.drawImage(sourceCanvas, 0, 0, y.width, y.height);
-              for (let e = 0; e < 2; e++) {
-                v.drawImage(y, 1, 0);
-                v.drawImage(y, -1, 0);
-                v.drawImage(y, 0, 1);
-                v.drawImage(y, 0, -1);
-              }
-              const w = v.getImageData(0, 0, y.width, y.height);
-              for (let e = 0; e < w.data.length; e += 4) {
-                if (w.data[e + 3] > 0) {
-                  w.data[e] = 0;
-                  w.data[e + 1] = 0;
-                  w.data[e + 2] = 0;
-                  w.data[e + 3] = 255;
-                }
-              }
-              v.putImageData(w, 0, 0);
-              const xPts = [];
-              const kw = y.width;
-              const ch = y.height;
-              const ed = v.getImageData(0, 0, kw, ch).data;
-              const S = 2;
-              for (let e = 1; e < ch - 1; e += S) {
-                for (let t = 1; t < kw - 1; t += S) {
-                  if (ed[4 * (e * kw + t) + 3] > 0) {
-                    if (ed[4 * ((e - 1) * kw + t) + 3] !== 0 && ed[4 * ((e + 1) * kw + t) + 3] !== 0 && ed[4 * (e * kw + (t - 1)) + 3] !== 0 && ed[4 * (e * kw + (t + 1)) + 3] !== 0) {
-                    } else {
-                      xPts.push({
-                        x: t / f + s,
-                        y: e / f + s
-                      });
-                    }
-                  }
-                }
-              }
-              const P = document.createElement("canvas");
-              P.width = r.width;
-              P.height = r.height;
-              const A = P.getContext("2d");
-              if (A) {
-                A.drawImage(sourceCanvas, s, s);
-                A.globalCompositeOperation = "source-in";
-                A.fillStyle = "black";
-                A.fillRect(0, 0, P.width, P.height);
-              }
-              a.drawImage(P, 0, 0);
-              for (let e = 0; e < 10; e++) {
-                a.drawImage(r, 1, 0);
-                a.drawImage(r, -1, 0);
-                a.drawImage(r, 0, 1);
-                a.drawImage(r, 0, -1);
-              }
-              const L = 0.5;
-              const TPts = [];
-              for (let e = 0; e < xPts.length; e++) {
-                if (Math.random() < L) {
-                  TPts.push(xPts[e]);
-                }
-              }
-              for (let e = 0; e < TPts.length; e++) {
-                const pt = TPts[e];
-                const stamp = g[Math.floor(Math.random() * b)];
-                a.drawImage(stamp.canvas, pt.x - stamp.halfW, pt.y - stamp.halfH);
-              }
-              a.globalCompositeOperation = "source-over";
-              a.drawImage(sourceCanvas, s, s);
-              return r;
-            };
-            const trimmedDataUri = trimmedCanvas.toDataURL("image/png");
-            const mugStandardScaled = scaleDesignForProduct(trimmedCanvas, 1050, 1050, 0.075);
-            const mugStandardCanvas = createMugCanvas(mugStandardScaled);
-            const mugStandardDataUri = mugStandardCanvas.toDataURL("image/png");
-            const brushCanvas = await applyBlackBrush(trimmedCanvas, brushImg);
-            const mugBrushScaled = scaleDesignForProduct(brushCanvas, 1050, 1050, 0.075);
-            const mugBrushCanvas = createMugCanvas(mugBrushScaled);
-            const mugBrushDataUri = mugBrushCanvas.toDataURL("image/png");
-            const drinkwareScaled = scaleDesignForProduct(trimmedCanvas, 1400, 1400, 0.075);
-            const drinkwareCanvas = createDrinkwareCanvas(drinkwareScaled);
-            const drinkwareStandardDataUri = drinkwareCanvas.toDataURL("image/png");
-            const drinkwareBrushScaled = scaleDesignForProduct(brushCanvas, 1400, 1400, 0.075);
-            const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
-            const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL("image/png");
-            return {
-              trimmedDataUri,
-              mugStandardDataUri,
-              mugBrushDataUri,
-              drinkwareStandardDataUri,
-              drinkwareBrushDataUri
-            };
-          }, {
-            masterUri: masterPngDataUri,
-            brushUri: brushTipDataUri
-          });
-          const trimmedBuf = inject300Dpi(Buffer.from(evaluatedResults.trimmedDataUri.split(",")[1], "base64"));
-          import_fs77.default.writeFileSync(trimmedFilePath, trimmedBuf);
-          const mugStandardBuf = inject300Dpi(Buffer.from(evaluatedResults.mugStandardDataUri.split(",")[1], "base64"));
-          import_fs77.default.writeFileSync(mugStandardFilePath, mugStandardBuf);
-          const mugBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.mugBrushDataUri.split(",")[1], "base64"));
-          import_fs77.default.writeFileSync(mugBrushFilePath, mugBrushBuf);
-          const drinkwareBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareStandardDataUri.split(",")[1], "base64"));
-          import_fs77.default.writeFileSync(drinkwareStandardFilePath, drinkwareBuf);
-          const drinkwareBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareBrushDataUri.split(",")[1], "base64"));
-          import_fs77.default.writeFileSync(drinkwareBrushFilePath, drinkwareBrushBuf);
-          const memAfter = process.memoryUsage();
-          const rssDiffMb = ((memAfter.rss - memBefore.rss) / (1024 * 1024)).toFixed(1);
-          const totalRssMb = (memAfter.rss / (1024 * 1024)).toFixed(1);
-          console.log(`[ArtworkResizeService] \u2705 Alle 5 Resized Varianten f\xFCr Task #${taskId} erfolgreich gespeichert \u2713 (Node RSS: ${totalRssMb}MB, Delta: ${Number(rssDiffMb) >= 0 ? "+" : ""}${rssDiffMb}MB)`);
-          return {
-            trimmedPath: trimmedFilePath,
-            mugStandardPath: mugStandardFilePath,
-            mugBrushPath: mugBrushFilePath,
-            drinkwareStandardPath: drinkwareStandardFilePath,
-            drinkwareBrushPath: drinkwareBrushFilePath
-          };
-        } finally {
-          await context2.close();
-        }
-      }
-    };
-  }
-});
-
 // src/server/services/listingSanitizationService.ts
 var ListingSanitizationService;
 var init_listingSanitizationService = __esm2({
@@ -220100,11 +219623,11 @@ var init_listingSanitizationService = __esm2({
 
 // src/server/utils/atomicFileStorage.ts
 function isFileInFailSafe(filePath) {
-  return failSafeRegistry.has(import_path73.default.resolve(filePath));
+  return failSafeRegistry.has(import_path72.default.resolve(filePath));
 }
 function atomicWriteFile(filePath, content, options2 = {}) {
-  const resolvedPath = import_path73.default.resolve(filePath);
-  const dir = import_path73.default.dirname(resolvedPath);
+  const resolvedPath = import_path72.default.resolve(filePath);
+  const dir = import_path72.default.dirname(resolvedPath);
   const backupExt = options2.backupExt || ".bak";
   const shouldBackup = options2.backup !== false;
   if (failSafeRegistry.has(resolvedPath)) {
@@ -220112,56 +219635,56 @@ function atomicWriteFile(filePath, content, options2 = {}) {
       `[AtomicStorage] \u{1F6A8} REFUSED: File '${resolvedPath}' is in FAIL-SAFE (CORRUPTED) mode. Writes are blocked to prevent destructive data loss.`
     );
   }
-  if (!import_fs78.default.existsSync(dir)) {
-    import_fs78.default.mkdirSync(dir, { recursive: true });
+  if (!import_fs77.default.existsSync(dir)) {
+    import_fs77.default.mkdirSync(dir, { recursive: true });
   }
   const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const tmpPath = `${resolvedPath}.tmp.${nonce}`;
   try {
-    const fd = import_fs78.default.openSync(tmpPath, "w");
+    const fd = import_fs77.default.openSync(tmpPath, "w");
     try {
       if (typeof content === "string") {
-        import_fs78.default.writeSync(fd, content, 0, "utf-8");
+        import_fs77.default.writeSync(fd, content, 0, "utf-8");
       } else {
-        import_fs78.default.writeSync(fd, content);
+        import_fs77.default.writeSync(fd, content);
       }
-      import_fs78.default.fsyncSync(fd);
+      import_fs77.default.fsyncSync(fd);
     } finally {
-      import_fs78.default.closeSync(fd);
+      import_fs77.default.closeSync(fd);
     }
-    if (shouldBackup && import_fs78.default.existsSync(resolvedPath)) {
+    if (shouldBackup && import_fs77.default.existsSync(resolvedPath)) {
       try {
-        const currentStats = import_fs78.default.statSync(resolvedPath);
+        const currentStats = import_fs77.default.statSync(resolvedPath);
         if (currentStats.size > 0) {
           const bakPath = `${resolvedPath}${backupExt}`;
           const bakTmpPath = `${bakPath}.tmp.${nonce}`;
-          import_fs78.default.copyFileSync(resolvedPath, bakTmpPath);
-          const bakFd = import_fs78.default.openSync(bakTmpPath, "r");
+          import_fs77.default.copyFileSync(resolvedPath, bakTmpPath);
+          const bakFd = import_fs77.default.openSync(bakTmpPath, "r");
           try {
-            import_fs78.default.fsyncSync(bakFd);
+            import_fs77.default.fsyncSync(bakFd);
           } finally {
-            import_fs78.default.closeSync(bakFd);
+            import_fs77.default.closeSync(bakFd);
           }
-          import_fs78.default.renameSync(bakTmpPath, bakPath);
+          import_fs77.default.renameSync(bakTmpPath, bakPath);
         }
       } catch (backupErr) {
         console.warn(`[AtomicStorage] Warning: Failed to create backup for ${resolvedPath}:`, backupErr.message);
       }
     }
-    import_fs78.default.renameSync(tmpPath, resolvedPath);
+    import_fs77.default.renameSync(tmpPath, resolvedPath);
     try {
-      const dirFd = import_fs78.default.openSync(dir, "r");
+      const dirFd = import_fs77.default.openSync(dir, "r");
       try {
-        import_fs78.default.fsyncSync(dirFd);
+        import_fs77.default.fsyncSync(dirFd);
       } finally {
-        import_fs78.default.closeSync(dirFd);
+        import_fs77.default.closeSync(dirFd);
       }
     } catch {
     }
   } catch (err) {
-    if (import_fs78.default.existsSync(tmpPath)) {
+    if (import_fs77.default.existsSync(tmpPath)) {
       try {
-        import_fs78.default.unlinkSync(tmpPath);
+        import_fs77.default.unlinkSync(tmpPath);
       } catch {
       }
     }
@@ -220177,11 +219700,11 @@ function atomicWriteJson(filePath, data, options2 = {}) {
   atomicWriteFile(filePath, jsonStr, options2);
 }
 function loadJsonWithBackupRecovery(filePath, options2 = {}) {
-  const resolvedPath = import_path73.default.resolve(filePath);
+  const resolvedPath = import_path72.default.resolve(filePath);
   const backupExt = options2.backupExt || ".bak";
   const bakPath = `${resolvedPath}${backupExt}`;
   const validate2 = options2.validate || (() => true);
-  if (!import_fs78.default.existsSync(resolvedPath) && !import_fs78.default.existsSync(bakPath)) {
+  if (!import_fs77.default.existsSync(resolvedPath) && !import_fs77.default.existsSync(bakPath)) {
     failSafeRegistry.delete(resolvedPath);
     return {
       success: true,
@@ -220193,9 +219716,9 @@ function loadJsonWithBackupRecovery(filePath, options2 = {}) {
   let mainValid = false;
   let mainData = null;
   let mainError = null;
-  if (import_fs78.default.existsSync(resolvedPath)) {
+  if (import_fs77.default.existsSync(resolvedPath)) {
     try {
-      const content = import_fs78.default.readFileSync(resolvedPath, "utf-8").trim();
+      const content = import_fs77.default.readFileSync(resolvedPath, "utf-8").trim();
       if (content.length === 0) {
         throw new Error("File is 0 bytes (empty/truncated)");
       }
@@ -220221,9 +219744,9 @@ function loadJsonWithBackupRecovery(filePath, options2 = {}) {
     };
   }
   console.warn(`[AtomicStorage] \u26A0\uFE0F Corrupted or invalid JSON detected in '${resolvedPath}' (${mainError}). Checking backup '${bakPath}'...`);
-  if (import_fs78.default.existsSync(bakPath)) {
+  if (import_fs77.default.existsSync(bakPath)) {
     try {
-      const bakContent = import_fs78.default.readFileSync(bakPath, "utf-8").trim();
+      const bakContent = import_fs77.default.readFileSync(bakPath, "utf-8").trim();
       if (bakContent.length === 0) {
         throw new Error("Backup file is 0 bytes (empty/truncated)");
       }
@@ -220261,30 +219784,30 @@ function loadJsonWithBackupRecovery(filePath, options2 = {}) {
     error: `Both '${resolvedPath}' and backup are corrupt or unreadable (${mainError})`
   };
 }
-var import_fs78, import_path73, failSafeRegistry;
+var import_fs77, import_path72, failSafeRegistry;
 var init_atomicFileStorage = __esm2({
   "src/server/utils/atomicFileStorage.ts"() {
     "use strict";
-    import_fs78 = __toESM2(require("fs"), 1);
-    import_path73 = __toESM2(require("path"), 1);
+    import_fs77 = __toESM2(require("fs"), 1);
+    import_path72 = __toESM2(require("path"), 1);
     failSafeRegistry = /* @__PURE__ */ new Set();
   }
 });
 
 // src/server/storage/taskRepository.ts
-var import_fs79, import_path74, import_node_sqlite, TaskRepository;
+var import_fs78, import_path73, import_node_sqlite, TaskRepository;
 var init_taskRepository = __esm2({
   "src/server/storage/taskRepository.ts"() {
     "use strict";
-    import_fs79 = __toESM2(require("fs"), 1);
-    import_path74 = __toESM2(require("path"), 1);
+    import_fs78 = __toESM2(require("fs"), 1);
+    import_path73 = __toESM2(require("path"), 1);
     import_node_sqlite = require("node:sqlite");
     init_atomicFileStorage();
     TaskRepository = class {
       static db = null;
-      static dbPath = import_path74.default.resolve(process.cwd(), "data", "mba_hub.sqlite");
-      static legacyJsonPath = import_path74.default.resolve(process.cwd(), "data", "tasks_log.json");
-      static legacyCounterPath = import_path74.default.resolve(process.cwd(), "data", "tasks_counter.json");
+      static dbPath = import_path73.default.resolve(process.cwd(), "data", "mba_hub.sqlite");
+      static legacyJsonPath = import_path73.default.resolve(process.cwd(), "data", "tasks_log.json");
+      static legacyCounterPath = import_path73.default.resolve(process.cwd(), "data", "tasks_counter.json");
       static isInitialized = false;
       static verifyNodeEngine() {
         const [majorStr, minorStr] = process.versions.node.split(".");
@@ -220303,11 +219826,11 @@ var init_taskRepository = __esm2({
         if (this.isInitialized && this.db && !customDbPath) return;
         this.verifyNodeEngine();
         const targetDbPath = customDbPath || this.dbPath;
-        const dbDir = import_path74.default.dirname(targetDbPath);
-        if (!import_fs79.default.existsSync(dbDir)) {
-          import_fs79.default.mkdirSync(dbDir, { recursive: true });
+        const dbDir = import_path73.default.dirname(targetDbPath);
+        if (!import_fs78.default.existsSync(dbDir)) {
+          import_fs78.default.mkdirSync(dbDir, { recursive: true });
         }
-        if (!import_fs79.default.existsSync(targetDbPath) && !customDbPath && import_fs79.default.existsSync(this.legacyJsonPath)) {
+        if (!import_fs78.default.existsSync(targetDbPath) && !customDbPath && import_fs78.default.existsSync(this.legacyJsonPath)) {
           console.log("[TaskRepository] \u{1F4E6} Discovered existing tasks_log.json with no SQLite database. Starting atomic migration...");
           this.executeMigrationFromLegacyJson(targetDbPath);
         }
@@ -220506,9 +220029,9 @@ var init_taskRepository = __esm2({
       static executeMigrationFromLegacyJson(targetDbPath, customJsonPath) {
         const jsonPath = customJsonPath || this.legacyJsonPath;
         const tempDbPath = `${targetDbPath}.migrating`;
-        if (import_fs79.default.existsSync(tempDbPath)) import_fs79.default.unlinkSync(tempDbPath);
-        if (import_fs79.default.existsSync(`${tempDbPath}-wal`)) import_fs79.default.unlinkSync(`${tempDbPath}-wal`);
-        if (import_fs79.default.existsSync(`${tempDbPath}-shm`)) import_fs79.default.unlinkSync(`${tempDbPath}-shm`);
+        if (import_fs78.default.existsSync(tempDbPath)) import_fs78.default.unlinkSync(tempDbPath);
+        if (import_fs78.default.existsSync(`${tempDbPath}-wal`)) import_fs78.default.unlinkSync(`${tempDbPath}-wal`);
+        if (import_fs78.default.existsSync(`${tempDbPath}-shm`)) import_fs78.default.unlinkSync(`${tempDbPath}-shm`);
         console.log(`[TaskRepository] \u23F3 Reading legacy JSON from ${jsonPath}...`);
         const recovery = loadJsonWithBackupRecovery(jsonPath, {
           backupExt: ".bak",
@@ -220576,9 +220099,9 @@ var init_taskRepository = __esm2({
             );
           }
           let counterToStore = maxCounter;
-          if (import_fs79.default.existsSync(this.legacyCounterPath)) {
+          if (import_fs78.default.existsSync(this.legacyCounterPath)) {
             try {
-              const rawCounter = JSON.parse(import_fs79.default.readFileSync(this.legacyCounterPath, "utf-8"));
+              const rawCounter = JSON.parse(import_fs78.default.readFileSync(this.legacyCounterPath, "utf-8"));
               if (rawCounter && typeof rawCounter.counter === "number") {
                 counterToStore = Math.max(counterToStore, rawCounter.counter);
               }
@@ -220604,27 +220127,27 @@ var init_taskRepository = __esm2({
           tempDb = null;
           const tempWalPath = `${tempDbPath}-wal`;
           const tempShmPath = `${tempDbPath}-shm`;
-          if (import_fs79.default.existsSync(tempWalPath)) {
+          if (import_fs78.default.existsSync(tempWalPath)) {
             try {
-              import_fs79.default.unlinkSync(tempWalPath);
+              import_fs78.default.unlinkSync(tempWalPath);
             } catch {
             }
           }
-          if (import_fs79.default.existsSync(tempShmPath)) {
+          if (import_fs78.default.existsSync(tempShmPath)) {
             try {
-              import_fs79.default.unlinkSync(tempShmPath);
+              import_fs78.default.unlinkSync(tempShmPath);
             } catch {
             }
           }
-          import_fs79.default.renameSync(tempDbPath, targetDbPath);
+          import_fs78.default.renameSync(tempDbPath, targetDbPath);
           console.log(`[TaskRepository] \u2705 Migration complete! Created ${targetDbPath} with ${countRow.count} tasks.`);
-          const backupJsonPath = import_path74.default.resolve(import_path74.default.dirname(jsonPath), "tasks_log.pre-sqlite-backup.json");
-          import_fs79.default.renameSync(jsonPath, backupJsonPath);
+          const backupJsonPath = import_path73.default.resolve(import_path73.default.dirname(jsonPath), "tasks_log.pre-sqlite-backup.json");
+          import_fs78.default.renameSync(jsonPath, backupJsonPath);
           console.log(`[TaskRepository] \u{1F6E1}\uFE0F Original tasks_log.json preserved as ${backupJsonPath}.`);
-          if (import_fs79.default.existsSync(this.legacyCounterPath)) {
-            const backupCounterPath = import_path74.default.resolve(import_path74.default.dirname(this.legacyCounterPath), "tasks_counter.pre-sqlite-backup.json");
+          if (import_fs78.default.existsSync(this.legacyCounterPath)) {
+            const backupCounterPath = import_path73.default.resolve(import_path73.default.dirname(this.legacyCounterPath), "tasks_counter.pre-sqlite-backup.json");
             try {
-              import_fs79.default.renameSync(this.legacyCounterPath, backupCounterPath);
+              import_fs78.default.renameSync(this.legacyCounterPath, backupCounterPath);
             } catch {
             }
           }
@@ -220637,15 +220160,15 @@ var init_taskRepository = __esm2({
             }
           }
           try {
-            if (import_fs79.default.existsSync(tempDbPath)) import_fs79.default.unlinkSync(tempDbPath);
+            if (import_fs78.default.existsSync(tempDbPath)) import_fs78.default.unlinkSync(tempDbPath);
           } catch {
           }
           try {
-            if (import_fs79.default.existsSync(`${tempDbPath}-wal`)) import_fs79.default.unlinkSync(`${tempDbPath}-wal`);
+            if (import_fs78.default.existsSync(`${tempDbPath}-wal`)) import_fs78.default.unlinkSync(`${tempDbPath}-wal`);
           } catch {
           }
           try {
-            if (import_fs79.default.existsSync(`${tempDbPath}-shm`)) import_fs79.default.unlinkSync(`${tempDbPath}-shm`);
+            if (import_fs78.default.existsSync(`${tempDbPath}-shm`)) import_fs78.default.unlinkSync(`${tempDbPath}-shm`);
           } catch {
           }
           console.error("[TaskRepository] \u{1F6A8} CRITICAL MIGRATION FAILURE. Original JSON files left untouched:", err.message);
@@ -222360,12 +221883,12 @@ var init_syncEngine = __esm2({
 });
 
 // src/server/services/amazonInspectService.ts
-var import_fs80, import_path75, FIND_LISTINGS_URL2, PRODUCT_CONFIG_URL2, ALL_STATUSES2, AmazonInspectService;
+var import_fs79, import_path74, FIND_LISTINGS_URL2, PRODUCT_CONFIG_URL2, ALL_STATUSES2, AmazonInspectService;
 var init_amazonInspectService = __esm2({
   "src/server/services/amazonInspectService.ts"() {
     "use strict";
-    import_fs80 = __toESM2(require("fs"), 1);
-    import_path75 = __toESM2(require("path"), 1);
+    import_fs79 = __toESM2(require("fs"), 1);
+    import_path74 = __toESM2(require("path"), 1);
     init_browserSessionService();
     init_syncEngine();
     init_taskLogService();
@@ -222744,13 +222267,13 @@ var init_amazonInspectService = __esm2({
         if (!cleanDesignId || !cleanTaskId) {
           return { success: false, error: "Task-ID oder Design-ID fehlt." };
         }
-        const designsDir = import_path75.default.resolve(process.cwd(), "data", "designs");
-        if (!import_fs80.default.existsSync(designsDir)) {
-          import_fs80.default.mkdirSync(designsDir, { recursive: true });
+        const designsDir = import_path74.default.resolve(process.cwd(), "data", "designs");
+        if (!import_fs79.default.existsSync(designsDir)) {
+          import_fs79.default.mkdirSync(designsDir, { recursive: true });
         }
         const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const filename = `${safeId}.png`;
-        const filePath = import_path75.default.join(designsDir, filename);
+        const filePath = import_path74.default.join(designsDir, filename);
         const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
         console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download & DOM-Live-Inspektion f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
         TaskLogService2.updateTaskStatus(cleanTaskId, {
@@ -222800,14 +222323,14 @@ var init_amazonInspectService = __esm2({
           }, extractResult.fullResUrl);
           const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
           const buffer = Buffer.from(base64Clean, "base64");
-          const designsDir2 = import_path75.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs80.default.existsSync(designsDir2)) {
-            import_fs80.default.mkdirSync(designsDir2, { recursive: true });
+          const designsDir2 = import_path74.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs79.default.existsSync(designsDir2)) {
+            import_fs79.default.mkdirSync(designsDir2, { recursive: true });
           }
           const safeId2 = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const filename2 = `${safeId2}.png`;
-          const filePath2 = import_path75.default.join(designsDir2, filename2);
-          import_fs80.default.writeFileSync(filePath2, buffer);
+          const filePath2 = import_path74.default.join(designsDir2, filename2);
+          import_fs79.default.writeFileSync(filePath2, buffer);
           console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
           const pageRejectionInfo = await newTab.evaluate(() => {
@@ -223071,12 +222594,12 @@ var init_amazonInspectService = __esm2({
 });
 
 // src/server/services/assetValidationService.ts
-var import_fs81, import_path76, AssetValidationService;
+var import_fs80, import_path75, AssetValidationService;
 var init_assetValidationService = __esm2({
   "src/server/services/assetValidationService.ts"() {
     "use strict";
-    import_fs81 = __toESM2(require("fs"), 1);
-    import_path76 = __toESM2(require("path"), 1);
+    import_fs80 = __toESM2(require("fs"), 1);
+    import_path75 = __toESM2(require("path"), 1);
     AssetValidationService = class {
       /**
        * Validates whether a given file path is a valid, readable PNG (or JPG) image.
@@ -223085,14 +222608,14 @@ var init_assetValidationService = __esm2({
       static isValidPngImage(filePath, minSizeBytes = 1e4) {
         if (!filePath) return false;
         try {
-          const resolved = import_path76.default.resolve(filePath);
-          if (!import_fs81.default.existsSync(resolved)) return false;
-          const stats2 = import_fs81.default.statSync(resolved);
+          const resolved = import_path75.default.resolve(filePath);
+          if (!import_fs80.default.existsSync(resolved)) return false;
+          const stats2 = import_fs80.default.statSync(resolved);
           if (!stats2.isFile() || stats2.size < minSizeBytes) return false;
-          const fd = import_fs81.default.openSync(resolved, "r");
+          const fd = import_fs80.default.openSync(resolved, "r");
           const buffer = Buffer.alloc(8);
-          import_fs81.default.readSync(fd, buffer, 0, 8, 0);
-          import_fs81.default.closeSync(fd);
+          import_fs80.default.readSync(fd, buffer, 0, 8, 0);
+          import_fs80.default.closeSync(fd);
           const isPng = buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71;
           const isJpg = buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255;
           return isPng || isJpg;
@@ -223106,11 +222629,11 @@ var init_assetValidationService = __esm2({
       static isValidSvgFile(filePath, minSizeBytes = 20) {
         if (!filePath) return false;
         try {
-          const resolved = import_path76.default.resolve(filePath);
-          if (!import_fs81.default.existsSync(resolved)) return false;
-          const stats2 = import_fs81.default.statSync(resolved);
+          const resolved = import_path75.default.resolve(filePath);
+          if (!import_fs80.default.existsSync(resolved)) return false;
+          const stats2 = import_fs80.default.statSync(resolved);
           if (!stats2.isFile() || stats2.size < minSizeBytes) return false;
-          const content = import_fs81.default.readFileSync(resolved, "utf-8");
+          const content = import_fs80.default.readFileSync(resolved, "utf-8");
           const trimmed = content.trim();
           const hasOpeningTag = trimmed.includes("<svg") || trimmed.includes("<?xml");
           const hasClosingTag = trimmed.includes("</svg>");
@@ -223121,19 +222644,47 @@ var init_assetValidationService = __esm2({
       }
       /**
        * Validates if existing resized assets on a task are intact.
-       * Only checks assets that are defined on the task.
+       * Checks legacy assets AND productVariants if present.
        */
       static areResizeAssetsComplete(task) {
         if (!task.resizedAssets) return false;
-        const { trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath } = task.resizedAssets;
-        const paths = [trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath].filter(Boolean);
-        if (paths.length === 0) return false;
-        for (const p of paths) {
+        const { trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants } = task.resizedAssets;
+        const legacyPaths = [trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath].filter(Boolean);
+        if (legacyPaths.length === 0) return false;
+        for (const p of legacyPaths) {
           if (!this.isValidPngImage(p, 1e3)) {
             return false;
           }
         }
+        if (productVariants && typeof productVariants === "object") {
+          for (const [key, variantPath] of Object.entries(productVariants)) {
+            if (!this.isValidPngImage(variantPath, 1e3)) {
+              return false;
+            }
+          }
+        }
         return true;
+      }
+      /**
+       * Validates a PNG file has the exact expected dimensions by reading the IHDR chunk.
+       * Returns true if dimensions match exactly.
+       */
+      static validateProductVariantDimensions(filePath, expectedWidth, expectedHeight) {
+        try {
+          const resolved = import_path75.default.resolve(filePath);
+          if (!import_fs80.default.existsSync(resolved)) return false;
+          const fd = import_fs80.default.openSync(resolved, "r");
+          const buffer = Buffer.alloc(24);
+          import_fs80.default.readSync(fd, buffer, 0, 24, 0);
+          import_fs80.default.closeSync(fd);
+          const isPng = buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71;
+          if (!isPng) return false;
+          const width = buffer.readUInt32BE(16);
+          const height = buffer.readUInt32BE(20);
+          return width === expectedWidth && height === expectedHeight;
+        } catch {
+          return false;
+        }
       }
     };
   }
@@ -223206,12 +222757,12 @@ var updatePipelineService_exports = {};
 __export2(updatePipelineService_exports, {
   UpdatePipelineService: () => UpdatePipelineService
 });
-var import_fs82, import_path77, UpdatePipelineService;
+var import_fs81, import_path76, UpdatePipelineService;
 var init_updatePipelineService = __esm2({
   "src/server/services/updatePipelineService.ts"() {
     "use strict";
-    import_fs82 = __toESM2(require("fs"), 1);
-    import_path77 = __toESM2(require("path"), 1);
+    import_fs81 = __toESM2(require("fs"), 1);
+    import_path76 = __toESM2(require("path"), 1);
     init_taskLogService();
     init_amazonInspectService();
     init_settingsService();
@@ -223258,8 +222809,8 @@ var init_updatePipelineService = __esm2({
         const designId = task.payload?.designId;
         if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const mbaPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+        const rawPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
         const existingValidPath = task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 5e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(mbaPath, 5e4) ? mbaPath : AssetValidationService.isValidPngImage(rawPath, 5e4) ? rawPath : null;
         if (existingValidPath) {
           console.log(`[UpdatePipeline] \u267B\uFE0F G\xFCltiges Master Artwork existiert bereits lokal (${existingValidPath}). \xDCberspringe Download.`);
@@ -223280,9 +222831,9 @@ var init_updatePipelineService = __esm2({
           });
           return { success: false, error: res.error };
         }
-        const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
-        const u4PreviewPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
-        if (targetPath && import_fs82.default.existsSync(targetPath)) {
+        const targetPath = task.localMbaPngPath && import_fs81.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs81.default.existsSync(mbaPath) ? mbaPath : import_fs81.default.existsSync(rawPath) ? rawPath : null;
+        const u4PreviewPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+        if (targetPath && import_fs81.default.existsSync(targetPath)) {
           VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
             if (r.savedPath) {
               TaskLogService2.updateTaskStatus(taskId, {
@@ -223322,22 +222873,22 @@ var init_updatePipelineService = __esm2({
         let imageBase64 = null;
         let gridPreviewUrl;
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
-        const gridOutputPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
-        const u4PreviewPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+        const mbaPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+        const rawPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const targetPath = task.localMbaPngPath && import_fs81.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs81.default.existsSync(mbaPath) ? mbaPath : import_fs81.default.existsSync(rawPath) ? rawPath : null;
+        const gridOutputPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
+        const u4PreviewPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
         if (targetPath) {
           try {
             const { base64DataUrl, savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridOutputPath);
             imageBase64 = base64DataUrl;
-            if (savedPath || import_fs82.default.existsSync(gridOutputPath)) {
+            if (savedPath || import_fs81.default.existsSync(gridOutputPath)) {
               gridPreviewUrl = `/api/v1/designs/grid2x2/${encodeURIComponent(taskId)}`;
             }
           } catch (err) {
             console.warn(`[UpdatePipeline] Konnte Bild f\xFCr Vision nicht optimieren:`, err);
           }
-          if (!import_fs82.default.existsSync(u4PreviewPath)) {
+          if (!import_fs81.default.existsSync(u4PreviewPath)) {
             VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
               if (r.savedPath) {
                 TaskLogService2.updateTaskStatus(taskId, {
@@ -223528,16 +223079,16 @@ Bullets: ${oldBullets}`
         let u4ImageBase64;
         let u4ImageSourceType = "ORIGINAL_FALLBACK";
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
-        const u4PreviewPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
-        if (targetPath && import_fs82.default.existsSync(targetPath)) {
-          if (import_fs82.default.existsSync(u4PreviewPath)) {
+        const mbaPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+        const rawPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const targetPath = task.localMbaPngPath && import_fs81.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs81.default.existsSync(mbaPath) ? mbaPath : import_fs81.default.existsSync(rawPath) ? rawPath : null;
+        const u4PreviewPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+        if (targetPath && import_fs81.default.existsSync(targetPath)) {
+          if (import_fs81.default.existsSync(u4PreviewPath)) {
             try {
-              const stats2 = import_fs82.default.statSync(u4PreviewPath);
+              const stats2 = import_fs81.default.statSync(u4PreviewPath);
               if (stats2.size > 1e3) {
-                const buf = import_fs82.default.readFileSync(u4PreviewPath);
+                const buf = import_fs81.default.readFileSync(u4PreviewPath);
                 u4ImageBase64 = `data:image/png;base64,${buf.toString("base64")}`;
                 u4ImageSourceType = "PREVIEW_1125x1350";
                 console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Verwende vorhandene 1125x1350 U4-Preview (${u4PreviewPath}, ${(buf.length / 1024).toFixed(1)} KB)`);
@@ -223566,7 +223117,7 @@ Bullets: ${oldBullets}`
           if (!u4ImageBase64) {
             try {
               console.warn(`[UpdatePipeline] \u{1F504} FALLBACK: Verwende Original-PNG f\xFCr U4-Call (${targetPath})...`);
-              const buf = import_fs82.default.readFileSync(targetPath);
+              const buf = import_fs81.default.readFileSync(targetPath);
               u4ImageBase64 = `data:image/png;base64,${buf.toString("base64")}`;
               u4ImageSourceType = "ORIGINAL_FALLBACK";
             } catch (e) {
@@ -224003,7 +223554,7 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u25B6\uFE0F Setze Pipeline ab aktuellem Stand f\xFCr Task ${taskId} fort...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        if (!task.localMbaPngPath || !import_fs82.default.existsSync(task.localMbaPngPath)) {
+        if (!task.localMbaPngPath || !import_fs81.default.existsSync(task.localMbaPngPath)) {
           const u2 = await this.stepU2_DownloadArtwork(taskId);
           if (!u2.success) return { success: false, error: u2.error };
         }
@@ -224873,12 +224424,12 @@ var init_amazonRecoveryVerificationService = __esm2({
 });
 
 // src/server/services/taskRecoveryService.ts
-var import_fs83, import_path78, TaskRecoveryService;
+var import_fs82, import_path77, TaskRecoveryService;
 var init_taskRecoveryService = __esm2({
   "src/server/services/taskRecoveryService.ts"() {
     "use strict";
-    import_fs83 = __toESM2(require("fs"), 1);
-    import_path78 = __toESM2(require("path"), 1);
+    import_fs82 = __toESM2(require("fs"), 1);
+    import_path77 = __toESM2(require("path"), 1);
     init_queueService();
     init_taskRepository();
     init_taskLogService();
@@ -225369,8 +224920,8 @@ var init_taskRecoveryService = __esm2({
             case "UPDATE_EXTRACTED":
               return await UpdatePipelineService.runFromStep(taskId, "U2", "RECOVERY");
             case "UPDATE_DOWNLOADING_ARTWORK": {
-              const mbaPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-              const rawPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+              const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+              const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
               const existingPath = task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 5e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(mbaPath, 5e4) ? mbaPath : AssetValidationService.isValidPngImage(rawPath, 5e4) ? rawPath : null;
               if (existingPath) {
                 TaskLogService2.addEvent(taskId, {
@@ -225465,7 +225016,7 @@ var init_taskRecoveryService = __esm2({
           case "PROMPT_READY":
             return await DesignPipelineService.runFromStep(taskId, "D3", "RECOVERY");
           case "GENERATING_IMAGE": {
-            const rawPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+            const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
             const targetPng = task.localImagePath && AssetValidationService.isValidPngImage(task.localImagePath, 1e4) ? task.localImagePath : task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 1e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(rawPath, 1e4) ? rawPath : null;
             if (targetPng) {
               TaskLogService2.addEvent(taskId, {
@@ -225517,7 +225068,7 @@ var init_taskRecoveryService = __esm2({
             return await DesignPipelineService.runFromStep(taskId, "D6", "RECOVERY");
           }
           case "VECTORIZING_DESIGN": {
-            const svgPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+            const svgPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
             const targetSvg = task.localSvgPath && AssetValidationService.isValidSvgFile(task.localSvgPath, 20) ? task.localSvgPath : AssetValidationService.isValidSvgFile(svgPath, 20) ? svgPath : null;
             if (targetSvg) {
               TaskLogService2.addEvent(taskId, {
@@ -225527,11 +225078,11 @@ var init_taskRecoveryService = __esm2({
                 content: { path: targetSvg }
               });
               try {
-                const svgContent = import_fs83.default.readFileSync(targetSvg, "utf-8");
+                const svgContent = import_fs82.default.readFileSync(targetSvg, "utf-8");
                 const fourPanelFilename = `${cleanId}_4panel.png`;
-                const fourPanelFilePath = import_path78.default.resolve(process.cwd(), "data", "designs", fourPanelFilename);
+                const fourPanelFilePath = import_path77.default.resolve(process.cwd(), "data", "designs", fourPanelFilename);
                 const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgContent);
-                import_fs83.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+                import_fs82.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
                 const auditRes = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
                 if (auditRes.cutout_verdict === "REJECTED") {
                   console.log(`[TaskRecovery] \u23F8\uFE0F SVG Audit verlangt manuelle \xDCberpr\xFCfung f\xFCr Task ${taskId}. Pausiere bei AWAITING_SVG_REVIEW.`);
@@ -225544,10 +225095,10 @@ var init_taskRecoveryService = __esm2({
                   return { success: true, pausedAtCheckpoint: "SVG_REVIEW" };
                 }
                 const mbaFilename = `${cleanId}_mba.png`;
-                const mbaFilePath = import_path78.default.resolve(process.cwd(), "data", "designs", mbaFilename);
+                const mbaFilePath = import_path77.default.resolve(process.cwd(), "data", "designs", mbaFilename);
                 if (!AssetValidationService.isValidPngImage(mbaFilePath, 5e4)) {
                   const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgContent);
-                  import_fs83.default.writeFileSync(mbaFilePath, mbaBuffer);
+                  import_fs82.default.writeFileSync(mbaFilePath, mbaBuffer);
                   TaskLogService2.updateTaskStatus(taskId, { localMbaPngPath: mbaFilePath });
                 }
                 return await DesignPipelineService.stepD8_Enqueue(taskId);
@@ -225880,12 +225431,12 @@ function normalizeCatalogProductId(raw) {
   const matched = ProductCatalogService.findProductByAmazonKey(s);
   return matched ? matched.id : s;
 }
-var import_fs84, import_path79, NON_US_DROP_ORDER, QueueService;
+var import_fs83, import_path78, NON_US_DROP_ORDER, QueueService;
 var init_queueService = __esm2({
   "src/server/services/queueService.ts"() {
     "use strict";
-    import_fs84 = __toESM2(require("fs"), 1);
-    import_path79 = __toESM2(require("path"), 1);
+    import_fs83 = __toESM2(require("fs"), 1);
+    import_path78 = __toESM2(require("path"), 1);
     init_productCatalogService();
     init_listingSanitizationService();
     init_settingsService();
@@ -225893,16 +225444,16 @@ var init_queueService = __esm2({
     init_atomicFileStorage();
     NON_US_DROP_ORDER = ["JP", "ES", "IT", "FR", "DE", "GB"];
     QueueService = class {
-      static queueFilePath = import_path79.default.resolve(process.cwd(), "data", "upload_queue.json");
+      static queueFilePath = import_path78.default.resolve(process.cwd(), "data", "upload_queue.json");
       static items = [];
       static isLoaded = false;
       static isStorageCorrupted = false;
       static dailySlotsInfo = { free: 200, used: 0, total: 200 };
       static setCustomQueuePath(customPath) {
         if (customPath) {
-          this.queueFilePath = import_path79.default.resolve(customPath);
+          this.queueFilePath = import_path78.default.resolve(customPath);
         } else {
-          this.queueFilePath = import_path79.default.resolve(process.cwd(), "data", "upload_queue.json");
+          this.queueFilePath = import_path78.default.resolve(process.cwd(), "data", "upload_queue.json");
         }
         this.isLoaded = false;
         this.isStorageCorrupted = false;
@@ -225920,7 +225471,7 @@ var init_queueService = __esm2({
        */
       static loadQueue() {
         try {
-          if (import_fs84.default.existsSync(this.queueFilePath)) {
+          if (import_fs83.default.existsSync(this.queueFilePath)) {
             const recovery = loadJsonWithBackupRecovery(this.queueFilePath, {
               backupExt: ".bak",
               validate: (data) => Array.isArray(data),
@@ -226805,6 +226356,685 @@ var init_queueService = __esm2({
   }
 });
 
+// src/server/services/artworkResizeService.ts
+async function getBrowser3() {
+  if (!sharedBrowser3 || !sharedBrowser3.isConnected()) {
+    const executablePath = findChromiumExecutable();
+    const launchOptions = {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
+      ]
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+    sharedBrowser3 = await chromium.launch(launchOptions);
+  }
+  return sharedBrowser3;
+}
+function crc32(buf) {
+  let crc = -1;
+  for (let i = 0; i < buf.length; i++) {
+    crc = crc >>> 8 ^ crcTable[(crc ^ buf[i]) & 255];
+  }
+  return (crc ^ -1) >>> 0;
+}
+function inject300Dpi(pngBuffer) {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i = 0; i < 8; i++) {
+    if (pngBuffer[i] !== sig[i]) return pngBuffer;
+  }
+  const dpi = 300;
+  const ppm = Math.round(dpi * 39.3701);
+  const physData = Buffer.alloc(9);
+  physData.writeUInt32BE(ppm, 0);
+  physData.writeUInt32BE(ppm, 4);
+  physData.writeUInt8(1, 8);
+  const typeAndData = Buffer.concat([Buffer.from("pHYs", "ascii"), physData]);
+  const crc = crc32(typeAndData);
+  const chunkHeader = Buffer.alloc(4);
+  chunkHeader.writeUInt32BE(9, 0);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crc, 0);
+  const physChunk = Buffer.concat([chunkHeader, typeAndData, crcBuf]);
+  return Buffer.concat([
+    pngBuffer.subarray(0, 33),
+    physChunk,
+    pngBuffer.subarray(33)
+  ]);
+}
+var import_fs84, import_path79, currentDir, sharedBrowser3, crcTable, ArtworkResizeService;
+var init_artworkResizeService = __esm2({
+  "src/server/services/artworkResizeService.ts"() {
+    "use strict";
+    init_playwright3();
+    import_fs84 = __toESM2(require("fs"), 1);
+    import_path79 = __toESM2(require("path"), 1);
+    init_browserSessionService();
+    init_productCatalogService();
+    currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
+    sharedBrowser3 = null;
+    crcTable = (() => {
+      const table = [];
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) {
+          c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+        }
+        table[n] = c;
+      }
+      return table;
+    })();
+    ArtworkResizeService = class {
+      /**
+       * Resolves the brush_tip.png asset from multiple candidate paths
+       */
+      static getBrushTipPath() {
+        const candidates = [
+          import_path79.default.resolve(process.cwd(), "assets", "brush_tip.png"),
+          import_path79.default.resolve(process.cwd(), "dist", "assets", "brush_tip.png"),
+          import_path79.default.resolve(currentDir, "../../assets", "brush_tip.png"),
+          import_path79.default.resolve(currentDir, "../assets", "brush_tip.png"),
+          import_path79.default.resolve(process.cwd(), "Erweiterungen und Programme /Listing Optimizer/assets", "brush_tip.png")
+        ];
+        for (const c of candidates) {
+          if (import_fs84.default.existsSync(c)) {
+            return c;
+          }
+        }
+        return candidates[0];
+      }
+      /**
+       * Generates all resized variants from the master 4500x5400px MBA PNG:
+       * 1. ${cleanId}_trimmed.png - Bounding box of artwork with transparent margins trimmed
+       * 2. ${cleanId}_two_sided_mug_standard.png - 2700x1050 px, 300 DPI, centered on front/back
+       * 3. ${cleanId}_two_sided_mug_brush.png - 2700x1050 px, 300 DPI with black brush contour
+       * 4. ${cleanId}_two_sided_drinkware_standard.png - 3000x1400 px, 300 DPI for Tumbler & Water Bottle
+       * 5. ${cleanId}_two_sided_drinkware_brush.png - 3000x1400 px, 300 DPI with black brush contour for Travel Tumbler
+       */
+      static resizeLock = Promise.resolve();
+      static async generateResizedArtworks(taskId, mbaPngPath) {
+        const previousLock = this.resizeLock;
+        let releaseLock = () => {
+        };
+        this.resizeLock = new Promise((resolve) => {
+          releaseLock = resolve;
+        });
+        await previousLock;
+        try {
+          return await this.executeResizedArtworksInternal(taskId, mbaPngPath);
+        } finally {
+          releaseLock();
+        }
+      }
+      static async executeResizedArtworksInternal(taskId, mbaPngPath) {
+        const memBefore = process.memoryUsage();
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
+        if (!import_fs84.default.existsSync(designsDir)) {
+          try {
+            import_fs84.default.mkdirSync(designsDir, { recursive: true });
+          } catch (e) {
+          }
+        }
+        const trimmedFilePath = import_path79.default.join(designsDir, `${cleanId}_trimmed.png`);
+        const mugStandardFilePath = import_path79.default.join(designsDir, `${cleanId}_two_sided_mug_standard.png`);
+        const mugBrushFilePath = import_path79.default.join(designsDir, `${cleanId}_two_sided_mug_brush.png`);
+        const drinkwareStandardFilePath = import_path79.default.join(designsDir, `${cleanId}_two_sided_drinkware_standard.png`);
+        const drinkwareBrushFilePath = import_path79.default.join(designsDir, `${cleanId}_two_sided_drinkware_brush.png`);
+        if (!import_fs84.default.existsSync(mbaPngPath)) {
+          throw new Error(`Master MBA PNG not found at path: ${mbaPngPath}`);
+        }
+        const masterPngBuffer = import_fs84.default.readFileSync(mbaPngPath);
+        const masterPngDataUri = `data:image/png;base64,${masterPngBuffer.toString("base64")}`;
+        const brushTipPath = this.getBrushTipPath();
+        let brushTipDataUri = "";
+        if (import_fs84.default.existsSync(brushTipPath)) {
+          const brushBuffer = import_fs84.default.readFileSync(brushTipPath);
+          brushTipDataUri = `data:image/png;base64,${brushBuffer.toString("base64")}`;
+        } else {
+          console.warn(`[ArtworkResizeService] \u26A0\uFE0F brush_tip.png not found at ${brushTipPath}. Falling back without brush tip.`);
+        }
+        console.log(`[ArtworkResizeService] \u{1F4D0} Starte Resize-Generierung f\xFCr Task #${taskId} (Chromium Engine)...`);
+        const browser = await getBrowser3();
+        const context2 = await browser.newContext({
+          viewport: { width: 3e3, height: 2e3 },
+          deviceScaleFactor: 1
+        });
+        const page = await context2.newPage();
+        try {
+          await page.addInitScript(() => {
+            window.__name = (target) => target;
+          });
+          await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
+          const evaluatedResults = await page.evaluate(async (params2) => {
+            const loadImage = (src) => {
+              return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => resolve(img);
+                img.onerror = (e) => reject(e);
+                img.src = src;
+              });
+            };
+            const masterImg = await loadImage(params2.masterUri);
+            let brushImg = null;
+            if (params2.brushUri) {
+              try {
+                brushImg = await loadImage(params2.brushUri);
+              } catch (e) {
+                console.warn("Failed to load brush tip image in browser context", e);
+              }
+            }
+            const trimCanvas = (img) => {
+              const width = img.naturalWidth || img.width;
+              const height = img.naturalHeight || img.height;
+              const canvas = document.createElement("canvas");
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext("2d", { willReadFrequently: true });
+              if (!ctx) return canvas;
+              ctx.drawImage(img, 0, 0);
+              const imgData = ctx.getImageData(0, 0, width, height);
+              const data = imgData.data;
+              let top = 0;
+              let bottom = height - 1;
+              let left = 0;
+              let right = width - 1;
+              let found = false;
+              for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                  if (data[4 * (y * width + x) + 3] > 0) {
+                    top = y;
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              if (!found) {
+                return canvas;
+              }
+              found = false;
+              for (let y = height - 1; y >= top; y--) {
+                for (let x = 0; x < width; x++) {
+                  if (data[4 * (y * width + x) + 3] > 0) {
+                    bottom = y;
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              found = false;
+              for (let x = 0; x < width; x++) {
+                for (let y = top; y <= bottom; y++) {
+                  if (data[4 * (y * width + x) + 3] > 0) {
+                    left = x;
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              found = false;
+              for (let x = width - 1; x >= left; x--) {
+                for (let y = top; y <= bottom; y++) {
+                  if (data[4 * (y * width + x) + 3] > 0) {
+                    right = x;
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              const croppedWidth = right - left + 1;
+              const croppedHeight = bottom - top + 1;
+              const trimmed = document.createElement("canvas");
+              trimmed.width = croppedWidth;
+              trimmed.height = croppedHeight;
+              const trimmedCtx = trimmed.getContext("2d");
+              if (trimmedCtx) {
+                trimmedCtx.drawImage(img, left, top, croppedWidth, croppedHeight, 0, 0, croppedWidth, croppedHeight);
+              }
+              return trimmed;
+            };
+            const trimmedCanvas = trimCanvas(masterImg);
+            const drawCentered = (ctx, source12, destX, destY, targetWidth, targetHeight) => {
+              const sw = source12.width;
+              const sh = source12.height;
+              const scale = Math.min(targetWidth / sw, targetHeight / sh, 1);
+              const dw = sw * scale;
+              const dh = sh * scale;
+              const x = destX + (targetWidth - dw) / 2;
+              const y = destY + (targetHeight - dh) / 2;
+              ctx.drawImage(source12, x, y, dw, dh);
+            };
+            const scaleDesignForProduct = (sourceCanvas, finalWidth, finalHeight, margin = 0.075) => {
+              const sw = sourceCanvas.width;
+              const sh = sourceCanvas.height;
+              const mt = finalHeight * margin;
+              const mb = finalHeight * margin;
+              const ml = finalWidth * margin;
+              const mr = finalWidth * margin;
+              const safeW = finalWidth - ml - mr;
+              const safeH = finalHeight - mt - mb;
+              const scale = Math.min(safeW / sw, safeH / sh);
+              const dw = sw * scale;
+              const dh = sh * scale;
+              const ox = ml + (safeW - dw) / 2;
+              const oy = mt + (safeH - dh) / 2;
+              const canvas = document.createElement("canvas");
+              canvas.width = finalWidth;
+              canvas.height = finalHeight;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = "high";
+                ctx.clearRect(0, 0, finalWidth, finalHeight);
+                ctx.drawImage(sourceCanvas, ox, oy, dw, dh);
+              }
+              return canvas;
+            };
+            const createMugCanvas = (scaledSideDesign) => {
+              const canvas = document.createElement("canvas");
+              canvas.width = 2700;
+              canvas.height = 1050;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.clearRect(0, 0, 2700, 1050);
+                const w = 1050;
+                const h = 1045.646;
+                const y = (1050 - h) / 2;
+                drawCentered(ctx, scaledSideDesign, 59, y, w, h);
+                drawCentered(ctx, scaledSideDesign, 1591, y, w, h);
+              }
+              return canvas;
+            };
+            const createDrinkwareCanvas = (scaledSideDesign) => {
+              const canvas = document.createElement("canvas");
+              canvas.width = 3e3;
+              canvas.height = 1400;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.clearRect(0, 0, 3e3, 1400);
+                const w = 1400;
+                const h = 1400;
+                const y = 0;
+                drawCentered(ctx, scaledSideDesign, 31, y, w, h);
+                drawCentered(ctx, scaledSideDesign, 1566.6667, y, w, h);
+              }
+              return canvas;
+            };
+            const removeSpecks = async (canvas, minSize = 25) => {
+              const ctx = canvas.getContext("2d", { willReadFrequently: true });
+              if (!ctx) return;
+              const width = canvas.width;
+              const height = canvas.height;
+              const totalPixels = width * height;
+              const imgData = ctx.getImageData(0, 0, width, height);
+              const data = imgData.data;
+              const visited = new Uint8Array(totalPixels);
+              let modified = false;
+              const queue = new Int32Array(Math.min(totalPixels, 1e5));
+              const speckOffsets = new Int32Array(minSize);
+              for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                  const startIdx = y * width + x;
+                  if (visited[startIdx] || data[4 * startIdx + 3] === 0) continue;
+                  let head2 = 0;
+                  let tail = 0;
+                  queue[tail++] = startIdx;
+                  visited[startIdx] = 1;
+                  let componentSize = 0;
+                  let isSpeck = true;
+                  while (head2 < tail) {
+                    const curIdx = queue[head2++];
+                    const cx = curIdx % width;
+                    const cy = curIdx / width | 0;
+                    if (isSpeck) {
+                      if (componentSize < minSize) {
+                        speckOffsets[componentSize] = 4 * curIdx;
+                      }
+                      componentSize++;
+                      if (componentSize >= minSize) {
+                        isSpeck = false;
+                      }
+                    }
+                    for (let dy = -1; dy <= 1; dy++) {
+                      const ny = cy + dy;
+                      if (ny < 0 || ny >= height) continue;
+                      const rowOffset = ny * width;
+                      for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const nx = cx + dx;
+                        if (nx < 0 || nx >= width) continue;
+                        const nIdx = rowOffset + nx;
+                        if (!visited[nIdx] && data[4 * nIdx + 3] > 0) {
+                          visited[nIdx] = 1;
+                          if (tail < queue.length) {
+                            queue[tail++] = nIdx;
+                          }
+                        }
+                      }
+                    }
+                  }
+                  if (isSpeck && componentSize < minSize) {
+                    for (let i = 0; i < componentSize; i++) {
+                      const offset = speckOffsets[i];
+                      data[offset] = 0;
+                      data[offset + 1] = 0;
+                      data[offset + 2] = 0;
+                      data[offset + 3] = 0;
+                    }
+                    modified = true;
+                  }
+                }
+              }
+              if (modified) {
+                ctx.putImageData(imgData, 0, 0);
+              }
+            };
+            const applyBlackBrush = async (sourceCanvas, brushP) => {
+              await removeSpecks(sourceCanvas);
+              const n = sourceCanvas.width;
+              const o = sourceCanvas.height;
+              const r = document.createElement("canvas");
+              const s = 0.15 * Math.max(n, o);
+              r.width = Math.ceil(n + 2 * s);
+              r.height = Math.ceil(o + 2 * s);
+              const a = r.getContext("2d");
+              if (!a) return sourceCanvas;
+              if (!brushP) {
+                a.drawImage(sourceCanvas, s, s);
+                return r;
+              }
+              const u = 16;
+              const m = 3;
+              const h = [0.6, 0.9, 1.2];
+              const g = [];
+              for (let e = 0; e < m; e++) {
+                const t = h[e];
+                const bw = Math.ceil(brushP.width * t);
+                const bh = Math.ceil(brushP.height * t);
+                const br = Math.ceil(Math.sqrt(bw * bw + bh * bh));
+                for (let k = 0; k < u; k++) {
+                  const rot = k / u * Math.PI * 2;
+                  const bc = document.createElement("canvas");
+                  bc.width = br;
+                  bc.height = br;
+                  const bctx = bc.getContext("2d");
+                  if (bctx) {
+                    bctx.translate(br / 2, br / 2);
+                    bctx.rotate(rot);
+                    bctx.scale(t, t);
+                    bctx.drawImage(brushP, -brushP.width / 2, -brushP.height / 2);
+                    g.push({
+                      canvas: bc,
+                      halfW: br / 2,
+                      halfH: br / 2
+                    });
+                  }
+                }
+              }
+              const b = g.length;
+              const f = 0.1;
+              const y = document.createElement("canvas");
+              y.width = Math.ceil(n * f);
+              y.height = Math.ceil(o * f);
+              const v = y.getContext("2d", { willReadFrequently: true });
+              if (!v) return sourceCanvas;
+              v.drawImage(sourceCanvas, 0, 0, y.width, y.height);
+              for (let e = 0; e < 2; e++) {
+                v.drawImage(y, 1, 0);
+                v.drawImage(y, -1, 0);
+                v.drawImage(y, 0, 1);
+                v.drawImage(y, 0, -1);
+              }
+              const w = v.getImageData(0, 0, y.width, y.height);
+              for (let e = 0; e < w.data.length; e += 4) {
+                if (w.data[e + 3] > 0) {
+                  w.data[e] = 0;
+                  w.data[e + 1] = 0;
+                  w.data[e + 2] = 0;
+                  w.data[e + 3] = 255;
+                }
+              }
+              v.putImageData(w, 0, 0);
+              const xPts = [];
+              const kw = y.width;
+              const ch = y.height;
+              const ed = v.getImageData(0, 0, kw, ch).data;
+              const S = 2;
+              for (let e = 1; e < ch - 1; e += S) {
+                for (let t = 1; t < kw - 1; t += S) {
+                  if (ed[4 * (e * kw + t) + 3] > 0) {
+                    if (ed[4 * ((e - 1) * kw + t) + 3] !== 0 && ed[4 * ((e + 1) * kw + t) + 3] !== 0 && ed[4 * (e * kw + (t - 1)) + 3] !== 0 && ed[4 * (e * kw + (t + 1)) + 3] !== 0) {
+                    } else {
+                      xPts.push({
+                        x: t / f + s,
+                        y: e / f + s
+                      });
+                    }
+                  }
+                }
+              }
+              const P = document.createElement("canvas");
+              P.width = r.width;
+              P.height = r.height;
+              const A = P.getContext("2d");
+              if (A) {
+                A.drawImage(sourceCanvas, s, s);
+                A.globalCompositeOperation = "source-in";
+                A.fillStyle = "black";
+                A.fillRect(0, 0, P.width, P.height);
+              }
+              a.drawImage(P, 0, 0);
+              for (let e = 0; e < 10; e++) {
+                a.drawImage(r, 1, 0);
+                a.drawImage(r, -1, 0);
+                a.drawImage(r, 0, 1);
+                a.drawImage(r, 0, -1);
+              }
+              const L = 0.5;
+              const TPts = [];
+              for (let e = 0; e < xPts.length; e++) {
+                if (Math.random() < L) {
+                  TPts.push(xPts[e]);
+                }
+              }
+              for (let e = 0; e < TPts.length; e++) {
+                const pt = TPts[e];
+                const stamp = g[Math.floor(Math.random() * b)];
+                a.drawImage(stamp.canvas, pt.x - stamp.halfW, pt.y - stamp.halfH);
+              }
+              a.globalCompositeOperation = "source-over";
+              a.drawImage(sourceCanvas, s, s);
+              return r;
+            };
+            const trimmedDataUri = trimmedCanvas.toDataURL("image/png");
+            const mugStandardScaled = scaleDesignForProduct(trimmedCanvas, 1050, 1050, 0.075);
+            const mugStandardCanvas = createMugCanvas(mugStandardScaled);
+            const mugStandardDataUri = mugStandardCanvas.toDataURL("image/png");
+            const brushCanvas = await applyBlackBrush(trimmedCanvas, brushImg);
+            const mugBrushScaled = scaleDesignForProduct(brushCanvas, 1050, 1050, 0.075);
+            const mugBrushCanvas = createMugCanvas(mugBrushScaled);
+            const mugBrushDataUri = mugBrushCanvas.toDataURL("image/png");
+            const drinkwareScaled = scaleDesignForProduct(trimmedCanvas, 1400, 1400, 0.075);
+            const drinkwareCanvas = createDrinkwareCanvas(drinkwareScaled);
+            const drinkwareStandardDataUri = drinkwareCanvas.toDataURL("image/png");
+            const drinkwareBrushScaled = scaleDesignForProduct(brushCanvas, 1400, 1400, 0.075);
+            const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
+            const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL("image/png");
+            return {
+              trimmedDataUri,
+              mugStandardDataUri,
+              mugBrushDataUri,
+              drinkwareStandardDataUri,
+              drinkwareBrushDataUri
+            };
+          }, {
+            masterUri: masterPngDataUri,
+            brushUri: brushTipDataUri
+          });
+          const trimmedBuf = inject300Dpi(Buffer.from(evaluatedResults.trimmedDataUri.split(",")[1], "base64"));
+          import_fs84.default.writeFileSync(trimmedFilePath, trimmedBuf);
+          const mugStandardBuf = inject300Dpi(Buffer.from(evaluatedResults.mugStandardDataUri.split(",")[1], "base64"));
+          import_fs84.default.writeFileSync(mugStandardFilePath, mugStandardBuf);
+          const mugBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.mugBrushDataUri.split(",")[1], "base64"));
+          import_fs84.default.writeFileSync(mugBrushFilePath, mugBrushBuf);
+          const drinkwareBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareStandardDataUri.split(",")[1], "base64"));
+          import_fs84.default.writeFileSync(drinkwareStandardFilePath, drinkwareBuf);
+          const drinkwareBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareBrushDataUri.split(",")[1], "base64"));
+          import_fs84.default.writeFileSync(drinkwareBrushFilePath, drinkwareBrushBuf);
+          const memAfter = process.memoryUsage();
+          const rssDiffMb = ((memAfter.rss - memBefore.rss) / (1024 * 1024)).toFixed(1);
+          const totalRssMb = (memAfter.rss / (1024 * 1024)).toFixed(1);
+          console.log(`[ArtworkResizeService] \u2705 Alle 5 Resized Varianten f\xFCr Task #${taskId} erfolgreich gespeichert \u2713 (Node RSS: ${totalRssMb}MB, Delta: ${Number(rssDiffMb) >= 0 ? "+" : ""}${rssDiffMb}MB)`);
+          return {
+            trimmedPath: trimmedFilePath,
+            mugStandardPath: mugStandardFilePath,
+            mugBrushPath: mugBrushFilePath,
+            drinkwareStandardPath: drinkwareStandardFilePath,
+            drinkwareBrushPath: drinkwareBrushFilePath
+          };
+        } finally {
+          await context2.close();
+        }
+      }
+      /**
+       * Generates a single CANVAS_BACKGROUND_CONTAIN product variant.
+       * Uses the trimmed PNG as source, creates a canvas with solid background,
+       * and proportionally contain-fits the design into the safe area.
+       * Crash-safe: writes to temp file, validates, then atomic renames.
+       */
+      static async generateProductVariant(taskId, trimmedPngPath, variantId, config) {
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
+        if (!import_fs84.default.existsSync(designsDir)) {
+          try {
+            import_fs84.default.mkdirSync(designsDir, { recursive: true });
+          } catch (e) {
+          }
+        }
+        const outputFilename = `${cleanId}_${variantId.toLowerCase()}.png`;
+        const outputPath = import_path79.default.join(designsDir, outputFilename);
+        const tmpPath = `${outputPath}.tmp`;
+        if (!import_fs84.default.existsSync(trimmedPngPath)) {
+          throw new Error(`Trimmed PNG not found at: ${trimmedPngPath}`);
+        }
+        const bgColor = resolveBackgroundColor(config);
+        const { width: canvasW, height: canvasH } = config.canvas;
+        const paddingPct = config.paddingShortSidePct;
+        const trimmedBuffer = import_fs84.default.readFileSync(trimmedPngPath);
+        const trimmedDataUri = `data:image/png;base64,${trimmedBuffer.toString("base64")}`;
+        console.log(`[ArtworkResizeService] \u{1F3A8} Generiere ${variantId} (${canvasW}\xD7${canvasH}) f\xFCr Task #${taskId}...`);
+        const browser = await getBrowser3();
+        const context2 = await browser.newContext({
+          viewport: { width: Math.min(canvasW, 4500), height: Math.min(canvasH, 5400) },
+          deviceScaleFactor: 1
+        });
+        const page = await context2.newPage();
+        try {
+          await page.addInitScript(() => {
+            window.__name = (target) => target;
+          });
+          await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
+          const resultDataUri = await page.evaluate(async (params2) => {
+            const loadImage = (src) => {
+              return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => resolve(img);
+                img.onerror = (e) => reject(e);
+                img.src = src;
+              });
+            };
+            const trimmedImg = await loadImage(params2.trimmedUri);
+            const sourceW = trimmedImg.naturalWidth || trimmedImg.width;
+            const sourceH = trimmedImg.naturalHeight || trimmedImg.height;
+            const canvas = document.createElement("canvas");
+            canvas.width = params2.canvasW;
+            canvas.height = params2.canvasH;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) throw new Error("Failed to get 2d context");
+            ctx.fillStyle = params2.bgColor;
+            ctx.fillRect(0, 0, params2.canvasW, params2.canvasH);
+            const paddingPx = Math.min(params2.canvasW, params2.canvasH) * params2.paddingPct;
+            const safeW = params2.canvasW - 2 * paddingPx;
+            const safeH = params2.canvasH - 2 * paddingPx;
+            const scale = Math.min(safeW / sourceW, safeH / sourceH);
+            const drawW = sourceW * scale;
+            const drawH = sourceH * scale;
+            const x = (params2.canvasW - drawW) / 2;
+            const y = (params2.canvasH - drawH) / 2;
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(trimmedImg, x, y, drawW, drawH);
+            return canvas.toDataURL("image/png");
+          }, {
+            trimmedUri: trimmedDataUri,
+            canvasW,
+            canvasH,
+            paddingPct,
+            bgColor
+          });
+          const pngBuffer = inject300Dpi(Buffer.from(resultDataUri.split(",")[1], "base64"));
+          import_fs84.default.writeFileSync(tmpPath, pngBuffer);
+          const tmpStats = import_fs84.default.statSync(tmpPath);
+          if (tmpStats.size < 1e3) {
+            throw new Error(`Generated ${variantId} PNG too small: ${tmpStats.size} bytes`);
+          }
+          const header = Buffer.alloc(8);
+          const fd = import_fs84.default.openSync(tmpPath, "r");
+          import_fs84.default.readSync(fd, header, 0, 8, 0);
+          import_fs84.default.closeSync(fd);
+          const isPng = header[0] === 137 && header[1] === 80 && header[2] === 78 && header[3] === 71;
+          if (!isPng) {
+            throw new Error(`Generated ${variantId} file is not a valid PNG`);
+          }
+          import_fs84.default.renameSync(tmpPath, outputPath);
+          console.log(`[ArtworkResizeService] \u2705 ${variantId} (${canvasW}\xD7${canvasH}) gespeichert: ${outputPath}`);
+          return outputPath;
+        } finally {
+          await context2.close();
+          try {
+            if (import_fs84.default.existsSync(tmpPath)) import_fs84.default.unlinkSync(tmpPath);
+          } catch (e) {
+          }
+        }
+      }
+      /**
+       * Generates ALL product variants registered in ARTWORK_VARIANT_REGISTRY that have a generator config.
+       * Executes sequentially within the existing resize mutex to prevent parallel memory spikes.
+       * Returns a Record<variantId, filePath> for storage in resizedAssets.productVariants.
+       */
+      static async generateAllProductVariants(taskId, trimmedPngPath) {
+        const variants = getGeneratableVariants();
+        if (variants.length === 0) return {};
+        console.log(`[ArtworkResizeService] \u{1F4D0} Generiere ${variants.length} Product-Varianten f\xFCr Task #${taskId}...`);
+        const result2 = {};
+        for (const variant of variants) {
+          if (!variant.generator) continue;
+          const outputPath = await this.generateProductVariant(
+            taskId,
+            trimmedPngPath,
+            variant.id,
+            variant.generator
+          );
+          result2[variant.id] = outputPath;
+        }
+        console.log(`[ArtworkResizeService] \u2705 Alle ${Object.keys(result2).length} Product-Varianten f\xFCr Task #${taskId} erfolgreich generiert.`);
+        return result2;
+      }
+    };
+  }
+});
+
 // src/server/services/finalizationService.ts
 var finalizationService_exports = {};
 __export2(finalizationService_exports, {
@@ -226942,9 +227172,9 @@ var init_finalizationService = __esm2({
           return { success: false, error: err };
         }
         let resizedAssets = task?.resizedAssets;
-        const areAssetsValid = resizedAssets && resizedAssets.trimmedPath && import_fs85.default.existsSync(resizedAssets.trimmedPath) && resizedAssets.mugStandardPath && import_fs85.default.existsSync(resizedAssets.mugStandardPath) && resizedAssets.mugBrushPath && import_fs85.default.existsSync(resizedAssets.mugBrushPath) && resizedAssets.drinkwareStandardPath && import_fs85.default.existsSync(resizedAssets.drinkwareStandardPath) && resizedAssets.drinkwareBrushPath && import_fs85.default.existsSync(resizedAssets.drinkwareBrushPath);
-        if (areAssetsValid) {
-          console.log(`[FinalizationService] \u26A1 Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
+        const areLegacyAssetsValid = resizedAssets && resizedAssets.trimmedPath && import_fs85.default.existsSync(resizedAssets.trimmedPath) && resizedAssets.mugStandardPath && import_fs85.default.existsSync(resizedAssets.mugStandardPath) && resizedAssets.mugBrushPath && import_fs85.default.existsSync(resizedAssets.mugBrushPath) && resizedAssets.drinkwareStandardPath && import_fs85.default.existsSync(resizedAssets.drinkwareStandardPath) && resizedAssets.drinkwareBrushPath && import_fs85.default.existsSync(resizedAssets.drinkwareBrushPath);
+        if (areLegacyAssetsValid) {
+          console.log(`[FinalizationService] \u26A1 Legacy Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
         } else {
           try {
             resizedAssets = await ArtworkResizeService.generateResizedArtworks(taskId, masterPngPath);
@@ -226959,6 +227189,46 @@ var init_finalizationService = __esm2({
             });
             TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
             return { success: false, error: err };
+          }
+        }
+        const { getGeneratableVariants: getGenVariants } = await Promise.resolve().then(() => (init_productCatalogService(), productCatalogService_exports));
+        const generatableVariants = getGenVariants();
+        if (generatableVariants.length > 0) {
+          const existingProductVariants = resizedAssets?.productVariants || {};
+          const allProductVariantsValid = generatableVariants.every(
+            (v) => existingProductVariants[v.id] && import_fs85.default.existsSync(existingProductVariants[v.id])
+          );
+          if (allProductVariantsValid) {
+            console.log(`[FinalizationService] \u26A1 Alle ${generatableVariants.length} Product-Varianten f\xFCr Task #${taskId} bereits vorhanden.`);
+            if (!resizedAssets.productVariants) {
+              resizedAssets.productVariants = existingProductVariants;
+            }
+          } else {
+            try {
+              const trimmedPath = resizedAssets.trimmedPath;
+              if (!trimmedPath || !import_fs85.default.existsSync(trimmedPath)) {
+                throw new Error(`Trimmed PNG nicht gefunden f\xFCr Product-Variant-Generierung: ${trimmedPath}`);
+              }
+              TaskLogService2.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "FINALIZATION_EVENT",
+                title: `\u{1F3A8} ${generatableVariants.length} Product-Varianten werden generiert...`,
+                content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", variants: generatableVariants.map((v) => v.id) }
+              });
+              const productVariants2 = await ArtworkResizeService.generateAllProductVariants(taskId, trimmedPath);
+              resizedAssets.productVariants = productVariants2;
+            } catch (pvErr) {
+              const err = `Fehler bei Product-Variant-Generierung: ${pvErr.message}`;
+              console.error(`[FinalizationService] \u274C ${err}`);
+              TaskLogService2.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "FINALIZATION_EVENT",
+                title: "\u274C Product-Variant-Generierung fehlgeschlagen",
+                content: { phase: "PRODUCT_VARIANT_GENERATION", status: "FAILED", error: err }
+              });
+              TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+              return { success: false, error: err };
+            }
           }
         }
         const requiredFiles = [
@@ -226976,10 +227246,21 @@ var init_finalizationService = __esm2({
             return { success: false, error: err };
           }
         }
+        const productVariants = resizedAssets.productVariants || {};
+        for (const variant of generatableVariants) {
+          const variantPath = productVariants[variant.id];
+          if (!variantPath || !import_fs85.default.existsSync(variantPath)) {
+            const err = `Product-Variant "${variant.id}" (${variant.label}) nicht auf Disk gefunden: ${variantPath}`;
+            console.error(`[FinalizationService] \u274C ${err}`);
+            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+            return { success: false, error: err };
+          }
+        }
+        const totalAssets = requiredFiles.length + Object.keys(productVariants).length;
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
-          title: "\u2713 Getrimmtes Master & alle 4 Two-Sided Varianten erfolgreich auf Disk verifiziert",
+          title: `\u2713 Alle ${totalAssets} Assets (${requiredFiles.length} Legacy + ${Object.keys(productVariants).length} Product-Varianten) auf Disk verifiziert`,
           content: { phase: "ARTWORK_PREPARATION", status: "SUCCESS", assets: resizedAssets }
         });
         TaskLogService2.addEvent(taskId, {
@@ -227113,7 +227394,6 @@ var init_taskLogService = __esm2({
     init_svgRenderService();
     init_llmService();
     init_visionOptimizationService();
-    init_artworkResizeService();
     init_listingValidationService();
     init_listingSanitizationService();
     init_taskRepository();
@@ -228362,25 +228642,6 @@ Beantworte die Analysefragen streng als JSON!`;
               const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
               task.localMbaPngPath = mbaFilePath;
               task.mbaPngUrl = mbaUrl;
-              try {
-                const resized = await ArtworkResizeService.generateResizedArtworks(taskId, mbaFilePath);
-                task.resizedAssets = resized;
-                this.addEvent(taskId, {
-                  timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                  type: "RESIZE_RESPONSE",
-                  title: `\u{1F4D0} Two-Sided & Brush Varianten generiert \u2713`,
-                  content: {
-                    trimmedPath: resized.trimmedPath,
-                    mugStandardPath: resized.mugStandardPath,
-                    mugBrushPath: resized.mugBrushPath,
-                    drinkwareStandardPath: resized.drinkwareStandardPath,
-                    drinkwareBrushPath: resized.drinkwareBrushPath,
-                    message: "Two-Sided Varianten f\xFCr Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt."
-                  }
-                });
-              } catch (resizeErr) {
-                console.error(`[TaskLogService] \u26A0\uFE0F Fehler bei der Resize-Generierung f\xFCr Task ${taskId}:`, resizeErr);
-              }
               this.updateTaskStatus(taskId, {
                 status: "COMPLETED",
                 checkpoint: void 0,
@@ -229172,25 +229433,6 @@ Beantworte die Analysefragen streng als JSON!`;
                 message: "Vektorgrafik gepr\xFCft, Cutout von Vision-KI freigegeben und MBA Master-PNG (4500x5400 px) erzeugt."
               }
             });
-            try {
-              const resized = await ArtworkResizeService.generateResizedArtworks(taskId, mbaFilePath);
-              task.resizedAssets = resized;
-              this.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "RESIZE_RESPONSE",
-                title: `\u{1F4D0} Two-Sided & Brush Varianten generiert \u2713`,
-                content: {
-                  trimmedPath: resized.trimmedPath,
-                  mugStandardPath: resized.mugStandardPath,
-                  mugBrushPath: resized.mugBrushPath,
-                  drinkwareStandardPath: resized.drinkwareStandardPath,
-                  drinkwareBrushPath: resized.drinkwareBrushPath,
-                  message: "Two-Sided Varianten f\xFCr Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt."
-                }
-              });
-            } catch (resizeErr) {
-              console.error(`[TaskLogService] \u26A0\uFE0F Fehler bei der Resize-Generierung f\xFCr Task ${taskId}:`, resizeErr);
-            }
             this.completeTaskAndEnqueue(task);
             return { success: true, message: "Cutout von Vision-KI freigegeben, MBA Master-PNG generiert & an Queue \xFCbergeben \u2713" };
           } else {
@@ -232237,16 +232479,14 @@ var UploadWorkerService = class _UploadWorkerService {
               this.log(`\u274C ${err}`);
               continue;
             }
-            const cleanTaskId = item.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-            const designsDir = import_path82.default.resolve(process.cwd(), "data", "designs");
-            let targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey];
-            if (!targetArtworkPath) {
-              const expectedFilename = `${cleanTaskId}_${selectedVariant.id.toLowerCase()}.png`;
-              const candidatePath = import_path82.default.join(designsDir, expectedFilename);
-              if (import_fs88.default.existsSync(candidatePath)) targetArtworkPath = candidatePath;
+            let targetArtworkPath;
+            if (selectedVariant.storageType === "legacy" && selectedVariant.artifactKey) {
+              targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey];
+            } else if (selectedVariant.storageType === "productVariants") {
+              targetArtworkPath = item.resizedAssets?.productVariants?.[selectedVariant.id];
             }
             if (!targetArtworkPath || !import_fs88.default.existsSync(targetArtworkPath)) {
-              const err = `FAILED_ARTWORK_RESOLUTION: Resized Datei "${selectedVariant.artifactKey}" f\xFCr ${product.displayName} (${selectedVariant.id}) nicht auf Disk gefunden`;
+              const err = `FAILED_ARTWORK_RESOLUTION: Asset f\xFCr Variante "${selectedVariant.id}" (${selectedVariant.label}) f\xFCr ${product.displayName} nicht gefunden (storageType: ${selectedVariant.storageType})`;
               currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
               currentProductFailureReason = err;
               this.log(`\u274C ${err}`);

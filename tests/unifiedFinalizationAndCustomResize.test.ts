@@ -76,11 +76,24 @@ async function runTests() {
   assert.strictEqual(Boolean(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_MUG_BRUSH), true);
   assert.strictEqual(Boolean(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_DRINKWARE_STANDARD), true);
   assert.strictEqual(Boolean(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_DRINKWARE_BRUSH), true);
+  // Legacy storage validation
+  assert.strictEqual(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_MUG_STANDARD.storageType, 'legacy');
   assert.strictEqual(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_MUG_STANDARD.artifactKey, 'mugStandardPath');
+  assert.strictEqual(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_MUG_BRUSH.storageType, 'legacy');
   assert.strictEqual(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_MUG_BRUSH.artifactKey, 'mugBrushPath');
+  assert.strictEqual(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_DRINKWARE_STANDARD.storageType, 'legacy');
   assert.strictEqual(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_DRINKWARE_STANDARD.artifactKey, 'drinkwareStandardPath');
+  assert.strictEqual(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_DRINKWARE_BRUSH.storageType, 'legacy');
   assert.strictEqual(ARTWORK_VARIANT_REGISTRY.TWO_SIDED_DRINKWARE_BRUSH.artifactKey, 'drinkwareBrushPath');
-  console.log('✅ Test 3 Passed: ARTWORK_VARIANT_REGISTRY contains all 5 variants and artifact keys.\n');
+  // New CANVAS_BACKGROUND_CONTAIN variants
+  assert.strictEqual(Boolean(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4452X5292_DARK), true, 'Blanket variant registered');
+  assert.strictEqual(Boolean(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4320X5400_DARK), true, 'Poster variant registered');
+  assert.strictEqual(Boolean(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4480X3472_DARK), true, 'Laptop Sleeve variant registered');
+  assert.strictEqual(Boolean(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4500X3750_DARK), true, 'Mouse Pad variant registered');
+  assert.strictEqual(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4452X5292_DARK.storageType, 'productVariants');
+  assert.strictEqual(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4500X3750_DARK.storageType, 'productVariants');
+  assert.strictEqual(Object.keys(ARTWORK_VARIANT_REGISTRY).length, 9, 'Registry must have exactly 9 entries');
+  console.log('✅ Test 3 Passed: ARTWORK_VARIANT_REGISTRY contains all 9 variants (4 legacy + 1 MASTER + 4 new).\n');
 
   // --------------------------------------------------------------------------
   // Test 4: Custom Resize Resolution Semantics
@@ -201,7 +214,13 @@ async function runTests() {
       mugStandardPath: dummyMasterPng,
       mugBrushPath: dummyMasterPng,
       drinkwareStandardPath: dummyMasterPng,
-      drinkwareBrushPath: dummyMasterPng
+      drinkwareBrushPath: dummyMasterPng,
+      productVariants: {
+        CANVAS_BG_CONTAIN_4452X5292_DARK: dummyMasterPng,
+        CANVAS_BG_CONTAIN_4320X5400_DARK: dummyMasterPng,
+        CANVAS_BG_CONTAIN_4480X3472_DARK: dummyMasterPng,
+        CANVAS_BG_CONTAIN_4500X3750_DARK: dummyMasterPng
+      }
     }
   };
   TaskRepository.createTask(successTask as any);
@@ -295,16 +314,22 @@ async function runTests() {
   // --------------------------------------------------------------------------
   // Test 10: Full Asset Package (All 5 assets mandatory per task)
   // --------------------------------------------------------------------------
-  console.log('Test 10: Verify 5/5 artwork assets contract...');
-  const requiredAssetKeys = [
+  console.log('Test 10: Verify 9/9 artwork assets contract (5 legacy + 4 productVariants)...');
+  const requiredLegacyAssetKeys = [
     'trimmedPath',
     'mugStandardPath',
     'mugBrushPath',
     'drinkwareStandardPath',
     'drinkwareBrushPath'
   ];
-  assert.strictEqual(requiredAssetKeys.length, 5, 'Exactly 5 derived assets required');
-  console.log('✅ Test 10 Passed: 5/5 artwork assets contract verified.\n');
+  const requiredProductVariantKeys = [
+    'CANVAS_BG_CONTAIN_4452X5292_DARK',
+    'CANVAS_BG_CONTAIN_4320X5400_DARK',
+    'CANVAS_BG_CONTAIN_4480X3472_DARK',
+    'CANVAS_BG_CONTAIN_4500X3750_DARK'
+  ];
+  assert.strictEqual(requiredLegacyAssetKeys.length + requiredProductVariantKeys.length, 9, 'Exactly 9 derived assets required (5 legacy + 4 productVariants)');
+  console.log('✅ Test 10 Passed: 9/9 artwork assets contract verified.\n');
 
   // Cleanup dummy
   if (fs.existsSync(dummyMasterPng)) fs.unlinkSync(dummyMasterPng);

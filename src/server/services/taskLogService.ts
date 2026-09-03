@@ -9,7 +9,6 @@ import { VectorizerService } from './vectorizerService';
 import { SvgRenderService } from './svgRenderService';
 import { LLMService } from './llmService';
 import { VisionOptimizationService } from './visionOptimizationService';
-import { ArtworkResizeService } from './artworkResizeService';
 import { ListingValidationService } from './listingValidationService';
 import { ListingSanitizationService } from './listingSanitizationService';
 import { 
@@ -1485,26 +1484,8 @@ export class TaskLogService {
           task.localMbaPngPath = mbaFilePath;
           task.mbaPngUrl = mbaUrl;
 
-          // 6. Generate Resized Artworks (Trimmed, Mug Standard & Brush, Drinkware Standard)
-          try {
-            const resized = await ArtworkResizeService.generateResizedArtworks(taskId, mbaFilePath);
-            task.resizedAssets = resized;
-            this.addEvent(taskId, {
-              timestamp: new Date().toISOString(),
-              type: 'RESIZE_RESPONSE',
-              title: `📐 Two-Sided & Brush Varianten generiert ✓`,
-              content: {
-                trimmedPath: resized.trimmedPath,
-                mugStandardPath: resized.mugStandardPath,
-                mugBrushPath: resized.mugBrushPath,
-                drinkwareStandardPath: resized.drinkwareStandardPath,
-                drinkwareBrushPath: resized.drinkwareBrushPath,
-                message: 'Two-Sided Varianten für Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt.'
-              }
-            });
-          } catch (resizeErr: any) {
-            console.error(`[TaskLogService] ⚠️ Fehler bei der Resize-Generierung für Task ${taskId}:`, resizeErr);
-          }
+          // Resize-Generierung wird ausschließlich durch FinalizationService orchestriert.
+          // completeTaskAndEnqueue() → FinalizationService.finalizeForQueue() erzeugt alle Varianten.
 
           this.updateTaskStatus(taskId, {
             status: 'COMPLETED',
@@ -2476,26 +2457,8 @@ export class TaskLogService {
           }
         });
 
-        // 6. Generate Resized Artworks (Trimmed, Mug Standard & Brush, Drinkware Standard)
-        try {
-          const resized = await ArtworkResizeService.generateResizedArtworks(taskId, mbaFilePath);
-          task.resizedAssets = resized;
-          this.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'RESIZE_RESPONSE',
-            title: `📐 Two-Sided & Brush Varianten generiert ✓`,
-            content: {
-              trimmedPath: resized.trimmedPath,
-              mugStandardPath: resized.mugStandardPath,
-              mugBrushPath: resized.mugBrushPath,
-              drinkwareStandardPath: resized.drinkwareStandardPath,
-              drinkwareBrushPath: resized.drinkwareBrushPath,
-              message: 'Two-Sided Varianten für Ceramic Mug (Standard & Brush) und Drinkware (Standard & Brush) erfolgreich erstellt.'
-            }
-          });
-        } catch (resizeErr: any) {
-          console.error(`[TaskLogService] ⚠️ Fehler bei der Resize-Generierung für Task ${taskId}:`, resizeErr);
-        }
+        // Resize-Generierung wird ausschließlich durch FinalizationService orchestriert.
+        // completeTaskAndEnqueue() → FinalizationService.finalizeForQueue() erzeugt alle Varianten.
 
         this.completeTaskAndEnqueue(task);
 

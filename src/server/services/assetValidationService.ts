@@ -59,21 +59,60 @@ export class AssetValidationService {
 
   /**
    * Validates if existing resized assets on a task are intact.
-   * Only checks assets that are defined on the task.
+   * Checks legacy assets AND productVariants if present.
    */
   public static areResizeAssetsComplete(task: DesignTaskLog): boolean {
     if (!task.resizedAssets) return false;
-    const { trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath } = task.resizedAssets;
+    const { trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants } = task.resizedAssets;
 
-    // If task has resizedAssets defined, check that each non-empty path points to a valid file
-    const paths = [trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath].filter(Boolean);
-    if (paths.length === 0) return false;
+    // Validate legacy fixed-field assets
+    const legacyPaths = [trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath].filter(Boolean);
+    if (legacyPaths.length === 0) return false;
 
-    for (const p of paths) {
+    for (const p of legacyPaths) {
       if (!this.isValidPngImage(p, 1000)) {
         return false;
       }
     }
+
+    // Validate productVariants if present
+    if (productVariants && typeof productVariants === 'object') {
+      for (const [key, variantPath] of Object.entries(productVariants)) {
+        if (!this.isValidPngImage(variantPath, 1000)) {
+          return false;
+        }
+      }
+    }
+
     return true;
+  }
+
+  /**
+   * Validates a PNG file has the exact expected dimensions by reading the IHDR chunk.
+   * Returns true if dimensions match exactly.
+   */
+  public static validateProductVariantDimensions(filePath: string, expectedWidth: number, expectedHeight: number): boolean {
+    try {
+      const resolved = path.resolve(filePath);
+      if (!fs.existsSync(resolved)) return false;
+
+      // PNG IHDR chunk: 8 bytes signature + 4 bytes length + 4 bytes 'IHDR' + 4 bytes width + 4 bytes height
+      // Width is at offset 16, Height at offset 20 (both uint32 big-endian)
+      const fd = fs.openSync(resolved, 'r');
+      const buffer = Buffer.alloc(24);
+      fs.readSync(fd, buffer, 0, 24, 0);
+      fs.closeSync(fd);
+
+      // Verify PNG signature
+      const isPng = buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+      if (!isPng) return false;
+
+      const width = buffer.readUInt32BE(16);
+      const height = buffer.readUInt32BE(20);
+
+      return width === expectedWidth && height === expectedHeight;
+    } catch {
+      return false;
+    }
   }
 }

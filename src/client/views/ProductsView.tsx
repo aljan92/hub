@@ -113,7 +113,7 @@ export const ProductsView: React.FC = () => {
   const [maxDroppableCapacity, setMaxDroppableCapacity] = useState(0);
   const [queueTolerance, setQueueTolerance] = useState(10);
   const [isUpdatingDropConfig, setIsUpdatingDropConfig] = useState(false);
-  const [artworkVariants, setArtworkVariants] = useState<Array<{ id: string; label: string; artifactKey: string }>>([]);
+  const [artworkVariants, setArtworkVariants] = useState<Array<{ id: string; label: string; artifactKey?: string; storageType?: string }>>([]);
 
   const handleUpdateArtworkConfig = async (productId: string, updatedArtwork: any) => {
     setProducts(prev => prev.map(p => {

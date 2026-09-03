@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { findChromiumExecutable } from './browserSessionService';
+import { ProductVariantGeneratorConfig, resolveBackgroundColor, getGeneratableVariants } from './productCatalogService';
 
 const currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
@@ -90,6 +91,8 @@ export interface ResizedArtworksResult {
   mugBrushPath: string;
   drinkwareStandardPath: string;
   drinkwareBrushPath: string;
+  /** Generic product-resize variants (catalog-driven). Key = technical variant ID */
+  productVariants?: Record<string, string>;
 }
 
 export class ArtworkResizeService {
@@ -685,5 +688,173 @@ export class ArtworkResizeService {
     } finally {
       await context.close();
     }
+  }
+
+  /**
+   * Generates a single CANVAS_BACKGROUND_CONTAIN product variant.
+   * Uses the trimmed PNG as source, creates a canvas with solid background,
+   * and proportionally contain-fits the design into the safe area.
+   * Crash-safe: writes to temp file, validates, then atomic renames.
+   */
+  public static async generateProductVariant(
+    taskId: string,
+    trimmedPngPath: string,
+    variantId: string,
+    config: ProductVariantGeneratorConfig
+  ): Promise<string> {
+    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const designsDir = path.resolve(process.cwd(), 'data', 'designs');
+    if (!fs.existsSync(designsDir)) {
+      try { fs.mkdirSync(designsDir, { recursive: true }); } catch (e) {}
+    }
+
+    const outputFilename = `${cleanId}_${variantId.toLowerCase()}.png`;
+    const outputPath = path.join(designsDir, outputFilename);
+    const tmpPath = `${outputPath}.tmp`;
+
+    if (!fs.existsSync(trimmedPngPath)) {
+      throw new Error(`Trimmed PNG not found at: ${trimmedPngPath}`);
+    }
+
+    const bgColor = resolveBackgroundColor(config);
+    const { width: canvasW, height: canvasH } = config.canvas;
+    const paddingPct = config.paddingShortSidePct;
+
+    const trimmedBuffer = fs.readFileSync(trimmedPngPath);
+    const trimmedDataUri = `data:image/png;base64,${trimmedBuffer.toString('base64')}`;
+
+    console.log(`[ArtworkResizeService] 🎨 Generiere ${variantId} (${canvasW}×${canvasH}) für Task #${taskId}...`);
+
+    const browser = await getBrowser();
+    const context = await browser.newContext({
+      viewport: { width: Math.min(canvasW, 4500), height: Math.min(canvasH, 5400) },
+      deviceScaleFactor: 1
+    });
+    const page = await context.newPage();
+
+    try {
+      await page.addInitScript(() => {
+        (window as any).__name = (target: any) => target;
+      });
+      await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
+
+      const resultDataUri = await page.evaluate(async (params: {
+        trimmedUri: string;
+        canvasW: number;
+        canvasH: number;
+        paddingPct: number;
+        bgColor: string;
+      }) => {
+        const loadImage = (src: string): Promise<HTMLImageElement> => {
+          return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => resolve(img);
+            img.onerror = (e) => reject(e);
+            img.src = src;
+          });
+        };
+
+        const trimmedImg = await loadImage(params.trimmedUri);
+        const sourceW = trimmedImg.naturalWidth || trimmedImg.width;
+        const sourceH = trimmedImg.naturalHeight || trimmedImg.height;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = params.canvasW;
+        canvas.height = params.canvasH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Failed to get 2d context');
+
+        // Fill entire canvas with background color
+        ctx.fillStyle = params.bgColor;
+        ctx.fillRect(0, 0, params.canvasW, params.canvasH);
+
+        // Calculate safe area with symmetric padding
+        const paddingPx = Math.min(params.canvasW, params.canvasH) * params.paddingPct;
+        const safeW = params.canvasW - 2 * paddingPx;
+        const safeH = params.canvasH - 2 * paddingPx;
+
+        // Proportional contain fit (no stretching, no distortion, no cropping)
+        const scale = Math.min(safeW / sourceW, safeH / sourceH);
+        const drawW = sourceW * scale;
+        const drawH = sourceH * scale;
+
+        // Center within canvas
+        const x = (params.canvasW - drawW) / 2;
+        const y = (params.canvasH - drawH) / 2;
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(trimmedImg, x, y, drawW, drawH);
+
+        return canvas.toDataURL('image/png');
+      }, {
+        trimmedUri: trimmedDataUri,
+        canvasW,
+        canvasH,
+        paddingPct,
+        bgColor
+      });
+
+      // Write to temp file, inject 300 DPI, validate, then atomic rename
+      const pngBuffer = inject300Dpi(Buffer.from(resultDataUri.split(',')[1], 'base64'));
+      fs.writeFileSync(tmpPath, pngBuffer);
+
+      // Validate PNG magic bytes and minimum size
+      const tmpStats = fs.statSync(tmpPath);
+      if (tmpStats.size < 1000) {
+        throw new Error(`Generated ${variantId} PNG too small: ${tmpStats.size} bytes`);
+      }
+      const header = Buffer.alloc(8);
+      const fd = fs.openSync(tmpPath, 'r');
+      fs.readSync(fd, header, 0, 8, 0);
+      fs.closeSync(fd);
+      const isPng = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47;
+      if (!isPng) {
+        throw new Error(`Generated ${variantId} file is not a valid PNG`);
+      }
+
+      // Atomic rename
+      fs.renameSync(tmpPath, outputPath);
+      console.log(`[ArtworkResizeService] ✅ ${variantId} (${canvasW}×${canvasH}) gespeichert: ${outputPath}`);
+
+      return outputPath;
+    } finally {
+      await context.close();
+      // Clean up temp file if still exists (error case)
+      try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (e) {}
+    }
+  }
+
+  /**
+   * Generates ALL product variants registered in ARTWORK_VARIANT_REGISTRY that have a generator config.
+   * Executes sequentially within the existing resize mutex to prevent parallel memory spikes.
+   * Returns a Record<variantId, filePath> for storage in resizedAssets.productVariants.
+   */
+  public static async generateAllProductVariants(
+    taskId: string,
+    trimmedPngPath: string
+  ): Promise<Record<string, string>> {
+    const variants = getGeneratableVariants();
+    if (variants.length === 0) return {};
+
+    console.log(`[ArtworkResizeService] 📐 Generiere ${variants.length} Product-Varianten für Task #${taskId}...`);
+
+    const result: Record<string, string> = {};
+
+    // Sequential generation: one at a time to preserve RAM
+    for (const variant of variants) {
+      if (!variant.generator) continue;
+      const outputPath = await this.generateProductVariant(
+        taskId,
+        trimmedPngPath,
+        variant.id,
+        variant.generator
+      );
+      result[variant.id] = outputPath;
+    }
+
+    console.log(`[ArtworkResizeService] ✅ Alle ${Object.keys(result).length} Product-Varianten für Task #${taskId} erfolgreich generiert.`);
+    return result;
   }
 }

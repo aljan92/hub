@@ -149,6 +149,8 @@ export interface DesignTaskLog {
     mugBrushPath?: string;
     drinkwareStandardPath?: string;
     drinkwareBrushPath?: string;
+    /** Generic product-resize variants (catalog-driven). Key = technical variant ID from ARTWORK_VARIANT_REGISTRY */
+    productVariants?: Record<string, string>;
   };
   hasError?: boolean;
   errorDetails?: string;
