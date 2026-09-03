@@ -7,7 +7,8 @@
 > **Deployment & Update:** Live-Betrieb auf dem NAS. Updates werden nach jedem Schritt automatisch per `git push origin main` auf GitHub veröffentlicht. 1-Click Update im Web-Dashboard (automatischer Tarball-Download & 10s Server-Neustart).  
 > **Workflow-Regel:** Nach jedem Feature/Fix führt der AI-Agent **automatisch** `npm run build` und `git push origin main` aus!  
 > **Projekt-Gedächtnis:** Diese `brain.md` dient als zentraler Master-Notizzettel und wird bei jedem Schritt fortlaufend gepflegt.  
-> **Letzte Aktualisierung:** 2. September 2026  
+> **Performance-Wissensbasis:** Siehe [`PERFORMANCE_AUDIT.md`](./PERFORMANCE_AUDIT.md) für Messwerte, behobene Regressionen, offene Optimierungen und Sicherheitsinvarianten.
+> **Letzte Aktualisierung:** 3. September 2026
 
 ---
 
