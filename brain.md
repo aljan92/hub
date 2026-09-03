@@ -1163,3 +1163,18 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - `tests/taskPaginationAndPerformanceP1.test.ts`: 7/7 bestanden.
   - `tests/taskRecoveryP3_1.test.ts`: 10/10 bestanden.
   - `npm run build`: Client- und Server-Build erfolgreich.
+
+### 10.43 Performance Regression Fix P0.3 – Optimistischer Queue-Modusschalter
+- **Ursache:** Der Klick setzte zwar `globalMode`, die Darstellung priorisierte jedoch weiterhin `queueState.uploadMode`. Der Modus wurde daher erst nach `PATCH /api/v1/queue/settings`, vollständigem Rebalancing und crash-sicherem Queue-fsync sichtbar. Auf langsamer NAS-Persistenz wirkte die UI blockiert.
+- **Umsetzung:**
+  - Ein expliziter `pendingMode` besitzt während der Speicherung Darstellungspriorität. Button, Modus-Hinweise und Draft/Hybrid-abhängige Inhalte reagieren sofort.
+  - Modusänderungen werden seriell gespeichert; während eines laufenden Requests eintreffende Klicks werden nach dem Prinzip "latest intent wins" zu genau dem letzten gewünschten Folgemodus zusammengefasst.
+  - Ein sichtbarer `Speichert…`-Indikator trennt sofortige UI-Reaktion von der noch laufenden durable Bestätigung.
+  - Bei Fehler erfolgt Rollback auf den letzten bestätigten Servermodus mit sichtbarer Fehlermeldung.
+  - Queue-Poll-Antworten, die während eines Mode-Saves eintreffen, werden nicht angewendet und können damit die neuere Mutation nicht überschreiben.
+  - Backend-Rebalancing sowie P3.1 Atomic Write, Backup-Rotation und fsync bleiben unverändert.
+- **Verifikation:**
+  - `tests/taskRecoveryP3_1.test.ts`: 10/10 bestanden.
+  - `tests/taskRecoveryP3_2.test.ts`: 12/12 bestanden.
+  - `tests/taskRecoveryP3_3.test.ts`: vollständig bestanden.
+  - `npm run build`: Client- und Server-Build erfolgreich.

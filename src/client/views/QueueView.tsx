@@ -103,6 +103,15 @@ interface QueueState {
   catalogProducts?: any[];
 }
 
+type QueueMode = 'draft' | 'live' | 'hybrid';
+
+interface QueueSettingsUpdate {
+  uploadScheduleTime?: string;
+  maxDropPerDesign?: number;
+  uploadMode?: QueueMode;
+  draftProductsPerDesign?: number;
+}
+
 interface UploadProgressState {
   isUploading: boolean;
   currentQueueId: string | null;
@@ -154,7 +163,12 @@ export const QueueView: React.FC = () => {
   const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [globalMode, setGlobalMode] = useState<'live' | 'draft' | 'hybrid'>('draft');
+  const [globalMode, setGlobalMode] = useState<QueueMode>('draft');
+  const [pendingMode, setPendingMode] = useState<QueueMode | null>(null);
+  const [modeSaveError, setModeSaveError] = useState<string | null>(null);
+  const confirmedModeRef = useRef<QueueMode>('draft');
+  const requestedModeRef = useRef<QueueMode | null>(null);
+  const modeSaveRunningRef = useRef(false);
   const [isScreencastOpen, setIsScreencastOpen] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
   const [isRefreshingSlots, setIsRefreshingSlots] = useState<boolean>(false);
@@ -234,6 +248,13 @@ export const QueueView: React.FC = () => {
       const res = await fetch('/api/v1/queue');
       const data = await res.json();
       if (data.success) {
+        // A GET that started before a mode PATCH must not overwrite its newer
+        // response. The next poll will retrieve the committed state.
+        if (modeSaveRunningRef.current) return;
+        if (data.uploadMode) {
+          confirmedModeRef.current = data.uploadMode;
+          setGlobalMode(data.uploadMode);
+        }
         setQueueState(data);
       }
     } catch (err) {
@@ -452,7 +473,7 @@ export const QueueView: React.FC = () => {
     }
   };
 
-  const handleUpdateSettings = async (updates: { uploadScheduleTime?: string; maxDropPerDesign?: number }) => {
+  const handleUpdateSettings = async (updates: QueueSettingsUpdate) => {
     try {
       const res = await fetch('/api/v1/queue/settings', {
         method: 'PATCH',
@@ -466,6 +487,62 @@ export const QueueView: React.FC = () => {
     } catch (err) {
       console.error('Settings update error:', err);
     }
+  };
+
+  const persistRequestedQueueModes = async () => {
+    if (modeSaveRunningRef.current) return;
+    modeSaveRunningRef.current = true;
+
+    try {
+      while (requestedModeRef.current) {
+        const modeToPersist = requestedModeRef.current;
+        requestedModeRef.current = null;
+
+        try {
+          const res = await fetch('/api/v1/queue/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uploadMode: modeToPersist })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success || !data.state) {
+            throw new Error(data.error || `HTTP ${res.status}`);
+          }
+
+          const confirmedMode = data.state.uploadMode || modeToPersist;
+          confirmedModeRef.current = confirmedMode;
+          setQueueState(data.state);
+          setModeSaveError(null);
+
+          if (requestedModeRef.current) {
+            // A newer click arrived while this request was running. Keep that
+            // latest intent visible and persist it next; intermediate clicks
+            // are intentionally coalesced.
+            setPendingMode(requestedModeRef.current);
+          } else {
+            setGlobalMode(confirmedMode);
+            setPendingMode(null);
+          }
+        } catch (err: any) {
+          console.error('[Queue] Failed to persist upload mode:', err);
+          if (!requestedModeRef.current) {
+            setGlobalMode(confirmedModeRef.current);
+            setPendingMode(null);
+            setModeSaveError('Modus konnte nicht gespeichert werden. Serverzustand wurde wiederhergestellt.');
+          }
+        }
+      }
+    } finally {
+      modeSaveRunningRef.current = false;
+    }
+  };
+
+  const handleSetGlobalMode = (mode: QueueMode) => {
+    requestedModeRef.current = mode;
+    setGlobalMode(mode);
+    setPendingMode(mode);
+    setModeSaveError(null);
+    void persistRequestedQueueModes();
   };
 
   const handleRebalance = async () => {
@@ -572,7 +649,9 @@ export const QueueView: React.FC = () => {
     }
   };
 
-  const currentMode = queueState?.uploadMode || globalMode || 'draft';
+  // Pending user intent wins over the last confirmed server snapshot so the
+  // selector responds immediately even when durable NAS persistence is slow.
+  const currentMode = pendingMode || queueState?.uploadMode || globalMode || 'draft';
   const isDraftMode = currentMode === 'draft';
   const isLiveMode = currentMode === 'live';
   const isHybridMode = currentMode === 'hybrid';
@@ -670,10 +749,7 @@ export const QueueView: React.FC = () => {
             <span className="text-[11px] font-semibold text-slate-400 px-2">Modus:</span>
             
             <button
-              onClick={() => {
-                setGlobalMode('live');
-                handleUpdateSettings({ uploadMode: 'live' });
-              }}
+              onClick={() => handleSetGlobalMode('live')}
               className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
                 currentMode === 'live'
                   ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm shadow-rose-500/20'
@@ -685,10 +761,7 @@ export const QueueView: React.FC = () => {
             </button>
 
             <button
-              onClick={() => {
-                setGlobalMode('draft');
-                handleUpdateSettings({ uploadMode: 'draft' });
-              }}
+              onClick={() => handleSetGlobalMode('draft')}
               className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
                 currentMode === 'draft'
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/20'
@@ -700,10 +773,7 @@ export const QueueView: React.FC = () => {
             </button>
 
             <button
-              onClick={() => {
-                setGlobalMode('hybrid');
-                handleUpdateSettings({ uploadMode: 'hybrid' });
-              }}
+              onClick={() => handleSetGlobalMode('hybrid')}
               className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
                 currentMode === 'hybrid'
                   ? 'bg-primary-500/20 text-primary-300 border border-primary-500/40 shadow-sm shadow-primary-500/20'
@@ -713,7 +783,19 @@ export const QueueView: React.FC = () => {
             >
               🟣 Draft-Hybrid
             </button>
+            {pendingMode && (
+              <span className="flex items-center gap-1 px-1.5 text-[10px] font-semibold text-cyan-300" title="Der Modus wird crash-sicher gespeichert">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Speichert…
+              </span>
+            )}
           </div>
+
+          {modeSaveError && (
+            <div className="text-[10px] font-semibold text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1" role="alert">
+              {modeSaveError}
+            </div>
+          )}
 
           {/* Pause Before Publish Toggle (Inspection Mode) */}
           <button
@@ -1007,7 +1089,7 @@ export const QueueView: React.FC = () => {
               </div>
               <div className="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
                 <span>{queueState.freeDailySlots || 0} freie Slots heute</span>
-                {(queueState.uploadMode || globalMode) === 'draft' && (
+                {currentMode === 'draft' && (
                   <span className="text-primary-300 font-medium">🟡 Drafts aktiv</span>
                 )}
               </div>
@@ -1181,7 +1263,7 @@ export const QueueView: React.FC = () => {
               </div>
 
               {/* Draft / Hybrid Mode Stepper: Produkte pro Design */}
-              {((queueState.uploadMode || globalMode) === 'draft' || (queueState.uploadMode || globalMode) === 'hybrid') && (
+              {(currentMode === 'draft' || currentMode === 'hybrid') && (
                 <div className="flex items-center space-x-2 border-l border-slate-800 pl-4">
                   <Package className="w-4 h-4 text-accent-cyan shrink-0" />
                   <span className="font-semibold text-slate-300">Produkte pro Design (Draft):</span>
@@ -1276,7 +1358,7 @@ export const QueueView: React.FC = () => {
                   const isUploading = item.status === 'UPLOADING';
                   const isPaused = item.isPaused ?? false;
                   const isUpdate = isUpdateItem(item);
-                  const isDraftMode = (queueState.uploadMode || globalMode) === 'draft';
+                  const isDraftMode = currentMode === 'draft';
                   const canUploadToday = !isPaused && (isUpdate || isDraftMode || (item.allocatedSlots && item.allocatedSlots > 0));
                   const isExpanded = expandedItemId === item.id;
                   const isDragging = draggedIndex === index;
