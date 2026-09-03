@@ -9,6 +9,7 @@
 > **Projekt-Gedächtnis:** Diese `brain.md` dient als zentraler Master-Notizzettel und wird bei jedem Schritt fortlaufend gepflegt.  
 > **Performance-Wissensbasis:** Siehe [`PERFORMANCE_AUDIT.md`](./PERFORMANCE_AUDIT.md) für Messwerte, behobene Regressionen, offene Optimierungen und Sicherheitsinvarianten.
 > **Letzte Aktualisierung:** 3. September 2026
+> **Upload-Optimierung vorerst abgeschlossen:** Nutzer bestätigt den aktuellen Ablauf als funktionierend. Offene, bewusst zurückgestellte Arbeiten: Abschnitt **10.54**. Keine weiteren Pipeline-Umbauten ohne neuen Auftrag.
 
 ---
 
@@ -1268,3 +1269,18 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Nach Eingabe wird ein Popover geschlossen und erneut geöffnet; der zurückgelesene Hex-Wert muss zweimal dem Soll entsprechen. Direkte Hex-Felder werden nach Change/Blur erneut gelesen. Nicht übernommene Werte blockieren den Upload.
 - Die bestehende Behandlung gesperrter veröffentlichter Produkte bleibt erhalten. Keine Produkt-Ausnahmen und kein Umschreiben des Scanstatus.
 - `tests/uploadColorPolicy.test.ts` testet Policy und tatsächlichen Browser-Konfigurationscode mit akzeptierter/abgelehnter Änderung und fehlendem Picker in isoliertem Chromium.
+
+### 10.54 Upload-Optimierung – Abschlussstand und zurückgestellte Punkte
+
+**Stand: 3. September 2026, nach `8bc9b1e`.** Der Nutzer hat die jüngsten Änderungen praktisch getestet und die Optimierung vorerst für abgeschlossen erklärt. Die folgenden Punkte sind ein Backlog, kein Auftrag zur automatischen Weiterarbeit. Die positive Rückmeldung ist kein Nachweis, dass alle Fehlerfälle ausgeschlossen sind.
+
+**Bereits bearbeitet:** fail-closed Produktauswahl, Update-Bestand plus Slot-Delta, generische Editor-Zuordnung, Sofortabbruch vor Remote-Request, Screencast-Backpressure/Wiederverbindung, Fit-/Farbscan-Übernahme, katalogabhängige Fit-/Farbprüfung, Picker-Readback und Listing-Readback. Details und Tests stehen in 10.44–10.53.
+
+**Noch offen, in empfohlener Reihenfolge bei Wiederaufnahme:**
+
+1. **Save-Draft-Bestätigung absichern (hohe Priorität).** Der Live-Worker setzt nach ausbleibender Toast-Bestätigung weiterhin `AMAZON_CONFIRMED`. Ein Timeout allein darf kein Erfolgsnachweis sein. Erfolgreichen Remote-Request beziehungsweise eindeutige Bestätigung verlangen; unklare Ergebnisse an die P3.3-Verifikation/Human Review übergeben, niemals blind erneut senden. Das Verweigern eines erzwungenen Abbruchs nach `REMOTE_REQUEST_INTENT` ersetzt diese Absicherung nicht.
+2. **Resize-Upload produktspezifisch bestätigen.** Verbleibende breite Datei-Input-Fallbacks entfernen und Datei-Input sowie Asset-Bestätigung an den verifizierten Produkteditor binden. Den Pfad „Upload angestoßen, fahre fort“ bei fehlender Bestätigung durch `FAILED_ARTWORK_UPLOAD` ersetzen. Gesperrte Bestands-Artworks berücksichtigen; konfigurierte Varianten niemals still durch Master-Artwork ersetzen.
+3. **Abschließender produktübergreifender Soll-Ist-Abgleich.** Unmittelbar vor Save/Publish die tatsächlich aktive Marktplatz-Matrix sowie relevante Fit-, Farb- und Artwork-Zustände gegen den Zielzustand prüfen. Der jetzige Publish Guard wertet gemeldete Fehler aus, ist aber noch kein vollständiger unabhängiger DOM-Abgleich. Listing-Readback ist bereits umgesetzt und muss nicht erneut gebaut werden.
+4. **Diagnostik nur bei erneutem Bedarf.** Bei weiterem Screencast-Lag oder Scan-Widersprüchen NAS-Laufzeitdaten und betroffene DOM-Zustände erfassen. Die angezeigte Stream-Zeit misst derzeit Server-Sendezeit bis Client-Darstellung, nicht die vollständige CDP-Aufnahmelatenz; Rechner-Uhrabweichungen können sie verfälschen. Der ältere Katalogtest mit der Erwartung von 4 statt inzwischen 8 Special-Artwork-Konfigurationen ist ebenfalls noch zu aktualisieren.
+
+**Leitplanken:** `extra.md` vor Arbeiten an Scanner/Katalog/Upload lesen. Produktwissen ausschließlich aus dynamischem Katalog und persistenten Overrides, keine Produkt-Ausnahmelisten. `REMOTE_REQUEST_INTENT`, sichere Persistenz und Recovery nicht abschwächen. Änderungen einzeln implementieren, gezielt testen und vor weiteren Paketen praktisch prüfen. Aktuell keine weiteren Geschwindigkeitsoptimierungen erforderlich.
