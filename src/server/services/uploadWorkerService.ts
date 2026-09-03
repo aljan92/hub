@@ -12,6 +12,7 @@ import { TaskRepository } from '../storage/taskRepository';
 import { RemoteBaselineInfo } from '../../types/tasks';
 import { Page } from 'playwright';
 import { buildUploadProductSelection } from './uploadProductSelection';
+import { getUploadFitPolicy } from './uploadFitPolicy';
 
 export interface UploadProgressState {
   isUploading: boolean;
@@ -770,7 +771,8 @@ export class UploadWorkerService {
           continue;
         }
 
-        if (product.fitDiscoveryStatus === 'FAILED') {
+        const fitPolicy = getUploadFitPolicy(product);
+        if (fitPolicy.blocked) {
           productUploadResults.push({
             productId: product.id,
             amazonKey: product.amazon?.key || product.id,
@@ -897,7 +899,7 @@ export class UploadWorkerService {
           // Rule: Adult Unisex is always active for any product offering it
           desiredFits.push('adult_unisex', 'unisex', 'adult');
 
-          const visibleFitCandidates = Array.from(inputContainer.querySelectorAll(
+          const visibleFitCandidates = params.expectsFitControls ? Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, ' +
             'flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, ' +
             'label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, ' +
@@ -905,7 +907,7 @@ export class UploadWorkerService {
           )).filter(el => {
             const rect = (el as HTMLElement).getBoundingClientRect();
             return rect.height > 0 && rect.width > 0;
-          });
+          }) : [];
 
           const fitElements: { element: Element; matchedFit: string }[] = [];
           const seenFits = new Set<string>();
@@ -1206,7 +1208,7 @@ export class UploadWorkerService {
           fitTypes,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
-          expectsFitControls: Array.isArray(product.fitTypes) && product.fitTypes.length > 0,
+          expectsFitControls: fitPolicy.required,
           catalogColors: Array.isArray(product.colors) ? product.colors.map(c => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || 'none' })) : []
         });
 

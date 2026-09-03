@@ -1246,3 +1246,9 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Nicht lesbare Farb-Checkboxen führen zu `FAILED` statt einer irrtümlich erfolgreichen Leerung. Erfolgreicher Farbmoduswechsel entfernt alte dynamische Farben/Presets.
 - Persistente Overrides bleiben unverändert, auch für aktuell nicht mehr angebotene Farben; sie können bei späterer Wiederkehr erneut angewendet werden.
 - Integrationstest `tests/catalogScanReplacement.test.ts` prüft den realen Katalog-Merge mit isoliertem Speicher: Reduktion, Leerung, Fehler/fehlende Bestätigung, Moduswechsel, Presets und Override-Erhalt. Build und Architektur-Guard bestanden. Live-Scan bleibt für die NAS-Daten erforderlich.
+
+### 10.51 Upload-Fit-Policy bei leerem Katalog
+
+- Gemäß Nutzerregel bedeutet `fitTypes: []`: keine Fit-Konfiguration. Der Upload überspringt dann Fit-DOM-Abfragen und den Fit-Discovery-Guard, auch bei `fitDiscoveryStatus=FAILED`. Der Scanstatus selbst wird nicht nachträglich als erfolgreich umgeschrieben.
+- Bei vorhandenen Katalog-Fits bleiben der Discovery-Guard und die Sollzustandsprüfung aktiv. Farb-/Editor-/Artwork-Prüfungen bleiben unverändert.
+- Generischer Helper `getUploadFitPolicy`, keine Produkt-Ausnahmeliste. `tests/uploadFitPolicy.test.ts`, Architektur-Guard und Build bestanden.

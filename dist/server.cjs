@@ -231716,6 +231716,12 @@ function buildUploadProductSelection(plannedAdditions, isUpdate, liveSummary) {
   return selected;
 }
 
+// src/server/services/uploadFitPolicy.ts
+function getUploadFitPolicy(product) {
+  const required = Array.isArray(product.fitTypes) && product.fitTypes.length > 0;
+  return { required, blocked: required && product.fitDiscoveryStatus === "FAILED" };
+}
+
 // src/server/services/uploadWorkerService.ts
 var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
@@ -232270,7 +232276,8 @@ var UploadWorkerService = class _UploadWorkerService {
           });
           continue;
         }
-        if (product.fitDiscoveryStatus === "FAILED") {
+        const fitPolicy = getUploadFitPolicy(product);
+        if (fitPolicy.blocked) {
           productUploadResults.push({
             productId: product.id,
             amazonKey: product.amazon?.key || product.id,
@@ -232359,12 +232366,12 @@ var UploadWorkerService = class _UploadWorkerService {
             desiredFits.push("girls");
           }
           desiredFits.push("adult_unisex", "unisex", "adult");
-          const visibleFitCandidates = Array.from(inputContainer.querySelectorAll(
+          const visibleFitCandidates = params2.expectsFitControls ? Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, flowcheckbox[class*="-checkbox"], label[class*="-label"]'
           )).filter((el) => {
             const rect = el.getBoundingClientRect();
             return rect.height > 0 && rect.width > 0;
-          });
+          }) : [];
           const fitElements = [];
           const seenFits = /* @__PURE__ */ new Set();
           for (const el of visibleFitCandidates) {
@@ -232602,7 +232609,7 @@ var UploadWorkerService = class _UploadWorkerService {
           fitTypes,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
-          expectsFitControls: Array.isArray(product.fitTypes) && product.fitTypes.length > 0,
+          expectsFitControls: fitPolicy.required,
           catalogColors: Array.isArray(product.colors) ? product.colors.map((c) => ({ id: c.id.toLowerCase(), avoidRule: c.avoidRule || "none" })) : []
         });
         let currentProductStatus = "SUCCESS";
