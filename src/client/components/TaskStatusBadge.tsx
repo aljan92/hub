@@ -127,6 +127,17 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
     };
   }
 
+  if (task.status === 'AWAITING_RECOVERY_REVIEW' || task.checkpoint === 'RECOVERY_REVIEW') {
+    return {
+      label: 'Wartet: Recovery-Review',
+      badgeClass: 'bg-red-500/20 text-red-200 border-red-500/50 font-bold shadow-sm animate-pulse',
+      dotBg: 'bg-red-500',
+      category: 'ERROR',
+      icon: <ShieldAlert className="w-3 h-3 text-red-400" />,
+      isAnimated: true
+    };
+  }
+
   // 5. Active Pipeline Processing Steps
   if (task.status === 'UPDATE_DOWNLOADING_ARTWORK') {
     return {

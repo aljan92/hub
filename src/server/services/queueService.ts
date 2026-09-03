@@ -4,8 +4,31 @@ import { ProductCatalogService, MerchProduct } from './productCatalogService';
 import { ListingSanitizationService } from './listingSanitizationService';
 import { loadSettings, saveSettings } from './settingsService';
 import { TaskRepository } from '../storage/taskRepository';
+import { atomicWriteJson, loadJsonWithBackupRecovery, isFileInFailSafe } from '../utils/atomicFileStorage';
 
 export type QueueItemStatus = 'WAITING' | 'UPLOADING' | 'COMPLETED' | 'ERROR';
+
+export type UploadRecoveryPhase =
+  | 'STARTING'
+  | 'NAVIGATING'
+  | 'CONFIGURING'
+  | 'VALIDATING'
+  | 'READY_TO_SUBMIT'
+  | 'REMOTE_ACTION_INTENT'
+  | 'AWAITING_AMAZON_CONFIRMATION'
+  | 'AMAZON_CONFIRMED';
+
+export interface UploadRecoveryMetadata {
+  phase: UploadRecoveryPhase;
+  action?: 'PUBLISH' | 'SAVE_DRAFT';
+  attempt: number;
+  startedAt?: string;
+  lastHeartbeatAt?: string;
+  remoteActionIntentAt?: string;
+  amazonConfirmedAt?: string;
+  amazonDesignId?: string;
+  recoveryReason?: string;
+}
 
 export interface ListingLanguageContent {
   brand?: string;
@@ -89,6 +112,7 @@ export interface QueueItem {
   liveStats?: any;                            // Live stats payload from Amazon
   liveProductSummary?: Record<string, any>;   // Specific product summary already live on Amazon
   liveProductTypes?: string[];                // Product type keys already live on Amazon
+  uploadRecovery?: UploadRecoveryMetadata;    // Persistent recovery and phase metadata
 }
 
 export interface QueueState {
@@ -142,39 +166,65 @@ export class QueueService {
   private static queueFilePath = path.resolve(process.cwd(), 'data', 'upload_queue.json');
   private static items: QueueItem[] = [];
   private static isLoaded = false;
+  private static isStorageCorrupted = false;
   private static dailySlotsInfo = { free: 200, used: 0, total: 200 };
 
-  private static ensureLoaded() {
+  public static setCustomQueuePath(customPath?: string): void {
+    if (customPath) {
+      this.queueFilePath = path.resolve(customPath);
+    } else {
+      this.queueFilePath = path.resolve(process.cwd(), 'data', 'upload_queue.json');
+    }
+    this.isLoaded = false;
+    this.isStorageCorrupted = false;
+  }
+
+  public static isCorrupted(): boolean {
+    return this.isStorageCorrupted || isFileInFailSafe(this.queueFilePath);
+  }
+
+  public static ensureLoaded() {
     if (this.isLoaded) return;
     this.loadQueue();
     this.isLoaded = true;
   }
 
   /**
-   * Load queue from ./data/upload_queue.json with auto-enrichment from tasks_log.json
+   * Load queue from ./data/upload_queue.json with atomic backup recovery & corruption shield
    */
   public static loadQueue(): QueueItem[] {
     try {
       if (fs.existsSync(this.queueFilePath)) {
-        const raw = fs.readFileSync(this.queueFilePath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          this.items = parsed;
+        const recovery = loadJsonWithBackupRecovery<QueueItem[]>(this.queueFilePath, {
+          backupExt: '.bak',
+          validate: (data) => Array.isArray(data),
+          defaultValue: []
+        });
 
-          // Migrate legacy status to clean 4-state model
-          for (const item of this.items) {
-            if ((item.status as any) === 'SCHEDULED_TODAY' || (item.status as any) === 'WAITING_FOR_SLOTS' || !item.status) {
-              item.status = 'WAITING';
-            }
-          }
-
-          // Auto-enrich any items that might be missing full multi-language listings
-          this.enrichListingsFromTasksLog();
+        if (!recovery.success) {
+          this.isStorageCorrupted = true;
+          console.error(`[QueueService] 🚨 CRITICAL: upload_queue.json and backup could not be loaded/validated from '${this.queueFilePath}'! Fail-closed mode active.`);
           return this.items;
         }
+
+        this.isStorageCorrupted = false;
+        this.items = recovery.data;
+
+        // Migrate legacy status to clean 4-state model
+        for (const item of this.items) {
+          if ((item.status as any) === 'SCHEDULED_TODAY' || (item.status as any) === 'WAITING_FOR_SLOTS' || !item.status) {
+            item.status = 'WAITING';
+          }
+        }
+
+        // Auto-enrich any items that might be missing full multi-language listings
+        this.enrichListingsFromTasksLog();
+        return this.items;
       }
     } catch (err: any) {
       console.error('[QueueService] Error reading upload_queue.json:', err.message);
+      this.isStorageCorrupted = true;
+      return this.items;
     }
     this.items = [];
     return this.items;
@@ -295,7 +345,7 @@ export class QueueService {
       }
 
       if (hasChanges) {
-        fs.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), 'utf-8');
+        this.saveQueue();
       }
     } catch (err: any) {
       console.error('[QueueService] enrichListings error:', err.message);
@@ -303,18 +353,47 @@ export class QueueService {
   }
 
   /**
-   * Save queue to ./data/upload_queue.json
+   * Save queue to ./data/upload_queue.json with atomic fsync, backup rotation (.bak) and corruption shielding
    */
   public static saveQueue() {
+    if (this.isCorrupted()) {
+      throw new Error(`[QueueService] 🚨 REFUSED: Cannot save queue while storage '${this.queueFilePath}' is in fail-safe corrupted mode.`);
+    }
     try {
-      const dir = path.dirname(this.queueFilePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), 'utf-8');
+      atomicWriteJson(this.queueFilePath, this.items, {
+        backup: true,
+        backupExt: '.bak',
+        space: 0
+      });
     } catch (err: any) {
       console.error('[QueueService] Error writing upload_queue.json:', err.message);
+      throw err;
     }
+  }
+
+  /**
+   * Updates an item's upload recovery phase and atomically persists to disk.
+   * Throws immediately if write fails (e.g. corruption guard or disk error).
+   */
+  public static updateItemUploadRecovery(itemId: string, recoveryUpdates: Partial<UploadRecoveryMetadata>): QueueItem | null {
+    this.ensureLoaded();
+    const item = this.items.find(i => i.id === itemId);
+    if (!item) return null;
+
+    const currentRecovery: UploadRecoveryMetadata = item.uploadRecovery || {
+      phase: 'STARTING',
+      attempt: 1,
+      startedAt: new Date().toISOString()
+    };
+
+    item.uploadRecovery = {
+      ...currentRecovery,
+      ...recoveryUpdates,
+      lastHeartbeatAt: new Date().toISOString()
+    };
+
+    this.saveQueue();
+    return item;
   }
 
   /**

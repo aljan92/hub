@@ -222511,6 +222511,9 @@ var init_listingSanitizationService = __esm2({
 });
 
 // src/server/utils/atomicFileStorage.ts
+function isFileInFailSafe(filePath) {
+  return failSafeRegistry.has(import_path74.default.resolve(filePath));
+}
 function atomicWriteFile(filePath, content, options2 = {}) {
   const resolvedPath = import_path74.default.resolve(filePath);
   const dir = import_path74.default.dirname(resolvedPath);
@@ -223523,6 +223526,24 @@ var init_taskRepository = __esm2({
       static clearAllTasks() {
         const db = this.getDb();
         db.exec("DELETE FROM tasks;");
+      }
+      /**
+       * Returns all tasks currently marked with in_queue = 1.
+       */
+      static getInQueueTasks() {
+        const db = this.getDb();
+        const rows = db.prepare("SELECT * FROM tasks WHERE in_queue = 1").all();
+        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
+      }
+      /**
+       * Returns tasks matching any of the specified statuses.
+       */
+      static getTasksByStatuses(statuses) {
+        if (!statuses || statuses.length === 0) return [];
+        const db = this.getDb();
+        const placeholders = statuses.map(() => "?").join(", ");
+        const rows = db.prepare(`SELECT * FROM tasks WHERE status IN (${placeholders})`).all(...statuses);
+        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
       }
       /**
        * Returns total task count in SQLite.
@@ -225386,38 +225407,61 @@ var init_queueService = __esm2({
     init_listingSanitizationService();
     init_settingsService();
     init_taskRepository();
+    init_atomicFileStorage();
     NON_US_DROP_ORDER = ["JP", "ES", "IT", "FR", "DE", "GB"];
     QueueService = class {
       static queueFilePath = import_path78.default.resolve(process.cwd(), "data", "upload_queue.json");
       static items = [];
       static isLoaded = false;
+      static isStorageCorrupted = false;
       static dailySlotsInfo = { free: 200, used: 0, total: 200 };
+      static setCustomQueuePath(customPath) {
+        if (customPath) {
+          this.queueFilePath = import_path78.default.resolve(customPath);
+        } else {
+          this.queueFilePath = import_path78.default.resolve(process.cwd(), "data", "upload_queue.json");
+        }
+        this.isLoaded = false;
+        this.isStorageCorrupted = false;
+      }
+      static isCorrupted() {
+        return this.isStorageCorrupted || isFileInFailSafe(this.queueFilePath);
+      }
       static ensureLoaded() {
         if (this.isLoaded) return;
         this.loadQueue();
         this.isLoaded = true;
       }
       /**
-       * Load queue from ./data/upload_queue.json with auto-enrichment from tasks_log.json
+       * Load queue from ./data/upload_queue.json with atomic backup recovery & corruption shield
        */
       static loadQueue() {
         try {
           if (import_fs83.default.existsSync(this.queueFilePath)) {
-            const raw = import_fs83.default.readFileSync(this.queueFilePath, "utf-8");
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              this.items = parsed;
-              for (const item of this.items) {
-                if (item.status === "SCHEDULED_TODAY" || item.status === "WAITING_FOR_SLOTS" || !item.status) {
-                  item.status = "WAITING";
-                }
-              }
-              this.enrichListingsFromTasksLog();
+            const recovery = loadJsonWithBackupRecovery(this.queueFilePath, {
+              backupExt: ".bak",
+              validate: (data) => Array.isArray(data),
+              defaultValue: []
+            });
+            if (!recovery.success) {
+              this.isStorageCorrupted = true;
+              console.error(`[QueueService] \u{1F6A8} CRITICAL: upload_queue.json and backup could not be loaded/validated from '${this.queueFilePath}'! Fail-closed mode active.`);
               return this.items;
             }
+            this.isStorageCorrupted = false;
+            this.items = recovery.data;
+            for (const item of this.items) {
+              if (item.status === "SCHEDULED_TODAY" || item.status === "WAITING_FOR_SLOTS" || !item.status) {
+                item.status = "WAITING";
+              }
+            }
+            this.enrichListingsFromTasksLog();
+            return this.items;
           }
         } catch (err) {
           console.error("[QueueService] Error reading upload_queue.json:", err.message);
+          this.isStorageCorrupted = true;
+          return this.items;
         }
         this.items = [];
         return this.items;
@@ -225524,25 +225568,50 @@ var init_queueService = __esm2({
             }
           }
           if (hasChanges) {
-            import_fs83.default.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), "utf-8");
+            this.saveQueue();
           }
         } catch (err) {
           console.error("[QueueService] enrichListings error:", err.message);
         }
       }
       /**
-       * Save queue to ./data/upload_queue.json
+       * Save queue to ./data/upload_queue.json with atomic fsync, backup rotation (.bak) and corruption shielding
        */
       static saveQueue() {
+        if (this.isCorrupted()) {
+          throw new Error(`[QueueService] \u{1F6A8} REFUSED: Cannot save queue while storage '${this.queueFilePath}' is in fail-safe corrupted mode.`);
+        }
         try {
-          const dir = import_path78.default.dirname(this.queueFilePath);
-          if (!import_fs83.default.existsSync(dir)) {
-            import_fs83.default.mkdirSync(dir, { recursive: true });
-          }
-          import_fs83.default.writeFileSync(this.queueFilePath, JSON.stringify(this.items, null, 2), "utf-8");
+          atomicWriteJson(this.queueFilePath, this.items, {
+            backup: true,
+            backupExt: ".bak",
+            space: 0
+          });
         } catch (err) {
           console.error("[QueueService] Error writing upload_queue.json:", err.message);
+          throw err;
         }
+      }
+      /**
+       * Updates an item's upload recovery phase and atomically persists to disk.
+       * Throws immediately if write fails (e.g. corruption guard or disk error).
+       */
+      static updateItemUploadRecovery(itemId, recoveryUpdates) {
+        this.ensureLoaded();
+        const item = this.items.find((i) => i.id === itemId);
+        if (!item) return null;
+        const currentRecovery = item.uploadRecovery || {
+          phase: "STARTING",
+          attempt: 1,
+          startedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        item.uploadRecovery = {
+          ...currentRecovery,
+          ...recoveryUpdates,
+          lastHeartbeatAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        this.saveQueue();
+        return item;
       }
       /**
        * Set daily available slots from live MBA Dashboard / Ratelimiter
@@ -228731,6 +228800,11 @@ Beantworte die Analysefragen streng als JSON!`;
 });
 
 // src/server/index.ts
+var index_exports = {};
+__export2(index_exports, {
+  getSystemReady: () => getSystemReady
+});
+module.exports = __toCommonJS2(index_exports);
 var import_express = __toESM2(require_express2(), 1);
 var import_http4 = __toESM2(require("http"), 1);
 
@@ -229623,6 +229697,9 @@ var UploadWorkerService = class {
     if (this.isUploading) {
       return { success: false, message: "Es l\xE4uft bereits ein Upload-Vorgang." };
     }
+    if (QueueService.isCorrupted()) {
+      return { success: false, message: "Upload blockiert: Queue-Speicher ist besch\xE4digt (Fail-Closed Schutz aktiv)." };
+    }
     const state = QueueService.getState();
     const queueMode = state.uploadMode || "draft";
     let targetItem;
@@ -229685,10 +229762,18 @@ var UploadWorkerService = class {
     const uploadUrl = isUpdate ? `https://merch.amazon.com/designs/${cleanDesignId}/edit` : "https://merch.amazon.com/designs/new";
     try {
       this.log(`\u{1F680} Starte Upload f\xFCr Task #${item.taskId} ("${item.title || item.designTitle}")${isUpdate ? " [UPDATE-MODUS]" : ""}`, "Initialisiere Session 2...", 5, 100);
+      QueueService.updateItemUploadRecovery(item.id, {
+        phase: "STARTING",
+        action: effectiveMode === "publish" ? "PUBLISH" : "SAVE_DRAFT",
+        attempt: (item.uploadRecovery?.attempt || 0) + 1,
+        startedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        recoveryReason: void 0
+      });
       const session2 = await BrowserSessionService.getSession("upload");
       const page = session2.page;
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       this.log(`\u{1F310} \xD6ffne ${uploadUrl}`, isUpdate ? "\xD6ffne Merch Edit Seite..." : "\xD6ffne Merch Create Seite...", 10, 100);
+      QueueService.updateItemUploadRecovery(item.id, { phase: "NAVIGATING" });
       await page.goto(uploadUrl, { waitUntil: "domcontentloaded", timeout: 6e4 });
       await page.waitForTimeout(1500);
       const currentUrl = page.url();
@@ -229748,6 +229833,7 @@ var UploadWorkerService = class {
           this.log(`\u26A0\uFE0F Render-Check beendet, fahre fort...`);
         }
       }
+      QueueService.updateItemUploadRecovery(item.id, { phase: "CONFIGURING" });
       this.log(`\u{1F4E6} \xD6ffne 'Select Products' Modal...`, "Konfiguriere Marktpl\xE4tze...", 40, 100);
       await page.waitForTimeout(2e3);
       let modalOpened = false;
@@ -230638,6 +230724,7 @@ var UploadWorkerService = class {
       await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
       await page.waitForTimeout(1500);
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
+      QueueService.updateItemUploadRecovery(item.id, { phase: "VALIDATING" });
       const technicalFailures = productUploadResults.filter((r) => r.status.startsWith("FAILED_"));
       const successfulCount = productUploadResults.filter((r) => r.status === "SUCCESS").length;
       const skippedCount = productUploadResults.filter((r) => r.status.startsWith("SKIPPED_")).length;
@@ -230655,6 +230742,7 @@ var UploadWorkerService = class {
         throw new Error(`Upload durch Publish Guard blockiert: ${technicalFailures.length} Produkt(e) fehlgeschlagen: ${failureDetails}`);
       }
       this.log(`\u2705 PUBLISH GUARD: Alle ${successfulCount} Produkte erfolgreich konfiguriert (${skippedCount} erwartete Skips). Freigabe erteilt!`);
+      QueueService.updateItemUploadRecovery(item.id, { phase: "READY_TO_SUBMIT" });
       if (mode === "publish") {
         if (this.pauseBeforePublishRequested) {
           this.isPausedBeforePublish = true;
@@ -230685,6 +230773,11 @@ var UploadWorkerService = class {
         if (!publishCheck.isEnabled && publishCheck.errors.length > 0) {
           throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(" | ")}`);
         }
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: "REMOTE_ACTION_INTENT",
+          action: "PUBLISH",
+          remoteActionIntentAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
         await page.evaluate(() => {
           const submitBtn = document.getElementById("submit-button") || document.querySelector('button[id*="submit"], button.btn-submit');
           submitBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -230693,9 +230786,18 @@ var UploadWorkerService = class {
         this.log(`\u23F3 Warte auf Best\xE4tigungs-Modal...`, "Best\xE4tige Publish...");
         const confirmBtn = await page.waitForSelector(".modal-footer .btn-primary.btn-submit, button.btn-submit", { timeout: 15e3 });
         if (!confirmBtn) throw new Error("Best\xE4tigungs-Button im Publish-Modal nicht gefunden.");
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: "AWAITING_AMAZON_CONFIRMATION",
+          action: "PUBLISH"
+        });
         await confirmBtn.click();
         this.log(`\u23F3 Warte auf finale Amazon-Best\xE4tigung (#redirect-manage)...`, "Warte auf Best\xE4tigung...");
         await page.waitForSelector('#redirect-manage, a[href*="/manage"]', { timeout: 6e4 });
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: "AMAZON_CONFIRMED",
+          action: "PUBLISH",
+          amazonConfirmedAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
         this.log(`\u{1F389} Design erfolgreich auf Amazon Merch ver\xF6ffentlicht!`, "Erfolgreich ver\xF6ffentlicht \u2713", 100, 100);
       } else {
         this.log(`\u{1F4BE} Klicke 'Save Draft' Button f\xFCr Entwurf-Speicherung...`, "Speichere Entwurf...", 95, 100);
@@ -230712,12 +230814,21 @@ var UploadWorkerService = class {
         if (!draftCheck.isEnabled && draftCheck.errors.length > 0) {
           throw new Error(`Save-Draft Button ist deaktiviert. Formularfehler: ${draftCheck.errors.join(" | ")}`);
         }
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: "REMOTE_ACTION_INTENT",
+          action: "SAVE_DRAFT",
+          remoteActionIntentAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
         await page.evaluate(() => {
           const draftBtn = document.getElementById("draft-button") || document.getElementById("save-as-draft-button") || document.querySelector('button[id*="draft"]') || document.querySelector("button.btn-draft");
           if (draftBtn) {
             draftBtn.scrollIntoView({ behavior: "smooth", block: "center" });
             draftBtn.click();
           }
+        });
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: "AWAITING_AMAZON_CONFIRMATION",
+          action: "SAVE_DRAFT"
         });
         try {
           await page.waitForFunction(() => {
@@ -230729,6 +230840,11 @@ var UploadWorkerService = class {
         } catch (e) {
           this.log(`\u23F3 Wartezeit nach Save-Draft beendet...`);
         }
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: "AMAZON_CONFIRMED",
+          action: "SAVE_DRAFT",
+          amazonConfirmedAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
         this.log(`\u{1F3E0} Navigiere zur\xFCck zum Dashboard (https://merch.amazon.com/dashboard)...`, "Navigiere zu Dashboard...");
         await page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 });
         await page.waitForTimeout(2e3);
@@ -231088,11 +231204,206 @@ var DesignPipelineService = class {
 init_trademarkWhitelistService();
 init_updateBackfillService();
 init_visionOptimizationService();
+
+// src/server/services/taskRecoveryService.ts
+init_queueService();
+init_taskRepository();
+init_taskLogService();
+var TaskRecoveryService = class {
+  /**
+   * Main recovery and reconciliation entrypoint.
+   * MUST run during server startup before any background schedulers, upload workers, or mutating APIs are allowed.
+   */
+  static initAndReconcile() {
+    const report = {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      queueCorrupted: false,
+      preRemoteUploadsReset: 0,
+      unsafeUploadsEscalated: 0,
+      confirmedUploadsCompleted: 0,
+      legacyUploadsEscalated: 0,
+      tasksLinkedToQueue: 0,
+      orphanQueueItemsWaiting: 0,
+      orphanQueueItemsUploading: 0,
+      tasksWithMissingQueueItem: 0,
+      detectedZombieTasks: 0,
+      details: []
+    };
+    console.log("[TaskRecovery] \u{1F6E1}\uFE0F Starting Phase P3.1 Crash Recovery & Storage Reconciliation...");
+    QueueService.ensureLoaded();
+    if (QueueService.isCorrupted()) {
+      report.queueCorrupted = true;
+      const msg = "CRITICAL: Queue storage is in fail-safe corrupted mode. Auto-recovery and uploads are blocked.";
+      report.details.push(msg);
+      console.error(`[TaskRecovery] \u{1F6A8} ${msg}`);
+      return report;
+    }
+    const queueItems = QueueService.loadQueue();
+    let hasQueueChanges = false;
+    for (const item of queueItems) {
+      if (item.status === "UPLOADING") {
+        const recovery = item.uploadRecovery;
+        if (recovery && recovery.phase) {
+          const preRemotePhases = ["STARTING", "NAVIGATING", "CONFIGURING", "VALIDATING", "READY_TO_SUBMIT"];
+          if (preRemotePhases.includes(recovery.phase)) {
+            item.status = "WAITING";
+            item.uploadRecovery = {
+              ...recovery,
+              phase: "STARTING",
+              attempt: (recovery.attempt || 1) + 1,
+              recoveryReason: `Recovered from pre-remote interruption in phase ${recovery.phase} (safe to retry)`
+            };
+            hasQueueChanges = true;
+            report.preRemoteUploadsReset++;
+            report.details.push(`Reset pre-remote item ${item.id} (${item.title || item.designTitle}) to WAITING`);
+            console.log(`[TaskRecovery] \u{1F504} Pre-Remote Recovery: Reset item ${item.id} (${recovery.phase}) back to WAITING.`);
+          } else if (recovery.phase === "REMOTE_ACTION_INTENT" || recovery.phase === "AWAITING_AMAZON_CONFIRMATION") {
+            item.status = "ERROR";
+            item.errorMessage = "Upload wurde w\xE4hrend oder nach dem Remote-Submit-Intent unterbrochen. Human Review erforderlich.";
+            item.uploadRecovery = {
+              ...recovery,
+              recoveryReason: `Interrupted during/after ${recovery.phase}. Automated retry blocked to prevent duplicate submission.`
+            };
+            hasQueueChanges = true;
+            report.unsafeUploadsEscalated++;
+            report.details.push(`Escalated unsafe item ${item.id} (${item.title || item.designTitle}) in phase ${recovery.phase} to Human Review`);
+            console.warn(`[TaskRecovery] \u26A0\uFE0F Unsafe Remote Intent: Item ${item.id} was in ${recovery.phase}. Escalating to Human Review.`);
+            if (item.taskId) {
+              const task = TaskRepository.getTaskById(item.taskId);
+              if (task) {
+                TaskLogService2.updateTaskStatus(task.id, {
+                  status: "AWAITING_RECOVERY_REVIEW",
+                  checkpoint: "RECOVERY_REVIEW",
+                  hasError: true,
+                  errorDetails: "Upload wurde nach dem Absenden des Remote-Intents an Amazon unterbrochen. Bitte in Amazon Manage pr\xFCfen, ob das Produkt ver\xF6ffentlicht wurde, bevor erneut hochgeladen wird."
+                });
+              }
+            }
+          } else if (recovery.phase === "AMAZON_CONFIRMED") {
+            item.status = "COMPLETED";
+            item.uploadRecovery = {
+              ...recovery,
+              recoveryReason: "Reconciled to COMPLETED: Amazon confirmation was persisted prior to crash"
+            };
+            hasQueueChanges = true;
+            report.confirmedUploadsCompleted++;
+            report.details.push(`Marked confirmed item ${item.id} (${item.title || item.designTitle}) as COMPLETED`);
+            console.log(`[TaskRecovery] \u2705 Confirmed Recovery: Item ${item.id} was already confirmed by Amazon. Reconciled to COMPLETED.`);
+            if (item.taskId) {
+              const task = TaskRepository.getTaskById(item.taskId);
+              if (task && task.status !== "COMPLETED" && task.status !== "UPDATE_QUEUED") {
+                TaskLogService2.updateTaskStatus(task.id, {
+                  status: task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED",
+                  inQueue: true,
+                  hasError: false
+                });
+              }
+            }
+          }
+        } else {
+          item.status = "ERROR";
+          item.errorMessage = "Legacy-Upload ohne Phaseninformation unterbrochen. Human Review erforderlich.";
+          item.uploadRecovery = {
+            phase: "REMOTE_ACTION_INTENT",
+            attempt: 1,
+            recoveryReason: "Legacy item in UPLOADING state without phase metadata. Auto-retry blocked."
+          };
+          hasQueueChanges = true;
+          report.legacyUploadsEscalated++;
+          report.details.push(`Legacy item ${item.id} without phase metadata escalated to Human Review`);
+          console.warn(`[TaskRecovery] \u26A0\uFE0F Legacy Upload Item: ${item.id} has no phase metadata. Escalating to Human Review.`);
+          if (item.taskId) {
+            const task = TaskRepository.getTaskById(item.taskId);
+            if (task) {
+              TaskLogService2.updateTaskStatus(task.id, {
+                status: "AWAITING_RECOVERY_REVIEW",
+                checkpoint: "RECOVERY_REVIEW",
+                hasError: true,
+                errorDetails: "Legacy-Task im Status UPLOADING ohne Phaseninformation unterbrochen. Bitte vor erneutem Upload den Amazon-Zustand manuell pr\xFCfen."
+              });
+            }
+          }
+        }
+      }
+    }
+    const queueTaskIdSet = /* @__PURE__ */ new Set();
+    for (const item of queueItems) {
+      if (item.taskId) {
+        queueTaskIdSet.add(item.taskId);
+        const task = TaskRepository.getTaskById(item.taskId);
+        if (task) {
+          if (!task.inQueue) {
+            const targetStatus = task.status === "COMPLETED" || task.status === "UPDATE_QUEUED" ? task.status : task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED";
+            TaskLogService2.updateTaskStatus(task.id, {
+              inQueue: true,
+              status: targetStatus
+            });
+            report.tasksLinkedToQueue++;
+            report.details.push(`Reconciled task ${task.id}: set inQueue=true and status=${targetStatus}`);
+            console.log(`[TaskRecovery] \u{1F517} Reconciled task ${task.id}: linked to existing queue item.`);
+          }
+        } else {
+          if (item.status === "WAITING") {
+            report.orphanQueueItemsWaiting++;
+            report.details.push(`Orphan WAITING queue item found: ${item.id} (task ${item.taskId} not found)`);
+            console.warn(`[TaskRecovery] \u26A0\uFE0F Orphan WAITING queue item: ${item.id} (Task ${item.taskId} missing).`);
+          } else if (item.status === "UPLOADING") {
+            report.orphanQueueItemsUploading++;
+            report.details.push(`Orphan UPLOADING queue item found: ${item.id} (task ${item.taskId} not found)`);
+            console.warn(`[TaskRecovery] \u{1F6A8} Orphan UPLOADING queue item: ${item.id} (preserved without deletion).`);
+          }
+        }
+      }
+    }
+    const inQueueTasks = TaskRepository.getInQueueTasks();
+    for (const task of inQueueTasks) {
+      if (!queueTaskIdSet.has(task.id)) {
+        if (task.status !== "COMPLETED" && task.status !== "UPDATE_QUEUED") {
+          report.tasksWithMissingQueueItem++;
+          report.details.push(`Task ${task.id} has inQueue=true, status=${task.status}, but queue item is missing`);
+          console.warn(`[TaskRecovery] \u26A0\uFE0F Task ${task.id} flagged inQueue=true, but missing from upload_queue.json.`);
+        }
+      }
+    }
+    const zombieStatuses = [
+      "PROCESSING",
+      "GENERATING_IMAGE",
+      "ANALYZING_DESIGN",
+      "GENERATING_LISTING",
+      "CHECKING_TRADEMARKS",
+      "TRANSLATING_LISTING",
+      "VECTORIZING_DESIGN",
+      "UPDATE_DOWNLOADING_ARTWORK"
+    ];
+    const detectedZombies = TaskRepository.getTasksByStatuses(zombieStatuses);
+    report.detectedZombieTasks = detectedZombies.length;
+    if (detectedZombies.length > 0) {
+      console.log(`[TaskRecovery] \u{1F9DF} Detected ${detectedZombies.length} in-flight zombie tasks (Detection only in P3.1; auto-resume follows in P3.2).`);
+    }
+    if (hasQueueChanges) {
+      try {
+        QueueService.saveQueue();
+        console.log("[TaskRecovery] \u{1F4BE} Queue changes successfully saved to disk.");
+      } catch (err) {
+        console.error("[TaskRecovery] \u274C Failed to save reconciled queue:", err.message);
+        report.details.push(`Failed to save reconciled queue: ${err.message}`);
+      }
+    }
+    console.log(`[TaskRecovery] \u2705 Phase P3.1 Recovery complete. (${report.preRemoteUploadsReset} resets, ${report.unsafeUploadsEscalated} escalations, ${report.confirmedUploadsCompleted} confirmed).`);
+    return report;
+  }
+};
+
+// src/server/index.ts
 var import_meta = {};
 import_dotenv.default.config();
 var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path81.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
 var app = (0, import_express.default)();
 var server2 = import_http4.default.createServer(app);
+var isSystemReady = false;
+function getSystemReady() {
+  return isSystemReady;
+}
 var wss = new import_websocket_server.default({ server: server2, path: "/ws" });
 var PORT = process.env.PORT || 3e3;
 var HOST = process.env.HOST || "0.0.0.0";
@@ -231111,6 +231422,17 @@ UploadWorkerService.onStatusUpdate((status) => {
 app.use((0, import_cors.default)());
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ extended: true, limit: "50mb" }));
+app.use((req, res, next) => {
+  if (isSystemReady) return next();
+  if (req.method === "GET" || req.path === "/api/health" || !req.path.startsWith("/api/v1/")) {
+    return next();
+  }
+  return res.status(503).json({
+    success: false,
+    error: "SYSTEM_RECOVERY_IN_PROGRESS",
+    message: "MBA Hub f\xFChrt gerade die Crash-Recovery und Speicher-Reconciliation durch. Bitte in K\xFCrze wiederholen."
+  });
+});
 var uploadQueue = [];
 var dailySlotStats = { used: 0, total: 100 };
 var activityLog = [
@@ -232758,6 +233080,13 @@ if (import_fs87.default.existsSync(staticPath)) {
   });
 }
 TaskRepository.init();
+QueueService.ensureLoaded();
+try {
+  TaskRecoveryService.initAndReconcile();
+} catch (err) {
+  console.error("[MBA Hub] \u{1F6A8} Critical failure during TaskRecoveryService.initAndReconcile:", err);
+}
+isSystemReady = true;
 server2.listen(Number(PORT), HOST, () => {
   console.log(`\u{1F680} MBA HUB Core Server running on http://${HOST}:${PORT}`);
   console.log(`\u{1F4E1} WebSocket stream active on ws://${HOST}:${PORT}/ws`);
@@ -232803,6 +233132,10 @@ var handleGracefulShutdown = (signal) => {
 };
 process.on("SIGTERM", () => handleGracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => handleGracefulShutdown("SIGINT"));
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  getSystemReady
+});
 /*! Bundled license information:
 
 depd/index.js:

@@ -927,6 +927,26 @@ export class TaskRepository {
   }
 
   /**
+   * Returns all tasks currently marked with in_queue = 1.
+   */
+  public static getInQueueTasks(): DesignTaskLog[] {
+    const db = this.getDb();
+    const rows = db.prepare('SELECT * FROM tasks WHERE in_queue = 1').all();
+    return rows.map((r: any) => this.rowToTask(r)).filter((t): t is DesignTaskLog => t !== null);
+  }
+
+  /**
+   * Returns tasks matching any of the specified statuses.
+   */
+  public static getTasksByStatuses(statuses: string[]): DesignTaskLog[] {
+    if (!statuses || statuses.length === 0) return [];
+    const db = this.getDb();
+    const placeholders = statuses.map(() => '?').join(', ');
+    const rows = db.prepare(`SELECT * FROM tasks WHERE status IN (${placeholders})`).all(...statuses);
+    return rows.map((r: any) => this.rowToTask(r)).filter((t): t is DesignTaskLog => t !== null);
+  }
+
+  /**
    * Returns total task count in SQLite.
    */
   public static getTotalTaskCount(): number {

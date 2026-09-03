@@ -31,6 +31,7 @@ import { DesignPipelineService } from './services/designPipelineService';
 import { TrademarkWhitelistService } from './services/trademarkWhitelistService';
 import { UpdateBackfillService } from './services/updateBackfillService';
 import { VisionOptimizationService } from './services/visionOptimizationService';
+import { TaskRecoveryService } from './services/taskRecoveryService';
 
 dotenv.config();
 
@@ -38,6 +39,14 @@ const currentDir = typeof __dirname !== 'undefined' ? __dirname : path.dirname(f
 
 const app = express();
 const server = http.createServer(app);
+
+// Readiness Gate state (Phase P3.1): Blocks mutating requests during crash recovery
+let isSystemReady = false;
+export function getSystemReady(): boolean {
+  return isSystemReady;
+}
+
+// WebSocket Server
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 const PORT = process.env.PORT || 3000;
@@ -65,6 +74,20 @@ UploadWorkerService.onStatusUpdate((status) => {
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Readiness Gate (Phase P3.1): Blocks mutating requests during crash recovery & reconciliation
+app.use((req, res, next) => {
+  if (isSystemReady) return next();
+  // Allow health checks, status checks, and static assets
+  if (req.method === 'GET' || req.path === '/api/health' || !req.path.startsWith('/api/v1/')) {
+    return next();
+  }
+  return res.status(503).json({
+    success: false,
+    error: 'SYSTEM_RECOVERY_IN_PROGRESS',
+    message: 'MBA Hub führt gerade die Crash-Recovery und Speicher-Reconciliation durch. Bitte in Kürze wiederholen.'
+  });
+});
 
 // In-Memory state for Queue and Stats
 let uploadQueue: any[] = [];
@@ -2035,29 +2058,41 @@ if (fs.existsSync(staticPath)) {
   });
 }
 
-// Initialize SQLite Task Storage
+// Phase P3.1 Startup Sequence:
+// 1. Initialize SQLite Task Storage
 TaskRepository.init();
+
+// 2. Ensure Queue is loaded into memory
+QueueService.ensureLoaded();
+
+// 3. Execute Crash Recovery & Cross-Storage Reconciliation BEFORE any mutating background service
+try {
+  TaskRecoveryService.initAndReconcile();
+} catch (err: any) {
+  console.error('[MBA Hub] 🚨 Critical failure during TaskRecoveryService.initAndReconcile:', err);
+}
+
+// 4. Unblock mutating API calls through the Readiness Gate
+isSystemReady = true;
 
 // Start Server
 server.listen(Number(PORT), HOST, () => {
   console.log(`🚀 MBA HUB Core Server running on http://${HOST}:${PORT}`);
   console.log(`📡 WebSocket stream active on ws://${HOST}:${PORT}/ws`);
 
-  // Initialize background SyncEngine scheduler based on persistent settings
+  // 5. Initialize background schedulers only AFTER recovery is complete
   try {
     SyncEngine.init();
   } catch (err: any) {
     console.warn('[MBA Hub] SyncEngine.init warning:', err.message);
   }
 
-  // Initialize ProductScannerService background scheduler
   try {
     ProductScannerService.init();
   } catch (err: any) {
     console.warn('[MBA Hub] ProductScannerService.init warning:', err.message);
   }
 
-  // Initialize UpdateBackfillService background scheduler
   try {
     const { UpdateBackfillService } = require('./services/updateBackfillService');
     UpdateBackfillService.startScheduler();

@@ -132,6 +132,10 @@ export class UploadWorkerService {
       return { success: false, message: 'Es läuft bereits ein Upload-Vorgang.' };
     }
 
+    if (QueueService.isCorrupted()) {
+      return { success: false, message: 'Upload blockiert: Queue-Speicher ist beschädigt (Fail-Closed Schutz aktiv).' };
+    }
+
     const state = QueueService.getState();
     const queueMode = state.uploadMode || 'draft';
     let targetItem: QueueItem | undefined;
@@ -215,6 +219,15 @@ export class UploadWorkerService {
     try {
       this.log(`🚀 Starte Upload für Task #${item.taskId} ("${item.title || item.designTitle}")${isUpdate ? ' [UPDATE-MODUS]' : ''}`, 'Initialisiere Session 2...', 5, 100);
 
+      // Set initial STARTING phase
+      QueueService.updateItemUploadRecovery(item.id, {
+        phase: 'STARTING',
+        action: effectiveMode === 'publish' ? 'PUBLISH' : 'SAVE_DRAFT',
+        attempt: (item.uploadRecovery?.attempt || 0) + 1,
+        startedAt: new Date().toISOString(),
+        recoveryReason: undefined
+      });
+
       // 1. Ensure Session 2 (Upload) is active
       const session = await BrowserSessionService.getSession('upload');
       const page = session.page;
@@ -223,6 +236,7 @@ export class UploadWorkerService {
 
       // 2. Navigate to Create or Edit Page
       this.log(`🌐 Öffne ${uploadUrl}`, isUpdate ? 'Öffne Merch Edit Seite...' : 'Öffne Merch Create Seite...', 10, 100);
+      QueueService.updateItemUploadRecovery(item.id, { phase: 'NAVIGATING' });
       await page.goto(uploadUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForTimeout(1500);
 
@@ -297,6 +311,7 @@ export class UploadWorkerService {
       }
 
       // 5. Select Products Modal (Intelligent Double-Check Selection)
+      QueueService.updateItemUploadRecovery(item.id, { phase: 'CONFIGURING' });
       this.log(`📦 Öffne 'Select Products' Modal...`, 'Konfiguriere Marktplätze...', 40, 100);
       await page.waitForTimeout(2000);
 
@@ -1480,6 +1495,7 @@ export class UploadWorkerService {
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
 
       // 8.5 Publish Guard V2: Check all product results
+      QueueService.updateItemUploadRecovery(item.id, { phase: 'VALIDATING' });
       const technicalFailures = productUploadResults.filter(r => r.status.startsWith('FAILED_'));
       const successfulCount = productUploadResults.filter(r => r.status === 'SUCCESS').length;
       const skippedCount = productUploadResults.filter(r => r.status.startsWith('SKIPPED_')).length;
@@ -1502,6 +1518,8 @@ export class UploadWorkerService {
       this.log(`✅ PUBLISH GUARD: Alle ${successfulCount} Produkte erfolgreich konfiguriert (${skippedCount} erwartete Skips). Freigabe erteilt!`);
 
       // 9. Final Action: Save Draft vs. Live Publish (with Strict Validation & State Verification)
+      QueueService.updateItemUploadRecovery(item.id, { phase: 'READY_TO_SUBMIT' });
+
       if (mode === 'publish') {
         if (this.pauseBeforePublishRequested) {
           this.isPausedBeforePublish = true;
@@ -1543,6 +1561,13 @@ export class UploadWorkerService {
           throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(' | ')}`);
         }
 
+        // CRITICAL WRITE-AHEAD REMOTE INTENT: Flush to disk BEFORE any remote submission!
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: 'REMOTE_ACTION_INTENT',
+          action: 'PUBLISH',
+          remoteActionIntentAt: new Date().toISOString()
+        });
+
         await page.evaluate(() => {
           const submitBtn = document.getElementById('submit-button') || document.querySelector('button[id*="submit"], button.btn-submit') as HTMLElement;
           submitBtn?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1552,10 +1577,23 @@ export class UploadWorkerService {
         this.log(`⏳ Warte auf Bestätigungs-Modal...`, 'Bestätige Publish...');
         const confirmBtn = await page.waitForSelector('.modal-footer .btn-primary.btn-submit, button.btn-submit', { timeout: 15000 });
         if (!confirmBtn) throw new Error('Bestätigungs-Button im Publish-Modal nicht gefunden.');
+
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: 'AWAITING_AMAZON_CONFIRMATION',
+          action: 'PUBLISH'
+        });
+
         await confirmBtn.click();
 
         this.log(`⏳ Warte auf finale Amazon-Bestätigung (#redirect-manage)...`, 'Warte auf Bestätigung...');
         await page.waitForSelector('#redirect-manage, a[href*="/manage"]', { timeout: 60000 });
+
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: 'AMAZON_CONFIRMED',
+          action: 'PUBLISH',
+          amazonConfirmedAt: new Date().toISOString()
+        });
+
         this.log(`🎉 Design erfolgreich auf Amazon Merch veröffentlicht!`, 'Erfolgreich veröffentlicht ✓', 100, 100);
       } else {
         this.log(`💾 Klicke 'Save Draft' Button für Entwurf-Speicherung...`, 'Speichere Entwurf...', 95, 100);
@@ -1585,6 +1623,13 @@ export class UploadWorkerService {
           throw new Error(`Save-Draft Button ist deaktiviert. Formularfehler: ${draftCheck.errors.join(' | ')}`);
         }
 
+        // CRITICAL WRITE-AHEAD REMOTE INTENT: Flush to disk BEFORE any remote action!
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: 'REMOTE_ACTION_INTENT',
+          action: 'SAVE_DRAFT',
+          remoteActionIntentAt: new Date().toISOString()
+        });
+
         await page.evaluate(() => {
           const draftBtn = (document.getElementById('draft-button') 
             || document.getElementById('save-as-draft-button')
@@ -1595,6 +1640,11 @@ export class UploadWorkerService {
             draftBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
             draftBtn.click();
           }
+        });
+
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: 'AWAITING_AMAZON_CONFIRMATION',
+          action: 'SAVE_DRAFT'
         });
 
         // Wait for Draft Saved confirmation message/toast or timer
@@ -1608,6 +1658,12 @@ export class UploadWorkerService {
         } catch (e) {
           this.log(`⏳ Wartezeit nach Save-Draft beendet...`);
         }
+
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: 'AMAZON_CONFIRMED',
+          action: 'SAVE_DRAFT',
+          amazonConfirmedAt: new Date().toISOString()
+        });
 
         // Navigate to https://merch.amazon.com/dashboard
         this.log(`🏠 Navigiere zurück zum Dashboard (https://merch.amazon.com/dashboard)...`, 'Navigiere zu Dashboard...');

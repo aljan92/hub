@@ -1025,5 +1025,45 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - `tests/unifiedFinalizationAndCustomResize.test.ts`: Alle 10 Tests bestanden.
   - `npm run build`: Production Build fehlerfrei abgeschlossen.
 
+### 10.38 Phase P3.1 – Recovery Foundation, Queue Durability & Upload Crash Safety
+- **Problemstellung & Audit-Erkenntnisse:**
+  - `upload_queue.json` wurde bisher ungeschützt via einfachem `fs.writeFileSync` ohne `fsync`, ohne Backup-Rotation (`.bak`) und ohne atomares Rename geschrieben.
+  - Ein Crash während des Queue-Schreibens konnte zur Zerstörung der Datei führen; `loadQueue` setzte `this.items = []` bei Lesefehlern zurück (gefährlicher Datenverlust).
+  - Ein persistiertes `status = UPLOADING` unterschied nicht, ob der Worker noch vor dem Remote-Submit war (sicher wiederholbar) oder ob der Submit-Request bereits an Amazon gesendet wurde (Gefahr doppelter Uploads / Account-Banns).
+  - `QueueItem` und `DesignTaskLog` fehlte eine persistente Phasen-Zustandsmaschine mit Write-Ahead Intent.
+  - Serverstart startete Background-Scheduler, bevor DB- und Queue-Zustände abgeglichen waren.
+- **Implementierte Architektur & Lösungen:**
+  1. **Upload Phase State Machine & Write-Ahead Remote Intent:**
+     - `QueueItem` um `uploadRecovery` erweitert (`phase`, `action`, `attempt`, `startedAt`, `lastHeartbeatAt`, `remoteActionIntentAt`, `amazonConfirmedAt`, `recoveryReason`).
+     - Phasen: `STARTING` → `NAVIGATING` → `CONFIGURING` → `VALIDATING` → `READY_TO_SUBMIT` → **`REMOTE_ACTION_INTENT`** → `AWAITING_AMAZON_CONFIRMATION` → `AMAZON_CONFIRMED`.
+     - **Strikte Write-Ahead Intent Boundary:** Unmittelbar vor dem Klick auf `submitBtn` (Publish) bzw. `draftBtn` (Save Draft) wird `REMOTE_ACTION_INTENT` mit `action: 'PUBLISH' | 'SAVE_DRAFT'` atomar auf die Festplatte geflusht. Schlägt der Festplatten-Write fehl, bricht der Worker sofort mit Exception ab – der Amazon-Button wird **niemals** geklickt!
+     - Erst nach Amazon-Bestätigung (`#redirect-manage` bzw. Draft Saved Toast) wird `AMAZON_CONFIRMED` persistiert und der Task auf `COMPLETED` gesetzt.
+  2. **Queue Persistence Hardening & Fail-Closed Storage:**
+     - `QueueService.loadQueue()` und `saveQueue()` nutzen jetzt `atomicWriteJson` und `loadJsonWithBackupRecovery` aus `atomicFileStorage.ts` (fsync, Parent-Dir-Sync, `.bak`-Rotation).
+     - Wenn sowohl `upload_queue.json` als auch `.bak` beschädigt sind: `isStorageCorrupted = true`. Die Queue wird **nicht** geleert. Writes werden blockiert und `UploadWorkerService.startUpload()` wird sofort abgewiesen (Fail-Closed).
+  3. **Deterministische Reconciliation via `TaskRecoveryService` (`src/server/services/taskRecoveryService.ts`):**
+     - Wird beim Systemstart ausgeführt, bevor Scheduler oder mutating APIs aktiv werden.
+     - Hängende `UPLOADING`-Items:
+       - Phase `STARTING` bis `READY_TO_SUBMIT` (Pre-Remote): Sicher wiederholbar → automatisch auf `WAITING` zurückgesetzt, `attempt` inkrementiert.
+       - Phase `REMOTE_ACTION_INTENT` oder `AWAITING_AMAZON_CONFIRMATION` (Post-Intent): Nicht idempotent → Eskalation auf `ERROR` in Queue und `AWAITING_RECOVERY_REVIEW` / Checkpoint `RECOVERY_REVIEW` im SQLite-Task (kein automatischer Retry).
+       - Phase `AMAZON_CONFIRMED`: Amazon hatte bereits bestätigt → deterministisch auf `COMPLETED` gesetzt.
+       - Legacy `UPLOADING` ohne Phase: Konservatives Fail-Closed → Eskalation auf `AWAITING_RECOVERY_REVIEW`.
+     - Cross-Storage Reconciliation:
+       - Existiert ein Queue-Item, aber `task.inQueue === false`: Task-Projektion wird auf `inQueue = true` und `status = 'COMPLETED'` korrigiert.
+       - Waisen-Queue-Items werden sicher erkannt; `UPLOADING`-Waisen werden niemals gelöscht.
+     - Zombie-Task Scan: Erkennt und zählt Tasks in Zwischenzuständen (`PROCESSING`, `GENERATING_LISTING`, etc.) im Recovery-Report (Auto-Resume folgt in Phase P3.2).
+  4. **Startup-Reihenfolge & Readiness Gate (`src/server/index.ts`):**
+     - Strikte Reihenfolge: `TaskRepository.init()` → `QueueService.ensureLoaded()` → `TaskRecoveryService.initAndReconcile()` → erst danach `isSystemReady = true` und Start von `SyncEngine`, `ProductScannerService`, `UpdateBackfillService` und Browser-Prewarming.
+     - Readiness Gate Middleware: Während der Recovery antworten mutierende API-Endpunkte unter `/api/v1/` mit HTTP 503 `SYSTEM_RECOVERY_IN_PROGRESS`.
+  5. **UI & Metadata:**
+     - `TaskStatus`: `'AWAITING_RECOVERY_REVIEW'` und `CheckpointType`: `'RECOVERY_REVIEW'` hinzugefügt.
+     - `DesignTaskLog`: Feld `recovery` für Wiederherstellungsversuche und Gründe.
+     - `TaskStatusBadge.tsx`: Rotes animiertes Status-Badge `Wartet: Recovery-Review` integriert.
+- **Verifikation:**
+  - `tests/taskRecoveryP3_1.test.ts`: Alle 10 Tests (A bis J) erfolgreich bestanden.
+  - `tests/taskSqliteMigrationP2.test.ts`: Alle Tests bestanden.
+  - `npm run build`: Client- und Server-Builds fehlerfrei kompiliert.
+
+
 
 

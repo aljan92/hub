@@ -15,6 +15,7 @@ export type TaskStatus =
   | 'TRANSLATING_LISTING'
   | 'VECTORIZING_DESIGN'
   | 'AWAITING_SVG_REVIEW'
+  | 'AWAITING_RECOVERY_REVIEW'
   | 'UPDATE_EXTRACTED'
   | 'UPDATE_DOWNLOADING_ARTWORK'
   | 'UPDATE_ARTWORK_READY'
@@ -30,7 +31,7 @@ export type TaskStatus =
 
 export type EventCategory = 'SYSTEM' | 'OPENROUTER' | 'TRADEMARK' | 'IDEOGRAM' | 'VECTORIZE' | 'ERROR';
 
-export type CheckpointType = 'PRE_FLIGHT' | 'DESIGN_REVIEW' | 'TM_REVIEW' | 'SVG_REVIEW' | 'UPDATE_REVIEW';
+export type CheckpointType = 'PRE_FLIGHT' | 'DESIGN_REVIEW' | 'TM_REVIEW' | 'SVG_REVIEW' | 'UPDATE_REVIEW' | 'RECOVERY_REVIEW';
 
 export type EventType = 
   | 'INCOMING_PAYLOAD'
@@ -137,6 +138,13 @@ export interface DesignTaskLog {
   };
   hasError?: boolean;
   errorDetails?: string;
+  recovery?: {
+    recoveryAttempts: number;
+    lastAttemptAt?: string;
+    interruptedStatus?: TaskStatus;
+    interruptedStep?: string;
+    recoveryReason?: string;
+  };
 }
 
 export type RetryStepType = 
