@@ -231722,6 +231722,12 @@ function getUploadFitPolicy(product) {
   return { required, blocked: required && product.fitDiscoveryStatus === "FAILED" };
 }
 
+// src/server/services/uploadColorPolicy.ts
+function isUploadColorBlocked(product) {
+  if (product.colorMode === "none" || product.colorMode === "customPicker") return false;
+  return product.colorMode !== "predefined" || product.colorDiscoveryStatus === "FAILED";
+}
+
 // src/server/services/listingReadback.ts
 function buildListingExpectations(listings, translated) {
   const fields = [
@@ -232343,13 +232349,13 @@ var UploadWorkerService = class _UploadWorkerService {
           });
           continue;
         }
-        if (product.colorDiscoveryStatus === "FAILED") {
+        if (isUploadColorBlocked(product)) {
           this.log(`\u274C Farbentdeckung f\xFCr "${product.displayName}" war fehlgeschlagen (colorDiscoveryStatus = FAILED)!`);
           productUploadResults.push({
             productId: product.id,
             amazonKey: product.amazon?.key || product.id,
             status: "FAILED_COLOR_CONFIGURATION",
-            reason: `Farbentdeckung f\xFCr ${product.displayName} im Produktkatalog ist unvollst\xE4ndig (colorDiscoveryStatus = FAILED)`
+            reason: `Farbmodus ${product.colorMode} oder Swatch-Scan f\xFCr ${product.displayName} ist nicht best\xE4tigt (${product.colorDiscoveryStatus || "unbekannt"})`
           });
           continue;
         }
@@ -232528,8 +232534,14 @@ var UploadWorkerService = class _UploadWorkerService {
                 colorBtn.click();
                 await sleep2(500);
               }
-              const popoverId = colorBtn.getAttribute("aria-describedby");
-              const popover = (popoverId ? document.getElementById(popoverId) : null) || document.querySelector("ngb-popover-window, color-sketch, .color-picker-popover, .sketch-picker");
+              let popover = null;
+              for (let attempt = 0; attempt < 30; attempt++) {
+                const popoverId = colorBtn.getAttribute("aria-describedby");
+                popover = (popoverId ? document.getElementById(popoverId) : null) || inputContainer.querySelector("ngb-popover-window, color-sketch, .color-picker-popover, .sketch-picker");
+                if (popover) break;
+                await sleep2(100);
+              }
+              if (!popover) throw new Error("FAILED_COLOR_CONFIGURATION: Zugeh\xF6riger Color-Picker wurde nicht ge\xF6ffnet");
               if (popover) {
                 const swatches = Array.from(popover.querySelectorAll(".sketch-swatches div, .sketch-swatches span, .sketch-swatches [title], .sketch-swatches [style]"));
                 let matchedSwatch = null;
@@ -232561,9 +232573,7 @@ var UploadWorkerService = class _UploadWorkerService {
                     hexInput = hexSpan.closest(".wrap")?.querySelector("input") || hexSpan.parentElement?.querySelector("input");
                   }
                 }
-                if (!hexInput) {
-                  hexInput = popover.querySelector('input[type="text"]') || popover.querySelector("input");
-                }
+                if (!hexInput) throw new Error("FAILED_COLOR_CONFIGURATION: Eindeutiges Hex-Feld im Color-Picker fehlt");
                 if (hexInput) {
                   hexInput.focus();
                   hexInput.value = "";
@@ -232584,6 +232594,26 @@ var UploadWorkerService = class _UploadWorkerService {
                   colorBtn.click();
                   await sleep2(200);
                 }
+                colorBtn.click();
+                let verifiedHex = false;
+                let stableReads = 0;
+                for (let attempt = 0; attempt < 30; attempt++) {
+                  await sleep2(100);
+                  const id = colorBtn.getAttribute("aria-describedby");
+                  const currentPicker = (id ? document.getElementById(id) : null) || inputContainer.querySelector("color-sketch, .color-picker-popover, .sketch-picker");
+                  let currentHex = currentPicker?.querySelector('color-editable-input[label="hex"] input');
+                  if (!currentHex && currentPicker) {
+                    const label = Array.from(currentPicker.querySelectorAll("span")).find((el) => el.textContent?.trim().toLowerCase() === "hex");
+                    currentHex = label?.closest(".wrap")?.querySelector("input") || label?.parentElement?.querySelector("input");
+                  }
+                  stableReads = currentHex?.value.replace(/^#/, "").toUpperCase() === cleanHex ? stableReads + 1 : 0;
+                  if (stableReads >= 2) {
+                    verifiedHex = true;
+                    break;
+                  }
+                }
+                if (!verifiedHex) throw new Error("FAILED_COLOR_CONFIGURATION: Hex-Farbwert nach erneutem \xD6ffnen nicht best\xE4tigt");
+                if (colorBtn.hasAttribute("aria-describedby")) colorBtn.click();
                 finalActiveColorNames.push(`#${cleanHex}`);
               }
             } else {
@@ -232592,8 +232622,14 @@ var UploadWorkerService = class _UploadWorkerService {
                 directHex.value = cleanHex;
                 directHex.dispatchEvent(new Event("input", { bubbles: true }));
                 directHex.dispatchEvent(new Event("change", { bubbles: true }));
+                directHex.blur();
+                await sleep2(300);
+                const currentHex = inputContainer.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]');
+                if (currentHex?.value.replace(/^#/, "").toUpperCase() !== cleanHex) {
+                  throw new Error("FAILED_COLOR_CONFIGURATION: Direkter Hex-Farbwert wurde nicht \xFCbernommen");
+                }
                 finalActiveColorNames.push(`#${cleanHex}`);
-              }
+              } else throw new Error("FAILED_COLOR_CONFIGURATION: Color-Picker und direktes Hex-Feld fehlen im Produkteditor");
             }
           } else {
             const colorCheckboxes = Array.from(inputContainer.querySelectorAll('colorcheckbox, .color-checkbox, flowcheckbox[class*="color"]')).filter((el) => {

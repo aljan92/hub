@@ -1260,3 +1260,11 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Erwartungswerte stammen aus den integritätsgeprüften Queue-Listings; EN-Fallback und JP→JA entsprechen der bisherigen Befüllung. Zeilenenden werden verglichen normalisiert, sonst exakter Textvergleich.
 - Kein stilles Kürzen/Trimmen beim Schreiben: Überschrittene Feldlimits werden vorab gemeldet. Der englische Root-Fallback darf keine fremden Sprachfelder überschreiben.
 - `tests/listingReadback.test.ts` prüft den tatsächlichen Browser-Verifier in isoliertem Chromium. Kein Live-Amazon-Submit im Test; Remote-Persistenz wird dadurch nicht nachgewiesen.
+
+### 10.53 Farb-Guard nach Katalogmodus
+
+- `none` überspringt Farben; `customPicker` erfordert keine Swatch-Discovery. Bei `predefined` bleibt ein fehlgeschlagener Farbscan blockierend; `failed`/unbekannte Modi blockieren immer.
+- Picker-Popovers dürfen nur über die Button-Zuordnung oder innerhalb des verifizierten Editors gefunden werden, nicht beliebig global. Fehlendes eindeutiges Hex-Feld ist ein Fehler.
+- Nach Eingabe wird ein Popover geschlossen und erneut geöffnet; der zurückgelesene Hex-Wert muss zweimal dem Soll entsprechen. Direkte Hex-Felder werden nach Change/Blur erneut gelesen. Nicht übernommene Werte blockieren den Upload.
+- Die bestehende Behandlung gesperrter veröffentlichter Produkte bleibt erhalten. Keine Produkt-Ausnahmen und kein Umschreiben des Scanstatus.
+- `tests/uploadColorPolicy.test.ts` testet Policy und tatsächlichen Browser-Konfigurationscode mit akzeptierter/abgelehnter Änderung und fehlendem Picker in isoliertem Chromium.

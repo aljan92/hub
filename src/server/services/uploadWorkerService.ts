@@ -13,6 +13,7 @@ import { RemoteBaselineInfo } from '../../types/tasks';
 import { Page } from 'playwright';
 import { buildUploadProductSelection } from './uploadProductSelection';
 import { getUploadFitPolicy } from './uploadFitPolicy';
+import { isUploadColorBlocked } from './uploadColorPolicy';
 import { buildListingExpectations, verifyListingReadback } from './listingReadback';
 
 export interface UploadProgressState {
@@ -783,13 +784,13 @@ export class UploadWorkerService {
           continue;
         }
 
-        if (product.colorDiscoveryStatus === 'FAILED') {
+        if (isUploadColorBlocked(product)) {
           this.log(`❌ Farbentdeckung für "${product.displayName}" war fehlgeschlagen (colorDiscoveryStatus = FAILED)!`);
           productUploadResults.push({
             productId: product.id,
             amazonKey: product.amazon?.key || product.id,
             status: 'FAILED_COLOR_CONFIGURATION',
-            reason: `Farbentdeckung für ${product.displayName} im Produktkatalog ist unvollständig (colorDiscoveryStatus = FAILED)`
+            reason: `Farbmodus ${product.colorMode} oder Swatch-Scan für ${product.displayName} ist nicht bestätigt (${product.colorDiscoveryStatus || 'unbekannt'})`
           });
           continue;
         }
@@ -1037,9 +1038,15 @@ export class UploadWorkerService {
                 await sleep(500);
               }
 
-              const popoverId = colorBtn.getAttribute('aria-describedby');
-              const popover = (popoverId ? document.getElementById(popoverId) : null)
-                || document.querySelector('ngb-popover-window, color-sketch, .color-picker-popover, .sketch-picker') as HTMLElement;
+              let popover: Element | null = null;
+              for (let attempt = 0; attempt < 30; attempt++) {
+                const popoverId = colorBtn.getAttribute('aria-describedby');
+                popover = (popoverId ? document.getElementById(popoverId) : null)
+                  || inputContainer.querySelector('ngb-popover-window, color-sketch, .color-picker-popover, .sketch-picker');
+                if (popover) break;
+                await sleep(100);
+              }
+              if (!popover) throw new Error('FAILED_COLOR_CONFIGURATION: Zugehöriger Color-Picker wurde nicht geöffnet');
 
               if (popover) {
                 // 1. Check palette swatches
@@ -1076,9 +1083,7 @@ export class UploadWorkerService {
                     hexInput = (hexSpan.closest('.wrap')?.querySelector('input') || hexSpan.parentElement?.querySelector('input')) as HTMLInputElement;
                   }
                 }
-                if (!hexInput) {
-                  hexInput = (popover.querySelector('input[type="text"]') || popover.querySelector('input')) as HTMLInputElement;
-                }
+                if (!hexInput) throw new Error('FAILED_COLOR_CONFIGURATION: Eindeutiges Hex-Feld im Color-Picker fehlt');
 
                 if (hexInput) {
                   hexInput.focus();
@@ -1104,6 +1109,27 @@ export class UploadWorkerService {
                   await sleep(200);
                 }
 
+                // Reopen and re-read after blur/close so a rejected framework
+                // update is not mistaken for the value we just assigned.
+                colorBtn.click();
+                let verifiedHex = false;
+                let stableReads = 0;
+                for (let attempt = 0; attempt < 30; attempt++) {
+                  await sleep(100);
+                  const id = colorBtn.getAttribute('aria-describedby');
+                  const currentPicker = (id ? document.getElementById(id) : null)
+                    || inputContainer.querySelector('color-sketch, .color-picker-popover, .sketch-picker');
+                  let currentHex = currentPicker?.querySelector('color-editable-input[label="hex"] input') as HTMLInputElement | null;
+                  if (!currentHex && currentPicker) {
+                    const label = Array.from(currentPicker.querySelectorAll('span')).find(el => el.textContent?.trim().toLowerCase() === 'hex');
+                    currentHex = (label?.closest('.wrap')?.querySelector('input') || label?.parentElement?.querySelector('input')) as HTMLInputElement | null;
+                  }
+                  stableReads = currentHex?.value.replace(/^#/, '').toUpperCase() === cleanHex ? stableReads + 1 : 0;
+                  if (stableReads >= 2) { verifiedHex = true; break; }
+                }
+                if (!verifiedHex) throw new Error('FAILED_COLOR_CONFIGURATION: Hex-Farbwert nach erneutem Öffnen nicht bestätigt');
+                if (colorBtn.hasAttribute('aria-describedby')) colorBtn.click();
+
                 finalActiveColorNames.push(`#${cleanHex}`);
               }
             } else {
@@ -1113,8 +1139,14 @@ export class UploadWorkerService {
                 directHex.value = cleanHex;
                 directHex.dispatchEvent(new Event('input', { bubbles: true }));
                 directHex.dispatchEvent(new Event('change', { bubbles: true }));
+                directHex.blur();
+                await sleep(300);
+                const currentHex = inputContainer.querySelector('input[type="text"][id*="hex"], input[type="text"][placeholder*="Hex"]') as HTMLInputElement | null;
+                if (currentHex?.value.replace(/^#/, '').toUpperCase() !== cleanHex) {
+                  throw new Error('FAILED_COLOR_CONFIGURATION: Direkter Hex-Farbwert wurde nicht übernommen');
+                }
                 finalActiveColorNames.push(`#${cleanHex}`);
-              }
+              } else throw new Error('FAILED_COLOR_CONFIGURATION: Color-Picker und direktes Hex-Feld fehlen im Produkteditor');
             }
           } else {
             // Swatches Mode (Predefined Colors) - only visible swatches in open editor
