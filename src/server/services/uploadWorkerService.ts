@@ -210,6 +210,64 @@ export class UploadWorkerService {
   }
 
   /**
+   * Resilient matcher for Amazon save/publish responses.
+   * Ensures non-submission POST requests (e.g. FindListings, ratelimiter, telemetry)
+   * are never mistakenly matched as design submission responses.
+   */
+  public static isAmazonSubmissionResponse(resp: any, action: 'PUBLISH' | 'SAVE_DRAFT'): boolean {
+    const req = resp.request();
+    if (req.method() !== 'POST') return false;
+
+    const url = resp.url();
+    if (!url.includes('merch.amazon.com')) return false;
+
+    // Explicitly reject non-submission background endpoints
+    if (
+      url.includes('FindListings') || 
+      url.includes('ratelimiter') || 
+      url.includes('reporting') || 
+      url.includes('retrieveSettingGroup') ||
+      url.includes('telemetry') ||
+      url.includes('logging') ||
+      url.includes('analytics')
+    ) {
+      return false;
+    }
+
+    // Match concrete ProductConfiguration write endpoints or Coral submission services
+    const isProdConfigSave = url.includes('/api/productconfiguration/save') ||
+                             url.includes('/api/productconfiguration/publish') ||
+                             url.includes('/api/productconfiguration/submit') ||
+                             url.includes('/api/productconfiguration/');
+
+    const isCoralSubmit = url.includes('/api/ng-amazon/coral/') &&
+                          !url.includes('FindListings') &&
+                          (url.includes('Publish') || url.includes('Save') || url.includes('Design') || url.includes('Submit'));
+
+    if (!isProdConfigSave && !isCoralSubmit) return false;
+
+    // Inspect request payload to ensure it is an actual design submission
+    try {
+      const postData = req.postData();
+      if (postData) {
+        if (postData.includes('FindListingsRequest')) return false;
+        const hasDesignPayload = 
+          postData.includes('textData') || 
+          postData.includes('products') || 
+          postData.includes('marketplaceData') || 
+          postData.includes('artworkInstructions') ||
+          postData.includes('dimensions');
+
+        if (!hasDesignPayload) return false;
+      }
+    } catch {
+      // Allow if URL matches specific save/publish path
+    }
+
+    return true;
+  }
+
+  /**
    * Main Upload Execution Pipeline
    */
   private static async executeUploadPipeline(item: QueueItem, mode: 'draft' | 'publish') {
@@ -1601,7 +1659,7 @@ export class UploadWorkerService {
 
         // STEP 2: Prepare Network Listener BEFORE triggering the remote request!
         const responsePromise = page.waitForResponse(
-          resp => (resp.url().includes('/api/productconfiguration/') || resp.url().includes('/api/ng-amazon/coral/')) && resp.request().method() === 'POST',
+          resp => UploadWorkerService.isAmazonSubmissionResponse(resp, 'PUBLISH'),
           { timeout: 35000 }
         ).catch(() => null);
 
@@ -1696,7 +1754,7 @@ export class UploadWorkerService {
 
         // STEP 1: Prepare Network Listener BEFORE clicking draft button!
         const responsePromise = page.waitForResponse(
-          resp => (resp.url().includes('/api/productconfiguration/') || resp.url().includes('/api/ng-amazon/coral/')) && resp.request().method() === 'POST',
+          resp => UploadWorkerService.isAmazonSubmissionResponse(resp, 'SAVE_DRAFT'),
           { timeout: 35000 }
         ).catch(() => null);
 

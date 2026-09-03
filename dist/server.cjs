@@ -231398,7 +231398,7 @@ init_syncEngine();
 init_amazonInspectService();
 init_amazonRecoveryVerificationService();
 init_taskRepository();
-var UploadWorkerService = class {
+var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
   static isPausedBeforePublish = false;
   static pauseBeforePublishRequested = false;
@@ -231548,6 +231548,33 @@ var UploadWorkerService = class {
    */
   static sanitizeListingText(text2, locale = "en") {
     return ListingSanitizationService.sanitizeText(text2);
+  }
+  /**
+   * Resilient matcher for Amazon save/publish responses.
+   * Ensures non-submission POST requests (e.g. FindListings, ratelimiter, telemetry)
+   * are never mistakenly matched as design submission responses.
+   */
+  static isAmazonSubmissionResponse(resp, action) {
+    const req = resp.request();
+    if (req.method() !== "POST") return false;
+    const url = resp.url();
+    if (!url.includes("merch.amazon.com")) return false;
+    if (url.includes("FindListings") || url.includes("ratelimiter") || url.includes("reporting") || url.includes("retrieveSettingGroup") || url.includes("telemetry") || url.includes("logging") || url.includes("analytics")) {
+      return false;
+    }
+    const isProdConfigSave = url.includes("/api/productconfiguration/save") || url.includes("/api/productconfiguration/publish") || url.includes("/api/productconfiguration/submit") || url.includes("/api/productconfiguration/");
+    const isCoralSubmit = url.includes("/api/ng-amazon/coral/") && !url.includes("FindListings") && (url.includes("Publish") || url.includes("Save") || url.includes("Design") || url.includes("Submit"));
+    if (!isProdConfigSave && !isCoralSubmit) return false;
+    try {
+      const postData = req.postData();
+      if (postData) {
+        if (postData.includes("FindListingsRequest")) return false;
+        const hasDesignPayload = postData.includes("textData") || postData.includes("products") || postData.includes("marketplaceData") || postData.includes("artworkInstructions") || postData.includes("dimensions");
+        if (!hasDesignPayload) return false;
+      }
+    } catch {
+    }
+    return true;
   }
   /**
    * Main Upload Execution Pipeline
@@ -232598,7 +232625,7 @@ var UploadWorkerService = class {
         const confirmBtn = await page.waitForSelector(".modal-footer .btn-primary.btn-submit, button.btn-submit", { timeout: 15e3 });
         if (!confirmBtn) throw new Error("Best\xE4tigungs-Button im Publish-Modal nicht gefunden.");
         const responsePromise = page.waitForResponse(
-          (resp) => (resp.url().includes("/api/productconfiguration/") || resp.url().includes("/api/ng-amazon/coral/")) && resp.request().method() === "POST",
+          (resp) => _UploadWorkerService.isAmazonSubmissionResponse(resp, "PUBLISH"),
           { timeout: 35e3 }
         ).catch(() => null);
         QueueService.updateItemUploadRecovery(item.id, {
@@ -232668,7 +232695,7 @@ var UploadWorkerService = class {
           throw new Error(`Save-Draft Button ist deaktiviert. Formularfehler: ${draftCheck.errors.join(" | ")}`);
         }
         const responsePromise = page.waitForResponse(
-          (resp) => (resp.url().includes("/api/productconfiguration/") || resp.url().includes("/api/ng-amazon/coral/")) && resp.request().method() === "POST",
+          (resp) => _UploadWorkerService.isAmazonSubmissionResponse(resp, "SAVE_DRAFT"),
           { timeout: 35e3 }
         ).catch(() => null);
         QueueService.updateItemUploadRecovery(item.id, {

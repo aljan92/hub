@@ -8,6 +8,7 @@ import { TaskRecoveryService } from '../src/server/services/taskRecoveryService'
 import { AmazonRecoveryVerificationService } from '../src/server/services/amazonRecoveryVerificationService';
 import { AmazonInspectService } from '../src/server/services/amazonInspectService';
 import { TaskExecutionLock } from '../src/server/services/taskExecutionLock';
+import { UploadWorkerService } from '../src/server/services/uploadWorkerService';
 
 const TEST_DIR = path.resolve(process.cwd(), 'scratch', `test_p3_3_${Date.now()}`);
 const TEST_DB_PATH = path.join(TEST_DIR, 'test_hub.sqlite');
@@ -506,6 +507,51 @@ async function runTests() {
 
     // Restore original
     AmazonInspectService.inspectProductConfig = origInspectProductConfig;
+
+    // ----------------------------------------------------
+    // Test 13: Narrow Response Matcher (Excludes FindListings & Telemetry)
+    // ----------------------------------------------------
+    console.log('Test 13: Narrow Response Matcher validation...');
+    // 1. FindListings POST must be rejected!
+    const mockFindListingsResp = {
+      request: () => ({
+        method: () => 'POST',
+        postData: () => JSON.stringify({ __type: 'com.amazon.merch.search#FindListingsRequest' })
+      }),
+      url: () => 'https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings'
+    };
+    assert.strictEqual(UploadWorkerService.isAmazonSubmissionResponse(mockFindListingsResp, 'PUBLISH'), false, 'FindListings POST must NOT match as submission response');
+
+    // 2. Ratelimiter / Telemetry POST must be rejected!
+    const mockRatelimiterResp = {
+      request: () => ({
+        method: () => 'POST',
+        postData: () => '{}'
+      }),
+      url: () => 'https://merch.amazon.com/api/ratelimiter/metadata'
+    };
+    assert.strictEqual(UploadWorkerService.isAmazonSubmissionResponse(mockRatelimiterResp, 'PUBLISH'), false, 'Ratelimiter POST must NOT match as submission response');
+
+    // 3. Concrete ProductConfiguration Save POST must match!
+    const mockValidSaveResp = {
+      request: () => ({
+        method: () => 'POST',
+        postData: () => JSON.stringify({ textData: { en: { title: 'Test' } }, products: {} })
+      }),
+      url: () => 'https://merch.amazon.com/api/productconfiguration/save'
+    };
+    assert.strictEqual(UploadWorkerService.isAmazonSubmissionResponse(mockValidSaveResp, 'SAVE_DRAFT'), true, 'Valid save response with design payload must match');
+
+    // 4. GET request must never match
+    const mockGetResp = {
+      request: () => ({
+        method: () => 'GET',
+        postData: () => null
+      }),
+      url: () => 'https://merch.amazon.com/api/productconfiguration/get?id=123'
+    };
+    assert.strictEqual(UploadWorkerService.isAmazonSubmissionResponse(mockGetResp, 'PUBLISH'), false, 'GET requests must never match');
+    console.log('  ✓ Response matcher strictly rejects non-submission requests and accepts genuine design submissions\n');
 
     console.log('====================================================');
     console.log('🎉 ALL P3.3 TESTS PASSED SUCCESSFULLY!');
