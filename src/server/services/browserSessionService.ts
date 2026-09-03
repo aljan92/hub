@@ -256,7 +256,7 @@ export class BrowserSessionService {
     try {
       await session.cdp.send('Page.startScreencast', {
         format: 'jpeg',
-        quality: 80,
+        quality: 72,
         maxWidth: 1440,
         maxHeight: 900,
         everyNthFrame: 1
@@ -279,6 +279,19 @@ export class BrowserSessionService {
       console.log(`[BrowserSession] Screencast active for session: ${type}`);
     } catch (err: any) {
       console.error(`[BrowserSession] Failed to start screencast for ${type}:`, err.message);
+    }
+  }
+
+  /**
+   * Immediately interrupt all Playwright work on one session without closing the
+   * shared persistent browser context. The next getSession() call creates a fresh page.
+   */
+  static async closeSessionPage(type: BrowserSessionType): Promise<void> {
+    const session = this.sessions.get(type);
+    this.sessions.delete(type);
+    this.latestFrames.delete(type);
+    if (session && !session.page.isClosed()) {
+      await session.page.close().catch(() => {});
     }
   }
 
@@ -453,11 +466,7 @@ export class BrowserSessionService {
    */
   static async restartSession(type: BrowserSessionType): Promise<{ success: boolean; message: string }> {
     try {
-      const existing = this.sessions.get(type);
-      if (existing && !existing.page.isClosed()) {
-        await existing.page.close().catch(() => {});
-      }
-      this.sessions.delete(type);
+      await this.closeSessionPage(type);
 
       // Launch fresh page with shared cookies/profile
       await this.getSession(type);

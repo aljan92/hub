@@ -28,12 +28,18 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [hasReceivedFrame, setHasReceivedFrame] = useState<boolean>(false);
   const [fps, setFps] = useState<number>(0);
+  const [streamLagMs, setStreamLagMs] = useState<number>(0);
+  const [droppedFrames, setDroppedFrames] = useState<number>(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const frameCountRef = useRef<number>(0);
+  const droppedFrameCountRef = useRef<number>(0);
+  const latestStreamLagRef = useRef<number>(0);
   const lastFpsCheckRef = useRef<number>(Date.now());
   const activeSessionRef = useRef<BrowserSessionType>(activeSession);
+  const pendingFrameRef = useRef<{ data: string; sentAt?: number } | null>(null);
+  const isDecodingFrameRef = useRef(false);
 
   // Keep ref synchronized
   useEffect(() => {
@@ -43,6 +49,33 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
   // Frame Cache per session for 0ms instant tab switching
   const cachedFramesRef = useRef<Record<BrowserSessionType, string | null>>({ sync: null, upload: null });
 
+  const renderLatestFrame = useCallback(() => {
+    if (isDecodingFrameRef.current) return;
+    const nextFrame = pendingFrameRef.current;
+    const canvas = canvasRef.current;
+    if (!nextFrame || !canvas) return;
+
+    pendingFrameRef.current = null;
+    isDecodingFrameRef.current = true;
+    const img = new Image();
+    const finish = () => {
+      isDecodingFrameRef.current = false;
+      if (pendingFrameRef.current) renderLatestFrame();
+    };
+    img.onload = () => {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setHasReceivedFrame(true);
+        frameCountRef.current += 1;
+        latestStreamLagRef.current = nextFrame.sentAt ? Math.max(0, Date.now() - nextFrame.sentAt) : 0;
+      }
+      finish();
+    };
+    img.onerror = finish;
+    img.src = 'data:image/jpeg;base64,' + nextFrame.data;
+  }, []);
+
   // FPS Counter
   useEffect(() => {
     const interval = setInterval(() => {
@@ -50,6 +83,8 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
       const elapsed = (now - lastFpsCheckRef.current) / 1000;
       if (elapsed >= 1) {
         setFps(Math.round(frameCountRef.current / elapsed));
+        setDroppedFrames(droppedFrameCountRef.current);
+        setStreamLagMs(latestStreamLagRef.current);
         frameCountRef.current = 0;
         lastFpsCheckRef.current = now;
       }
@@ -79,28 +114,21 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
       // Trigger session initialization for both sessions
       sendWsEvent('BROWSER_INIT', {}, 'sync');
       sendWsEvent('BROWSER_INIT', {}, 'upload');
+      sendWsEvent('BROWSER_WATCH', {}, activeSessionRef.current);
     };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'BROWSER_FRAME') {
-          const { session, data, metadata } = msg.payload;
+          const { session, data, sentAt } = msg.payload;
           if (session) {
             cachedFramesRef.current[session as BrowserSessionType] = data;
           }
           if (session === activeSessionRef.current && canvasRef.current) {
-            const canvas = canvasRef.current;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              const img = new Image();
-              img.onload = () => {
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                setHasReceivedFrame(true);
-                frameCountRef.current += 1;
-              };
-              img.src = 'data:image/jpeg;base64,' + data;
-            }
+            if (pendingFrameRef.current) droppedFrameCountRef.current += 1;
+            pendingFrameRef.current = { data, sentAt };
+            renderLatestFrame();
           }
         }
       } catch (err) {
@@ -111,7 +139,7 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
     return () => {
       ws.close();
     };
-  }, [sendWsEvent]);
+  }, [renderLatestFrame, sendWsEvent]);
 
   // Switch session tab instantly with cached frame rendering
   const handleSessionChange = (newSession: BrowserSessionType) => {
@@ -134,6 +162,7 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
       setHasReceivedFrame(false);
     }
     sendWsEvent('BROWSER_INIT', {}, newSession);
+    sendWsEvent('BROWSER_WATCH', {}, newSession);
   };
 
   // Convert canvas event coordinates to remote 1440x900 browser coordinates with exact aspect ratio compensation
@@ -358,7 +387,9 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
 
           <div className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-slate-300 font-mono text-[11px]">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span>{fps > 0 ? `${fps} FPS` : 'Live'}</span>
+            <span title={`${droppedFrames} veraltete Frames clientseitig verworfen`}>
+              {fps > 0 ? `${fps} FPS · ${streamLagMs} ms` : 'Live'}
+            </span>
           </div>
 
           <button

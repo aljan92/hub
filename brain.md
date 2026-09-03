@@ -1193,3 +1193,15 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - Fit- und Farb-Controls werden ausschließlich innerhalb des verifizierten Editors abgefragt. Fit-Sollzustände werden abschließend verglichen; fehlende erwartete Fit-Controls erzeugen `FAILED_FIT_TYPE`.
 - **Sicherheitsprinzip:** Bei einem unklaren DOM-Zustand wird nicht publiziert. Die bestehende Publish-Guard- sowie P3.3-Recovery-/Write-Ahead-Logik bleibt unverändert.
 - **Verifikation:** `npm run build` und `tests/productCatalogArchitectureGuard.test.ts` erfolgreich. `tests/productCatalogV2.test.ts` besitzt bereits vor dieser Änderung eine veraltete Erwartung von 4 statt aktuell 8 Special-Artwork-Konfigurationen und bricht deshalb in Test 2 ab.
+
+### 10.45 Upload Reliability P0.5 – Sofortabbruch & Screencast Backpressure
+- **Phasensicherer Sofortabbruch:**
+  - Vor `REMOTE_REQUEST_INTENT` beendet der Abbruch gezielt nur die Upload-Page. Dadurch werden laufende `page.evaluate`, Selector-Waits und DOM-Polls unmittelbar unterbrochen; der persistente Browser-Kontext mit Login/Cookies bleibt erhalten.
+  - Der Pipeline-Catch klassifiziert das Page-Close bei gesetztem Abbruchflag als bewussten Benutzerabbruch (`USER_CANCELLED_BEFORE_REMOTE_REQUEST`) statt als technischen Browser-Crash.
+  - Ab `REMOTE_REQUEST_INTENT`, `AWAITING_AMAZON_CONFIRMATION` oder `AMAZON_CONFIRMED` wird kein erzwungenes Page-Close zugelassen. Ein möglicherweise bereits ausgeführter Amazon-Request bleibt unter dem Schutz der P3.3-Verifikation und wird niemals blind wiederholt.
+- **Screencast Latest-Frame-Wins:**
+  - Jeder WebSocket-Client abonniert nur die aktuell betrachtete Browser-Session; Frames der unsichtbaren Session werden nicht an ihn übertragen.
+  - Clients mit mehr als 512 KiB WebSocket-Rückstand werden übersprungen, damit kein zeitlich wachsender Video-Backlog entsteht.
+  - Der React-Client dekodiert höchstens ein Bild gleichzeitig und hält währenddessen nur den neuesten eingegangenen Frame. Veraltete Zwischenframes werden bewusst verworfen.
+  - JPEG-Qualität wurde moderat von 80 auf 72 reduziert; die 1440×900-Auflösung bleibt für lesbare Kontrolle erhalten.
+  - Die Anzeige zeigt reale gerenderte FPS und das Alter des zuletzt dargestellten Frames in Millisekunden; die Drop-Zahl ist als Tooltip verfügbar.

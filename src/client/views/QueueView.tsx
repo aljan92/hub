@@ -166,6 +166,7 @@ export const QueueView: React.FC = () => {
   const [globalMode, setGlobalMode] = useState<QueueMode>('draft');
   const [pendingMode, setPendingMode] = useState<QueueMode | null>(null);
   const [modeSaveError, setModeSaveError] = useState<string | null>(null);
+  const [uploadActionMessage, setUploadActionMessage] = useState<{ text: string; success: boolean } | null>(null);
   const confirmedModeRef = useRef<QueueMode>('draft');
   const requestedModeRef = useRef<QueueMode | null>(null);
   const modeSaveRunningRef = useRef(false);
@@ -642,10 +643,13 @@ export const QueueView: React.FC = () => {
     try {
       const res = await fetch('/api/v1/upload/cancel', { method: 'POST' });
       const data = await res.json();
+      setUploadActionMessage({ text: data.message || (data.success ? 'Upload abgebrochen.' : 'Abbruch konnte nicht ausgeführt werden.'), success: Boolean(data.success) });
+      window.setTimeout(() => setUploadActionMessage(null), 8000);
       fetchUploadStatus();
       fetchQueue();
     } catch (err) {
       console.error('Cancel upload error:', err);
+      setUploadActionMessage({ text: 'Abbruchanfrage konnte den Server nicht erreichen.', success: false });
     }
   };
 
@@ -794,6 +798,11 @@ export const QueueView: React.FC = () => {
           {modeSaveError && (
             <div className="text-[10px] font-semibold text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1" role="alert">
               {modeSaveError}
+            </div>
+          )}
+          {uploadActionMessage && (
+            <div className={`text-[10px] font-semibold border rounded-lg px-2 py-1 ${uploadActionMessage.success ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' : 'text-amber-300 bg-amber-500/10 border-amber-500/30'}`} role="status">
+              {uploadActionMessage.text}
             </div>
           )}
 

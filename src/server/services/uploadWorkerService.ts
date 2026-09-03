@@ -97,16 +97,30 @@ export class UploadWorkerService {
   /**
    * Cancel currently running upload
    */
-  public static cancelUpload(): boolean {
-    if (!this.isUploading) return false;
+  public static async cancelUpload(): Promise<{ success: boolean; message: string }> {
+    if (!this.isUploading) return { success: false, message: 'Kein Upload aktiv' };
+
+    const currentItem = QueueService.getState().items.find(item => item.id === this.currentQueueId);
+    const phase = currentItem?.uploadRecovery?.phase;
+    const remoteRequestMayHaveStarted = phase === 'REMOTE_REQUEST_INTENT'
+      || phase === 'AWAITING_AMAZON_CONFIRMATION'
+      || phase === 'AMAZON_CONFIRMED';
+
+    if (remoteRequestMayHaveStarted) {
+      const message = `Abbruch nach Amazon-Request nicht erzwungen (Phase ${phase}). Der Remote-Zustand wird sicher bestätigt bzw. verifiziert.`;
+      this.log(`🛡️ ${message}`, 'Amazon-Bestätigung wird geschützt...');
+      return { success: false, message };
+    }
+
     this.abortRequested = true;
     if (this.resumePublishResolver) {
       this.isPausedBeforePublish = false;
       this.resumePublishResolver();
       this.resumePublishResolver = null;
     }
-    this.log('🛑 Upload-Abbruch angefordert...', 'Wird abgebrochen...');
-    return true;
+    this.log('🛑 Sofortabbruch angefordert – Upload-Page wird sicher beendet...', 'Wird abgebrochen...');
+    await BrowserSessionService.closeSessionPage('upload');
+    return { success: true, message: 'Upload wurde vor dem Amazon-Request sofort abgebrochen.' };
   }
 
   /**
@@ -1940,11 +1954,18 @@ export class UploadWorkerService {
       this.broadcastStatus();
 
     } catch (err: any) {
-      const errorMsg = err.message || 'Unbekannter Fehler während des Uploads';
-      this.log(`❌ Upload Fehler: ${errorMsg}`, `Fehler: ${errorMsg}`);
+      const wasUserCancelled = this.abortRequested;
+      const errorMsg = wasUserCancelled
+        ? 'Upload vom Benutzer vor dem Amazon-Request abgebrochen.'
+        : (err.message || 'Unbekannter Fehler während des Uploads');
+      this.log(wasUserCancelled ? `🛑 ${errorMsg}` : `❌ Upload Fehler: ${errorMsg}`, wasUserCancelled ? 'Abgebrochen' : `Fehler: ${errorMsg}`);
+      if (wasUserCancelled) {
+        QueueService.updateItemUploadRecovery(item.id, { recoveryReason: 'USER_CANCELLED_BEFORE_REMOTE_REQUEST' });
+      }
       QueueService.updateItemStatus(item.id, 'ERROR', errorMsg, item.uploadResultSummary);
       QueueService.rebalanceQueue();
       this.isUploading = false;
+      this.abortRequested = false;
       this.broadcastStatus();
     }
   }

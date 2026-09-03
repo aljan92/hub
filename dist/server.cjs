@@ -218738,7 +218738,7 @@ var init_browserSessionService = __esm2({
         try {
           await session2.cdp.send("Page.startScreencast", {
             format: "jpeg",
-            quality: 80,
+            quality: 72,
             maxWidth: 1440,
             maxHeight: 900,
             everyNthFrame: 1
@@ -218757,6 +218757,19 @@ var init_browserSessionService = __esm2({
           console.log(`[BrowserSession] Screencast active for session: ${type3}`);
         } catch (err) {
           console.error(`[BrowserSession] Failed to start screencast for ${type3}:`, err.message);
+        }
+      }
+      /**
+       * Immediately interrupt all Playwright work on one session without closing the
+       * shared persistent browser context. The next getSession() call creates a fresh page.
+       */
+      static async closeSessionPage(type3) {
+        const session2 = this.sessions.get(type3);
+        this.sessions.delete(type3);
+        this.latestFrames.delete(type3);
+        if (session2 && !session2.page.isClosed()) {
+          await session2.page.close().catch(() => {
+          });
         }
       }
       /**
@@ -218918,12 +218931,7 @@ var init_browserSessionService = __esm2({
        */
       static async restartSession(type3) {
         try {
-          const existing = this.sessions.get(type3);
-          if (existing && !existing.page.isClosed()) {
-            await existing.page.close().catch(() => {
-            });
-          }
-          this.sessions.delete(type3);
+          await this.closeSessionPage(type3);
           await this.getSession(type3);
           return {
             success: true,
@@ -231716,16 +231724,25 @@ var UploadWorkerService = class _UploadWorkerService {
   /**
    * Cancel currently running upload
    */
-  static cancelUpload() {
-    if (!this.isUploading) return false;
+  static async cancelUpload() {
+    if (!this.isUploading) return { success: false, message: "Kein Upload aktiv" };
+    const currentItem = QueueService.getState().items.find((item) => item.id === this.currentQueueId);
+    const phase = currentItem?.uploadRecovery?.phase;
+    const remoteRequestMayHaveStarted = phase === "REMOTE_REQUEST_INTENT" || phase === "AWAITING_AMAZON_CONFIRMATION" || phase === "AMAZON_CONFIRMED";
+    if (remoteRequestMayHaveStarted) {
+      const message = `Abbruch nach Amazon-Request nicht erzwungen (Phase ${phase}). Der Remote-Zustand wird sicher best\xE4tigt bzw. verifiziert.`;
+      this.log(`\u{1F6E1}\uFE0F ${message}`, "Amazon-Best\xE4tigung wird gesch\xFCtzt...");
+      return { success: false, message };
+    }
     this.abortRequested = true;
     if (this.resumePublishResolver) {
       this.isPausedBeforePublish = false;
       this.resumePublishResolver();
       this.resumePublishResolver = null;
     }
-    this.log("\u{1F6D1} Upload-Abbruch angefordert...", "Wird abgebrochen...");
-    return true;
+    this.log("\u{1F6D1} Sofortabbruch angefordert \u2013 Upload-Page wird sicher beendet...", "Wird abgebrochen...");
+    await BrowserSessionService.closeSessionPage("upload");
+    return { success: true, message: "Upload wurde vor dem Amazon-Request sofort abgebrochen." };
   }
   /**
    * Resume upload that was paused before publish in inspection mode
@@ -233103,11 +233120,16 @@ var UploadWorkerService = class _UploadWorkerService {
       this.stepIndex = 100;
       this.broadcastStatus();
     } catch (err) {
-      const errorMsg = err.message || "Unbekannter Fehler w\xE4hrend des Uploads";
-      this.log(`\u274C Upload Fehler: ${errorMsg}`, `Fehler: ${errorMsg}`);
+      const wasUserCancelled = this.abortRequested;
+      const errorMsg = wasUserCancelled ? "Upload vom Benutzer vor dem Amazon-Request abgebrochen." : err.message || "Unbekannter Fehler w\xE4hrend des Uploads";
+      this.log(wasUserCancelled ? `\u{1F6D1} ${errorMsg}` : `\u274C Upload Fehler: ${errorMsg}`, wasUserCancelled ? "Abgebrochen" : `Fehler: ${errorMsg}`);
+      if (wasUserCancelled) {
+        QueueService.updateItemUploadRecovery(item.id, { recoveryReason: "USER_CANCELLED_BEFORE_REMOTE_REQUEST" });
+      }
       QueueService.updateItemStatus(item.id, "ERROR", errorMsg, item.uploadResultSummary);
       QueueService.rebalanceQueue();
       this.isUploading = false;
+      this.abortRequested = false;
       this.broadcastStatus();
     }
   }
@@ -233231,6 +233253,9 @@ function getSystemReady() {
 var wss = new import_websocket_server.default({ server: server2, path: "/ws" });
 var PORT = process.env.PORT || 3e3;
 var HOST = process.env.HOST || "0.0.0.0";
+var browserWatchSessions = /* @__PURE__ */ new WeakMap();
+var browserFrameSequences = { sync: 0, upload: 0 };
+var MAX_BROWSER_FRAME_BUFFER_BYTES = 512 * 1024;
 function broadcast(type3, payload) {
   const message = JSON.stringify({ type: type3, payload, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   wss.clients.forEach((client) => {
@@ -233279,11 +233304,20 @@ function logActivity(title, desc, type3 = "INFO") {
   broadcast("ACTIVITY_LOG", event);
 }
 BrowserSessionService.onFrame((session2, base64Data, metadata) => {
-  broadcast("BROWSER_FRAME", {
-    session: session2,
-    data: base64Data,
-    metadata
+  const watchingClients = Array.from(wss.clients).filter(
+    (client) => client.readyState === import_websocket.default.OPEN && browserWatchSessions.get(client) === session2
+  );
+  if (watchingClients.length === 0) return;
+  const sequence = ++browserFrameSequences[session2];
+  const message = JSON.stringify({
+    type: "BROWSER_FRAME",
+    payload: { session: session2, data: base64Data, metadata, sequence, sentAt: Date.now() }
   });
+  for (const client of watchingClients) {
+    if (client.bufferedAmount <= MAX_BROWSER_FRAME_BUFFER_BYTES) {
+      client.send(message);
+    }
+  }
 });
 wss.on("connection", (ws4) => {
   ws4.send(JSON.stringify({
@@ -233302,6 +233336,8 @@ wss.on("connection", (ws4) => {
       const { type: type3, session: session2, payload } = parsed;
       if (type3 === "BROWSER_INIT") {
         await BrowserSessionService.getSession(session2 || "sync");
+      } else if (type3 === "BROWSER_WATCH") {
+        browserWatchSessions.set(ws4, session2 === "upload" ? "upload" : "sync");
       } else if (type3 === "BROWSER_MOUSE") {
         await BrowserSessionService.dispatchMouseEvent(session2 || "sync", payload);
       } else if (type3 === "BROWSER_KEY") {
@@ -234701,10 +234737,10 @@ app.post("/api/v1/upload/resume-publish", (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.post("/api/v1/upload/cancel", (req, res) => {
+app.post("/api/v1/upload/cancel", async (req, res) => {
   try {
-    const success = UploadWorkerService.cancelUpload();
-    res.json({ success, message: success ? "Upload-Abbruch angefordert" : "Kein Upload aktiv" });
+    const result2 = await UploadWorkerService.cancelUpload();
+    res.json(result2);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -52,6 +52,9 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
+const browserWatchSessions = new WeakMap<WebSocket, 'sync' | 'upload'>();
+const browserFrameSequences: Record<'sync' | 'upload', number> = { sync: 0, upload: 0 };
+const MAX_BROWSER_FRAME_BUFFER_BYTES = 512 * 1024;
 
 // Broadcast helper for WebSockets
 function broadcast(type: string, payload: any) {
@@ -122,13 +125,24 @@ function logActivity(title: string, desc: string, type: 'SUCCESS' | 'INFO' | 'WA
   broadcast('ACTIVITY_LOG', event);
 }
 
-// Stream CDP Screencast frames to all connected dashboard clients
+// Stream only the newest useful CDP frame to clients watching this session.
+// Slow clients are skipped instead of accumulating an ever-growing delayed video queue.
 BrowserSessionService.onFrame((session, base64Data, metadata) => {
-  broadcast('BROWSER_FRAME', {
-    session,
-    data: base64Data,
-    metadata
+  const watchingClients = Array.from(wss.clients).filter(client =>
+    client.readyState === WebSocket.OPEN && browserWatchSessions.get(client) === session
+  );
+  if (watchingClients.length === 0) return;
+
+  const sequence = ++browserFrameSequences[session];
+  const message = JSON.stringify({
+    type: 'BROWSER_FRAME',
+    payload: { session, data: base64Data, metadata, sequence, sentAt: Date.now() }
   });
+  for (const client of watchingClients) {
+    if (client.bufferedAmount <= MAX_BROWSER_FRAME_BUFFER_BYTES) {
+      client.send(message);
+    }
+  }
 });
 
 // WebSocket Connection Handler
@@ -151,6 +165,8 @@ wss.on('connection', (ws) => {
 
       if (type === 'BROWSER_INIT') {
         await BrowserSessionService.getSession(session || 'sync');
+      } else if (type === 'BROWSER_WATCH') {
+        browserWatchSessions.set(ws, session === 'upload' ? 'upload' : 'sync');
       } else if (type === 'BROWSER_MOUSE') {
         await BrowserSessionService.dispatchMouseEvent(session || 'sync', payload);
       } else if (type === 'BROWSER_KEY') {
@@ -1813,10 +1829,10 @@ app.post('/api/v1/upload/resume-publish', (req, res) => {
 });
 
 // Cancel Running Upload
-app.post('/api/v1/upload/cancel', (req, res) => {
+app.post('/api/v1/upload/cancel', async (req, res) => {
   try {
-    const success = UploadWorkerService.cancelUpload();
-    res.json({ success, message: success ? 'Upload-Abbruch angefordert' : 'Kein Upload aktiv' });
+    const result = await UploadWorkerService.cancelUpload();
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -129,6 +129,14 @@ Lokal war der warme Pfad schnell. Auf NAS/bei Event-Loop-Blockade wurde seine ge
 - Zeitbudgets sind zustandsbasiert (Checkbox bis 3 s, Editor bis 3 × 5 s) statt über pauschale Langzeit-Sleeps gelöst.
 - Noch offen: exakte Resize-Upload-Bestätigung, Listing-Readback, finaler Soll-Ist-Audit und fail-closed Save-Draft-Bestätigung.
 
+### Upload-Pipeline: Sofortabbruch & Screencast-Backpressure umgesetzt (3. September 2026)
+
+- Abbruch vor der Remote-Request-Grenze schließt die Upload-Page und unterbricht damit auch laufende Browser-Evaluations sofort; Browserprofil und Login bleiben erhalten.
+- Abbruch nach `REMOTE_REQUEST_INTENT` wird nicht erzwungen, damit ein möglicherweise bereits gesendeter Amazon-Request über P3.3 sicher verifiziert wird.
+- Screencast-Frames werden nur an Clients der betrachteten Session gesendet; bei mehr als 512 KiB Sendepuffer werden Frames fallengelassen.
+- Der Client verwendet eine Ein-Frame-Dekodierpipeline mit einem einzigen Latest-Frame-Slot. Langsame Dekodierung erzeugt dadurch keinen anwachsenden Zeitversatz mehr.
+- Stream-Telemetrie zeigt gerenderte FPS und Frame-Alter; JPEG-Qualität 72 reduziert Bandbreite bei unveränderter 1440×900-Kontrollauflösung.
+
 ### P1.1 WebSocket-Broadcasts deduplizieren – empfohlen als nächster Schritt
 
 Einige API-Routen senden `TASK_UPDATED`, obwohl aufgerufene Services durch `addEvent` oder `updateTaskStatus` bereits senden. Künftig sollte gelten: **genau ein Broadcast pro persistierter Mutation**.
