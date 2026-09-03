@@ -1222,3 +1222,11 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Queue-Delta, Slot-Berechnung und Auswahl der neu zu konfigurierenden Produkte bleiben unverändert. Neue Designs übernehmen keine Bestandsauswahl.
 - Fehlende oder ungültige Update-Bestandsdaten bleiben fail-closed; die Prüfung akzeptiert nicht pauschal alle aktiven Checkboxen.
 - `tests/uploadProductSelection.test.ts`, Architektur-Guard und Production Build bestanden. Amazon-Live-Verifikation ist noch erforderlich.
+
+### 10.48 Generische Editor-Identität statt Positionsheuristik
+
+- Der bereitgestellte Amazon-DOM zeigt pro Produktreihe einen gemeinsamen `<product-editor>` mit verschachteltem `.product-editor`. „Edit details“ schaltet diesen auf das jeweilige Produkt um.
+- Die bisherige Prüfung zählte äußeren und inneren Wrapper doppelt und verwendete ungeeignete Bildschirmpositionen zur Produktzuordnung.
+- Verschachtelte Wrapper werden nun auf einen Root reduziert. Die Identität wird über das exakte `${amazonKey}-container`-Klassentoken des enthaltenen `.asset-container` geprüft; `amazonKey` stammt ausschließlich aus dem dynamischen Katalog (gemäß `extra.md`). Keine konkreten Produktkennungen im Runtime-Code.
+- Tatsächlich mehrere passende Roots bleiben mehrdeutig und werden nicht freigegeben. Kein `proceed_anyway` und kein beliebiger sichtbarer Editor als Ersatz.
+- `tests/uploadEditorIdentity.test.ts` führt den tatsächlichen Worker-Resolver in lokalem Chromium aus: verschachtelte Wrapper, geteilte Reihe, falsches Produkt, neue dynamische Kennung, Mehrdeutigkeit und versteckte Editoren bestanden.

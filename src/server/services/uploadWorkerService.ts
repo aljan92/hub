@@ -685,16 +685,16 @@ export class UploadWorkerService {
 
             const findMatchingEditors = (): HTMLElement[] => {
               const allEditors = Array.from(document.querySelectorAll('.product-editor, product-editor, .product-config-panel')) as HTMLElement[];
-              const cardRect = card!.getBoundingClientRect();
-              const nextCardTop = allCards
-                .filter(candidate => candidate !== card && candidate.getBoundingClientRect().top > cardRect.top)
-                .map(candidate => candidate.getBoundingClientRect().top)
-                .sort((a, b) => a - b)[0] ?? Number.POSITIVE_INFINITY;
-              return allEditors.filter(ed => {
+              // Amazon nests .product-editor inside a row-level <product-editor>.
+              // Treat those wrappers as ONE editor, never as competing candidates.
+              const editorRoots = allEditors.filter(ed => !allEditors.some(other => other !== ed && other.contains(ed)));
+              return editorRoots.filter(ed => {
                 const rect = ed.getBoundingClientRect();
                 if (rect.height <= 40 || rect.width <= 0 || ed.innerHTML.length <= 20) return false;
-                if (card!.contains(ed) || ed.closest('[id*="-card"], .product-card') === card) return true;
-                return rect.top >= cardRect.top && rect.top < nextCardTop;
+                // A row hosts several cards and one shared editor. Its actual
+                // artwork identity, not screen position, identifies the product.
+                const assets = Array.from(ed.querySelectorAll('.asset-container'));
+                return assets.some(asset => asset.classList.contains(`${amazonKey}-container`));
               });
             };
 
