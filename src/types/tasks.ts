@@ -160,8 +160,64 @@ export interface DesignTaskLog {
     recoveryReason?: string;
     recoveredAt?: string;
     recoveredSuccessfully?: boolean;
+    amazonDesignId?: string;
+    verifiedRemoteStatus?: string;
+    remoteVerificationResult?: RemoteVerificationResult;
   };
   trademarkWorkflowState?: TrademarkWorkflowState;
+}
+
+export type RemoteVerificationResult =
+  | 'CONFIRMED_SUCCESS'
+  | 'VERIFY_PENDING'
+  | 'AMBIGUOUS'
+  | 'AUTH_REQUIRED'
+  | 'RATE_LIMITED'
+  | 'NETWORK_ERROR'
+  | 'REMOTE_ERROR'
+  | 'CONFIRMED_REJECTED_BEFORE_MUTATION';
+
+export interface RemoteResponseInfo {
+  receivedAt: string;
+  httpStatus: number;
+  result: 'SUCCESS' | 'VALIDATION_ERROR' | 'AUTH_ERROR' | 'RATE_LIMITED' | 'REMOTE_ERROR';
+  amazonDesignId?: string;
+  amazonStatus?: string;
+}
+
+export interface RemoteBaselineInfo {
+  designId: string;
+  status?: string;
+  updatedDate?: string;
+  fingerprint: string;
+}
+
+export interface RemoteVerificationAttempt {
+  attempt: number;
+  status: RemoteVerificationResult;
+  timestamp: string;
+  details?: string;
+}
+
+export interface RemoteVerificationInfo {
+  status: RemoteVerificationResult;
+  attempts: number;
+  firstAttemptAt: string;
+  lastAttemptAt: string;
+  matchedDesignId?: string;
+  details?: string;
+  history?: RemoteVerificationAttempt[];
+}
+
+export interface UploadRecoveryHistoryEntry {
+  attempt: number;
+  phase: string;
+  action?: 'PUBLISH' | 'SAVE_DRAFT';
+  remoteRequestIntentAt?: string;
+  result?: string;
+  manualOverride?: 'FORCE_RETRY' | 'MARK_CONFIRMED' | 'CANCEL';
+  overrideAt?: string;
+  reason?: string;
 }
 
 export type TrademarkWorkflowPhase =

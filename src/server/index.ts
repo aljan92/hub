@@ -32,6 +32,7 @@ import { TrademarkWhitelistService } from './services/trademarkWhitelistService'
 import { UpdateBackfillService } from './services/updateBackfillService';
 import { VisionOptimizationService } from './services/visionOptimizationService';
 import { TaskRecoveryService } from './services/taskRecoveryService';
+import { AmazonRecoveryVerificationService } from './services/amazonRecoveryVerificationService';
 
 dotenv.config();
 
@@ -1137,6 +1138,44 @@ app.post('/api/v1/tasks/:taskId/reset-svg', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Phase P3.3: Human Review Actions for AWAITING_RECOVERY_REVIEW
+app.post('/api/v1/tasks/:taskId/submit-recovery-review', async (req, res) => {
+  const { taskId } = req.params;
+  const { action, amazonDesignId, reason } = req.body;
+
+  try {
+    let result: any = { success: false };
+    if (action === 'REVERIFY_REMOTE') {
+      result = await AmazonRecoveryVerificationService.reverifyRemote(taskId);
+    } else if (action === 'MARK_CONFIRMED') {
+      if (!amazonDesignId) throw new Error('amazonDesignId ist erforderlich für MARK_CONFIRMED');
+      result = AmazonRecoveryVerificationService.markConfirmed(taskId, amazonDesignId);
+    } else if (action === 'FORCE_RETRY') {
+      result = AmazonRecoveryVerificationService.forceRetry(taskId, reason || 'Manuell erzwungener Retry');
+    } else if (action === 'CANCEL') {
+      result = AmazonRecoveryVerificationService.cancelUpload(taskId, reason || 'Vom Benutzer abgebrochen');
+    } else {
+      throw new Error(`Unbekannte Recovery Action: ${action}`);
+    }
+
+    broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
+    broadcast('QUEUE_UPDATED', QueueService.loadQueue());
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/v1/tasks/:taskId/recovery-candidates', async (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const result = await AmazonRecoveryVerificationService.findPossibleAmazonCandidates(taskId);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message, candidates: [] });
   }
 });
 

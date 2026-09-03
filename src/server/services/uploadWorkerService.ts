@@ -6,6 +6,10 @@ import { ProductCatalogService, MerchProduct, ARTWORK_VARIANT_REGISTRY } from '.
 import { ArtworkResizeService } from './artworkResizeService';
 import { ListingSanitizationService } from './listingSanitizationService';
 import { SyncEngine } from './syncEngine';
+import { AmazonInspectService } from './amazonInspectService';
+import { AmazonRecoveryVerificationService } from './amazonRecoveryVerificationService';
+import { TaskRepository } from '../storage/taskRepository';
+import { RemoteBaselineInfo } from '../../types/tasks';
 import { Page } from 'playwright';
 
 export interface UploadProgressState {
@@ -1541,6 +1545,29 @@ export class UploadWorkerService {
           if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
         }
 
+        // Pre-compute intended canonical fingerprint
+        const canonicalIntended = AmazonRecoveryVerificationService.canonicalizeRemoteState({
+          immutableListings: item.immutableListings || item.listings,
+          activeProductsMap: item.activeProductsMap,
+          pricesMap: item.pricesMap,
+          colorOptions: item.colorOptions,
+          fitTypes: item.fitTypes
+        });
+        const intendedRemoteFingerprint = AmazonRecoveryVerificationService.computeRemoteFingerprint(canonicalIntended);
+
+        // Fetch remote baseline snapshot if UPDATE task
+        let remoteBaseline: RemoteBaselineInfo | undefined;
+        if (isUpdate && cleanDesignId) {
+          try {
+            const inspectRes = await AmazonInspectService.inspectProductConfig(cleanDesignId);
+            if (inspectRes.success && inspectRes.data) {
+              remoteBaseline = AmazonRecoveryVerificationService.createBaselineSnapshot(cleanDesignId, inspectRes.data);
+            }
+          } catch (bErr: any) {
+            console.warn('[UploadWorker] Baseline-Snapshot nicht abrufbar:', bErr.message);
+          }
+        }
+
         this.log(`🚀 Klicke 'Publish' Button für Live-Veröffentlichung...`, 'Veröffentliche...', 95, 100);
 
         // Check form validity before clicking
@@ -1561,13 +1588,7 @@ export class UploadWorkerService {
           throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(' | ')}`);
         }
 
-        // CRITICAL WRITE-AHEAD REMOTE INTENT: Flush to disk BEFORE any remote submission!
-        QueueService.updateItemUploadRecovery(item.id, {
-          phase: 'REMOTE_ACTION_INTENT',
-          action: 'PUBLISH',
-          remoteActionIntentAt: new Date().toISOString()
-        });
-
+        // STEP 1: Click #submit-button to open modal. NO REMOTE REQUEST IS TRIGGERED YET!
         await page.evaluate(() => {
           const submitBtn = document.getElementById('submit-button') || document.querySelector('button[id*="submit"], button.btn-submit') as HTMLElement;
           submitBtn?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1578,20 +1599,70 @@ export class UploadWorkerService {
         const confirmBtn = await page.waitForSelector('.modal-footer .btn-primary.btn-submit, button.btn-submit', { timeout: 15000 });
         if (!confirmBtn) throw new Error('Bestätigungs-Button im Publish-Modal nicht gefunden.');
 
+        // STEP 2: Prepare Network Listener BEFORE triggering the remote request!
+        const responsePromise = page.waitForResponse(
+          resp => (resp.url().includes('/api/productconfiguration/') || resp.url().includes('/api/ng-amazon/coral/')) && resp.request().method() === 'POST',
+          { timeout: 35000 }
+        ).catch(() => null);
+
+        // STEP 3: Write-Ahead REMOTE_REQUEST_INTENT boundary flush to disk!
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: 'REMOTE_REQUEST_INTENT',
+          action: 'PUBLISH',
+          remoteRequestIntentAt: new Date().toISOString(),
+          remoteBaseline,
+          intendedRemoteFingerprint
+        });
+
+        // STEP 4: Trigger the ACTUAL Amazon Remote Request via modal confirm click
+        await confirmBtn.click();
+
         QueueService.updateItemUploadRecovery(item.id, {
           phase: 'AWAITING_AMAZON_CONFIRMATION',
           action: 'PUBLISH'
         });
 
-        await confirmBtn.click();
+        // STEP 5: Capture network response and extract new amazonDesignId ASAP
+        let capturedDesignId: string | undefined = item.designId;
+        const netResp = await responsePromise;
+        if (netResp) {
+          try {
+            const httpStatus = netResp.status();
+            const respJson = await netResp.json().catch(() => null);
+            const isSuccess = httpStatus === 200;
+            const newId = respJson?.designId || respJson?.id || respJson?.globalDesignId;
+            if (newId && typeof newId === 'string') {
+              capturedDesignId = newId;
+            }
 
+            QueueService.updateItemUploadRecovery(item.id, {
+              amazonDesignId: capturedDesignId,
+              remoteResponse: {
+                receivedAt: new Date().toISOString(),
+                httpStatus,
+                result: isSuccess ? 'SUCCESS' : httpStatus === 429 ? 'RATE_LIMITED' : httpStatus === 401 ? 'AUTH_ERROR' : 'REMOTE_ERROR',
+                amazonDesignId: capturedDesignId,
+                amazonStatus: respJson?.status
+              }
+            });
+
+            if (capturedDesignId && item.taskId) {
+              try {
+                TaskRepository.updateTask(item.taskId, { designId: capturedDesignId });
+              } catch {}
+            }
+          } catch {}
+        }
+
+        // STEP 6: Await DOM redirect/manage confirmation
         this.log(`⏳ Warte auf finale Amazon-Bestätigung (#redirect-manage)...`, 'Warte auf Bestätigung...');
         await page.waitForSelector('#redirect-manage, a[href*="/manage"]', { timeout: 60000 });
 
         QueueService.updateItemUploadRecovery(item.id, {
           phase: 'AMAZON_CONFIRMED',
           action: 'PUBLISH',
-          amazonConfirmedAt: new Date().toISOString()
+          amazonConfirmedAt: new Date().toISOString(),
+          amazonDesignId: capturedDesignId
         });
 
         this.log(`🎉 Design erfolgreich auf Amazon Merch veröffentlicht!`, 'Erfolgreich veröffentlicht ✓', 100, 100);
@@ -1623,13 +1694,22 @@ export class UploadWorkerService {
           throw new Error(`Save-Draft Button ist deaktiviert. Formularfehler: ${draftCheck.errors.join(' | ')}`);
         }
 
-        // CRITICAL WRITE-AHEAD REMOTE INTENT: Flush to disk BEFORE any remote action!
+        // STEP 1: Prepare Network Listener BEFORE clicking draft button!
+        const responsePromise = page.waitForResponse(
+          resp => (resp.url().includes('/api/productconfiguration/') || resp.url().includes('/api/ng-amazon/coral/')) && resp.request().method() === 'POST',
+          { timeout: 35000 }
+        ).catch(() => null);
+
+        // STEP 2: Write-Ahead REMOTE_REQUEST_INTENT boundary flush to disk!
         QueueService.updateItemUploadRecovery(item.id, {
-          phase: 'REMOTE_ACTION_INTENT',
+          phase: 'REMOTE_REQUEST_INTENT',
           action: 'SAVE_DRAFT',
-          remoteActionIntentAt: new Date().toISOString()
+          remoteRequestIntentAt: new Date().toISOString(),
+          remoteBaseline,
+          intendedRemoteFingerprint
         });
 
+        // STEP 3: Click draft button (triggers remote request directly!)
         await page.evaluate(() => {
           const draftBtn = (document.getElementById('draft-button') 
             || document.getElementById('save-as-draft-button')
@@ -1647,6 +1727,38 @@ export class UploadWorkerService {
           action: 'SAVE_DRAFT'
         });
 
+        // STEP 4: Capture network response and extract new amazonDesignId ASAP
+        let capturedDraftDesignId: string | undefined = item.designId;
+        const netResp = await responsePromise;
+        if (netResp) {
+          try {
+            const httpStatus = netResp.status();
+            const respJson = await netResp.json().catch(() => null);
+            const isSuccess = httpStatus === 200;
+            const newId = respJson?.designId || respJson?.id || respJson?.globalDesignId;
+            if (newId && typeof newId === 'string') {
+              capturedDraftDesignId = newId;
+            }
+
+            QueueService.updateItemUploadRecovery(item.id, {
+              amazonDesignId: capturedDraftDesignId,
+              remoteResponse: {
+                receivedAt: new Date().toISOString(),
+                httpStatus,
+                result: isSuccess ? 'SUCCESS' : httpStatus === 429 ? 'RATE_LIMITED' : httpStatus === 401 ? 'AUTH_ERROR' : 'REMOTE_ERROR',
+                amazonDesignId: capturedDraftDesignId,
+                amazonStatus: respJson?.status
+              }
+            });
+
+            if (capturedDraftDesignId && item.taskId) {
+              try {
+                TaskRepository.updateTask(item.taskId, { designId: capturedDraftDesignId });
+              } catch {}
+            }
+          } catch {}
+        }
+
         // Wait for Draft Saved confirmation message/toast or timer
         try {
           await page.waitForFunction(() => {
@@ -1662,7 +1774,8 @@ export class UploadWorkerService {
         QueueService.updateItemUploadRecovery(item.id, {
           phase: 'AMAZON_CONFIRMED',
           action: 'SAVE_DRAFT',
-          amazonConfirmedAt: new Date().toISOString()
+          amazonConfirmedAt: new Date().toISOString(),
+          amazonDesignId: capturedDraftDesignId
         });
 
         // Navigate to https://merch.amazon.com/dashboard

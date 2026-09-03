@@ -12,6 +12,7 @@ import { SvgRenderService } from './svgRenderService';
 import { TrademarkService } from './trademarkService';
 import { loadSettings } from './settingsService';
 import { LLMService } from './llmService';
+import { AmazonRecoveryVerificationService } from './amazonRecoveryVerificationService';
 
 export interface ReservedRecoveryJob {
   taskId: string;
@@ -103,11 +104,31 @@ export class TaskRecoveryService {
     const queueItems = QueueService.loadQueue();
     let hasQueueChanges = false;
 
-    // 3. Reconcile Upload Queue Items in 'UPLOADING' state
+    // 3. Cross-Storage Saga & Upload Queue Items Reconciliation
     for (const item of queueItems) {
-      if (item.status === 'UPLOADING') {
-        const recovery = item.uploadRecovery;
+      const recovery = item.uploadRecovery;
+      const designId = recovery?.amazonDesignId || item.designId;
 
+      // SAGA RECOVERY: If remote verification succeeded or AMAZON_CONFIRMED was persisted,
+      // but SQLite task or Queue status is not COMPLETED:
+      if (recovery?.remoteVerification?.status === 'CONFIRMED_SUCCESS' || recovery?.phase === 'AMAZON_CONFIRMED') {
+        const targetDesignId = designId || (item.taskId ? TaskRepository.getTaskById(item.taskId)?.designId : undefined);
+        const taskObj = item.taskId ? TaskRepository.getTaskById(item.taskId) : null;
+        if (targetDesignId && (item.status !== 'COMPLETED' || (taskObj && taskObj.status !== 'COMPLETED'))) {
+          AmazonRecoveryVerificationService.finalizeConfirmedRemoteAction(
+            item.id,
+            targetDesignId,
+            recovery?.remoteVerification?.details || 'Startup Reconciled',
+            'Cross-Storage Recovery: Finalized verified remote state'
+          );
+          hasQueueChanges = true;
+          report.confirmedUploadsCompleted++;
+          report.details.push(`Reconciled confirmed item ${item.id} across Queue and Task`);
+          continue;
+        }
+      }
+
+      if (item.status === 'UPLOADING') {
         if (recovery && recovery.phase) {
           const preRemotePhases = ['STARTING', 'NAVIGATING', 'CONFIGURING', 'VALIDATING', 'READY_TO_SUBMIT'];
 
@@ -125,30 +146,87 @@ export class TaskRecoveryService {
             report.details.push(`Reset pre-remote item ${item.id} (${item.title || item.designTitle}) to WAITING`);
             console.log(`[TaskRecovery] 🔄 Pre-Remote Recovery: Reset item ${item.id} (${recovery.phase}) back to WAITING.`);
 
-          } else if (recovery.phase === 'REMOTE_ACTION_INTENT' || recovery.phase === 'AWAITING_AMAZON_CONFIRMATION') {
-            // UNSAFE / UNKNOWN REMOTE STATE: Remote submission may have reached Amazon!
-            item.status = 'ERROR';
-            item.errorMessage = 'Upload wurde während oder nach dem Remote-Submit-Intent unterbrochen. Human Review erforderlich.';
+          } else if (recovery.phase === 'REMOTE_ACTION_INTENT' && recovery.action === 'PUBLISH' && !recovery.remoteRequestIntentAt) {
+            // P3.1 LEGACY PUBLISH: REMOTE_ACTION_INTENT was recorded before opening modal!
+            // First submit button only opens modal without sending HTTP request.
+            // Safe to restart!
+            item.status = 'WAITING';
             item.uploadRecovery = {
               ...recovery,
-              recoveryReason: `Interrupted during/after ${recovery.phase}. Automated retry blocked to prevent duplicate submission.`
+              phase: 'STARTING',
+              attempt: (recovery.attempt || 1) + 1,
+              recoveryReason: 'Recovered from legacy pre-remote publish intent (modal not submitted, safe to retry)'
+            };
+            hasQueueChanges = true;
+            report.preRemoteUploadsReset++;
+            report.details.push(`Reset legacy pre-remote publish item ${item.id} to WAITING`);
+            console.log(`[TaskRecovery] 🔄 Pre-Remote Publish Recovery: Reset legacy item ${item.id} to WAITING.`);
+
+          } else if (recovery.phase === 'REMOTE_ACTION_INTENT' && recovery.action === 'SAVE_DRAFT') {
+            // P3.1 LEGACY SAVE_DRAFT: Draft button fires HTTP request immediately!
+            // Unsafe unknown remote state.
+            const hasKnownId = Boolean(recovery.amazonDesignId || item.designId);
+            const now = new Date().toISOString();
+
+            item.status = 'ERROR';
+            item.errorMessage = 'Upload während Save-Draft unterbrochen. Remote-Zustand unbekannt.';
+            item.uploadRecovery = {
+              ...recovery,
+              recoveryReason: 'Interrupted during SAVE_DRAFT intent. Automated retry blocked to prevent duplicates.',
+              remoteVerification: hasKnownId ? {
+                status: 'VERIFY_PENDING',
+                attempts: 1,
+                firstAttemptAt: now,
+                lastAttemptAt: now,
+                matchedDesignId: recovery.amazonDesignId || item.designId,
+                details: 'Prüfe remote Draft-Status auf Amazon'
+              } : undefined
             };
             hasQueueChanges = true;
             report.unsafeUploadsEscalated++;
-            report.details.push(`Escalated unsafe item ${item.id} (${item.title || item.designTitle}) in phase ${recovery.phase} to Human Review`);
-            console.warn(`[TaskRecovery] ⚠️ Unsafe Remote Intent: Item ${item.id} was in ${recovery.phase}. Escalating to Human Review.`);
+            report.details.push(`Escalated legacy draft item ${item.id} to ${hasKnownId ? 'VERIFY_PENDING' : 'Human Review'}`);
 
-            // Escalate associated SQLite Task
             if (item.taskId) {
-              const task = TaskRepository.getTaskById(item.taskId);
-              if (task) {
-                TaskLogService.updateTaskStatus(task.id, {
-                  status: 'AWAITING_RECOVERY_REVIEW',
-                  checkpoint: 'RECOVERY_REVIEW',
-                  hasError: true,
-                  errorDetails: 'Upload wurde nach dem Absenden des Remote-Intents an Amazon unterbrochen. Bitte in Amazon Manage prüfen, ob das Produkt veröffentlicht wurde, bevor erneut hochgeladen wird.'
-                });
-              }
+              TaskLogService.updateTaskStatus(item.taskId, {
+                status: 'AWAITING_RECOVERY_REVIEW',
+                checkpoint: 'RECOVERY_REVIEW',
+                hasError: true,
+                errorDetails: 'Upload während Save-Draft unterbrochen. Bitte in Amazon Manage prüfen.'
+              });
+            }
+
+          } else if (recovery.phase === 'REMOTE_REQUEST_INTENT' || recovery.phase === 'AWAITING_AMAZON_CONFIRMATION') {
+            // P3.3 UNIFIED REMOTE REQUEST INTENT: Remote side effects possibly in-flight!
+            const hasKnownId = Boolean(recovery.amazonDesignId || item.designId);
+            const now = new Date().toISOString();
+
+            item.status = 'ERROR';
+            item.errorMessage = 'Upload während des Amazon Remote-Requests unterbrochen.';
+            item.uploadRecovery = {
+              ...recovery,
+              recoveryReason: `Interrupted during ${recovery.phase}. Remote request was possibly received.`,
+              remoteVerification: hasKnownId ? {
+                status: 'VERIFY_PENDING',
+                attempts: 1,
+                firstAttemptAt: now,
+                lastAttemptAt: now,
+                matchedDesignId: recovery.amazonDesignId || item.designId,
+                details: 'Automatische Remote-Verifikation aktiv'
+              } : undefined
+            };
+            hasQueueChanges = true;
+            report.unsafeUploadsEscalated++;
+            report.details.push(`Escalated remote request item ${item.id} (${hasKnownId ? 'ID known: VERIFY_PENDING' : 'NEW without ID: Human Review'})`);
+
+            if (item.taskId) {
+              TaskLogService.updateTaskStatus(item.taskId, {
+                status: 'AWAITING_RECOVERY_REVIEW',
+                checkpoint: 'RECOVERY_REVIEW',
+                hasError: true,
+                errorDetails: hasKnownId 
+                  ? 'Upload während Amazon-Request unterbrochen. Automatische Remote-Verifikation wird ausgeführt...'
+                  : 'Upload während Amazon-Request unterbrochen. Keine Design-ID vorhanden. Manuelle Prüfung erforderlich.'
+              });
             }
 
           } else if (recovery.phase === 'AMAZON_CONFIRMED') {
@@ -212,7 +290,7 @@ export class TaskRecoveryService {
 
         if (task) {
           if (!task.inQueue) {
-            const targetStatus = task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED'
+            const targetStatus = (task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED' || task.status === 'AWAITING_RECOVERY_REVIEW')
               ? task.status
               : (task.source === 'UPDATE' ? 'UPDATE_QUEUED' : 'COMPLETED');
 
@@ -369,6 +447,9 @@ export class TaskRecoveryService {
    * Runs asynchronously after server is ready (isSystemReady = true).
    */
   public static async startRecoveryQueueWorker(concurrency = 1): Promise<void> {
+    // Start asynchronous remote verification worker for in-flight pending uploads
+    AmazonRecoveryVerificationService.startVerificationWorker();
+
     if (this.isWorkerRunning) {
       console.log('[TaskRecovery] ℹ️ Recovery Worker is already running.');
       return;

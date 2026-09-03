@@ -193,11 +193,11 @@ async function runTests() {
       tmBlockedProductIds: [],
       sortOrder: 3,
       uploadRecovery: {
-        phase: 'REMOTE_ACTION_INTENT',
+        phase: 'REMOTE_REQUEST_INTENT',
         action: 'PUBLISH',
         attempt: 1,
         startedAt: new Date().toISOString(),
-        remoteActionIntentAt: new Date().toISOString()
+        remoteRequestIntentAt: new Date().toISOString()
       }
     };
 

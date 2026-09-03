@@ -6,6 +6,14 @@ import { loadSettings, saveSettings } from './settingsService';
 import { TaskRepository } from '../storage/taskRepository';
 import { atomicWriteJson, loadJsonWithBackupRecovery, isFileInFailSafe } from '../utils/atomicFileStorage';
 
+import { 
+  RemoteVerificationResult, 
+  RemoteResponseInfo, 
+  RemoteBaselineInfo, 
+  RemoteVerificationInfo, 
+  UploadRecoveryHistoryEntry 
+} from '../../types/tasks';
+
 export type QueueItemStatus = 'WAITING' | 'UPLOADING' | 'COMPLETED' | 'ERROR';
 
 export type UploadRecoveryPhase =
@@ -14,7 +22,8 @@ export type UploadRecoveryPhase =
   | 'CONFIGURING'
   | 'VALIDATING'
   | 'READY_TO_SUBMIT'
-  | 'REMOTE_ACTION_INTENT'
+  | 'REMOTE_ACTION_INTENT' // legacy P3.1
+  | 'REMOTE_REQUEST_INTENT' // P3.3 unified pre-remote-request boundary
   | 'AWAITING_AMAZON_CONFIRMATION'
   | 'AMAZON_CONFIRMED';
 
@@ -24,10 +33,21 @@ export interface UploadRecoveryMetadata {
   attempt: number;
   startedAt?: string;
   lastHeartbeatAt?: string;
-  remoteActionIntentAt?: string;
+  remoteActionIntentAt?: string; // legacy support
+  remoteRequestIntentAt?: string; // P3.3
   amazonConfirmedAt?: string;
   amazonDesignId?: string;
   recoveryReason?: string;
+  remoteResponse?: RemoteResponseInfo;
+  remoteBaseline?: RemoteBaselineInfo;
+  intendedRemoteFingerprint?: string;
+  remoteVerification?: RemoteVerificationInfo;
+  manualOverride?: {
+    action: 'FORCE_RETRY' | 'MARK_CONFIRMED' | 'CANCEL';
+    timestamp: string;
+    reason?: string;
+  };
+  history?: UploadRecoveryHistoryEntry[];
 }
 
 export interface ListingLanguageContent {

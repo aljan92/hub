@@ -1097,3 +1097,40 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
   - `tests/taskRecoveryP3_2.test.ts`: Alle 12 Tests bestanden (Immunität, Attempt-Limit, S1 Shared Status, S2 Analysis Gate, S3 SVG Gate, S4 Queued Crash Attempt Invariante, S5 TM Mid-Cycle, S6 TM Rewrite Boundary Max 3, S7 10.000 Historical Tasks Benchmark in 1ms, H1 Asset Heuristics, H2 TaskExecutionLock, H3 Backfill Protection).
   - Regression: `tests/taskRecoveryP3_1.test.ts` (10/10 PASS), `tests/trademarkV2.test.ts` (115/115 PASS), `tests/unifiedFinalizationAndCustomResize.test.ts` (10/10 PASS), `tests/productCatalogArchitectureGuard.test.ts` (PASS).
   - `npm run build`: Vollständiger Client- und Server-Build fehlerfrei.
+
+### 10.40 Phase P3.3 – Deterministic Amazon Remote Verification & Recovery
+- **Architektur & Recovery-Prinzipien:**
+  1. **Kritische Remote-Side-Effect-Grenze (`REMOTE_REQUEST_INTENT`):**
+     - `PUBLISH`: Der Klick auf `#submit-button` öffnet lediglich ein modales Bestätigungsfenster und sendet keinen HTTP-Request. Erst vor dem Klick auf `.modal-footer .btn-primary.btn-submit` (Confirm-Button) wird `REMOTE_REQUEST_INTENT` atomar auf die Festplatte geflusht.
+     - `SAVE_DRAFT`: Der Klick auf `#draft-button` löst unmittelbar den Remote-Request aus. `REMOTE_REQUEST_INTENT` wird direkt vor diesem Klick persistiert.
+     - Legacy Migration: Ältere Items mit `phase: 'REMOTE_ACTION_INTENT'` und `action: 'PUBLISH'` ohne `remoteRequestIntentAt` werden sicher auf `WAITING` (Attempt + 1) zurückgesetzt. Für `SAVE_DRAFT` wird hingegen niemals blind neu versucht, sondern auf Verifikation / Human Review eskaliert.
+  2. **Network Response Capture & Sofortige ID-Sicherung:**
+     - Vor dem Auslösen des Remote-Requests wird ein Playwright `page.waitForResponse(...)` registriert, der spezifisch auf Amazon POST Requests (`/api/productconfiguration/` oder `/api/ng-amazon/coral/`) lauscht.
+     - Sobald der Response eingeht, wird die neu generierte `amazonDesignId` (UUID) sofort atomar in `QueueItem.uploadRecovery.amazonDesignId` und im SQLite-Task gesichert – noch bevor auf DOM-Redirects (`#redirect-manage`) oder Toasts gewartet wird.
+     - Crash-Fenster-Minimierung: Sollte ein Crash vor Empfang der Response-ID erfolgen, existiert keine deterministische Remote-ID. Das Item wird ausnahmslos zu `AWAITING_RECOVERY_REVIEW` eskaliert (kein Auto-Retry, kein Auto-Complete).
+  3. **Deterministisches Fingerprinting & Baseline-Vergleich:**
+     - `AmazonRecoveryVerificationService`:
+       - `canonicalizeRemoteState`: Übersetzt sowohl Live-Amazon-Inspections (`productconfiguration/get?id=`) als auch MBA-Hub-Upload-Payloads in eine identische, normalisierte Datenstruktur (Listingtexte, Locales, Produkte, Fits, Farben, Preise).
+       - `computeRemoteFingerprint`: Rekursiv sortiertes JSON-Hashing via SHA-256 erzeugt einen mathematisch deterministischen Fingerprint.
+     - Für UPDATE Tasks wird vor dem Submit ein kompakter `remoteBaseline`-Snapshot persistiert.
+     - Verifikationsregeln:
+       - `currentRemoteFingerprint === intendedRemoteFingerprint` ➔ `CONFIRMED_SUCCESS` (Exakter Zielzustand nachgewiesen).
+       - Statusübergang zu `UNDER_REVIEW` / `PROCESSING` / `TRANSLATING` (wenn Baseline nicht bereits diesen Status hatte) ➔ `CONFIRMED_SUCCESS` (Amazon hat den Submit angenommen).
+       - `currentRemoteFingerprint === baselineFingerprint` ➔ `VERIFY_PENDING` (Amazon verarbeitet eventuell noch; kein Auto-Retry!).
+       - Remote-Zustand weicht von Baseline und Ziel ab ➔ `AMBIGUOUS` (Human Review).
+  4. **Eventual Consistency & Asynchroner Verification Worker:**
+     - `VERIFY_PENDING` prüft mit gestaffeltem Backoff (0m, 2m, 6m, 12m) asynchron im Hintergrund über Session 1 (`AmazonInspectService`).
+     - Nach maximal 4 Versuchen ohne Bestätigung eskaliert der Task zu `AWAITING_RECOVERY_REVIEW`. Zeitablauf führt niemals zu automatischem Neu-Upload.
+     - `AUTH_REQUIRED` (401 / Login-Redirect), `RATE_LIMITED` (429) und `NETWORK_ERROR` werden strikt isoliert und führen niemals zu `NOT_FOUND`.
+  5. **Idempotente Cross-Storage Saga:**
+     - `finalizeConfirmedRemoteAction(queueItemId, amazonDesignId, ...)` synchronisiert Queue JSON und SQLite Task in einer idempotent wiederholbaren Abfolge (Queue `AMAZON_CONFIRMED` ➔ SQLite Task `COMPLETED` ➔ Queue `COMPLETED`).
+     - Sollte der Server zwischen diesen Schritten abstürzen, schließt die Startup-Reconciliation die verbleibenden Schritte ab, ohne einen Remote-Request erneut abzusenden.
+  6. **Human Review Actions (`/api/v1/tasks/:taskId/submit-recovery-review`):**
+     - `REVERIFY_REMOTE`: Triggert sofortige Live-Prüfung in Session 1.
+     - `MARK_CONFIRMED`: Manuelle Benutzer-Bestätigung schließt Task und Queue via Saga ab.
+     - `FORCE_RETRY`: Bewusster Benutzer-Override archiviert den vorherigen Versuch in `history` (mit Zeitstempel und Begründung) und setzt das Queue-Item sauber auf `WAITING` (Attempt + 1).
+     - `CANCEL`: Bricht den Upload ab, behält aber die gesamte Recovery-Historie persistent bei.
+- **Verifikation:**
+  - `tests/taskRecoveryP3_3.test.ts`: Alle 12 Tests bestanden (R0A Publish Pre-Remote Reset, R0B Draft Unknown State, R0C Unified Intent Boundary, R1/R2 Response ID Capture & Exact Recovery, R3 Missing ID Review Escalation, R4 UPDATE Fingerprint Match, R5 Baseline Unchanged Pending, R6 Ambiguous State, R7 Pre-existing Under Review Guard, R8/R9 Cross-Storage Saga, R10 Human Review Actions, R11 Auth/Rate Limits).
+  - Regression: `tests/taskRecoveryP3_1.test.ts` (10/10 PASS), `tests/taskRecoveryP3_2.test.ts` (12/12 PASS), `tests/taskSqliteMigrationP2.test.ts` (PASS).
+  - `npm run build`: Vollständiger Client- und Server-Build fehlerfrei.

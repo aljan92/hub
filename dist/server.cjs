@@ -20065,14 +20065,14 @@ var require_etag = __commonJS2({
   "node_modules/etag/index.js"(exports2, module3) {
     "use strict";
     module3.exports = etag;
-    var crypto3 = require("crypto");
+    var crypto4 = require("crypto");
     var Stats = require("fs").Stats;
     var toString = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-      var hash = crypto3.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
+      var hash = crypto4.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash + '"';
     }
@@ -22965,11 +22965,11 @@ var require_request = __commonJS2({
 // node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS2({
   "node_modules/cookie-signature/index.js"(exports2) {
-    var crypto3 = require("crypto");
+    var crypto4 = require("crypto");
     exports2.sign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
-      return val + "." + crypto3.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
+      return val + "." + crypto4.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
     };
     exports2.unsign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Signed cookie string must be provided.");
@@ -22978,7 +22978,7 @@ var require_cookie_signature = __commonJS2({
       return sha1(mac) == sha1(val) ? str : false;
     };
     function sha1(str) {
-      return crypto3.createHash("sha1").update(str).digest("hex");
+      return crypto4.createHash("sha1").update(str).digest("hex");
     }
   }
 });
@@ -27968,7 +27968,7 @@ var require_main = __commonJS2({
     var fs20 = require("fs");
     var path19 = require("path");
     var os = require("os");
-    var crypto3 = require("crypto");
+    var crypto4 = require("crypto");
     var packageJson = require_package();
     var version5 = packageJson.version;
     var LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
@@ -28187,7 +28187,7 @@ var require_main = __commonJS2({
       const authTag = ciphertext.subarray(-16);
       ciphertext = ciphertext.subarray(12, -16);
       try {
-        const aesgcm = crypto3.createDecipheriv("aes-256-gcm", key, nonce);
+        const aesgcm = crypto4.createDecipheriv("aes-256-gcm", key, nonce);
         aesgcm.setAuthTag(authTag);
         return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
       } catch (error) {
@@ -141702,7 +141702,7 @@ data: ${JSON.stringify(message)}
     var import_http24 = require("http2");
     var import_http222 = require("http2");
     var import_stream42 = require("stream");
-    var import_crypto3 = __toESM3(require("crypto"), 1);
+    var import_crypto4 = __toESM3(require("crypto"), 1);
     var RequestError = class extends Error {
       constructor(message, options2) {
         super(message, options2);
@@ -142041,7 +142041,7 @@ data: ${JSON.stringify(message)}
     };
     var X_ALREADY_SENT = "x-hono-already-sent";
     if (typeof global.crypto === "undefined") {
-      global.crypto = import_crypto3.default;
+      global.crypto = import_crypto4.default;
     }
     var outgoingEnded = /* @__PURE__ */ Symbol("outgoingEnded");
     var incomingDraining = /* @__PURE__ */ Symbol("incomingDraining");
@@ -224323,6 +224323,555 @@ var init_designPipelineService = __esm2({
   }
 });
 
+// src/server/services/amazonRecoveryVerificationService.ts
+var import_crypto3, AmazonRecoveryVerificationService;
+var init_amazonRecoveryVerificationService = __esm2({
+  "src/server/services/amazonRecoveryVerificationService.ts"() {
+    "use strict";
+    import_crypto3 = __toESM2(require("crypto"), 1);
+    init_queueService();
+    init_taskRepository();
+    init_taskLogService();
+    init_amazonInspectService();
+    init_listingSanitizationService();
+    AmazonRecoveryVerificationService = class {
+      static isVerificationWorkerRunning = false;
+      static verificationTimer = null;
+      static BACKOFF_INTERVALS_MS = [0, 12e4, 36e4, 72e4];
+      // 0m, 2m, 6m, 12m
+      static MAX_VERIFY_ATTEMPTS = 4;
+      /**
+       * Translates arbitrary Amazon inspect data or MBA Hub intended upload payload
+       * into an identical, normalized canonical structure for deterministic fingerprinting.
+       */
+      static canonicalizeRemoteState(raw) {
+        const canonical = {
+          locales: {},
+          products: {}
+        };
+        if (!raw) return canonical;
+        const rawTexts = raw.textData || raw.immutableListings || raw.listings || {};
+        const candidateLocales = ["en", "de", "fr", "it", "es", "ja"];
+        for (const loc of candidateLocales) {
+          const locData = rawTexts[loc] || rawTexts[loc.toUpperCase()] || null;
+          if (locData) {
+            const title = ListingSanitizationService.sanitizeText(locData.title || "");
+            const brand = ListingSanitizationService.sanitizeText(locData.brandName || locData.brand || "");
+            let bullet1 = "";
+            let bullet2 = "";
+            if (Array.isArray(locData.bullets)) {
+              bullet1 = ListingSanitizationService.sanitizeText(locData.bullets[0] || "");
+              bullet2 = ListingSanitizationService.sanitizeText(locData.bullets[1] || "");
+            } else {
+              bullet1 = ListingSanitizationService.sanitizeText(locData.bullet1 || locData.bullet_1 || "");
+              bullet2 = ListingSanitizationService.sanitizeText(locData.bullet2 || locData.bullet_2 || "");
+            }
+            const description = ListingSanitizationService.sanitizeText(locData.description || "");
+            if (title || brand) {
+              canonical.locales[loc] = {
+                title: title.trim(),
+                brand: brand.trim(),
+                bullet1: bullet1.trim(),
+                bullet2: bullet2.trim(),
+                description: description.trim()
+              };
+            }
+          }
+        }
+        if (raw.products && typeof raw.products === "object") {
+          const pKeys = Object.keys(raw.products).sort();
+          for (const pk of pKeys) {
+            const pVal = raw.products[pk];
+            const mps = [];
+            if (pVal?.marketplaceData && typeof pVal.marketplaceData === "object") {
+              mps.push(...Object.keys(pVal.marketplaceData).map((m) => m.toUpperCase()));
+            }
+            mps.sort();
+            const fits = Array.isArray(pVal?.dimensions?.FIT) ? [...pVal.dimensions.FIT].sort() : void 0;
+            const colors4 = Array.isArray(pVal?.dimensions?.COLOR) ? [...pVal.dimensions.COLOR].sort() : void 0;
+            canonical.products[pk.toUpperCase()] = {
+              marketplaces: mps,
+              fits,
+              colors: colors4
+            };
+          }
+        } else if (raw.activeProductsMap && typeof raw.activeProductsMap === "object") {
+          const pKeys = Object.keys(raw.activeProductsMap).sort();
+          for (const pk of pKeys) {
+            const mps = Array.isArray(raw.activeProductsMap[pk]) ? [...raw.activeProductsMap[pk]].map((m) => m.toUpperCase()).sort() : [];
+            canonical.products[pk.toUpperCase()] = {
+              marketplaces: mps
+            };
+          }
+        }
+        return canonical;
+      }
+      /**
+       * Computes a deterministic SHA-256 fingerprint for a canonical remote state.
+       */
+      static computeRemoteFingerprint(state) {
+        const stringifyDeterministic = (obj) => {
+          if (obj === null || typeof obj !== "object") {
+            return JSON.stringify(obj);
+          }
+          if (Array.isArray(obj)) {
+            return "[" + obj.map(stringifyDeterministic).join(",") + "]";
+          }
+          const keys = Object.keys(obj).sort();
+          return "{" + keys.map((k) => JSON.stringify(k) + ":" + stringifyDeterministic(obj[k])).join(",") + "}";
+        };
+        const sortedJson = stringifyDeterministic(state);
+        return import_crypto3.default.createHash("sha256").update(sortedJson).digest("hex");
+      }
+      /**
+       * Creates a compact baseline snapshot from an Amazon Inspect result before submission.
+       */
+      static createBaselineSnapshot(designId, inspectData) {
+        const canonical = this.canonicalizeRemoteState(inspectData);
+        const fingerprint = this.computeRemoteFingerprint(canonical);
+        let status;
+        let updatedDate;
+        if (inspectData?.marketplaceData) {
+          const firstMp = Object.values(inspectData.marketplaceData)[0];
+          status = firstMp?.status;
+        }
+        return {
+          designId,
+          status,
+          updatedDate,
+          fingerprint
+        };
+      }
+      /**
+       * Evaluates the current remote state of a design against baseline and intended fingerprints.
+       */
+      static async verifySingleDesignRemote(designId, options2) {
+        const cleanId = (designId || "").trim();
+        if (!cleanId) {
+          return {
+            result: "AMBIGUOUS",
+            details: "Keine Amazon Design-ID f\xFCr Verifikation vorhanden."
+          };
+        }
+        console.log(`[RemoteVerification] \u{1F50D} Pr\xFCfe Remote-Zustand f\xFCr Design ${cleanId} via Session 1...`);
+        const inspectRes = await AmazonInspectService.inspectProductConfig(cleanId);
+        if (inspectRes.status === 401 || inspectRes.error && inspectRes.error.includes("ausgeloggt")) {
+          console.warn(`[RemoteVerification] \u26A0\uFE0F Session 1 ist ausgeloggt. Verifikation erfordert Amazon-Login.`);
+          return {
+            result: "AUTH_REQUIRED",
+            details: "Session 1 ist ausgeloggt. Bitte im Screencast bei Amazon anmelden."
+          };
+        }
+        if (inspectRes.status === 429) {
+          console.warn(`[RemoteVerification] \u23F3 Amazon Rate Limit (429) erreicht.`);
+          return {
+            result: "RATE_LIMITED",
+            details: "Amazon Rate Limit erreicht (HTTP 429)."
+          };
+        }
+        if (inspectRes.status === 0) {
+          return {
+            result: "NETWORK_ERROR",
+            details: inspectRes.error || "Netzwerkfehler im Browser"
+          };
+        }
+        if (inspectRes.status === 404) {
+          return {
+            result: "VERIFY_PENDING",
+            details: "Design noch nicht unter productconfiguration auffindbar (Amazon eventuelle Konsistenz)."
+          };
+        }
+        if (!inspectRes.success || !inspectRes.data) {
+          return {
+            result: "REMOTE_ERROR",
+            details: inspectRes.error || "Fehler beim Abruf der Produktkonfiguration."
+          };
+        }
+        const currentCanonical = this.canonicalizeRemoteState(inspectRes.data);
+        const currentFingerprint = this.computeRemoteFingerprint(currentCanonical);
+        let currentStatus;
+        if (inspectRes.data?.products) {
+          for (const pk of Object.keys(inspectRes.data.products)) {
+            const mpData = inspectRes.data.products[pk]?.marketplaceData;
+            if (mpData) {
+              const firstSt = Object.values(mpData)[0];
+              if (firstSt?.status) {
+                currentStatus = firstSt.status;
+                break;
+              }
+            }
+          }
+        }
+        console.log(`[RemoteVerification] \u{1F4CA} Fingerprint: current=${currentFingerprint.substring(0, 8)}, intended=${options2.intendedFingerprint?.substring(0, 8) || "none"}, baseline=${options2.baselineFingerprint?.substring(0, 8) || "none"}`);
+        if (options2.intendedFingerprint && currentFingerprint === options2.intendedFingerprint) {
+          return {
+            result: "CONFIRMED_SUCCESS",
+            currentFingerprint,
+            currentStatus,
+            details: "Exakter Fingerprint-Match: Intendierter Zielzustand existiert auf Amazon.",
+            data: inspectRes.data
+          };
+        }
+        const processingStatuses = /* @__PURE__ */ new Set(["UNDER_REVIEW", "REVIEW", "PROCESSING", "TRANSLATING", "PUBLISHING"]);
+        const baselineWasProcessing = options2.baselineStatus && processingStatuses.has(options2.baselineStatus.toUpperCase());
+        const isNowProcessing = currentStatus && processingStatuses.has(currentStatus.toUpperCase());
+        if (isNowProcessing && !baselineWasProcessing) {
+          return {
+            result: "CONFIRMED_SUCCESS",
+            currentFingerprint,
+            currentStatus,
+            details: `Statuswechsel nachgewiesen: Design ist nun in Amazon-Verarbeitung (${currentStatus}).`,
+            data: inspectRes.data
+          };
+        }
+        if (options2.baselineFingerprint && currentFingerprint === options2.baselineFingerprint) {
+          return {
+            result: "VERIFY_PENDING",
+            currentFingerprint,
+            currentStatus,
+            details: "Remote-Zustand entspricht noch der Baseline vor Submit. Amazon verarbeitet m\xF6glicherweise noch.",
+            data: inspectRes.data
+          };
+        }
+        return {
+          result: "AMBIGUOUS",
+          currentFingerprint,
+          currentStatus,
+          details: `Remote-Zustand unterscheidet sich von Baseline und Ziel (Status: ${currentStatus || "unbekannt"}).`,
+          data: inspectRes.data
+        };
+      }
+      /**
+       * Idempotent, crash-recoverable Saga to finalize a confirmed remote action across Queue and SQLite.
+       */
+      static finalizeConfirmedRemoteAction(queueItemId, amazonDesignId, verifiedRemoteStatus, details) {
+        console.log(`[RemoteVerification] \u{1F3C1} Finalisiere best\xE4tigte Remote-Aktion f\xFCr Queue-Item ${queueItemId} (Amazon-ID: ${amazonDesignId})...`);
+        const queue = QueueService.loadQueue();
+        const item = queue.find((i) => i.id === queueItemId);
+        if (!item) {
+          return { success: false, error: `Queue Item ${queueItemId} nicht gefunden` };
+        }
+        const taskId = item.taskId;
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        QueueService.updateItemUploadRecovery(queueItemId, {
+          phase: "AMAZON_CONFIRMED",
+          amazonDesignId,
+          amazonConfirmedAt: now,
+          recoveryReason: details || "Remote-Aktion deterministisch verifiziert",
+          remoteVerification: {
+            status: "CONFIRMED_SUCCESS",
+            attempts: (item.uploadRecovery?.remoteVerification?.attempts || 0) + 1,
+            firstAttemptAt: item.uploadRecovery?.remoteVerification?.firstAttemptAt || now,
+            lastAttemptAt: now,
+            matchedDesignId: amazonDesignId,
+            details: details || "Deterministisch best\xE4tigt"
+          }
+        });
+        if (taskId) {
+          try {
+            const existingTask = TaskRepository.getTaskById(taskId);
+            if (existingTask && existingTask.status !== "COMPLETED") {
+              TaskLogService2.updateTaskStatus(taskId, {
+                status: "COMPLETED",
+                hasError: false,
+                errorDetails: void 0,
+                designId: amazonDesignId,
+                inQueue: true,
+                recovery: {
+                  recoveryAttempts: existingTask.recovery?.recoveryAttempts || 1,
+                  lastAttemptAt: now,
+                  recoveredAt: now,
+                  recoveredSuccessfully: true,
+                  amazonDesignId,
+                  verifiedRemoteStatus: verifiedRemoteStatus || "CONFIRMED",
+                  remoteVerificationResult: "CONFIRMED_SUCCESS",
+                  recoveryReason: details || "Remote Verification Confirmed"
+                }
+              });
+              TaskLogService2.addEvent(taskId, {
+                timestamp: now,
+                type: "RECOVERY_COMPLETED",
+                title: "Remote-Aktion erfolgreich auf Amazon verifiziert",
+                content: {
+                  amazonDesignId,
+                  verifiedRemoteStatus: verifiedRemoteStatus || "CONFIRMED",
+                  details
+                }
+              });
+            }
+          } catch (dbErr) {
+            console.warn(`[RemoteVerification] SQLite Task ${taskId} konnte nicht aktualisiert werden:`, dbErr.message);
+          }
+        }
+        QueueService.updateItemStatus(queueItemId, "COMPLETED", void 0, item.uploadResultSummary);
+        QueueService.rebalanceQueue();
+        console.log(`[RemoteVerification] \u2705 Queue-Item ${queueItemId} & Task ${taskId} erfolgreich als COMPLETED synchronisiert.`);
+        return { success: true };
+      }
+      /**
+       * Starts the background verification worker for in-flight VERIFY_PENDING uploads.
+       * Runs asynchronously without blocking system readiness.
+       */
+      static startVerificationWorker() {
+        if (this.isVerificationWorkerRunning) return;
+        this.isVerificationWorkerRunning = true;
+        console.log("[RemoteVerification] \u2699\uFE0F Starte Remote Verification Worker (Intervall: 30s)...");
+        this.verificationTimer = setInterval(async () => {
+          try {
+            await this.runPendingVerificationCycle();
+          } catch (err) {
+            console.warn("[RemoteVerification] Fehler im Verifikations-Zyklus:", err.message);
+          }
+        }, 3e4);
+      }
+      /**
+       * Executes a single verification pass over all pending queue items.
+       */
+      static async runPendingVerificationCycle() {
+        const queue = QueueService.loadQueue();
+        const pendingItems = queue.filter((item) => {
+          const v = item.uploadRecovery?.remoteVerification;
+          return v && v.status === "VERIFY_PENDING";
+        });
+        if (pendingItems.length === 0) return;
+        for (const item of pendingItems) {
+          const designId = item.uploadRecovery?.amazonDesignId || item.designId;
+          if (!designId) continue;
+          const vInfo = item.uploadRecovery?.remoteVerification;
+          const attempts = vInfo.attempts || 1;
+          const nextDelayMs = this.BACKOFF_INTERVALS_MS[Math.min(attempts, this.BACKOFF_INTERVALS_MS.length - 1)];
+          const lastCheckTime = new Date(vInfo.lastAttemptAt).getTime();
+          if (Date.now() - lastCheckTime < nextDelayMs) {
+            continue;
+          }
+          console.log(`[RemoteVerification] \u{1F504} Pr\xFCfe Versuch ${attempts + 1}/${this.MAX_VERIFY_ATTEMPTS} f\xFCr Item ${item.id}...`);
+          const verifyRes = await this.verifySingleDesignRemote(designId, {
+            intendedFingerprint: item.uploadRecovery?.intendedRemoteFingerprint,
+            baselineFingerprint: item.uploadRecovery?.remoteBaseline?.fingerprint,
+            baselineStatus: item.uploadRecovery?.remoteBaseline?.status
+          });
+          const now = (/* @__PURE__ */ new Date()).toISOString();
+          const nextAttempts = attempts + 1;
+          if (verifyRes.result === "CONFIRMED_SUCCESS") {
+            this.finalizeConfirmedRemoteAction(item.id, designId, verifyRes.currentStatus, verifyRes.details);
+          } else if (verifyRes.result === "VERIFY_PENDING" && nextAttempts < this.MAX_VERIFY_ATTEMPTS) {
+            QueueService.updateItemUploadRecovery(item.id, {
+              remoteVerification: {
+                status: "VERIFY_PENDING",
+                attempts: nextAttempts,
+                firstAttemptAt: vInfo.firstAttemptAt,
+                lastAttemptAt: now,
+                details: verifyRes.details
+              }
+            });
+          } else {
+            const finalStatus = verifyRes.result === "AUTH_REQUIRED" ? "AUTH_REQUIRED" : "AMBIGUOUS";
+            console.warn(`[RemoteVerification] \u26A0\uFE0F Verifikation f\xFCr Item ${item.id} nicht automatisch aufl\xF6sbar (${finalStatus}). Eskaliere zu AWAITING_RECOVERY_REVIEW.`);
+            QueueService.updateItemUploadRecovery(item.id, {
+              remoteVerification: {
+                status: finalStatus,
+                attempts: nextAttempts,
+                firstAttemptAt: vInfo.firstAttemptAt,
+                lastAttemptAt: now,
+                details: verifyRes.details
+              }
+            });
+            QueueService.updateItemStatus(item.id, "ERROR", `Remote-Aktion unklar: ${verifyRes.details}`);
+            if (item.taskId) {
+              TaskLogService2.updateTaskStatus(item.taskId, {
+                status: "AWAITING_RECOVERY_REVIEW",
+                checkpoint: "RECOVERY_REVIEW",
+                hasError: true,
+                errorDetails: `Remote-Verifikation unklar: ${verifyRes.details}`
+              });
+            }
+          }
+        }
+      }
+      /**
+       * Human Review Action 1: REVERIFY_REMOTE
+       * Triggers an immediate remote verification check on demand.
+       */
+      static async reverifyRemote(taskId) {
+        const queue = QueueService.loadQueue();
+        const item = queue.find((i) => i.taskId === taskId);
+        if (!item) {
+          return { success: false, result: "AMBIGUOUS", details: `Kein Queue-Item f\xFCr Task ${taskId} gefunden.` };
+        }
+        const designId = item.uploadRecovery?.amazonDesignId || item.designId;
+        if (!designId) {
+          return { success: false, result: "AMBIGUOUS", details: "Keine Amazon Design-ID hinterlegt." };
+        }
+        const res = await this.verifySingleDesignRemote(designId, {
+          intendedFingerprint: item.uploadRecovery?.intendedRemoteFingerprint,
+          baselineFingerprint: item.uploadRecovery?.remoteBaseline?.fingerprint,
+          baselineStatus: item.uploadRecovery?.remoteBaseline?.status
+        });
+        if (res.result === "CONFIRMED_SUCCESS") {
+          this.finalizeConfirmedRemoteAction(item.id, designId, res.currentStatus, res.details);
+        }
+        return { success: true, result: res.result, details: res.details };
+      }
+      /**
+       * Human Review Action 2: MARK_CONFIRMED
+       * User explicitly confirms that Amazon has accepted the design.
+       */
+      static markConfirmed(taskId, amazonDesignId) {
+        const queue = QueueService.loadQueue();
+        const item = queue.find((i) => i.taskId === taskId);
+        if (!item) {
+          return { success: false, error: `Kein Queue-Item f\xFCr Task ${taskId} gefunden.` };
+        }
+        return this.finalizeConfirmedRemoteAction(item.id, amazonDesignId, "MANUALLY_CONFIRMED", "Vom Benutzer manuell als erfolgreich best\xE4tigt");
+      }
+      /**
+       * Human Review Action 3: FORCE_RETRY
+       * Conscious user override: User confirms design was NOT submitted.
+       * Archives previous attempt in history and cleanly resets to WAITING.
+       */
+      static forceRetry(taskId, reason) {
+        const queue = QueueService.loadQueue();
+        const item = queue.find((i) => i.taskId === taskId);
+        if (!item) {
+          return { success: false, error: `Kein Queue-Item f\xFCr Task ${taskId} gefunden.` };
+        }
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const prevRecovery = item.uploadRecovery;
+        const historyEntry = {
+          attempt: prevRecovery?.attempt || 1,
+          phase: prevRecovery?.phase || "UNKNOWN",
+          action: prevRecovery?.action,
+          remoteRequestIntentAt: prevRecovery?.remoteRequestIntentAt || prevRecovery?.remoteActionIntentAt,
+          result: prevRecovery?.remoteVerification?.status || "FORCE_RETRIED",
+          manualOverride: "FORCE_RETRY",
+          overrideAt: now,
+          reason: reason || "Benutzer hat erneuten Upload-Versuch erzwungen"
+        };
+        const currentHistory = prevRecovery?.history || [];
+        currentHistory.push(historyEntry);
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: "STARTING",
+          attempt: (prevRecovery?.attempt || 1) + 1,
+          startedAt: now,
+          remoteRequestIntentAt: void 0,
+          remoteActionIntentAt: void 0,
+          amazonConfirmedAt: void 0,
+          recoveryReason: `Manueller Retry: ${reason}`,
+          manualOverride: {
+            action: "FORCE_RETRY",
+            timestamp: now,
+            reason
+          },
+          history: currentHistory
+        });
+        QueueService.updateItemStatus(item.id, "WAITING", void 0);
+        QueueService.rebalanceQueue();
+        TaskLogService2.updateTaskStatus(taskId, {
+          status: "PROCESSING",
+          hasError: false,
+          errorDetails: void 0
+        });
+        TaskLogService2.addEvent(taskId, {
+          timestamp: now,
+          type: "RECOVERY_OVERRIDDEN",
+          title: "Manueller Upload-Retry erteilt (Override)",
+          content: { reason, previousAttempt: prevRecovery?.attempt }
+        });
+        console.log(`[RemoteVerification] \u{1F504} FORCE_RETRY f\xFCr Task ${taskId} ausgef\xFChrt. Item ${item.id} ist wieder WAITING.`);
+        return { success: true };
+      }
+      /**
+       * Human Review Action 4: CANCEL
+       * Aborts upload workflow while preserving full recovery evidence.
+       */
+      static cancelUpload(taskId, reason) {
+        const queue = QueueService.loadQueue();
+        const item = queue.find((i) => i.taskId === taskId);
+        if (!item) {
+          return { success: false, error: `Kein Queue-Item f\xFCr Task ${taskId} gefunden.` };
+        }
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const prevRecovery = item.uploadRecovery;
+        const historyEntry = {
+          attempt: prevRecovery?.attempt || 1,
+          phase: prevRecovery?.phase || "UNKNOWN",
+          action: prevRecovery?.action,
+          remoteRequestIntentAt: prevRecovery?.remoteRequestIntentAt,
+          result: "CANCELLED_BY_USER",
+          manualOverride: "CANCEL",
+          overrideAt: now,
+          reason: reason || "Vom Benutzer abgebrochen"
+        };
+        const currentHistory = prevRecovery?.history || [];
+        currentHistory.push(historyEntry);
+        QueueService.updateItemUploadRecovery(item.id, {
+          recoveryReason: `Abgebrochen: ${reason}`,
+          manualOverride: {
+            action: "CANCEL",
+            timestamp: now,
+            reason
+          },
+          history: currentHistory
+        });
+        QueueService.updateItemStatus(item.id, "ERROR", `Upload abgebrochen: ${reason}`);
+        QueueService.rebalanceQueue();
+        TaskLogService2.updateTaskStatus(taskId, {
+          status: "REJECTED",
+          hasError: true,
+          errorDetails: `Upload abgebrochen: ${reason}`
+        });
+        return { success: true };
+      }
+      /**
+       * Finds possible Amazon candidate designs in Coral FindListings to assist the user in Human Review.
+       * Matches by title, brand or time window (UI helper only - never triggers automated state changes).
+       */
+      static async findPossibleAmazonCandidates(taskId) {
+        const task = TaskRepository.getTaskById(taskId);
+        if (!task) return { candidates: [] };
+        const quoteOrTitle = (task.payload?.title || task.payload?.quote || "").toLowerCase();
+        if (!quoteOrTitle) return { candidates: [] };
+        try {
+          const inspectRes = await AmazonInspectService.inspectFindListings();
+          if (!inspectRes.success || !inspectRes.data?.items) return { candidates: [] };
+          const items = inspectRes.data.items;
+          const candidates = [];
+          for (const it of items) {
+            const dId = it.designId;
+            const itTitle = (it.title || "").toLowerCase();
+            if (dId && itTitle) {
+              if (itTitle === quoteOrTitle || itTitle.includes(quoteOrTitle) || quoteOrTitle.includes(itTitle)) {
+                candidates.push({
+                  designId: dId,
+                  title: it.title,
+                  brand: it.brandName,
+                  status: it.status || "UNKNOWN",
+                  createdDate: it.createdDate,
+                  updatedDate: it.updatedDate,
+                  similarity: itTitle === quoteOrTitle ? "HIGH" : "MEDIUM"
+                });
+              }
+            }
+          }
+          return { candidates: candidates.slice(0, 5) };
+        } catch {
+          return { candidates: [] };
+        }
+      }
+      /**
+       * Stops the verification worker (used in testing).
+       */
+      static stopVerificationWorker() {
+        if (this.verificationTimer) {
+          clearInterval(this.verificationTimer);
+          this.verificationTimer = null;
+        }
+        this.isVerificationWorkerRunning = false;
+      }
+    };
+  }
+});
+
 // src/server/services/taskRecoveryService.ts
 var import_fs83, import_path78, TaskRecoveryService;
 var init_taskRecoveryService = __esm2({
@@ -224340,6 +224889,7 @@ var init_taskRecoveryService = __esm2({
     init_svgRenderService();
     init_settingsService();
     init_llmService();
+    init_amazonRecoveryVerificationService();
     TaskRecoveryService = class {
       static reservedRecoveryJobs = [];
       static reservedDesignIds = /* @__PURE__ */ new Set();
@@ -224397,8 +224947,25 @@ var init_taskRecoveryService = __esm2({
         const queueItems = QueueService.loadQueue();
         let hasQueueChanges = false;
         for (const item of queueItems) {
+          const recovery = item.uploadRecovery;
+          const designId = recovery?.amazonDesignId || item.designId;
+          if (recovery?.remoteVerification?.status === "CONFIRMED_SUCCESS" || recovery?.phase === "AMAZON_CONFIRMED") {
+            const targetDesignId = designId || (item.taskId ? TaskRepository.getTaskById(item.taskId)?.designId : void 0);
+            const taskObj = item.taskId ? TaskRepository.getTaskById(item.taskId) : null;
+            if (targetDesignId && (item.status !== "COMPLETED" || taskObj && taskObj.status !== "COMPLETED")) {
+              AmazonRecoveryVerificationService.finalizeConfirmedRemoteAction(
+                item.id,
+                targetDesignId,
+                recovery?.remoteVerification?.details || "Startup Reconciled",
+                "Cross-Storage Recovery: Finalized verified remote state"
+              );
+              hasQueueChanges = true;
+              report.confirmedUploadsCompleted++;
+              report.details.push(`Reconciled confirmed item ${item.id} across Queue and Task`);
+              continue;
+            }
+          }
           if (item.status === "UPLOADING") {
-            const recovery = item.uploadRecovery;
             if (recovery && recovery.phase) {
               const preRemotePhases = ["STARTING", "NAVIGATING", "CONFIGURING", "VALIDATING", "READY_TO_SUBMIT"];
               if (preRemotePhases.includes(recovery.phase)) {
@@ -224413,27 +224980,73 @@ var init_taskRecoveryService = __esm2({
                 report.preRemoteUploadsReset++;
                 report.details.push(`Reset pre-remote item ${item.id} (${item.title || item.designTitle}) to WAITING`);
                 console.log(`[TaskRecovery] \u{1F504} Pre-Remote Recovery: Reset item ${item.id} (${recovery.phase}) back to WAITING.`);
-              } else if (recovery.phase === "REMOTE_ACTION_INTENT" || recovery.phase === "AWAITING_AMAZON_CONFIRMATION") {
-                item.status = "ERROR";
-                item.errorMessage = "Upload wurde w\xE4hrend oder nach dem Remote-Submit-Intent unterbrochen. Human Review erforderlich.";
+              } else if (recovery.phase === "REMOTE_ACTION_INTENT" && recovery.action === "PUBLISH" && !recovery.remoteRequestIntentAt) {
+                item.status = "WAITING";
                 item.uploadRecovery = {
                   ...recovery,
-                  recoveryReason: `Interrupted during/after ${recovery.phase}. Automated retry blocked to prevent duplicate submission.`
+                  phase: "STARTING",
+                  attempt: (recovery.attempt || 1) + 1,
+                  recoveryReason: "Recovered from legacy pre-remote publish intent (modal not submitted, safe to retry)"
+                };
+                hasQueueChanges = true;
+                report.preRemoteUploadsReset++;
+                report.details.push(`Reset legacy pre-remote publish item ${item.id} to WAITING`);
+                console.log(`[TaskRecovery] \u{1F504} Pre-Remote Publish Recovery: Reset legacy item ${item.id} to WAITING.`);
+              } else if (recovery.phase === "REMOTE_ACTION_INTENT" && recovery.action === "SAVE_DRAFT") {
+                const hasKnownId = Boolean(recovery.amazonDesignId || item.designId);
+                const now = (/* @__PURE__ */ new Date()).toISOString();
+                item.status = "ERROR";
+                item.errorMessage = "Upload w\xE4hrend Save-Draft unterbrochen. Remote-Zustand unbekannt.";
+                item.uploadRecovery = {
+                  ...recovery,
+                  recoveryReason: "Interrupted during SAVE_DRAFT intent. Automated retry blocked to prevent duplicates.",
+                  remoteVerification: hasKnownId ? {
+                    status: "VERIFY_PENDING",
+                    attempts: 1,
+                    firstAttemptAt: now,
+                    lastAttemptAt: now,
+                    matchedDesignId: recovery.amazonDesignId || item.designId,
+                    details: "Pr\xFCfe remote Draft-Status auf Amazon"
+                  } : void 0
                 };
                 hasQueueChanges = true;
                 report.unsafeUploadsEscalated++;
-                report.details.push(`Escalated unsafe item ${item.id} (${item.title || item.designTitle}) in phase ${recovery.phase} to Human Review`);
-                console.warn(`[TaskRecovery] \u26A0\uFE0F Unsafe Remote Intent: Item ${item.id} was in ${recovery.phase}. Escalating to Human Review.`);
+                report.details.push(`Escalated legacy draft item ${item.id} to ${hasKnownId ? "VERIFY_PENDING" : "Human Review"}`);
                 if (item.taskId) {
-                  const task = TaskRepository.getTaskById(item.taskId);
-                  if (task) {
-                    TaskLogService2.updateTaskStatus(task.id, {
-                      status: "AWAITING_RECOVERY_REVIEW",
-                      checkpoint: "RECOVERY_REVIEW",
-                      hasError: true,
-                      errorDetails: "Upload wurde nach dem Absenden des Remote-Intents an Amazon unterbrochen. Bitte in Amazon Manage pr\xFCfen, ob das Produkt ver\xF6ffentlicht wurde, bevor erneut hochgeladen wird."
-                    });
-                  }
+                  TaskLogService2.updateTaskStatus(item.taskId, {
+                    status: "AWAITING_RECOVERY_REVIEW",
+                    checkpoint: "RECOVERY_REVIEW",
+                    hasError: true,
+                    errorDetails: "Upload w\xE4hrend Save-Draft unterbrochen. Bitte in Amazon Manage pr\xFCfen."
+                  });
+                }
+              } else if (recovery.phase === "REMOTE_REQUEST_INTENT" || recovery.phase === "AWAITING_AMAZON_CONFIRMATION") {
+                const hasKnownId = Boolean(recovery.amazonDesignId || item.designId);
+                const now = (/* @__PURE__ */ new Date()).toISOString();
+                item.status = "ERROR";
+                item.errorMessage = "Upload w\xE4hrend des Amazon Remote-Requests unterbrochen.";
+                item.uploadRecovery = {
+                  ...recovery,
+                  recoveryReason: `Interrupted during ${recovery.phase}. Remote request was possibly received.`,
+                  remoteVerification: hasKnownId ? {
+                    status: "VERIFY_PENDING",
+                    attempts: 1,
+                    firstAttemptAt: now,
+                    lastAttemptAt: now,
+                    matchedDesignId: recovery.amazonDesignId || item.designId,
+                    details: "Automatische Remote-Verifikation aktiv"
+                  } : void 0
+                };
+                hasQueueChanges = true;
+                report.unsafeUploadsEscalated++;
+                report.details.push(`Escalated remote request item ${item.id} (${hasKnownId ? "ID known: VERIFY_PENDING" : "NEW without ID: Human Review"})`);
+                if (item.taskId) {
+                  TaskLogService2.updateTaskStatus(item.taskId, {
+                    status: "AWAITING_RECOVERY_REVIEW",
+                    checkpoint: "RECOVERY_REVIEW",
+                    hasError: true,
+                    errorDetails: hasKnownId ? "Upload w\xE4hrend Amazon-Request unterbrochen. Automatische Remote-Verifikation wird ausgef\xFChrt..." : "Upload w\xE4hrend Amazon-Request unterbrochen. Keine Design-ID vorhanden. Manuelle Pr\xFCfung erforderlich."
+                  });
                 }
               } else if (recovery.phase === "AMAZON_CONFIRMED") {
                 item.status = "COMPLETED";
@@ -224489,7 +225102,7 @@ var init_taskRecoveryService = __esm2({
             const task = TaskRepository.getTaskById(item.taskId);
             if (task) {
               if (!task.inQueue) {
-                const targetStatus = task.status === "COMPLETED" || task.status === "UPDATE_QUEUED" ? task.status : task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED";
+                const targetStatus = task.status === "COMPLETED" || task.status === "UPDATE_QUEUED" || task.status === "AWAITING_RECOVERY_REVIEW" ? task.status : task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED";
                 TaskLogService2.updateTaskStatus(task.id, {
                   inQueue: true,
                   status: targetStatus
@@ -224616,6 +225229,7 @@ var init_taskRecoveryService = __esm2({
        * Runs asynchronously after server is ready (isSystemReady = true).
        */
       static async startRecoveryQueueWorker(concurrency = 1) {
+        AmazonRecoveryVerificationService.startVerificationWorker();
         if (this.isWorkerRunning) {
           console.log("[TaskRecovery] \u2139\uFE0F Recovery Worker is already running.");
           return;
@@ -230781,6 +231395,9 @@ init_queueService();
 init_productCatalogService();
 init_listingSanitizationService();
 init_syncEngine();
+init_amazonInspectService();
+init_amazonRecoveryVerificationService();
+init_taskRepository();
 var UploadWorkerService = class {
   static isUploading = false;
   static isPausedBeforePublish = false;
@@ -231941,6 +232558,25 @@ var UploadWorkerService = class {
           this.isPausedBeforePublish = false;
           if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
         }
+        const canonicalIntended = AmazonRecoveryVerificationService.canonicalizeRemoteState({
+          immutableListings: item.immutableListings || item.listings,
+          activeProductsMap: item.activeProductsMap,
+          pricesMap: item.pricesMap,
+          colorOptions: item.colorOptions,
+          fitTypes: item.fitTypes
+        });
+        const intendedRemoteFingerprint2 = AmazonRecoveryVerificationService.computeRemoteFingerprint(canonicalIntended);
+        let remoteBaseline2;
+        if (isUpdate && cleanDesignId) {
+          try {
+            const inspectRes = await AmazonInspectService.inspectProductConfig(cleanDesignId);
+            if (inspectRes.success && inspectRes.data) {
+              remoteBaseline2 = AmazonRecoveryVerificationService.createBaselineSnapshot(cleanDesignId, inspectRes.data);
+            }
+          } catch (bErr) {
+            console.warn("[UploadWorker] Baseline-Snapshot nicht abrufbar:", bErr.message);
+          }
+        }
         this.log(`\u{1F680} Klicke 'Publish' Button f\xFCr Live-Ver\xF6ffentlichung...`, "Ver\xF6ffentliche...", 95, 100);
         const publishCheck = await page.evaluate(() => {
           const submitBtn = document.getElementById("submit-button") || document.querySelector('button[id*="submit"], button.btn-submit');
@@ -231953,11 +232589,6 @@ var UploadWorkerService = class {
         if (!publishCheck.isEnabled && publishCheck.errors.length > 0) {
           throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(" | ")}`);
         }
-        QueueService.updateItemUploadRecovery(item.id, {
-          phase: "REMOTE_ACTION_INTENT",
-          action: "PUBLISH",
-          remoteActionIntentAt: (/* @__PURE__ */ new Date()).toISOString()
-        });
         await page.evaluate(() => {
           const submitBtn = document.getElementById("submit-button") || document.querySelector('button[id*="submit"], button.btn-submit');
           submitBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -231966,17 +232597,59 @@ var UploadWorkerService = class {
         this.log(`\u23F3 Warte auf Best\xE4tigungs-Modal...`, "Best\xE4tige Publish...");
         const confirmBtn = await page.waitForSelector(".modal-footer .btn-primary.btn-submit, button.btn-submit", { timeout: 15e3 });
         if (!confirmBtn) throw new Error("Best\xE4tigungs-Button im Publish-Modal nicht gefunden.");
+        const responsePromise = page.waitForResponse(
+          (resp) => (resp.url().includes("/api/productconfiguration/") || resp.url().includes("/api/ng-amazon/coral/")) && resp.request().method() === "POST",
+          { timeout: 35e3 }
+        ).catch(() => null);
+        QueueService.updateItemUploadRecovery(item.id, {
+          phase: "REMOTE_REQUEST_INTENT",
+          action: "PUBLISH",
+          remoteRequestIntentAt: (/* @__PURE__ */ new Date()).toISOString(),
+          remoteBaseline: remoteBaseline2,
+          intendedRemoteFingerprint: intendedRemoteFingerprint2
+        });
+        await confirmBtn.click();
         QueueService.updateItemUploadRecovery(item.id, {
           phase: "AWAITING_AMAZON_CONFIRMATION",
           action: "PUBLISH"
         });
-        await confirmBtn.click();
+        let capturedDesignId = item.designId;
+        const netResp = await responsePromise;
+        if (netResp) {
+          try {
+            const httpStatus = netResp.status();
+            const respJson = await netResp.json().catch(() => null);
+            const isSuccess = httpStatus === 200;
+            const newId = respJson?.designId || respJson?.id || respJson?.globalDesignId;
+            if (newId && typeof newId === "string") {
+              capturedDesignId = newId;
+            }
+            QueueService.updateItemUploadRecovery(item.id, {
+              amazonDesignId: capturedDesignId,
+              remoteResponse: {
+                receivedAt: (/* @__PURE__ */ new Date()).toISOString(),
+                httpStatus,
+                result: isSuccess ? "SUCCESS" : httpStatus === 429 ? "RATE_LIMITED" : httpStatus === 401 ? "AUTH_ERROR" : "REMOTE_ERROR",
+                amazonDesignId: capturedDesignId,
+                amazonStatus: respJson?.status
+              }
+            });
+            if (capturedDesignId && item.taskId) {
+              try {
+                TaskRepository.updateTask(item.taskId, { designId: capturedDesignId });
+              } catch {
+              }
+            }
+          } catch {
+          }
+        }
         this.log(`\u23F3 Warte auf finale Amazon-Best\xE4tigung (#redirect-manage)...`, "Warte auf Best\xE4tigung...");
         await page.waitForSelector('#redirect-manage, a[href*="/manage"]', { timeout: 6e4 });
         QueueService.updateItemUploadRecovery(item.id, {
           phase: "AMAZON_CONFIRMED",
           action: "PUBLISH",
-          amazonConfirmedAt: (/* @__PURE__ */ new Date()).toISOString()
+          amazonConfirmedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          amazonDesignId: capturedDesignId
         });
         this.log(`\u{1F389} Design erfolgreich auf Amazon Merch ver\xF6ffentlicht!`, "Erfolgreich ver\xF6ffentlicht \u2713", 100, 100);
       } else {
@@ -231994,10 +232667,16 @@ var UploadWorkerService = class {
         if (!draftCheck.isEnabled && draftCheck.errors.length > 0) {
           throw new Error(`Save-Draft Button ist deaktiviert. Formularfehler: ${draftCheck.errors.join(" | ")}`);
         }
+        const responsePromise = page.waitForResponse(
+          (resp) => (resp.url().includes("/api/productconfiguration/") || resp.url().includes("/api/ng-amazon/coral/")) && resp.request().method() === "POST",
+          { timeout: 35e3 }
+        ).catch(() => null);
         QueueService.updateItemUploadRecovery(item.id, {
-          phase: "REMOTE_ACTION_INTENT",
+          phase: "REMOTE_REQUEST_INTENT",
           action: "SAVE_DRAFT",
-          remoteActionIntentAt: (/* @__PURE__ */ new Date()).toISOString()
+          remoteRequestIntentAt: (/* @__PURE__ */ new Date()).toISOString(),
+          remoteBaseline,
+          intendedRemoteFingerprint
         });
         await page.evaluate(() => {
           const draftBtn = document.getElementById("draft-button") || document.getElementById("save-as-draft-button") || document.querySelector('button[id*="draft"]') || document.querySelector("button.btn-draft");
@@ -232010,6 +232689,36 @@ var UploadWorkerService = class {
           phase: "AWAITING_AMAZON_CONFIRMATION",
           action: "SAVE_DRAFT"
         });
+        let capturedDraftDesignId = item.designId;
+        const netResp = await responsePromise;
+        if (netResp) {
+          try {
+            const httpStatus = netResp.status();
+            const respJson = await netResp.json().catch(() => null);
+            const isSuccess = httpStatus === 200;
+            const newId = respJson?.designId || respJson?.id || respJson?.globalDesignId;
+            if (newId && typeof newId === "string") {
+              capturedDraftDesignId = newId;
+            }
+            QueueService.updateItemUploadRecovery(item.id, {
+              amazonDesignId: capturedDraftDesignId,
+              remoteResponse: {
+                receivedAt: (/* @__PURE__ */ new Date()).toISOString(),
+                httpStatus,
+                result: isSuccess ? "SUCCESS" : httpStatus === 429 ? "RATE_LIMITED" : httpStatus === 401 ? "AUTH_ERROR" : "REMOTE_ERROR",
+                amazonDesignId: capturedDraftDesignId,
+                amazonStatus: respJson?.status
+              }
+            });
+            if (capturedDraftDesignId && item.taskId) {
+              try {
+                TaskRepository.updateTask(item.taskId, { designId: capturedDraftDesignId });
+              } catch {
+              }
+            }
+          } catch {
+          }
+        }
         try {
           await page.waitForFunction(() => {
             const txt = (document.body.innerText || "").toLowerCase();
@@ -232023,7 +232732,8 @@ var UploadWorkerService = class {
         QueueService.updateItemUploadRecovery(item.id, {
           phase: "AMAZON_CONFIRMED",
           action: "SAVE_DRAFT",
-          amazonConfirmedAt: (/* @__PURE__ */ new Date()).toISOString()
+          amazonConfirmedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          amazonDesignId: capturedDraftDesignId
         });
         this.log(`\u{1F3E0} Navigiere zur\xFCck zum Dashboard (https://merch.amazon.com/dashboard)...`, "Navigiere zu Dashboard...");
         await page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 });
@@ -232162,6 +232872,7 @@ init_trademarkWhitelistService();
 init_updateBackfillService();
 init_visionOptimizationService();
 init_taskRecoveryService();
+init_amazonRecoveryVerificationService();
 var import_meta = {};
 import_dotenv.default.config();
 var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path83.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
@@ -233091,6 +233802,39 @@ app.post("/api/v1/tasks/:taskId/reset-svg", async (req, res) => {
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/tasks/:taskId/submit-recovery-review", async (req, res) => {
+  const { taskId } = req.params;
+  const { action, amazonDesignId, reason } = req.body;
+  try {
+    let result2 = { success: false };
+    if (action === "REVERIFY_REMOTE") {
+      result2 = await AmazonRecoveryVerificationService.reverifyRemote(taskId);
+    } else if (action === "MARK_CONFIRMED") {
+      if (!amazonDesignId) throw new Error("amazonDesignId ist erforderlich f\xFCr MARK_CONFIRMED");
+      result2 = AmazonRecoveryVerificationService.markConfirmed(taskId, amazonDesignId);
+    } else if (action === "FORCE_RETRY") {
+      result2 = AmazonRecoveryVerificationService.forceRetry(taskId, reason || "Manuell erzwungener Retry");
+    } else if (action === "CANCEL") {
+      result2 = AmazonRecoveryVerificationService.cancelUpload(taskId, reason || "Vom Benutzer abgebrochen");
+    } else {
+      throw new Error(`Unbekannte Recovery Action: ${action}`);
+    }
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    broadcast("QUEUE_UPDATED", QueueService.loadQueue());
+    res.json(result2);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+app.get("/api/v1/tasks/:taskId/recovery-candidates", async (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const result2 = await AmazonRecoveryVerificationService.findPossibleAmazonCandidates(taskId);
+    res.json(result2);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message, candidates: [] });
   }
 });
 function validateMcpAuth(req, res, next) {
