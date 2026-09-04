@@ -224145,6 +224145,17 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u{1F4E6} Starte Step U7 (Queue \xDCbergabe) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
+        try {
+          const { FinalizationService: FinalizationService2 } = await Promise.resolve().then(() => (init_finalizationService(), finalizationService_exports));
+          return await FinalizationService2.finalizeForQueue(this.finalizationParams(task));
+        } catch (err) {
+          console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
+          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          return { success: false, error: err.message };
+        }
+      }
+      /** Same inputs for normal U7 and isolated finalization retry. */
+      static finalizationParams(task) {
         const listing = task.listingResult?.en || {
           brand: task.payload?.brand || "",
           title: task.payload?.title || "",
@@ -224172,37 +224183,26 @@ Bullets: ${oldBullets}`
         } else if (rawAvoid.includes("black") || rawAvoid.includes("schwarz")) {
           resolvedAvoidColor = "black";
         }
-        try {
-          const { FinalizationService: FinalizationService2 } = await Promise.resolve().then(() => (init_finalizationService(), finalizationService_exports));
-          const finRes = await FinalizationService2.finalizeForQueue({
-            taskId: task.id,
-            pipeline: "UPDATE",
-            designId: task.payload?.designId,
-            brand: listing.brand,
-            title: listing.title,
-            bullet1: listing.bullet1,
-            bullet2: listing.bullet2,
-            description: listing.description || "",
-            listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
-            fitTypes: resolvedFitTypes,
-            avoidColor: resolvedAvoidColor,
-            localImagePath: task.localImagePath || "",
-            masterPngPath: task.localMbaPngPath || task.localImagePath || "",
-            publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
-            liveStats: task.payload?.liveStats || null,
-            liveProductSummary: task.payload?.productSummary || task.payload?.liveProductSummary || null,
-            liveProductTypes: task.payload?.productTypes || task.payload?.liveProductTypes || null,
-            tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
-          });
-          if (!finRes.success) {
-            return { success: false, error: finRes.error };
-          }
-          return { success: true };
-        } catch (err) {
-          console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
-          return { success: false, error: err.message };
-        }
+        return {
+          taskId: task.id,
+          pipeline: "UPDATE",
+          designId: task.payload?.designId,
+          brand: listing.brand,
+          title: listing.title,
+          bullet1: listing.bullet1,
+          bullet2: listing.bullet2,
+          description: listing.description || "",
+          listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
+          fitTypes: resolvedFitTypes,
+          avoidColor: resolvedAvoidColor,
+          localImagePath: task.localImagePath || "",
+          masterPngPath: task.localMbaPngPath || task.localImagePath || "",
+          publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
+          liveStats: task.payload?.liveStats || null,
+          liveProductSummary: task.payload?.productSummary || task.payload?.liveProductSummary || null,
+          liveProductTypes: task.payload?.productTypes || task.payload?.liveProductTypes || null,
+          tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
+        };
       }
       /**
        * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval or crash recovery)
@@ -227351,6 +227351,16 @@ var init_finalizationService = __esm2({
         if (params2.prepareOnly) {
           return { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
         }
+        return this.handoffPrepared(params2, { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
+      }
+      /** Synchronous queue handoff of an already validated result. No rendering or earlier workflow steps. */
+      static handoffPrepared(params2, result2) {
+        if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error("Vollst\xE4ndige Finalisierung fehlt");
+        const { taskId, pipeline: pipeline3 } = params2;
+        const task = TaskLogService2.getTask(taskId);
+        if (!task) throw new Error("Task nicht mehr vorhanden");
+        const resizedAssets = result2.resizedAssets;
+        const { root: sanitizedRoot, listings: sanitizedListings } = result2.preparedListing;
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
@@ -227388,6 +227398,7 @@ var init_finalizationService = __esm2({
             status: "COMPLETED",
             inQueue: true,
             hasError: false,
+            errorDetails: void 0,
             resizedAssets
           });
           TaskLogService2.addEvent(taskId, {
@@ -227433,6 +227444,7 @@ var init_finalizationService = __esm2({
           TaskLogService2.updateTaskStatus(taskId, {
             status: "UPDATE_QUEUED",
             hasError: false,
+            errorDetails: void 0,
             resizedAssets
           });
           TaskLogService2.addEvent(taskId, {
@@ -227633,50 +227645,8 @@ var init_taskLogService = __esm2({
         if (task.inQueue) return { success: true };
         task.inQueue = true;
         try {
-          const listing = task.listingResult || task.trademarkRefineResult || {};
-          const enListing = listing.en || (listing.title || listing.brand ? listing : {});
-          const brand = enListing.brand || task.payload?.brand || "";
-          const title = enListing.title || task.payload?.title || task.payload?.quote || "Design #" + task.id;
-          const bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
-          const bullet2 = enListing.bullet2 || enListing.bullet_2 || "";
-          const description = enListing.description || "";
-          const listings = {};
-          if (typeof listing === "object") {
-            for (const [key, val] of Object.entries(listing)) {
-              if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
-                listings[key.toLowerCase()] = val;
-              }
-            }
-          }
-          const audience = (task.customAnswers?.audience || task.payload?.audience || "Men, Women, Youth").toLowerCase();
-          const fitTypes = [];
-          if (audience.includes("men") || audience.includes("m\xE4nner") || audience.includes("herren")) fitTypes.push("men");
-          if (audience.includes("women") || audience.includes("frauen") || audience.includes("damen")) fitTypes.push("women");
-          if (audience.includes("youth") || audience.includes("kids") || audience.includes("kinder") || audience.includes("jugend")) fitTypes.push("youth");
-          let avoidColor = "none";
-          const avoid = (task.customAnswers?.avoidColor || task.payload?.avoidColor || "").toLowerCase();
-          if (avoid.includes("white") || avoid.includes("wei\xDF")) avoidColor = "white";
-          else if (avoid.includes("black") || avoid.includes("schwarz")) avoidColor = "black";
-          const rawHex = task.customAnswers?.customBackgroundColor || task.customAnswers?.accessoryColorHex;
-          const customBackgroundColor = typeof rawHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim()) ? rawHex.startsWith("#") ? rawHex : `#${rawHex}` : void 0;
           const { FinalizationService: FinalizationService2 } = await Promise.resolve().then(() => (init_finalizationService(), finalizationService_exports));
-          const finResult = await FinalizationService2.finalizeForQueue({
-            taskId: task.id,
-            pipeline: "DESIGN",
-            niche: task.payload?.niche || "",
-            brand,
-            title,
-            bullet1,
-            bullet2,
-            description,
-            listings,
-            fitTypes: fitTypes.length > 0 ? fitTypes : ["men", "women", "youth"],
-            avoidColor,
-            customBackgroundColor,
-            localImagePath: task.localImagePath || "",
-            masterPngPath: task.localMbaPngPath || "",
-            tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
-          });
+          const finResult = await FinalizationService2.finalizeForQueue(this.finalizationParams(task));
           if (!finResult.success) {
             task.inQueue = false;
             TaskRepository.updateTask(task.id, { inQueue: false });
@@ -227689,6 +227659,52 @@ var init_taskLogService = __esm2({
           console.warn("[TaskLogService] Failed to auto-enqueue completed task:", err.message);
           return { success: false, error: err.message };
         }
+      }
+      /** Existing approved inputs only; no generation, audit, translation or side effects. */
+      static finalizationParams(task) {
+        const listing = task.listingResult || task.trademarkRefineResult || {};
+        const enListing = listing.en || (listing.title || listing.brand ? listing : {});
+        const brand = enListing.brand || task.payload?.brand || "";
+        const title = enListing.title || task.payload?.title || task.payload?.quote || "Design #" + task.id;
+        const bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
+        const bullet2 = enListing.bullet2 || enListing.bullet_2 || "";
+        const description = enListing.description || "";
+        const listings = {};
+        if (typeof listing === "object") {
+          for (const [key, val] of Object.entries(listing)) {
+            if (val && typeof val === "object" && !Array.isArray(val) && !key.startsWith("_")) {
+              listings[key.toLowerCase()] = val;
+            }
+          }
+        }
+        const audience = (task.customAnswers?.audience || task.payload?.audience || "Men, Women, Youth").toLowerCase();
+        const fitTypes = [];
+        if (audience.includes("men") || audience.includes("m\xE4nner") || audience.includes("herren")) fitTypes.push("men");
+        if (audience.includes("women") || audience.includes("frauen") || audience.includes("damen")) fitTypes.push("women");
+        if (audience.includes("youth") || audience.includes("kids") || audience.includes("kinder") || audience.includes("jugend")) fitTypes.push("youth");
+        let avoidColor = "none";
+        const avoid = (task.customAnswers?.avoidColor || task.payload?.avoidColor || "").toLowerCase();
+        if (avoid.includes("white") || avoid.includes("wei\xDF")) avoidColor = "white";
+        else if (avoid.includes("black") || avoid.includes("schwarz")) avoidColor = "black";
+        const rawHex = task.customAnswers?.customBackgroundColor || task.customAnswers?.accessoryColorHex;
+        const customBackgroundColor = typeof rawHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim()) ? rawHex.startsWith("#") ? rawHex : `#${rawHex}` : void 0;
+        return {
+          taskId: task.id,
+          pipeline: "DESIGN",
+          niche: task.payload?.niche || "",
+          brand,
+          title,
+          bullet1,
+          bullet2,
+          description,
+          listings,
+          fitTypes: fitTypes.length > 0 ? fitTypes : ["men", "women", "youth"],
+          avoidColor,
+          customBackgroundColor,
+          localImagePath: task.localImagePath || "",
+          masterPngPath: task.localMbaPngPath || "",
+          tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
+        };
       }
       static updateTaskStatus(taskId, updates) {
         if (updates.status === "COMPLETED") {
@@ -233390,28 +233406,52 @@ init_queueService();
 init_taskLogService();
 init_taskExecutionLock();
 init_productCatalogService();
+init_updatePipelineService();
+
+// src/types/finalizationRetry.ts
+function hasFailedFinalization(task) {
+  const latest = [...task.events || []].reverse().find((event) => String(event.type) === "FINALIZATION_EVENT");
+  return latest?.content?.status === "FAILED";
+}
+function canRepeatFinalization(task) {
+  if (task.checkpoint || task.status.startsWith("AWAITING_")) return false;
+  if (["COMPLETED", "UPDATE_QUEUED", "ERROR"].includes(task.status)) return true;
+  return task.status === "UPDATE_TRANSLATED" && Boolean(task.hasError) && hasFailedFinalization(task);
+}
+
+// src/server/services/manualFinalizationService.ts
 var ManualFinalizationService = class {
   static running = false;
   static async repeat(taskId) {
     if (this.running || TaskExecutionLock.isLocked(taskId)) throw new Error("Eine Finalisierung oder Task-Verarbeitung l\xE4uft bereits.");
+    if (QueueService.isCorrupted()) throw new Error("Queue-Speicher ist im Sicherheitsmodus; keine Finalisierung m\xF6glich.");
     const task = TaskLogService2.getTask(taskId);
-    if (!task || !["COMPLETED", "UPDATE_QUEUED", "ERROR"].includes(task.status)) {
+    if (!task || !canRepeatFinalization(task)) {
       throw new Error("Task noch in Verarbeitung oder Review; Finalisierung hier nicht wiederholbar.");
     }
     const matches = QueueService.getState().items.filter((item2) => item2.taskId === taskId);
-    if (matches.length !== 1) throw new Error("Genau ein vorhandener Queue-Eintrag erforderlich. Es wird kein neuer Eintrag angelegt.");
-    const item = structuredClone(matches[0]);
-    if (!["WAITING", "ERROR"].includes(item.status) || item.uploadRecovery?.remoteRequestIntentAt || ["REMOTE_ACTION_INTENT", "REMOTE_REQUEST_INTENT", "AWAITING_AMAZON_CONFIRMATION", "AMAZON_CONFIRMED"].includes(item.uploadRecovery?.phase || "")) {
+    if (matches.length > 1) throw new Error("Mehrere Queue-Eintr\xE4ge vorhanden; keine eindeutige Wiederholung m\xF6glich.");
+    if (!matches.length && (!hasFailedFinalization(task) || task.inQueue || task.events?.some((event) => event.type === "TASK_HANDOFF" && event.content?.status === "SUCCESS"))) {
+      throw new Error("Ohne Queue-Eintrag darf nur eine vor der ersten \xDCbergabe fehlgeschlagene Finalisierung wiederholt werden.");
+    }
+    const item = matches.length ? structuredClone(matches[0]) : void 0;
+    if (item && (!["WAITING", "ERROR"].includes(item.status) || item.uploadRecovery?.remoteRequestIntentAt || ["REMOTE_ACTION_INTENT", "REMOTE_REQUEST_INTENT", "AWAITING_AMAZON_CONFIRMATION", "AMAZON_CONFIRMED"].includes(item.uploadRecovery?.phase || ""))) {
       throw new Error("Upload l\xE4uft, wurde abgeschlossen oder ist remote ungekl\xE4rt; Wiederholung gesperrt.");
     }
     if (!TaskExecutionLock.acquire(taskId, "USER_ACTION")) throw new Error("Task ist gesperrt.");
     this.running = true;
     try {
-      const result2 = await FinalizationService.finalizeForQueue({
+      const paramsForTask = (value2) => value2.source === "UPDATE" ? UpdatePipelineService.finalizationParams(value2) : TaskLogService2.finalizationParams(value2);
+      const params2 = item ? {
         ...item,
         taskId,
         pipeline: item.designId || item.source === "UPDATE" || item.type === "update" ? "UPDATE" : "DESIGN",
-        masterPngPath: item.pngPath,
+        masterPngPath: item.pngPath
+      } : paramsForTask(task);
+      const inputFingerprint = (value2) => JSON.stringify([paramsForTask(value2), value2.svgContent, value2.localSvgPath, value2.checkpoint, value2.status]);
+      const before = item ? void 0 : inputFingerprint(task);
+      const result2 = await FinalizationService.finalizeForQueue({
+        ...params2,
         prepareOnly: true,
         artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto3.randomUUID)()}`
       });
@@ -233434,7 +233474,15 @@ var ManualFinalizationService = class {
           throw new Error(`Unerwartete Bildma\xDFe: ${variant.id}`);
         }
       }
-      if (!TaskLogService2.getTask(taskId)) throw new Error("Task wurde w\xE4hrend der Vorbereitung entfernt.");
+      const currentTask = TaskLogService2.getTask(taskId);
+      if (!currentTask) throw new Error("Task wurde w\xE4hrend der Vorbereitung entfernt.");
+      if (!item) {
+        if (QueueService.isCorrupted() || inputFingerprint(currentTask) !== before || currentTask.inQueue || QueueService.getState().items.some((candidate) => candidate.taskId === taskId)) {
+          throw new Error("Task oder Queue wurde inzwischen ge\xE4ndert; keine \xDCbernahme.");
+        }
+        FinalizationService.handoffPrepared(params2, result2);
+        return { success: true, message: "Nur Listing & Druckdateien finalisiert und erstmals an die Upload-Queue \xFCbergeben. Fr\xFChere Workflow-Schritte wurden nicht wiederholt; die Queue arbeitet gem\xE4\xDF ihrer Einstellung weiter." };
+      }
       const current = QueueService.getState().items.find((candidate) => candidate.id === item.id);
       const fingerprint = (value2) => JSON.stringify([value2.brand, value2.title, value2.bullet1, value2.bullet2, value2.description, value2.listings, value2.pngPath, value2.resizedAssets]);
       if (!current || fingerprint(current) !== fingerprint(item)) throw new Error("Queue-Inhalt wurde inzwischen ge\xE4ndert; keine \xDCbernahme.");
@@ -233448,7 +233496,7 @@ var ManualFinalizationService = class {
         listings: result2.preparedListing.listings,
         resizedAssets: assets
       });
-      TaskLogService2.updateTaskStatus(taskId, { resizedAssets: assets });
+      TaskLogService2.updateTaskStatus(taskId, { resizedAssets: assets, hasError: false, errorDetails: void 0 });
       TaskLogService2.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "FINALIZATION_EVENT",

@@ -271,6 +271,18 @@ export class FinalizationService {
       return { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
     }
 
+    return this.handoffPrepared(params, { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
+  }
+
+  /** Synchronous queue handoff of an already validated result. No rendering or earlier workflow steps. */
+  public static handoffPrepared(params: FinalizationParams, result: FinalizationResult): FinalizationResult {
+    if (!result.success || !result.resizedAssets || !result.preparedListing) throw new Error('Vollständige Finalisierung fehlt');
+    const { taskId, pipeline } = params;
+    const task = TaskLogService.getTask(taskId);
+    if (!task) throw new Error('Task nicht mehr vorhanden');
+    const resizedAssets = result.resizedAssets;
+    const { root: sanitizedRoot, listings: sanitizedListings } = result.preparedListing;
+
     // =========================================================================
     // PHASE 5: QUEUE HANDOFF & SIDE EFFECTS
     // =========================================================================
@@ -315,6 +327,7 @@ export class FinalizationService {
         status: 'COMPLETED',
         inQueue: true,
         hasError: false,
+        errorDetails: undefined,
         resizedAssets
       });
 
@@ -364,6 +377,7 @@ export class FinalizationService {
       TaskLogService.updateTaskStatus(taskId, {
         status: 'UPDATE_QUEUED',
         hasError: false,
+        errorDetails: undefined,
         resizedAssets
       });
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { canRepeatFinalization } from '../../types/finalizationRetry';
 import { 
   Terminal, 
   Send, 
@@ -737,7 +738,7 @@ export const PromptLogView: React.FC = () => {
 
   const handleRepeatFinalization = async (taskId: string) => {
     if (finalizingTaskId) return;
-    if (!window.confirm('Listing erneut prüfen und alle Resize-Dateien neu erzeugen? Der bestehende Queue-Eintrag wird aktualisiert. Kein Upload wird gestartet.')) return;
+    if (!window.confirm('Nur Listing & Druckdateien finalisieren wiederholen? Das vorhandene Listing wird geprüft und alle Druckdateien werden neu erzeugt. Frühere Workflow-Schritte bleiben unverändert. Nach Erfolg wird der Queue-Eintrag aktualisiert oder die bisher fehlgeschlagene erste Übergabe abgeschlossen. Eine aktive automatische Queue arbeitet anschließend regulär weiter.')) return;
     setFinalizingTaskId(taskId);
     setFinalizationMessage(null);
     try {
@@ -1598,8 +1599,8 @@ export const PromptLogView: React.FC = () => {
                               <h4 className="text-sm font-semibold text-cyan-200">Listing & Druckdateien finalisieren</h4>
                               <p className="text-xs text-slate-400">{busy ? 'Wird erneut vorbereitet…' : last.title}</p>
                             </div>
-                            <button onClick={() => handleRepeatFinalization(selectedTask.id)} disabled={Boolean(finalizingTaskId) || !['COMPLETED', 'UPDATE_QUEUED', 'ERROR'].includes(selectedTask.status)}
-                              title="Bestehenden wartenden/fehlgeschlagenen Queue-Eintrag vorbereiten. Laufende, abgeschlossene oder remote ungeklärte Uploads sind gesperrt."
+                            <button onClick={() => handleRepeatFinalization(selectedTask.id)} disabled={Boolean(finalizingTaskId) || !canRepeatFinalization(selectedTask)}
+                              title="Nur Listing und Druckdateien wiederholen – auch nach einem Fehler vor der Queue-Übergabe. Laufende Tasks, offene Reviews und ungeklärte Uploads bleiben gesperrt."
                               className="flex items-center gap-2 rounded-lg border border-cyan-700/50 px-3 py-2 text-xs text-cyan-200 disabled:opacity-40">
                               <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />Erneut ausführen
                             </button>

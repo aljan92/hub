@@ -19,6 +19,7 @@ import {
 } from '../utils/atomicFileStorage';
 import { TaskRepository } from '../storage/taskRepository';
 import { TaskExecutionLock } from './taskExecutionLock';
+import type { FinalizationParams } from './finalizationService';
 
 export * from '../../types/tasks';
 import { 
@@ -203,6 +204,24 @@ export class TaskLogService {
     task.inQueue = true;
 
     try {
+      const { FinalizationService } = await import('./finalizationService');
+      const finResult = await FinalizationService.finalizeForQueue(this.finalizationParams(task));
+      if (!finResult.success) {
+        task.inQueue = false;
+        TaskRepository.updateTask(task.id, { inQueue: false });
+      }
+      this.emitUpdate(task);
+      return finResult;
+    } catch (err: any) {
+      task.inQueue = false;
+      TaskRepository.updateTask(task.id, { inQueue: false });
+      console.warn('[TaskLogService] Failed to auto-enqueue completed task:', err.message);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /** Existing approved inputs only; no generation, audit, translation or side effects. */
+  static finalizationParams(task: DesignTaskLog): FinalizationParams {
       const listing = task.listingResult || task.trademarkRefineResult || {};
       const enListing = listing.en || (listing.title || listing.brand ? listing : {});
       const brand = enListing.brand || task.payload?.brand || '';
@@ -236,8 +255,7 @@ export class TaskLogService {
       const rawHex = (task.customAnswers as any)?.customBackgroundColor || (task.customAnswers as any)?.accessoryColorHex;
       const customBackgroundColor = (typeof rawHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim())) ? (rawHex.startsWith('#') ? rawHex : `#${rawHex}`) : undefined;
 
-      const { FinalizationService } = await import('./finalizationService');
-      const finResult = await FinalizationService.finalizeForQueue({
+      return {
         taskId: task.id,
         pipeline: 'DESIGN',
         niche: task.payload?.niche || '',
@@ -253,21 +271,7 @@ export class TaskLogService {
         localImagePath: task.localImagePath || '',
         masterPngPath: task.localMbaPngPath || '',
         tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
-      });
-
-      if (!finResult.success) {
-        task.inQueue = false;
-        TaskRepository.updateTask(task.id, { inQueue: false });
-      }
-
-      this.emitUpdate(task);
-      return finResult;
-    } catch (err: any) {
-      task.inQueue = false;
-      TaskRepository.updateTask(task.id, { inQueue: false });
-      console.warn('[TaskLogService] Failed to auto-enqueue completed task:', err.message);
-      return { success: false, error: err.message };
-    }
+      };
   }
 
   static updateTaskStatus(taskId: string, updates: Partial<DesignTaskLog>): DesignTaskLog | undefined {

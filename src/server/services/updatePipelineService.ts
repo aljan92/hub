@@ -12,6 +12,7 @@ import { VisionOptimizationService } from './visionOptimizationService';
 import { ListingValidationService } from './listingValidationService';
 import { AssetValidationService } from './assetValidationService';
 import { TaskExecutionLock } from './taskExecutionLock';
+import type { FinalizationParams } from './finalizationService';
 
 export class UpdatePipelineService {
   /**
@@ -711,6 +712,18 @@ export class UpdatePipelineService {
     const task = this.getTask(taskId);
     if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
 
+    try {
+      const { FinalizationService } = await import('./finalizationService');
+      return await FinalizationService.finalizeForQueue(this.finalizationParams(task));
+    } catch (err: any) {
+      console.error(`[UpdatePipeline] ❌ Fehler in Step U7:`, err);
+      TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: err.message });
+      return { success: false, error: err.message };
+    }
+  }
+
+  /** Same inputs for normal U7 and isolated finalization retry. */
+  static finalizationParams(task: DesignTaskLog): FinalizationParams {
     const listing = task.listingResult?.en || {
       brand: task.payload?.brand || '',
       title: task.payload?.title || '',
@@ -748,9 +761,7 @@ export class UpdatePipelineService {
       resolvedAvoidColor = 'black';
     }
 
-    try {
-      const { FinalizationService } = await import('./finalizationService');
-      const finRes = await FinalizationService.finalizeForQueue({
+      return {
         taskId: task.id,
         pipeline: 'UPDATE',
         designId: task.payload?.designId,
@@ -769,18 +780,7 @@ export class UpdatePipelineService {
         liveProductSummary: task.payload?.productSummary || task.payload?.liveProductSummary || null,
         liveProductTypes: task.payload?.productTypes || task.payload?.liveProductTypes || null,
         tmBlockedProductIds: task.blockedProducts || task.trademarkCheckResult?.blockedProducts || []
-      });
-
-      if (!finRes.success) {
-        return { success: false, error: finRes.error };
-      }
-
-      return { success: true };
-    } catch (err: any) {
-      console.error(`[UpdatePipeline] ❌ Fehler in Step U7:`, err);
-      TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: err.message });
-      return { success: false, error: err.message };
-    }
+      };
   }
 
   /**
