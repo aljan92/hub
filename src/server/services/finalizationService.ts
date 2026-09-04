@@ -211,7 +211,12 @@ export class FinalizationService {
       } else {
         // Existing referenced files stay untouched until the complete replacement is ready.
         const runId = params.artifactRunId || (task?.resizedAssets ? taskId + '_rebuild_' + randomUUID() : taskId);
-        resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source);
+        resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source, (stage, title) => {
+          TaskLogService.addEvent(taskId, {
+            timestamp: new Date().toISOString(), type: 'FINALIZATION_EVENT' as any,
+            title, content: { phase: 'ARTWORK_PREPARATION', status: 'RUNNING', source: source.kind, stage }
+          });
+        });
         const currentSource = ArtworkResizeService.source(TaskLogService.getTask(taskId), masterPngPath);
         if (ArtworkResizeService.fingerprint(currentSource) !== sourceFingerprint) throw new Error('Artwork-Quelle wurde während des Renderns geändert; keine Übernahme.');
       }

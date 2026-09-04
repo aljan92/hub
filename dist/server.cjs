@@ -219350,18 +219350,18 @@ async function prepareBrushLayer(brushUri) {
       A.fillRect(0, 0, P.width, P.height);
     }
     a.drawImage(P, 0, 0);
-    for (let e = 0; e < 10; e++) {
+    for (let e = 0; e < 4; e++) {
       a.drawImage(r, 1, 0);
       a.drawImage(r, -1, 0);
       a.drawImage(r, 0, 1);
       a.drawImage(r, 0, -1);
     }
     const L = 0.5;
+    const MAX_BRUSH_STAMPS = 4e3;
+    const stride = Math.max(1, Math.ceil(xPts.length / (MAX_BRUSH_STAMPS * 2)));
     const TPts = [];
-    for (let e = 0; e < xPts.length; e++) {
-      if (random() < L) {
-        TPts.push(xPts[e]);
-      }
+    for (let e = 0; e < xPts.length && TPts.length < MAX_BRUSH_STAMPS; e += stride) {
+      if (random() < L) TPts.push(xPts[e]);
     }
     for (let e = 0; e < TPts.length; e++) {
       const pt = TPts[e];
@@ -219532,10 +219532,10 @@ var init_artworkResizeService = __esm2({
           }
         });
       }
-      static async generateResizedArtworks(taskId, source12) {
+      static async generateResizedArtworks(taskId, source12, onProgress) {
         const input = typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12;
         const fingerprint = this.fingerprint(input);
-        const files = await this.renderProfiles(taskId, input, artworkProfiles());
+        const files = await this.renderProfiles(taskId, input, artworkProfiles(), onProgress);
         const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants } = files;
         const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
         return { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants, renderFingerprint: fingerprint, renderFileHashes };
@@ -219547,7 +219547,7 @@ var init_artworkResizeService = __esm2({
       static async generateAllProductVariants(taskId, source12) {
         return this.renderProfiles(taskId, typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12, artworkProfiles().filter((p) => !p.key.endsWith("Path")));
       }
-      static async renderProfiles(taskId, source12, profiles) {
+      static async renderProfiles(taskId, source12, profiles, onProgress) {
         profiles.forEach(validateProfile);
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const dir = import_node_path.default.resolve(process.cwd(), "data", "designs");
@@ -219556,9 +219556,13 @@ var init_artworkResizeService = __esm2({
         return ArtworkRenderSession.run(async (page) => {
           const geometry = await page.evaluate(installArtworkRuntime, { kind: source12.kind, data });
           console.log("[ArtworkRenderer] Quelle", source12.kind, geometry.bounds);
-          if (profiles.some((p) => p.brush)) await page.evaluate(prepareBrushLayer, "data:image/png;base64," + import_node_fs.default.readFileSync(this.getBrushTipPath()).toString("base64"));
+          if (profiles.some((p) => p.brush)) {
+            onProgress?.("BRUSH_PREPARATION", "\u{1F58C}\uFE0F Brush-Kontur wird vorbereitet\u2026");
+            await page.evaluate(prepareBrushLayer, "data:image/png;base64," + import_node_fs.default.readFileSync(this.getBrushTipPath()).toString("base64"));
+          }
           const files = {};
           for (const profile of profiles) {
+            onProgress?.("VARIANT", `\u{1F3A8} Render ${profile.key} (${profile.width}\xD7${profile.height})\u2026`);
             const start3 = Date.now();
             const output = import_node_path.default.join(dir, cleanId + "_" + profile.suffix + ".png");
             const temporary = output + "." + (0, import_node_crypto.randomUUID)() + ".tmp";
@@ -227119,7 +227123,14 @@ var init_finalizationService = __esm2({
             resizedAssets = task.resizedAssets;
           } else {
             const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto2.randomUUID)() : taskId);
-            resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12);
+            resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title) => {
+              TaskLogService2.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "FINALIZATION_EVENT",
+                title,
+                content: { phase: "ARTWORK_PREPARATION", status: "RUNNING", source: source12.kind, stage }
+              });
+            });
             const currentSource = ArtworkResizeService.source(TaskLogService2.getTask(taskId), masterPngPath);
             if (ArtworkResizeService.fingerprint(currentSource) !== sourceFingerprint) throw new Error("Artwork-Quelle wurde w\xE4hrend des Renderns ge\xE4ndert; keine \xDCbernahme.");
           }

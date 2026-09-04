@@ -212,7 +212,9 @@ export async function prepareBrushLayer(brushUri: string) {
           }
 
           a.drawImage(P, 0, 0);
-          for (let e = 0; e < 10; e++) {
+          // Four passes retain the soft contour while avoiding a pathological
+          // full-canvas redraw loop on dense 4,500 px PNG artwork.
+          for (let e = 0; e < 4; e++) {
             a.drawImage(r, 1, 0);
             a.drawImage(r, -1, 0);
             a.drawImage(r, 0, 1);
@@ -220,11 +222,14 @@ export async function prepareBrushLayer(brushUri: string) {
           }
 
           const L = 0.5;
+          // Dense distressed artwork can expose hundreds of thousands of edge
+          // samples. A deterministic, evenly distributed cap keeps the brush
+          // appearance while guaranteeing bounded render work.
+          const MAX_BRUSH_STAMPS = 4000;
+          const stride = Math.max(1, Math.ceil(xPts.length / (MAX_BRUSH_STAMPS * 2)));
           const TPts: { x: number; y: number }[] = [];
-          for (let e = 0; e < xPts.length; e++) {
-            if (random() < L) {
-              TPts.push(xPts[e]);
-            }
+          for (let e = 0; e < xPts.length && TPts.length < MAX_BRUSH_STAMPS; e += stride) {
+            if (random() < L) TPts.push(xPts[e]);
           }
 
           for (let e = 0; e < TPts.length; e++) {
@@ -242,4 +247,3 @@ export async function prepareBrushLayer(brushUri: string) {
  state.brush={uri:layer.toDataURL('image/png'),width:layer.width,height:layer.height,padding:0.15*Math.max(source.width,source.height)};
  source.width=0; source.height=0; layer.width=0; layer.height=0;
 }
-

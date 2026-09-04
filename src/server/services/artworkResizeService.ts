@@ -65,6 +65,7 @@ export function inject300Dpi(pngBuffer: Buffer): Buffer {
 
 
 export type ArtworkSource = { kind: 'SVG'; svg: string } | { kind: 'PNG'; path: string };
+export type ArtworkRenderProgress = (stage: 'BRUSH_PREPARATION' | 'VARIANT', detail: string) => void;
 export interface ResizedArtworksResult {
   /** Read compatibility only; new generations do not produce a trimmed PNG. */
   trimmedPath?: string;
@@ -117,10 +118,10 @@ export class ArtworkResizeService {
       } catch { return false; }
     });
   }
-  static async generateResizedArtworks(taskId: string, source: ArtworkSource | string): Promise<ResizedArtworksResult> {
+  static async generateResizedArtworks(taskId: string, source: ArtworkSource | string, onProgress?: ArtworkRenderProgress): Promise<ResizedArtworksResult> {
     const input: ArtworkSource = typeof source === 'string' ? {kind:'PNG',path:source} : source;
     const fingerprint=this.fingerprint(input);
-    const files=await this.renderProfiles(taskId,input,artworkProfiles());
+    const files=await this.renderProfiles(taskId,input,artworkProfiles(),onProgress);
     const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants }=files;
     const renderFileHashes=Object.fromEntries(Object.entries(files).map(([key,file])=>[key,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]));
     return {mugStandardPath,mugBrushPath,drinkwareStandardPath,drinkwareBrushPath,productVariants,renderFingerprint:fingerprint,renderFileHashes};
@@ -132,7 +133,7 @@ export class ArtworkResizeService {
   static async generateAllProductVariants(taskId: string, source: ArtworkSource | string) {
     return this.renderProfiles(taskId,typeof source==='string'?{kind:'PNG',path:source}:source,artworkProfiles().filter(p=>!p.key.endsWith('Path')));
   }
-  private static async renderProfiles(taskId: string, source: ArtworkSource, profiles: ArtworkProfile[]) {
+  private static async renderProfiles(taskId: string, source: ArtworkSource, profiles: ArtworkProfile[], onProgress?: ArtworkRenderProgress) {
     profiles.forEach(validateProfile);
     const cleanId=taskId.replace(/[^a-zA-Z0-9_-]/g,'_');
     const dir=path.resolve(process.cwd(),'data','designs'); fs.mkdirSync(dir,{recursive:true});
@@ -140,9 +141,13 @@ export class ArtworkResizeService {
     return ArtworkRenderSession.run(async page=>{
       const geometry=await page.evaluate(installArtworkRuntime,{kind:source.kind,data});
       console.log('[ArtworkRenderer] Quelle',source.kind,geometry.bounds);
-      if (profiles.some(p=>p.brush)) await page.evaluate(prepareBrushLayer,'data:image/png;base64,'+fs.readFileSync(this.getBrushTipPath()).toString('base64'));
+      if (profiles.some(p=>p.brush)) {
+        onProgress?.('BRUSH_PREPARATION', '🖌️ Brush-Kontur wird vorbereitet…');
+        await page.evaluate(prepareBrushLayer,'data:image/png;base64,'+fs.readFileSync(this.getBrushTipPath()).toString('base64'));
+      }
       const files: Record<string,string>={};
       for(const profile of profiles) {
+        onProgress?.('VARIANT', `🎨 Render ${profile.key} (${profile.width}×${profile.height})…`);
         const start=Date.now();
         const output=path.join(dir,cleanId+'_'+profile.suffix+'.png');
         const temporary=output+'.'+randomUUID()+'.tmp';
