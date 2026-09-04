@@ -783,6 +783,20 @@ export class QueueService {
   /**
    * Update item status during upload (UPLOADING, COMPLETED, ERROR)
    */
+  public static replacePreparedAssets(queueId: string, patch: Pick<QueueItem, 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description' | 'listings' | 'resizedAssets'>): QueueItem {
+    this.ensureLoaded();
+    const index = this.items.findIndex(item => item.id === queueId);
+    const previous = this.items[index];
+    if (!previous || !['WAITING', 'ERROR'].includes(previous.status) || previous.uploadRecovery?.remoteRequestIntentAt
+      || ['REMOTE_ACTION_INTENT', 'REMOTE_REQUEST_INTENT', 'AWAITING_AMAZON_CONFIRMATION', 'AMAZON_CONFIRMED'].includes(previous.uploadRecovery?.phase || '')) {
+      throw new Error('Queue-Eintrag wurde geändert oder hat einen Remote-Vorgang; keine Übernahme.');
+    }
+    const updated = { ...previous, ...patch };
+    this.items[index] = updated;
+    try { this.saveQueue(); } catch (error) { this.items[index] = previous; throw error; }
+    return updated;
+  }
+
   public static updateItemStatus(queueId: string, status: QueueItemStatus, error?: string, uploadResultSummary?: UploadResultSummary): QueueItem | null {
     this.ensureLoaded();
     const item = this.items.find(i => i.id === queueId);

@@ -18,6 +18,7 @@ import {
   isFileInFailSafe 
 } from '../utils/atomicFileStorage';
 import { TaskRepository } from '../storage/taskRepository';
+import { TaskExecutionLock } from './taskExecutionLock';
 
 export * from '../../types/tasks';
 import { 
@@ -1564,6 +1565,7 @@ export class TaskLogService {
    * Jump back to an earlier pipeline step and re-execute from there
    */
   static async retryFromStep(taskId: string, stepType: RetryStepType, eventIndex?: number): Promise<{ success: boolean; message: string }> {
+    if (TaskExecutionLock.isLocked(taskId)) throw new Error('Task wird gerade verarbeitet; Wiederholung gesperrt.');
     const logs = this.loadLogs();
     const currentTask = logs.find(t => t.id === taskId);
     if (!currentTask) {
@@ -2575,4 +2577,3 @@ export class TaskLogService {
     };
   }
 }
-

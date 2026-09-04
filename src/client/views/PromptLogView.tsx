@@ -307,6 +307,8 @@ export const PromptLogView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [retryingStep, setRetryingStep] = useState<string | null>(null);
+  const [finalizingTaskId, setFinalizingTaskId] = useState<string | null>(null);
+  const [finalizationMessage, setFinalizationMessage] = useState<{ taskId: string; text: string; success: boolean } | null>(null);
   const [selectedListingLang, setSelectedListingLang] = useState<Record<string, string>>({});
 
   // Mini Playground State
@@ -732,6 +734,21 @@ export const PromptLogView: React.FC = () => {
     }, 25000);
     return () => clearInterval(interval);
   }, [isConnected, filterSource, searchQuery, fetchTasks]);
+
+  const handleRepeatFinalization = async (taskId: string) => {
+    if (finalizingTaskId) return;
+    if (!window.confirm('Listing erneut prüfen und alle Resize-Dateien neu erzeugen? Der bestehende Queue-Eintrag wird aktualisiert. Kein Upload wird gestartet.')) return;
+    setFinalizingTaskId(taskId);
+    setFinalizationMessage(null);
+    try {
+      const response = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/repeat-finalization`, { method: 'POST' });
+      const result = await response.json();
+      setFinalizationMessage({ taskId, text: result.message || result.error || 'Unbekanntes Ergebnis', success: response.ok && result.success });
+      fetchTaskDetail(taskId);
+    } catch {
+      setFinalizationMessage({ taskId, text: 'Verbindung unterbrochen. Status im Log prüfen, bevor erneut gestartet wird.', success: false });
+    } finally { setFinalizingTaskId(null); }
+  };
 
   const handleRetryStep = async (taskId: string, stepType: RetryStepType, eventIndex?: number) => {
     setRetryingStep(`${taskId}-${stepType}-${eventIndex ?? 0}`);
@@ -1567,6 +1584,38 @@ export const PromptLogView: React.FC = () => {
               {/* Timeline */}
               <div className="space-y-4 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
                 {(selectedTask.events || []).map((event, idx) => {
+                  if (String(event.type) === 'FINALIZATION_EVENT') {
+                    if (idx > 0 && String(selectedTask.events[idx - 1].type) === 'FINALIZATION_EVENT') return null;
+                    const details = [];
+                    for (let index = idx; index < selectedTask.events.length && String(selectedTask.events[index].type) === 'FINALIZATION_EVENT'; index++) details.push(selectedTask.events[index]);
+                    const last = details[details.length - 1];
+                    const busy = finalizingTaskId === selectedTask.id;
+                    return (
+                      <div key={idx} className="relative pl-7">
+                        <div className="rounded-xl border border-cyan-700/40 bg-slate-950 p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <h4 className="text-sm font-semibold text-cyan-200">Listing & Druckdateien finalisieren</h4>
+                              <p className="text-xs text-slate-400">{busy ? 'Wird erneut vorbereitet…' : last.title}</p>
+                            </div>
+                            <button onClick={() => handleRepeatFinalization(selectedTask.id)} disabled={Boolean(finalizingTaskId) || !['COMPLETED', 'UPDATE_QUEUED', 'ERROR'].includes(selectedTask.status)}
+                              title="Bestehenden wartenden/fehlgeschlagenen Queue-Eintrag vorbereiten. Laufende, abgeschlossene oder remote ungeklärte Uploads sind gesperrt."
+                              className="flex items-center gap-2 rounded-lg border border-cyan-700/50 px-3 py-2 text-xs text-cyan-200 disabled:opacity-40">
+                              <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />Erneut ausführen
+                            </button>
+                          </div>
+                          {finalizationMessage?.taskId === selectedTask.id && <p role="status" className={`text-xs ${finalizationMessage.success ? 'text-emerald-300' : 'text-amber-300'}`}>{finalizationMessage.text}</p>}
+                          <details className="text-xs text-slate-400">
+                            <summary className="cursor-pointer">Details ({details.length})</summary>
+                            <div className="mt-2 space-y-2">{details.map((detail, index) => <div key={index}>
+                              <span className="text-slate-500 mr-2">{new Date(detail.timestamp).toLocaleTimeString('de-DE')}</span>{detail.title}
+                              <pre className="mt-1 whitespace-pre-wrap break-all text-[10px]">{JSON.stringify(detail.content, null, 2)}</pre>
+                            </div>)}</div>
+                          </details>
+                        </div>
+                      </div>
+                    );
+                  }
                   const isPreFlight = event.content?.isPreFlight || (event.type === 'TM_CHECK_REQUEST' && idx <= 3);
                   const category = getEventCategory(event);
                   const styles = getCategoryStyles(category);

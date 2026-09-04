@@ -1294,8 +1294,8 @@ var require_node = __commonJS2({
           }
           break;
         case "FILE":
-          var fs20 = require("fs");
-          stream2 = new fs20.SyncWriteStream(fd2, { autoClose: false });
+          var fs21 = require("fs");
+          stream2 = new fs21.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -17727,8 +17727,8 @@ var require_node2 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs20 = require("fs");
-          stream2 = new fs20.SyncWriteStream(fd2, { autoClose: false });
+          var fs21 = require("fs");
+          stream2 = new fs21.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18446,8 +18446,8 @@ var require_node3 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs20 = require("fs");
-          stream2 = new fs20.SyncWriteStream(fd2, { autoClose: false });
+          var fs21 = require("fs");
+          stream2 = new fs21.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -19341,7 +19341,7 @@ var require_view = __commonJS2({
     "use strict";
     var debug17 = require_src3()("express:view");
     var path19 = require("path");
-    var fs20 = require("fs");
+    var fs21 = require("fs");
     var dirname = path19.dirname;
     var basename = path19.basename;
     var extname = path19.extname;
@@ -19407,7 +19407,7 @@ var require_view = __commonJS2({
     function tryStat(path20) {
       debug17('stat "%s"', path20);
       try {
-        return fs20.statSync(path20);
+        return fs21.statSync(path20);
       } catch (e) {
         return void 0;
       }
@@ -20012,8 +20012,8 @@ var require_node4 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs20 = require("fs");
-          stream2 = new fs20.SyncWriteStream(fd2, { autoClose: false });
+          var fs21 = require("fs");
+          stream2 = new fs21.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -20186,7 +20186,7 @@ var require_types = __commonJS2({
 var require_mime = __commonJS2({
   "node_modules/mime/mime.js"(exports2, module3) {
     var path19 = require("path");
-    var fs20 = require("fs");
+    var fs21 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -20207,7 +20207,7 @@ var require_mime = __commonJS2({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs20.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs21.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -20445,7 +20445,7 @@ var require_send = __commonJS2({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs20 = require("fs");
+    var fs21 = require("fs");
     var mime8 = require_mime();
     var ms = require_ms5();
     var onFinished = require_on_finished();
@@ -20778,7 +20778,7 @@ var require_send = __commonJS2({
       var i = 0;
       var self2 = this;
       debug17('stat "%s"', path20);
-      fs20.stat(path20, function onstat(err, stat) {
+      fs21.stat(path20, function onstat(err, stat) {
         if (err && err.code === "ENOENT" && !extname(path20) && path20[path20.length - 1] !== sep) {
           return next(err);
         }
@@ -20793,7 +20793,7 @@ var require_send = __commonJS2({
         }
         var p = path20 + "." + self2._extensions[i++];
         debug17('stat "%s"', p);
-        fs20.stat(p, function(err2, stat) {
+        fs21.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20811,7 +20811,7 @@ var require_send = __commonJS2({
         }
         var p = join(path20, self2._index[i]);
         debug17('stat "%s"', p);
-        fs20.stat(p, function(err2, stat) {
+        fs21.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20823,7 +20823,7 @@ var require_send = __commonJS2({
     SendStream.prototype.stream = function stream(path20, options2) {
       var self2 = this;
       var res = this.res;
-      var stream2 = fs20.createReadStream(path20, options2);
+      var stream2 = fs21.createReadStream(path20, options2);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -27965,7 +27965,7 @@ var require_package = __commonJS2({
 // node_modules/dotenv/lib/main.js
 var require_main = __commonJS2({
   "node_modules/dotenv/lib/main.js"(exports2, module3) {
-    var fs20 = require("fs");
+    var fs21 = require("fs");
     var path19 = require("path");
     var os = require("os");
     var crypto4 = require("crypto");
@@ -28074,7 +28074,7 @@ var require_main = __commonJS2({
       if (options2 && options2.path && options2.path.length > 0) {
         if (Array.isArray(options2.path)) {
           for (const filepath of options2.path) {
-            if (fs20.existsSync(filepath)) {
+            if (fs21.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -28084,7 +28084,7 @@ var require_main = __commonJS2({
       } else {
         possibleVaultPath = path19.resolve(process.cwd(), ".env.vault");
       }
-      if (fs20.existsSync(possibleVaultPath)) {
+      if (fs21.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
@@ -28133,7 +28133,7 @@ var require_main = __commonJS2({
       const parsedAll = {};
       for (const path20 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs20.readFileSync(path20, { encoding }));
+          const parsed = DotenvModule.parse(fs21.readFileSync(path20, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options2);
         } catch (e) {
           if (debug17) {
@@ -49994,24 +49994,25 @@ var init_productCatalogService = __esm2({
       // ─── New CANVAS_BACKGROUND_CONTAIN variants ────────────────────────────────
       CANVAS_BG_CONTAIN_4452X5292_DARK: {
         id: "CANVAS_BG_CONTAIN_4452X5292_DARK",
-        label: "Blanket Format \u2013 4452 \xD7 5292",
+        label: "Blanket Format \u2013 6678 \xD7 7938 (150% Test)",
         storageType: "productVariants",
         generator: {
           mode: "CANVAS_BACKGROUND_CONTAIN",
           source: "TRIMMED",
-          canvas: { width: 4452, height: 5292 },
+          // Temporary 150% placement experiment; keep the persisted variant ID stable.
+          canvas: { width: 6678, height: 7938 },
           paddingShortSidePct: 0.1,
           backgroundProfile: "DARK_PRODUCT"
         }
       },
       CANVAS_BG_CONTAIN_4320X5400_DARK: {
         id: "CANVAS_BG_CONTAIN_4320X5400_DARK",
-        label: "Poster Format \u2013 4320 \xD7 5400",
+        label: "Poster Format \u2013 6480 \xD7 8100 (150% Test)",
         storageType: "productVariants",
         generator: {
           mode: "CANVAS_BACKGROUND_CONTAIN",
           source: "TRIMMED",
-          canvas: { width: 4320, height: 5400 },
+          canvas: { width: 6480, height: 8100 },
           paddingShortSidePct: 0.08,
           backgroundProfile: "DARK_PRODUCT"
         }
@@ -53683,8 +53684,8 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
         let imagePayload = fourPanelImageBase64OrPath;
         if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
           try {
-            const fs20 = await import("fs");
-            const buffer = fs20.readFileSync(imagePayload);
+            const fs21 = await import("fs");
+            const buffer = fs21.readFileSync(imagePayload);
             imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
           } catch (e) {
           }
@@ -111528,11 +111529,11 @@ ${end.comment}` : end.comment;
     var import_node_os = __toESM3(require("node:os"), 1);
     var import_node_fs3 = __toESM3(require("node:fs"), 1);
     var import_node_fs2 = __toESM3(require("node:fs"), 1);
-    var import_node_fs = __toESM3(require("node:fs"), 1);
+    var import_node_fs4 = __toESM3(require("node:fs"), 1);
     var isDockerCached;
     function hasDockerEnv() {
       try {
-        import_node_fs.default.statSync("/.dockerenv");
+        import_node_fs4.default.statSync("/.dockerenv");
         return true;
       } catch {
         return false;
@@ -111540,7 +111541,7 @@ ${end.comment}` : end.comment;
     }
     function hasDockerCGroup() {
       try {
-        return import_node_fs.default.readFileSync("/proc/self/cgroup", "utf8").includes("docker");
+        return import_node_fs4.default.readFileSync("/proc/self/cgroup", "utf8").includes("docker");
       } catch {
         return false;
       }
@@ -112247,7 +112248,7 @@ tell application "System Events" to get value of property list item "CFBundleNam
     var import_node_events = require("node:events");
     var import_node_child_process8 = __toESM3(require("node:child_process"), 1);
     var import_node_path2 = __toESM3(require("node:path"), 1);
-    var import_node_fs4 = __toESM3(require("node:fs"), 1);
+    var import_node_fs42 = __toESM3(require("node:fs"), 1);
     var import_node_process8 = __toESM3(require("node:process"), 1);
     var import_node_util8 = require("node:util");
     var import_node_util7 = require("node:util");
@@ -114207,7 +114208,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} subcommandName
        */
       _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-        if (import_node_fs4.default.existsSync(executableFile)) return;
+        if (import_node_fs42.default.existsSync(executableFile)) return;
         const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
         const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -114225,10 +114226,10 @@ Expecting one of '${allowedValues.join("', '")}'`);
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
           const localBin = import_node_path2.default.resolve(baseDir, baseName);
-          if (import_node_fs4.default.existsSync(localBin)) return localBin;
+          if (import_node_fs42.default.existsSync(localBin)) return localBin;
           if (sourceExt.includes(import_node_path2.default.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
-            (ext2) => import_node_fs4.default.existsSync(`${localBin}${ext2}`)
+            (ext2) => import_node_fs42.default.existsSync(`${localBin}${ext2}`)
           );
           if (foundExt) return `${localBin}${foundExt}`;
           return void 0;
@@ -114240,7 +114241,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
         if (this._scriptPath) {
           let resolvedScriptPath;
           try {
-            resolvedScriptPath = import_node_fs4.default.realpathSync(this._scriptPath);
+            resolvedScriptPath = import_node_fs42.default.realpathSync(this._scriptPath);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
@@ -141359,7 +141360,7 @@ ${value2}`, dataLines++;
         this._protocolVersion = version22;
       }
     };
-    var import_node_crypto = require("node:crypto");
+    var import_node_crypto2 = require("node:crypto");
     var import_node_tls = require("node:tls");
     var import_bytes = __toESM3(require_bytes2());
     function getRawBody(req, { limit, encoding }) {
@@ -141395,7 +141396,7 @@ ${value2}`, dataLines++;
       constructor(_endpoint, res, options2) {
         this._endpoint = _endpoint;
         this.res = res;
-        this._sessionId = (0, import_node_crypto.randomUUID)();
+        this._sessionId = (0, import_node_crypto2.randomUUID)();
         this._options = options2 || { enableDnsRebindingProtection: false };
       }
       /**
@@ -220731,6 +220732,68 @@ var init_taskRepository = __esm2({
   }
 });
 
+// src/server/services/taskExecutionLock.ts
+var TaskExecutionLock;
+var init_taskExecutionLock = __esm2({
+  "src/server/services/taskExecutionLock.ts"() {
+    "use strict";
+    TaskExecutionLock = class {
+      static activeLocks = /* @__PURE__ */ new Map();
+      /**
+       * Attempts to acquire execution lock for a given taskId.
+       * Re-entrant: If already acquired by the same owner, increments depth and returns true.
+       * Returns false if task is already running under a DIFFERENT owner.
+       */
+      static acquire(taskId, owner) {
+        const cleanId = taskId.trim();
+        const existing = this.activeLocks.get(cleanId);
+        if (existing) {
+          if (existing.owner === owner) {
+            existing.depth++;
+            return true;
+          }
+          return false;
+        }
+        this.activeLocks.set(cleanId, { owner, depth: 1, acquiredAt: (/* @__PURE__ */ new Date()).toISOString() });
+        return true;
+      }
+      /**
+       * Releases execution lock for a given taskId.
+       * Decrements depth and removes lock when depth reaches 0.
+       */
+      static release(taskId) {
+        const cleanId = taskId.trim();
+        const existing = this.activeLocks.get(cleanId);
+        if (existing) {
+          existing.depth--;
+          if (existing.depth <= 0) {
+            this.activeLocks.delete(cleanId);
+          }
+        }
+      }
+      /**
+       * Checks whether a task is currently executing.
+       */
+      static isLocked(taskId) {
+        return this.activeLocks.has(taskId.trim());
+      }
+      /**
+       * Returns current lock owner info if locked.
+       */
+      static getLockInfo(taskId) {
+        const existing = this.activeLocks.get(taskId.trim());
+        return existing ? { owner: existing.owner, acquiredAt: existing.acquiredAt } : void 0;
+      }
+      /**
+       * Clears all locks (used in tests or system resets).
+       */
+      static clear() {
+        this.activeLocks.clear();
+      }
+    };
+  }
+});
+
 // src/server/services/syncEngine.ts
 var MP_MAP, VARIANT_PRODUCT_TYPES, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, SyncEngine;
 var init_syncEngine = __esm2({
@@ -222712,68 +222775,6 @@ var init_assetValidationService = __esm2({
         } catch {
           return false;
         }
-      }
-    };
-  }
-});
-
-// src/server/services/taskExecutionLock.ts
-var TaskExecutionLock;
-var init_taskExecutionLock = __esm2({
-  "src/server/services/taskExecutionLock.ts"() {
-    "use strict";
-    TaskExecutionLock = class {
-      static activeLocks = /* @__PURE__ */ new Map();
-      /**
-       * Attempts to acquire execution lock for a given taskId.
-       * Re-entrant: If already acquired by the same owner, increments depth and returns true.
-       * Returns false if task is already running under a DIFFERENT owner.
-       */
-      static acquire(taskId, owner) {
-        const cleanId = taskId.trim();
-        const existing = this.activeLocks.get(cleanId);
-        if (existing) {
-          if (existing.owner === owner) {
-            existing.depth++;
-            return true;
-          }
-          return false;
-        }
-        this.activeLocks.set(cleanId, { owner, depth: 1, acquiredAt: (/* @__PURE__ */ new Date()).toISOString() });
-        return true;
-      }
-      /**
-       * Releases execution lock for a given taskId.
-       * Decrements depth and removes lock when depth reaches 0.
-       */
-      static release(taskId) {
-        const cleanId = taskId.trim();
-        const existing = this.activeLocks.get(cleanId);
-        if (existing) {
-          existing.depth--;
-          if (existing.depth <= 0) {
-            this.activeLocks.delete(cleanId);
-          }
-        }
-      }
-      /**
-       * Checks whether a task is currently executing.
-       */
-      static isLocked(taskId) {
-        return this.activeLocks.has(taskId.trim());
-      }
-      /**
-       * Returns current lock owner info if locked.
-       */
-      static getLockInfo(taskId) {
-        const existing = this.activeLocks.get(taskId.trim());
-        return existing ? { owner: existing.owner, acquiredAt: existing.acquiredAt } : void 0;
-      }
-      /**
-       * Clears all locks (used in tests or system resets).
-       */
-      static clear() {
-        this.activeLocks.clear();
       }
     };
   }
@@ -225937,6 +225938,23 @@ var init_queueService = __esm2({
       /**
        * Update item status during upload (UPLOADING, COMPLETED, ERROR)
        */
+      static replacePreparedAssets(queueId, patch) {
+        this.ensureLoaded();
+        const index = this.items.findIndex((item) => item.id === queueId);
+        const previous = this.items[index];
+        if (!previous || !["WAITING", "ERROR"].includes(previous.status) || previous.uploadRecovery?.remoteRequestIntentAt || ["REMOTE_ACTION_INTENT", "REMOTE_REQUEST_INTENT", "AWAITING_AMAZON_CONFIRMATION", "AMAZON_CONFIRMED"].includes(previous.uploadRecovery?.phase || "")) {
+          throw new Error("Queue-Eintrag wurde ge\xE4ndert oder hat einen Remote-Vorgang; keine \xDCbernahme.");
+        }
+        const updated = { ...previous, ...patch };
+        this.items[index] = updated;
+        try {
+          this.saveQueue();
+        } catch (error) {
+          this.items[index] = previous;
+          throw error;
+        }
+        return updated;
+      }
       static updateItemStatus(queueId, status, error, uploadResultSummary) {
         this.ensureLoaded();
         const item = this.items.find((i) => i.id === queueId);
@@ -227198,13 +227216,13 @@ var init_finalizationService = __esm2({
           TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
-        let resizedAssets = task?.resizedAssets;
+        let resizedAssets = params2.artifactRunId ? void 0 : task?.resizedAssets;
         const areLegacyAssetsValid = resizedAssets && resizedAssets.trimmedPath && import_fs85.default.existsSync(resizedAssets.trimmedPath) && resizedAssets.mugStandardPath && import_fs85.default.existsSync(resizedAssets.mugStandardPath) && resizedAssets.mugBrushPath && import_fs85.default.existsSync(resizedAssets.mugBrushPath) && resizedAssets.drinkwareStandardPath && import_fs85.default.existsSync(resizedAssets.drinkwareStandardPath) && resizedAssets.drinkwareBrushPath && import_fs85.default.existsSync(resizedAssets.drinkwareBrushPath);
         if (areLegacyAssetsValid) {
           console.log(`[FinalizationService] \u26A1 Legacy Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
         } else {
           try {
-            resizedAssets = await ArtworkResizeService.generateResizedArtworks(taskId, masterPngPath);
+            resizedAssets = await ArtworkResizeService.generateResizedArtworks(params2.artifactRunId || taskId, masterPngPath);
           } catch (resizeErr) {
             const err = `Fehler bei Artwork-Resize: ${resizeErr.message}`;
             console.error(`[FinalizationService] \u274C ${err}`);
@@ -227242,7 +227260,7 @@ var init_finalizationService = __esm2({
                 title: `\u{1F3A8} ${generatableVariants.length} Product-Varianten werden generiert...`,
                 content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", variants: generatableVariants.map((v) => v.id) }
               });
-              const productVariants2 = await ArtworkResizeService.generateAllProductVariants(taskId, trimmedPath);
+              const productVariants2 = await ArtworkResizeService.generateAllProductVariants(params2.artifactRunId || taskId, trimmedPath);
               resizedAssets.productVariants = productVariants2;
             } catch (pvErr) {
               const err = `Fehler bei Product-Variant-Generierung: ${pvErr.message}`;
@@ -227290,6 +227308,9 @@ var init_finalizationService = __esm2({
           title: `\u2713 Alle ${totalAssets} Assets (${requiredFiles.length} Legacy + ${Object.keys(productVariants).length} Product-Varianten) auf Disk verifiziert`,
           content: { phase: "ARTWORK_PREPARATION", status: "SUCCESS", assets: resizedAssets }
         });
+        if (params2.prepareOnly) {
+          return { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
+        }
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
@@ -227426,6 +227447,7 @@ var init_taskLogService = __esm2({
     init_listingValidationService();
     init_listingSanitizationService();
     init_taskRepository();
+    init_taskExecutionLock();
     init_tasks();
     init_tasks();
     TaskLogService2 = class {
@@ -228741,6 +228763,7 @@ Beantworte die Analysefragen streng als JSON!`;
        * Jump back to an earlier pipeline step and re-execute from there
        */
       static async retryFromStep(taskId, stepType, eventIndex) {
+        if (TaskExecutionLock.isLocked(taskId)) throw new Error("Task wird gerade verarbeitet; Wiederholung gesperrt.");
         const logs = this.loadLogs();
         const currentTask = logs.find((t) => t.id === taskId);
         if (!currentTask) {
@@ -231728,6 +231751,9 @@ function isUploadColorBlocked(product) {
   return product.colorMode !== "predefined" || product.colorDiscoveryStatus === "FAILED";
 }
 
+// src/server/services/uploadWorkerService.ts
+init_taskExecutionLock();
+
 // src/server/services/listingReadback.ts
 function buildListingExpectations(listings, translated) {
   const fields = [
@@ -231914,6 +231940,9 @@ var UploadWorkerService = class _UploadWorkerService {
     }
     if (!targetItem) {
       return { success: false, message: "Kein bereitstehendes Design in der Queue gefunden." };
+    }
+    if (TaskExecutionLock.isLocked(targetItem.taskId)) {
+      return { success: false, message: "Task wird gerade vorbereitet; Upload bleibt gesperrt." };
     }
     const isUpdateItem = isUpdate(targetItem);
     const effectiveMode = isUpdateItem ? "publish" : queueMode === "live" || mode === "publish" ? "publish" : "draft";
@@ -233313,6 +233342,95 @@ var UploadWorkerService = class _UploadWorkerService {
   }
 };
 
+// src/server/services/manualFinalizationService.ts
+var import_node_fs = __toESM2(require("node:fs"), 1);
+var import_node_crypto = require("node:crypto");
+init_finalizationService();
+init_queueService();
+init_taskLogService();
+init_taskExecutionLock();
+init_productCatalogService();
+var ManualFinalizationService = class {
+  static running = false;
+  static async repeat(taskId) {
+    if (this.running || TaskExecutionLock.isLocked(taskId)) throw new Error("Eine Finalisierung oder Task-Verarbeitung l\xE4uft bereits.");
+    const task = TaskLogService2.getTask(taskId);
+    if (!task || !["COMPLETED", "UPDATE_QUEUED", "ERROR"].includes(task.status)) {
+      throw new Error("Task noch in Verarbeitung oder Review; Finalisierung hier nicht wiederholbar.");
+    }
+    const matches = QueueService.getState().items.filter((item2) => item2.taskId === taskId);
+    if (matches.length !== 1) throw new Error("Genau ein vorhandener Queue-Eintrag erforderlich. Es wird kein neuer Eintrag angelegt.");
+    const item = structuredClone(matches[0]);
+    if (!["WAITING", "ERROR"].includes(item.status) || item.uploadRecovery?.remoteRequestIntentAt || ["REMOTE_ACTION_INTENT", "REMOTE_REQUEST_INTENT", "AWAITING_AMAZON_CONFIRMATION", "AMAZON_CONFIRMED"].includes(item.uploadRecovery?.phase || "")) {
+      throw new Error("Upload l\xE4uft, wurde abgeschlossen oder ist remote ungekl\xE4rt; Wiederholung gesperrt.");
+    }
+    if (!TaskExecutionLock.acquire(taskId, "USER_ACTION")) throw new Error("Task ist gesperrt.");
+    this.running = true;
+    try {
+      const result2 = await FinalizationService.finalizeForQueue({
+        ...item,
+        taskId,
+        pipeline: item.designId || item.source === "UPDATE" || item.type === "update" ? "UPDATE" : "DESIGN",
+        masterPngPath: item.pngPath,
+        prepareOnly: true,
+        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto.randomUUID)()}`
+      });
+      if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error(result2.error || "Vorbereitung fehlgeschlagen");
+      const assets = result2.resizedAssets;
+      const paths = [assets.trimmedPath, assets.mugStandardPath, assets.mugBrushPath, assets.drinkwareStandardPath, assets.drinkwareBrushPath, ...Object.values(assets.productVariants || {})];
+      for (const file of paths) {
+        const descriptor = import_node_fs.default.openSync(file, "r");
+        const header = Buffer.alloc(24);
+        try {
+          import_node_fs.default.readSync(descriptor, header, 0, 24, 0);
+        } finally {
+          import_node_fs.default.closeSync(descriptor);
+        }
+        if (header.toString("hex", 0, 8) !== "89504e470d0a1a0a" || !header.readUInt32BE(16) || !header.readUInt32BE(20)) {
+          throw new Error(`Ung\xFCltiges PNG: ${file}`);
+        }
+        const variant = getGeneratableVariants().find((v) => assets.productVariants?.[v.id] === file);
+        if (variant?.generator && (header.readUInt32BE(16) !== variant.generator.canvas.width || header.readUInt32BE(20) !== variant.generator.canvas.height)) {
+          throw new Error(`Unerwartete Bildma\xDFe: ${variant.id}`);
+        }
+      }
+      if (!TaskLogService2.getTask(taskId)) throw new Error("Task wurde w\xE4hrend der Vorbereitung entfernt.");
+      const current = QueueService.getState().items.find((candidate) => candidate.id === item.id);
+      const fingerprint = (value2) => JSON.stringify([value2.brand, value2.title, value2.bullet1, value2.bullet2, value2.description, value2.listings, value2.pngPath, value2.resizedAssets]);
+      if (!current || fingerprint(current) !== fingerprint(item)) throw new Error("Queue-Inhalt wurde inzwischen ge\xE4ndert; keine \xDCbernahme.");
+      const root = result2.preparedListing.root;
+      QueueService.replacePreparedAssets(item.id, {
+        brand: root.brand,
+        title: root.title,
+        bullet1: root.bullet1,
+        bullet2: root.bullet2,
+        description: root.description,
+        listings: result2.preparedListing.listings,
+        resizedAssets: assets
+      });
+      TaskLogService2.updateTaskStatus(taskId, { resizedAssets: assets });
+      TaskLogService2.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "FINALIZATION_EVENT",
+        title: "\u2713 Listing & Druckdateien erneuert \u2013 vorhandener Queue-Eintrag aktualisiert, kein Upload gestartet",
+        content: { phase: "MANUAL_FINALIZATION", status: "SUCCESS", queueId: item.id }
+      });
+      return { success: true, message: "Listing gepr\xFCft und Druckdateien neu erzeugt. Queue-Status unver\xE4ndert; kein Upload gestartet." };
+    } catch (error) {
+      TaskLogService2.addEvent(taskId, {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        type: "FINALIZATION_EVENT",
+        title: "\u274C Manuelle Finalisierung fehlgeschlagen",
+        content: { phase: "MANUAL_FINALIZATION", status: "FAILED", error: error.message }
+      });
+      throw error;
+    } finally {
+      this.running = false;
+      TaskExecutionLock.release(taskId);
+    }
+  }
+};
+
 // src/server/services/costTrackingService.ts
 init_settingsService();
 init_queueService();
@@ -234495,6 +234613,13 @@ app.delete("/api/v1/tasks/:taskId", (req, res) => {
     return res.json({ success: true, message: `Task ${taskId} gel\xF6scht.` });
   }
   return res.status(404).json({ success: false, error: `Task ${taskId} nicht gefunden.` });
+});
+app.post("/api/v1/tasks/:taskId/repeat-finalization", async (req, res) => {
+  try {
+    res.json(await ManualFinalizationService.repeat(req.params.taskId));
+  } catch (error) {
+    res.status(409).json({ success: false, error: error.message });
+  }
 });
 app.post("/api/v1/tasks/:taskId/retry", async (req, res) => {
   const { taskId } = req.params;

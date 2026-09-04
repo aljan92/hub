@@ -14,6 +14,7 @@ import { Page } from 'playwright';
 import { buildUploadProductSelection } from './uploadProductSelection';
 import { getUploadFitPolicy } from './uploadFitPolicy';
 import { isUploadColorBlocked } from './uploadColorPolicy';
+import { TaskExecutionLock } from './taskExecutionLock';
 import { buildListingExpectations, verifyListingReadback } from './listingReadback';
 
 export interface UploadProgressState {
@@ -185,6 +186,10 @@ export class UploadWorkerService {
 
     if (!targetItem) {
       return { success: false, message: 'Kein bereitstehendes Design in der Queue gefunden.' };
+    }
+
+    if (TaskExecutionLock.isLocked(targetItem.taskId)) {
+      return { success: false, message: 'Task wird gerade vorbereitet; Upload bleibt gesperrt.' };
     }
 
     const isUpdateItem = isUpdate(targetItem);

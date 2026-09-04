@@ -27,6 +27,9 @@ export interface FinalizationParams {
   liveProductSummary?: any;
   liveProductTypes?: string[];
   tmBlockedProductIds?: string[];
+  /** Manual preparation only: generate a separate immutable file set, no enqueue. */
+  artifactRunId?: string;
+  prepareOnly?: boolean;
 }
 
 export interface FinalizationResult {
@@ -34,6 +37,7 @@ export interface FinalizationResult {
   error?: string;
   queueItemId?: string;
   resizedAssets?: ResizedArtworksResult;
+  preparedListing?: { root: Record<string, string>; listings: Record<string, any> };
 }
 
 export class FinalizationService {
@@ -190,7 +194,7 @@ export class FinalizationService {
       return { success: false, error: err };
     }
 
-    let resizedAssets = task?.resizedAssets;
+    let resizedAssets = params.artifactRunId ? undefined : task?.resizedAssets;
     const areLegacyAssetsValid = resizedAssets &&
       resizedAssets.trimmedPath && fs.existsSync(resizedAssets.trimmedPath) &&
       resizedAssets.mugStandardPath && fs.existsSync(resizedAssets.mugStandardPath) &&
@@ -203,7 +207,7 @@ export class FinalizationService {
     } else {
       try {
         // Execute legacy resize exactly once via ArtworkResizeService mutex
-        resizedAssets = await ArtworkResizeService.generateResizedArtworks(taskId, masterPngPath);
+        resizedAssets = await ArtworkResizeService.generateResizedArtworks(params.artifactRunId || taskId, masterPngPath);
       } catch (resizeErr: any) {
         const err = `Fehler bei Artwork-Resize: ${resizeErr.message}`;
         console.error(`[FinalizationService] ❌ ${err}`);
@@ -253,7 +257,7 @@ export class FinalizationService {
             content: { phase: 'PRODUCT_VARIANT_GENERATION', status: 'RUNNING', variants: generatableVariants.map(v => v.id) }
           });
 
-          const productVariants = await ArtworkResizeService.generateAllProductVariants(taskId, trimmedPath);
+          const productVariants = await ArtworkResizeService.generateAllProductVariants(params.artifactRunId || taskId, trimmedPath);
           resizedAssets!.productVariants = productVariants;
         } catch (pvErr: any) {
           const err = `Fehler bei Product-Variant-Generierung: ${pvErr.message}`;
@@ -311,6 +315,10 @@ export class FinalizationService {
       title: `✓ Alle ${totalAssets} Assets (${requiredFiles.length} Legacy + ${Object.keys(productVariants).length} Product-Varianten) auf Disk verifiziert`,
       content: { phase: 'ARTWORK_PREPARATION', status: 'SUCCESS', assets: resizedAssets }
     });
+
+    if (params.prepareOnly) {
+      return { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
+    }
 
     // =========================================================================
     // PHASE 5: QUEUE HANDOFF & SIDE EFFECTS

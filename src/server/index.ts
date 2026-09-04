@@ -25,6 +25,7 @@ import { ProductCatalogService } from './services/productCatalogService';
 import { ProductScannerService } from './services/productScannerService';
 import { QueueService } from './services/queueService';
 import { UploadWorkerService } from './services/uploadWorkerService';
+import { ManualFinalizationService } from './services/manualFinalizationService';
 import { CostTrackingService } from './services/costTrackingService';
 import { AmazonInspectService } from './services/amazonInspectService';
 import { UpdatePipelineService } from './services/updatePipelineService';
@@ -1317,6 +1318,14 @@ app.delete('/api/v1/tasks/:taskId', (req, res) => {
     return res.json({ success: true, message: `Task ${taskId} gelöscht.` });
   }
   return res.status(404).json({ success: false, error: `Task ${taskId} nicht gefunden.` });
+});
+
+app.post('/api/v1/tasks/:taskId/repeat-finalization', async (req, res) => {
+  try {
+    res.json(await ManualFinalizationService.repeat(req.params.taskId));
+  } catch (error: any) {
+    res.status(409).json({ success: false, error: error.message });
+  }
 });
 
 app.post('/api/v1/tasks/:taskId/retry', async (req, res) => {

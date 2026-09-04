@@ -117,24 +117,25 @@ export const ARTWORK_VARIANT_REGISTRY: Record<string, ArtworkVariantRegistryEntr
   // ─── New CANVAS_BACKGROUND_CONTAIN variants ────────────────────────────────
   CANVAS_BG_CONTAIN_4452X5292_DARK: {
     id: 'CANVAS_BG_CONTAIN_4452X5292_DARK',
-    label: 'Blanket Format – 4452 × 5292',
+    label: 'Blanket Format – 6678 × 7938 (150% Test)',
     storageType: 'productVariants',
     generator: {
       mode: 'CANVAS_BACKGROUND_CONTAIN',
       source: 'TRIMMED',
-      canvas: { width: 4452, height: 5292 },
+      // Temporary 150% placement experiment; keep the persisted variant ID stable.
+      canvas: { width: 6678, height: 7938 },
       paddingShortSidePct: 0.10,
       backgroundProfile: 'DARK_PRODUCT'
     }
   },
   CANVAS_BG_CONTAIN_4320X5400_DARK: {
     id: 'CANVAS_BG_CONTAIN_4320X5400_DARK',
-    label: 'Poster Format – 4320 × 5400',
+    label: 'Poster Format – 6480 × 8100 (150% Test)',
     storageType: 'productVariants',
     generator: {
       mode: 'CANVAS_BACKGROUND_CONTAIN',
       source: 'TRIMMED',
-      canvas: { width: 4320, height: 5400 },
+      canvas: { width: 6480, height: 8100 },
       paddingShortSidePct: 0.08,
       backgroundProfile: 'DARK_PRODUCT'
     }
