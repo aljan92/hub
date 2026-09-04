@@ -1287,6 +1287,8 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 
 ### 10.55 Resize-Größenversuch und manuelle Finalisierung (4. September 2026)
 
+**Nachfolgeplanung:** [SVG-Resize-Umbauplan](./RESIZE_SVG_PLAN.md). Nutzer hat Umsetzung beauftragt; vor Implementierung ist die Behandlung von PNG-only-Update-Tasks zu klären. Zusätzlicher Master mit Hintergrund entfällt. Aktueller Renderer bleibt bis zur Klärung unverändert.
+
 - Temporärer Test ausschließlich für Blanket und Poster: Canvas 4452×5292 → 6678×7938 beziehungsweise 4320×5400 → 6480×8100. Je Achse +50%, Pixelzahl ×2,25. Contain-Verfahren, Hintergrund und proportionale Innenabstände unverändert; kein Qualitätsgewinn durch zusätzliche Quelldetails. Ob Amazon die Darstellung dadurch vergrößert, ist noch live zu prüfen.
 - Bestehende technische Varianten-IDs bleiben absichtlich stabil, auch wenn ihre Namen die alten Maße enthalten; persistente Produkt-Overrides bleiben gültig. Rückbau über die beiden Registry-Canvasgrößen/Labels, anschließend Dateien erneut erzeugen. Keine neuen produktspezifischen Upload-Selektoren.
 - Prompt Log fasst zusammenhängende `FINALIZATION_EVENT`s als „Listing & Druckdateien finalisieren“ zusammen; Einzelschritte bleiben aufklappbar. „Erneut ausführen“ prüft/sanitisiert vorhandene Queue-Listings und erzeugt sämtliche Resize-Dateien neu, ohne LLM-Neugenerierung.
