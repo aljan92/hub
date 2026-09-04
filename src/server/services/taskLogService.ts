@@ -7,7 +7,7 @@ import { TrademarkService } from './trademarkService';
 import { BannedWordsService } from './bannedWordsService';
 import { VectorizerService } from './vectorizerService';
 import { SvgRenderService } from './svgRenderService';
-import { LLMService } from './llmService';
+import { LLMService, type EnglishListing } from './llmService';
 import { VisionOptimizationService } from './visionOptimizationService';
 import { ListingValidationService } from './listingValidationService';
 import { ListingSanitizationService } from './listingSanitizationService';
@@ -2149,8 +2149,15 @@ export class TaskLogService {
     blockedProducts?: string[];
     blockedNiceClasses?: number[];
   }) {
+    if (TaskExecutionLock.isLocked(taskId)) throw new Error('Task wird bereits verarbeitet; TM-Entscheidung gesperrt.');
     const task = this.getTaskLogById(taskId);
     if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+    if (task.status !== 'AWAITING_TM_REVIEW' || task.checkpoint !== 'TM_REVIEW') {
+      throw new Error('Task wartet nicht mehr auf TM-Review. Bitte Ansicht aktualisieren.');
+    }
+    if (!TaskExecutionLock.acquire(taskId, 'USER_ACTION')) throw new Error('Task ist gesperrt.');
+    let continuationStarted = false;
+    try {
 
     if (params.action === 'RECHECK') {
       const listingToCheck: EnglishListing = params.refinedListing || task.listingResult?.en || {
@@ -2201,9 +2208,18 @@ export class TaskLogService {
         task.blockedNiceClasses = params.blockedNiceClasses;
       }
 
-      task.status = 'CHECKING_TRADEMARKS';
-      task.checkpoint = undefined;
-      task.hasError = false;
+      const isUpdate = task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U');
+      const translate = isUpdate || (loadSettings().translationDesignEnabled ?? true);
+      // SQLite reads are detached objects: persist the changed fields explicitly,
+      // before announcing approval or starting downstream work.
+      const saved = this.updateTaskStatus(taskId, {
+        status: translate ? 'TRANSLATING_LISTING' : 'VECTORIZING_DESIGN',
+        checkpoint: undefined, hasError: false, errorDetails: undefined,
+        listingResult: task.listingResult,
+        blockedProducts: task.blockedProducts,
+        blockedNiceClasses: task.blockedNiceClasses
+      });
+      if (!saved) throw new Error('TM-Freigabe konnte nicht gespeichert werden.');
 
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -2216,66 +2232,23 @@ export class TaskLogService {
         }
       });
 
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-
-      const approvedEn = task.listingResult?.en || task.listingResult;
-      const quote = task.payload?.quote || '';
-      const niche1 = task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || '';
-      const subniche = task.subniche || task.customAnswers?.subniche || task.payload?.subniche || '';
-
-      if (task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U')) {
-        console.log(`[TaskLogService] ✨ Update-Task ${taskId} TM manuell freigegeben -> Übersetzung (U6) und Übergabe an Queue (U7) ✓`);
-        try {
-          const { UpdatePipelineService } = require('./updatePipelineService');
-          UpdatePipelineService.runFromStep(taskId, 'U6').catch((err: any) => {
-            console.error(`[TaskLogService] Fehler bei Update Weiterführung nach TM-Freigabe für ${taskId}:`, err);
-          });
-        } catch (err) {
-          console.error(`[TaskLogService] Konnte UpdatePipelineService nicht laden:`, err);
-        }
-        return { success: true, message: 'Update-Listing freigegeben! Übersetzung & Queue-Übergabe laufen.' };
-      }
-
-      // For Creation Tasks: Translate (if enabled) and then vectorize
-      const isTranslationEnabled = settings.translationDesignEnabled ?? true;
-
-      if (!isTranslationEnabled) {
-        console.log(`[TaskLogService] ⏩ Manuelle Freigabe: Übersetzung deaktiviert. Verwende englisches Master-Listing.`);
-        task.listingResult = { en: approvedEn };
-        this.saveLogs(this.loadLogs());
-        this.emitUpdate(task);
-        this.vectorizeDesignTask(taskId).catch(err => {
-          console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe für Task ${taskId} fehlgeschlagen:`, err);
-        });
-        return { success: true, message: 'Listing manuell freigegeben! Vektorisierung gestartet (Übersetzung übersprungen).' };
-      }
-
-      LLMService.translateApprovedListing({
-        englishListing: approvedEn,
-        quote,
-        niche1,
-        subniche
-      }).then(translatedListings => {
-        const sanitized = this.sanitizeAndValidateListingBeforeQueue(translatedListings);
-        task.listingResult = sanitized;
-        this.saveLogs(this.loadLogs());
-        this.emitUpdate(task);
-        this.vectorizeDesignTask(taskId).catch(err => {
-          console.error(`[TaskLogService] Vektorisierung nach manueller TM-Freigabe für Task ${taskId} fehlgeschlagen:`, err);
-        });
-      }).catch(err => {
-        console.error(`[TaskLogService] Fehler bei Übersetzung nach manueller TM-Freigabe für Task ${taskId}:`, err);
-        // Fallback: continue vectorization even if translation fails
-        this.vectorizeDesignTask(taskId).catch(vErr => console.error(vErr));
-      });
-
-      return { success: true, message: 'Listing manuell freigegeben! Übersetzung und Vektorisierung gestartet.' };
+      continuationStarted = true;
+      void this.continueAfterTmApproval(taskId, isUpdate, translate).catch(err => {
+        const message = `Weiterverarbeitung nach TM-Freigabe fehlgeschlagen: ${err.message || err}`;
+        console.error(`[TaskLogService] ${taskId}: ${message}`);
+        this.updateTaskStatus(taskId, { status: 'ERROR', checkpoint: undefined, hasError: true, errorDetails: message });
+        this.addEvent(taskId, { timestamp: new Date().toISOString(), type: 'ERROR', title: message, content: { phase: 'POST_TM_APPROVAL', error: message } });
+      }).catch(err => console.error('[TaskLogService] Fehlerstatus konnte nicht gespeichert werden:', err))
+        .finally(() => TaskExecutionLock.release(taskId));
+      return { success: true, message: isUpdate
+        ? 'Update-Listing freigegeben! Übersetzung & Queue-Übergabe laufen.'
+        : translate ? 'Listing manuell freigegeben! Übersetzung und Vektorisierung gestartet.'
+          : 'Listing manuell freigegeben! Vektorisierung gestartet (Übersetzung übersprungen).' };
     }
 
     if (params.action === 'REJECT') {
-      task.status = 'REJECTED';
-      task.checkpoint = undefined;
+      const saved = this.updateTaskStatus(taskId, { status: 'REJECTED', checkpoint: undefined, hasError: false, errorDetails: undefined });
+      if (!saved) throw new Error('TM-Ablehnung konnte nicht gespeichert werden.');
 
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -2287,13 +2260,36 @@ export class TaskLogService {
         }
       });
 
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-
       return { success: true, message: 'Task abgelehnt und geschlossen.' };
     }
 
     throw new Error(`Ungültige Aktion: ${params.action}`);
+    } finally {
+      if (!continuationStarted) TaskExecutionLock.release(taskId);
+    }
+  }
+
+  private static async continueAfterTmApproval(taskId: string, isUpdate: boolean, translate: boolean): Promise<void> {
+    if (isUpdate) {
+      const { UpdatePipelineService } = await import('./updatePipelineService');
+      // Re-entrant same-owner lock; skip U5 (TM audit), resume at U6 only.
+      const result = await UpdatePipelineService.runFromStep(taskId, 'U6', 'USER_ACTION');
+      if (!result.success) throw new Error(result.error || 'Update-Fortsetzung fehlgeschlagen');
+      return;
+    }
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error('Freigegebener Task fehlt');
+    const approvedEn = task.listingResult?.en || task.listingResult;
+    const listingResult = translate
+      ? this.sanitizeAndValidateListingBeforeQueue(await LLMService.translateApprovedListing({
+          englishListing: approvedEn,
+          quote: task.payload?.quote || '',
+          niche1: task.niche1 || (task.customAnswers as any)?.niche1 || task.payload?.niche1 || '',
+          subniche: task.subniche || (task.customAnswers as any)?.subniche || task.payload?.subniche || ''
+        }))
+      : { en: approvedEn };
+    if (!this.updateTaskStatus(taskId, { listingResult })) throw new Error('Übersetztes Listing konnte nicht gespeichert werden');
+    await this.vectorizeDesignTask(taskId);
   }
 
   /**
