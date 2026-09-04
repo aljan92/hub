@@ -223521,16 +223521,348 @@ var init_assetValidationService = __esm2({
   }
 });
 
+// src/server/services/finalizationService.ts
+var finalizationService_exports = {};
+__export2(finalizationService_exports, {
+  FinalizationService: () => FinalizationService
+});
+var import_fs81, import_node_crypto2, FinalizationService;
+var init_finalizationService = __esm2({
+  "src/server/services/finalizationService.ts"() {
+    "use strict";
+    import_fs81 = __toESM2(require("fs"), 1);
+    import_node_crypto2 = require("node:crypto");
+    init_taskLogService();
+    init_queueService();
+    init_listingSanitizationService();
+    init_listingValidationService();
+    init_artworkResizeService();
+    FinalizationService = class {
+      /**
+       * Single unified finalization pipeline for both Design and Update pipelines.
+       * Atomically executes:
+       * 1. Deterministic Listing Sanitization (Amazon Charset safe, preserving Umlauts/Kanji/Accents)
+       * 2. Final Strict Validation (no semantic mutations, strictly enforces limits)
+       * 3. Direct SVG output / PNG output without upscaling (no trimmed file)
+       * 4. Asset Verification on disk
+       * 5. Atomic Queue Handoff with all task completion side-effects preserved
+       */
+      static async finalizeForQueue(params2) {
+        const { taskId, pipeline: pipeline3 } = params2;
+        console.log(`[FinalizationService] \u{1F680} Starte Unified Finalization f\xFCr Task #${taskId} (Pipeline: ${pipeline3})...`);
+        const task = TaskLogService2.getTask(taskId);
+        const masterPngPath = params2.masterPngPath || task?.localMbaPngPath || task?.localImagePath || "";
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u{1F9F9} Listing wird bereinigt & normalisiert (Amazon-safe Charset)...",
+          content: { phase: "SANITIZING", status: "RUNNING" }
+        });
+        const rootListing = {
+          brand: params2.brand || "",
+          title: params2.title || "",
+          bullet1: params2.bullet1 || "",
+          bullet2: params2.bullet2 || "",
+          description: params2.description || ""
+        };
+        const sanitizedRoot = ListingSanitizationService.sanitizeListing(rootListing);
+        const rawListings = params2.listings && typeof params2.listings === "object" ? params2.listings : { en: rootListing };
+        const sanitizedListings = ListingSanitizationService.sanitizeAllListings(rawListings);
+        sanitizedListings.en = {
+          ...sanitizedRoot,
+          ...sanitizedListings.en || {}
+        };
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u2713 Listing sanitisiert (Smart Quotes, typografische Dashes & Amazon Charset normalisiert)",
+          content: { phase: "SANITIZING", status: "SUCCESS", listing: sanitizedRoot }
+        });
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u{1F50D} Finale Validierung der Listing-Limits vor Queue-Handoff...",
+          content: { phase: "FINAL_VALIDATION", status: "RUNNING" }
+        });
+        const validation = ListingValidationService.validateFinalListing({
+          listing: sanitizedRoot,
+          allListings: sanitizedListings
+        });
+        const validationAttempts = (task?.validationAttempts || 0) + 1;
+        if (task) {
+          task.validationAttempts = validationAttempts;
+          TaskLogService2.updateTaskStatus(taskId, { validationAttempts });
+        }
+        if (!validation.isValid) {
+          const errorMsg = `Final Listing Validation fehlgeschlagen (Versuch ${validationAttempts}/3): ${validation.errors.join("; ")}`;
+          console.error(`[FinalizationService] \u274C ${errorMsg}`);
+          if (validationAttempts >= 3) {
+            const limitErrorMsg = `LISTING_VALIDATION_RETRY_LIMIT_REACHED: Finale Listing-Validierung nach ${validationAttempts} Versuchen endg\xFCltig fehlgeschlagen: ${validation.errors.join("; ")}`;
+            console.error(`[FinalizationService] \u{1F6D1} ${limitErrorMsg}`);
+            TaskLogService2.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "FINALIZATION_EVENT",
+              title: "\u{1F6D1} Finale Listing-Validierung: Retry-Limit erreicht (3/3 Versuche fehlgeschlagen)",
+              content: {
+                phase: "FINAL_VALIDATION",
+                status: "FAILED",
+                reason: "LISTING_VALIDATION_RETRY_LIMIT_REACHED",
+                attempts: validationAttempts,
+                errors: validation.errors
+              }
+            });
+            TaskLogService2.updateTaskStatus(taskId, {
+              status: "ERROR",
+              hasError: true,
+              errorDetails: limitErrorMsg
+            });
+            return { success: false, error: limitErrorMsg };
+          }
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "FINALIZATION_EVENT",
+            title: `\u274C Finale Listing-Validierung fehlgeschlagen (Versuch ${validationAttempts}/3)`,
+            content: { phase: "FINAL_VALIDATION", status: "FAILED", attempt: validationAttempts, errors: validation.errors }
+          });
+          TaskLogService2.updateTaskStatus(taskId, {
+            hasError: true,
+            errorDetails: errorMsg
+          });
+          return { success: false, error: errorMsg };
+        }
+        if (task) {
+          task.validationAttempts = 0;
+          TaskLogService2.updateTaskStatus(taskId, { validationAttempts: 0 });
+        }
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u2713 Finale Validierung bestanden (Title \u226460, Brand \u226450, Bullets \u2264256, alle Locales gepr\xFCft)",
+          content: { phase: "FINAL_VALIDATION", status: "SUCCESS" }
+        });
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: "\u{1F4D0} Artwork-Vorbereitung (gemeinsame Quellen- und Formatpr\xFCfung)...",
+          content: { phase: "ARTWORK_PREPARATION", status: "RUNNING" }
+        });
+        if (!masterPngPath || !import_fs81.default.existsSync(masterPngPath)) {
+          const err = `Master-Artwork nicht gefunden unter: ${masterPngPath}`;
+          console.error(`[FinalizationService] \u274C ${err}`);
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "FINALIZATION_EVENT",
+            title: "\u274C Master-Artwork fehlt auf Disk",
+            content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
+          });
+          TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+          return { success: false, error: err };
+        }
+        let resizedAssets;
+        const { getGeneratableVariants: getGeneratableVariants2 } = await Promise.resolve().then(() => (init_productCatalogService(), productCatalogService_exports));
+        const generatableVariants = getGeneratableVariants2();
+        try {
+          const source12 = ArtworkResizeService.source(task, masterPngPath);
+          const sourceFingerprint = ArtworkResizeService.fingerprint(source12);
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "FINALIZATION_EVENT",
+            title: source12.kind === "SVG" ? "\u{1F3A8} Varianten direkt aus freigegebenem SVG rendern..." : "\u{1F3A8} PNG-Varianten vorbereiten \u2013 Original-Pixelgr\xF6\xDFe, keine Vergr\xF6\xDFerung...",
+            content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", source: source12.kind }
+          });
+          if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint)) {
+            resizedAssets = task.resizedAssets;
+          } else {
+            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto2.randomUUID)() : taskId);
+            resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title, metrics) => {
+              TaskLogService2.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "FINALIZATION_EVENT",
+                title,
+                content: { phase: "ARTWORK_PREPARATION", status: "RUNNING", source: source12.kind, stage, ...metrics ? { metrics } : {} }
+              });
+            });
+            const currentSource = ArtworkResizeService.source(TaskLogService2.getTask(taskId), masterPngPath);
+            if (ArtworkResizeService.fingerprint(currentSource) !== sourceFingerprint) throw new Error("Artwork-Quelle wurde w\xE4hrend des Renderns ge\xE4ndert; keine \xDCbernahme.");
+          }
+        } catch (error) {
+          const err = "Fehler bei Artwork-Vorbereitung: " + error.message;
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "FINALIZATION_EVENT",
+            title: "\u274C Artwork-Vorbereitung fehlgeschlagen",
+            content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
+          });
+          TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+          return { success: false, error: err };
+        }
+        const requiredFiles = [
+          { name: "Mug Standard", path: resizedAssets.mugStandardPath },
+          { name: "Mug Brush", path: resizedAssets.mugBrushPath },
+          { name: "Drinkware Standard", path: resizedAssets.drinkwareStandardPath },
+          { name: "Drinkware Brush", path: resizedAssets.drinkwareBrushPath }
+        ];
+        for (const f of requiredFiles) {
+          if (!f.path || !import_fs81.default.existsSync(f.path)) {
+            const err = `Generiertes Asset "${f.name}" nicht auf Disk gefunden: ${f.path}`;
+            console.error(`[FinalizationService] \u274C ${err}`);
+            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+            return { success: false, error: err };
+          }
+        }
+        const productVariants = resizedAssets.productVariants || {};
+        for (const variant of generatableVariants) {
+          const variantPath = productVariants[variant.id];
+          if (!variantPath || !import_fs81.default.existsSync(variantPath)) {
+            const err = `Product-Variant "${variant.id}" (${variant.label}) nicht auf Disk gefunden: ${variantPath}`;
+            console.error(`[FinalizationService] \u274C ${err}`);
+            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+            return { success: false, error: err };
+          }
+        }
+        const totalAssets = requiredFiles.length + Object.keys(productVariants).length;
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: `\u2713 Alle ${totalAssets} Assets (${requiredFiles.length} Legacy + ${Object.keys(productVariants).length} Product-Varianten) auf Disk verifiziert`,
+          content: { phase: "ARTWORK_PREPARATION", status: "SUCCESS", assets: resizedAssets }
+        });
+        if (params2.prepareOnly) {
+          return { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
+        }
+        return this.handoffPrepared(params2, { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
+      }
+      /** Synchronous queue handoff of an already validated result. No rendering or earlier workflow steps. */
+      static handoffPrepared(params2, result2) {
+        if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error("Vollst\xE4ndige Finalisierung fehlt");
+        const { taskId, pipeline: pipeline3 } = params2;
+        const task = TaskLogService2.getTask(taskId);
+        if (!task) throw new Error("Task nicht mehr vorhanden");
+        const resizedAssets = result2.resizedAssets;
+        const { root: sanitizedRoot, listings: sanitizedListings } = result2.preparedListing;
+        TaskLogService2.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "FINALIZATION_EVENT",
+          title: `\u{1F4E6} \xDCbergabe an die Upload-Queue (${pipeline3 === "UPDATE" ? "Tab Update" : "Tab New"})...`,
+          content: { phase: "QUEUE_HANDOFF", status: "RUNNING" }
+        });
+        let queueItem;
+        if (pipeline3 === "DESIGN") {
+          queueItem = QueueService.enqueueDesign({
+            taskId,
+            designTitle: sanitizedRoot.title || "Design #" + taskId,
+            niche: params2.niche || "",
+            brand: sanitizedRoot.brand,
+            title: sanitizedRoot.title,
+            bullet1: sanitizedRoot.bullet1,
+            bullet2: sanitizedRoot.bullet2,
+            description: sanitizedRoot.description,
+            listings: sanitizedListings,
+            fitTypes: params2.fitTypes && params2.fitTypes.length > 0 ? params2.fitTypes : ["men", "women", "youth"],
+            avoidColor: params2.avoidColor || "none",
+            customBackgroundColor: params2.customBackgroundColor,
+            imagePath: params2.localImagePath || "",
+            pngPath: params2.masterPngPath,
+            resizedAssets,
+            tmBlockedProductIds: params2.tmBlockedProductIds || []
+          });
+          if (task) {
+            task.status = "COMPLETED";
+            task.inQueue = true;
+            task.checkpoint = void 0;
+            task.hasError = false;
+            task.resizedAssets = resizedAssets;
+          }
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "COMPLETED",
+            inQueue: true,
+            checkpoint: void 0,
+            hasError: false,
+            errorDetails: void 0,
+            resizedAssets
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\u{1F4E6} Design erfolgreich in die Upload-Queue \xFCbergeben",
+            content: {
+              phase: "QUEUE_HANDOFF",
+              status: "SUCCESS",
+              queueId: queueItem.id,
+              allocatedSlots: queueItem.allocatedSlots,
+              message: `Design mit 4500x5400px Master-PNG und sanitisiertem Listing an die Queue \xFCbergeben (${queueItem.allocatedSlots} Slots geplant).`
+            }
+          });
+        } else {
+          queueItem = QueueService.enqueueItem({
+            taskId,
+            source: "UPDATE",
+            type: "update",
+            designId: params2.designId,
+            brand: sanitizedRoot.brand,
+            title: sanitizedRoot.title,
+            bullet1: sanitizedRoot.bullet1,
+            bullet2: sanitizedRoot.bullet2,
+            description: sanitizedRoot.description,
+            listings: sanitizedListings,
+            fitTypes: params2.fitTypes && params2.fitTypes.length > 0 ? params2.fitTypes : ["men", "women", "youth"],
+            avoidColor: params2.avoidColor || "none",
+            imagePath: params2.localImagePath || "",
+            pngPath: params2.masterPngPath,
+            resizedAssets,
+            publishedProductsCount: params2.publishedProductsCount ?? 0,
+            liveStats: params2.liveStats || null,
+            liveProductSummary: params2.liveProductSummary || null,
+            liveProductTypes: params2.liveProductTypes || null,
+            tmBlockedProductIds: params2.tmBlockedProductIds || []
+          });
+          if (task) {
+            task.status = "UPDATE_QUEUED";
+            task.hasError = false;
+            task.resizedAssets = resizedAssets;
+          }
+          TaskLogService2.updateTaskStatus(taskId, {
+            status: "UPDATE_QUEUED",
+            hasError: false,
+            errorDetails: void 0,
+            resizedAssets
+          });
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
+            content: {
+              phase: "QUEUE_HANDOFF",
+              status: "SUCCESS",
+              queueId: queueItem.id,
+              statusText: queueItem.status,
+              designId: params2.designId,
+              allocatedSlots: queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0,
+              message: `Design erfolgreich in den Tab Update der Queue eingereiht (${queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0} neue Slots werden erg\xE4nzt).`
+            }
+          });
+        }
+        console.log(`[FinalizationService] \u2705 Task #${taskId} erfolgreich finalisiert und in Queue \xFCbergeben (QueueId: ${queueItem.id}).`);
+        return {
+          success: true,
+          queueItemId: queueItem.id,
+          resizedAssets
+        };
+      }
+    };
+  }
+});
+
 // src/server/services/updatePipelineService.ts
 var updatePipelineService_exports = {};
 __export2(updatePipelineService_exports, {
   UpdatePipelineService: () => UpdatePipelineService
 });
-var import_fs81, import_path76, UpdatePipelineService;
+var import_fs82, import_path76, UpdatePipelineService;
 var init_updatePipelineService = __esm2({
   "src/server/services/updatePipelineService.ts"() {
     "use strict";
-    import_fs81 = __toESM2(require("fs"), 1);
+    import_fs82 = __toESM2(require("fs"), 1);
     import_path76 = __toESM2(require("path"), 1);
     init_taskLogService();
     init_amazonInspectService();
@@ -223600,9 +223932,9 @@ var init_updatePipelineService = __esm2({
           });
           return { success: false, error: res.error };
         }
-        const targetPath = task.localMbaPngPath && import_fs81.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs81.default.existsSync(mbaPath) ? mbaPath : import_fs81.default.existsSync(rawPath) ? rawPath : null;
+        const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
         const u4PreviewPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
-        if (targetPath && import_fs81.default.existsSync(targetPath)) {
+        if (targetPath && import_fs82.default.existsSync(targetPath)) {
           VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
             if (r.savedPath) {
               TaskLogService2.updateTaskStatus(taskId, {
@@ -223644,20 +223976,20 @@ var init_updatePipelineService = __esm2({
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const mbaPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
         const rawPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs81.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs81.default.existsSync(mbaPath) ? mbaPath : import_fs81.default.existsSync(rawPath) ? rawPath : null;
+        const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
         const gridOutputPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
         const u4PreviewPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
         if (targetPath) {
           try {
             const { base64DataUrl, savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridOutputPath);
             imageBase64 = base64DataUrl;
-            if (savedPath || import_fs81.default.existsSync(gridOutputPath)) {
+            if (savedPath || import_fs82.default.existsSync(gridOutputPath)) {
               gridPreviewUrl = `/api/v1/designs/grid2x2/${encodeURIComponent(taskId)}`;
             }
           } catch (err) {
             console.warn(`[UpdatePipeline] Konnte Bild f\xFCr Vision nicht optimieren:`, err);
           }
-          if (!import_fs81.default.existsSync(u4PreviewPath)) {
+          if (!import_fs82.default.existsSync(u4PreviewPath)) {
             VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
               if (r.savedPath) {
                 TaskLogService2.updateTaskStatus(taskId, {
@@ -223850,14 +224182,14 @@ Bullets: ${oldBullets}`
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const mbaPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
         const rawPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs81.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs81.default.existsSync(mbaPath) ? mbaPath : import_fs81.default.existsSync(rawPath) ? rawPath : null;
+        const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
         const u4PreviewPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
-        if (targetPath && import_fs81.default.existsSync(targetPath)) {
-          if (import_fs81.default.existsSync(u4PreviewPath)) {
+        if (targetPath && import_fs82.default.existsSync(targetPath)) {
+          if (import_fs82.default.existsSync(u4PreviewPath)) {
             try {
-              const stats2 = import_fs81.default.statSync(u4PreviewPath);
+              const stats2 = import_fs82.default.statSync(u4PreviewPath);
               if (stats2.size > 1e3) {
-                const buf = import_fs81.default.readFileSync(u4PreviewPath);
+                const buf = import_fs82.default.readFileSync(u4PreviewPath);
                 u4ImageBase64 = `data:image/png;base64,${buf.toString("base64")}`;
                 u4ImageSourceType = "PREVIEW_1125x1350";
                 console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Verwende vorhandene 1125x1350 U4-Preview (${u4PreviewPath}, ${(buf.length / 1024).toFixed(1)} KB)`);
@@ -223886,7 +224218,7 @@ Bullets: ${oldBullets}`
           if (!u4ImageBase64) {
             try {
               console.warn(`[UpdatePipeline] \u{1F504} FALLBACK: Verwende Original-PNG f\xFCr U4-Call (${targetPath})...`);
-              const buf = import_fs81.default.readFileSync(targetPath);
+              const buf = import_fs82.default.readFileSync(targetPath);
               u4ImageBase64 = `data:image/png;base64,${buf.toString("base64")}`;
               u4ImageSourceType = "ORIGINAL_FALLBACK";
             } catch (e) {
@@ -224323,7 +224655,7 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u25B6\uFE0F Setze Pipeline ab aktuellem Stand f\xFCr Task ${taskId} fort...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        if (!task.localMbaPngPath || !import_fs81.default.existsSync(task.localMbaPngPath)) {
+        if (!task.localMbaPngPath || !import_fs82.default.existsSync(task.localMbaPngPath)) {
           const u2 = await this.stepU2_DownloadArtwork(taskId);
           if (!u2.success) return { success: false, error: u2.error };
         }
@@ -224502,6 +224834,7 @@ var init_designPipelineService = __esm2({
         try {
           await TaskLogService2.vectorizeDesignTask(taskId);
           const updated = this.getTask(taskId);
+          if (updated?.hasError || updated?.status === "ERROR") return { success: false, error: updated.errorDetails || "Vektorisierung/Finalisierung fehlgeschlagen" };
           return { success: true, svgUrl: updated?.svgUrl };
         } catch (err) {
           console.error(`[DesignPipeline] \u274C Fehler in Step D7:`, err);
@@ -224514,8 +224847,7 @@ var init_designPipelineService = __esm2({
       static async stepD8_Enqueue(taskId) {
         console.log(`[DesignPipeline] \u{1F4E6} Starte Step D8 (Upload Queue Handoff) f\xFCr Task ${taskId}...`);
         try {
-          await TaskLogService2.completeTaskAndEnqueue(taskId);
-          return { success: true };
+          return await TaskLogService2.completeTaskAndEnqueue(taskId);
         } catch (err) {
           console.error(`[DesignPipeline] \u274C Fehler in Step D8:`, err);
           return { success: false, error: err.message };
@@ -225193,11 +225525,11 @@ var init_amazonRecoveryVerificationService = __esm2({
 });
 
 // src/server/services/taskRecoveryService.ts
-var import_fs82, import_path77, TaskRecoveryService;
+var import_fs83, import_path77, TaskRecoveryService;
 var init_taskRecoveryService = __esm2({
   "src/server/services/taskRecoveryService.ts"() {
     "use strict";
-    import_fs82 = __toESM2(require("fs"), 1);
+    import_fs83 = __toESM2(require("fs"), 1);
     import_path77 = __toESM2(require("path"), 1);
     init_queueService();
     init_taskRepository();
@@ -225231,6 +225563,7 @@ var init_taskRecoveryService = __esm2({
         "UPDATE_TM_CHECKED",
         "TRANSLATING_LISTING",
         "VECTORIZING_DESIGN",
+        "FINALIZING",
         "UPDATE_TRANSLATED"
       ];
       /**
@@ -225836,6 +226169,9 @@ var init_taskRecoveryService = __esm2({
           case "CHECKING_TRADEMARKS": {
             return await DesignPipelineService.runFromStep(taskId, "D6", "RECOVERY");
           }
+          case "FINALIZING": {
+            return await TaskLogService2.completeTaskAndEnqueue(taskId);
+          }
           case "VECTORIZING_DESIGN": {
             const svgPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
             const targetSvg = task.localSvgPath && AssetValidationService.isValidSvgFile(task.localSvgPath, 20) ? task.localSvgPath : AssetValidationService.isValidSvgFile(svgPath, 20) ? svgPath : null;
@@ -225847,11 +226183,11 @@ var init_taskRecoveryService = __esm2({
                 content: { path: targetSvg }
               });
               try {
-                const svgContent = import_fs82.default.readFileSync(targetSvg, "utf-8");
+                const svgContent = import_fs83.default.readFileSync(targetSvg, "utf-8");
                 const fourPanelFilename = `${cleanId}_4panel.png`;
                 const fourPanelFilePath = import_path77.default.resolve(process.cwd(), "data", "designs", fourPanelFilename);
                 const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgContent);
-                import_fs82.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+                import_fs83.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
                 const auditRes = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
                 if (auditRes.cutout_verdict === "REJECTED") {
                   console.log(`[TaskRecovery] \u23F8\uFE0F SVG Audit verlangt manuelle \xDCberpr\xFCfung f\xFCr Task ${taskId}. Pausiere bei AWAITING_SVG_REVIEW.`);
@@ -225867,7 +226203,7 @@ var init_taskRecoveryService = __esm2({
                 const mbaFilePath = import_path77.default.resolve(process.cwd(), "data", "designs", mbaFilename);
                 if (!AssetValidationService.isValidPngImage(mbaFilePath, 5e4)) {
                   const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgContent);
-                  import_fs82.default.writeFileSync(mbaFilePath, mbaBuffer);
+                  import_fs83.default.writeFileSync(mbaFilePath, mbaBuffer);
                   TaskLogService2.updateTaskStatus(taskId, { localMbaPngPath: mbaFilePath });
                 }
                 return await DesignPipelineService.stepD8_Enqueue(taskId);
@@ -226200,11 +226536,11 @@ function normalizeCatalogProductId(raw) {
   const matched = ProductCatalogService.findProductByAmazonKey(s);
   return matched ? matched.id : s;
 }
-var import_fs83, import_path78, NON_US_DROP_ORDER, QueueService;
+var import_fs84, import_path78, NON_US_DROP_ORDER, QueueService;
 var init_queueService = __esm2({
   "src/server/services/queueService.ts"() {
     "use strict";
-    import_fs83 = __toESM2(require("fs"), 1);
+    import_fs84 = __toESM2(require("fs"), 1);
     import_path78 = __toESM2(require("path"), 1);
     init_productCatalogService();
     init_listingSanitizationService();
@@ -226240,7 +226576,7 @@ var init_queueService = __esm2({
        */
       static loadQueue() {
         try {
-          if (import_fs83.default.existsSync(this.queueFilePath)) {
+          if (import_fs84.default.existsSync(this.queueFilePath)) {
             const recovery = loadJsonWithBackupRecovery(this.queueFilePath, {
               backupExt: ".bak",
               validate: (data) => Array.isArray(data),
@@ -227142,337 +227478,6 @@ var init_queueService = __esm2({
   }
 });
 
-// src/server/services/finalizationService.ts
-var finalizationService_exports = {};
-__export2(finalizationService_exports, {
-  FinalizationService: () => FinalizationService
-});
-var import_fs84, import_node_crypto2, FinalizationService;
-var init_finalizationService = __esm2({
-  "src/server/services/finalizationService.ts"() {
-    "use strict";
-    import_fs84 = __toESM2(require("fs"), 1);
-    import_node_crypto2 = require("node:crypto");
-    init_taskLogService();
-    init_queueService();
-    init_listingSanitizationService();
-    init_listingValidationService();
-    init_artworkResizeService();
-    FinalizationService = class {
-      /**
-       * Single unified finalization pipeline for both Design and Update pipelines.
-       * Atomically executes:
-       * 1. Deterministic Listing Sanitization (Amazon Charset safe, preserving Umlauts/Kanji/Accents)
-       * 2. Final Strict Validation (no semantic mutations, strictly enforces limits)
-       * 3. Direct SVG output / PNG output without upscaling (no trimmed file)
-       * 4. Asset Verification on disk
-       * 5. Atomic Queue Handoff with all task completion side-effects preserved
-       */
-      static async finalizeForQueue(params2) {
-        const { taskId, pipeline: pipeline3 } = params2;
-        console.log(`[FinalizationService] \u{1F680} Starte Unified Finalization f\xFCr Task #${taskId} (Pipeline: ${pipeline3})...`);
-        const task = TaskLogService2.getTask(taskId);
-        const masterPngPath = params2.masterPngPath || task?.localMbaPngPath || task?.localImagePath || "";
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "FINALIZATION_EVENT",
-          title: "\u{1F9F9} Listing wird bereinigt & normalisiert (Amazon-safe Charset)...",
-          content: { phase: "SANITIZING", status: "RUNNING" }
-        });
-        const rootListing = {
-          brand: params2.brand || "",
-          title: params2.title || "",
-          bullet1: params2.bullet1 || "",
-          bullet2: params2.bullet2 || "",
-          description: params2.description || ""
-        };
-        const sanitizedRoot = ListingSanitizationService.sanitizeListing(rootListing);
-        const rawListings = params2.listings && typeof params2.listings === "object" ? params2.listings : { en: rootListing };
-        const sanitizedListings = ListingSanitizationService.sanitizeAllListings(rawListings);
-        sanitizedListings.en = {
-          ...sanitizedRoot,
-          ...sanitizedListings.en || {}
-        };
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "FINALIZATION_EVENT",
-          title: "\u2713 Listing sanitisiert (Smart Quotes, typografische Dashes & Amazon Charset normalisiert)",
-          content: { phase: "SANITIZING", status: "SUCCESS", listing: sanitizedRoot }
-        });
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "FINALIZATION_EVENT",
-          title: "\u{1F50D} Finale Validierung der Listing-Limits vor Queue-Handoff...",
-          content: { phase: "FINAL_VALIDATION", status: "RUNNING" }
-        });
-        const validation = ListingValidationService.validateFinalListing({
-          listing: sanitizedRoot,
-          allListings: sanitizedListings
-        });
-        const validationAttempts = (task?.validationAttempts || 0) + 1;
-        if (task) {
-          task.validationAttempts = validationAttempts;
-          TaskLogService2.updateTaskStatus(taskId, { validationAttempts });
-        }
-        if (!validation.isValid) {
-          const errorMsg = `Final Listing Validation fehlgeschlagen (Versuch ${validationAttempts}/3): ${validation.errors.join("; ")}`;
-          console.error(`[FinalizationService] \u274C ${errorMsg}`);
-          if (validationAttempts >= 3) {
-            const limitErrorMsg = `LISTING_VALIDATION_RETRY_LIMIT_REACHED: Finale Listing-Validierung nach ${validationAttempts} Versuchen endg\xFCltig fehlgeschlagen: ${validation.errors.join("; ")}`;
-            console.error(`[FinalizationService] \u{1F6D1} ${limitErrorMsg}`);
-            TaskLogService2.addEvent(taskId, {
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "FINALIZATION_EVENT",
-              title: "\u{1F6D1} Finale Listing-Validierung: Retry-Limit erreicht (3/3 Versuche fehlgeschlagen)",
-              content: {
-                phase: "FINAL_VALIDATION",
-                status: "FAILED",
-                reason: "LISTING_VALIDATION_RETRY_LIMIT_REACHED",
-                attempts: validationAttempts,
-                errors: validation.errors
-              }
-            });
-            TaskLogService2.updateTaskStatus(taskId, {
-              status: "ERROR",
-              hasError: true,
-              errorDetails: limitErrorMsg
-            });
-            return { success: false, error: limitErrorMsg };
-          }
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "FINALIZATION_EVENT",
-            title: `\u274C Finale Listing-Validierung fehlgeschlagen (Versuch ${validationAttempts}/3)`,
-            content: { phase: "FINAL_VALIDATION", status: "FAILED", attempt: validationAttempts, errors: validation.errors }
-          });
-          TaskLogService2.updateTaskStatus(taskId, {
-            hasError: true,
-            errorDetails: errorMsg
-          });
-          return { success: false, error: errorMsg };
-        }
-        if (task) {
-          task.validationAttempts = 0;
-          TaskLogService2.updateTaskStatus(taskId, { validationAttempts: 0 });
-        }
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "FINALIZATION_EVENT",
-          title: "\u2713 Finale Validierung bestanden (Title \u226460, Brand \u226450, Bullets \u2264256, alle Locales gepr\xFCft)",
-          content: { phase: "FINAL_VALIDATION", status: "SUCCESS" }
-        });
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "FINALIZATION_EVENT",
-          title: "\u{1F4D0} Artwork-Vorbereitung (gemeinsame Quellen- und Formatpr\xFCfung)...",
-          content: { phase: "ARTWORK_PREPARATION", status: "RUNNING" }
-        });
-        if (!masterPngPath || !import_fs84.default.existsSync(masterPngPath)) {
-          const err = `Master-Artwork nicht gefunden unter: ${masterPngPath}`;
-          console.error(`[FinalizationService] \u274C ${err}`);
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "FINALIZATION_EVENT",
-            title: "\u274C Master-Artwork fehlt auf Disk",
-            content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
-          });
-          TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
-          return { success: false, error: err };
-        }
-        let resizedAssets;
-        const { getGeneratableVariants: getGeneratableVariants2 } = await Promise.resolve().then(() => (init_productCatalogService(), productCatalogService_exports));
-        const generatableVariants = getGeneratableVariants2();
-        try {
-          const source12 = ArtworkResizeService.source(task, masterPngPath);
-          const sourceFingerprint = ArtworkResizeService.fingerprint(source12);
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "FINALIZATION_EVENT",
-            title: source12.kind === "SVG" ? "\u{1F3A8} Varianten direkt aus freigegebenem SVG rendern..." : "\u{1F3A8} PNG-Varianten vorbereiten \u2013 Original-Pixelgr\xF6\xDFe, keine Vergr\xF6\xDFerung...",
-            content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", source: source12.kind }
-          });
-          if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint)) {
-            resizedAssets = task.resizedAssets;
-          } else {
-            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto2.randomUUID)() : taskId);
-            resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title, metrics) => {
-              TaskLogService2.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "FINALIZATION_EVENT",
-                title,
-                content: { phase: "ARTWORK_PREPARATION", status: "RUNNING", source: source12.kind, stage, ...metrics ? { metrics } : {} }
-              });
-            });
-            const currentSource = ArtworkResizeService.source(TaskLogService2.getTask(taskId), masterPngPath);
-            if (ArtworkResizeService.fingerprint(currentSource) !== sourceFingerprint) throw new Error("Artwork-Quelle wurde w\xE4hrend des Renderns ge\xE4ndert; keine \xDCbernahme.");
-          }
-        } catch (error) {
-          const err = "Fehler bei Artwork-Vorbereitung: " + error.message;
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "FINALIZATION_EVENT",
-            title: "\u274C Artwork-Vorbereitung fehlgeschlagen",
-            content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
-          });
-          TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
-          return { success: false, error: err };
-        }
-        const requiredFiles = [
-          { name: "Mug Standard", path: resizedAssets.mugStandardPath },
-          { name: "Mug Brush", path: resizedAssets.mugBrushPath },
-          { name: "Drinkware Standard", path: resizedAssets.drinkwareStandardPath },
-          { name: "Drinkware Brush", path: resizedAssets.drinkwareBrushPath }
-        ];
-        for (const f of requiredFiles) {
-          if (!f.path || !import_fs84.default.existsSync(f.path)) {
-            const err = `Generiertes Asset "${f.name}" nicht auf Disk gefunden: ${f.path}`;
-            console.error(`[FinalizationService] \u274C ${err}`);
-            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
-            return { success: false, error: err };
-          }
-        }
-        const productVariants = resizedAssets.productVariants || {};
-        for (const variant of generatableVariants) {
-          const variantPath = productVariants[variant.id];
-          if (!variantPath || !import_fs84.default.existsSync(variantPath)) {
-            const err = `Product-Variant "${variant.id}" (${variant.label}) nicht auf Disk gefunden: ${variantPath}`;
-            console.error(`[FinalizationService] \u274C ${err}`);
-            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
-            return { success: false, error: err };
-          }
-        }
-        const totalAssets = requiredFiles.length + Object.keys(productVariants).length;
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "FINALIZATION_EVENT",
-          title: `\u2713 Alle ${totalAssets} Assets (${requiredFiles.length} Legacy + ${Object.keys(productVariants).length} Product-Varianten) auf Disk verifiziert`,
-          content: { phase: "ARTWORK_PREPARATION", status: "SUCCESS", assets: resizedAssets }
-        });
-        if (params2.prepareOnly) {
-          return { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
-        }
-        return this.handoffPrepared(params2, { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
-      }
-      /** Synchronous queue handoff of an already validated result. No rendering or earlier workflow steps. */
-      static handoffPrepared(params2, result2) {
-        if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error("Vollst\xE4ndige Finalisierung fehlt");
-        const { taskId, pipeline: pipeline3 } = params2;
-        const task = TaskLogService2.getTask(taskId);
-        if (!task) throw new Error("Task nicht mehr vorhanden");
-        const resizedAssets = result2.resizedAssets;
-        const { root: sanitizedRoot, listings: sanitizedListings } = result2.preparedListing;
-        TaskLogService2.addEvent(taskId, {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          type: "FINALIZATION_EVENT",
-          title: `\u{1F4E6} \xDCbergabe an die Upload-Queue (${pipeline3 === "UPDATE" ? "Tab Update" : "Tab New"})...`,
-          content: { phase: "QUEUE_HANDOFF", status: "RUNNING" }
-        });
-        let queueItem;
-        if (pipeline3 === "DESIGN") {
-          queueItem = QueueService.enqueueDesign({
-            taskId,
-            designTitle: sanitizedRoot.title || "Design #" + taskId,
-            niche: params2.niche || "",
-            brand: sanitizedRoot.brand,
-            title: sanitizedRoot.title,
-            bullet1: sanitizedRoot.bullet1,
-            bullet2: sanitizedRoot.bullet2,
-            description: sanitizedRoot.description,
-            listings: sanitizedListings,
-            fitTypes: params2.fitTypes && params2.fitTypes.length > 0 ? params2.fitTypes : ["men", "women", "youth"],
-            avoidColor: params2.avoidColor || "none",
-            customBackgroundColor: params2.customBackgroundColor,
-            imagePath: params2.localImagePath || "",
-            pngPath: params2.masterPngPath,
-            resizedAssets,
-            tmBlockedProductIds: params2.tmBlockedProductIds || []
-          });
-          if (task) {
-            task.status = "COMPLETED";
-            task.inQueue = true;
-            task.checkpoint = void 0;
-            task.hasError = false;
-            task.resizedAssets = resizedAssets;
-          }
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "COMPLETED",
-            inQueue: true,
-            hasError: false,
-            errorDetails: void 0,
-            resizedAssets
-          });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: "\u{1F4E6} Design erfolgreich in die Upload-Queue \xFCbergeben",
-            content: {
-              phase: "QUEUE_HANDOFF",
-              status: "SUCCESS",
-              queueId: queueItem.id,
-              allocatedSlots: queueItem.allocatedSlots,
-              message: `Design mit 4500x5400px Master-PNG und sanitisiertem Listing an die Queue \xFCbergeben (${queueItem.allocatedSlots} Slots geplant).`
-            }
-          });
-        } else {
-          queueItem = QueueService.enqueueItem({
-            taskId,
-            source: "UPDATE",
-            type: "update",
-            designId: params2.designId,
-            brand: sanitizedRoot.brand,
-            title: sanitizedRoot.title,
-            bullet1: sanitizedRoot.bullet1,
-            bullet2: sanitizedRoot.bullet2,
-            description: sanitizedRoot.description,
-            listings: sanitizedListings,
-            fitTypes: params2.fitTypes && params2.fitTypes.length > 0 ? params2.fitTypes : ["men", "women", "youth"],
-            avoidColor: params2.avoidColor || "none",
-            imagePath: params2.localImagePath || "",
-            pngPath: params2.masterPngPath,
-            resizedAssets,
-            publishedProductsCount: params2.publishedProductsCount ?? 0,
-            liveStats: params2.liveStats || null,
-            liveProductSummary: params2.liveProductSummary || null,
-            liveProductTypes: params2.liveProductTypes || null,
-            tmBlockedProductIds: params2.tmBlockedProductIds || []
-          });
-          if (task) {
-            task.status = "UPDATE_QUEUED";
-            task.hasError = false;
-            task.resizedAssets = resizedAssets;
-          }
-          TaskLogService2.updateTaskStatus(taskId, {
-            status: "UPDATE_QUEUED",
-            hasError: false,
-            errorDetails: void 0,
-            resizedAssets
-          });
-          TaskLogService2.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "TASK_HANDOFF",
-            title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
-            content: {
-              phase: "QUEUE_HANDOFF",
-              status: "SUCCESS",
-              queueId: queueItem.id,
-              statusText: queueItem.status,
-              designId: params2.designId,
-              allocatedSlots: queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0,
-              message: `Design erfolgreich in den Tab Update der Queue eingereiht (${queueItem.totalBaseSlots ?? queueItem.allocatedSlots ?? 0} neue Slots werden erg\xE4nzt).`
-            }
-          });
-        }
-        console.log(`[FinalizationService] \u2705 Task #${taskId} erfolgreich finalisiert und in Queue \xFCbergeben (QueueId: ${queueItem.id}).`);
-        return {
-          success: true,
-          queueItemId: queueItem.id,
-          resizedAssets
-        };
-      }
-    };
-  }
-});
-
 // src/server/services/taskLogService.ts
 var taskLogService_exports = {};
 __export2(taskLogService_exports, {
@@ -227639,23 +227644,39 @@ var init_taskLogService = __esm2({
         this.emitUpdate(updated);
         return updated;
       }
-      static async completeTaskAndEnqueue(taskOrId) {
-        const task = typeof taskOrId === "string" ? this.getTaskLogById(taskOrId) : taskOrId;
-        if (!task) return { success: false, error: "Task nicht gefunden" };
-        if (task.inQueue) return { success: true };
-        task.inQueue = true;
+      static finalizations = /* @__PURE__ */ new Map();
+      static completeTaskAndEnqueue(taskOrId) {
+        const taskId = typeof taskOrId === "string" ? taskOrId : taskOrId.id;
+        const running = this.finalizations.get(taskId);
+        if (running) return running;
+        const work = this.finalizeDesignTask(taskId).finally(() => this.finalizations.delete(taskId));
+        this.finalizations.set(taskId, work);
+        return work;
+      }
+      static async finalizeDesignTask(taskId) {
         try {
+          const { QueueService: QueueService2 } = await Promise.resolve().then(() => (init_queueService(), queueService_exports));
+          const task = this.getTaskLogById(taskId);
+          if (!task) return { success: false, error: "Task nicht gefunden" };
+          if (QueueService2.isCorrupted()) throw new Error("Queue-Speicher im Sicherheitsmodus");
+          const queued = QueueService2.getState().items.filter((item) => item.taskId === taskId);
+          if (queued.length > 1) throw new Error("Mehrere Queue-Eintr\xE4ge f\xFCr Task; keine erneute \xDCbergabe");
+          if (queued.length === 1) {
+            this.updateTaskStatus(taskId, { status: "COMPLETED", inQueue: true });
+            return { success: true };
+          }
+          if (task.events?.some((event) => event.type === "TASK_HANDOFF" && event.content?.status === "SUCCESS")) {
+            throw new Error("Fr\xFChere Queue-\xDCbergabe vorhanden, Auftrag inzwischen entfernt; keine automatische Neuanlage");
+          }
+          this.updateTaskStatus(taskId, { status: "FINALIZING", inQueue: false, checkpoint: void 0, hasError: false, errorDetails: void 0 });
           const { FinalizationService: FinalizationService2 } = await Promise.resolve().then(() => (init_finalizationService(), finalizationService_exports));
           const finResult = await FinalizationService2.finalizeForQueue(this.finalizationParams(task));
           if (!finResult.success) {
-            task.inQueue = false;
-            TaskRepository.updateTask(task.id, { inQueue: false });
+            this.updateTaskStatus(taskId, { status: "ERROR", inQueue: false, hasError: true, errorDetails: finResult.error });
           }
-          this.emitUpdate(task);
           return finResult;
         } catch (err) {
-          task.inQueue = false;
-          TaskRepository.updateTask(task.id, { inQueue: false });
+          this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
           console.warn("[TaskLogService] Failed to auto-enqueue completed task:", err.message);
           return { success: false, error: err.message };
         }
@@ -227707,14 +227728,13 @@ var init_taskLogService = __esm2({
         };
       }
       static updateTaskStatus(taskId, updates) {
-        if (updates.status === "COMPLETED") {
+        if (updates.status === "COMPLETED" && updates.inQueue !== true) {
           const current = TaskRepository.getTaskById(taskId);
           if (current && current.source !== "UPDATE" && !current.inQueue) {
-            updates.inQueue = true;
-            const updated2 = TaskRepository.updateTask(taskId, updates);
+            const updated2 = TaskRepository.updateTask(taskId, { ...updates, status: "FINALIZING", inQueue: false });
             if (updated2) {
               this.emitUpdate(updated2);
-              this.completeTaskAndEnqueue(updated2);
+              void this.completeTaskAndEnqueue(updated2);
             }
             return updated2 || void 0;
           }
@@ -228663,6 +228683,7 @@ Beantworte die Analysefragen streng als JSON!`;
           task.localSvgPath = svgFilePath;
           task.svgUrl = localSvgUrl;
           task.svgContent = svgText;
+          this.persistArtworkState(task);
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "VECTORIZE_RESPONSE",
@@ -228723,6 +228744,7 @@ Beantworte die Analysefragen streng als JSON!`;
             console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit f\xFCr Task ${taskId} durch...`);
             const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
             task.svgAuditResult = auditResult;
+            this.persistArtworkState(task);
             this.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "SVG_AUDIT_RESPONSE",
@@ -228749,11 +228771,9 @@ Beantworte die Analysefragen streng als JSON!`;
               const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
               task.localMbaPngPath = mbaFilePath;
               task.mbaPngUrl = mbaUrl;
-              this.updateTaskStatus(taskId, {
-                status: "COMPLETED",
-                checkpoint: void 0,
-                hasError: false
-              });
+              this.persistArtworkState(task);
+              const finalized = await this.completeTaskAndEnqueue(taskId);
+              if (!finalized.success) return;
               console.log(`[TaskLogService] \u{1F389} Task ${taskId} vollautonom freigestellt, gepr\xFCft & als MBA PNG abgeschlossen \u2713`);
             } else {
               this.addEvent(taskId, {
@@ -228783,6 +228803,7 @@ Beantworte die Analysefragen streng als JSON!`;
               import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
               task.localFourPanelImagePath = fourPanelFilePath;
               task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+              this.persistArtworkState(task);
             } catch (e) {
             }
             this.addEvent(taskId, {
@@ -228812,8 +228833,24 @@ Beantworte die Analysefragen streng als JSON!`;
             content: err.message || "Fehler beim Vectorizer.ai API Aufruf",
             metadata: { latencyMs }
           });
-          this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+          this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message || "Vektorisierung fehlgeschlagen" });
         }
+      }
+      /** Persist generated artifacts explicitly; repository reads are detached objects. */
+      static persistArtworkState(task) {
+        const saved = this.updateTaskStatus(task.id, {
+          originalSvgPath: task.originalSvgPath,
+          originalSvgUrl: task.originalSvgUrl,
+          localSvgPath: task.localSvgPath,
+          svgUrl: task.svgUrl,
+          svgContent: task.svgContent,
+          localFourPanelImagePath: task.localFourPanelImagePath,
+          fourPanelImageUrl: task.fourPanelImageUrl,
+          svgAuditResult: task.svgAuditResult,
+          localMbaPngPath: task.localMbaPngPath,
+          mbaPngUrl: task.mbaPngUrl
+        });
+        if (!saved) throw new Error("Artwork-Pfade konnten nicht gespeichert werden");
       }
       /**
        * Jump back to an earlier pipeline step and re-execute from there
@@ -229501,6 +229538,7 @@ Beantworte die Analysefragen streng als JSON!`;
           console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit nach SVG-Freigabe f\xFCr Task ${taskId} durch...`);
           const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
           task.svgAuditResult = auditResult;
+          this.persistArtworkState(task);
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "SVG_AUDIT_RESPONSE",
@@ -229538,7 +229576,9 @@ Beantworte die Analysefragen streng als JSON!`;
                 message: "Vektorgrafik gepr\xFCft, Cutout von Vision-KI freigegeben und MBA Master-PNG (4500x5400 px) erzeugt."
               }
             });
-            this.completeTaskAndEnqueue(task);
+            this.persistArtworkState(task);
+            const finalized = await this.completeTaskAndEnqueue(taskId);
+            if (!finalized.success) return { success: false, error: finalized.error };
             return { success: true, message: "Cutout von Vision-KI freigegeben, MBA Master-PNG generiert & an Queue \xFCbergeben \u2713" };
           } else {
             task.status = "AWAITING_SVG_REVIEW";
@@ -229554,8 +229594,7 @@ Beantworte die Analysefragen streng als JSON!`;
                 detectedIssues: auditResult.detected_issues
               }
             });
-            this.saveLogs(this.loadLogs());
-            this.emitUpdate(task);
+            this.updateTaskStatus(taskId, { status: "AWAITING_SVG_REVIEW", checkpoint: "SVG_REVIEW", hasError: false });
             return {
               success: false,
               error: `KI Cutout-Audit: ${auditResult.explanation || auditResult.detected_issues && auditResult.detected_issues.join(", ") || "Unreinheiten erkannt. Bitte nachbessern."}`
@@ -235177,7 +235216,7 @@ app.post("/api/v1/queue/item/:id/retry", (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.post(["/api/v1/tasks/:id/enqueue", "/api/v1/tasks/enqueue"], (req, res) => {
+app.post(["/api/v1/tasks/:id/enqueue", "/api/v1/tasks/enqueue"], async (req, res) => {
   try {
     const rawId = req.params.id || req.body?.taskId || req.query?.taskId;
     if (!rawId) {
@@ -235191,9 +235230,10 @@ app.post(["/api/v1/tasks/:id/enqueue", "/api/v1/tasks/enqueue"], (req, res) => {
     if (!task.localMbaPngPath && !task.mbaPngUrl) {
       return res.status(400).json({ success: false, error: `Task #${taskId} besitzt noch kein fertig generiertes Master-PNG.` });
     }
-    TaskLogService2.completeTaskAndEnqueue(task);
+    const result2 = await TaskLogService2.completeTaskAndEnqueue(task);
+    if (!result2.success) return res.status(400).json({ success: false, error: result2.error });
     const queueState = QueueService.getState();
-    res.json({ success: true, message: `Task #${taskId} erfolgreich in die Upload-Queue \xFCbertragen!`, task, queueState });
+    res.json({ success: true, message: `Task #${taskId} erfolgreich in die Upload-Queue \xFCbertragen!`, task: TaskLogService2.getTaskById(taskId), queueState });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

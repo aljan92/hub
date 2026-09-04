@@ -326,6 +326,7 @@ export class FinalizationService {
       TaskLogService.updateTaskStatus(taskId, {
         status: 'COMPLETED',
         inQueue: true,
+        checkpoint: undefined,
         hasError: false,
         errorDetails: undefined,
         resizedAssets

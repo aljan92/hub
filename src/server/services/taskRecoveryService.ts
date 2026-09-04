@@ -61,6 +61,7 @@ export class TaskRecoveryService {
     'UPDATE_TM_CHECKED',
     'TRANSLATING_LISTING',
     'VECTORIZING_DESIGN',
+    'FINALIZING',
     'UPDATE_TRANSLATED'
   ];
 
@@ -807,6 +808,10 @@ export class TaskRecoveryService {
       case 'CHECKING_TRADEMARKS': {
         // Step D6 uses preserved trademarkWorkflowState automatically if present
         return await DesignPipelineService.runFromStep(taskId, 'D6', 'RECOVERY');
+      }
+
+      case 'FINALIZING': {
+        return await TaskLogService.completeTaskAndEnqueue(taskId);
       }
 
       case 'VECTORIZING_DESIGN': {

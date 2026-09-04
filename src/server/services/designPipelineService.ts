@@ -153,6 +153,7 @@ export class DesignPipelineService {
     try {
       await TaskLogService.vectorizeDesignTask(taskId);
       const updated = this.getTask(taskId);
+      if (updated?.hasError || updated?.status === 'ERROR') return { success: false, error: updated.errorDetails || 'Vektorisierung/Finalisierung fehlgeschlagen' };
       return { success: true, svgUrl: updated?.svgUrl };
     } catch (err: any) {
       console.error(`[DesignPipeline] ❌ Fehler in Step D7:`, err);
@@ -167,8 +168,7 @@ export class DesignPipelineService {
   static async stepD8_Enqueue(taskId: string): Promise<{ success: boolean; error?: string }> {
     console.log(`[DesignPipeline] 📦 Starte Step D8 (Upload Queue Handoff) für Task ${taskId}...`);
     try {
-      await TaskLogService.completeTaskAndEnqueue(taskId);
-      return { success: true };
+      return await TaskLogService.completeTaskAndEnqueue(taskId);
     } catch (err: any) {
       console.error(`[DesignPipeline] ❌ Fehler in Step D8:`, err);
       return { success: false, error: err.message };

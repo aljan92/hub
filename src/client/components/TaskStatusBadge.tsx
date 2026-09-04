@@ -70,10 +70,15 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
     };
   }
 
-  // 3. Completed / Queued state
+  if (task.status === 'FINALIZING') {
+    return { label: 'Listing & Druckdateien finalisieren…', badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+      dotBg: 'bg-cyan-400', category: 'SYSTEM', icon: <RefreshCw className="w-3 h-3 animate-spin" />, isAnimated: true };
+  }
+
+  // 3. Completion alone is not evidence of queue handoff.
   if (task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED') {
     return {
-      label: isUpdate ? 'In Queue (Update) ✓' : 'In Queue übergeben ✓',
+      label: task.inQueue || task.status === 'UPDATE_QUEUED' ? (isUpdate ? 'In Queue (Update) ✓' : 'In Queue übergeben ✓') : 'Abgeschlossen – Queue-Übergabe offen',
       badgeClass: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 font-semibold',
       dotBg: 'bg-emerald-400',
       category: 'SYSTEM',

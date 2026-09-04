@@ -1903,7 +1903,7 @@ app.post('/api/v1/queue/item/:id/retry', (req, res) => {
 });
 
 // Re-push / Enqueue Task into Upload Queue
-app.post(['/api/v1/tasks/:id/enqueue', '/api/v1/tasks/enqueue'], (req, res) => {
+app.post(['/api/v1/tasks/:id/enqueue', '/api/v1/tasks/enqueue'], async (req, res) => {
   try {
     const rawId = req.params.id || req.body?.taskId || req.query?.taskId;
     if (!rawId) {
@@ -1919,9 +1919,10 @@ app.post(['/api/v1/tasks/:id/enqueue', '/api/v1/tasks/enqueue'], (req, res) => {
       return res.status(400).json({ success: false, error: `Task #${taskId} besitzt noch kein fertig generiertes Master-PNG.` });
     }
 
-    TaskLogService.completeTaskAndEnqueue(task);
+    const result = await TaskLogService.completeTaskAndEnqueue(task);
+    if (!result.success) return res.status(400).json({ success: false, error: result.error });
     const queueState = QueueService.getState();
-    res.json({ success: true, message: `Task #${taskId} erfolgreich in die Upload-Queue übertragen!`, task, queueState });
+    res.json({ success: true, message: `Task #${taskId} erfolgreich in die Upload-Queue übertragen!`, task: TaskLogService.getTaskById(taskId), queueState });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

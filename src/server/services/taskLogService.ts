@@ -197,24 +197,42 @@ export class TaskLogService {
     return updated;
   }
 
-  static async completeTaskAndEnqueue(taskOrId: DesignTaskLog | string): Promise<{ success: boolean; error?: string }> {
-    const task = typeof taskOrId === 'string' ? this.getTaskLogById(taskOrId) : taskOrId;
-    if (!task) return { success: false, error: 'Task nicht gefunden' };
-    if (task.inQueue) return { success: true };
-    task.inQueue = true;
+  private static finalizations = new Map<string, Promise<{ success: boolean; error?: string }>>();
 
+  static completeTaskAndEnqueue(taskOrId: DesignTaskLog | string): Promise<{ success: boolean; error?: string }> {
+    const taskId = typeof taskOrId === 'string' ? taskOrId : taskOrId.id;
+    const running = this.finalizations.get(taskId);
+    if (running) return running;
+    const work = this.finalizeDesignTask(taskId).finally(() => this.finalizations.delete(taskId));
+    this.finalizations.set(taskId, work);
+    return work;
+  }
+
+  private static async finalizeDesignTask(taskId: string): Promise<{ success: boolean; error?: string }> {
     try {
+      const { QueueService } = await import('./queueService');
+      const task = this.getTaskLogById(taskId);
+      if (!task) return { success: false, error: 'Task nicht gefunden' };
+      if (QueueService.isCorrupted()) throw new Error('Queue-Speicher im Sicherheitsmodus');
+      const queued = QueueService.getState().items.filter(item => item.taskId === taskId);
+      if (queued.length > 1) throw new Error('Mehrere Queue-Einträge für Task; keine erneute Übergabe');
+      if (queued.length === 1) {
+        // Existing queue state (including remote intent/errors) must never be reset.
+        this.updateTaskStatus(taskId, { status: 'COMPLETED', inQueue: true });
+        return { success: true };
+      }
+      if (task.events?.some(event => event.type === 'TASK_HANDOFF' && event.content?.status === 'SUCCESS')) {
+        throw new Error('Frühere Queue-Übergabe vorhanden, Auftrag inzwischen entfernt; keine automatische Neuanlage');
+      }
+      this.updateTaskStatus(taskId, { status: 'FINALIZING', inQueue: false, checkpoint: undefined, hasError: false, errorDetails: undefined });
       const { FinalizationService } = await import('./finalizationService');
       const finResult = await FinalizationService.finalizeForQueue(this.finalizationParams(task));
       if (!finResult.success) {
-        task.inQueue = false;
-        TaskRepository.updateTask(task.id, { inQueue: false });
+        this.updateTaskStatus(taskId, { status: 'ERROR', inQueue: false, hasError: true, errorDetails: finResult.error });
       }
-      this.emitUpdate(task);
       return finResult;
     } catch (err: any) {
-      task.inQueue = false;
-      TaskRepository.updateTask(task.id, { inQueue: false });
+      this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: err.message });
       console.warn('[TaskLogService] Failed to auto-enqueue completed task:', err.message);
       return { success: false, error: err.message };
     }
@@ -276,14 +294,13 @@ export class TaskLogService {
 
   static updateTaskStatus(taskId: string, updates: Partial<DesignTaskLog>): DesignTaskLog | undefined {
     // Only auto-trigger enqueue when the status is explicitly transitioning to COMPLETED
-    if (updates.status === 'COMPLETED') {
+    if (updates.status === 'COMPLETED' && updates.inQueue !== true) {
       const current = TaskRepository.getTaskById(taskId);
       if (current && current.source !== 'UPDATE' && !current.inQueue) {
-        updates.inQueue = true;
-        const updated = TaskRepository.updateTask(taskId, updates);
+        const updated = TaskRepository.updateTask(taskId, { ...updates, status: 'FINALIZING', inQueue: false });
         if (updated) {
           this.emitUpdate(updated);
-          this.completeTaskAndEnqueue(updated);
+          void this.completeTaskAndEnqueue(updated);
         }
         return updated || undefined;
       }
@@ -1384,6 +1401,7 @@ export class TaskLogService {
       task.localSvgPath = svgFilePath;
       task.svgUrl = localSvgUrl;
       task.svgContent = svgText;
+      this.persistArtworkState(task);
 
       // 2. Log Event: Empfangen von Vectorizer.ai
       this.addEvent(taskId, {
@@ -1457,6 +1475,7 @@ export class TaskLogService {
         console.log(`[TaskLogService] 🤖 Führe LLM Vision Cutout-Audit für Task ${taskId} durch...`);
         const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
         task.svgAuditResult = auditResult;
+        this.persistArtworkState(task);
 
         // Log: Empfangen von LLM Vision Cutout Audit
         this.addEvent(taskId, {
@@ -1492,11 +1511,9 @@ export class TaskLogService {
           // Resize-Generierung wird ausschließlich durch FinalizationService orchestriert.
           // completeTaskAndEnqueue() → FinalizationService.finalizeForQueue() erzeugt alle Varianten.
 
-          this.updateTaskStatus(taskId, {
-            status: 'COMPLETED',
-            checkpoint: undefined,
-            hasError: false
-          });
+          this.persistArtworkState(task);
+          const finalized = await this.completeTaskAndEnqueue(taskId);
+          if (!finalized.success) return;
 
           console.log(`[TaskLogService] 🎉 Task ${taskId} vollautonom freigestellt, geprüft & als MBA PNG abgeschlossen ✓`);
         } else {
@@ -1531,6 +1548,7 @@ export class TaskLogService {
           fs.writeFileSync(fourPanelFilePath, fourPanelBuffer);
           task.localFourPanelImagePath = fourPanelFilePath;
           task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
+          this.persistArtworkState(task);
         } catch (e) {}
 
         this.addEvent(taskId, {
@@ -1561,8 +1579,19 @@ export class TaskLogService {
         content: err.message || 'Fehler beim Vectorizer.ai API Aufruf',
         metadata: { latencyMs }
       });
-      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
+      this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: err.message || 'Vektorisierung fehlgeschlagen' });
     }
+  }
+
+  /** Persist generated artifacts explicitly; repository reads are detached objects. */
+  private static persistArtworkState(task: DesignTaskLog) {
+    const saved = this.updateTaskStatus(task.id, {
+      originalSvgPath: task.originalSvgPath, originalSvgUrl: task.originalSvgUrl,
+      localSvgPath: task.localSvgPath, svgUrl: task.svgUrl, svgContent: task.svgContent,
+      localFourPanelImagePath: task.localFourPanelImagePath, fourPanelImageUrl: task.fourPanelImageUrl,
+      svgAuditResult: task.svgAuditResult, localMbaPngPath: task.localMbaPngPath, mbaPngUrl: task.mbaPngUrl
+    });
+    if (!saved) throw new Error('Artwork-Pfade konnten nicht gespeichert werden');
   }
 
   /**
@@ -2416,6 +2445,7 @@ export class TaskLogService {
       console.log(`[TaskLogService] 🤖 Führe LLM Vision Cutout-Audit nach SVG-Freigabe für Task ${taskId} durch...`);
       const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
       task.svgAuditResult = auditResult;
+      this.persistArtworkState(task);
 
       // 4. Log: Empfangen von LLM Vision Cutout Audit
       this.addEvent(taskId, {
@@ -2462,7 +2492,9 @@ export class TaskLogService {
         // Resize-Generierung wird ausschließlich durch FinalizationService orchestriert.
         // completeTaskAndEnqueue() → FinalizationService.finalizeForQueue() erzeugt alle Varianten.
 
-        this.completeTaskAndEnqueue(task);
+        this.persistArtworkState(task);
+        const finalized = await this.completeTaskAndEnqueue(taskId);
+        if (!finalized.success) return { success: false, error: finalized.error };
 
         return { success: true, message: 'Cutout von Vision-KI freigegeben, MBA Master-PNG generiert & an Queue übergeben ✓' };
       } else {
@@ -2482,8 +2514,7 @@ export class TaskLogService {
           }
         });
 
-        this.saveLogs(this.loadLogs());
-        this.emitUpdate(task);
+        this.updateTaskStatus(taskId, { status: 'AWAITING_SVG_REVIEW', checkpoint: 'SVG_REVIEW', hasError: false });
 
         return {
           success: false,
