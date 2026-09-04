@@ -293,6 +293,16 @@ export class UploadWorkerService {
   /**
    * Main Upload Execution Pipeline
    */
+  private static handleDailyUploadLimit(isUpdate: boolean, effectiveMode: 'draft' | 'publish'): void {
+    // Hybrid already resolves new designs to draft and updates to publish.
+    // Only this daily-slot notice is exempted; form and remote-response guards stay active.
+    if (!isUpdate && effectiveMode === 'draft') {
+      this.log('ℹ️ Tageslimit-Hinweis erkannt – neues Design wird nur als Entwurf gespeichert; Upload wird fortgesetzt.');
+      return;
+    }
+    throw new Error('Tägliches Amazon Upload-Limit erreicht (.daily-rate-limit-breached).');
+  }
+
   private static async executeUploadPipeline(item: QueueItem, mode: 'draft' | 'publish') {
     const isUpdate = (item as any).type === 'UPDATE' || (item as any).type === 'update' || (item as any).source === 'UPDATE' || Boolean(item.designId) || item.taskId.endsWith('-U');
     const effectiveMode: 'draft' | 'publish' = isUpdate ? 'publish' : mode; // Update designs are ALWAYS live!
@@ -386,7 +396,7 @@ export class UploadWorkerService {
           // Check rate limit warning if present
           const rateLimit = await page.$('.daily-rate-limit-breached');
           if (rateLimit) {
-            throw new Error('Tägliches Amazon Upload-Limit erreicht (.daily-rate-limit-breached).');
+            this.handleDailyUploadLimit(isUpdate, effectiveMode);
           }
           this.log(`✅ Master-PNG erfolgreich gerendert!`, 'PNG Upload fertig ✓', 35, 100);
         } catch (err: any) {

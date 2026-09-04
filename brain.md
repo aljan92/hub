@@ -1340,3 +1340,9 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Pro Task ein gemeinsames laufendes Finalisierungs-Promise gegen doppelte Aufrufe. Queue-Zugehörigkeit wird anhand vorhandener Einträge geprüft, nicht nur anhand des alten Flags. Bestehende Queue-/Remote-Zustände werden nicht zurückgesetzt. Entfernte frühere Aufträge mit erfolgreichem Handoff-Event werden nicht automatisch neu angelegt.
 - `tests/cutoutFinalization.test.ts`: echte isolierte SQLite-Datenbank, externe Bild-/KI-Schritte gemockt. Prüft vollständigen Übergang, gespeicherte Vektorquelle, Abwarten, Duplikate, altes irrtümliches inQueue-Flag, Finalisierungsfehler, manuelle Freigabe, abgelehnten Cutout und Statusanzeige. TM-Review-/Finalisierungsregression, Unified-Finalisierung, Architektur-Guard und Build bestanden.
 - Bereits hängen gebliebene Nutzertasks werden nicht pauschal migriert. Falls ihre Artwork-Pfade noch fehlen, nach Deployment den Vektorisierungsschritt erneut ausführen; ein kompletter Workflow-Neustart ist nicht erforderlich. Der reparierte Übergang korrigiert das verfrühte Flag, sofern tatsächlich keine Queue-Übergabe stattgefunden hat.
+
+### 10.61 Tageslimit-Hinweis bei neuen Drafts (4. September 2026)
+
+- `.daily-rate-limit-breached` stoppt neue Designs mit effektivem Modus `draft` nicht mehr; stattdessen erscheint ein Hinweis im Upload-Log. Dies umfasst neue Designs im Hybrid-Modus, der bereits auf Draft aufgelöst wird. Explizites Publish/Live und Updates erhalten keine Ausnahme.
+- Ausschließlich die lokale Tageslimit-Warnung wird ausgenommen. Formularvalidierung, Save-Draft-Prüfung und Remote-Fehler einschließlich HTTP 429 bleiben unverändert. Keine Änderungen an Slot-Planung, Produktauswahl oder Amazon-Limitwerten.
+- `tests/uploadDailyLimit.test.ts` prüft Draft-Ausnahme und Publish-/Update-Abgrenzung ohne echte Uploads. Praktischer Amazon-Draft-Test nach Deployment bleibt erforderlich.

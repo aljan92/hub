@@ -232097,6 +232097,13 @@ var UploadWorkerService = class _UploadWorkerService {
   /**
    * Main Upload Execution Pipeline
    */
+  static handleDailyUploadLimit(isUpdate, effectiveMode) {
+    if (!isUpdate && effectiveMode === "draft") {
+      this.log("\u2139\uFE0F Tageslimit-Hinweis erkannt \u2013 neues Design wird nur als Entwurf gespeichert; Upload wird fortgesetzt.");
+      return;
+    }
+    throw new Error("T\xE4gliches Amazon Upload-Limit erreicht (.daily-rate-limit-breached).");
+  }
   static async executeUploadPipeline(item, mode) {
     const isUpdate = item.type === "UPDATE" || item.type === "update" || item.source === "UPDATE" || Boolean(item.designId) || item.taskId.endsWith("-U");
     const effectiveMode = isUpdate ? "publish" : mode;
@@ -232167,7 +232174,7 @@ var UploadWorkerService = class _UploadWorkerService {
           }, { timeout: 6e4 });
           const rateLimit = await page.$(".daily-rate-limit-breached");
           if (rateLimit) {
-            throw new Error("T\xE4gliches Amazon Upload-Limit erreicht (.daily-rate-limit-breached).");
+            this.handleDailyUploadLimit(isUpdate, effectiveMode);
           }
           this.log(`\u2705 Master-PNG erfolgreich gerendert!`, "PNG Upload fertig \u2713", 35, 100);
         } catch (err) {
