@@ -6,27 +6,8 @@ import { installArtworkRuntime } from './artworkRenderRuntime';
 import { prepareBrushLayer } from './artworkBrushRuntime';
 import { artworkProfiles, productProfile, validateProfile, ArtworkProfile } from './artworkProfiles';
 import { ProductVariantGeneratorConfig } from './productCatalogService';
+import { crc32, validateArtworkPng } from './artworkPngValidation';
 const currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
-// CRC32 table for PNG 300 DPI chunk calculation
-const crcTable: number[] = (() => {
-  const table: number[] = [];
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) {
-      c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-    }
-    table[n] = c;
-  }
-  return table;
-})();
-
-function crc32(buf: Uint8Array | Buffer): number {
-  let crc = -1;
-  for (let i = 0; i < buf.length; i++) {
-    crc = (crc >>> 8) ^ crcTable[(crc ^ buf[i]) & 0xFF];
-  }
-  return (crc ^ (-1)) >>> 0;
-}
 
 /**
  * Injects a 300 DPI (pHYs) chunk into a PNG buffer according to PNG specification
@@ -55,12 +36,16 @@ export function inject300Dpi(pngBuffer: Buffer): Buffer {
 
   const physChunk = Buffer.concat([chunkHeader, typeAndData, crcBuf]);
 
-  // Insert immediately after IHDR chunk (33 bytes: 8 sig + 4 len + 4 IHDR + 13 data + 4 crc)
-  return Buffer.concat([
-    pngBuffer.subarray(0, 33),
-    physChunk,
-    pngBuffer.subarray(33)
-  ]);
+  // Replace encoder-provided density rather than creating duplicate pHYs chunks.
+  const chunks = [pngBuffer.subarray(0, 33), physChunk];
+  for (let offset = 33; offset < pngBuffer.length;) {
+    if (offset + 12 > pngBuffer.length) throw new Error('PNG-Chunk abgeschnitten');
+    const end = offset + 12 + pngBuffer.readUInt32BE(offset);
+    if (end > pngBuffer.length) throw new Error('PNG-Chunk abgeschnitten');
+    if (pngBuffer.toString('ascii', offset + 4, offset + 8) !== 'pHYs') chunks.push(pngBuffer.subarray(offset, end));
+    offset = end;
+  }
+  return Buffer.concat(chunks);
 }
 
 
@@ -102,7 +87,7 @@ export class ArtworkResizeService {
     return { kind: 'PNG', path: pngPath };
   }
   static fingerprint(source: ArtworkSource): string {
-    return createHash('sha256').update('artwork-v4-direct-brush-source-short-seed-original-contour')
+    return createHash('sha256').update('artwork-v5-direct-png-canvas-stream-validation')
       .update(source.kind).update(source.kind === 'SVG' ? source.svg : fs.readFileSync(source.path))
       .update(JSON.stringify(artworkProfiles())).update(fs.readFileSync(this.getBrushTipPath())).digest('hex');
   }
@@ -159,19 +144,33 @@ export class ArtworkResizeService {
         const start=Date.now();
         const output=path.join(dir,cleanId+'_'+profile.suffix+'.png');
         const temporary=output+'.'+randomUUID()+'.tmp';
+        let stage = 'RENDER';
         try {
-          await page.setViewportSize({width:profile.width,height:profile.height});
-          await page.evaluate(p=>(window as any).__artwork.render(p),profile);
-          const png=await page.screenshot({type:'png',omitBackground:true,timeout:120000});
-          if(png.readUInt32BE(16)!==profile.width || png.readUInt32BE(20)!==profile.height) throw new Error('Artwork-Ausgabemaße stimmen nicht');
-          // Release the large viewport/image before decoding the output for validation.
-          await page.evaluate(()=>{(document.getElementById('output') as HTMLImageElement).src='';});
-          await page.setViewportSize({width:1,height:1});
-          // Decode before commit, not merely an existence/header check.
-          await page.evaluate(async uri=>{const image=new Image();image.src=uri;await image.decode();},'data:image/png;base64,'+png.toString('base64'));
-          fs.writeFileSync(temporary,inject300Dpi(png)); fs.renameSync(temporary,output);
+          let png: Buffer;
+          if (source.kind === 'PNG') {
+            stage = 'PNG_CANVAS_RENDER_ENCODE';
+            await page.setViewportSize({width:1,height:1});
+            const base64 = await page.evaluate(p=>(window as any).__artwork.renderPng(p),profile);
+            png = Buffer.from(base64, 'base64');
+          } else {
+            stage = 'SVG_COMPOSITION_DECODE';
+            await page.setViewportSize({width:profile.width,height:profile.height});
+            await page.evaluate(p=>(window as any).__artwork.render(p),profile);
+            stage = 'SVG_SCREENSHOT';
+            png = await page.screenshot({type:'png',omitBackground:true,timeout:120000});
+            await page.evaluate(()=>{(document.getElementById('output') as HTMLImageElement).src='';});
+            await page.setViewportSize({width:1,height:1});
+          }
+          stage = 'PNG_DPI_METADATA';
+          const finalPng = inject300Dpi(png);
+          stage = 'PNG_INTEGRITY_VALIDATION';
+          await validateArtworkPng(finalPng, profile.width, profile.height);
+          stage = 'FILE_COMMIT';
+          fs.writeFileSync(temporary,finalPng); fs.renameSync(temporary,output);
           files[profile.key]=output;
           console.log('[ArtworkRenderer]',JSON.stringify({variant:profile.key,source:source.kind,width:profile.width,height:profile.height,ms:Date.now()-start,bytes:png.length}));
+        } catch (error) {
+          throw new Error(`${profile.key} (${profile.width}×${profile.height}, ${source.kind}) [${stage}]: ${error instanceof Error ? error.message : String(error)}`);
         } finally { if(fs.existsSync(temporary)) fs.unlinkSync(temporary); }
       }
       return files;

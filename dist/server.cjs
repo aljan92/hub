@@ -4721,13 +4721,13 @@ var require_extend_node = __commonJS2({
           return length;
         };
         if (iconv.supportsStreams) {
-          var Readable = require("stream").Readable;
-          original.ReadableSetEncoding = Readable.prototype.setEncoding;
-          Readable.prototype.setEncoding = function setEncoding(enc, options2) {
+          var Readable2 = require("stream").Readable;
+          original.ReadableSetEncoding = Readable2.prototype.setEncoding;
+          Readable2.prototype.setEncoding = function setEncoding(enc, options2) {
             this._readableState.decoder = iconv.getDecoder(enc, options2);
             this._readableState.encoding = enc;
           };
-          Readable.prototype.collect = iconv._collect;
+          Readable2.prototype.collect = iconv._collect;
         }
       };
       iconv.undoExtendNodeEncodings = function undoExtendNodeEncodings() {
@@ -4744,9 +4744,9 @@ var require_extend_node = __commonJS2({
         Buffer2.prototype.toString = original.BufferToString;
         Buffer2.prototype.write = original.BufferWrite;
         if (iconv.supportsStreams) {
-          var Readable = require("stream").Readable;
-          Readable.prototype.setEncoding = original.ReadableSetEncoding;
-          delete Readable.prototype.collect;
+          var Readable2 = require("stream").Readable;
+          Readable2.prototype.setEncoding = original.ReadableSetEncoding;
+          delete Readable2.prototype.collect;
         }
         original = void 0;
       };
@@ -24682,7 +24682,7 @@ var require_validation = __commonJS2({
 var require_receiver = __commonJS2({
   "node_modules/ws/lib/receiver.js"(exports2, module3) {
     "use strict";
-    var { Writable } = require("stream");
+    var { Writable: Writable2 } = require("stream");
     var PerMessageDeflate2 = require_permessage_deflate();
     var {
       BINARY_TYPES,
@@ -24700,7 +24700,7 @@ var require_receiver = __commonJS2({
     var GET_DATA = 4;
     var INFLATING = 5;
     var DEFER_EVENT = 6;
-    var Receiver2 = class extends Writable {
+    var Receiver2 = class extends Writable2 {
       /**
        * Creates a Receiver instance.
        *
@@ -26186,7 +26186,7 @@ var require_websocket = __commonJS2({
     var net = require("net");
     var tls = require("tls");
     var { randomBytes, createHash: createHash3 } = require("crypto");
-    var { Duplex, Readable } = require("stream");
+    var { Duplex, Readable: Readable2 } = require("stream");
     var { URL: URL2 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
@@ -59908,7 +59908,7 @@ var require_utilsBundle = __commonJS2({
             this._maxLength = opts.maxLength;
           }
         }
-        function createInflate(opts) {
+        function createInflate2(opts) {
           return new Inflate(opts);
         }
         function _close(engine, callback) {
@@ -60018,7 +60018,7 @@ var require_utilsBundle = __commonJS2({
         }
         module22.exports = exports22 = inflateSync;
         exports22.Inflate = Inflate;
-        exports22.createInflate = createInflate;
+        exports22.createInflate = createInflate2;
         exports22.inflateSync = inflateSync;
       }
     });
@@ -65313,7 +65313,7 @@ var require_utilsBundle = __commonJS2({
     var require_receiver2 = __commonJS3({
       "node_modules/ws/lib/receiver.js"(exports22, module22) {
         "use strict";
-        var { Writable } = require("stream");
+        var { Writable: Writable2 } = require("stream");
         var PerMessageDeflate2 = require_permessage_deflate2();
         var {
           BINARY_TYPES,
@@ -65331,7 +65331,7 @@ var require_utilsBundle = __commonJS2({
         var GET_DATA = 4;
         var INFLATING = 5;
         var DEFER_EVENT = 6;
-        var Receiver2 = class extends Writable {
+        var Receiver2 = class extends Writable2 {
           /**
            * Creates a Receiver instance.
            *
@@ -91634,7 +91634,7 @@ ${end.comment}` : end.comment;
         var EventEmitter22 = require("events").EventEmitter;
         var Transform = require("stream").Transform;
         var PassThrough2 = require("stream").PassThrough;
-        var Writable = require("stream").Writable;
+        var Writable2 = require("stream").Writable;
         var crc322 = typeof zlib2.crc32 === "function" ? zlib2.crc32 : require_crc32();
         exports22.open = open32;
         exports22.fromFd = fromFd;
@@ -92408,7 +92408,7 @@ ${end.comment}` : end.comment;
         };
         RandomAccessReader.prototype.read = function(buffer, offset, length, position, callback) {
           var readStream = this.createReadStream({ start: position, end: position + length });
-          var writeStream = new Writable();
+          var writeStream = new Writable2();
           var written = 0;
           writeStream._write = function(chunk, encoding, cb) {
             chunk.copy(buffer, offset + written, 0, chunk.length);
@@ -111524,7 +111524,7 @@ ${end.comment}` : end.comment;
     var import_promises2 = __toESM3(require("node:fs/promises"), 1);
     var import_node_util2 = require("node:util");
     var import_node_child_process2 = __toESM3(require("node:child_process"), 1);
-    var import_promises = __toESM3(require("node:fs/promises"), 1);
+    var import_promises3 = __toESM3(require("node:fs/promises"), 1);
     var import_node_process = __toESM3(require("node:process"), 1);
     var import_node_os = __toESM3(require("node:os"), 1);
     var import_node_fs3 = __toESM3(require("node:fs"), 1);
@@ -111645,14 +111645,14 @@ ${end.comment}` : end.comment;
         const configFilePath = "/etc/wsl.conf";
         let isConfigFileExists = false;
         try {
-          await import_promises.default.access(configFilePath, import_promises.constants.F_OK);
+          await import_promises3.default.access(configFilePath, import_promises3.constants.F_OK);
           isConfigFileExists = true;
         } catch {
         }
         if (!isConfigFileExists) {
           return defaultMountPoint;
         }
-        const configContent = await import_promises.default.readFile(configFilePath, { encoding: "utf8" });
+        const configContent = await import_promises3.default.readFile(configFilePath, { encoding: "utf8" });
         const parsedMountPoint = parseMountPointFromConfig(configContent);
         if (parsedMountPoint === void 0) {
           return defaultMountPoint;
@@ -111672,7 +111672,7 @@ ${end.comment}` : end.comment;
       canAccessPowerShellPromise ??= (async () => {
         try {
           const psPath = await powerShellPath2();
-          await import_promises.default.access(psPath, import_promises.constants.X_OK);
+          await import_promises3.default.access(psPath, import_promises3.constants.X_OK);
           return true;
         } catch {
           return false;
@@ -115995,7 +115995,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
       unload
     } = signalExitWrap(processOk(process10) ? new SignalExit(process10) : new SignalExitFallback());
     var import_node_events2 = require("node:events");
-    var import_promises3 = require("node:stream/promises");
+    var import_promises32 = require("node:stream/promises");
     function isStream(stream, { checkOpen = true } = {}) {
       return stream !== null && typeof stream === "object" && (stream.writable || stream.readable || !checkOpen || stream.writable === void 0 && stream.readable === void 0) && typeof stream.pipe === "function";
     }
@@ -116260,7 +116260,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
       getFinalChunk: getFinalStringChunk,
       finalize: getContentsProperty
     };
-    Object.assign(nodeImports, { on: import_node_events2.on, finished: import_promises3.finished });
+    Object.assign(nodeImports, { on: import_node_events2.on, finished: import_promises32.finished });
     var zod_exports = {};
     __export3(zod_exports, {
       $brand: () => $brand,
@@ -141535,7 +141535,7 @@ data: ${JSON.stringify(message)}
     };
     var import_cross_spawn = __toESM3(require_cross_spawn(), 1);
     var import_node_process9 = __toESM3(require("node:process"), 1);
-    var import_node_stream = require("node:stream");
+    var import_node_stream2 = require("node:stream");
     var ReadBuffer = class {
       append(chunk) {
         this._buffer = this._buffer ? Buffer.concat([this._buffer, chunk]) : chunk;
@@ -141599,7 +141599,7 @@ data: ${JSON.stringify(message)}
         this._stderrStream = null;
         this._serverParams = server3;
         if (server3.stderr === "pipe" || server3.stderr === "overlapped") {
-          this._stderrStream = new import_node_stream.PassThrough();
+          this._stderrStream = new import_node_stream2.PassThrough();
         }
       }
       /**
@@ -219143,27 +219143,72 @@ async function installArtworkRuntime(params2) {
     context2.drawImage(image, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
     return source12;
   };
+  const placements = (profile) => profile.boxes.map((box) => {
+    const brush = profile.brush ? state.brush : null;
+    if (profile.brush && !brush) throw new Error("Brush-Ebene fehlt");
+    const bw = brush?.width || bounds.width, bh = brush?.height || bounds.height;
+    const scale = Math.min(box.width / bw, box.height / bh, params2.kind === "PNG" ? 1 : Infinity);
+    const dw = bw * scale, dh = bh * scale;
+    let x = box.x + (box.width - dw) / 2, y = box.y + (box.height - dh) / 2;
+    if (params2.kind === "PNG" && scale === 1) {
+      x = Math.round(x);
+      y = Math.round(y);
+    }
+    const offset = brush?.padding || 0;
+    const artX = params2.kind === "PNG" && scale === 1 ? Math.round(x + offset) : x + offset * scale;
+    const artY = params2.kind === "PNG" && scale === 1 ? Math.round(y + offset) : y + offset * scale;
+    return { brush, scale, dw, dh, x, y, artX, artY };
+  });
+  let brushImage;
+  let brushUri;
+  state.renderPng = async (profile) => {
+    if (params2.kind !== "PNG" || profile.master) throw new Error("Direkter PNG-Renderer ben\xF6tigt ein PNG-Variantenprofil");
+    const target = document.createElement("canvas");
+    target.width = profile.width;
+    target.height = profile.height;
+    try {
+      const context2 = target.getContext("2d");
+      if (!context2) throw new Error("Ausgabe-Canvas konnte nicht erstellt werden");
+      if (profile.background) {
+        context2.fillStyle = profile.background;
+        context2.fillRect(0, 0, target.width, target.height);
+      }
+      for (const p of placements(profile)) {
+        if (p.brush) {
+          if (brushUri !== p.brush.uri) {
+            brushImage = await load(p.brush.uri);
+            brushUri = p.brush.uri;
+          }
+          context2.drawImage(brushImage, p.x, p.y, p.dw, p.dh);
+        }
+        context2.drawImage(
+          image,
+          bounds.x,
+          bounds.y,
+          bounds.width,
+          bounds.height,
+          p.artX,
+          p.artY,
+          bounds.width * p.scale,
+          bounds.height * p.scale
+        );
+      }
+      const result2 = target.toDataURL("image/png");
+      if (!result2.startsWith("data:image/png;base64,")) throw new Error("PNG-Canvas konnte nicht kodiert werden");
+      return result2.slice("data:image/png;base64,".length);
+    } finally {
+      target.width = 0;
+      target.height = 0;
+    }
+  };
   state.render = async (profile) => {
     const { width: w, height: h } = profile;
     let content = profile.background ? `<rect width="100%" height="100%" fill="${xml(profile.background)}"/>` : "";
     if (profile.master) {
       content += `<svg width="${w}" height="${h}" viewBox="0 0 ${width} ${height}">${body}</svg>`;
     } else {
-      for (const box of profile.boxes) {
-        const brush = profile.brush ? state.brush : null;
-        if (profile.brush && !brush) throw new Error("Brush-Ebene fehlt");
-        const bw = brush?.width || bounds.width, bh = brush?.height || bounds.height;
-        const scale = Math.min(box.width / bw, box.height / bh, params2.kind === "PNG" ? 1 : Infinity);
-        const dw = bw * scale, dh = bh * scale;
-        let x = box.x + (box.width - dw) / 2, y = box.y + (box.height - dh) / 2;
-        if (params2.kind === "PNG" && scale === 1) {
-          x = Math.round(x);
-          y = Math.round(y);
-        }
+      for (const { brush, scale, dw, dh, x, y, artX, artY } of placements(profile)) {
         if (brush) content += `<image x="${x}" y="${y}" width="${dw}" height="${dh}" href="${xml(brush.uri)}"/>`;
-        const offset = brush?.padding || 0;
-        const artX = params2.kind === "PNG" && scale === 1 ? Math.round(x + offset) : x + offset * scale;
-        const artY = params2.kind === "PNG" && scale === 1 ? Math.round(y + offset) : y + offset * scale;
         content += `<svg x="${artX}" y="${artY}" width="${bounds.width * scale}" height="${bounds.height * scale}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}">${body}</svg>`;
       }
     }
@@ -219472,14 +219517,86 @@ var init_artworkProfiles = __esm2({
   }
 });
 
-// src/server/services/artworkResizeService.ts
-function crc32(buf) {
+// src/server/services/artworkPngValidation.ts
+function crc32(bytes) {
   let crc = -1;
-  for (let i = 0; i < buf.length; i++) {
-    crc = crc >>> 8 ^ crcTable[(crc ^ buf[i]) & 255];
-  }
+  for (const byte of bytes) crc = crc >>> 8 ^ crcTable[(crc ^ byte) & 255];
   return (crc ^ -1) >>> 0;
 }
+async function validateArtworkPng(png, width, height) {
+  const fail = (message) => {
+    throw new Error(`PNG-Integrit\xE4tspr\xFCfung: ${message}`);
+  };
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 || width * height > 1e8) fail("Pixelbudget/Ma\xDFe ung\xFCltig");
+  if (png.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") fail("Signatur ung\xFCltig");
+  let offset = 8, channels = 0, ended = false, dataClosed = false, seenData = false;
+  const idats = [];
+  for (; offset < png.length; ) {
+    if (offset + 12 > png.length) fail("Chunk abgeschnitten");
+    const length = png.readUInt32BE(offset), end = offset + 12 + length;
+    if (end > png.length || length > 2147483647) fail("Chunk-L\xE4nge ung\xFCltig");
+    const type3 = png.toString("latin1", offset + 4, offset + 8);
+    if (!/^[A-Za-z]{4}$/.test(type3) || type3[2] !== type3[2].toUpperCase()) fail("Chunk-Typ ung\xFCltig");
+    if (crc32(png.subarray(offset + 4, end - 4)) !== png.readUInt32BE(end - 4)) fail(`CRC ung\xFCltig (${type3})`);
+    const data = png.subarray(offset + 8, end - 4);
+    if (offset === 8 && type3 !== "IHDR") fail("IHDR fehlt");
+    if (type3 === "IHDR") {
+      if (offset !== 8 || length !== 13) fail("IHDR ung\xFCltig");
+      if (data.readUInt32BE(0) !== width || data.readUInt32BE(4) !== height) fail("Ausgabema\xDFe stimmen nicht");
+      if (data[8] !== 8 || ![2, 6].includes(data[9]) || data[10] || data[11] || data[12]) fail("Nicht unterst\xFCtztes Ausgabeformat");
+      channels = data[9] === 6 ? 4 : 3;
+    } else if (type3 === "IDAT") {
+      if (dataClosed) fail("IDAT-Reihenfolge ung\xFCltig");
+      seenData = true;
+      idats.push(data);
+    } else {
+      if (seenData) dataClosed = true;
+      if (type3 === "IEND") {
+        if (length !== 0 || !seenData || end !== png.length) fail("IEND/Dateiende ung\xFCltig");
+        ended = true;
+      } else if (type3[0] === type3[0].toUpperCase()) {
+        fail(`Unerwarteter kritischer Chunk (${type3})`);
+      }
+    }
+    offset = end;
+  }
+  if (!ended || !channels) fail("Unvollst\xE4ndige Datei");
+  const stride = width * channels + 1, expected = stride * height;
+  let count = 0;
+  const inflate = (0, import_node_zlib.createInflate)();
+  await (0, import_promises.pipeline)(import_node_stream.Readable.from(idats), inflate, new import_node_stream.Writable({
+    write(chunk, _encoding, callback) {
+      try {
+        if (count + chunk.length > expected) fail("Zu viele Bilddaten");
+        for (let i = (stride - count % stride) % stride; i < chunk.length; i += stride) {
+          if (chunk[i] > 4) fail("Scanline-Filter ung\xFCltig");
+        }
+        count += chunk.length;
+        callback();
+      } catch (error) {
+        callback(error);
+      }
+    }
+  }));
+  if (count !== expected) fail("Bilddaten abgeschnitten");
+  if (inflate.bytesWritten !== idats.reduce((sum, data) => sum + data.length, 0)) fail("\xDCberz\xE4hlige komprimierte Daten");
+}
+var import_node_zlib, import_node_stream, import_promises, crcTable;
+var init_artworkPngValidation = __esm2({
+  "src/server/services/artworkPngValidation.ts"() {
+    "use strict";
+    import_node_zlib = require("node:zlib");
+    import_node_stream = require("node:stream");
+    import_promises = require("node:stream/promises");
+    crcTable = Array.from({ length: 256 }, (_, n) => {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+      return c;
+    });
+  }
+});
+
+// src/server/services/artworkResizeService.ts
 function inject300Dpi(pngBuffer) {
   const sig = [137, 80, 78, 71, 13, 10, 26, 10];
   for (let i = 0; i < 8; i++) {
@@ -219498,13 +219615,17 @@ function inject300Dpi(pngBuffer) {
   const crcBuf = Buffer.alloc(4);
   crcBuf.writeUInt32BE(crc, 0);
   const physChunk = Buffer.concat([chunkHeader, typeAndData, crcBuf]);
-  return Buffer.concat([
-    pngBuffer.subarray(0, 33),
-    physChunk,
-    pngBuffer.subarray(33)
-  ]);
+  const chunks = [pngBuffer.subarray(0, 33), physChunk];
+  for (let offset = 33; offset < pngBuffer.length; ) {
+    if (offset + 12 > pngBuffer.length) throw new Error("PNG-Chunk abgeschnitten");
+    const end = offset + 12 + pngBuffer.readUInt32BE(offset);
+    if (end > pngBuffer.length) throw new Error("PNG-Chunk abgeschnitten");
+    if (pngBuffer.toString("ascii", offset + 4, offset + 8) !== "pHYs") chunks.push(pngBuffer.subarray(offset, end));
+    offset = end;
+  }
+  return Buffer.concat(chunks);
 }
-var import_node_fs, import_node_path, import_node_crypto, currentDir, crcTable, ArtworkResizeService;
+var import_node_fs, import_node_path, import_node_crypto, currentDir, ArtworkResizeService;
 var init_artworkResizeService = __esm2({
   "src/server/services/artworkResizeService.ts"() {
     "use strict";
@@ -219515,18 +219636,8 @@ var init_artworkResizeService = __esm2({
     init_artworkRenderRuntime();
     init_artworkBrushRuntime();
     init_artworkProfiles();
+    init_artworkPngValidation();
     currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
-    crcTable = (() => {
-      const table = [];
-      for (let n = 0; n < 256; n++) {
-        let c = n;
-        for (let k = 0; k < 8; k++) {
-          c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
-        }
-        table[n] = c;
-      }
-      return table;
-    })();
     ArtworkResizeService = class {
       static getBrushTipPath() {
         const candidates = [
@@ -219552,7 +219663,7 @@ var init_artworkResizeService = __esm2({
         return { kind: "PNG", path: pngPath };
       }
       static fingerprint(source12) {
-        return (0, import_node_crypto.createHash)("sha256").update("artwork-v4-direct-brush-source-short-seed-original-contour").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+        return (0, import_node_crypto.createHash)("sha256").update("artwork-v5-direct-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
       }
       static hasCurrentAssets(assets, fingerprint) {
         if (!assets || assets.renderFingerprint !== fingerprint) return false;
@@ -219615,24 +219726,36 @@ var init_artworkResizeService = __esm2({
             const start3 = Date.now();
             const output = import_node_path.default.join(dir, cleanId + "_" + profile.suffix + ".png");
             const temporary = output + "." + (0, import_node_crypto.randomUUID)() + ".tmp";
+            let stage = "RENDER";
             try {
-              await page.setViewportSize({ width: profile.width, height: profile.height });
-              await page.evaluate((p) => window.__artwork.render(p), profile);
-              const png = await page.screenshot({ type: "png", omitBackground: true, timeout: 12e4 });
-              if (png.readUInt32BE(16) !== profile.width || png.readUInt32BE(20) !== profile.height) throw new Error("Artwork-Ausgabema\xDFe stimmen nicht");
-              await page.evaluate(() => {
-                document.getElementById("output").src = "";
-              });
-              await page.setViewportSize({ width: 1, height: 1 });
-              await page.evaluate(async (uri) => {
-                const image = new Image();
-                image.src = uri;
-                await image.decode();
-              }, "data:image/png;base64," + png.toString("base64"));
-              import_node_fs.default.writeFileSync(temporary, inject300Dpi(png));
+              let png;
+              if (source12.kind === "PNG") {
+                stage = "PNG_CANVAS_RENDER_ENCODE";
+                await page.setViewportSize({ width: 1, height: 1 });
+                const base64 = await page.evaluate((p) => window.__artwork.renderPng(p), profile);
+                png = Buffer.from(base64, "base64");
+              } else {
+                stage = "SVG_COMPOSITION_DECODE";
+                await page.setViewportSize({ width: profile.width, height: profile.height });
+                await page.evaluate((p) => window.__artwork.render(p), profile);
+                stage = "SVG_SCREENSHOT";
+                png = await page.screenshot({ type: "png", omitBackground: true, timeout: 12e4 });
+                await page.evaluate(() => {
+                  document.getElementById("output").src = "";
+                });
+                await page.setViewportSize({ width: 1, height: 1 });
+              }
+              stage = "PNG_DPI_METADATA";
+              const finalPng = inject300Dpi(png);
+              stage = "PNG_INTEGRITY_VALIDATION";
+              await validateArtworkPng(finalPng, profile.width, profile.height);
+              stage = "FILE_COMMIT";
+              import_node_fs.default.writeFileSync(temporary, finalPng);
               import_node_fs.default.renameSync(temporary, output);
               files[profile.key] = output;
               console.log("[ArtworkRenderer]", JSON.stringify({ variant: profile.key, source: source12.kind, width: profile.width, height: profile.height, ms: Date.now() - start3, bytes: png.length }));
+            } catch (error) {
+              throw new Error(`${profile.key} (${profile.width}\xD7${profile.height}, ${source12.kind}) [${stage}]: ${error instanceof Error ? error.message : String(error)}`);
             } finally {
               if (import_node_fs.default.existsSync(temporary)) import_node_fs.default.unlinkSync(temporary);
             }
@@ -227046,8 +227169,8 @@ var init_finalizationService = __esm2({
        * 5. Atomic Queue Handoff with all task completion side-effects preserved
        */
       static async finalizeForQueue(params2) {
-        const { taskId, pipeline: pipeline2 } = params2;
-        console.log(`[FinalizationService] \u{1F680} Starte Unified Finalization f\xFCr Task #${taskId} (Pipeline: ${pipeline2})...`);
+        const { taskId, pipeline: pipeline3 } = params2;
+        console.log(`[FinalizationService] \u{1F680} Starte Unified Finalization f\xFCr Task #${taskId} (Pipeline: ${pipeline3})...`);
         const task = TaskLogService2.getTask(taskId);
         const masterPngPath = params2.masterPngPath || task?.localMbaPngPath || task?.localImagePath || "";
         TaskLogService2.addEvent(taskId, {
@@ -227231,11 +227354,11 @@ var init_finalizationService = __esm2({
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
-          title: `\u{1F4E6} \xDCbergabe an die Upload-Queue (${pipeline2 === "UPDATE" ? "Tab Update" : "Tab New"})...`,
+          title: `\u{1F4E6} \xDCbergabe an die Upload-Queue (${pipeline3 === "UPDATE" ? "Tab Update" : "Tab New"})...`,
           content: { phase: "QUEUE_HANDOFF", status: "RUNNING" }
         });
         let queueItem;
-        if (pipeline2 === "DESIGN") {
+        if (pipeline3 === "DESIGN") {
           queueItem = QueueService.enqueueDesign({
             taskId,
             designTitle: sanitizedRoot.title || "Design #" + taskId,
