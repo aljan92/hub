@@ -21,7 +21,7 @@ try {
   TaskLogService.getTask=(()=>task) as any;TaskLogService.addEvent=((_id:any,e:any)=>events.push(e)) as any;
   TaskLogService.updateTaskStatus=(()=>{}) as any;
   QueueService.enqueueDesign=(()=>{throw new Error('prepareOnly must not enqueue');}) as any;
-  ArtworkResizeService.generateResizedArtworks=(async (_id:any,source:any)=>{received=source;calls++;if(mutate)task.svgContent+='<changed/>';return assets;}) as any;
+  ArtworkResizeService.generateResizedArtworks=(async (_id:any,source:any,onProgress:any)=>{received=source;calls++;onProgress?.('BRUSH_PREPARATION','Brush-Test abgeschlossen',{totalMs:12});if(mutate)task.svgContent+='<changed/>';return assets;}) as any;
   const params={taskId:'fixture',pipeline:'DESIGN' as const,prepareOnly:true,masterPngPath:file,
     brand:'Wilderness Apparel Studio',title:'Retro Sunset Wilderness Adventure Graphic Art',
     bullet1:'Features pine trees and sunset silhouettes for outdoor nature adventures.',
@@ -33,6 +33,7 @@ try {
   result=await FinalizationService.finalizeForQueue({...params,pipeline:'UPDATE'});
   assert(result.success,result.error);assert.equal(received.kind,'PNG');assert.equal(received.path,file);
   assert(events.some(e=>e.content?.source==='PNG'));
+  assert(events.some(e=>e.content?.stage==='BRUSH_PREPARATION' && e.content?.metrics?.totalMs===12));
   task={id:'fixture',svgContent:'<svg/>'};mutate=true;
   result=await FinalizationService.finalizeForQueue(params);
   assert.equal(result.success,false);assert.match(result.error!,/Quelle.*geändert/);

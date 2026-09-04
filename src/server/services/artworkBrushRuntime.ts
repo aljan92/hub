@@ -1,14 +1,24 @@
 /** Existing brush texture/contour algorithm, isolated from artwork rasterization. */
-export async function prepareBrushLayer(brushUri: string) {
+export async function prepareBrushLayer(params: { brushUri: string; seed: number }) {
+ if (!Number.isInteger(params.seed) || params.seed < 0 || params.seed > 0xffffffff) throw new Error('Ungültiger Brush-Startwert');
+ const report = async (detail: string) => {
+   const callback = (window as any).__reportBrushStep;
+   if (callback) await callback(detail);
+ };
+ await report('Bildquelle direkt zuschneiden');
+ const started = performance.now();
  const state = (window as any).__artwork;
- const sourceImage = await state.load(state.encode(state.crop(state.bounds.width, state.bounds.height)));
- const source = document.createElement('canvas');
- source.width=state.bounds.width; source.height=state.bounds.height;
- source.getContext('2d')!.drawImage(sourceImage,0,0);
- const brushImage = await state.load(brushUri);
- // Deterministic texture for repeatable visual regression and caching.
- let seed=2166136261;
- for (let i=0;i<sourceImage.src.length;i++) seed=Math.imul(seed ^ sourceImage.src.charCodeAt(i),16777619) >>> 0;
+ const source: HTMLCanvasElement = state.createBrushSource();
+ const sourceMs = performance.now() - started;
+ await report('Brush-Textur laden');
+ const brushLoadStart = performance.now();
+ const brushImage = await state.load(params.brushUri);
+ const brushLoadMs = performance.now() - brushLoadStart;
+ // Node derives this fixed-size seed from the existing render fingerprint.
+ // Never iterate over an HTMLImageElement.src getter or its full data URI here.
+ let seed=params.seed >>> 0;
+ const metrics = { sourceMs, brushLoadMs, cleanupMs: 0, contourMs: 0, encodeMs: 0, totalMs: 0,
+   sourceWidth: source.width, sourceHeight: source.height, candidates: 0, stamps: 0, passes: 10 };
  const random=()=> { seed=(Math.imul(seed,1664525)+1013904223) >>> 0; return seed/4294967296; };
         // Helper: removeSpecks (< 25 px) - Zero-allocation & Early-cutoff optimiert
         const removeSpecks = async (canvas: HTMLCanvasElement, minSize = 25): Promise<void> => {
@@ -100,7 +110,11 @@ export async function prepareBrushLayer(brushUri: string) {
           sourceCanvas: HTMLCanvasElement,
           brushP: HTMLImageElement | null
         ): Promise<HTMLCanvasElement> => {
+          await report('Konturmaske bereinigen');
+          const cleanupStart = performance.now();
           await removeSpecks(sourceCanvas);
+          metrics.cleanupMs = performance.now() - cleanupStart;
+          await report('Kontur und Stempel berechnen');
 
           const n = sourceCanvas.width;
           const o = sourceCanvas.height;
@@ -212,9 +226,8 @@ export async function prepareBrushLayer(brushUri: string) {
           }
 
           a.drawImage(P, 0, 0);
-          // Four passes retain the soft contour while avoiding a pathological
-          // full-canvas redraw loop on dense 4,500 px PNG artwork.
-          for (let e = 0; e < 4; e++) {
+          // Preserve the original brush contour and density.
+          for (let e = 0; e < 10; e++) {
             a.drawImage(r, 1, 0);
             a.drawImage(r, -1, 0);
             a.drawImage(r, 0, 1);
@@ -222,15 +235,12 @@ export async function prepareBrushLayer(brushUri: string) {
           }
 
           const L = 0.5;
-          // Dense distressed artwork can expose hundreds of thousands of edge
-          // samples. A deterministic, evenly distributed cap keeps the brush
-          // appearance while guaranteeing bounded render work.
-          const MAX_BRUSH_STAMPS = 4000;
-          const stride = Math.max(1, Math.ceil(xPts.length / (MAX_BRUSH_STAMPS * 2)));
           const TPts: { x: number; y: number }[] = [];
-          for (let e = 0; e < xPts.length && TPts.length < MAX_BRUSH_STAMPS; e += stride) {
+          for (let e = 0; e < xPts.length; e++) {
             if (random() < L) TPts.push(xPts[e]);
           }
+          metrics.candidates = xPts.length;
+          metrics.stamps = TPts.length;
 
           for (let e = 0; e < TPts.length; e++) {
             const pt = TPts[e];
@@ -243,7 +253,14 @@ export async function prepareBrushLayer(brushUri: string) {
         };
 
 
+ const contourStart = performance.now();
  const layer=await applyBlackBrush(source,brushImage);
+ metrics.contourMs = performance.now() - contourStart - metrics.cleanupMs;
+ await report('Brush-Ebene als PNG kodieren');
+ const encodeStart = performance.now();
  state.brush={uri:layer.toDataURL('image/png'),width:layer.width,height:layer.height,padding:0.15*Math.max(source.width,source.height)};
+ metrics.encodeMs = performance.now() - encodeStart;
+ metrics.totalMs = performance.now() - started;
  source.width=0; source.height=0; layer.width=0; layer.height=0;
+ return metrics;
 }

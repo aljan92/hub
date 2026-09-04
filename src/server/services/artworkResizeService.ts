@@ -65,7 +65,7 @@ export function inject300Dpi(pngBuffer: Buffer): Buffer {
 
 
 export type ArtworkSource = { kind: 'SVG'; svg: string } | { kind: 'PNG'; path: string };
-export type ArtworkRenderProgress = (stage: 'BRUSH_PREPARATION' | 'VARIANT', detail: string) => void;
+export type ArtworkRenderProgress = (stage: 'BRUSH_PREPARATION' | 'VARIANT', detail: string, metrics?: Record<string, number>) => void;
 export interface ResizedArtworksResult {
   /** Read compatibility only; new generations do not produce a trimmed PNG. */
   trimmedPath?: string;
@@ -102,7 +102,7 @@ export class ArtworkResizeService {
     return { kind: 'PNG', path: pngPath };
   }
   static fingerprint(source: ArtworkSource): string {
-    return createHash('sha256').update('artwork-v3-svg-direct-png-no-upscale')
+    return createHash('sha256').update('artwork-v4-direct-brush-source-short-seed-original-contour')
       .update(source.kind).update(source.kind === 'SVG' ? source.svg : fs.readFileSync(source.path))
       .update(JSON.stringify(artworkProfiles())).update(fs.readFileSync(this.getBrushTipPath())).digest('hex');
   }
@@ -121,7 +121,7 @@ export class ArtworkResizeService {
   static async generateResizedArtworks(taskId: string, source: ArtworkSource | string, onProgress?: ArtworkRenderProgress): Promise<ResizedArtworksResult> {
     const input: ArtworkSource = typeof source === 'string' ? {kind:'PNG',path:source} : source;
     const fingerprint=this.fingerprint(input);
-    const files=await this.renderProfiles(taskId,input,artworkProfiles(),onProgress);
+    const files=await this.renderProfiles(taskId,input,artworkProfiles(),onProgress,fingerprint);
     const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants }=files;
     const renderFileHashes=Object.fromEntries(Object.entries(files).map(([key,file])=>[key,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]));
     return {mugStandardPath,mugBrushPath,drinkwareStandardPath,drinkwareBrushPath,productVariants,renderFingerprint:fingerprint,renderFileHashes};
@@ -133,7 +133,7 @@ export class ArtworkResizeService {
   static async generateAllProductVariants(taskId: string, source: ArtworkSource | string) {
     return this.renderProfiles(taskId,typeof source==='string'?{kind:'PNG',path:source}:source,artworkProfiles().filter(p=>!p.key.endsWith('Path')));
   }
-  private static async renderProfiles(taskId: string, source: ArtworkSource, profiles: ArtworkProfile[], onProgress?: ArtworkRenderProgress) {
+  private static async renderProfiles(taskId: string, source: ArtworkSource, profiles: ArtworkProfile[], onProgress?: ArtworkRenderProgress, fingerprint?: string) {
     profiles.forEach(validateProfile);
     const cleanId=taskId.replace(/[^a-zA-Z0-9_-]/g,'_');
     const dir=path.resolve(process.cwd(),'data','designs'); fs.mkdirSync(dir,{recursive:true});
@@ -143,7 +143,15 @@ export class ArtworkResizeService {
       console.log('[ArtworkRenderer] Quelle',source.kind,geometry.bounds);
       if (profiles.some(p=>p.brush)) {
         onProgress?.('BRUSH_PREPARATION', '🖌️ Brush-Kontur wird vorbereitet…');
-        await page.evaluate(prepareBrushLayer,'data:image/png;base64,'+fs.readFileSync(this.getBrushTipPath()).toString('base64'));
+        await page.exposeFunction('__reportBrushStep', (detail: string) => {
+          onProgress?.('BRUSH_PREPARATION', `🖌️ Brush: ${detail}…`);
+        });
+        const metrics = await page.evaluate(prepareBrushLayer, {
+          brushUri: 'data:image/png;base64,'+fs.readFileSync(this.getBrushTipPath()).toString('base64'),
+          seed: Number.parseInt((fingerprint || this.fingerprint(source)).slice(0, 8), 16)
+        });
+        console.log('[ArtworkRenderer] Brush-Teilschritte', JSON.stringify(metrics));
+        onProgress?.('BRUSH_PREPARATION', `✓ Brush-Kontur vorbereitet (${(metrics.totalMs / 1000).toFixed(1)} s)`, metrics);
       }
       const files: Record<string,string>={};
       for(const profile of profiles) {

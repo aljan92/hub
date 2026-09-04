@@ -7,6 +7,7 @@ export async function installArtworkRuntime(params: { kind: 'SVG' | 'PNG'; data:
   const wrap = (width: number, height: number, body: string, box = `0 0 ${width} ${height}`) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${box}">${body}</svg>`;
   let width: number, height: number, body: string, uri: string;
+  let decodedImage: HTMLImageElement | undefined;
   if (params.kind === 'SVG') {
     const document = new DOMParser().parseFromString(params.data, 'image/svg+xml');
     const root = document.documentElement;
@@ -31,12 +32,13 @@ export async function installArtworkRuntime(params: { kind: 'SVG' | 'PNG'; data:
     uri = encode(wrap(width, height, body));
   } else {
     const img = await load(params.data);
+    decodedImage = img;
     width = img.naturalWidth; height = img.naturalHeight;
     if (width * height > 100_000_000) throw new Error('PNG-Quelle überschreitet Pixelbudget');
     body = `<image width="${width}" height="${height}" href="${xml(params.data)}"/>`;
     uri = params.data;
   }
-  const image = await load(uri);
+  const image = decodedImage || await load(uri);
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(image, 0, 0, width, height);
@@ -51,6 +53,17 @@ export async function installArtworkRuntime(params: { kind: 'SVG' | 'PNG'; data:
   // Cropping changes coordinates only; the original SVG remains vector content.
   const crop = (w: number, h: number) => wrap(w, h, body, `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
   const state: any = { kind: params.kind, bounds, wrap, encode, xml, load, crop, brush: null };
+  // Brush masks are raster effects at source resolution. Reuse the already decoded
+  // source; never wrap a large PNG into SVG and decode it a second time for this.
+  // The final SVG foreground remains vector content in state.render below.
+  state.createBrushSource = () => {
+    const source = document.createElement('canvas');
+    source.width = bounds.width; source.height = bounds.height;
+    const context = source.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('Brush-Canvas konnte nicht erstellt werden');
+    context.drawImage(image, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
+    return source;
+  };
   state.render = async (profile: any) => {
     const { width: w, height: h } = profile;
     let content = profile.background ? `<rect width="100%" height="100%" fill="${xml(profile.background)}"/>` : '';

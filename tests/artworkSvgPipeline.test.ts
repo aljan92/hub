@@ -39,7 +39,7 @@ await ArtworkRenderSession.run(async page => {
   assert(vector.includes('<rect'));assert(!vector.includes('data:image/png'));
   console.log('PASS SVG: target-size vector composition, centered contain, no intermediate raster');
 
-  await page.evaluate(prepareBrushLayer,'data:image/png;base64,'+fs.readFileSync(ArtworkResizeService.getBrushTipPath()).toString('base64'));
+  await page.evaluate(prepareBrushLayer,{brushUri:'data:image/png;base64,'+fs.readFileSync(ArtworkResizeService.getBrushTipPath()).toString('base64'),seed:12345});
   await page.evaluate(p=>(window as any).__artwork.render(p),{width:600,height:400,brush:true,boxes:[{x:0,y:0,width:280,height:400},{x:320,y:0,width:280,height:400}]});
   pixels=await inspect(page);assert(pixels.count>1000);
   const composed=await page.evaluate(()=>decodeURIComponent((document.getElementById('output') as HTMLImageElement).src));

@@ -219080,6 +219080,7 @@ async function installArtworkRuntime(params2) {
   const xml = (text2) => text2.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   const wrap = (width2, height2, body2, box = `0 0 ${width2} ${height2}`) => `<svg xmlns="http://www.w3.org/2000/svg" width="${width2}" height="${height2}" viewBox="${box}">${body2}</svg>`;
   let width, height, body, uri;
+  let decodedImage;
   if (params2.kind === "SVG") {
     const document2 = new DOMParser().parseFromString(params2.data, "image/svg+xml");
     const root = document2.documentElement;
@@ -219104,13 +219105,14 @@ async function installArtworkRuntime(params2) {
     uri = encode(wrap(width, height, body));
   } else {
     const img = await load(params2.data);
+    decodedImage = img;
     width = img.naturalWidth;
     height = img.naturalHeight;
     if (width * height > 1e8) throw new Error("PNG-Quelle \xFCberschreitet Pixelbudget");
     body = `<image width="${width}" height="${height}" href="${xml(params2.data)}"/>`;
     uri = params2.data;
   }
-  const image = await load(uri);
+  const image = decodedImage || await load(uri);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -219132,6 +219134,15 @@ async function installArtworkRuntime(params2) {
   const bounds = { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
   const crop = (w, h) => wrap(w, h, body, `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
   const state = { kind: params2.kind, bounds, wrap, encode, xml, load, crop, brush: null };
+  state.createBrushSource = () => {
+    const source12 = document.createElement("canvas");
+    source12.width = bounds.width;
+    source12.height = bounds.height;
+    const context2 = source12.getContext("2d", { willReadFrequently: true });
+    if (!context2) throw new Error("Brush-Canvas konnte nicht erstellt werden");
+    context2.drawImage(image, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
+    return source12;
+  };
   state.render = async (profile) => {
     const { width: w, height: h } = profile;
     let content = profile.background ? `<rect width="100%" height="100%" fill="${xml(profile.background)}"/>` : "";
@@ -219172,16 +219183,35 @@ var init_artworkRenderRuntime = __esm2({
 });
 
 // src/server/services/artworkBrushRuntime.ts
-async function prepareBrushLayer(brushUri) {
+async function prepareBrushLayer(params2) {
+  if (!Number.isInteger(params2.seed) || params2.seed < 0 || params2.seed > 4294967295) throw new Error("Ung\xFCltiger Brush-Startwert");
+  const report = async (detail) => {
+    const callback = window.__reportBrushStep;
+    if (callback) await callback(detail);
+  };
+  await report("Bildquelle direkt zuschneiden");
+  const started = performance.now();
   const state = window.__artwork;
-  const sourceImage = await state.load(state.encode(state.crop(state.bounds.width, state.bounds.height)));
-  const source12 = document.createElement("canvas");
-  source12.width = state.bounds.width;
-  source12.height = state.bounds.height;
-  source12.getContext("2d").drawImage(sourceImage, 0, 0);
-  const brushImage = await state.load(brushUri);
-  let seed = 2166136261;
-  for (let i = 0; i < sourceImage.src.length; i++) seed = Math.imul(seed ^ sourceImage.src.charCodeAt(i), 16777619) >>> 0;
+  const source12 = state.createBrushSource();
+  const sourceMs = performance.now() - started;
+  await report("Brush-Textur laden");
+  const brushLoadStart = performance.now();
+  const brushImage = await state.load(params2.brushUri);
+  const brushLoadMs = performance.now() - brushLoadStart;
+  let seed = params2.seed >>> 0;
+  const metrics = {
+    sourceMs,
+    brushLoadMs,
+    cleanupMs: 0,
+    contourMs: 0,
+    encodeMs: 0,
+    totalMs: 0,
+    sourceWidth: source12.width,
+    sourceHeight: source12.height,
+    candidates: 0,
+    stamps: 0,
+    passes: 10
+  };
   const random = () => {
     seed = Math.imul(seed, 1664525) + 1013904223 >>> 0;
     return seed / 4294967296;
@@ -219256,7 +219286,11 @@ async function prepareBrushLayer(brushUri) {
     }
   };
   const applyBlackBrush = async (sourceCanvas, brushP) => {
+    await report("Konturmaske bereinigen");
+    const cleanupStart = performance.now();
     await removeSpecks(sourceCanvas);
+    metrics.cleanupMs = performance.now() - cleanupStart;
+    await report("Kontur und Stempel berechnen");
     const n = sourceCanvas.width;
     const o = sourceCanvas.height;
     const r = document.createElement("canvas");
@@ -219350,19 +219384,19 @@ async function prepareBrushLayer(brushUri) {
       A.fillRect(0, 0, P.width, P.height);
     }
     a.drawImage(P, 0, 0);
-    for (let e = 0; e < 4; e++) {
+    for (let e = 0; e < 10; e++) {
       a.drawImage(r, 1, 0);
       a.drawImage(r, -1, 0);
       a.drawImage(r, 0, 1);
       a.drawImage(r, 0, -1);
     }
     const L = 0.5;
-    const MAX_BRUSH_STAMPS = 4e3;
-    const stride = Math.max(1, Math.ceil(xPts.length / (MAX_BRUSH_STAMPS * 2)));
     const TPts = [];
-    for (let e = 0; e < xPts.length && TPts.length < MAX_BRUSH_STAMPS; e += stride) {
+    for (let e = 0; e < xPts.length; e++) {
       if (random() < L) TPts.push(xPts[e]);
     }
+    metrics.candidates = xPts.length;
+    metrics.stamps = TPts.length;
     for (let e = 0; e < TPts.length; e++) {
       const pt = TPts[e];
       const stamp = g[Math.floor(random() * b)];
@@ -219371,12 +219405,19 @@ async function prepareBrushLayer(brushUri) {
     a.globalCompositeOperation = "source-over";
     return r;
   };
+  const contourStart = performance.now();
   const layer = await applyBlackBrush(source12, brushImage);
+  metrics.contourMs = performance.now() - contourStart - metrics.cleanupMs;
+  await report("Brush-Ebene als PNG kodieren");
+  const encodeStart = performance.now();
   state.brush = { uri: layer.toDataURL("image/png"), width: layer.width, height: layer.height, padding: 0.15 * Math.max(source12.width, source12.height) };
+  metrics.encodeMs = performance.now() - encodeStart;
+  metrics.totalMs = performance.now() - started;
   source12.width = 0;
   source12.height = 0;
   layer.width = 0;
   layer.height = 0;
+  return metrics;
 }
 var init_artworkBrushRuntime = __esm2({
   "src/server/services/artworkBrushRuntime.ts"() {
@@ -219511,7 +219552,7 @@ var init_artworkResizeService = __esm2({
         return { kind: "PNG", path: pngPath };
       }
       static fingerprint(source12) {
-        return (0, import_node_crypto.createHash)("sha256").update("artwork-v3-svg-direct-png-no-upscale").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+        return (0, import_node_crypto.createHash)("sha256").update("artwork-v4-direct-brush-source-short-seed-original-contour").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
       }
       static hasCurrentAssets(assets, fingerprint) {
         if (!assets || assets.renderFingerprint !== fingerprint) return false;
@@ -219535,7 +219576,7 @@ var init_artworkResizeService = __esm2({
       static async generateResizedArtworks(taskId, source12, onProgress) {
         const input = typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12;
         const fingerprint = this.fingerprint(input);
-        const files = await this.renderProfiles(taskId, input, artworkProfiles(), onProgress);
+        const files = await this.renderProfiles(taskId, input, artworkProfiles(), onProgress, fingerprint);
         const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants } = files;
         const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
         return { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants, renderFingerprint: fingerprint, renderFileHashes };
@@ -219547,7 +219588,7 @@ var init_artworkResizeService = __esm2({
       static async generateAllProductVariants(taskId, source12) {
         return this.renderProfiles(taskId, typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12, artworkProfiles().filter((p) => !p.key.endsWith("Path")));
       }
-      static async renderProfiles(taskId, source12, profiles, onProgress) {
+      static async renderProfiles(taskId, source12, profiles, onProgress, fingerprint) {
         profiles.forEach(validateProfile);
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const dir = import_node_path.default.resolve(process.cwd(), "data", "designs");
@@ -219558,7 +219599,15 @@ var init_artworkResizeService = __esm2({
           console.log("[ArtworkRenderer] Quelle", source12.kind, geometry.bounds);
           if (profiles.some((p) => p.brush)) {
             onProgress?.("BRUSH_PREPARATION", "\u{1F58C}\uFE0F Brush-Kontur wird vorbereitet\u2026");
-            await page.evaluate(prepareBrushLayer, "data:image/png;base64," + import_node_fs.default.readFileSync(this.getBrushTipPath()).toString("base64"));
+            await page.exposeFunction("__reportBrushStep", (detail) => {
+              onProgress?.("BRUSH_PREPARATION", `\u{1F58C}\uFE0F Brush: ${detail}\u2026`);
+            });
+            const metrics = await page.evaluate(prepareBrushLayer, {
+              brushUri: "data:image/png;base64," + import_node_fs.default.readFileSync(this.getBrushTipPath()).toString("base64"),
+              seed: Number.parseInt((fingerprint || this.fingerprint(source12)).slice(0, 8), 16)
+            });
+            console.log("[ArtworkRenderer] Brush-Teilschritte", JSON.stringify(metrics));
+            onProgress?.("BRUSH_PREPARATION", `\u2713 Brush-Kontur vorbereitet (${(metrics.totalMs / 1e3).toFixed(1)} s)`, metrics);
           }
           const files = {};
           for (const profile of profiles) {
@@ -227123,12 +227172,12 @@ var init_finalizationService = __esm2({
             resizedAssets = task.resizedAssets;
           } else {
             const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto2.randomUUID)() : taskId);
-            resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title) => {
+            resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title, metrics) => {
               TaskLogService2.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "FINALIZATION_EVENT",
                 title,
-                content: { phase: "ARTWORK_PREPARATION", status: "RUNNING", source: source12.kind, stage }
+                content: { phase: "ARTWORK_PREPARATION", status: "RUNNING", source: source12.kind, stage, ...metrics ? { metrics } : {} }
               });
             });
             const currentSource = ArtworkResizeService.source(TaskLogService2.getTask(taskId), masterPngPath);
