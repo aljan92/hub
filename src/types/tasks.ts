@@ -164,7 +164,10 @@ export interface DesignTaskLog {
   trademarkCheckResult?: any;
   trademarkRefineResult?: any;
   resizedAssets?: {
+    /** Historical field only; no new trimmed files. */
     trimmedPath?: string;
+    renderFingerprint?: string;
+    renderFileHashes?: Record<string, string>;
     mugStandardPath?: string;
     mugBrushPath?: string;
     drinkwareStandardPath?: string;

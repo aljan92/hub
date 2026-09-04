@@ -65,7 +65,7 @@ export const RESIZE_BACKGROUND_PROFILES: Record<string, ResizeBackground> = {
  */
 export interface ProductVariantGeneratorConfig {
   mode: 'CANVAS_BACKGROUND_CONTAIN';
-  source: 'TRIMMED';
+  source: 'VISIBLE_ARTWORK';
   canvas: { width: number; height: number };
   paddingShortSidePct: number;
   backgroundProfile: string;  // Key into RESIZE_BACKGROUND_PROFILES
@@ -117,13 +117,13 @@ export const ARTWORK_VARIANT_REGISTRY: Record<string, ArtworkVariantRegistryEntr
   // ─── New CANVAS_BACKGROUND_CONTAIN variants ────────────────────────────────
   CANVAS_BG_CONTAIN_4452X5292_DARK: {
     id: 'CANVAS_BG_CONTAIN_4452X5292_DARK',
-    label: 'Blanket Format – 6678 × 7938 (150% Test)',
+    label: 'Blanket Format – 8904 × 10584 (200%)',
     storageType: 'productVariants',
     generator: {
       mode: 'CANVAS_BACKGROUND_CONTAIN',
-      source: 'TRIMMED',
-      // Temporary 150% placement experiment; keep the persisted variant ID stable.
-      canvas: { width: 6678, height: 7938 },
+      source: 'VISIBLE_ARTWORK',
+      // Keep the persisted variant ID stable; output dimensions are versioned separately.
+      canvas: { width: 8904, height: 10584 },
       paddingShortSidePct: 0.10,
       backgroundProfile: 'DARK_PRODUCT'
     }
@@ -134,7 +134,7 @@ export const ARTWORK_VARIANT_REGISTRY: Record<string, ArtworkVariantRegistryEntr
     storageType: 'productVariants',
     generator: {
       mode: 'CANVAS_BACKGROUND_CONTAIN',
-      source: 'TRIMMED',
+      source: 'VISIBLE_ARTWORK',
       canvas: { width: 6480, height: 8100 },
       paddingShortSidePct: 0.08,
       backgroundProfile: 'DARK_PRODUCT'
@@ -146,7 +146,7 @@ export const ARTWORK_VARIANT_REGISTRY: Record<string, ArtworkVariantRegistryEntr
     storageType: 'productVariants',
     generator: {
       mode: 'CANVAS_BACKGROUND_CONTAIN',
-      source: 'TRIMMED',
+      source: 'VISIBLE_ARTWORK',
       canvas: { width: 4480, height: 3472 },
       paddingShortSidePct: 0.08,
       backgroundProfile: 'DARK_PRODUCT'
@@ -158,7 +158,7 @@ export const ARTWORK_VARIANT_REGISTRY: Record<string, ArtworkVariantRegistryEntr
     storageType: 'productVariants',
     generator: {
       mode: 'CANVAS_BACKGROUND_CONTAIN',
-      source: 'TRIMMED',
+      source: 'VISIBLE_ARTWORK',
       canvas: { width: 4500, height: 3750 },
       paddingShortSidePct: 0.09,
       backgroundProfile: 'DARK_PRODUCT'

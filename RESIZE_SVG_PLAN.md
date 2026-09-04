@@ -1,6 +1,6 @@
 # Plan: einheitliche Artwork-Ausgabe aus SVG
 
-Status: geplant, Implementierung wartet auf Quellenentscheidung für PNG-only-Updates.
+Status: implementiert und lokal getestet; NAS-Vergleich und Live-Amazon-Abnahme offen.
 
 ## Ziel und feste Vorgaben
 
@@ -12,13 +12,13 @@ Status: geplant, Implementierung wartet auf Quellenentscheidung für PNG-only-Up
 - Bestehende Verzeichnisse, normale Varianten-Dateinamen, technische Varianten-IDs, Artifact-Keys, Queue-/Upload-Auflösung und manueller Wiederholungsablauf bleiben kompatibel. Eindeutige Generation-Pfade beim manuellen Wiederholen bleiben erhalten.
 - Produktzuordnung ausschließlich aus Katalog und persistenten Overrides gemäß extra.md. Kein Eingriff in den SyncEngine.
 
-## Vor Implementierung zu entscheiden: Updates ohne SVG
+## Beschlossene Quellenregel: Updates ohne SVG
 
 Im aktuellen Update-Ablauf lädt `UpdatePipelineService` über `AmazonInspectService.downloadDesignArtwork` das Amazon-Artwork als PNG. `stepU7_Enqueue` übergibt `localMbaPngPath || localImagePath` an den gemeinsamen Finalisierer; eine SVG-Beschaffung ist nicht vorgesehen.
 
-Empfehlung: explizite Quellenarten im gemeinsamen Renderer. Neue Designs verwenden das freigegebene SVG; bestehende Updates ohne SVG verwenden weiterhin ihr vorhandenes PNG, mit sichtbarer Kennzeichnung der eingeschränkten Skalierungsqualität. Keine automatische Neu-Vektorisierung und keine ungesicherte Zuordnung eines fremden/älteren SVGs anhand ähnlicher Namen. So bleibt der Update-Workflow erhalten, ohne eine zweite Resize-Pipeline einzuführen.
+Vom Nutzer bestätigt: SVG direkt rendern; PNG-Motive nur verkleinern, niemals vergrößern. Transparente Außenränder intern ermitteln und sichtbares Motiv höchstens 1:1 zentrieren. Ganze Pixelpositionen vermeiden zusätzliche Unschärfe bei 1:1-Ausgabe. Die komplette Zielfläche erhält den konfigurierten Hintergrund. PNG-Master bleibt unverändert. Keine automatische Neu-Vektorisierung oder ungesicherte Zuordnung fremder SVGs.
 
-Alternative: SVG zwingend verlangen und PNG-only-Updates bis zur Bereitstellung eines passenden SVG blockieren. Das verändert den bisherigen Workflow und benötigt eine ausdrückliche Entscheidung.
+Fehlt eine ausdrücklich hinterlegte SVG-Datei, kein stiller PNG-Fallback. Tasks ohne SVG-Zuordnung nutzen den expliziten PNG-Pfad.
 
 ## Paket 1 – Quellen- und Ausgabe-Verträge, Referenztests
 
@@ -29,7 +29,7 @@ Alternative: SVG zwingend verlangen und PNG-only-Updates bis zur Bereitstellung 
 
 ## Paket 2 – Gemeinsamer Renderer
 
-1. Native SVG-Engine zunächst mit Referenzfällen und NAS-Laufzeitumgebung erproben; Auswahl nach visueller Kompatibilität und Messung, nicht nach vermuteter Beschleunigung. Änderungen an Abhängigkeiten und gebündeltem Deployment mitprüfen.
+1. Implementierungsentscheidung: zunächst Chromium für gleiche SVG-/Filterdarstellung beibehalten. Master und Varianten verwenden dieselbe Runtime und denselben global serialisierten, isolierten Renderprozess. Native Engine als spätere Benchmark-Option, keine neue native Deployment-Abhängigkeit in diesem Austausch.
 2. Sichtbaren Motivbereich einmal pro Quelle bestimmen, einschließlich Konturen/Filter/Masken. Geometrisches getBBox allein ist kein hinreichender Ersatz für sichtbare Alpha-Grenzen. Master-Layout und Varianten-Motivgrenzen ausdrücklich trennen.
 3. Generische Ausgabeprofile für Master, Contain und Two-Sided. SVG-Artwork direkt in Zielgröße rasterisieren; keine Raster-Zwischenquelle für Vektorbestandteile. Brush-Textur bleibt als Rastereffekt gesondert betrachtet und visuell geprüft.
 4. Große Renderjobs global serialisieren, vom API-Eventloop isolieren, Timeout/Abbruch und Ressourcenfreigabe sicherstellen. Dateien statt großer Base64-Ketten zwischen Prozessen verwenden.
@@ -55,4 +55,10 @@ Alternative: SVG zwingend verlangen und PNG-only-Updates bis zur Bereitstellung 
 
 ## Aktueller Implementierungsstand
 
-Noch keine Änderungen am Renderer oder den Produktionsmaßen vorgenommen. Der Quellenkonflikt für PNG-only-Updates muss zuerst aufgelöst werden, damit der verlangte 1:1-Ersatz den bestehenden Update-Workflow nicht bricht.
+Umgesetzt: gemeinsame Profile/Runtime, SVG-Direktausgabe, PNG-No-Upscale, acht Varianten ohne Trimmed-Datei, Master-Aufrufvertrag, Fingerprint-/Dateihash-Cache, Quellenänderungsschutz, separate Generation bei vorhandenen Assets, Größenversuch, Quellenanzeige in den Finalisierungsdetails und gemeinsame Render-Sperre. Bestehende Pfade/IDs bleiben erhalten; Altdateien werden nicht gelöscht. `trimmedPath` bleibt ausschließlich für alte gespeicherte Daten typkompatibel.
+
+Alpha-Grenzen für SVG werden einmal im bisherigen Master-Koordinatensystem gemessen, einschließlich sichtbarer Konturen/Filter/Masken. Diese Analyse rasterisiert temporär; keine Variante verwendet diese Analysepixel als Motivquelle. Brush-Textur verwendet weiterhin die vorhandene Rasterkontur-Logik; Motiv darüber direkt aus SVG. Zufallsstempel sind reproduzierbar. Speckbereinigung betrifft nur die Brush-Maske, nicht mehr das eigentliche Motiv. Live-Brush-Vergleich bleibt Teil der Abnahme.
+
+Tests: `artworkSvgPipeline.test.ts` (mit `ARTWORK_FULL_SIZE_TEST=1` alle acht Produktionsgrößen), `artworkFinalizationIntegration.test.ts`, `manualFinalization.test.ts`, `productResizeV2.test.ts`, `unifiedFinalizationAndCustomResize.test.ts` und Architektur-Guard. Master-Testmotiv pixelgleich zur bisherigen Referenz. Keine pauschale Zusicherung für jedes SVG oder die reale Druckqualität.
+
+Ressourcen: pro Variante Maße/Laufzeit/PNG-Bytes; pro Job Laufzeit und im 1-s-Takt gesampeltes maximales aggregiertes Chromium-Prozessbaum-RSS (MiB). Shared Memory kann mehrfach gezählt werden, kurze Spitzen können fehlen. Getrennt von Upload-/Screencast-Sessions. Zehn-Minuten-Joblimit, Browser-Abbau bei Fehlern, 100-MP-Pixelbudget. NAS-Vorher-/Nachher-Benchmark und praktische Abnahme stehen aus; Todo 4/5 noch nicht vollständig abschließen.

@@ -36,7 +36,7 @@ export class ManualFinalizationService {
       if (!result.success || !result.resizedAssets || !result.preparedListing) throw new Error(result.error || 'Vorbereitung fehlgeschlagen');
 
       const assets = result.resizedAssets;
-      const paths = [assets.trimmedPath, assets.mugStandardPath, assets.mugBrushPath, assets.drinkwareStandardPath, assets.drinkwareBrushPath, ...Object.values(assets.productVariants || {})];
+      const paths = [assets.mugStandardPath, assets.mugBrushPath, assets.drinkwareStandardPath, assets.drinkwareBrushPath, ...Object.values(assets.productVariants || {})];
       for (const file of paths) {
         const descriptor = fs.openSync(file!, 'r');
         const header = Buffer.alloc(24);

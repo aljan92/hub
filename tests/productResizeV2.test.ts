@@ -57,7 +57,7 @@ async function runTests() {
     test(v?.storageType === 'productVariants', `${id} has storageType productVariants`);
     test(v?.generator != null, `${id} has generator config`);
     test(v?.generator?.mode === 'CANVAS_BACKGROUND_CONTAIN', `${id} generator mode is CANVAS_BACKGROUND_CONTAIN`);
-    test(v?.generator?.source === 'TRIMMED', `${id} generator source is TRIMMED`);
+    test(v?.generator?.source === 'VISIBLE_ARTWORK', `${id} generator source is VISIBLE_ARTWORK`);
   }
 
   // No product IDs as variant IDs
@@ -71,11 +71,11 @@ async function runTests() {
   // ==========================================================================
   console.log('\n--- Canvas Dimensions ---');
 
-  test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4452X5292_DARK?.generator?.canvas.width === 4452, 'Blanket width 4452');
-  test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4452X5292_DARK?.generator?.canvas.height === 5292, 'Blanket height 5292');
+  test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4452X5292_DARK?.generator?.canvas.width === 8904, 'Blanket width 8904');
+  test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4452X5292_DARK?.generator?.canvas.height === 10584, 'Blanket height 10584');
 
-  test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4320X5400_DARK?.generator?.canvas.width === 4320, 'Poster width 4320');
-  test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4320X5400_DARK?.generator?.canvas.height === 5400, 'Poster height 5400');
+  test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4320X5400_DARK?.generator?.canvas.width === 6480, 'Poster width 6480');
+  test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4320X5400_DARK?.generator?.canvas.height === 8100, 'Poster height 8100');
 
   test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4480X3472_DARK?.generator?.canvas.width === 4480, 'Laptop Sleeve width 4480');
   test(ARTWORK_VARIANT_REGISTRY.CANVAS_BG_CONTAIN_4480X3472_DARK?.generator?.canvas.height === 3472, 'Laptop Sleeve height 3472');
@@ -86,7 +86,7 @@ async function runTests() {
   // Max width constraint
   for (const id of newVariantIds) {
     const w = ARTWORK_VARIANT_REGISTRY[id]?.generator?.canvas.width || 0;
-    test(w <= 4500, `${id} width ${w} <= 4500 pixel budget`);
+    test(w * ARTWORK_VARIANT_REGISTRY[id].generator!.canvas.height <= 100_000_000, `${id} fits the 100 MP pixel budget`);
   }
 
   // ==========================================================================
@@ -129,7 +129,7 @@ async function runTests() {
   test(generatable.length === 4, `getGeneratableVariants returns exactly 4 (got ${generatable.length})`);
   test(generatable.every(v => v.generator != null), 'All generable variants have generator configs');
   test(generatable.every(v => v.storageType === 'productVariants'), 'All generable variants use productVariants storage');
-  test(generatable.every(v => v.generator!.source === 'TRIMMED'), 'All generable variants use TRIMMED source');
+  test(generatable.every(v => v.generator!.source === 'VISIBLE_ARTWORK'), 'All generable variants use VISIBLE_ARTWORK source');
 
   // Legacy variants should NOT be in generatable list
   test(!generatable.some(v => v.id === 'MASTER'), 'MASTER is not in generatable list');
@@ -261,7 +261,7 @@ async function runTests() {
   const finContent = fs.readFileSync(finalizationPath, 'utf-8');
   // Both pipelines use the same FinalizationService.finalizeForQueue
   test(finContent.includes("pipeline: 'DESIGN' | 'UPDATE'"), 'FinalizationService handles both DESIGN and UPDATE');
-  test(finContent.includes('generateAllProductVariants'), 'FinalizationService calls generateAllProductVariants');
+  test(!finContent.includes('generateAllProductVariants'), 'Finalization uses one shared generation call, not a second product pass');
   // No separate resize logic for DESIGN vs UPDATE
   const designResizeCount = (finContent.match(/generateResizedArtworks/g) || []).length;
   test(designResizeCount === 1, `Only 1 call to generateResizedArtworks in FinalizationService (got ${designResizeCount})`);

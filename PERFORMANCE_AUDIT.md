@@ -225,6 +225,16 @@ Instrumentierung nach der Messung entfernen oder klar als deaktivierbares Diagno
 
 ## 9. Historische Zuordnung
 
+### Resize-Nachtrag: SVG-/PNG-Renderer (4. September 2026)
+
+- Gemeinsame Ausgabe-Runtime: SVG direkt in Zielgröße; PNG-only-Updates ohne Vergrößerung. Kein persistiertes Trimmed-PNG, ein vorbereiteter Quellzustand pro Variantenbatch, acht statt neun Dateien. Master bleibt eigener bisheriger Schritt mit derselben Rendertechnik.
+- Große Jobs global serialisiert. Isolierter Chromium-Prozess wird nach jedem Job beendet. Große Viewports vor Validierungs-Decodierung freigegeben. Rasterquellen/Brush-Ebene und Decode-Prüfung verwenden noch Data-URIs; nicht sämtliche Kopien sind entfernt.
+- `[ArtworkRenderer]`: pro Variante `width`, `height`, `ms`, `bytes`, `source`; pro Job `peakProcessTreeRssMiB`, `sampleIntervalMs`, `ms`. RSS ist die im Sekundentakt gesampelte Summe des eigenen Chromium-Prozessbaums, nicht Node-RSS/physischer RAM. Shared Memory kann mehrfach gezählt werden, kurze Spitzen fehlen möglicherweise. Ohne `ps`: `null`.
+- Lokaler synthetischer Vollgrößenlauf: alle acht Varianten, etwa 7,2 Sekunden für den Batch und 762 MiB gesampeltes Prozessbaum-RSS. Keine Prognose für komplexe Designs oder NAS; noch kein belastbarer Vorher-/Nachher-Vergleich. Keine Aussage „schneller/speichersparender“ allein aus diesem Test ableiten. Blanket hat gegenüber ursprünglichen Maßen viermal so viele Pixel.
+- Nächste Messung: gleiches reales SVG/PNG, gleiche Größen, alter/neuer Renderer auf NAS; zusätzlich Upload/Screencast unter Last beobachten. Kein Live-Publish für Benchmarks. Details: [Umbauplan](./RESIZE_SVG_PLAN.md).
+
+### Frühere Phasen
+
 | Phase | Performance-Auswirkung |
 |---|---|
 | P1 `939bdde` | Gute Summary/Pagination-Basis, aber Full-detail Refetch pro `TASK_UPDATED` eingeführt. |

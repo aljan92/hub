@@ -105,7 +105,10 @@ export interface QueueItem {
   imagePath: string;
   pngPath: string;
   resizedAssets?: {
+    /** Historical field only; no new trimmed files. */
     trimmedPath?: string;
+    renderFingerprint?: string;
+    renderFileHashes?: Record<string, string>;
     mugStandardPath?: string;
     mugBrushPath?: string;
     drinkwareStandardPath?: string;
@@ -553,7 +556,10 @@ export class QueueService {
     imagePath: string;
     pngPath: string;
     resizedAssets?: {
+      /** Historical field only; no new trimmed files. */
       trimmedPath?: string;
+      renderFingerprint?: string;
+      renderFileHashes?: Record<string, string>;
       mugStandardPath?: string;
       mugBrushPath?: string;
       drinkwareStandardPath?: string;
@@ -758,7 +764,10 @@ export class QueueService {
     imagePath: string;
     pngPath: string;
     resizedAssets?: {
+      /** Historical field only; no new trimmed files. */
       trimmedPath?: string;
+      renderFingerprint?: string;
+      renderFileHashes?: Record<string, string>;
       mugStandardPath?: string;
       mugBrushPath?: string;
       drinkwareStandardPath?: string;

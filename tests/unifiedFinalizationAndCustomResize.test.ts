@@ -1,6 +1,8 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import os from 'node:os';
+import { ArtworkResizeService } from '../src/server/services/artworkResizeService';
 import { ListingSanitizationService } from '../src/server/services/listingSanitizationService';
 import { ListingValidationService } from '../src/server/services/listingValidationService';
 import { FinalizationService } from '../src/server/services/finalizationService';
@@ -13,8 +15,12 @@ console.log('====================================================');
 console.log('🚀 RUNNING UNIFIED FINALIZATION & CUSTOM RESIZE TESTS');
 console.log('====================================================\n');
 
+const TEST_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'unified-finalization-'));
+(TaskRepository as any).dbPath = path.join(TEST_DIR, 'test.sqlite');
+(QueueService as any).queueFilePath = path.join(TEST_DIR, 'queue.json');
+
 async function runTests() {
-  const dummyMasterPng = path.resolve(process.cwd(), 'data/designs/test_dummy_master.png');
+  const dummyMasterPng = path.join(TEST_DIR, 'test_dummy_master.png');
   const dummyDir = path.dirname(dummyMasterPng);
   if (!fs.existsSync(dummyDir)) fs.mkdirSync(dummyDir, { recursive: true });
   fs.writeFileSync(dummyMasterPng, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]));
@@ -225,6 +231,10 @@ async function runTests() {
   };
   TaskRepository.createTask(successTask as any);
 
+  // This is an orchestration fixture, not a PNG decoder fixture. Rendering/cache integrity
+  // are exercised with actual images by artworkSvgPipeline.test.ts.
+  const originalReuse = ArtworkResizeService.hasCurrentAssets;
+  ArtworkResizeService.hasCurrentAssets = () => true;
   const successResult = await FinalizationService.finalizeForQueue({
     taskId: successTask.id,
     pipeline: 'DESIGN',
@@ -235,6 +245,7 @@ async function runTests() {
     description: 'Detailed apparel design showcasing outdoor adventure and nature motifs.',
     masterPngPath: dummyMasterPng
   });
+  ArtworkResizeService.hasCurrentAssets = originalReuse;
   assert.strictEqual(successResult.success, true, `Finalization must succeed without ReferenceError: ${successResult.error}`);
   TaskRepository.deleteTask(successTask.id);
   console.log('✅ Test 6b Passed: Task is correctly accessible in Phase 3 without ReferenceError.\n');
@@ -312,11 +323,10 @@ async function runTests() {
   console.log('✅ Test 9 Passed: Legacy resize steps are completely removed from pipeline services.\n');
 
   // --------------------------------------------------------------------------
-  // Test 10: Full Asset Package (All 5 assets mandatory per task)
+  // Test 10: Full Asset Package (All 8 assets mandatory per task)
   // --------------------------------------------------------------------------
-  console.log('Test 10: Verify 9/9 artwork assets contract (5 legacy + 4 productVariants)...');
+  console.log('Test 10: Verify 8/8 artwork assets contract (4 legacy + 4 productVariants)...');
   const requiredLegacyAssetKeys = [
-    'trimmedPath',
     'mugStandardPath',
     'mugBrushPath',
     'drinkwareStandardPath',
@@ -328,8 +338,8 @@ async function runTests() {
     'CANVAS_BG_CONTAIN_4480X3472_DARK',
     'CANVAS_BG_CONTAIN_4500X3750_DARK'
   ];
-  assert.strictEqual(requiredLegacyAssetKeys.length + requiredProductVariantKeys.length, 9, 'Exactly 9 derived assets required (5 legacy + 4 productVariants)');
-  console.log('✅ Test 10 Passed: 9/9 artwork assets contract verified.\n');
+  assert.strictEqual(requiredLegacyAssetKeys.length + requiredProductVariantKeys.length, 8, 'Exactly 8 derived assets required (4 legacy + 4 productVariants)');
+  console.log('✅ Test 10 Passed: 8/8 artwork assets contract verified.\n');
 
   // Cleanup dummy
   if (fs.existsSync(dummyMasterPng)) fs.unlinkSync(dummyMasterPng);
@@ -339,7 +349,7 @@ async function runTests() {
   console.log('===========================================================\n');
 }
 
-runTests().catch(err => {
+runTests().finally(() => { TaskRepository.close(); fs.rmSync(TEST_DIR, { recursive: true, force: true }); }).catch(err => {
   console.error('❌ Test failed:', err);
   process.exit(1);
 });

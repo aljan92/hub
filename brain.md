@@ -1287,7 +1287,7 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 
 ### 10.55 Resize-Größenversuch und manuelle Finalisierung (4. September 2026)
 
-**Nachfolgeplanung:** [SVG-Resize-Umbauplan](./RESIZE_SVG_PLAN.md). Nutzer hat Umsetzung beauftragt; vor Implementierung ist die Behandlung von PNG-only-Update-Tasks zu klären. Zusätzlicher Master mit Hintergrund entfällt. Aktueller Renderer bleibt bis zur Klärung unverändert.
+**Nachfolgestand:** [SVG-Resize-Umbauplan und Umsetzung](./RESIZE_SVG_PLAN.md), siehe 10.56. Zusätzliches Hintergrund-Master entfällt. Die folgende 150%-Blanket-Zwischenstufe ist inzwischen durch 200% ersetzt.
 
 - Temporärer Test ausschließlich für Blanket und Poster: Canvas 4452×5292 → 6678×7938 beziehungsweise 4320×5400 → 6480×8100. Je Achse +50%, Pixelzahl ×2,25. Contain-Verfahren, Hintergrund und proportionale Innenabstände unverändert; kein Qualitätsgewinn durch zusätzliche Quelldetails. Ob Amazon die Darstellung dadurch vergrößert, ist noch live zu prüfen.
 - Bestehende technische Varianten-IDs bleiben absichtlich stabil, auch wenn ihre Namen die alten Maße enthalten; persistente Produkt-Overrides bleiben gültig. Rückbau über die beiden Registry-Canvasgrößen/Labels, anschließend Dateien erneut erzeugen. Keine neuen produktspezifischen Upload-Selektoren.
@@ -1296,3 +1296,12 @@ Do NOT introduce hardcoded product mappings in services, workers or UI.
 - Jeder Wiederholungslauf schreibt unter einer eindeutigen Generation-ID. Erst nach Dateiprüfung und PNG-Header-/Maßprüfung werden Queue-Verweise aktualisiert. Alte Dateien bleiben als Rückfall erhalten; eine spätere gezielte Bereinigung unreferenzierter Generationen ist offen. Die Prüfung ist kein vollständiger PNG-Decode. Renderer-/Validierungsfehler vor Übernahme behalten die bisherigen Queue-Dateiverweise.
 - Prozessweite Serialisierung manueller Wiederholungen plus Task-Lock; Uploadstart und bestehende Schritt-Wiederholung beachten den Lock. Vor Übernahme werden parallele Änderungen der Queue-Listing-/Assetdaten und Remote-Zustände nochmals geprüft. Queue-Persistenzfehler rollen den In-Memory-Austausch zurück.
 - Isolierter Test `tests/manualFinalization.test.ts`: eindeutige Generationen, gleicher Queue-Eintrag/Status, Uploadsperre, doppelte Einträge, Remote-Guard, Fehlererhalt, falsche Maße und konkurrierende Änderungen. Architektur-Guard bestanden. Live-Rendering/Platzierung auf NAS/Amazon bleibt Nutzertest; lange HTTP-Verbindungen können abbrechen, dann zuerst Log prüfen.
+
+### 10.56 Einheitlicher SVG-/PNG-Renderer
+
+- Master und Resize-Ausgaben nutzen dieselbe Chromium-Runtime. Freigegebenes SVG (`svgContent`, sonst zugehöriger `localSvgPath`) bleibt Vektorquelle. Kein neues Trimmed-PNG, kein zusätzliches Hintergrund-Master. PNG-only-Updates: sichtbares Motiv maximal 1:1, nur verkleinern, zentrieren, Zielfläche mit Profilhintergrund füllen. Heruntergeladenes Master bleibt unverändert.
+- Blanket 8904×10584, Poster 6480×8100; IDs und Produkt-Overrides unverändert. Generatorquelle heißt `VISIBLE_ARTWORK`. Acht abgeleitete Dateien statt neun; historische `trimmedPath`-Felder bleiben lesbar, aber kein Vollständigkeitskriterium.
+- Ein isolierter Renderprozess pro Job, globaler Mutex für Master/Resizes, 100-MP-Grenze, Timeout und Prozessabbau. Keine neue native Abhängigkeit. Vektorisierung, Audit und Upload bleiben ihre bisherigen Schritte.
+- Fingerprint enthält Quellinhalt, Profile, Brush-Asset und Algorithmusversion; Cache zusätzlich durch Dateihashes/Maße geprüft. Wiederholung regeneriert weiterhin; bei vorhandenen Assets neue Generation statt Überschreiben referenzierter Dateien. Quelle vor Übernahme erneut geprüft. Keine Altdatei-Löschung.
+- Brush nutzt vorhandene Masken-/Stempeltechnik, nun deterministisch; Vordergrund direkt aus Quelle. Speckbereinigung nur für Brush-Maske. Brush-Ausgaben live vergleichen; keine Behauptung pixelgleicher Zufallstexturen.
+- Tests/Abnahmestand im [Umbauplan](./RESIZE_SVG_PLAN.md). Lokaler Master-Test pixelgleich, acht Varianten in voller Größe erfolgreich. NAS-Messung und Live-Abnahme offen; Metriken im [Performance-Audit](./PERFORMANCE_AUDIT.md).

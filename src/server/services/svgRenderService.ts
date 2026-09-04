@@ -2,6 +2,9 @@ import { chromium, Browser } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import { findChromiumExecutable } from './browserSessionService';
+import { ArtworkRenderSession } from './artworkRenderSession';
+import { installArtworkRuntime } from './artworkRenderRuntime';
+import { inject300Dpi } from './artworkResizeService';
 
 let sharedBrowser: Browser | null = null;
 
@@ -309,67 +312,12 @@ export class SvgRenderService {
    * Renders the optimal Merch by Amazon Print PNG (4500 x 5400 px, 300 DPI, Transparent Background)
    */
   static async renderSvgToMbaPng(svgText: string, width = 4500, height = 5400): Promise<Buffer> {
-    const clean = this.cleanSvg(svgText);
-    const browser = await getBrowser();
-    const context = await browser.newContext({
-      viewport: { width, height },
-      deviceScaleFactor: 1
+    if (![width, height].every(n => Number.isSafeInteger(n) && n > 0) || width * height > 100_000_000) throw new Error('Ungültige Master-Abmessungen');
+    return ArtworkRenderSession.run(async page => {
+      await page.evaluate(installArtworkRuntime, { kind: 'SVG' as const, data: this.cleanSvg(svgText), masterWidth: width, masterHeight: height });
+      await page.setViewportSize({ width, height });
+      await page.evaluate(p => (window as any).__artwork.render(p), { master: true, width, height, boxes: [] });
+      return inject300Dpi(await page.screenshot({ type: 'png', omitBackground: true, timeout: 120000 }));
     });
-    const page = await context.newPage();
-
-    try {
-      // Standard safe area margin of 10% (4050 x 4860 px canvas)
-      const containerWidth = Math.round(width * 0.90);
-      const containerHeight = Math.round(height * 0.90);
-
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            html, body {
-              width: ${width}px;
-              height: ${height}px;
-              background: transparent;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              overflow: hidden;
-            }
-            .design-container {
-              width: ${containerWidth}px;
-              height: ${containerHeight}px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            svg {
-              width: 100%;
-              height: 100%;
-              max-width: 100%;
-              max-height: 100%;
-              object-fit: contain;
-              display: block;
-              margin: auto;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="design-container">
-            ${clean}
-          </div>
-        </body>
-        </html>
-      `;
-
-      await page.setContent(htmlContent);
-      await page.waitForTimeout(60);
-      const buffer = await page.screenshot({ type: 'png', omitBackground: true });
-      return buffer;
-    } finally {
-      await context.close().catch(() => {});
-    }
   }
 }

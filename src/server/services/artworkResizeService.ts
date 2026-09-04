@@ -1,34 +1,12 @@
-import { chromium, Browser } from 'playwright';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { findChromiumExecutable } from './browserSessionService';
-import { ProductVariantGeneratorConfig, resolveBackgroundColor, getGeneratableVariants } from './productCatalogService';
-
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { ArtworkRenderSession } from './artworkRenderSession';
+import { installArtworkRuntime } from './artworkRenderRuntime';
+import { prepareBrushLayer } from './artworkBrushRuntime';
+import { artworkProfiles, productProfile, validateProfile, ArtworkProfile } from './artworkProfiles';
+import { ProductVariantGeneratorConfig } from './productCatalogService';
 const currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
-
-let sharedBrowser: Browser | null = null;
-
-async function getBrowser(): Promise<Browser> {
-  if (!sharedBrowser || !sharedBrowser.isConnected()) {
-    const executablePath = findChromiumExecutable();
-    const launchOptions: any = {
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu'
-      ]
-    };
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-    }
-    sharedBrowser = await chromium.launch(launchOptions);
-  }
-  return sharedBrowser;
-}
-
 // CRC32 table for PNG 300 DPI chunk calculation
 const crcTable: number[] = (() => {
   const table: number[] = [];
@@ -85,20 +63,17 @@ export function inject300Dpi(pngBuffer: Buffer): Buffer {
   ]);
 }
 
-export interface ResizedArtworksResult {
-  trimmedPath: string;
-  mugStandardPath: string;
-  mugBrushPath: string;
-  drinkwareStandardPath: string;
-  drinkwareBrushPath: string;
-  /** Generic product-resize variants (catalog-driven). Key = technical variant ID */
-  productVariants?: Record<string, string>;
-}
 
+export type ArtworkSource = { kind: 'SVG'; svg: string } | { kind: 'PNG'; path: string };
+export interface ResizedArtworksResult {
+  /** Read compatibility only; new generations do not produce a trimmed PNG. */
+  trimmedPath?: string;
+  mugStandardPath: string; mugBrushPath: string; drinkwareStandardPath: string; drinkwareBrushPath: string;
+  productVariants?: Record<string, string>;
+  renderFingerprint?: string;
+  renderFileHashes?: Record<string, string>;
+}
 export class ArtworkResizeService {
-  /**
-   * Resolves the brush_tip.png asset from multiple candidate paths
-   */
   public static getBrushTipPath(): string {
     const candidates = [
       path.resolve(process.cwd(), 'assets', 'brush_tip.png'),
@@ -116,745 +91,77 @@ export class ArtworkResizeService {
     return candidates[0];
   }
 
-  /**
-   * Generates all resized variants from the master 4500x5400px MBA PNG:
-   * 1. ${cleanId}_trimmed.png - Bounding box of artwork with transparent margins trimmed
-   * 2. ${cleanId}_two_sided_mug_standard.png - 2700x1050 px, 300 DPI, centered on front/back
-   * 3. ${cleanId}_two_sided_mug_brush.png - 2700x1050 px, 300 DPI with black brush contour
-   * 4. ${cleanId}_two_sided_drinkware_standard.png - 3000x1400 px, 300 DPI for Tumbler & Water Bottle
-   * 5. ${cleanId}_two_sided_drinkware_brush.png - 3000x1400 px, 300 DPI with black brush contour for Travel Tumbler
-   */
-  private static resizeLock: Promise<void> = Promise.resolve();
 
-  public static async generateResizedArtworks(taskId: string, mbaPngPath: string): Promise<ResizedArtworksResult> {
-    // Strikter sequentieller Lock: Verhindert parallele 1GB+ Speicher-Spitzen auf dem NAS
-    const previousLock = this.resizeLock;
-    let releaseLock = () => {};
-    this.resizeLock = new Promise<void>(resolve => { releaseLock = resolve; });
-
-    await previousLock;
-    try {
-      return await this.executeResizedArtworksInternal(taskId, mbaPngPath);
-    } finally {
-      releaseLock();
+  static source(task: { svgContent?: string; localSvgPath?: string } | undefined, pngPath: string): ArtworkSource {
+    if (task?.svgContent) return { kind: 'SVG', svg: task.svgContent };
+    if (task?.localSvgPath) {
+      if (!fs.existsSync(task.localSvgPath)) throw new Error('Freigegebene SVG-Datei fehlt; kein stiller PNG-Fallback.');
+      return { kind: 'SVG', svg: fs.readFileSync(task.localSvgPath, 'utf8') };
     }
+    return { kind: 'PNG', path: pngPath };
   }
-
-  private static async executeResizedArtworksInternal(taskId: string, mbaPngPath: string): Promise<ResizedArtworksResult> {
-    const memBefore = process.memoryUsage();
-    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const designsDir = path.resolve(process.cwd(), 'data', 'designs');
-    if (!fs.existsSync(designsDir)) {
-      try { fs.mkdirSync(designsDir, { recursive: true }); } catch (e) {}
-    }
-
-    const trimmedFilePath = path.join(designsDir, `${cleanId}_trimmed.png`);
-    const mugStandardFilePath = path.join(designsDir, `${cleanId}_two_sided_mug_standard.png`);
-    const mugBrushFilePath = path.join(designsDir, `${cleanId}_two_sided_mug_brush.png`);
-    const drinkwareStandardFilePath = path.join(designsDir, `${cleanId}_two_sided_drinkware_standard.png`);
-    const drinkwareBrushFilePath = path.join(designsDir, `${cleanId}_two_sided_drinkware_brush.png`);
-
-    if (!fs.existsSync(mbaPngPath)) {
-      throw new Error(`Master MBA PNG not found at path: ${mbaPngPath}`);
-    }
-
-    const masterPngBuffer = fs.readFileSync(mbaPngPath);
-    const masterPngDataUri = `data:image/png;base64,${masterPngBuffer.toString('base64')}`;
-
-    const brushTipPath = this.getBrushTipPath();
-    let brushTipDataUri = '';
-    if (fs.existsSync(brushTipPath)) {
-      const brushBuffer = fs.readFileSync(brushTipPath);
-      brushTipDataUri = `data:image/png;base64,${brushBuffer.toString('base64')}`;
-    } else {
-      console.warn(`[ArtworkResizeService] ⚠️ brush_tip.png not found at ${brushTipPath}. Falling back without brush tip.`);
-    }
-
-    console.log(`[ArtworkResizeService] 📐 Starte Resize-Generierung für Task #${taskId} (Chromium Engine)...`);
-    const browser = await getBrowser();
-    const context = await browser.newContext({
-      viewport: { width: 3000, height: 2000 },
-      deviceScaleFactor: 1
+  static fingerprint(source: ArtworkSource): string {
+    return createHash('sha256').update('artwork-v3-svg-direct-png-no-upscale')
+      .update(source.kind).update(source.kind === 'SVG' ? source.svg : fs.readFileSync(source.path))
+      .update(JSON.stringify(artworkProfiles())).update(fs.readFileSync(this.getBrushTipPath())).digest('hex');
+  }
+  static hasCurrentAssets(assets: Partial<ResizedArtworksResult> | undefined, fingerprint: string): boolean {
+    if (!assets || assets.renderFingerprint !== fingerprint) return false;
+    return artworkProfiles().every(p => {
+      const file = (assets as any)[p.key] || assets.productVariants?.[p.key];
+      if (!file) return false;
+      try { const fd=fs.openSync(file,'r'); const header=Buffer.alloc(24);
+        try { fs.readSync(fd,header,0,24,0); } finally { fs.closeSync(fd); }
+        return header.toString('hex',0,8)==='89504e470d0a1a0a' && header.readUInt32BE(16)===p.width && header.readUInt32BE(20)===p.height
+          && assets.renderFileHashes?.[p.key] === createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+      } catch { return false; }
     });
-    const page = await context.newPage();
-
-    try {
-      await page.addInitScript(() => {
-        (window as any).__name = (target: any) => target;
-      });
-      await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
-
-      const evaluatedResults = await page.evaluate(async (params: { masterUri: string; brushUri: string }) => {
-        const loadImage = (src: string): Promise<HTMLImageElement> => {
-          return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => resolve(img);
-            img.onerror = (e) => reject(e);
-            img.src = src;
-          });
-        };
-
-        const masterImg = await loadImage(params.masterUri);
-        let brushImg: HTMLImageElement | null = null;
-        if (params.brushUri) {
-          try {
-            brushImg = await loadImage(params.brushUri);
-          } catch (e) {
-            console.warn('Failed to load brush tip image in browser context', e);
-          }
-        }
-
-        // 1. Trim Canvas (find exact bounding box where alpha > 0)
-        const trimCanvas = (img: HTMLImageElement): HTMLCanvasElement => {
-          const width = img.naturalWidth || img.width;
-          const height = img.naturalHeight || img.height;
-
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          if (!ctx) return canvas;
-
-          ctx.drawImage(img, 0, 0);
-          const imgData = ctx.getImageData(0, 0, width, height);
-          const data = imgData.data;
-
-          let top = 0;
-          let bottom = height - 1;
-          let left = 0;
-          let right = width - 1;
-
-          // Find top
-          let found = false;
-          for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-              if (data[4 * (y * width + x) + 3] > 0) {
-                top = y;
-                found = true;
-                break;
-              }
-            }
-            if (found) break;
-          }
-
-          if (!found) {
-            // Completely empty image
-            return canvas;
-          }
-
-          // Find bottom
-          found = false;
-          for (let y = height - 1; y >= top; y--) {
-            for (let x = 0; x < width; x++) {
-              if (data[4 * (y * width + x) + 3] > 0) {
-                bottom = y;
-                found = true;
-                break;
-              }
-            }
-            if (found) break;
-          }
-
-          // Find left
-          found = false;
-          for (let x = 0; x < width; x++) {
-            for (let y = top; y <= bottom; y++) {
-              if (data[4 * (y * width + x) + 3] > 0) {
-                left = x;
-                found = true;
-                break;
-              }
-            }
-            if (found) break;
-          }
-
-          // Find right
-          found = false;
-          for (let x = width - 1; x >= left; x--) {
-            for (let y = top; y <= bottom; y++) {
-              if (data[4 * (y * width + x) + 3] > 0) {
-                right = x;
-                found = true;
-                break;
-              }
-            }
-            if (found) break;
-          }
-
-          const croppedWidth = right - left + 1;
-          const croppedHeight = bottom - top + 1;
-
-          const trimmed = document.createElement('canvas');
-          trimmed.width = croppedWidth;
-          trimmed.height = croppedHeight;
-          const trimmedCtx = trimmed.getContext('2d');
-          if (trimmedCtx) {
-            trimmedCtx.drawImage(img, left, top, croppedWidth, croppedHeight, 0, 0, croppedWidth, croppedHeight);
-          }
-          return trimmed;
-        };
-
-        const trimmedCanvas = trimCanvas(masterImg);
-
-        // Helper: drawCentered
-        const drawCentered = (
-          ctx: CanvasRenderingContext2D,
-          source: HTMLCanvasElement,
-          destX: number,
-          destY: number,
-          targetWidth: number,
-          targetHeight: number
-        ) => {
-          const sw = source.width;
-          const sh = source.height;
-          const scale = Math.min(targetWidth / sw, targetHeight / sh, 1);
-          const dw = sw * scale;
-          const dh = sh * scale;
-          const x = destX + (targetWidth - dw) / 2;
-          const y = destY + (targetHeight - dh) / 2;
-          ctx.drawImage(source, x, y, dw, dh);
-        };
-
-        // Helper: scaleDesignForProduct
-        const scaleDesignForProduct = (
-          sourceCanvas: HTMLCanvasElement,
-          finalWidth: number,
-          finalHeight: number,
-          margin = 0.075
-        ): HTMLCanvasElement => {
-          const sw = sourceCanvas.width;
-          const sh = sourceCanvas.height;
-
-          const mt = finalHeight * margin;
-          const mb = finalHeight * margin;
-          const ml = finalWidth * margin;
-          const mr = finalWidth * margin;
-
-          const safeW = finalWidth - ml - mr;
-          const safeH = finalHeight - mt - mb;
-
-          const scale = Math.min(safeW / sw, safeH / sh);
-          const dw = sw * scale;
-          const dh = sh * scale;
-
-          const ox = ml + (safeW - dw) / 2;
-          const oy = mt + (safeH - dh) / 2;
-
-          const canvas = document.createElement('canvas');
-          canvas.width = finalWidth;
-          canvas.height = finalHeight;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.clearRect(0, 0, finalWidth, finalHeight);
-            ctx.drawImage(sourceCanvas, ox, oy, dw, dh);
-          }
-          return canvas;
-        };
-
-        // Helper: createMugCanvas (2700 x 1050)
-        const createMugCanvas = (scaledSideDesign: HTMLCanvasElement): HTMLCanvasElement => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 2700;
-          canvas.height = 1050;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.clearRect(0, 0, 2700, 1050);
-            const w = 1050;
-            const h = 1045.646;
-            const y = (1050 - h) / 2;
-            drawCentered(ctx, scaledSideDesign, 59, y, w, h);
-            drawCentered(ctx, scaledSideDesign, 1591, y, w, h);
-          }
-          return canvas;
-        };
-
-        // Helper: createTwoSidedCanvas for Drinkware (3000 x 1400)
-        const createDrinkwareCanvas = (scaledSideDesign: HTMLCanvasElement): HTMLCanvasElement => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 3000;
-          canvas.height = 1400;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.clearRect(0, 0, 3000, 1400);
-            const w = 1400;
-            const h = 1400;
-            const y = 0;
-            drawCentered(ctx, scaledSideDesign, 31, y, w, h);
-            drawCentered(ctx, scaledSideDesign, 1566.6667, y, w, h);
-          }
-          return canvas;
-        };
-
-        // Helper: removeSpecks (< 25 px) - Zero-allocation & Early-cutoff optimiert
-        const removeSpecks = async (canvas: HTMLCanvasElement, minSize = 25): Promise<void> => {
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          if (!ctx) return;
-          const width = canvas.width;
-          const height = canvas.height;
-          const totalPixels = width * height;
-          const imgData = ctx.getImageData(0, 0, width, height);
-          const data = imgData.data;
-          const visited = new Uint8Array(totalPixels);
-          let modified = false;
-
-          // Wiederverwendbare feste Puffer statt Millionen Array-Objekten im V8-Heap
-          const queue = new Int32Array(Math.min(totalPixels, 100000));
-          const speckOffsets = new Int32Array(minSize);
-
-          for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-              const startIdx = y * width + x;
-              if (visited[startIdx] || data[4 * startIdx + 3] === 0) continue;
-
-              let head = 0;
-              let tail = 0;
-              queue[tail++] = startIdx;
-              visited[startIdx] = 1;
-
-              let componentSize = 0;
-              let isSpeck = true;
-
-              while (head < tail) {
-                const curIdx = queue[head++];
-                const cx = curIdx % width;
-                const cy = (curIdx / width) | 0;
-
-                if (isSpeck) {
-                  if (componentSize < minSize) {
-                    speckOffsets[componentSize] = 4 * curIdx;
-                  }
-                  componentSize++;
-                  if (componentSize >= minSize) {
-                    // Sobald Komponentengröße >= minSize: Definitiv kein Speck!
-                    // Stoppt sofort das Sammeln von Offsets, spart massiv Speicher
-                    isSpeck = false;
-                  }
-                }
-
-                // 8 Nachbarn absuchen
-                for (let dy = -1; dy <= 1; dy++) {
-                  const ny = cy + dy;
-                  if (ny < 0 || ny >= height) continue;
-                  const rowOffset = ny * width;
-                  for (let dx = -1; dx <= 1; dx++) {
-                    if (dx === 0 && dy === 0) continue;
-                    const nx = cx + dx;
-                    if (nx < 0 || nx >= width) continue;
-                    const nIdx = rowOffset + nx;
-                    if (!visited[nIdx] && data[4 * nIdx + 3] > 0) {
-                      visited[nIdx] = 1;
-                      if (tail < queue.length) {
-                        queue[tail++] = nIdx;
-                      }
-                    }
-                  }
-                }
-              }
-
-              // Wurde als isolierter Speck (< minSize) identifiziert: Pixel löschen
-              if (isSpeck && componentSize < minSize) {
-                for (let i = 0; i < componentSize; i++) {
-                  const offset = speckOffsets[i];
-                  data[offset] = 0;
-                  data[offset + 1] = 0;
-                  data[offset + 2] = 0;
-                  data[offset + 3] = 0;
-                }
-                modified = true;
-              }
-            }
-          }
-
-          if (modified) {
-            ctx.putImageData(imgData, 0, 0);
-          }
-        };
-
-        // Helper: applyBlackBrush
-        const applyBlackBrush = async (
-          sourceCanvas: HTMLCanvasElement,
-          brushP: HTMLImageElement | null
-        ): Promise<HTMLCanvasElement> => {
-          await removeSpecks(sourceCanvas);
-
-          const n = sourceCanvas.width;
-          const o = sourceCanvas.height;
-          const r = document.createElement('canvas');
-          const s = 0.15 * Math.max(n, o);
-          r.width = Math.ceil(n + 2 * s);
-          r.height = Math.ceil(o + 2 * s);
-          const a = r.getContext('2d');
-          if (!a) return sourceCanvas;
-
-          if (!brushP) {
-            // Fallback outline if brush_tip is missing
-            a.drawImage(sourceCanvas, s, s);
-            return r;
-          }
-
-          const u = 16;
-          const m = 3;
-          const h = [0.6, 0.9, 1.2];
-          const g: { canvas: HTMLCanvasElement; halfW: number; halfH: number }[] = [];
-
-          for (let e = 0; e < m; e++) {
-            const t = h[e];
-            const bw = Math.ceil(brushP.width * t);
-            const bh = Math.ceil(brushP.height * t);
-            const br = Math.ceil(Math.sqrt(bw * bw + bh * bh));
-            for (let k = 0; k < u; k++) {
-              const rot = (k / u) * Math.PI * 2;
-              const bc = document.createElement('canvas');
-              bc.width = br;
-              bc.height = br;
-              const bctx = bc.getContext('2d');
-              if (bctx) {
-                bctx.translate(br / 2, br / 2);
-                bctx.rotate(rot);
-                bctx.scale(t, t);
-                bctx.drawImage(brushP, -brushP.width / 2, -brushP.height / 2);
-                g.push({
-                  canvas: bc,
-                  halfW: br / 2,
-                  halfH: br / 2
-                });
-              }
-            }
-          }
-
-          const b = g.length;
-          const f = 0.1;
-          const y = document.createElement('canvas');
-          y.width = Math.ceil(n * f);
-          y.height = Math.ceil(o * f);
-          const v = y.getContext('2d', { willReadFrequently: true });
-          if (!v) return sourceCanvas;
-
-          v.drawImage(sourceCanvas, 0, 0, y.width, y.height);
-
-          for (let e = 0; e < 2; e++) {
-            v.drawImage(y, 1, 0);
-            v.drawImage(y, -1, 0);
-            v.drawImage(y, 0, 1);
-            v.drawImage(y, 0, -1);
-          }
-
-          const w = v.getImageData(0, 0, y.width, y.height);
-          for (let e = 0; e < w.data.length; e += 4) {
-            if (w.data[e + 3] > 0) {
-              w.data[e] = 0;
-              w.data[e + 1] = 0;
-              w.data[e + 2] = 0;
-              w.data[e + 3] = 255;
-            }
-          }
-          v.putImageData(w, 0, 0);
-
-          const xPts: { x: number; y: number }[] = [];
-          const kw = y.width;
-          const ch = y.height;
-          const ed = v.getImageData(0, 0, kw, ch).data;
-          const S = 2;
-          for (let e = 1; e < ch - 1; e += S) {
-            for (let t = 1; t < kw - 1; t += S) {
-              if (ed[4 * (e * kw + t) + 3] > 0) {
-                if (
-                  ed[4 * ((e - 1) * kw + t) + 3] !== 0 &&
-                  ed[4 * ((e + 1) * kw + t) + 3] !== 0 &&
-                  ed[4 * (e * kw + (t - 1)) + 3] !== 0 &&
-                  ed[4 * (e * kw + (t + 1)) + 3] !== 0
-                ) {
-                  // Internal pixel, ignore
-                } else {
-                  xPts.push({
-                    x: t / f + s,
-                    y: e / f + s
-                  });
-                }
-              }
-            }
-          }
-
-          const P = document.createElement('canvas');
-          P.width = r.width;
-          P.height = r.height;
-          const A = P.getContext('2d');
-          if (A) {
-            A.drawImage(sourceCanvas, s, s);
-            A.globalCompositeOperation = 'source-in';
-            A.fillStyle = 'black';
-            A.fillRect(0, 0, P.width, P.height);
-          }
-
-          a.drawImage(P, 0, 0);
-          for (let e = 0; e < 10; e++) {
-            a.drawImage(r, 1, 0);
-            a.drawImage(r, -1, 0);
-            a.drawImage(r, 0, 1);
-            a.drawImage(r, 0, -1);
-          }
-
-          const L = 0.5;
-          const TPts: { x: number; y: number }[] = [];
-          for (let e = 0; e < xPts.length; e++) {
-            if (Math.random() < L) {
-              TPts.push(xPts[e]);
-            }
-          }
-
-          for (let e = 0; e < TPts.length; e++) {
-            const pt = TPts[e];
-            const stamp = g[Math.floor(Math.random() * b)];
-            a.drawImage(stamp.canvas, pt.x - stamp.halfW, pt.y - stamp.halfH);
-          }
-
-          a.globalCompositeOperation = 'source-over';
-          a.drawImage(sourceCanvas, s, s);
-          return r;
-        };
-
-        // Generation 1: Trimmed Master
-        const trimmedDataUri = trimmedCanvas.toDataURL('image/png');
-
-        // Generation 2: Mug Standard (2700x1050)
-        const mugStandardScaled = scaleDesignForProduct(trimmedCanvas, 1050, 1050, 0.075);
-        const mugStandardCanvas = createMugCanvas(mugStandardScaled);
-        const mugStandardDataUri = mugStandardCanvas.toDataURL('image/png');
-
-        // Generation 3: Mug Brush (2700x1050)
-        const brushCanvas = await applyBlackBrush(trimmedCanvas, brushImg);
-        const mugBrushScaled = scaleDesignForProduct(brushCanvas, 1050, 1050, 0.075);
-        const mugBrushCanvas = createMugCanvas(mugBrushScaled);
-        const mugBrushDataUri = mugBrushCanvas.toDataURL('image/png');
-
-        // Generation 4: Drinkware Standard (3000x1400)
-        const drinkwareScaled = scaleDesignForProduct(trimmedCanvas, 1400, 1400, 0.075);
-        const drinkwareCanvas = createDrinkwareCanvas(drinkwareScaled);
-        const drinkwareStandardDataUri = drinkwareCanvas.toDataURL('image/png');
-
-        // Generation 5: Drinkware Brush (3000x1400 with Black Brush contour for Travel Tumbler)
-        // Nutzt exakt das gleiche organische brushCanvas wie der Mug mit 7.5% Margins (kein massiver Vollschwarz-Hintergrund)
-        const drinkwareBrushScaled = scaleDesignForProduct(brushCanvas, 1400, 1400, 0.075);
-        const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
-        const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL('image/png');
-
-        return {
-          trimmedDataUri,
-          mugStandardDataUri,
-          mugBrushDataUri,
-          drinkwareStandardDataUri,
-          drinkwareBrushDataUri
-        };
-      }, {
-        masterUri: masterPngDataUri,
-        brushUri: brushTipDataUri
-      });
-
-      // Write trimmed PNG (with 300 DPI)
-      const trimmedBuf = inject300Dpi(Buffer.from(evaluatedResults.trimmedDataUri.split(',')[1], 'base64'));
-      fs.writeFileSync(trimmedFilePath, trimmedBuf);
-
-      // Write Mug Standard PNG (with 300 DPI)
-      const mugStandardBuf = inject300Dpi(Buffer.from(evaluatedResults.mugStandardDataUri.split(',')[1], 'base64'));
-      fs.writeFileSync(mugStandardFilePath, mugStandardBuf);
-
-      // Write Mug Brush PNG (with 300 DPI)
-      const mugBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.mugBrushDataUri.split(',')[1], 'base64'));
-      fs.writeFileSync(mugBrushFilePath, mugBrushBuf);
-
-      // Write Drinkware Standard PNG (with 300 DPI)
-      const drinkwareBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareStandardDataUri.split(',')[1], 'base64'));
-      fs.writeFileSync(drinkwareStandardFilePath, drinkwareBuf);
-
-      // Write Drinkware Brush PNG (with 300 DPI)
-      const drinkwareBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareBrushDataUri.split(',')[1], 'base64'));
-      fs.writeFileSync(drinkwareBrushFilePath, drinkwareBrushBuf);
-
-      const memAfter = process.memoryUsage();
-      const rssDiffMb = ((memAfter.rss - memBefore.rss) / (1024 * 1024)).toFixed(1);
-      const totalRssMb = (memAfter.rss / (1024 * 1024)).toFixed(1);
-      console.log(`[ArtworkResizeService] ✅ Alle 5 Resized Varianten für Task #${taskId} erfolgreich gespeichert ✓ (Node RSS: ${totalRssMb}MB, Delta: ${Number(rssDiffMb) >= 0 ? '+' : ''}${rssDiffMb}MB)`);
-
-      return {
-        trimmedPath: trimmedFilePath,
-        mugStandardPath: mugStandardFilePath,
-        mugBrushPath: mugBrushFilePath,
-        drinkwareStandardPath: drinkwareStandardFilePath,
-        drinkwareBrushPath: drinkwareBrushFilePath
-      };
-    } finally {
-      await context.close();
-    }
   }
-
-  /**
-   * Generates a single CANVAS_BACKGROUND_CONTAIN product variant.
-   * Uses the trimmed PNG as source, creates a canvas with solid background,
-   * and proportionally contain-fits the design into the safe area.
-   * Crash-safe: writes to temp file, validates, then atomic renames.
-   */
-  public static async generateProductVariant(
-    taskId: string,
-    trimmedPngPath: string,
-    variantId: string,
-    config: ProductVariantGeneratorConfig
-  ): Promise<string> {
-    const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const designsDir = path.resolve(process.cwd(), 'data', 'designs');
-    if (!fs.existsSync(designsDir)) {
-      try { fs.mkdirSync(designsDir, { recursive: true }); } catch (e) {}
-    }
-
-    const outputFilename = `${cleanId}_${variantId.toLowerCase()}.png`;
-    const outputPath = path.join(designsDir, outputFilename);
-    const tmpPath = `${outputPath}.tmp`;
-
-    if (!fs.existsSync(trimmedPngPath)) {
-      throw new Error(`Trimmed PNG not found at: ${trimmedPngPath}`);
-    }
-
-    const bgColor = resolveBackgroundColor(config);
-    const { width: canvasW, height: canvasH } = config.canvas;
-    const paddingPct = config.paddingShortSidePct;
-
-    const trimmedBuffer = fs.readFileSync(trimmedPngPath);
-    const trimmedDataUri = `data:image/png;base64,${trimmedBuffer.toString('base64')}`;
-
-    console.log(`[ArtworkResizeService] 🎨 Generiere ${variantId} (${canvasW}×${canvasH}) für Task #${taskId}...`);
-
-    const browser = await getBrowser();
-    const context = await browser.newContext({
-      viewport: { width: Math.min(canvasW, 4500), height: Math.min(canvasH, 5400) },
-      deviceScaleFactor: 1
+  static async generateResizedArtworks(taskId: string, source: ArtworkSource | string): Promise<ResizedArtworksResult> {
+    const input: ArtworkSource = typeof source === 'string' ? {kind:'PNG',path:source} : source;
+    const fingerprint=this.fingerprint(input);
+    const files=await this.renderProfiles(taskId,input,artworkProfiles());
+    const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants }=files;
+    const renderFileHashes=Object.fromEntries(Object.entries(files).map(([key,file])=>[key,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]));
+    return {mugStandardPath,mugBrushPath,drinkwareStandardPath,drinkwareBrushPath,productVariants,renderFingerprint:fingerprint,renderFileHashes};
+  }
+  static async generateProductVariant(taskId: string, source: ArtworkSource | string, id: string, config: ProductVariantGeneratorConfig) {
+    const files=await this.renderProfiles(taskId,typeof source==='string'?{kind:'PNG',path:source}:source,[productProfile(id,config)]);
+    return files[id];
+  }
+  static async generateAllProductVariants(taskId: string, source: ArtworkSource | string) {
+    return this.renderProfiles(taskId,typeof source==='string'?{kind:'PNG',path:source}:source,artworkProfiles().filter(p=>!p.key.endsWith('Path')));
+  }
+  private static async renderProfiles(taskId: string, source: ArtworkSource, profiles: ArtworkProfile[]) {
+    profiles.forEach(validateProfile);
+    const cleanId=taskId.replace(/[^a-zA-Z0-9_-]/g,'_');
+    const dir=path.resolve(process.cwd(),'data','designs'); fs.mkdirSync(dir,{recursive:true});
+    const data=source.kind==='SVG'?source.svg:'data:image/png;base64,'+fs.readFileSync(source.path).toString('base64');
+    return ArtworkRenderSession.run(async page=>{
+      const geometry=await page.evaluate(installArtworkRuntime,{kind:source.kind,data});
+      console.log('[ArtworkRenderer] Quelle',source.kind,geometry.bounds);
+      if (profiles.some(p=>p.brush)) await page.evaluate(prepareBrushLayer,'data:image/png;base64,'+fs.readFileSync(this.getBrushTipPath()).toString('base64'));
+      const files: Record<string,string>={};
+      for(const profile of profiles) {
+        const start=Date.now();
+        const output=path.join(dir,cleanId+'_'+profile.suffix+'.png');
+        const temporary=output+'.'+randomUUID()+'.tmp';
+        try {
+          await page.setViewportSize({width:profile.width,height:profile.height});
+          await page.evaluate(p=>(window as any).__artwork.render(p),profile);
+          const png=await page.screenshot({type:'png',omitBackground:true,timeout:120000});
+          if(png.readUInt32BE(16)!==profile.width || png.readUInt32BE(20)!==profile.height) throw new Error('Artwork-Ausgabemaße stimmen nicht');
+          // Release the large viewport/image before decoding the output for validation.
+          await page.evaluate(()=>{(document.getElementById('output') as HTMLImageElement).src='';});
+          await page.setViewportSize({width:1,height:1});
+          // Decode before commit, not merely an existence/header check.
+          await page.evaluate(async uri=>{const image=new Image();image.src=uri;await image.decode();},'data:image/png;base64,'+png.toString('base64'));
+          fs.writeFileSync(temporary,inject300Dpi(png)); fs.renameSync(temporary,output);
+          files[profile.key]=output;
+          console.log('[ArtworkRenderer]',JSON.stringify({variant:profile.key,source:source.kind,width:profile.width,height:profile.height,ms:Date.now()-start,bytes:png.length}));
+        } finally { if(fs.existsSync(temporary)) fs.unlinkSync(temporary); }
+      }
+      return files;
     });
-    const page = await context.newPage();
-
-    try {
-      await page.addInitScript(() => {
-        (window as any).__name = (target: any) => target;
-      });
-      await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
-
-      const resultDataUri = await page.evaluate(async (params: {
-        trimmedUri: string;
-        canvasW: number;
-        canvasH: number;
-        paddingPct: number;
-        bgColor: string;
-      }) => {
-        const loadImage = (src: string): Promise<HTMLImageElement> => {
-          return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => resolve(img);
-            img.onerror = (e) => reject(e);
-            img.src = src;
-          });
-        };
-
-        const trimmedImg = await loadImage(params.trimmedUri);
-        const sourceW = trimmedImg.naturalWidth || trimmedImg.width;
-        const sourceH = trimmedImg.naturalHeight || trimmedImg.height;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = params.canvasW;
-        canvas.height = params.canvasH;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('Failed to get 2d context');
-
-        // Fill entire canvas with background color
-        ctx.fillStyle = params.bgColor;
-        ctx.fillRect(0, 0, params.canvasW, params.canvasH);
-
-        // Calculate safe area with symmetric padding
-        const paddingPx = Math.min(params.canvasW, params.canvasH) * params.paddingPct;
-        const safeW = params.canvasW - 2 * paddingPx;
-        const safeH = params.canvasH - 2 * paddingPx;
-
-        // Proportional contain fit (no stretching, no distortion, no cropping)
-        const scale = Math.min(safeW / sourceW, safeH / sourceH);
-        const drawW = sourceW * scale;
-        const drawH = sourceH * scale;
-
-        // Center within canvas
-        const x = (params.canvasW - drawW) / 2;
-        const y = (params.canvasH - drawH) / 2;
-
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(trimmedImg, x, y, drawW, drawH);
-
-        return canvas.toDataURL('image/png');
-      }, {
-        trimmedUri: trimmedDataUri,
-        canvasW,
-        canvasH,
-        paddingPct,
-        bgColor
-      });
-
-      // Write to temp file, inject 300 DPI, validate, then atomic rename
-      const pngBuffer = inject300Dpi(Buffer.from(resultDataUri.split(',')[1], 'base64'));
-      fs.writeFileSync(tmpPath, pngBuffer);
-
-      // Validate PNG magic bytes and minimum size
-      const tmpStats = fs.statSync(tmpPath);
-      if (tmpStats.size < 1000) {
-        throw new Error(`Generated ${variantId} PNG too small: ${tmpStats.size} bytes`);
-      }
-      const header = Buffer.alloc(8);
-      const fd = fs.openSync(tmpPath, 'r');
-      fs.readSync(fd, header, 0, 8, 0);
-      fs.closeSync(fd);
-      const isPng = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47;
-      if (!isPng) {
-        throw new Error(`Generated ${variantId} file is not a valid PNG`);
-      }
-
-      // Atomic rename
-      fs.renameSync(tmpPath, outputPath);
-      console.log(`[ArtworkResizeService] ✅ ${variantId} (${canvasW}×${canvasH}) gespeichert: ${outputPath}`);
-
-      return outputPath;
-    } finally {
-      await context.close();
-      // Clean up temp file if still exists (error case)
-      try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (e) {}
-    }
-  }
-
-  /**
-   * Generates ALL product variants registered in ARTWORK_VARIANT_REGISTRY that have a generator config.
-   * Executes sequentially within the existing resize mutex to prevent parallel memory spikes.
-   * Returns a Record<variantId, filePath> for storage in resizedAssets.productVariants.
-   */
-  public static async generateAllProductVariants(
-    taskId: string,
-    trimmedPngPath: string
-  ): Promise<Record<string, string>> {
-    const variants = getGeneratableVariants();
-    if (variants.length === 0) return {};
-
-    console.log(`[ArtworkResizeService] 📐 Generiere ${variants.length} Product-Varianten für Task #${taskId}...`);
-
-    const result: Record<string, string> = {};
-
-    // Sequential generation: one at a time to preserve RAM
-    for (const variant of variants) {
-      if (!variant.generator) continue;
-      const outputPath = await this.generateProductVariant(
-        taskId,
-        trimmedPngPath,
-        variant.id,
-        variant.generator
-      );
-      result[variant.id] = outputPath;
-    }
-
-    console.log(`[ArtworkResizeService] ✅ Alle ${Object.keys(result).length} Product-Varianten für Task #${taskId} erfolgreich generiert.`);
-    return result;
   }
 }

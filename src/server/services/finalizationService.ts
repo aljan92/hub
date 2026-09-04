@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { randomUUID } from 'node:crypto';
 import path from 'path';
 import { TaskLogService, DesignTaskLog } from './taskLogService';
 import { QueueService, QueueItem } from './queueService';
@@ -46,7 +47,7 @@ export class FinalizationService {
    * Atomically executes:
    * 1. Deterministic Listing Sanitization (Amazon Charset safe, preserving Umlauts/Kanji/Accents)
    * 2. Final Strict Validation (no semantic mutations, strictly enforces limits)
-   * 3. Master Artwork & Trimmed Resizes (exactly once, using trimmed content as source)
+   * 3. Direct SVG output / PNG output without upscaling (no trimmed file)
    * 4. Asset Verification on disk
    * 5. Atomic Queue Handoff with all task completion side-effects preserved
    */
@@ -175,7 +176,7 @@ export class FinalizationService {
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'FINALIZATION_EVENT' as any,
-      title: '📐 Artwork-Vorbereitung (Alpha Trim & Two-Sided Resizes)...',
+      title: '📐 Artwork-Vorbereitung (gemeinsame Quellen- und Formatprüfung)...',
       content: { phase: 'ARTWORK_PREPARATION', status: 'RUNNING' }
     });
 
@@ -194,93 +195,38 @@ export class FinalizationService {
       return { success: false, error: err };
     }
 
-    let resizedAssets = params.artifactRunId ? undefined : task?.resizedAssets;
-    const areLegacyAssetsValid = resizedAssets &&
-      resizedAssets.trimmedPath && fs.existsSync(resizedAssets.trimmedPath) &&
-      resizedAssets.mugStandardPath && fs.existsSync(resizedAssets.mugStandardPath) &&
-      resizedAssets.mugBrushPath && fs.existsSync(resizedAssets.mugBrushPath) &&
-      resizedAssets.drinkwareStandardPath && fs.existsSync(resizedAssets.drinkwareStandardPath) &&
-      resizedAssets.drinkwareBrushPath && fs.existsSync(resizedAssets.drinkwareBrushPath);
-
-    if (areLegacyAssetsValid) {
-      console.log(`[FinalizationService] ⚡ Legacy Resized Assets für Task #${taskId} bereits vorhanden. Überspringe doppelten Resize.`);
-    } else {
-      try {
-        // Execute legacy resize exactly once via ArtworkResizeService mutex
-        resizedAssets = await ArtworkResizeService.generateResizedArtworks(params.artifactRunId || taskId, masterPngPath);
-      } catch (resizeErr: any) {
-        const err = `Fehler bei Artwork-Resize: ${resizeErr.message}`;
-        console.error(`[FinalizationService] ❌ ${err}`);
-
-        TaskLogService.addEvent(taskId, {
-          timestamp: new Date().toISOString(),
-          type: 'FINALIZATION_EVENT' as any,
-          title: '❌ Artwork-Resize fehlgeschlagen',
-          content: { phase: 'ARTWORK_PREPARATION', status: 'FAILED', error: err }
-        });
-
-        TaskLogService.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
-        return { success: false, error: err };
-      }
-    }
-
-    // ─── PHASE 3b: PRODUCT VARIANT GENERATION (CANVAS_BACKGROUND_CONTAIN) ───
-    // Every task receives ALL registered product variants, regardless of product selection.
-    // Product Catalog only decides which variant is used at upload time.
-    const { getGeneratableVariants: getGenVariants } = await import('./productCatalogService');
-    const generatableVariants = getGenVariants();
-
-    if (generatableVariants.length > 0) {
-      // Check if all product variants are already valid on disk
-      const existingProductVariants = resizedAssets?.productVariants || {};
-      const allProductVariantsValid = generatableVariants.every(v =>
-        existingProductVariants[v.id] && fs.existsSync(existingProductVariants[v.id])
-      );
-
-      if (allProductVariantsValid) {
-        console.log(`[FinalizationService] ⚡ Alle ${generatableVariants.length} Product-Varianten für Task #${taskId} bereits vorhanden.`);
-        // Ensure productVariants is set on resizedAssets
-        if (!resizedAssets!.productVariants) {
-          resizedAssets!.productVariants = existingProductVariants;
-        }
+    let resizedAssets: ResizedArtworksResult | undefined;
+    const { getGeneratableVariants } = await import('./productCatalogService');
+    const generatableVariants = getGeneratableVariants();
+    try {
+      const source = ArtworkResizeService.source(task, masterPngPath);
+      const sourceFingerprint = ArtworkResizeService.fingerprint(source);
+      TaskLogService.addEvent(taskId, {
+        timestamp: new Date().toISOString(), type: 'FINALIZATION_EVENT' as any,
+        title: source.kind === 'SVG' ? '🎨 Varianten direkt aus freigegebenem SVG rendern...' : '🎨 PNG-Varianten vorbereiten – Original-Pixelgröße, keine Vergrößerung...',
+        content: { phase: 'PRODUCT_VARIANT_GENERATION', status: 'RUNNING', source: source.kind }
+      });
+      if (!params.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint)) {
+        resizedAssets = task!.resizedAssets as ResizedArtworksResult;
       } else {
-        try {
-          const trimmedPath = resizedAssets!.trimmedPath;
-          if (!trimmedPath || !fs.existsSync(trimmedPath)) {
-            throw new Error(`Trimmed PNG nicht gefunden für Product-Variant-Generierung: ${trimmedPath}`);
-          }
-
-          TaskLogService.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'FINALIZATION_EVENT' as any,
-            title: `🎨 ${generatableVariants.length} Product-Varianten werden generiert...`,
-            content: { phase: 'PRODUCT_VARIANT_GENERATION', status: 'RUNNING', variants: generatableVariants.map(v => v.id) }
-          });
-
-          const productVariants = await ArtworkResizeService.generateAllProductVariants(params.artifactRunId || taskId, trimmedPath);
-          resizedAssets!.productVariants = productVariants;
-        } catch (pvErr: any) {
-          const err = `Fehler bei Product-Variant-Generierung: ${pvErr.message}`;
-          console.error(`[FinalizationService] ❌ ${err}`);
-
-          TaskLogService.addEvent(taskId, {
-            timestamp: new Date().toISOString(),
-            type: 'FINALIZATION_EVENT' as any,
-            title: '❌ Product-Variant-Generierung fehlgeschlagen',
-            content: { phase: 'PRODUCT_VARIANT_GENERATION', status: 'FAILED', error: err }
-          });
-
-          TaskLogService.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
-          return { success: false, error: err };
-        }
+        // Existing referenced files stay untouched until the complete replacement is ready.
+        const runId = params.artifactRunId || (task?.resizedAssets ? taskId + '_rebuild_' + randomUUID() : taskId);
+        resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source);
+        const currentSource = ArtworkResizeService.source(TaskLogService.getTask(taskId), masterPngPath);
+        if (ArtworkResizeService.fingerprint(currentSource) !== sourceFingerprint) throw new Error('Artwork-Quelle wurde während des Renderns geändert; keine Übernahme.');
       }
+    } catch (error: any) {
+      const err = 'Fehler bei Artwork-Vorbereitung: ' + error.message;
+      TaskLogService.addEvent(taskId, { timestamp: new Date().toISOString(), type: 'FINALIZATION_EVENT' as any,
+        title: '❌ Artwork-Vorbereitung fehlgeschlagen', content: { phase: 'ARTWORK_PREPARATION', status: 'FAILED', error: err } });
+      TaskLogService.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+      return { success: false, error: err };
     }
 
     // =========================================================================
     // PHASE 4: FINAL ASSET VALIDATION (Verifying files on disk)
     // =========================================================================
     const requiredFiles = [
-      { name: 'Trimmed Master', path: resizedAssets!.trimmedPath },
       { name: 'Mug Standard', path: resizedAssets!.mugStandardPath },
       { name: 'Mug Brush', path: resizedAssets!.mugBrushPath },
       { name: 'Drinkware Standard', path: resizedAssets!.drinkwareStandardPath },

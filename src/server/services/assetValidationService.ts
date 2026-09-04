@@ -63,11 +63,11 @@ export class AssetValidationService {
    */
   public static areResizeAssetsComplete(task: DesignTaskLog): boolean {
     if (!task.resizedAssets) return false;
-    const { trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants } = task.resizedAssets;
+    const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants } = task.resizedAssets;
 
     // Validate legacy fixed-field assets
-    const legacyPaths = [trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath].filter(Boolean);
-    if (legacyPaths.length === 0) return false;
+    const legacyPaths = [mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath];
+    if (legacyPaths.some(p => !p)) return false;
 
     for (const p of legacyPaths) {
       if (!this.isValidPngImage(p, 1000)) {

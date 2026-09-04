@@ -26185,7 +26185,7 @@ var require_websocket = __commonJS2({
     var http2 = require("http");
     var net = require("net");
     var tls = require("tls");
-    var { randomBytes, createHash: createHash2 } = require("crypto");
+    var { randomBytes, createHash: createHash3 } = require("crypto");
     var { Duplex, Readable } = require("stream");
     var { URL: URL2 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -26853,7 +26853,7 @@ var require_websocket = __commonJS2({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash2("sha1").update(key + GUID).digest("base64");
+        const digest = createHash3("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -27222,7 +27222,7 @@ var require_websocket_server = __commonJS2({
     var EventEmitter = require("events");
     var http2 = require("http");
     var { Duplex } = require("stream");
-    var { createHash: createHash2 } = require("crypto");
+    var { createHash: createHash3 } = require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -27529,7 +27529,7 @@ var require_websocket_server = __commonJS2({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash2("sha1").update(key + GUID).digest("base64");
+        const digest = createHash3("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -49994,13 +49994,13 @@ var init_productCatalogService = __esm2({
       // ─── New CANVAS_BACKGROUND_CONTAIN variants ────────────────────────────────
       CANVAS_BG_CONTAIN_4452X5292_DARK: {
         id: "CANVAS_BG_CONTAIN_4452X5292_DARK",
-        label: "Blanket Format \u2013 6678 \xD7 7938 (150% Test)",
+        label: "Blanket Format \u2013 8904 \xD7 10584 (200%)",
         storageType: "productVariants",
         generator: {
           mode: "CANVAS_BACKGROUND_CONTAIN",
-          source: "TRIMMED",
-          // Temporary 150% placement experiment; keep the persisted variant ID stable.
-          canvas: { width: 6678, height: 7938 },
+          source: "VISIBLE_ARTWORK",
+          // Keep the persisted variant ID stable; output dimensions are versioned separately.
+          canvas: { width: 8904, height: 10584 },
           paddingShortSidePct: 0.1,
           backgroundProfile: "DARK_PRODUCT"
         }
@@ -50011,7 +50011,7 @@ var init_productCatalogService = __esm2({
         storageType: "productVariants",
         generator: {
           mode: "CANVAS_BACKGROUND_CONTAIN",
-          source: "TRIMMED",
+          source: "VISIBLE_ARTWORK",
           canvas: { width: 6480, height: 8100 },
           paddingShortSidePct: 0.08,
           backgroundProfile: "DARK_PRODUCT"
@@ -50023,7 +50023,7 @@ var init_productCatalogService = __esm2({
         storageType: "productVariants",
         generator: {
           mode: "CANVAS_BACKGROUND_CONTAIN",
-          source: "TRIMMED",
+          source: "VISIBLE_ARTWORK",
           canvas: { width: 4480, height: 3472 },
           paddingShortSidePct: 0.08,
           backgroundProfile: "DARK_PRODUCT"
@@ -50035,7 +50035,7 @@ var init_productCatalogService = __esm2({
         storageType: "productVariants",
         generator: {
           mode: "CANVAS_BACKGROUND_CONTAIN",
-          source: "TRIMMED",
+          source: "VISIBLE_ARTWORK",
           canvas: { width: 4500, height: 3750 },
           paddingShortSidePct: 0.09,
           backgroundProfile: "DARK_PRODUCT"
@@ -66817,7 +66817,7 @@ var require_utilsBundle = __commonJS2({
         var http22 = require("http");
         var net4 = require("net");
         var tls3 = require("tls");
-        var { randomBytes, createHash: createHash2 } = require("crypto");
+        var { randomBytes, createHash: createHash3 } = require("crypto");
         var { Duplex, Readable: Readable2 } = require("stream");
         var { URL: URL5 } = require("url");
         var PerMessageDeflate2 = require_permessage_deflate2();
@@ -67485,7 +67485,7 @@ var require_utilsBundle = __commonJS2({
               abortHandshake(websocket, socket, "Invalid Upgrade header");
               return;
             }
-            const digest = createHash2("sha1").update(key + GUID).digest("base64");
+            const digest = createHash3("sha1").update(key + GUID).digest("base64");
             if (res.headers["sec-websocket-accept"] !== digest) {
               abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
               return;
@@ -67848,7 +67848,7 @@ var require_utilsBundle = __commonJS2({
         var EventEmitter22 = require("events");
         var http22 = require("http");
         var { Duplex } = require("stream");
-        var { createHash: createHash2 } = require("crypto");
+        var { createHash: createHash3 } = require("crypto");
         var extension2 = require_extension2();
         var PerMessageDeflate2 = require_permessage_deflate2();
         var subprotocol2 = require_subprotocol2();
@@ -68155,7 +68155,7 @@ var require_utilsBundle = __commonJS2({
               );
             }
             if (this._state > RUNNING) return abortHandshake(socket, 503);
-            const digest = createHash2("sha1").update(key + GUID).digest("base64");
+            const digest = createHash3("sha1").update(key + GUID).digest("base64");
             const headers = [
               "HTTP/1.1 101 Switching Protocols",
               "Upgrade: websocket",
@@ -111518,7 +111518,7 @@ ${end.comment}` : end.comment;
     minimatch.escape = escape2;
     minimatch.unescape = unescape2;
     var import_node_process7 = __toESM3(require("node:process"), 1);
-    var import_node_path = __toESM3(require("node:path"), 1);
+    var import_node_path2 = __toESM3(require("node:path"), 1);
     var import_node_url = require("node:url");
     var import_node_child_process7 = __toESM3(require("node:child_process"), 1);
     var import_promises2 = __toESM3(require("node:fs/promises"), 1);
@@ -111528,7 +111528,7 @@ ${end.comment}` : end.comment;
     var import_node_process = __toESM3(require("node:process"), 1);
     var import_node_os = __toESM3(require("node:os"), 1);
     var import_node_fs3 = __toESM3(require("node:fs"), 1);
-    var import_node_fs2 = __toESM3(require("node:fs"), 1);
+    var import_node_fs22 = __toESM3(require("node:fs"), 1);
     var import_node_fs4 = __toESM3(require("node:fs"), 1);
     var isDockerCached;
     function hasDockerEnv() {
@@ -111555,7 +111555,7 @@ ${end.comment}` : end.comment;
     var cachedResult;
     var hasContainerEnv = () => {
       try {
-        import_node_fs2.default.statSync("/run/.containerenv");
+        import_node_fs22.default.statSync("/run/.containerenv");
         return true;
       } catch {
         return false;
@@ -111591,9 +111591,9 @@ ${end.comment}` : end.comment;
     var is_wsl_default = import_node_process.default.env.__IS_WSL_TEST__ ? isWsl : isWsl();
     var import_node_process2 = __toESM3(require("node:process"), 1);
     var import_node_buffer = require("node:buffer");
-    var import_node_util = require("node:util");
-    var import_node_child_process = __toESM3(require("node:child_process"), 1);
-    var execFile = (0, import_node_util.promisify)(import_node_child_process.default.execFile);
+    var import_node_util3 = require("node:util");
+    var import_node_child_process3 = __toESM3(require("node:child_process"), 1);
+    var execFile2 = (0, import_node_util3.promisify)(import_node_child_process3.default.execFile);
     var powerShellPath = () => `${import_node_process2.default.env.SYSTEMROOT || import_node_process2.default.env.windir || String.raw`C:\Windows`}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
     var executePowerShell = async (command, options2 = {}) => {
       const {
@@ -111601,7 +111601,7 @@ ${end.comment}` : end.comment;
         ...execFileOptions
       } = options2;
       const encodedCommand = executePowerShell.encodeCommand(command);
-      return execFile(
+      return execFile2(
         psPath ?? powerShellPath(),
         [
           ...executePowerShell.argumentsPrefix,
@@ -111634,7 +111634,7 @@ ${end.comment}` : end.comment;
         return match2.groups.mountPoint.trim().replaceAll(/^["']|["']$/g, "");
       }
     }
-    var execFile2 = (0, import_node_util2.promisify)(import_node_child_process2.default.execFile);
+    var execFile22 = (0, import_node_util2.promisify)(import_node_child_process2.default.execFile);
     var wslDrivesMountPoint = /* @__PURE__ */ (() => {
       const defaultMountPoint = "/mnt/";
       let mountPoint;
@@ -111691,7 +111691,7 @@ ${end.comment}` : end.comment;
         return path42;
       }
       try {
-        const { stdout } = await execFile2("wslpath", ["-aw", path42], { encoding: "utf8" });
+        const { stdout } = await execFile22("wslpath", ["-aw", path42], { encoding: "utf8" });
         return stdout.trim();
       } catch {
         return path42;
@@ -111716,10 +111716,10 @@ ${end.comment}` : end.comment;
     var import_node_util6 = require("node:util");
     var import_node_process5 = __toESM3(require("node:process"), 1);
     var import_node_child_process6 = require("node:child_process");
-    var import_node_util3 = require("node:util");
+    var import_node_util32 = require("node:util");
     var import_node_process3 = __toESM3(require("node:process"), 1);
-    var import_node_child_process3 = require("node:child_process");
-    var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process3.execFile);
+    var import_node_child_process32 = require("node:child_process");
+    var execFileAsync = (0, import_node_util32.promisify)(import_node_child_process32.execFile);
     async function defaultBrowserId() {
       if (import_node_process3.default.platform !== "darwin") {
         throw new Error("macOS only");
@@ -111819,8 +111819,8 @@ tell application "System Events" to get value of property list item "CFBundleNam
     var is_in_ssh_default = isInSsh;
     var import_meta2 = {};
     var fallbackAttemptSymbol = /* @__PURE__ */ Symbol("fallbackAttempt");
-    var __dirname2 = import_meta2.url ? import_node_path.default.dirname((0, import_node_url.fileURLToPath)(import_meta2.url)) : "";
-    var localXdgOpenPath = import_node_path.default.join(__dirname2, "xdg-open");
+    var __dirname2 = import_meta2.url ? import_node_path2.default.dirname((0, import_node_url.fileURLToPath)(import_meta2.url)) : "";
+    var localXdgOpenPath = import_node_path2.default.join(__dirname2, "xdg-open");
     var { platform, arch } = import_node_process7.default;
     var tryEachApp = async (apps2, opener) => {
       if (apps2.length === 0) {
@@ -112247,7 +112247,7 @@ tell application "System Events" to get value of property list item "CFBundleNam
     }
     var import_node_events = require("node:events");
     var import_node_child_process8 = __toESM3(require("node:child_process"), 1);
-    var import_node_path2 = __toESM3(require("node:path"), 1);
+    var import_node_path22 = __toESM3(require("node:path"), 1);
     var import_node_fs42 = __toESM3(require("node:fs"), 1);
     var import_node_process8 = __toESM3(require("node:process"), 1);
     var import_node_util8 = require("node:util");
@@ -114225,9 +114225,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
         args = args.slice();
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
-          const localBin = import_node_path2.default.resolve(baseDir, baseName);
+          const localBin = import_node_path22.default.resolve(baseDir, baseName);
           if (import_node_fs42.default.existsSync(localBin)) return localBin;
-          if (sourceExt.includes(import_node_path2.default.extname(baseName))) return void 0;
+          if (sourceExt.includes(import_node_path22.default.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
             (ext2) => import_node_fs42.default.existsSync(`${localBin}${ext2}`)
           );
@@ -114245,17 +114245,17 @@ Expecting one of '${allowedValues.join("', '")}'`);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
-          executableDir = import_node_path2.default.resolve(
-            import_node_path2.default.dirname(resolvedScriptPath),
+          executableDir = import_node_path22.default.resolve(
+            import_node_path22.default.dirname(resolvedScriptPath),
             executableDir
           );
         }
         if (executableDir) {
           let localFile = findFile(executableDir, executableFile);
           if (!localFile && !subcommand._executableFile && this._scriptPath) {
-            const legacyName = import_node_path2.default.basename(
+            const legacyName = import_node_path22.default.basename(
               this._scriptPath,
-              import_node_path2.default.extname(this._scriptPath)
+              import_node_path22.default.extname(this._scriptPath)
             );
             if (legacyName !== this._name) {
               localFile = findFile(
@@ -114266,7 +114266,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
           }
           executableFile = localFile || executableFile;
         }
-        const launchWithNode = sourceExt.includes(import_node_path2.default.extname(executableFile));
+        const launchWithNode = sourceExt.includes(import_node_path22.default.extname(executableFile));
         let proc;
         if (import_node_process8.default.platform !== "win32") {
           if (launchWithNode) {
@@ -115183,7 +115183,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @return {Command}
        */
       nameFromFilename(filename) {
-        this._name = import_node_path2.default.basename(filename, import_node_path2.default.extname(filename));
+        this._name = import_node_path22.default.basename(filename, import_node_path22.default.extname(filename));
         return this;
       }
       /**
@@ -141360,7 +141360,7 @@ ${value2}`, dataLines++;
         this._protocolVersion = version22;
       }
     };
-    var import_node_crypto2 = require("node:crypto");
+    var import_node_crypto4 = require("node:crypto");
     var import_node_tls = require("node:tls");
     var import_bytes = __toESM3(require_bytes2());
     function getRawBody(req, { limit, encoding }) {
@@ -141396,7 +141396,7 @@ ${value2}`, dataLines++;
       constructor(_endpoint, res, options2) {
         this._endpoint = _endpoint;
         this.res = res;
-        this._sessionId = (0, import_node_crypto2.randomUUID)();
+        this._sessionId = (0, import_node_crypto4.randomUUID)();
         this._options = options2 || { enableDnsRebindingProtection: false };
       }
       /**
@@ -218977,6 +218977,620 @@ var init_browserSessionService = __esm2({
   }
 });
 
+// src/server/services/artworkRenderSession.ts
+async function processTreeRss(root) {
+  const { stdout } = await execute("ps", ["-axo", "pid=,ppid=,rss="], { timeout: 3e3, maxBuffer: 4 * 1024 * 1024 });
+  const rows = stdout.trim().split("\n").map((line) => line.trim().split(/\s+/).map(Number));
+  const included = /* @__PURE__ */ new Set([root]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [pid, parent] of rows) if (included.has(parent) && !included.has(pid)) {
+      included.add(pid);
+      changed = true;
+    }
+  }
+  return rows.reduce((total, [pid, , rss]) => total + (included.has(pid) ? rss : 0), 0) / 1024;
+}
+var import_node_child_process, import_node_util, execute, ArtworkRenderSession;
+var init_artworkRenderSession = __esm2({
+  "src/server/services/artworkRenderSession.ts"() {
+    "use strict";
+    init_playwright3();
+    import_node_child_process = require("node:child_process");
+    import_node_util = require("node:util");
+    init_browserSessionService();
+    execute = (0, import_node_util.promisify)(import_node_child_process.execFile);
+    ArtworkRenderSession = class {
+      static tail = Promise.resolve();
+      static async run(work) {
+        const previous = this.tail;
+        let release;
+        this.tail = new Promise((resolve) => {
+          release = resolve;
+        });
+        await previous;
+        let browser;
+        let server3;
+        let timer;
+        let sampler;
+        let sampleInFlight;
+        let peakProcessTreeRssMiB = null;
+        const started = Date.now();
+        try {
+          server3 = await chromium.launchServer({
+            executablePath: findChromiumExecutable() || void 0,
+            headless: true,
+            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+          });
+          browser = await chromium.connect(server3.wsEndpoint());
+          const pid = server3.process().pid;
+          const sample = () => {
+            if (!pid || sampleInFlight) return;
+            sampleInFlight = processTreeRss(pid).then((rss) => {
+              peakProcessTreeRssMiB = Math.max(peakProcessTreeRssMiB || 0, rss);
+            }).catch(() => {
+            }).finally(() => {
+              sampleInFlight = void 0;
+            });
+          };
+          sample();
+          sampler = setInterval(sample, 1e3);
+          const context2 = await browser.newContext({ viewport: { width: 4500, height: 5400 }, deviceScaleFactor: 1 });
+          await context2.route("**/*", (route2) => route2.abort());
+          const page = await context2.newPage();
+          page.setDefaultTimeout(12e4);
+          await page.setContent('<html><head><style>*{margin:0;padding:0}body{background:transparent}img{display:block}</style><script>window.__name=t=>t;</script></head><body><img id="output"></body></html>');
+          const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => {
+              reject(new Error("Artwork-Renderzeit \xFCberschritten (10 Minuten)"));
+              void browser?.close();
+            }, 6e5);
+          });
+          return await Promise.race([work(page), timeout]);
+        } finally {
+          if (timer) clearTimeout(timer);
+          if (sampler) clearInterval(sampler);
+          await sampleInFlight;
+          try {
+            await browser?.close();
+          } finally {
+            try {
+              await server3?.close();
+            } finally {
+              console.log("[ArtworkRenderer] Job-Ressourcen", JSON.stringify({ ms: Date.now() - started, peakProcessTreeRssMiB, sampleIntervalMs: 1e3 }));
+              release();
+            }
+          }
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/artworkRenderRuntime.ts
+async function installArtworkRuntime(params2) {
+  const load = async (uri2) => {
+    const img = new Image();
+    img.src = uri2;
+    await img.decode();
+    return img;
+  };
+  const encode = (text2) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text2)}`;
+  const xml = (text2) => text2.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  const wrap = (width2, height2, body2, box = `0 0 ${width2} ${height2}`) => `<svg xmlns="http://www.w3.org/2000/svg" width="${width2}" height="${height2}" viewBox="${box}">${body2}</svg>`;
+  let width, height, body, uri;
+  if (params2.kind === "SVG") {
+    const document2 = new DOMParser().parseFromString(params2.data, "image/svg+xml");
+    const root = document2.documentElement;
+    if (root.localName !== "svg" || document2.querySelector("parsererror")) throw new Error("Ung\xFCltige SVG-Quelle");
+    for (const el of Array.from(root.querySelectorAll("*")).concat(root)) {
+      if (["script", "foreignObject"].includes(el.localName)) throw new Error("Aktiver SVG-Inhalt nicht erlaubt");
+      for (const attr of Array.from(el.attributes)) {
+        if (/^on/i.test(attr.name)) throw new Error("SVG-Eventhandler nicht erlaubt");
+        if (attr.localName === "href" && !/^(#|data:image\/)/i.test(attr.value) || /url\(\s*['"]?(?!#|data:)[^\s)]/i.test(attr.value) && /(?:https?:|file:|\/\/)/i.test(attr.value)) throw new Error("Externe SVG-Ressource nicht erlaubt");
+      }
+    }
+    if (/@import|url\(\s*['"]?(?:https?:|file:|\/\/)/i.test(params2.data)) throw new Error("Externe SVG-Ressource nicht erlaubt");
+    width = params2.masterWidth || 4500;
+    height = params2.masterHeight || 5400;
+    root.setAttribute("x", String((width - Math.round(width * 0.9)) / 2));
+    root.setAttribute("y", String((height - Math.round(height * 0.9)) / 2));
+    root.setAttribute("width", String(Math.round(width * 0.9)));
+    root.setAttribute("height", String(Math.round(height * 0.9)));
+    root.style.setProperty("width", `${Math.round(width * 0.9)}px`);
+    root.style.setProperty("height", `${Math.round(height * 0.9)}px`);
+    body = new XMLSerializer().serializeToString(root);
+    uri = encode(wrap(width, height, body));
+  } else {
+    const img = await load(params2.data);
+    width = img.naturalWidth;
+    height = img.naturalHeight;
+    if (width * height > 1e8) throw new Error("PNG-Quelle \xFCberschreitet Pixelbudget");
+    body = `<image width="${width}" height="${height}" href="${xml(params2.data)}"/>`;
+    uri = params2.data;
+  }
+  const image = await load(uri);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(image, 0, 0, width, height);
+  const pixels = ctx.getImageData(0, 0, width, height).data;
+  let left = width, top = height, right = -1, bottom = -1;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    if (pixels[(y * width + x) * 4 + 3]) {
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  canvas.width = 0;
+  canvas.height = 0;
+  if (right < left) throw new Error("Artwork ist vollst\xE4ndig transparent");
+  const bounds = { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
+  const crop = (w, h) => wrap(w, h, body, `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
+  const state = { kind: params2.kind, bounds, wrap, encode, xml, load, crop, brush: null };
+  state.render = async (profile) => {
+    const { width: w, height: h } = profile;
+    let content = profile.background ? `<rect width="100%" height="100%" fill="${xml(profile.background)}"/>` : "";
+    if (profile.master) {
+      content += `<svg width="${w}" height="${h}" viewBox="0 0 ${width} ${height}">${body}</svg>`;
+    } else {
+      for (const box of profile.boxes) {
+        const brush = profile.brush ? state.brush : null;
+        if (profile.brush && !brush) throw new Error("Brush-Ebene fehlt");
+        const bw = brush?.width || bounds.width, bh = brush?.height || bounds.height;
+        const scale = Math.min(box.width / bw, box.height / bh, params2.kind === "PNG" ? 1 : Infinity);
+        const dw = bw * scale, dh = bh * scale;
+        let x = box.x + (box.width - dw) / 2, y = box.y + (box.height - dh) / 2;
+        if (params2.kind === "PNG" && scale === 1) {
+          x = Math.round(x);
+          y = Math.round(y);
+        }
+        if (brush) content += `<image x="${x}" y="${y}" width="${dw}" height="${dh}" href="${xml(brush.uri)}"/>`;
+        const offset = brush?.padding || 0;
+        const artX = params2.kind === "PNG" && scale === 1 ? Math.round(x + offset) : x + offset * scale;
+        const artY = params2.kind === "PNG" && scale === 1 ? Math.round(y + offset) : y + offset * scale;
+        content += `<svg x="${artX}" y="${artY}" width="${bounds.width * scale}" height="${bounds.height * scale}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}">${body}</svg>`;
+      }
+    }
+    const output = document.getElementById("output");
+    output.style.width = `${w}px`;
+    output.style.height = `${h}px`;
+    output.src = encode(wrap(w, h, content));
+    await output.decode();
+  };
+  window.__artwork = state;
+  return { width, height, bounds, kind: params2.kind };
+}
+var init_artworkRenderRuntime = __esm2({
+  "src/server/services/artworkRenderRuntime.ts"() {
+    "use strict";
+  }
+});
+
+// src/server/services/artworkBrushRuntime.ts
+async function prepareBrushLayer(brushUri) {
+  const state = window.__artwork;
+  const sourceImage = await state.load(state.encode(state.crop(state.bounds.width, state.bounds.height)));
+  const source12 = document.createElement("canvas");
+  source12.width = state.bounds.width;
+  source12.height = state.bounds.height;
+  source12.getContext("2d").drawImage(sourceImage, 0, 0);
+  const brushImage = await state.load(brushUri);
+  let seed = 2166136261;
+  for (let i = 0; i < sourceImage.src.length; i++) seed = Math.imul(seed ^ sourceImage.src.charCodeAt(i), 16777619) >>> 0;
+  const random = () => {
+    seed = Math.imul(seed, 1664525) + 1013904223 >>> 0;
+    return seed / 4294967296;
+  };
+  const removeSpecks = async (canvas, minSize = 25) => {
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+    const width = canvas.width;
+    const height = canvas.height;
+    const totalPixels = width * height;
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+    const visited = new Uint8Array(totalPixels);
+    let modified = false;
+    const queue = new Int32Array(Math.min(totalPixels, 1e5));
+    const speckOffsets = new Int32Array(minSize);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const startIdx = y * width + x;
+        if (visited[startIdx] || data[4 * startIdx + 3] === 0) continue;
+        let head2 = 0;
+        let tail = 0;
+        queue[tail++] = startIdx;
+        visited[startIdx] = 1;
+        let componentSize = 0;
+        let isSpeck = true;
+        while (head2 < tail) {
+          const curIdx = queue[head2++];
+          const cx = curIdx % width;
+          const cy = curIdx / width | 0;
+          if (isSpeck) {
+            if (componentSize < minSize) {
+              speckOffsets[componentSize] = 4 * curIdx;
+            }
+            componentSize++;
+            if (componentSize >= minSize) {
+              isSpeck = false;
+            }
+          }
+          for (let dy = -1; dy <= 1; dy++) {
+            const ny = cy + dy;
+            if (ny < 0 || ny >= height) continue;
+            const rowOffset = ny * width;
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nx = cx + dx;
+              if (nx < 0 || nx >= width) continue;
+              const nIdx = rowOffset + nx;
+              if (!visited[nIdx] && data[4 * nIdx + 3] > 0) {
+                visited[nIdx] = 1;
+                if (tail < queue.length) {
+                  queue[tail++] = nIdx;
+                }
+              }
+            }
+          }
+        }
+        if (isSpeck && componentSize < minSize) {
+          for (let i = 0; i < componentSize; i++) {
+            const offset = speckOffsets[i];
+            data[offset] = 0;
+            data[offset + 1] = 0;
+            data[offset + 2] = 0;
+            data[offset + 3] = 0;
+          }
+          modified = true;
+        }
+      }
+    }
+    if (modified) {
+      ctx.putImageData(imgData, 0, 0);
+    }
+  };
+  const applyBlackBrush = async (sourceCanvas, brushP) => {
+    await removeSpecks(sourceCanvas);
+    const n = sourceCanvas.width;
+    const o = sourceCanvas.height;
+    const r = document.createElement("canvas");
+    const s = 0.15 * Math.max(n, o);
+    r.width = Math.ceil(n + 2 * s);
+    r.height = Math.ceil(o + 2 * s);
+    const a = r.getContext("2d");
+    if (!a) return sourceCanvas;
+    if (!brushP) {
+      a.drawImage(sourceCanvas, s, s);
+      return r;
+    }
+    const u = 16;
+    const m = 3;
+    const h = [0.6, 0.9, 1.2];
+    const g = [];
+    for (let e = 0; e < m; e++) {
+      const t = h[e];
+      const bw = Math.ceil(brushP.width * t);
+      const bh = Math.ceil(brushP.height * t);
+      const br = Math.ceil(Math.sqrt(bw * bw + bh * bh));
+      for (let k = 0; k < u; k++) {
+        const rot = k / u * Math.PI * 2;
+        const bc = document.createElement("canvas");
+        bc.width = br;
+        bc.height = br;
+        const bctx = bc.getContext("2d");
+        if (bctx) {
+          bctx.translate(br / 2, br / 2);
+          bctx.rotate(rot);
+          bctx.scale(t, t);
+          bctx.drawImage(brushP, -brushP.width / 2, -brushP.height / 2);
+          g.push({
+            canvas: bc,
+            halfW: br / 2,
+            halfH: br / 2
+          });
+        }
+      }
+    }
+    const b = g.length;
+    const f = 0.1;
+    const y = document.createElement("canvas");
+    y.width = Math.ceil(n * f);
+    y.height = Math.ceil(o * f);
+    const v = y.getContext("2d", { willReadFrequently: true });
+    if (!v) return sourceCanvas;
+    v.drawImage(sourceCanvas, 0, 0, y.width, y.height);
+    for (let e = 0; e < 2; e++) {
+      v.drawImage(y, 1, 0);
+      v.drawImage(y, -1, 0);
+      v.drawImage(y, 0, 1);
+      v.drawImage(y, 0, -1);
+    }
+    const w = v.getImageData(0, 0, y.width, y.height);
+    for (let e = 0; e < w.data.length; e += 4) {
+      if (w.data[e + 3] > 0) {
+        w.data[e] = 0;
+        w.data[e + 1] = 0;
+        w.data[e + 2] = 0;
+        w.data[e + 3] = 255;
+      }
+    }
+    v.putImageData(w, 0, 0);
+    const xPts = [];
+    const kw = y.width;
+    const ch = y.height;
+    const ed = v.getImageData(0, 0, kw, ch).data;
+    const S = 2;
+    for (let e = 1; e < ch - 1; e += S) {
+      for (let t = 1; t < kw - 1; t += S) {
+        if (ed[4 * (e * kw + t) + 3] > 0) {
+          if (ed[4 * ((e - 1) * kw + t) + 3] !== 0 && ed[4 * ((e + 1) * kw + t) + 3] !== 0 && ed[4 * (e * kw + (t - 1)) + 3] !== 0 && ed[4 * (e * kw + (t + 1)) + 3] !== 0) {
+          } else {
+            xPts.push({
+              x: t / f + s,
+              y: e / f + s
+            });
+          }
+        }
+      }
+    }
+    const P = document.createElement("canvas");
+    P.width = r.width;
+    P.height = r.height;
+    const A = P.getContext("2d");
+    if (A) {
+      A.drawImage(sourceCanvas, s, s);
+      A.globalCompositeOperation = "source-in";
+      A.fillStyle = "black";
+      A.fillRect(0, 0, P.width, P.height);
+    }
+    a.drawImage(P, 0, 0);
+    for (let e = 0; e < 10; e++) {
+      a.drawImage(r, 1, 0);
+      a.drawImage(r, -1, 0);
+      a.drawImage(r, 0, 1);
+      a.drawImage(r, 0, -1);
+    }
+    const L = 0.5;
+    const TPts = [];
+    for (let e = 0; e < xPts.length; e++) {
+      if (random() < L) {
+        TPts.push(xPts[e]);
+      }
+    }
+    for (let e = 0; e < TPts.length; e++) {
+      const pt = TPts[e];
+      const stamp = g[Math.floor(random() * b)];
+      a.drawImage(stamp.canvas, pt.x - stamp.halfW, pt.y - stamp.halfH);
+    }
+    a.globalCompositeOperation = "source-over";
+    return r;
+  };
+  const layer = await applyBlackBrush(source12, brushImage);
+  state.brush = { uri: layer.toDataURL("image/png"), width: layer.width, height: layer.height, padding: 0.15 * Math.max(source12.width, source12.height) };
+  source12.width = 0;
+  source12.height = 0;
+  layer.width = 0;
+  layer.height = 0;
+}
+var init_artworkBrushRuntime = __esm2({
+  "src/server/services/artworkBrushRuntime.ts"() {
+    "use strict";
+  }
+});
+
+// src/server/services/artworkProfiles.ts
+function productProfile(id, config) {
+  const { width, height } = config.canvas;
+  const padding = Math.min(width, height) * config.paddingShortSidePct;
+  return {
+    key: id,
+    suffix: id.toLowerCase(),
+    width,
+    height,
+    background: resolveBackgroundColor(config),
+    boxes: [{ x: padding, y: padding, width: width - 2 * padding, height: height - 2 * padding }]
+  };
+}
+function artworkProfiles() {
+  const twoSided = (key, suffix, width, height, side, xs, brush) => {
+    const margin = side * 0.075;
+    return {
+      key,
+      suffix,
+      width,
+      height,
+      brush,
+      boxes: xs.map((x) => ({ x: x + margin, y: (height - side) / 2 + margin, width: side - 2 * margin, height: side - 2 * margin }))
+    };
+  };
+  const mugSide = 1045.646;
+  const mugXs = [59, 1591].map((x) => x + (1050 - mugSide) / 2);
+  return [
+    twoSided("mugStandardPath", "two_sided_mug_standard", 2700, 1050, mugSide, mugXs, false),
+    twoSided("mugBrushPath", "two_sided_mug_brush", 2700, 1050, mugSide, mugXs, true),
+    twoSided("drinkwareStandardPath", "two_sided_drinkware_standard", 3e3, 1400, 1400, [31, 1566.6667], false),
+    twoSided("drinkwareBrushPath", "two_sided_drinkware_brush", 3e3, 1400, 1400, [31, 1566.6667], true),
+    ...getGeneratableVariants().map((v) => productProfile(v.id, v.generator))
+  ];
+}
+function validateProfile(p) {
+  if (!/^[a-z0-9_-]+$/.test(p.suffix) || ![p.width, p.height].every((n) => Number.isSafeInteger(n) && n > 0) || p.width * p.height > 1e8 || p.boxes.some((b) => ![b.x, b.y, b.width, b.height].every(Number.isFinite) || b.width <= 0 || b.height <= 0)) {
+    throw new Error(`Ung\xFCltiges Artwork-Profil: ${p.key}`);
+  }
+}
+var init_artworkProfiles = __esm2({
+  "src/server/services/artworkProfiles.ts"() {
+    "use strict";
+    init_productCatalogService();
+  }
+});
+
+// src/server/services/artworkResizeService.ts
+function crc32(buf) {
+  let crc = -1;
+  for (let i = 0; i < buf.length; i++) {
+    crc = crc >>> 8 ^ crcTable[(crc ^ buf[i]) & 255];
+  }
+  return (crc ^ -1) >>> 0;
+}
+function inject300Dpi(pngBuffer) {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i = 0; i < 8; i++) {
+    if (pngBuffer[i] !== sig[i]) return pngBuffer;
+  }
+  const dpi = 300;
+  const ppm = Math.round(dpi * 39.3701);
+  const physData = Buffer.alloc(9);
+  physData.writeUInt32BE(ppm, 0);
+  physData.writeUInt32BE(ppm, 4);
+  physData.writeUInt8(1, 8);
+  const typeAndData = Buffer.concat([Buffer.from("pHYs", "ascii"), physData]);
+  const crc = crc32(typeAndData);
+  const chunkHeader = Buffer.alloc(4);
+  chunkHeader.writeUInt32BE(9, 0);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crc, 0);
+  const physChunk = Buffer.concat([chunkHeader, typeAndData, crcBuf]);
+  return Buffer.concat([
+    pngBuffer.subarray(0, 33),
+    physChunk,
+    pngBuffer.subarray(33)
+  ]);
+}
+var import_node_fs, import_node_path, import_node_crypto, currentDir, crcTable, ArtworkResizeService;
+var init_artworkResizeService = __esm2({
+  "src/server/services/artworkResizeService.ts"() {
+    "use strict";
+    import_node_fs = __toESM2(require("node:fs"), 1);
+    import_node_path = __toESM2(require("node:path"), 1);
+    import_node_crypto = require("node:crypto");
+    init_artworkRenderSession();
+    init_artworkRenderRuntime();
+    init_artworkBrushRuntime();
+    init_artworkProfiles();
+    currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
+    crcTable = (() => {
+      const table = [];
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) {
+          c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+        }
+        table[n] = c;
+      }
+      return table;
+    })();
+    ArtworkResizeService = class {
+      static getBrushTipPath() {
+        const candidates = [
+          import_node_path.default.resolve(process.cwd(), "assets", "brush_tip.png"),
+          import_node_path.default.resolve(process.cwd(), "dist", "assets", "brush_tip.png"),
+          import_node_path.default.resolve(currentDir, "../../assets", "brush_tip.png"),
+          import_node_path.default.resolve(currentDir, "../assets", "brush_tip.png"),
+          import_node_path.default.resolve(process.cwd(), "Erweiterungen und Programme /Listing Optimizer/assets", "brush_tip.png")
+        ];
+        for (const c of candidates) {
+          if (import_node_fs.default.existsSync(c)) {
+            return c;
+          }
+        }
+        return candidates[0];
+      }
+      static source(task, pngPath) {
+        if (task?.svgContent) return { kind: "SVG", svg: task.svgContent };
+        if (task?.localSvgPath) {
+          if (!import_node_fs.default.existsSync(task.localSvgPath)) throw new Error("Freigegebene SVG-Datei fehlt; kein stiller PNG-Fallback.");
+          return { kind: "SVG", svg: import_node_fs.default.readFileSync(task.localSvgPath, "utf8") };
+        }
+        return { kind: "PNG", path: pngPath };
+      }
+      static fingerprint(source12) {
+        return (0, import_node_crypto.createHash)("sha256").update("artwork-v3-svg-direct-png-no-upscale").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+      }
+      static hasCurrentAssets(assets, fingerprint) {
+        if (!assets || assets.renderFingerprint !== fingerprint) return false;
+        return artworkProfiles().every((p) => {
+          const file = assets[p.key] || assets.productVariants?.[p.key];
+          if (!file) return false;
+          try {
+            const fd = import_node_fs.default.openSync(file, "r");
+            const header = Buffer.alloc(24);
+            try {
+              import_node_fs.default.readSync(fd, header, 0, 24, 0);
+            } finally {
+              import_node_fs.default.closeSync(fd);
+            }
+            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
+          } catch {
+            return false;
+          }
+        });
+      }
+      static async generateResizedArtworks(taskId, source12) {
+        const input = typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12;
+        const fingerprint = this.fingerprint(input);
+        const files = await this.renderProfiles(taskId, input, artworkProfiles());
+        const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants } = files;
+        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
+        return { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants, renderFingerprint: fingerprint, renderFileHashes };
+      }
+      static async generateProductVariant(taskId, source12, id, config) {
+        const files = await this.renderProfiles(taskId, typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12, [productProfile(id, config)]);
+        return files[id];
+      }
+      static async generateAllProductVariants(taskId, source12) {
+        return this.renderProfiles(taskId, typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12, artworkProfiles().filter((p) => !p.key.endsWith("Path")));
+      }
+      static async renderProfiles(taskId, source12, profiles) {
+        profiles.forEach(validateProfile);
+        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const dir = import_node_path.default.resolve(process.cwd(), "data", "designs");
+        import_node_fs.default.mkdirSync(dir, { recursive: true });
+        const data = source12.kind === "SVG" ? source12.svg : "data:image/png;base64," + import_node_fs.default.readFileSync(source12.path).toString("base64");
+        return ArtworkRenderSession.run(async (page) => {
+          const geometry = await page.evaluate(installArtworkRuntime, { kind: source12.kind, data });
+          console.log("[ArtworkRenderer] Quelle", source12.kind, geometry.bounds);
+          if (profiles.some((p) => p.brush)) await page.evaluate(prepareBrushLayer, "data:image/png;base64," + import_node_fs.default.readFileSync(this.getBrushTipPath()).toString("base64"));
+          const files = {};
+          for (const profile of profiles) {
+            const start3 = Date.now();
+            const output = import_node_path.default.join(dir, cleanId + "_" + profile.suffix + ".png");
+            const temporary = output + "." + (0, import_node_crypto.randomUUID)() + ".tmp";
+            try {
+              await page.setViewportSize({ width: profile.width, height: profile.height });
+              await page.evaluate((p) => window.__artwork.render(p), profile);
+              const png = await page.screenshot({ type: "png", omitBackground: true, timeout: 12e4 });
+              if (png.readUInt32BE(16) !== profile.width || png.readUInt32BE(20) !== profile.height) throw new Error("Artwork-Ausgabema\xDFe stimmen nicht");
+              await page.evaluate(() => {
+                document.getElementById("output").src = "";
+              });
+              await page.setViewportSize({ width: 1, height: 1 });
+              await page.evaluate(async (uri) => {
+                const image = new Image();
+                image.src = uri;
+                await image.decode();
+              }, "data:image/png;base64," + png.toString("base64"));
+              import_node_fs.default.writeFileSync(temporary, inject300Dpi(png));
+              import_node_fs.default.renameSync(temporary, output);
+              files[profile.key] = output;
+              console.log("[ArtworkRenderer]", JSON.stringify({ variant: profile.key, source: source12.kind, width: profile.width, height: profile.height, ms: Date.now() - start3, bytes: png.length }));
+            } finally {
+              if (import_node_fs.default.existsSync(temporary)) import_node_fs.default.unlinkSync(temporary);
+            }
+          }
+          return files;
+        });
+      }
+    };
+  }
+});
+
 // src/server/services/svgRenderService.ts
 async function getBrowser() {
   if (!sharedBrowser || !sharedBrowser.isConnected()) {
@@ -219003,6 +219617,9 @@ var init_svgRenderService = __esm2({
     "use strict";
     init_playwright3();
     init_browserSessionService();
+    init_artworkRenderSession();
+    init_artworkRenderRuntime();
+    init_artworkResizeService();
     sharedBrowser = null;
     SvgRenderService = class {
       /**
@@ -219264,65 +219881,13 @@ var init_svgRenderService = __esm2({
        * Renders the optimal Merch by Amazon Print PNG (4500 x 5400 px, 300 DPI, Transparent Background)
        */
       static async renderSvgToMbaPng(svgText, width = 4500, height = 5400) {
-        const clean = this.cleanSvg(svgText);
-        const browser = await getBrowser();
-        const context2 = await browser.newContext({
-          viewport: { width, height },
-          deviceScaleFactor: 1
+        if (![width, height].every((n) => Number.isSafeInteger(n) && n > 0) || width * height > 1e8) throw new Error("Ung\xFCltige Master-Abmessungen");
+        return ArtworkRenderSession.run(async (page) => {
+          await page.evaluate(installArtworkRuntime, { kind: "SVG", data: this.cleanSvg(svgText), masterWidth: width, masterHeight: height });
+          await page.setViewportSize({ width, height });
+          await page.evaluate((p) => window.__artwork.render(p), { master: true, width, height, boxes: [] });
+          return inject300Dpi(await page.screenshot({ type: "png", omitBackground: true, timeout: 12e4 }));
         });
-        const page = await context2.newPage();
-        try {
-          const containerWidth = Math.round(width * 0.9);
-          const containerHeight = Math.round(height * 0.9);
-          const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            html, body {
-              width: ${width}px;
-              height: ${height}px;
-              background: transparent;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              overflow: hidden;
-            }
-            .design-container {
-              width: ${containerWidth}px;
-              height: ${containerHeight}px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            svg {
-              width: 100%;
-              height: 100%;
-              max-width: 100%;
-              max-height: 100%;
-              object-fit: contain;
-              display: block;
-              margin: auto;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="design-container">
-            ${clean}
-          </div>
-        </body>
-        </html>
-      `;
-          await page.setContent(htmlContent);
-          await page.waitForTimeout(60);
-          const buffer = await page.screenshot({ type: "png", omitBackground: true });
-          return buffer;
-        } finally {
-          await context2.close().catch(() => {
-          });
-        }
       }
     };
   }
@@ -222738,9 +223303,9 @@ var init_assetValidationService = __esm2({
        */
       static areResizeAssetsComplete(task) {
         if (!task.resizedAssets) return false;
-        const { trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants } = task.resizedAssets;
-        const legacyPaths = [trimmedPath, mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath].filter(Boolean);
-        if (legacyPaths.length === 0) return false;
+        const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants } = task.resizedAssets;
+        const legacyPaths = [mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath];
+        if (legacyPaths.some((p) => !p)) return false;
         for (const p of legacyPaths) {
           if (!this.isValidPngImage(p, 1e3)) {
             return false;
@@ -226401,695 +226966,17 @@ var init_queueService = __esm2({
   }
 });
 
-// src/server/services/artworkResizeService.ts
-async function getBrowser3() {
-  if (!sharedBrowser3 || !sharedBrowser3.isConnected()) {
-    const executablePath = findChromiumExecutable();
-    const launchOptions = {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu"
-      ]
-    };
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-    }
-    sharedBrowser3 = await chromium.launch(launchOptions);
-  }
-  return sharedBrowser3;
-}
-function crc32(buf) {
-  let crc = -1;
-  for (let i = 0; i < buf.length; i++) {
-    crc = crc >>> 8 ^ crcTable[(crc ^ buf[i]) & 255];
-  }
-  return (crc ^ -1) >>> 0;
-}
-function inject300Dpi(pngBuffer) {
-  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
-  for (let i = 0; i < 8; i++) {
-    if (pngBuffer[i] !== sig[i]) return pngBuffer;
-  }
-  const dpi = 300;
-  const ppm = Math.round(dpi * 39.3701);
-  const physData = Buffer.alloc(9);
-  physData.writeUInt32BE(ppm, 0);
-  physData.writeUInt32BE(ppm, 4);
-  physData.writeUInt8(1, 8);
-  const typeAndData = Buffer.concat([Buffer.from("pHYs", "ascii"), physData]);
-  const crc = crc32(typeAndData);
-  const chunkHeader = Buffer.alloc(4);
-  chunkHeader.writeUInt32BE(9, 0);
-  const crcBuf = Buffer.alloc(4);
-  crcBuf.writeUInt32BE(crc, 0);
-  const physChunk = Buffer.concat([chunkHeader, typeAndData, crcBuf]);
-  return Buffer.concat([
-    pngBuffer.subarray(0, 33),
-    physChunk,
-    pngBuffer.subarray(33)
-  ]);
-}
-var import_fs84, import_path79, currentDir, sharedBrowser3, crcTable, ArtworkResizeService;
-var init_artworkResizeService = __esm2({
-  "src/server/services/artworkResizeService.ts"() {
-    "use strict";
-    init_playwright3();
-    import_fs84 = __toESM2(require("fs"), 1);
-    import_path79 = __toESM2(require("path"), 1);
-    init_browserSessionService();
-    init_productCatalogService();
-    currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
-    sharedBrowser3 = null;
-    crcTable = (() => {
-      const table = [];
-      for (let n = 0; n < 256; n++) {
-        let c = n;
-        for (let k = 0; k < 8; k++) {
-          c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
-        }
-        table[n] = c;
-      }
-      return table;
-    })();
-    ArtworkResizeService = class {
-      /**
-       * Resolves the brush_tip.png asset from multiple candidate paths
-       */
-      static getBrushTipPath() {
-        const candidates = [
-          import_path79.default.resolve(process.cwd(), "assets", "brush_tip.png"),
-          import_path79.default.resolve(process.cwd(), "dist", "assets", "brush_tip.png"),
-          import_path79.default.resolve(currentDir, "../../assets", "brush_tip.png"),
-          import_path79.default.resolve(currentDir, "../assets", "brush_tip.png"),
-          import_path79.default.resolve(process.cwd(), "Erweiterungen und Programme /Listing Optimizer/assets", "brush_tip.png")
-        ];
-        for (const c of candidates) {
-          if (import_fs84.default.existsSync(c)) {
-            return c;
-          }
-        }
-        return candidates[0];
-      }
-      /**
-       * Generates all resized variants from the master 4500x5400px MBA PNG:
-       * 1. ${cleanId}_trimmed.png - Bounding box of artwork with transparent margins trimmed
-       * 2. ${cleanId}_two_sided_mug_standard.png - 2700x1050 px, 300 DPI, centered on front/back
-       * 3. ${cleanId}_two_sided_mug_brush.png - 2700x1050 px, 300 DPI with black brush contour
-       * 4. ${cleanId}_two_sided_drinkware_standard.png - 3000x1400 px, 300 DPI for Tumbler & Water Bottle
-       * 5. ${cleanId}_two_sided_drinkware_brush.png - 3000x1400 px, 300 DPI with black brush contour for Travel Tumbler
-       */
-      static resizeLock = Promise.resolve();
-      static async generateResizedArtworks(taskId, mbaPngPath) {
-        const previousLock = this.resizeLock;
-        let releaseLock = () => {
-        };
-        this.resizeLock = new Promise((resolve) => {
-          releaseLock = resolve;
-        });
-        await previousLock;
-        try {
-          return await this.executeResizedArtworksInternal(taskId, mbaPngPath);
-        } finally {
-          releaseLock();
-        }
-      }
-      static async executeResizedArtworksInternal(taskId, mbaPngPath) {
-        const memBefore = process.memoryUsage();
-        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-        if (!import_fs84.default.existsSync(designsDir)) {
-          try {
-            import_fs84.default.mkdirSync(designsDir, { recursive: true });
-          } catch (e) {
-          }
-        }
-        const trimmedFilePath = import_path79.default.join(designsDir, `${cleanId}_trimmed.png`);
-        const mugStandardFilePath = import_path79.default.join(designsDir, `${cleanId}_two_sided_mug_standard.png`);
-        const mugBrushFilePath = import_path79.default.join(designsDir, `${cleanId}_two_sided_mug_brush.png`);
-        const drinkwareStandardFilePath = import_path79.default.join(designsDir, `${cleanId}_two_sided_drinkware_standard.png`);
-        const drinkwareBrushFilePath = import_path79.default.join(designsDir, `${cleanId}_two_sided_drinkware_brush.png`);
-        if (!import_fs84.default.existsSync(mbaPngPath)) {
-          throw new Error(`Master MBA PNG not found at path: ${mbaPngPath}`);
-        }
-        const masterPngBuffer = import_fs84.default.readFileSync(mbaPngPath);
-        const masterPngDataUri = `data:image/png;base64,${masterPngBuffer.toString("base64")}`;
-        const brushTipPath = this.getBrushTipPath();
-        let brushTipDataUri = "";
-        if (import_fs84.default.existsSync(brushTipPath)) {
-          const brushBuffer = import_fs84.default.readFileSync(brushTipPath);
-          brushTipDataUri = `data:image/png;base64,${brushBuffer.toString("base64")}`;
-        } else {
-          console.warn(`[ArtworkResizeService] \u26A0\uFE0F brush_tip.png not found at ${brushTipPath}. Falling back without brush tip.`);
-        }
-        console.log(`[ArtworkResizeService] \u{1F4D0} Starte Resize-Generierung f\xFCr Task #${taskId} (Chromium Engine)...`);
-        const browser = await getBrowser3();
-        const context2 = await browser.newContext({
-          viewport: { width: 3e3, height: 2e3 },
-          deviceScaleFactor: 1
-        });
-        const page = await context2.newPage();
-        try {
-          await page.addInitScript(() => {
-            window.__name = (target) => target;
-          });
-          await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
-          const evaluatedResults = await page.evaluate(async (params2) => {
-            const loadImage = (src) => {
-              return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.crossOrigin = "anonymous";
-                img.onload = () => resolve(img);
-                img.onerror = (e) => reject(e);
-                img.src = src;
-              });
-            };
-            const masterImg = await loadImage(params2.masterUri);
-            let brushImg = null;
-            if (params2.brushUri) {
-              try {
-                brushImg = await loadImage(params2.brushUri);
-              } catch (e) {
-                console.warn("Failed to load brush tip image in browser context", e);
-              }
-            }
-            const trimCanvas = (img) => {
-              const width = img.naturalWidth || img.width;
-              const height = img.naturalHeight || img.height;
-              const canvas = document.createElement("canvas");
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext("2d", { willReadFrequently: true });
-              if (!ctx) return canvas;
-              ctx.drawImage(img, 0, 0);
-              const imgData = ctx.getImageData(0, 0, width, height);
-              const data = imgData.data;
-              let top = 0;
-              let bottom = height - 1;
-              let left = 0;
-              let right = width - 1;
-              let found = false;
-              for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    top = y;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              if (!found) {
-                return canvas;
-              }
-              found = false;
-              for (let y = height - 1; y >= top; y--) {
-                for (let x = 0; x < width; x++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    bottom = y;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              found = false;
-              for (let x = 0; x < width; x++) {
-                for (let y = top; y <= bottom; y++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    left = x;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              found = false;
-              for (let x = width - 1; x >= left; x--) {
-                for (let y = top; y <= bottom; y++) {
-                  if (data[4 * (y * width + x) + 3] > 0) {
-                    right = x;
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              const croppedWidth = right - left + 1;
-              const croppedHeight = bottom - top + 1;
-              const trimmed = document.createElement("canvas");
-              trimmed.width = croppedWidth;
-              trimmed.height = croppedHeight;
-              const trimmedCtx = trimmed.getContext("2d");
-              if (trimmedCtx) {
-                trimmedCtx.drawImage(img, left, top, croppedWidth, croppedHeight, 0, 0, croppedWidth, croppedHeight);
-              }
-              return trimmed;
-            };
-            const trimmedCanvas = trimCanvas(masterImg);
-            const drawCentered = (ctx, source12, destX, destY, targetWidth, targetHeight) => {
-              const sw = source12.width;
-              const sh = source12.height;
-              const scale = Math.min(targetWidth / sw, targetHeight / sh, 1);
-              const dw = sw * scale;
-              const dh = sh * scale;
-              const x = destX + (targetWidth - dw) / 2;
-              const y = destY + (targetHeight - dh) / 2;
-              ctx.drawImage(source12, x, y, dw, dh);
-            };
-            const scaleDesignForProduct = (sourceCanvas, finalWidth, finalHeight, margin = 0.075) => {
-              const sw = sourceCanvas.width;
-              const sh = sourceCanvas.height;
-              const mt = finalHeight * margin;
-              const mb = finalHeight * margin;
-              const ml = finalWidth * margin;
-              const mr = finalWidth * margin;
-              const safeW = finalWidth - ml - mr;
-              const safeH = finalHeight - mt - mb;
-              const scale = Math.min(safeW / sw, safeH / sh);
-              const dw = sw * scale;
-              const dh = sh * scale;
-              const ox = ml + (safeW - dw) / 2;
-              const oy = mt + (safeH - dh) / 2;
-              const canvas = document.createElement("canvas");
-              canvas.width = finalWidth;
-              canvas.height = finalHeight;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = "high";
-                ctx.clearRect(0, 0, finalWidth, finalHeight);
-                ctx.drawImage(sourceCanvas, ox, oy, dw, dh);
-              }
-              return canvas;
-            };
-            const createMugCanvas = (scaledSideDesign) => {
-              const canvas = document.createElement("canvas");
-              canvas.width = 2700;
-              canvas.height = 1050;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.clearRect(0, 0, 2700, 1050);
-                const w = 1050;
-                const h = 1045.646;
-                const y = (1050 - h) / 2;
-                drawCentered(ctx, scaledSideDesign, 59, y, w, h);
-                drawCentered(ctx, scaledSideDesign, 1591, y, w, h);
-              }
-              return canvas;
-            };
-            const createDrinkwareCanvas = (scaledSideDesign) => {
-              const canvas = document.createElement("canvas");
-              canvas.width = 3e3;
-              canvas.height = 1400;
-              const ctx = canvas.getContext("2d");
-              if (ctx) {
-                ctx.clearRect(0, 0, 3e3, 1400);
-                const w = 1400;
-                const h = 1400;
-                const y = 0;
-                drawCentered(ctx, scaledSideDesign, 31, y, w, h);
-                drawCentered(ctx, scaledSideDesign, 1566.6667, y, w, h);
-              }
-              return canvas;
-            };
-            const removeSpecks = async (canvas, minSize = 25) => {
-              const ctx = canvas.getContext("2d", { willReadFrequently: true });
-              if (!ctx) return;
-              const width = canvas.width;
-              const height = canvas.height;
-              const totalPixels = width * height;
-              const imgData = ctx.getImageData(0, 0, width, height);
-              const data = imgData.data;
-              const visited = new Uint8Array(totalPixels);
-              let modified = false;
-              const queue = new Int32Array(Math.min(totalPixels, 1e5));
-              const speckOffsets = new Int32Array(minSize);
-              for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                  const startIdx = y * width + x;
-                  if (visited[startIdx] || data[4 * startIdx + 3] === 0) continue;
-                  let head2 = 0;
-                  let tail = 0;
-                  queue[tail++] = startIdx;
-                  visited[startIdx] = 1;
-                  let componentSize = 0;
-                  let isSpeck = true;
-                  while (head2 < tail) {
-                    const curIdx = queue[head2++];
-                    const cx = curIdx % width;
-                    const cy = curIdx / width | 0;
-                    if (isSpeck) {
-                      if (componentSize < minSize) {
-                        speckOffsets[componentSize] = 4 * curIdx;
-                      }
-                      componentSize++;
-                      if (componentSize >= minSize) {
-                        isSpeck = false;
-                      }
-                    }
-                    for (let dy = -1; dy <= 1; dy++) {
-                      const ny = cy + dy;
-                      if (ny < 0 || ny >= height) continue;
-                      const rowOffset = ny * width;
-                      for (let dx = -1; dx <= 1; dx++) {
-                        if (dx === 0 && dy === 0) continue;
-                        const nx = cx + dx;
-                        if (nx < 0 || nx >= width) continue;
-                        const nIdx = rowOffset + nx;
-                        if (!visited[nIdx] && data[4 * nIdx + 3] > 0) {
-                          visited[nIdx] = 1;
-                          if (tail < queue.length) {
-                            queue[tail++] = nIdx;
-                          }
-                        }
-                      }
-                    }
-                  }
-                  if (isSpeck && componentSize < minSize) {
-                    for (let i = 0; i < componentSize; i++) {
-                      const offset = speckOffsets[i];
-                      data[offset] = 0;
-                      data[offset + 1] = 0;
-                      data[offset + 2] = 0;
-                      data[offset + 3] = 0;
-                    }
-                    modified = true;
-                  }
-                }
-              }
-              if (modified) {
-                ctx.putImageData(imgData, 0, 0);
-              }
-            };
-            const applyBlackBrush = async (sourceCanvas, brushP) => {
-              await removeSpecks(sourceCanvas);
-              const n = sourceCanvas.width;
-              const o = sourceCanvas.height;
-              const r = document.createElement("canvas");
-              const s = 0.15 * Math.max(n, o);
-              r.width = Math.ceil(n + 2 * s);
-              r.height = Math.ceil(o + 2 * s);
-              const a = r.getContext("2d");
-              if (!a) return sourceCanvas;
-              if (!brushP) {
-                a.drawImage(sourceCanvas, s, s);
-                return r;
-              }
-              const u = 16;
-              const m = 3;
-              const h = [0.6, 0.9, 1.2];
-              const g = [];
-              for (let e = 0; e < m; e++) {
-                const t = h[e];
-                const bw = Math.ceil(brushP.width * t);
-                const bh = Math.ceil(brushP.height * t);
-                const br = Math.ceil(Math.sqrt(bw * bw + bh * bh));
-                for (let k = 0; k < u; k++) {
-                  const rot = k / u * Math.PI * 2;
-                  const bc = document.createElement("canvas");
-                  bc.width = br;
-                  bc.height = br;
-                  const bctx = bc.getContext("2d");
-                  if (bctx) {
-                    bctx.translate(br / 2, br / 2);
-                    bctx.rotate(rot);
-                    bctx.scale(t, t);
-                    bctx.drawImage(brushP, -brushP.width / 2, -brushP.height / 2);
-                    g.push({
-                      canvas: bc,
-                      halfW: br / 2,
-                      halfH: br / 2
-                    });
-                  }
-                }
-              }
-              const b = g.length;
-              const f = 0.1;
-              const y = document.createElement("canvas");
-              y.width = Math.ceil(n * f);
-              y.height = Math.ceil(o * f);
-              const v = y.getContext("2d", { willReadFrequently: true });
-              if (!v) return sourceCanvas;
-              v.drawImage(sourceCanvas, 0, 0, y.width, y.height);
-              for (let e = 0; e < 2; e++) {
-                v.drawImage(y, 1, 0);
-                v.drawImage(y, -1, 0);
-                v.drawImage(y, 0, 1);
-                v.drawImage(y, 0, -1);
-              }
-              const w = v.getImageData(0, 0, y.width, y.height);
-              for (let e = 0; e < w.data.length; e += 4) {
-                if (w.data[e + 3] > 0) {
-                  w.data[e] = 0;
-                  w.data[e + 1] = 0;
-                  w.data[e + 2] = 0;
-                  w.data[e + 3] = 255;
-                }
-              }
-              v.putImageData(w, 0, 0);
-              const xPts = [];
-              const kw = y.width;
-              const ch = y.height;
-              const ed = v.getImageData(0, 0, kw, ch).data;
-              const S = 2;
-              for (let e = 1; e < ch - 1; e += S) {
-                for (let t = 1; t < kw - 1; t += S) {
-                  if (ed[4 * (e * kw + t) + 3] > 0) {
-                    if (ed[4 * ((e - 1) * kw + t) + 3] !== 0 && ed[4 * ((e + 1) * kw + t) + 3] !== 0 && ed[4 * (e * kw + (t - 1)) + 3] !== 0 && ed[4 * (e * kw + (t + 1)) + 3] !== 0) {
-                    } else {
-                      xPts.push({
-                        x: t / f + s,
-                        y: e / f + s
-                      });
-                    }
-                  }
-                }
-              }
-              const P = document.createElement("canvas");
-              P.width = r.width;
-              P.height = r.height;
-              const A = P.getContext("2d");
-              if (A) {
-                A.drawImage(sourceCanvas, s, s);
-                A.globalCompositeOperation = "source-in";
-                A.fillStyle = "black";
-                A.fillRect(0, 0, P.width, P.height);
-              }
-              a.drawImage(P, 0, 0);
-              for (let e = 0; e < 10; e++) {
-                a.drawImage(r, 1, 0);
-                a.drawImage(r, -1, 0);
-                a.drawImage(r, 0, 1);
-                a.drawImage(r, 0, -1);
-              }
-              const L = 0.5;
-              const TPts = [];
-              for (let e = 0; e < xPts.length; e++) {
-                if (Math.random() < L) {
-                  TPts.push(xPts[e]);
-                }
-              }
-              for (let e = 0; e < TPts.length; e++) {
-                const pt = TPts[e];
-                const stamp = g[Math.floor(Math.random() * b)];
-                a.drawImage(stamp.canvas, pt.x - stamp.halfW, pt.y - stamp.halfH);
-              }
-              a.globalCompositeOperation = "source-over";
-              a.drawImage(sourceCanvas, s, s);
-              return r;
-            };
-            const trimmedDataUri = trimmedCanvas.toDataURL("image/png");
-            const mugStandardScaled = scaleDesignForProduct(trimmedCanvas, 1050, 1050, 0.075);
-            const mugStandardCanvas = createMugCanvas(mugStandardScaled);
-            const mugStandardDataUri = mugStandardCanvas.toDataURL("image/png");
-            const brushCanvas = await applyBlackBrush(trimmedCanvas, brushImg);
-            const mugBrushScaled = scaleDesignForProduct(brushCanvas, 1050, 1050, 0.075);
-            const mugBrushCanvas = createMugCanvas(mugBrushScaled);
-            const mugBrushDataUri = mugBrushCanvas.toDataURL("image/png");
-            const drinkwareScaled = scaleDesignForProduct(trimmedCanvas, 1400, 1400, 0.075);
-            const drinkwareCanvas = createDrinkwareCanvas(drinkwareScaled);
-            const drinkwareStandardDataUri = drinkwareCanvas.toDataURL("image/png");
-            const drinkwareBrushScaled = scaleDesignForProduct(brushCanvas, 1400, 1400, 0.075);
-            const drinkwareBrushCanvas = createDrinkwareCanvas(drinkwareBrushScaled);
-            const drinkwareBrushDataUri = drinkwareBrushCanvas.toDataURL("image/png");
-            return {
-              trimmedDataUri,
-              mugStandardDataUri,
-              mugBrushDataUri,
-              drinkwareStandardDataUri,
-              drinkwareBrushDataUri
-            };
-          }, {
-            masterUri: masterPngDataUri,
-            brushUri: brushTipDataUri
-          });
-          const trimmedBuf = inject300Dpi(Buffer.from(evaluatedResults.trimmedDataUri.split(",")[1], "base64"));
-          import_fs84.default.writeFileSync(trimmedFilePath, trimmedBuf);
-          const mugStandardBuf = inject300Dpi(Buffer.from(evaluatedResults.mugStandardDataUri.split(",")[1], "base64"));
-          import_fs84.default.writeFileSync(mugStandardFilePath, mugStandardBuf);
-          const mugBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.mugBrushDataUri.split(",")[1], "base64"));
-          import_fs84.default.writeFileSync(mugBrushFilePath, mugBrushBuf);
-          const drinkwareBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareStandardDataUri.split(",")[1], "base64"));
-          import_fs84.default.writeFileSync(drinkwareStandardFilePath, drinkwareBuf);
-          const drinkwareBrushBuf = inject300Dpi(Buffer.from(evaluatedResults.drinkwareBrushDataUri.split(",")[1], "base64"));
-          import_fs84.default.writeFileSync(drinkwareBrushFilePath, drinkwareBrushBuf);
-          const memAfter = process.memoryUsage();
-          const rssDiffMb = ((memAfter.rss - memBefore.rss) / (1024 * 1024)).toFixed(1);
-          const totalRssMb = (memAfter.rss / (1024 * 1024)).toFixed(1);
-          console.log(`[ArtworkResizeService] \u2705 Alle 5 Resized Varianten f\xFCr Task #${taskId} erfolgreich gespeichert \u2713 (Node RSS: ${totalRssMb}MB, Delta: ${Number(rssDiffMb) >= 0 ? "+" : ""}${rssDiffMb}MB)`);
-          return {
-            trimmedPath: trimmedFilePath,
-            mugStandardPath: mugStandardFilePath,
-            mugBrushPath: mugBrushFilePath,
-            drinkwareStandardPath: drinkwareStandardFilePath,
-            drinkwareBrushPath: drinkwareBrushFilePath
-          };
-        } finally {
-          await context2.close();
-        }
-      }
-      /**
-       * Generates a single CANVAS_BACKGROUND_CONTAIN product variant.
-       * Uses the trimmed PNG as source, creates a canvas with solid background,
-       * and proportionally contain-fits the design into the safe area.
-       * Crash-safe: writes to temp file, validates, then atomic renames.
-       */
-      static async generateProductVariant(taskId, trimmedPngPath, variantId, config) {
-        const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-        if (!import_fs84.default.existsSync(designsDir)) {
-          try {
-            import_fs84.default.mkdirSync(designsDir, { recursive: true });
-          } catch (e) {
-          }
-        }
-        const outputFilename = `${cleanId}_${variantId.toLowerCase()}.png`;
-        const outputPath = import_path79.default.join(designsDir, outputFilename);
-        const tmpPath = `${outputPath}.tmp`;
-        if (!import_fs84.default.existsSync(trimmedPngPath)) {
-          throw new Error(`Trimmed PNG not found at: ${trimmedPngPath}`);
-        }
-        const bgColor = resolveBackgroundColor(config);
-        const { width: canvasW, height: canvasH } = config.canvas;
-        const paddingPct = config.paddingShortSidePct;
-        const trimmedBuffer = import_fs84.default.readFileSync(trimmedPngPath);
-        const trimmedDataUri = `data:image/png;base64,${trimmedBuffer.toString("base64")}`;
-        console.log(`[ArtworkResizeService] \u{1F3A8} Generiere ${variantId} (${canvasW}\xD7${canvasH}) f\xFCr Task #${taskId}...`);
-        const browser = await getBrowser3();
-        const context2 = await browser.newContext({
-          viewport: { width: Math.min(canvasW, 4500), height: Math.min(canvasH, 5400) },
-          deviceScaleFactor: 1
-        });
-        const page = await context2.newPage();
-        try {
-          await page.addInitScript(() => {
-            window.__name = (target) => target;
-          });
-          await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"/><script>window.__name = function(t){return t;};</script></head><body></body></html>`);
-          const resultDataUri = await page.evaluate(async (params2) => {
-            const loadImage = (src) => {
-              return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.crossOrigin = "anonymous";
-                img.onload = () => resolve(img);
-                img.onerror = (e) => reject(e);
-                img.src = src;
-              });
-            };
-            const trimmedImg = await loadImage(params2.trimmedUri);
-            const sourceW = trimmedImg.naturalWidth || trimmedImg.width;
-            const sourceH = trimmedImg.naturalHeight || trimmedImg.height;
-            const canvas = document.createElement("canvas");
-            canvas.width = params2.canvasW;
-            canvas.height = params2.canvasH;
-            const ctx = canvas.getContext("2d");
-            if (!ctx) throw new Error("Failed to get 2d context");
-            ctx.fillStyle = params2.bgColor;
-            ctx.fillRect(0, 0, params2.canvasW, params2.canvasH);
-            const paddingPx = Math.min(params2.canvasW, params2.canvasH) * params2.paddingPct;
-            const safeW = params2.canvasW - 2 * paddingPx;
-            const safeH = params2.canvasH - 2 * paddingPx;
-            const scale = Math.min(safeW / sourceW, safeH / sourceH);
-            const drawW = sourceW * scale;
-            const drawH = sourceH * scale;
-            const x = (params2.canvasW - drawW) / 2;
-            const y = (params2.canvasH - drawH) / 2;
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = "high";
-            ctx.drawImage(trimmedImg, x, y, drawW, drawH);
-            return canvas.toDataURL("image/png");
-          }, {
-            trimmedUri: trimmedDataUri,
-            canvasW,
-            canvasH,
-            paddingPct,
-            bgColor
-          });
-          const pngBuffer = inject300Dpi(Buffer.from(resultDataUri.split(",")[1], "base64"));
-          import_fs84.default.writeFileSync(tmpPath, pngBuffer);
-          const tmpStats = import_fs84.default.statSync(tmpPath);
-          if (tmpStats.size < 1e3) {
-            throw new Error(`Generated ${variantId} PNG too small: ${tmpStats.size} bytes`);
-          }
-          const header = Buffer.alloc(8);
-          const fd = import_fs84.default.openSync(tmpPath, "r");
-          import_fs84.default.readSync(fd, header, 0, 8, 0);
-          import_fs84.default.closeSync(fd);
-          const isPng = header[0] === 137 && header[1] === 80 && header[2] === 78 && header[3] === 71;
-          if (!isPng) {
-            throw new Error(`Generated ${variantId} file is not a valid PNG`);
-          }
-          import_fs84.default.renameSync(tmpPath, outputPath);
-          console.log(`[ArtworkResizeService] \u2705 ${variantId} (${canvasW}\xD7${canvasH}) gespeichert: ${outputPath}`);
-          return outputPath;
-        } finally {
-          await context2.close();
-          try {
-            if (import_fs84.default.existsSync(tmpPath)) import_fs84.default.unlinkSync(tmpPath);
-          } catch (e) {
-          }
-        }
-      }
-      /**
-       * Generates ALL product variants registered in ARTWORK_VARIANT_REGISTRY that have a generator config.
-       * Executes sequentially within the existing resize mutex to prevent parallel memory spikes.
-       * Returns a Record<variantId, filePath> for storage in resizedAssets.productVariants.
-       */
-      static async generateAllProductVariants(taskId, trimmedPngPath) {
-        const variants = getGeneratableVariants();
-        if (variants.length === 0) return {};
-        console.log(`[ArtworkResizeService] \u{1F4D0} Generiere ${variants.length} Product-Varianten f\xFCr Task #${taskId}...`);
-        const result2 = {};
-        for (const variant of variants) {
-          if (!variant.generator) continue;
-          const outputPath = await this.generateProductVariant(
-            taskId,
-            trimmedPngPath,
-            variant.id,
-            variant.generator
-          );
-          result2[variant.id] = outputPath;
-        }
-        console.log(`[ArtworkResizeService] \u2705 Alle ${Object.keys(result2).length} Product-Varianten f\xFCr Task #${taskId} erfolgreich generiert.`);
-        return result2;
-      }
-    };
-  }
-});
-
 // src/server/services/finalizationService.ts
 var finalizationService_exports = {};
 __export2(finalizationService_exports, {
   FinalizationService: () => FinalizationService
 });
-var import_fs85, FinalizationService;
+var import_fs84, import_node_crypto2, FinalizationService;
 var init_finalizationService = __esm2({
   "src/server/services/finalizationService.ts"() {
     "use strict";
-    import_fs85 = __toESM2(require("fs"), 1);
+    import_fs84 = __toESM2(require("fs"), 1);
+    import_node_crypto2 = require("node:crypto");
     init_taskLogService();
     init_queueService();
     init_listingSanitizationService();
@@ -227101,7 +226988,7 @@ var init_finalizationService = __esm2({
        * Atomically executes:
        * 1. Deterministic Listing Sanitization (Amazon Charset safe, preserving Umlauts/Kanji/Accents)
        * 2. Final Strict Validation (no semantic mutations, strictly enforces limits)
-       * 3. Master Artwork & Trimmed Resizes (exactly once, using trimmed content as source)
+       * 3. Direct SVG output / PNG output without upscaling (no trimmed file)
        * 4. Asset Verification on disk
        * 5. Atomic Queue Handoff with all task completion side-effects preserved
        */
@@ -227201,10 +227088,10 @@ var init_finalizationService = __esm2({
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
-          title: "\u{1F4D0} Artwork-Vorbereitung (Alpha Trim & Two-Sided Resizes)...",
+          title: "\u{1F4D0} Artwork-Vorbereitung (gemeinsame Quellen- und Formatpr\xFCfung)...",
           content: { phase: "ARTWORK_PREPARATION", status: "RUNNING" }
         });
-        if (!masterPngPath || !import_fs85.default.existsSync(masterPngPath)) {
+        if (!masterPngPath || !import_fs84.default.existsSync(masterPngPath)) {
           const err = `Master-Artwork nicht gefunden unter: ${masterPngPath}`;
           console.error(`[FinalizationService] \u274C ${err}`);
           TaskLogService2.addEvent(taskId, {
@@ -227216,75 +227103,45 @@ var init_finalizationService = __esm2({
           TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
-        let resizedAssets = params2.artifactRunId ? void 0 : task?.resizedAssets;
-        const areLegacyAssetsValid = resizedAssets && resizedAssets.trimmedPath && import_fs85.default.existsSync(resizedAssets.trimmedPath) && resizedAssets.mugStandardPath && import_fs85.default.existsSync(resizedAssets.mugStandardPath) && resizedAssets.mugBrushPath && import_fs85.default.existsSync(resizedAssets.mugBrushPath) && resizedAssets.drinkwareStandardPath && import_fs85.default.existsSync(resizedAssets.drinkwareStandardPath) && resizedAssets.drinkwareBrushPath && import_fs85.default.existsSync(resizedAssets.drinkwareBrushPath);
-        if (areLegacyAssetsValid) {
-          console.log(`[FinalizationService] \u26A1 Legacy Resized Assets f\xFCr Task #${taskId} bereits vorhanden. \xDCberspringe doppelten Resize.`);
-        } else {
-          try {
-            resizedAssets = await ArtworkResizeService.generateResizedArtworks(params2.artifactRunId || taskId, masterPngPath);
-          } catch (resizeErr) {
-            const err = `Fehler bei Artwork-Resize: ${resizeErr.message}`;
-            console.error(`[FinalizationService] \u274C ${err}`);
-            TaskLogService2.addEvent(taskId, {
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "FINALIZATION_EVENT",
-              title: "\u274C Artwork-Resize fehlgeschlagen",
-              content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
-            });
-            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
-            return { success: false, error: err };
-          }
-        }
-        const { getGeneratableVariants: getGenVariants } = await Promise.resolve().then(() => (init_productCatalogService(), productCatalogService_exports));
-        const generatableVariants = getGenVariants();
-        if (generatableVariants.length > 0) {
-          const existingProductVariants = resizedAssets?.productVariants || {};
-          const allProductVariantsValid = generatableVariants.every(
-            (v) => existingProductVariants[v.id] && import_fs85.default.existsSync(existingProductVariants[v.id])
-          );
-          if (allProductVariantsValid) {
-            console.log(`[FinalizationService] \u26A1 Alle ${generatableVariants.length} Product-Varianten f\xFCr Task #${taskId} bereits vorhanden.`);
-            if (!resizedAssets.productVariants) {
-              resizedAssets.productVariants = existingProductVariants;
-            }
+        let resizedAssets;
+        const { getGeneratableVariants: getGeneratableVariants2 } = await Promise.resolve().then(() => (init_productCatalogService(), productCatalogService_exports));
+        const generatableVariants = getGeneratableVariants2();
+        try {
+          const source12 = ArtworkResizeService.source(task, masterPngPath);
+          const sourceFingerprint = ArtworkResizeService.fingerprint(source12);
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "FINALIZATION_EVENT",
+            title: source12.kind === "SVG" ? "\u{1F3A8} Varianten direkt aus freigegebenem SVG rendern..." : "\u{1F3A8} PNG-Varianten vorbereiten \u2013 Original-Pixelgr\xF6\xDFe, keine Vergr\xF6\xDFerung...",
+            content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", source: source12.kind }
+          });
+          if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint)) {
+            resizedAssets = task.resizedAssets;
           } else {
-            try {
-              const trimmedPath = resizedAssets.trimmedPath;
-              if (!trimmedPath || !import_fs85.default.existsSync(trimmedPath)) {
-                throw new Error(`Trimmed PNG nicht gefunden f\xFCr Product-Variant-Generierung: ${trimmedPath}`);
-              }
-              TaskLogService2.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "FINALIZATION_EVENT",
-                title: `\u{1F3A8} ${generatableVariants.length} Product-Varianten werden generiert...`,
-                content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", variants: generatableVariants.map((v) => v.id) }
-              });
-              const productVariants2 = await ArtworkResizeService.generateAllProductVariants(params2.artifactRunId || taskId, trimmedPath);
-              resizedAssets.productVariants = productVariants2;
-            } catch (pvErr) {
-              const err = `Fehler bei Product-Variant-Generierung: ${pvErr.message}`;
-              console.error(`[FinalizationService] \u274C ${err}`);
-              TaskLogService2.addEvent(taskId, {
-                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-                type: "FINALIZATION_EVENT",
-                title: "\u274C Product-Variant-Generierung fehlgeschlagen",
-                content: { phase: "PRODUCT_VARIANT_GENERATION", status: "FAILED", error: err }
-              });
-              TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
-              return { success: false, error: err };
-            }
+            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto2.randomUUID)() : taskId);
+            resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12);
+            const currentSource = ArtworkResizeService.source(TaskLogService2.getTask(taskId), masterPngPath);
+            if (ArtworkResizeService.fingerprint(currentSource) !== sourceFingerprint) throw new Error("Artwork-Quelle wurde w\xE4hrend des Renderns ge\xE4ndert; keine \xDCbernahme.");
           }
+        } catch (error) {
+          const err = "Fehler bei Artwork-Vorbereitung: " + error.message;
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "FINALIZATION_EVENT",
+            title: "\u274C Artwork-Vorbereitung fehlgeschlagen",
+            content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
+          });
+          TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+          return { success: false, error: err };
         }
         const requiredFiles = [
-          { name: "Trimmed Master", path: resizedAssets.trimmedPath },
           { name: "Mug Standard", path: resizedAssets.mugStandardPath },
           { name: "Mug Brush", path: resizedAssets.mugBrushPath },
           { name: "Drinkware Standard", path: resizedAssets.drinkwareStandardPath },
           { name: "Drinkware Brush", path: resizedAssets.drinkwareBrushPath }
         ];
         for (const f of requiredFiles) {
-          if (!f.path || !import_fs85.default.existsSync(f.path)) {
+          if (!f.path || !import_fs84.default.existsSync(f.path)) {
             const err = `Generiertes Asset "${f.name}" nicht auf Disk gefunden: ${f.path}`;
             console.error(`[FinalizationService] \u274C ${err}`);
             TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
@@ -227294,7 +227151,7 @@ var init_finalizationService = __esm2({
         const productVariants = resizedAssets.productVariants || {};
         for (const variant of generatableVariants) {
           const variantPath = productVariants[variant.id];
-          if (!variantPath || !import_fs85.default.existsSync(variantPath)) {
+          if (!variantPath || !import_fs84.default.existsSync(variantPath)) {
             const err = `Product-Variant "${variant.id}" (${variant.label}) nicht auf Disk gefunden: ${variantPath}`;
             console.error(`[FinalizationService] \u274C ${err}`);
             TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
@@ -227429,12 +227286,12 @@ __export2(taskLogService_exports, {
   isTaskAwaitingUserAction: () => isTaskAwaitingUserAction,
   toTaskSummary: () => toTaskSummary
 });
-var import_fs86, import_path80, TaskLogService2;
+var import_fs85, import_path79, TaskLogService2;
 var init_taskLogService = __esm2({
   "src/server/services/taskLogService.ts"() {
     "use strict";
-    import_fs86 = __toESM2(require("fs"), 1);
-    import_path80 = __toESM2(require("path"), 1);
+    import_fs85 = __toESM2(require("fs"), 1);
+    import_path79 = __toESM2(require("path"), 1);
     init_settingsService();
     init_systemPromptService();
     init_ideogramService();
@@ -227451,7 +227308,7 @@ var init_taskLogService = __esm2({
     init_tasks();
     init_tasks();
     TaskLogService2 = class {
-      static dataDir = import_path80.default.resolve(process.cwd(), "data");
+      static dataDir = import_path79.default.resolve(process.cwd(), "data");
       static eventBroadcaster = null;
       static setBroadcaster(fn) {
         this.eventBroadcaster = fn;
@@ -227924,23 +227781,23 @@ ${JSON.stringify(task.payload, null, 2)}`;
           });
           const latencyMs = Date.now() - start3;
           const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-          const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs86.default.existsSync(designsDir)) {
+          const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs85.default.existsSync(designsDir)) {
             try {
-              import_fs86.default.mkdirSync(designsDir, { recursive: true });
+              import_fs85.default.mkdirSync(designsDir, { recursive: true });
             } catch (e) {
             }
           }
           const localFilename = `${cleanId}.png`;
-          const localFilePath = import_path80.default.join(designsDir, localFilename);
+          const localFilePath = import_path79.default.join(designsDir, localFilename);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
           try {
             const imgRes = await fetch(result2.imageUrl);
             if (imgRes.ok) {
               const arrayBuffer = await imgRes.arrayBuffer();
-              import_fs86.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
+              import_fs85.default.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
               console.log(`[TaskLogService] \u{1F4BE} Bild f\xFCr Task ${taskId} lokal gespeichert: ${localFilePath}`);
-              const previewFilePath = import_path80.default.join(designsDir, `${cleanId}.u4-preview.png`);
+              const previewFilePath = import_path79.default.join(designsDir, `${cleanId}.u4-preview.png`);
               VisionOptimizationService.prepareU4PreviewImage(localFilePath, previewFilePath).catch((err) => {
                 console.warn(`[TaskLogService] Background preview pre-generation failed for ${taskId}:`, err.message);
               });
@@ -228034,7 +227891,7 @@ Beantworte die Analysefragen streng als JSON!`;
           }
         });
         let imageSource = imageUrl;
-        if (import_fs86.default.existsSync(localFilePath)) {
+        if (import_fs85.default.existsSync(localFilePath)) {
           try {
             const { base64DataUrl } = await VisionOptimizationService.prepareVisionImage(localFilePath);
             imageSource = base64DataUrl || imageSource;
@@ -228181,18 +228038,18 @@ Beantworte die Analysefragen streng als JSON!`;
         const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "Men, Women, Youth";
         const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || "None";
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
-        const previewFilePath = import_path80.default.join(designsDir, `${cleanId}.u4-preview.png`);
-        const mbaFilePath = import_path80.default.join(designsDir, `${cleanId}_mba.png`);
-        const rawFilePath = import_path80.default.join(designsDir, `${cleanId}.png`);
-        const targetOriginalPath = task.localMbaPngPath && import_fs86.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task.localImagePath && import_fs86.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs86.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs86.default.existsSync(rawFilePath) ? rawFilePath : void 0;
+        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
+        const previewFilePath = import_path79.default.join(designsDir, `${cleanId}.u4-preview.png`);
+        const mbaFilePath = import_path79.default.join(designsDir, `${cleanId}_mba.png`);
+        const rawFilePath = import_path79.default.join(designsDir, `${cleanId}.png`);
+        const targetOriginalPath = task.localMbaPngPath && import_fs85.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs85.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs85.default.existsSync(rawFilePath) ? rawFilePath : void 0;
         let listingImageBase64 = void 0;
         let listingImageSourceType = "NONE";
         let optimizationMeta = void 0;
         if (targetOriginalPath) {
-          if (import_fs86.default.existsSync(previewFilePath)) {
+          if (import_fs85.default.existsSync(previewFilePath)) {
             try {
-              const previewBuf = import_fs86.default.readFileSync(previewFilePath);
+              const previewBuf = import_fs85.default.readFileSync(previewFilePath);
               if (previewBuf.length > 500) {
                 listingImageBase64 = `data:image/png;base64,${previewBuf.toString("base64")}`;
                 listingImageSourceType = "PREVIEW_1125x1350";
@@ -228229,7 +228086,7 @@ Beantworte die Analysefragen streng als JSON!`;
           if (!listingImageBase64) {
             try {
               console.warn(`[TaskLogService] \u{1F504} FALLBACK: Verwende Originalbild f\xFCr Listing-Vision-Call (${targetOriginalPath})...`);
-              const origBuf = import_fs86.default.readFileSync(targetOriginalPath);
+              const origBuf = import_fs85.default.readFileSync(targetOriginalPath);
               listingImageBase64 = `data:image/png;base64,${origBuf.toString("base64")}`;
               listingImageSourceType = "ORIGINAL_FALLBACK";
               optimizationMeta = {
@@ -228548,8 +228405,8 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         const maxColors = task.customAnswers?.maxColors ?? task.analysisResult?.color_analysis?.color_count ?? 2;
         const cleanId = task.id.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const localImagePath = task.localImagePath || import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const hasLocalImage = import_fs86.default.existsSync(localImagePath);
+        const localImagePath = task.localImagePath || import_path79.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const hasLocalImage = import_fs85.default.existsSync(localImagePath);
         if (!hasLocalImage && !task.imageUrl) {
           console.warn(`[TaskLogService] \u26A0\uFE0F Kein Bild f\xFCr Vektorisierung bei Task ${taskId} gefunden.`);
           this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
@@ -228580,25 +228437,25 @@ Beantworte die Analysefragen streng als JSON!`;
         try {
           let svgText = "";
           if (hasLocalImage) {
-            const buffer = import_fs86.default.readFileSync(localImagePath);
+            const buffer = import_fs85.default.readFileSync(localImagePath);
             svgText = await VectorizerService.vectorizeBuffer(buffer, "image/png", false, { maxColors });
           } else if (task.imageUrl) {
             svgText = await VectorizerService.vectorizeImage(task.imageUrl, false, { maxColors });
           }
           const latencyMs = Date.now() - start3;
-          const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs86.default.existsSync(designsDir)) {
+          const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs85.default.existsSync(designsDir)) {
             try {
-              import_fs86.default.mkdirSync(designsDir, { recursive: true });
+              import_fs85.default.mkdirSync(designsDir, { recursive: true });
             } catch (e) {
             }
           }
           const origFilename = `${cleanId}_original.svg`;
-          const origFilePath = import_path80.default.join(designsDir, origFilename);
-          import_fs86.default.writeFileSync(origFilePath, svgText, "utf-8");
+          const origFilePath = import_path79.default.join(designsDir, origFilename);
+          import_fs85.default.writeFileSync(origFilePath, svgText, "utf-8");
           const svgFilename = `${cleanId}.svg`;
-          const svgFilePath = import_path80.default.join(designsDir, svgFilename);
-          import_fs86.default.writeFileSync(svgFilePath, svgText, "utf-8");
+          const svgFilePath = import_path79.default.join(designsDir, svgFilename);
+          import_fs85.default.writeFileSync(svgFilePath, svgText, "utf-8");
           const ts = Date.now();
           const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}?t=${ts}`;
           const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${ts}`;
@@ -228632,7 +228489,7 @@ Beantworte die Analysefragen streng als JSON!`;
             const bgResult = await SvgRenderService.autoRemoveCornerBackground(svgText);
             if (bgResult.success && bgResult.removedCount > 0) {
               svgText = bgResult.modifiedSvg;
-              import_fs86.default.writeFileSync(svgFilePath, svgText, "utf-8");
+              import_fs85.default.writeFileSync(svgFilePath, svgText, "utf-8");
               task.svgContent = svgText;
               this.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -228646,9 +228503,9 @@ Beantworte die Analysefragen streng als JSON!`;
             }
             console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Multifarben-Testbild f\xFCr Task ${taskId}...`);
             const fourPanelFilename = `${cleanId}_4panel.png`;
-            const fourPanelFilePath = import_path80.default.join(designsDir, fourPanelFilename);
+            const fourPanelFilePath = import_path79.default.join(designsDir, fourPanelFilename);
             const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-            import_fs86.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+            import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
             const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${Date.now()}`;
             task.localFourPanelImagePath = fourPanelFilePath;
             task.fourPanelImageUrl = fourPanelUrl;
@@ -228687,9 +228544,9 @@ Beantworte die Analysefragen streng als JSON!`;
             if (auditResult.cutout_verdict === "APPROVED") {
               console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
               const mbaFilename = `${cleanId}_mba.png`;
-              const mbaFilePath = import_path80.default.join(designsDir, mbaFilename);
+              const mbaFilePath = import_path79.default.join(designsDir, mbaFilename);
               const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgText);
-              import_fs86.default.writeFileSync(mbaFilePath, mbaBuffer);
+              import_fs85.default.writeFileSync(mbaFilePath, mbaBuffer);
               const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
               task.localMbaPngPath = mbaFilePath;
               task.mbaPngUrl = mbaUrl;
@@ -228722,9 +228579,9 @@ Beantworte die Analysefragen streng als JSON!`;
           } else {
             try {
               const fourPanelFilename = `${cleanId}_4panel.png`;
-              const fourPanelFilePath = import_path80.default.join(designsDir, fourPanelFilename);
+              const fourPanelFilePath = import_path79.default.join(designsDir, fourPanelFilename);
               const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-              import_fs86.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+              import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
               task.localFourPanelImagePath = fourPanelFilePath;
               task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
             } catch (e) {
@@ -229003,15 +228860,15 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         let deletedFiles = 0;
         try {
-          const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
-          if (import_fs86.default.existsSync(designsDir)) {
-            const files = import_fs86.default.readdirSync(designsDir);
+          const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
+          if (import_fs85.default.existsSync(designsDir)) {
+            const files = import_fs85.default.readdirSync(designsDir);
             for (const file of files) {
               if (file === ".gitkeep") continue;
               try {
-                const filePath = import_path80.default.join(designsDir, file);
-                if (import_fs86.default.statSync(filePath).isFile()) {
-                  import_fs86.default.unlinkSync(filePath);
+                const filePath = import_path79.default.join(designsDir, file);
+                if (import_fs85.default.statSync(filePath).isFile()) {
+                  import_fs85.default.unlinkSync(filePath);
                   deletedFiles++;
                 }
               } catch (e) {
@@ -229022,15 +228879,15 @@ Beantworte die Analysefragen streng als JSON!`;
           console.warn("[TaskLogService] Konnte data/designs/ nicht leeren:", err);
         }
         try {
-          const dataDir = import_path80.default.resolve(process.cwd(), "data");
-          if (import_fs86.default.existsSync(dataDir)) {
-            const files = import_fs86.default.readdirSync(dataDir);
+          const dataDir = import_path79.default.resolve(process.cwd(), "data");
+          if (import_fs85.default.existsSync(dataDir)) {
+            const files = import_fs85.default.readdirSync(dataDir);
             for (const file of files) {
               if (file.endsWith("_grid2x2.jpg") || file.endsWith(".u4-preview.png") || file.endsWith("_mba.png") || file.endsWith("_orig.svg") || file.endsWith("_4panel.jpg") || file.endsWith(".svg") || file.startsWith("test_")) {
                 try {
-                  const filePath = import_path80.default.join(dataDir, file);
-                  if (import_fs86.default.statSync(filePath).isFile()) {
-                    import_fs86.default.unlinkSync(filePath);
+                  const filePath = import_path79.default.join(dataDir, file);
+                  if (import_fs85.default.statSync(filePath).isFile()) {
+                    import_fs85.default.unlinkSync(filePath);
                     deletedFiles++;
                   }
                 } catch (e) {
@@ -229054,10 +228911,10 @@ Beantworte die Analysefragen streng als JSON!`;
         if (deleted) {
           try {
             const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-            const imgPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${safeId}.png`);
-            if (import_fs86.default.existsSync(imgPath)) import_fs86.default.unlinkSync(imgPath);
-            const previewPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${safeId}.u4-preview.png`);
-            if (import_fs86.default.existsSync(previewPath)) import_fs86.default.unlinkSync(previewPath);
+            const imgPath = import_path79.default.resolve(process.cwd(), "data", "designs", `${safeId}.png`);
+            if (import_fs85.default.existsSync(imgPath)) import_fs85.default.unlinkSync(imgPath);
+            const previewPath = import_path79.default.resolve(process.cwd(), "data", "designs", `${safeId}.u4-preview.png`);
+            if (import_fs85.default.existsSync(previewPath)) import_fs85.default.unlinkSync(previewPath);
           } catch (e) {
           }
           if (this.eventBroadcaster) {
@@ -229409,17 +229266,17 @@ Beantworte die Analysefragen streng als JSON!`;
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
         if (params2.action === "APPROVE") {
           if (params2.editedSvgContent) {
-            if (!import_fs86.default.existsSync(designsDir)) {
+            if (!import_fs85.default.existsSync(designsDir)) {
               try {
-                import_fs86.default.mkdirSync(designsDir, { recursive: true });
+                import_fs85.default.mkdirSync(designsDir, { recursive: true });
               } catch (e) {
               }
             }
-            const svgFilePath = import_path80.default.join(designsDir, `${cleanId}.svg`);
-            import_fs86.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
+            const svgFilePath = import_path79.default.join(designsDir, `${cleanId}.svg`);
+            import_fs85.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
             task.svgContent = params2.editedSvgContent;
             task.localSvgPath = svgFilePath;
             task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
@@ -229428,8 +229285,8 @@ Beantworte die Analysefragen streng als JSON!`;
           const ts = Date.now();
           console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Testbild nach SVG-Freigabe f\xFCr Task ${taskId}...`);
           const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
-          const fourPanelFilePath = import_path80.default.join(designsDir, `${cleanId}_4panel.png`);
-          import_fs86.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+          const fourPanelFilePath = import_path79.default.join(designsDir, `${cleanId}_4panel.png`);
+          import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
           task.localFourPanelImagePath = fourPanelFilePath;
           const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
           task.fourPanelImageUrl = fourPanelUrl;
@@ -229468,8 +229325,8 @@ Beantworte die Analysefragen streng als JSON!`;
           if (auditResult.cutout_verdict === "APPROVED") {
             console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
             const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
-            const mbaFilePath = import_path80.default.join(designsDir, `${cleanId}_mba.png`);
-            import_fs86.default.writeFileSync(mbaFilePath, mbaBuffer);
+            const mbaFilePath = import_path79.default.join(designsDir, `${cleanId}_mba.png`);
+            import_fs85.default.writeFileSync(mbaFilePath, mbaBuffer);
             task.localMbaPngPath = mbaFilePath;
             task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
             this.addEvent(taskId, {
@@ -229558,14 +229415,14 @@ Beantworte die Analysefragen streng als JSON!`;
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
-        const origFilePath = import_path80.default.join(designsDir, `${cleanId}_original.svg`);
-        const svgFilePath = import_path80.default.join(designsDir, `${cleanId}.svg`);
-        if (!import_fs86.default.existsSync(origFilePath)) {
+        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
+        const origFilePath = import_path79.default.join(designsDir, `${cleanId}_original.svg`);
+        const svgFilePath = import_path79.default.join(designsDir, `${cleanId}.svg`);
+        if (!import_fs85.default.existsSync(origFilePath)) {
           throw new Error(`Original-SVG f\xFCr Task ${taskId} nicht gefunden.`);
         }
-        const originalSvgContent = import_fs86.default.readFileSync(origFilePath, "utf-8");
-        import_fs86.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
+        const originalSvgContent = import_fs85.default.readFileSync(origFilePath, "utf-8");
+        import_fs85.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
         task.svgContent = originalSvgContent;
         task.localSvgPath = svgFilePath;
         task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
@@ -230908,8 +230765,8 @@ var import_websocket_server = __toESM2(require_websocket_server(), 1);
 
 // src/server/index.ts
 var import_cors = __toESM2(require_lib3(), 1);
-var import_path83 = __toESM2(require("path"), 1);
-var import_fs89 = __toESM2(require("fs"), 1);
+var import_path82 = __toESM2(require("path"), 1);
+var import_fs88 = __toESM2(require("fs"), 1);
 var import_dotenv = __toESM2(require_main(), 1);
 var import_url3 = require("url");
 var import_child_process8 = require("child_process");
@@ -230920,8 +230777,8 @@ init_ideogramService();
 init_vectorizerService();
 
 // src/server/services/supabaseService.ts
-var import_fs87 = __toESM2(require("fs"), 1);
-var import_path81 = __toESM2(require("path"), 1);
+var import_fs86 = __toESM2(require("fs"), 1);
+var import_path80 = __toESM2(require("path"), 1);
 init_dist4();
 init_settingsService();
 var SupabaseService = class {
@@ -230989,11 +230846,11 @@ var SupabaseService = class {
     if (this.cachedStats && now - this.lastStatsFetch < 15e3) {
       return this.cachedStats;
     }
-    const statsFile = import_path81.default.resolve(process.cwd(), "data", "supabase_stats.json");
+    const statsFile = import_path80.default.resolve(process.cwd(), "data", "supabase_stats.json");
     const loadPersisted = () => {
       try {
-        if (import_fs87.default.existsSync(statsFile)) {
-          return JSON.parse(import_fs87.default.readFileSync(statsFile, "utf-8"));
+        if (import_fs86.default.existsSync(statsFile)) {
+          return JSON.parse(import_fs86.default.readFileSync(statsFile, "utf-8"));
         }
       } catch (e) {
       }
@@ -231035,9 +230892,9 @@ var SupabaseService = class {
       };
       if (result2.totalDesigns > 0 || result2.liveDesigns > 0) {
         try {
-          const dataDir = import_path81.default.resolve(process.cwd(), "data");
-          if (!import_fs87.default.existsSync(dataDir)) import_fs87.default.mkdirSync(dataDir, { recursive: true });
-          import_fs87.default.writeFileSync(statsFile, JSON.stringify(result2, null, 2), "utf-8");
+          const dataDir = import_path80.default.resolve(process.cwd(), "data");
+          if (!import_fs86.default.existsSync(dataDir)) import_fs86.default.mkdirSync(dataDir, { recursive: true });
+          import_fs86.default.writeFileSync(statsFile, JSON.stringify(result2, null, 2), "utf-8");
         } catch (e) {
         }
       }
@@ -231702,8 +231559,8 @@ var ProductScannerService = class {
 init_queueService();
 
 // src/server/services/uploadWorkerService.ts
-var import_path82 = __toESM2(require("path"), 1);
-var import_fs88 = __toESM2(require("fs"), 1);
+var import_path81 = __toESM2(require("path"), 1);
+var import_fs87 = __toESM2(require("fs"), 1);
 init_browserSessionService();
 init_queueService();
 init_productCatalogService();
@@ -232034,19 +231891,19 @@ var UploadWorkerService = class _UploadWorkerService {
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       let pngAbsolutePath = "";
-      if (item.pngPath && import_fs88.default.existsSync(item.pngPath)) {
-        pngAbsolutePath = import_path82.default.resolve(item.pngPath);
+      if (item.pngPath && import_fs87.default.existsSync(item.pngPath)) {
+        pngAbsolutePath = import_path81.default.resolve(item.pngPath);
       } else {
         const candidatePaths = [
-          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId}.png`),
-          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId.replace("#", "")}.png`),
-          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`),
-          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_master.png`),
-          import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}.png`),
-          import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}_master.png`)
+          import_path81.default.resolve(process.cwd(), "data", "designs", `${item.taskId}.png`),
+          import_path81.default.resolve(process.cwd(), "data", "designs", `${item.taskId.replace("#", "")}.png`),
+          import_path81.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`),
+          import_path81.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_master.png`),
+          import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}.png`),
+          import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}_master.png`)
         ];
         for (const cp of candidatePaths) {
-          if (import_fs88.default.existsSync(cp)) {
+          if (import_fs87.default.existsSync(cp)) {
             pngAbsolutePath = cp;
             break;
           }
@@ -232055,10 +231912,10 @@ var UploadWorkerService = class _UploadWorkerService {
       if (isUpdate) {
         this.log(`\u2139\uFE0F [UPDATE-MODUS] Bestehendes Listing wird bearbeitet \u2013 Artwork ist bereits auf Amazon vorhanden.`, "Update Modus", 25, 100);
       } else {
-        if (!pngAbsolutePath || !import_fs88.default.existsSync(pngAbsolutePath)) {
+        if (!pngAbsolutePath || !import_fs87.default.existsSync(pngAbsolutePath)) {
           throw new Error(`Druckfertige 4500x5400px PNG-Datei f\xFCr Task #${item.taskId} nicht gefunden.`);
         }
-        this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path82.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
+        this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path81.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
         const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', {
           state: "attached",
           timeout: 2e4
@@ -232780,7 +232637,7 @@ var UploadWorkerService = class _UploadWorkerService {
             } else if (selectedVariant.storageType === "productVariants") {
               targetArtworkPath = item.resizedAssets?.productVariants?.[selectedVariant.id];
             }
-            if (!targetArtworkPath || !import_fs88.default.existsSync(targetArtworkPath)) {
+            if (!targetArtworkPath || !import_fs87.default.existsSync(targetArtworkPath)) {
               const err = `FAILED_ARTWORK_RESOLUTION: Asset f\xFCr Variante "${selectedVariant.id}" (${selectedVariant.label}) f\xFCr ${product.displayName} nicht gefunden (storageType: ${selectedVariant.storageType})`;
               currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
               currentProductFailureReason = err;
@@ -232895,7 +232752,7 @@ var UploadWorkerService = class _UploadWorkerService {
                     }
                   }, locateInputResult.inputId);
                 }
-                this.log(`\u23F3 ${product.displayName}: Artwork zugewiesen (${import_path82.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
+                this.log(`\u23F3 ${product.displayName}: Artwork zugewiesen (${import_path81.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
                 let uploadDone = false;
                 const pollStart = Date.now();
                 const amazonKey = product.amazon?.key || product.id;
@@ -233343,8 +233200,8 @@ var UploadWorkerService = class _UploadWorkerService {
 };
 
 // src/server/services/manualFinalizationService.ts
-var import_node_fs = __toESM2(require("node:fs"), 1);
-var import_node_crypto = require("node:crypto");
+var import_node_fs2 = __toESM2(require("node:fs"), 1);
+var import_node_crypto3 = require("node:crypto");
 init_finalizationService();
 init_queueService();
 init_taskLogService();
@@ -233373,18 +233230,18 @@ var ManualFinalizationService = class {
         pipeline: item.designId || item.source === "UPDATE" || item.type === "update" ? "UPDATE" : "DESIGN",
         masterPngPath: item.pngPath,
         prepareOnly: true,
-        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto.randomUUID)()}`
+        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto3.randomUUID)()}`
       });
       if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error(result2.error || "Vorbereitung fehlgeschlagen");
       const assets = result2.resizedAssets;
-      const paths = [assets.trimmedPath, assets.mugStandardPath, assets.mugBrushPath, assets.drinkwareStandardPath, assets.drinkwareBrushPath, ...Object.values(assets.productVariants || {})];
+      const paths = [assets.mugStandardPath, assets.mugBrushPath, assets.drinkwareStandardPath, assets.drinkwareBrushPath, ...Object.values(assets.productVariants || {})];
       for (const file of paths) {
-        const descriptor = import_node_fs.default.openSync(file, "r");
+        const descriptor = import_node_fs2.default.openSync(file, "r");
         const header = Buffer.alloc(24);
         try {
-          import_node_fs.default.readSync(descriptor, header, 0, 24, 0);
+          import_node_fs2.default.readSync(descriptor, header, 0, 24, 0);
         } finally {
-          import_node_fs.default.closeSync(descriptor);
+          import_node_fs2.default.closeSync(descriptor);
         }
         if (header.toString("hex", 0, 8) !== "89504e470d0a1a0a" || !header.readUInt32BE(16) || !header.readUInt32BE(20)) {
           throw new Error(`Ung\xFCltiges PNG: ${file}`);
@@ -233539,7 +233396,7 @@ init_taskRecoveryService();
 init_amazonRecoveryVerificationService();
 var import_meta = {};
 import_dotenv.default.config();
-var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path83.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
+var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path82.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
 var app = (0, import_express.default)();
 var server2 = import_http4.default.createServer(app);
 var isSystemReady = false;
@@ -233871,26 +233728,26 @@ app.post("/api/v1/system/update", async (req, res) => {
     }
     const arrayBuffer = await response2.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const tempTarPath = import_path83.default.resolve(process.cwd(), ".temp_update.tar.gz");
-    import_fs89.default.writeFileSync(tempTarPath, buffer);
+    const tempTarPath = import_path82.default.resolve(process.cwd(), ".temp_update.tar.gz");
+    import_fs88.default.writeFileSync(tempTarPath, buffer);
     (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
     try {
-      import_fs89.default.unlinkSync(tempTarPath);
+      import_fs88.default.unlinkSync(tempTarPath);
     } catch (e) {
     }
-    const hostRepoPath = import_path83.default.resolve(process.cwd(), "host_repo");
-    if (import_fs89.default.existsSync(hostRepoPath)) {
+    const hostRepoPath = import_path82.default.resolve(process.cwd(), "host_repo");
+    if (import_fs88.default.existsSync(hostRepoPath)) {
       try {
-        import_fs89.default.writeFileSync(tempTarPath, buffer);
+        import_fs88.default.writeFileSync(tempTarPath, buffer);
         (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });
         try {
-          import_fs89.default.unlinkSync(tempTarPath);
+          import_fs88.default.unlinkSync(tempTarPath);
         } catch (e) {
         }
       } catch (e) {
@@ -234166,11 +234023,11 @@ app.post("/api/v1/design-pipeline/run", async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
-var heartbeatFile = import_path83.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
+var heartbeatFile = import_path82.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
 function loadHeartbeatState() {
   try {
-    if (import_fs89.default.existsSync(heartbeatFile)) {
-      const data = JSON.parse(import_fs89.default.readFileSync(heartbeatFile, "utf-8"));
+    if (import_fs88.default.existsSync(heartbeatFile)) {
+      const data = JSON.parse(import_fs88.default.readFileSync(heartbeatFile, "utf-8"));
       return {
         lastPingTime: Number(data.lastPingTime) || 0,
         lastPingIp: data.lastPingIp || "",
@@ -234193,9 +234050,9 @@ function recordHermesHeartbeat(req, metadata) {
   }
   console.log(`[MCP Heartbeat] \u{1F7E2} Heartbeat #${hermesHeartbeat.totalPings} von IP ${clientIp} registriert (Server-Zeit: ${(/* @__PURE__ */ new Date()).toLocaleTimeString()})`);
   try {
-    const dataDir = import_path83.default.resolve(process.cwd(), "data");
-    if (!import_fs89.default.existsSync(dataDir)) import_fs89.default.mkdirSync(dataDir, { recursive: true });
-    import_fs89.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
+    const dataDir = import_path82.default.resolve(process.cwd(), "data");
+    if (!import_fs88.default.existsSync(dataDir)) import_fs88.default.mkdirSync(dataDir, { recursive: true });
+    import_fs88.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
   } catch (e) {
   }
   const currentHermes = {
@@ -234656,66 +234513,66 @@ app.post("/api/v1/systemprompts/reset", (req, res) => {
 });
 app.get("/api/v1/designs/image/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const mbaFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs89.default.existsSync(mbaFilePath)) {
+  if (import_fs88.default.existsSync(mbaFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs89.default.createReadStream(mbaFilePath).pipe(res);
+    return import_fs88.default.createReadStream(mbaFilePath).pipe(res);
   }
-  if (import_fs89.default.existsSync(rawFilePath)) {
+  if (import_fs88.default.existsSync(rawFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs89.default.createReadStream(rawFilePath).pipe(res);
+    return import_fs88.default.createReadStream(rawFilePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  if (task?.localImagePath && import_fs89.default.existsSync(task.localImagePath)) {
+  if (task?.localImagePath && import_fs88.default.existsSync(task.localImagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs89.default.createReadStream(task.localImagePath).pipe(res);
+    return import_fs88.default.createReadStream(task.localImagePath).pipe(res);
   }
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
   }
   const queueItems = QueueService.loadQueue();
   const qItem = queueItems.find((q) => q.id === req.params.taskId || q.taskId === req.params.taskId || q.designId === req.params.taskId);
-  if (qItem?.pngPath && import_fs89.default.existsSync(qItem.pngPath)) {
+  if (qItem?.pngPath && import_fs88.default.existsSync(qItem.pngPath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs89.default.createReadStream(qItem.pngPath).pipe(res);
+    return import_fs88.default.createReadStream(qItem.pngPath).pipe(res);
   }
-  if (qItem?.imagePath && import_fs89.default.existsSync(qItem.imagePath)) {
+  if (qItem?.imagePath && import_fs88.default.existsSync(qItem.imagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs89.default.createReadStream(qItem.imagePath).pipe(res);
+    return import_fs88.default.createReadStream(qItem.imagePath).pipe(res);
   }
   res.status(404).send("Design image not found");
 });
 app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const gridFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
+  const gridFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs89.default.existsSync(gridFilePath)) {
+  if (import_fs88.default.existsSync(gridFilePath)) {
     try {
-      const stats2 = import_fs89.default.statSync(gridFilePath);
+      const stats2 = import_fs88.default.statSync(gridFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs89.default.createReadStream(gridFilePath).pipe(res);
+        return import_fs88.default.createReadStream(gridFilePath).pipe(res);
       }
     } catch (e) {
     }
   }
-  const mbaFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs89.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs89.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs89.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs89.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs88.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs88.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs88.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs88.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge 2x2 Grid f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
-      if (savedPath && import_fs89.default.existsSync(savedPath)) {
+      if (savedPath && import_fs88.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs89.default.createReadStream(savedPath).pipe(res);
+        return import_fs88.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -234725,31 +234582,31 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
 });
 app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const previewFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+  const previewFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs89.default.existsSync(previewFilePath)) {
+  if (import_fs88.default.existsSync(previewFilePath)) {
     try {
-      const stats2 = import_fs89.default.statSync(previewFilePath);
+      const stats2 = import_fs88.default.statSync(previewFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs89.default.createReadStream(previewFilePath).pipe(res);
+        return import_fs88.default.createReadStream(previewFilePath).pipe(res);
       }
     } catch (e) {
     }
   }
-  const mbaFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs89.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs89.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs89.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs89.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs88.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs88.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs88.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs88.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge U4 Preview f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
-      if (savedPath && import_fs89.default.existsSync(savedPath)) {
+      if (savedPath && import_fs88.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs89.default.createReadStream(savedPath).pipe(res);
+        return import_fs88.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] U4-Preview Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -234759,13 +234616,13 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
 });
 app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  const filePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs89.default.existsSync(filePath)) {
+  if (import_fs88.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs89.default.createReadStream(filePath).pipe(res);
+    return import_fs88.default.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -234776,18 +234633,18 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
 });
 app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
+  const filePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs89.default.existsSync(filePath)) {
+  if (import_fs88.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs89.default.createReadStream(filePath).pipe(res);
+    return import_fs88.default.createReadStream(filePath).pipe(res);
   }
-  const fallbackPath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
-  if (import_fs89.default.existsSync(fallbackPath)) {
+  const fallbackPath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  if (import_fs88.default.existsSync(fallbackPath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs89.default.createReadStream(fallbackPath).pipe(res);
+    return import_fs88.default.createReadStream(fallbackPath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -234798,25 +234655,25 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
 });
 app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const filePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs89.default.existsSync(filePath)) {
+  if (import_fs88.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs89.default.createReadStream(filePath).pipe(res);
+    return import_fs88.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("MBA PNG not found");
 });
 app.get("/api/v1/designs/4panel/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
+  const filePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs89.default.existsSync(filePath)) {
+  if (import_fs88.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs89.default.createReadStream(filePath).pipe(res);
+    return import_fs88.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("4-Panel image not found");
 });
@@ -235265,14 +235122,14 @@ app.delete("/api/v1/products/catalog", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-var clientDistPath = import_path83.default.resolve(currentDir2, "client");
-var fallbackDistPath = import_path83.default.resolve(process.cwd(), "dist/client");
-var staticPath = import_fs89.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
-if (import_fs89.default.existsSync(staticPath)) {
+var clientDistPath = import_path82.default.resolve(currentDir2, "client");
+var fallbackDistPath = import_path82.default.resolve(process.cwd(), "dist/client");
+var staticPath = import_fs88.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
+if (import_fs88.default.existsSync(staticPath)) {
   console.log(`\u{1F4C2} Serving static frontend from ${staticPath}`);
   app.use(import_express.default.static(staticPath));
   app.get("*", (req, res) => {
-    res.sendFile(import_path83.default.join(staticPath, "index.html"));
+    res.sendFile(import_path82.default.join(staticPath, "index.html"));
   });
 }
 TaskRepository.init();
