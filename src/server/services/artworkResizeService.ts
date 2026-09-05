@@ -87,7 +87,7 @@ export class ArtworkResizeService {
     return { kind: 'PNG', path: pngPath };
   }
   static fingerprint(source: ArtworkSource): string {
-    return createHash('sha256').update('artwork-v5-direct-png-canvas-stream-validation')
+    return createHash('sha256').update('artwork-v6-direct-svg-png-canvas-stream-validation')
       .update(source.kind).update(source.kind === 'SVG' ? source.svg : fs.readFileSync(source.path))
       .update(JSON.stringify(artworkProfiles())).update(fs.readFileSync(this.getBrushTipPath())).digest('hex');
   }
@@ -153,13 +153,10 @@ export class ArtworkResizeService {
             const base64 = await page.evaluate(p=>(window as any).__artwork.renderPng(p),profile);
             png = Buffer.from(base64, 'base64');
           } else {
-            stage = 'SVG_COMPOSITION_DECODE';
-            await page.setViewportSize({width:profile.width,height:profile.height});
-            await page.evaluate(p=>(window as any).__artwork.render(p),profile);
-            stage = 'SVG_SCREENSHOT';
-            png = await page.screenshot({type:'png',omitBackground:true,timeout:120000});
-            await page.evaluate(()=>{(document.getElementById('output') as HTMLImageElement).src='';});
+            stage = 'SVG_CANVAS_RENDER_ENCODE';
             await page.setViewportSize({width:1,height:1});
+            const base64 = await page.evaluate(p=>(window as any).__artwork.renderSvgPng(p),profile);
+            png = Buffer.from(base64, 'base64');
           }
           stage = 'PNG_DPI_METADATA';
           const finalPng = inject300Dpi(png);

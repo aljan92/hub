@@ -89,6 +89,11 @@ try {
     const assets=await ArtworkResizeService.generateResizedArtworks('full_fixture',source);
     assert.equal(Object.keys(assets.productVariants!).length,4);assert.equal(assets.trimmedPath,undefined);
     assert(ArtworkResizeService.hasCurrentAssets(assets,ArtworkResizeService.fingerprint(source)));
+    const blanket=assets.productVariants!.CANVAS_BG_CONTAIN_4452X5292_DARK;
+    await ArtworkRenderSession.run(async page=>{
+      const alpha=await page.evaluate(async uri=>{const image=new Image();image.src=uri;await image.decode();const c=document.createElement('canvas');c.width=2;c.height=2;const ctx=c.getContext('2d')!;ctx.drawImage(image,0,0,2,2);return [ctx.getImageData(0,0,1,1).data[3],ctx.getImageData(1,1,1,1).data[3]];},'data:image/png;base64,'+fs.readFileSync(blanket).toString('base64'));
+      assert.deepEqual(alpha,[255,255],'Large background output must not end in a transparent screenshot cutoff');
+    });
     assert(!ArtworkResizeService.hasCurrentAssets(assets,ArtworkResizeService.fingerprint({kind:'SVG',svg:svg.replace('#ff0000','#0000ff')})));
     fs.appendFileSync(assets.mugStandardPath,'corrupt');
     assert(!ArtworkResizeService.hasCurrentAssets(assets,ArtworkResizeService.fingerprint(source)));

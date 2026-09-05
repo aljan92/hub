@@ -219218,6 +219218,34 @@ async function installArtworkRuntime(params2) {
     output.src = encode(wrap(w, h, content));
     await output.decode();
   };
+  state.renderSvgPng = async (profile) => {
+    if (params2.kind !== "SVG") throw new Error("Direkter SVG-Canvas-Renderer ben\xF6tigt eine SVG-Quelle");
+    await state.render(profile);
+    const output = document.getElementById("output");
+    const target = document.createElement("canvas");
+    target.width = profile.width;
+    target.height = profile.height;
+    try {
+      const context2 = target.getContext("2d");
+      if (!context2) throw new Error("SVG-Ausgabe-Canvas konnte nicht erstellt werden");
+      context2.drawImage(output, 0, 0, target.width, target.height);
+      if (profile.background) {
+        const points = [[0, 0], [target.width - 1, 0], [0, target.height - 1], [target.width - 1, target.height - 1]];
+        if (points.some(([x, y]) => context2.getImageData(x, y, 1, 1).data[3] !== 255)) {
+          throw new Error("SVG-Ausgabe enth\xE4lt eine transparente Abrisskante trotz Hintergrundprofil");
+        }
+      }
+      const result2 = target.toDataURL("image/png");
+      if (!result2.startsWith("data:image/png;base64,")) throw new Error("SVG-Ausgabe konnte nicht als PNG kodiert werden");
+      return result2.slice("data:image/png;base64,".length);
+    } finally {
+      output.src = "";
+      output.style.width = "1px";
+      output.style.height = "1px";
+      target.width = 0;
+      target.height = 0;
+    }
+  };
   window.__artwork = state;
   return { width, height, bounds, kind: params2.kind };
 }
@@ -219663,7 +219691,7 @@ var init_artworkResizeService = __esm2({
         return { kind: "PNG", path: pngPath };
       }
       static fingerprint(source12) {
-        return (0, import_node_crypto.createHash)("sha256").update("artwork-v5-direct-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+        return (0, import_node_crypto.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
       }
       static hasCurrentAssets(assets, fingerprint) {
         if (!assets || assets.renderFingerprint !== fingerprint) return false;
@@ -219735,15 +219763,10 @@ var init_artworkResizeService = __esm2({
                 const base64 = await page.evaluate((p) => window.__artwork.renderPng(p), profile);
                 png = Buffer.from(base64, "base64");
               } else {
-                stage = "SVG_COMPOSITION_DECODE";
-                await page.setViewportSize({ width: profile.width, height: profile.height });
-                await page.evaluate((p) => window.__artwork.render(p), profile);
-                stage = "SVG_SCREENSHOT";
-                png = await page.screenshot({ type: "png", omitBackground: true, timeout: 12e4 });
-                await page.evaluate(() => {
-                  document.getElementById("output").src = "";
-                });
+                stage = "SVG_CANVAS_RENDER_ENCODE";
                 await page.setViewportSize({ width: 1, height: 1 });
+                const base64 = await page.evaluate((p) => window.__artwork.renderSvgPng(p), profile);
+                png = Buffer.from(base64, "base64");
               }
               stage = "PNG_DPI_METADATA";
               const finalPng = inject300Dpi(png);
@@ -233209,7 +233232,24 @@ var UploadWorkerService = class _UploadWorkerService {
       }
       this.log(`\u2705 PUBLISH GUARD: Alle ${successfulCount} Produkte erfolgreich konfiguriert (${skippedCount} erwartete Skips). Freigabe erteilt!`);
       QueueService.updateItemUploadRecovery(item.id, { phase: "READY_TO_SUBMIT" });
-      if (mode === "publish") {
+      const canonicalIntended = AmazonRecoveryVerificationService.canonicalizeRemoteState({
+        immutableListings: item.immutableListings || item.listings,
+        activeProductsMap: item.activeProductsMap,
+        pricesMap: item.pricesMap,
+        colorOptions: item.colorOptions,
+        fitTypes: item.fitTypes
+      });
+      const intendedRemoteFingerprint = AmazonRecoveryVerificationService.computeRemoteFingerprint(canonicalIntended);
+      let remoteBaseline;
+      if (isUpdate && cleanDesignId) {
+        try {
+          const inspectRes = await AmazonInspectService.inspectProductConfig(cleanDesignId);
+          if (inspectRes.success && inspectRes.data) remoteBaseline = AmazonRecoveryVerificationService.createBaselineSnapshot(cleanDesignId, inspectRes.data);
+        } catch (bErr) {
+          console.warn("[UploadWorker] Baseline-Snapshot nicht abrufbar:", bErr.message);
+        }
+      }
+      if (effectiveMode === "publish") {
         if (this.pauseBeforePublishRequested) {
           this.isPausedBeforePublish = true;
           this.log(`\u23F8\uFE0F Upload vor Publish pausiert (Pr\xFCfmodus aktiv). \xDCberpr\xFCfe die Amazon-Seite im Screencast!`, "Pausiert vor Publish (Pr\xFCfmodus)", 92, 100);
@@ -233226,25 +233266,6 @@ var UploadWorkerService = class _UploadWorkerService {
           });
           this.isPausedBeforePublish = false;
           if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
-        }
-        const canonicalIntended = AmazonRecoveryVerificationService.canonicalizeRemoteState({
-          immutableListings: item.immutableListings || item.listings,
-          activeProductsMap: item.activeProductsMap,
-          pricesMap: item.pricesMap,
-          colorOptions: item.colorOptions,
-          fitTypes: item.fitTypes
-        });
-        const intendedRemoteFingerprint2 = AmazonRecoveryVerificationService.computeRemoteFingerprint(canonicalIntended);
-        let remoteBaseline2;
-        if (isUpdate && cleanDesignId) {
-          try {
-            const inspectRes = await AmazonInspectService.inspectProductConfig(cleanDesignId);
-            if (inspectRes.success && inspectRes.data) {
-              remoteBaseline2 = AmazonRecoveryVerificationService.createBaselineSnapshot(cleanDesignId, inspectRes.data);
-            }
-          } catch (bErr) {
-            console.warn("[UploadWorker] Baseline-Snapshot nicht abrufbar:", bErr.message);
-          }
         }
         this.log(`\u{1F680} Klicke 'Publish' Button f\xFCr Live-Ver\xF6ffentlichung...`, "Ver\xF6ffentliche...", 95, 100);
         const publishCheck = await page.evaluate(() => {
@@ -233274,8 +233295,8 @@ var UploadWorkerService = class _UploadWorkerService {
           phase: "REMOTE_REQUEST_INTENT",
           action: "PUBLISH",
           remoteRequestIntentAt: (/* @__PURE__ */ new Date()).toISOString(),
-          remoteBaseline: remoteBaseline2,
-          intendedRemoteFingerprint: intendedRemoteFingerprint2
+          remoteBaseline,
+          intendedRemoteFingerprint
         });
         await confirmBtn.click();
         QueueService.updateItemUploadRecovery(item.id, {

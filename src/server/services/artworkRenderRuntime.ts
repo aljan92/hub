@@ -118,6 +118,30 @@ export async function installArtworkRuntime(params: { kind: 'SVG' | 'PNG'; data:
     output.src = encode(wrap(w, h, content));
     await output.decode();
   };
+  state.renderSvgPng = async (profile: any) => {
+    if (params.kind !== 'SVG') throw new Error('Direkter SVG-Canvas-Renderer benötigt eine SVG-Quelle');
+    await state.render(profile);
+    const output = document.getElementById('output') as HTMLImageElement;
+    const target = document.createElement('canvas');
+    target.width = profile.width; target.height = profile.height;
+    try {
+      const context = target.getContext('2d');
+      if (!context) throw new Error('SVG-Ausgabe-Canvas konnte nicht erstellt werden');
+      context.drawImage(output, 0, 0, target.width, target.height);
+      if (profile.background) {
+        const points = [[0, 0], [target.width - 1, 0], [0, target.height - 1], [target.width - 1, target.height - 1]];
+        if (points.some(([x, y]) => context.getImageData(x, y, 1, 1).data[3] !== 255)) {
+          throw new Error('SVG-Ausgabe enthält eine transparente Abrisskante trotz Hintergrundprofil');
+        }
+      }
+      const result = target.toDataURL('image/png');
+      if (!result.startsWith('data:image/png;base64,')) throw new Error('SVG-Ausgabe konnte nicht als PNG kodiert werden');
+      return result.slice('data:image/png;base64,'.length);
+    } finally {
+      output.src = ''; output.style.width = '1px'; output.style.height = '1px';
+      target.width = 0; target.height = 0;
+    }
+  };
   (window as any).__artwork = state;
   return { width, height, bounds, kind: params.kind };
 }

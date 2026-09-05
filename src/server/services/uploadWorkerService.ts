@@ -1748,7 +1748,27 @@ export class UploadWorkerService {
       // 9. Final Action: Save Draft vs. Live Publish (with Strict Validation & State Verification)
       QueueService.updateItemUploadRecovery(item.id, { phase: 'READY_TO_SUBMIT' });
 
-      if (mode === 'publish') {
+      // Both Publish and Save Draft cross the same durable remote-intent boundary.
+      // Compute recovery evidence in shared scope before either branch uses it.
+      const canonicalIntended = AmazonRecoveryVerificationService.canonicalizeRemoteState({
+        immutableListings: (item as any).immutableListings || item.listings,
+        activeProductsMap: item.activeProductsMap,
+        pricesMap: (item as any).pricesMap,
+        colorOptions: (item as any).colorOptions,
+        fitTypes: item.fitTypes
+      });
+      const intendedRemoteFingerprint = AmazonRecoveryVerificationService.computeRemoteFingerprint(canonicalIntended);
+      let remoteBaseline: RemoteBaselineInfo | undefined;
+      if (isUpdate && cleanDesignId) {
+        try {
+          const inspectRes = await AmazonInspectService.inspectProductConfig(cleanDesignId);
+          if (inspectRes.success && inspectRes.data) remoteBaseline = AmazonRecoveryVerificationService.createBaselineSnapshot(cleanDesignId, inspectRes.data);
+        } catch (bErr: any) {
+          console.warn('[UploadWorker] Baseline-Snapshot nicht abrufbar:', bErr.message);
+        }
+      }
+
+      if (effectiveMode === 'publish') {
         if (this.pauseBeforePublishRequested) {
           this.isPausedBeforePublish = true;
           this.log(`⏸️ Upload vor Publish pausiert (Prüfmodus aktiv). Überprüfe die Amazon-Seite im Screencast!`, 'Pausiert vor Publish (Prüfmodus)', 92, 100);
@@ -1767,29 +1787,6 @@ export class UploadWorkerService {
 
           this.isPausedBeforePublish = false;
           if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
-        }
-
-        // Pre-compute intended canonical fingerprint
-        const canonicalIntended = AmazonRecoveryVerificationService.canonicalizeRemoteState({
-          immutableListings: item.immutableListings || item.listings,
-          activeProductsMap: item.activeProductsMap,
-          pricesMap: item.pricesMap,
-          colorOptions: item.colorOptions,
-          fitTypes: item.fitTypes
-        });
-        const intendedRemoteFingerprint = AmazonRecoveryVerificationService.computeRemoteFingerprint(canonicalIntended);
-
-        // Fetch remote baseline snapshot if UPDATE task
-        let remoteBaseline: RemoteBaselineInfo | undefined;
-        if (isUpdate && cleanDesignId) {
-          try {
-            const inspectRes = await AmazonInspectService.inspectProductConfig(cleanDesignId);
-            if (inspectRes.success && inspectRes.data) {
-              remoteBaseline = AmazonRecoveryVerificationService.createBaselineSnapshot(cleanDesignId, inspectRes.data);
-            }
-          } catch (bErr: any) {
-            console.warn('[UploadWorker] Baseline-Snapshot nicht abrufbar:', bErr.message);
-          }
         }
 
         this.log(`🚀 Klicke 'Publish' Button für Live-Veröffentlichung...`, 'Veröffentliche...', 95, 100);
