@@ -874,97 +874,6 @@ export const QueueView: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-2">
-        {/* 1. Warteschlange */}
-        <button
-          onClick={() => setActiveTab('queue')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'queue'
-              ? 'bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <ListOrdered className="w-4 h-4" />
-          <span>Warteschlange</span>
-          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700">
-            {activeQueueDesigns.length}
-          </span>
-        </button>
-
-        {/* 2. Pausiert */}
-        <button
-          onClick={() => setActiveTab('paused')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'paused'
-              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <Pause className="w-4 h-4 text-amber-400" />
-          <span>Pausiert</span>
-          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono border ${
-            pausedDesigns.length > 0
-              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-              : 'bg-slate-800 text-slate-400 border-slate-700'
-          }`}>
-            {pausedDesigns.length}
-          </span>
-        </button>
-
-        {/* 3. Update */}
-        <button
-          onClick={() => setActiveTab('update')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'update'
-              ? 'bg-teal-500/15 text-teal-300 border border-teal-500/30 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <RotateCcw className="w-4 h-4 text-teal-400" />
-          <span>Update</span>
-          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-teal-950/60 text-teal-300 border border-teal-800/60">
-            {updateDesigns.length}
-          </span>
-        </button>
-
-        {/* 4. Hochgeladen */}
-        <button
-          onClick={() => setActiveTab('completed')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'completed'
-              ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>Hochgeladen</span>
-          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 text-emerald-300 border border-emerald-800/60">
-            {completedDesigns.length}
-          </span>
-        </button>
-
-        {/* 5. Fehler */}
-        <button
-          onClick={() => setActiveTab('errors')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'errors'
-              ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <AlertTriangle className={`w-4 h-4 ${errorDesigns.length > 0 ? 'text-rose-400' : 'text-slate-500'}`} />
-          <span>Fehler</span>
-          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono border ${
-            errorDesigns.length > 0
-              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
-              : 'bg-slate-800 text-slate-400 border-slate-700'
-          }`}>
-            {errorDesigns.length}
-          </span>
-        </button>
-      </div>
-
       {/* Upload progress remains visible in idle, active, paused, completed and failed states. */}
       <div className={`border rounded-2xl p-4.5 shadow-lg backdrop-blur-md transition-all ${
           isUploadIdle
@@ -1114,11 +1023,8 @@ export const QueueView: React.FC = () => {
           )}
       </div>
 
-      {/* ================= TAB 1: WARTESCHLANGE ================= */}
-      {activeTab === 'queue' && (
-        <div className="space-y-6 animate-fadeIn">
-          {/* Slot Metrics & Capacity Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Slot Metrics & Capacity Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Card 1: Tages-Uploads (Amazon Kontingent) */}
             <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
@@ -1249,7 +1155,55 @@ export const QueueView: React.FC = () => {
                 )}
               </div>
             </div>
-          </div>
+      </div>
+
+      {/* Tabs Navigation */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-2">
+        <button
+          onClick={() => setActiveTab('queue')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'queue' ? 'bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30 shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'}`}
+        >
+          <ListOrdered className="w-4 h-4" />
+          <span>Warteschlange</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700">{activeQueueDesigns.length}</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('paused')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'paused' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'}`}
+        >
+          <Pause className="w-4 h-4 text-amber-400" />
+          <span>Pausiert</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono border ${pausedDesigns.length > 0 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>{pausedDesigns.length}</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('update')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'update' ? 'bg-teal-500/15 text-teal-300 border border-teal-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'}`}
+        >
+          <RotateCcw className="w-4 h-4 text-teal-400" />
+          <span>Update</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-teal-950/60 text-teal-300 border border-teal-800/60">{updateDesigns.length}</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('completed')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'completed' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'}`}
+        >
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>Hochgeladen</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/60 text-emerald-300 border border-emerald-800/60">{completedDesigns.length}</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('errors')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'errors' ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'}`}
+        >
+          <AlertTriangle className={`w-4 h-4 ${errorDesigns.length > 0 ? 'text-rose-400' : 'text-slate-500'}`} />
+          <span>Fehler</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono border ${errorDesigns.length > 0 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>{errorDesigns.length}</span>
+        </button>
+      </div>
+
+      {/* ================= TAB 1: WARTESCHLANGE ================= */}
+      {activeTab === 'queue' && (
+        <div className="space-y-6 animate-fadeIn">
 
           {/* Control Panel: Scheduling & Balancing Settings */}
           <div className="bg-surface/80 border border-slate-800/80 rounded-2xl px-4 py-3 shadow-sm backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs">
