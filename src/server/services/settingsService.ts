@@ -132,6 +132,14 @@ function getSettingsFilePath(): string {
 
 let cachedSettings: AppSettings | null = null;
 
+function normalizeUploadScheduleTime(value: unknown): string {
+  const schedule = String(value || 'off');
+  if (schedule === 'off') return 'off';
+  if (!/^(?:[01]\d|2[0-3]):(?:[0-5]\d)$/.test(schedule)) return 'off';
+  const [hour, minute] = schedule.split(':');
+  return `${hour}:${String(Math.floor(Number(minute) / 5) * 5).padStart(2, '0')}`;
+}
+
 export function loadSettings(): AppSettings {
   if (cachedSettings) {
     return cachedSettings;
@@ -141,12 +149,21 @@ export function loadSettings(): AppSettings {
     try {
       const fileData = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(fileData);
-      const settings = { ...DEFAULT_SETTINGS, ...parsed };
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        queueUploadScheduleTime: normalizeUploadScheduleTime(parsed.queueUploadScheduleTime ?? DEFAULT_SETTINGS.queueUploadScheduleTime)
+      };
+      const scheduleWasNormalized = settings.queueUploadScheduleTime !== parsed.queueUploadScheduleTime;
       if (!settings.mcpApiKey) {
         settings.mcpApiKey = generateApiKey();
-        const merged = { ...DEFAULT_SETTINGS, ...parsed, mcpApiKey: settings.mcpApiKey };
+        const merged = { ...settings, mcpApiKey: settings.mcpApiKey };
         try {
           fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
+        } catch (e) {}
+      } else if (scheduleWasNormalized) {
+        try {
+          fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');
         } catch (e) {}
       }
       cachedSettings = settings;

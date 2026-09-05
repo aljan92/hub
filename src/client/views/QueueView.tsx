@@ -159,7 +159,6 @@ export const QueueView: React.FC = () => {
   const [savingTargetCount, setSavingTargetCount] = useState<boolean>(false);
   const [isTriggeringBackfill, setIsTriggeringBackfill] = useState<boolean>(false);
   const [backfillToast, setBackfillToast] = useState<{ message: string; success: boolean } | null>(null);
-  const [isRebalancing, setIsRebalancing] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -569,21 +568,6 @@ export const QueueView: React.FC = () => {
     setPendingMode(mode);
     setModeSaveError(null);
     void persistRequestedQueueModes();
-  };
-
-  const handleRebalance = async () => {
-    setIsRebalancing(true);
-    try {
-      const res = await fetch('/api/v1/queue/rebalance', { method: 'POST' });
-      const data = await res.json();
-      if (data.success && data.state) {
-        setQueueState(data.state);
-      }
-    } catch (err) {
-      console.error('Rebalance error:', err);
-    } finally {
-      setIsRebalancing(false);
-    }
   };
 
   // Drag & Drop handlers
@@ -1206,10 +1190,10 @@ export const QueueView: React.FC = () => {
         <div className="space-y-6 animate-fadeIn">
 
           {/* Control Panel: Scheduling & Balancing Settings */}
-          <div className="bg-surface/80 border border-slate-800/80 rounded-2xl px-4 py-3 shadow-sm backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center flex-wrap gap-4">
+          <div className="bg-surface/80 border border-slate-800/80 rounded-2xl px-3 py-2 shadow-sm backdrop-blur-md overflow-x-auto text-xs">
+            <div className="flex items-center gap-3 min-w-max">
               {/* Upload Startzeit */}
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-slate-400 shrink-0" />
                 <span className="font-semibold text-slate-300">Upload Startzeit:</span>
 
@@ -1225,22 +1209,42 @@ export const QueueView: React.FC = () => {
                       : 'bg-slate-800 text-slate-400 border-slate-700'
                   }`}
                 >
-                  {queueState.uploadScheduleTime !== 'off' ? 'Aktiv' : 'Aus (Nur Manuell)'}
+                  {queueState.uploadScheduleTime !== 'off' ? 'Aktiv' : 'Aus'}
                 </button>
 
-                {/* Native Time Picker for precise Hours & Minutes */}
+                {/* Stable hour/minute selects instead of browser-dependent native time input */}
                 {queueState.uploadScheduleTime !== 'off' && (
-                  <input
-                    type="time"
-                    value={queueState.uploadScheduleTime}
-                    onChange={(e) => handleUpdateSettings({ uploadScheduleTime: e.target.value })}
-                    className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-accent-cyan"
-                  />
+                  <div className="flex items-center gap-1 font-mono">
+                    <select
+                      aria-label="Upload-Stunde"
+                      value={queueState.uploadScheduleTime.split(':')[0]}
+                      onChange={(e) => {
+                        const currentMinute = Math.floor(Number(queueState.uploadScheduleTime.split(':')[1] || 0) / 5) * 5;
+                        handleUpdateSettings({ uploadScheduleTime: `${e.target.value}:${String(currentMinute).padStart(2, '0')}` });
+                      }}
+                      className="bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-accent-cyan"
+                    >
+                      {Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0')).map(hour => (
+                        <option key={hour} value={hour}>{hour}</option>
+                      ))}
+                    </select>
+                    <span className="text-slate-500">:</span>
+                    <select
+                      aria-label="Upload-Minute"
+                      value={String(Math.floor(Number(queueState.uploadScheduleTime.split(':')[1] || 0) / 5) * 5).padStart(2, '0')}
+                      onChange={(e) => handleUpdateSettings({ uploadScheduleTime: `${queueState.uploadScheduleTime.split(':')[0] || '04'}:${e.target.value}` })}
+                      className="bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-accent-cyan"
+                    >
+                      {Array.from({ length: 12 }, (_, step) => String(step * 5).padStart(2, '0')).map(minute => (
+                        <option key={minute} value={minute}>{minute}</option>
+                      ))}
+                    </select>
+                  </div>
                 )}
               </div>
 
               {/* Stepper for Max Drop Tolerance per Design */}
-              <div className="flex items-center space-x-2 border-l border-slate-800 pl-4">
+              <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
                 <Sliders className="w-4 h-4 text-slate-400 shrink-0" />
                 <span className="font-semibold text-slate-300">Max. Kürzungs-Toleranz:</span>
                 
@@ -1279,12 +1283,12 @@ export const QueueView: React.FC = () => {
                     +
                   </button>
                 </div>
-                <span className="text-[11px] text-slate-500">Slots / Design</span>
+                <span className="text-[10px] text-slate-500">Slots/Design</span>
               </div>
 
               {/* Draft / Hybrid Mode Stepper: Produkte pro Design */}
               {(currentMode === 'draft' || currentMode === 'hybrid') && (
-                <div className="flex items-center space-x-2 border-l border-slate-800 pl-4">
+                <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
                   <Package className="w-4 h-4 text-accent-cyan shrink-0" />
                   <span className="font-semibold text-slate-300">Produkte pro Design (Draft):</span>
                   
@@ -1332,26 +1336,14 @@ export const QueueView: React.FC = () => {
                             +
                           </button>
                         </div>
-                        <span className="text-[11px] text-slate-400 font-mono">
-                          (Min: {minSlots} / Max: {maxSlots})
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          Min {minSlots} / Max {maxSlots}
                         </span>
                       </div>
                     );
                   })()}
                 </div>
               )}
-            </div>
-
-            {/* Action Controls */}
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={handleRebalance}
-                disabled={isRebalancing}
-                className="p-2 rounded-xl text-slate-400 hover:text-accent-cyan bg-slate-900 hover:bg-slate-800 border border-slate-700/80 flex items-center justify-center transition-all shadow-sm shrink-0"
-                title="Slot-Berechnung manuell neu anstoßen"
-              >
-                <RefreshCw className={`w-4 h-4 ${isRebalancing ? 'animate-spin' : ''}`} />
-              </button>
             </div>
           </div>
 

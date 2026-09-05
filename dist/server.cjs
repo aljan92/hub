@@ -49800,6 +49800,13 @@ function getSettingsFilePath() {
   }
   return import_path66.default.join(dataDir, "settings.json");
 }
+function normalizeUploadScheduleTime(value2) {
+  const schedule = String(value2 || "off");
+  if (schedule === "off") return "off";
+  if (!/^(?:[01]\d|2[0-3]):(?:[0-5]\d)$/.test(schedule)) return "off";
+  const [hour, minute] = schedule.split(":");
+  return `${hour}:${String(Math.floor(Number(minute) / 5) * 5).padStart(2, "0")}`;
+}
 function loadSettings() {
   if (cachedSettings) {
     return cachedSettings;
@@ -49809,12 +49816,22 @@ function loadSettings() {
     try {
       const fileData = import_fs71.default.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(fileData);
-      const settings = { ...DEFAULT_SETTINGS, ...parsed };
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        queueUploadScheduleTime: normalizeUploadScheduleTime(parsed.queueUploadScheduleTime ?? DEFAULT_SETTINGS.queueUploadScheduleTime)
+      };
+      const scheduleWasNormalized = settings.queueUploadScheduleTime !== parsed.queueUploadScheduleTime;
       if (!settings.mcpApiKey) {
         settings.mcpApiKey = generateApiKey();
-        const merged = { ...DEFAULT_SETTINGS, ...parsed, mcpApiKey: settings.mcpApiKey };
+        const merged = { ...settings, mcpApiKey: settings.mcpApiKey };
         try {
           import_fs71.default.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
+        } catch (e) {
+        }
+      } else if (scheduleWasNormalized) {
+        try {
+          import_fs71.default.writeFileSync(filePath, JSON.stringify(settings, null, 2), "utf-8");
         } catch (e) {
         }
       }
@@ -233595,6 +233612,45 @@ var UploadWorkerService = class _UploadWorkerService {
   }
 };
 
+// src/server/services/uploadScheduleService.ts
+init_settingsService();
+var SCHEDULE_PATTERN = /^(?:[01]\d|2[0-3]):(?:[0-5]\d)$/;
+function hasUploadScheduleStarted(schedule, now = /* @__PURE__ */ new Date()) {
+  if (!SCHEDULE_PATTERN.test(schedule)) return false;
+  const [hour, minute] = schedule.split(":").map(Number);
+  return now.getHours() > hour || now.getHours() === hour && now.getMinutes() >= minute;
+}
+var UploadScheduleService = class {
+  static intervalId = null;
+  static startRequestRunning = false;
+  static startScheduler() {
+    if (this.intervalId) return;
+    const tick = () => void this.runTick();
+    tick();
+    this.intervalId = setInterval(tick, 5e3);
+    console.log("[UploadSchedule] Daily upload scheduler started.");
+  }
+  static stopScheduler() {
+    if (this.intervalId) clearInterval(this.intervalId);
+    this.intervalId = null;
+  }
+  static async runTick(now = /* @__PURE__ */ new Date()) {
+    if (this.startRequestRunning || UploadWorkerService.getStatus().isUploading) return;
+    const settings = loadSettings();
+    const schedule = settings.queueUploadScheduleTime || "off";
+    if (schedule === "off" || !hasUploadScheduleStarted(schedule, now)) return;
+    this.startRequestRunning = true;
+    try {
+      const result2 = await UploadWorkerService.startUpload(void 0, settings.queueUploadMode || "draft", false);
+      if (result2.success) console.log(`[UploadSchedule] ${result2.message}`);
+    } catch (error) {
+      console.error("[UploadSchedule] Automatic upload start failed:", error?.message || error);
+    } finally {
+      this.startRequestRunning = false;
+    }
+  }
+};
+
 // src/server/services/manualFinalizationService.ts
 var import_node_fs2 = __toESM2(require("node:fs"), 1);
 var import_node_crypto3 = require("node:crypto");
@@ -235273,6 +235329,12 @@ app.patch("/api/v1/queue/settings", (req, res) => {
       queueUpdateMaxActiveProducts,
       updateMaxActiveProducts
     } = req.body;
+    if (uploadScheduleTime !== void 0 && uploadScheduleTime !== "off" && !/^(?:[01]\d|2[0-3]):(?:[0-5]\d)$/.test(String(uploadScheduleTime))) {
+      return res.status(400).json({ success: false, error: "Ung\xFCltige Upload-Startzeit. Erwartet wird HH:MM." });
+    }
+    if (uploadScheduleTime !== void 0 && uploadScheduleTime !== "off" && Number(String(uploadScheduleTime).split(":")[1]) % 5 !== 0) {
+      return res.status(400).json({ success: false, error: "Die Upload-Minute muss in einem 5-Minuten-Schritt liegen." });
+    }
     const current = loadSettings();
     const updated = {
       ...current,
@@ -235591,6 +235653,11 @@ server2.listen(Number(PORT), HOST, () => {
     UpdateBackfillService2.startScheduler();
   } catch (err) {
     console.warn("[MBA Hub] UpdateBackfillService.startScheduler warning:", err.message);
+  }
+  try {
+    UploadScheduleService.startScheduler();
+  } catch (err) {
+    console.warn("[MBA Hub] UploadScheduleService.startScheduler warning:", err.message);
   }
   try {
     TaskRecoveryService.startRecoveryQueueWorker(1);

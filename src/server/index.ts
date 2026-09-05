@@ -25,6 +25,7 @@ import { ProductCatalogService } from './services/productCatalogService';
 import { ProductScannerService } from './services/productScannerService';
 import { QueueService } from './services/queueService';
 import { UploadWorkerService } from './services/uploadWorkerService';
+import { UploadScheduleService } from './services/uploadScheduleService';
 import { ManualFinalizationService } from './services/manualFinalizationService';
 import { CostTrackingService } from './services/costTrackingService';
 import { AmazonInspectService } from './services/amazonInspectService';
@@ -1770,6 +1771,17 @@ app.patch('/api/v1/queue/settings', (req, res) => {
       queueUpdateMaxActiveProducts,
       updateMaxActiveProducts
     } = req.body;
+
+    if (uploadScheduleTime !== undefined
+      && uploadScheduleTime !== 'off'
+      && !/^(?:[01]\d|2[0-3]):(?:[0-5]\d)$/.test(String(uploadScheduleTime))) {
+      return res.status(400).json({ success: false, error: 'Ungültige Upload-Startzeit. Erwartet wird HH:MM.' });
+    }
+    if (uploadScheduleTime !== undefined
+      && uploadScheduleTime !== 'off'
+      && Number(String(uploadScheduleTime).split(':')[1]) % 5 !== 0) {
+      return res.status(400).json({ success: false, error: 'Die Upload-Minute muss in einem 5-Minuten-Schritt liegen.' });
+    }
     
     const current = loadSettings();
     const updated = {
@@ -2177,6 +2189,12 @@ server.listen(Number(PORT), HOST, () => {
     UpdateBackfillService.startScheduler();
   } catch (err: any) {
     console.warn('[MBA Hub] UpdateBackfillService.startScheduler warning:', err.message);
+  }
+
+  try {
+    UploadScheduleService.startScheduler();
+  } catch (err: any) {
+    console.warn('[MBA Hub] UploadScheduleService.startScheduler warning:', err.message);
   }
 
   // 6. Launch Phase P3.2 background recovery queue worker
