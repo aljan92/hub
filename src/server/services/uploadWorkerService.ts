@@ -16,6 +16,7 @@ import { getUploadFitPolicy } from './uploadFitPolicy';
 import { isUploadColorBlocked } from './uploadColorPolicy';
 import { TaskExecutionLock } from './taskExecutionLock';
 import { buildListingExpectations, verifyListingReadback } from './listingReadback';
+import { UpdateMetadataService } from './updateMetadataService';
 
 export interface UploadProgressState {
   isUploading: boolean;
@@ -1881,12 +1882,33 @@ export class UploadWorkerService {
         this.log(`⏳ Warte auf finale Amazon-Bestätigung (#redirect-manage)...`, 'Warte auf Bestätigung...');
         await page.waitForSelector('#redirect-manage, a[href*="/manage"]', { timeout: 60000 });
 
+        const amazonConfirmedAt = new Date().toISOString();
         QueueService.updateItemUploadRecovery(item.id, {
           phase: 'AMAZON_CONFIRMED',
           action: 'PUBLISH',
-          amazonConfirmedAt: new Date().toISOString(),
-          amazonDesignId: capturedDesignId
+          amazonConfirmedAt,
+          amazonDesignId: capturedDesignId,
+          ...(isUpdate ? {
+            hubMetadataSync: {
+              status: 'PENDING' as const,
+              attemptedAt: amazonConfirmedAt
+            }
+          } : {})
         });
+
+        if (isUpdate) {
+          const metadataResult = await UpdateMetadataService.markSuccessfulUpdate(cleanDesignId, amazonConfirmedAt);
+          QueueService.updateItemUploadRecovery(item.id, {
+            hubMetadataSync: metadataResult.success
+              ? { status: 'SUCCESS', attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString() }
+              : { status: 'PENDING', attemptedAt: new Date().toISOString(), error: metadataResult.error }
+          });
+          if (metadataResult.success) {
+            this.log('✅ Supabase: Hub-Updatezeitpunkt gespeichert und Update-Ausschluss aufgehoben.');
+          } else {
+            this.log(`⚠️ Amazon-Update bestätigt; Supabase-Metadaten werden separat erneut versucht (${metadataResult.error}).`);
+          }
+        }
 
         this.log(`🎉 Design erfolgreich auf Amazon Merch veröffentlicht!`, 'Erfolgreich veröffentlicht ✓', 100, 100);
       } else {

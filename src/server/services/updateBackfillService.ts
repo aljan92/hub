@@ -5,6 +5,17 @@ import { TaskLogService } from './taskLogService';
 import { UpdatePipelineService } from './updatePipelineService';
 import { LLMService } from './llmService';
 import { TaskRecoveryService } from './taskRecoveryService';
+import { UpdateMetadataService } from './updateMetadataService';
+
+export function getHubUpdatePriorityTimestamp(candidate: { mba_hub_updated_at?: string | null; created_date?: string | null }): number {
+  const raw = candidate.mba_hub_updated_at || candidate.created_date;
+  const parsed = raw ? Date.parse(raw) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
+export function sortCandidatesByHubUpdatePriority<T extends { mba_hub_updated_at?: string | null; created_date?: string | null }>(candidates: T[]): T[] {
+  return [...candidates].sort((a, b) => getHubUpdatePriorityTimestamp(a) - getHubUpdatePriorityTimestamp(b));
+}
 
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
@@ -80,7 +91,7 @@ export class UpdateBackfillService {
    * that matches the active product count threshold and is not already in the Hub.
    * Strictly checks that the "published_products" cell is NOT empty.
    */
-  public static async fetchNextCandidateFromSupabase(extraExcludedIds?: Set<string>): Promise<{ designId: string; title?: string; activeProductsCount: number; updatedDate?: string } | null> {
+  public static async fetchNextCandidateFromSupabase(extraExcludedIds?: Set<string>): Promise<{ designId: string; title?: string; activeProductsCount: number; updatedDate?: string; priorityDate?: string } | null> {
     const settings = loadSettings();
     if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
       console.warn('[UpdateBackfillService] ⚠️ Supabase URL oder Service Role Key fehlt in den Einstellungen.');
@@ -96,20 +107,44 @@ export class UpdateBackfillService {
 
     console.log(`[UpdateBackfillService] 🔍 Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
 
-    // Fetch batch of oldest published designs with non-null published_products and 0 sales
-    const { data: candidates, error } = await supabase
-      .from('mba_designs')
-      .select('design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status, sales_total')
-      .eq('status', 'PUBLISHED')
-      .not('published_products', 'is', null)
-      .or('sales_total.eq.0,sales_total.is.null')
-      .order('updated_date', { ascending: true, nullsFirst: true })
-      .limit(300);
+    const candidateColumns = 'design_id, asin_standard_tshirt_us, created_date, updated_date, mba_hub_updated_at, skip_update, published_products, asins, status, sales_total';
 
-    if (error) {
-      console.error('[UpdateBackfillService] ❌ Supabase Abfrage-Fehler:', error.message);
+    // PostgREST cannot order by COALESCE without an RPC/view. Fetch the oldest
+    // slice of both groups, then merge them by the same effective timestamp.
+    const [neverUpdatedResult, previouslyUpdatedResult] = await Promise.all([
+      supabase
+        .from('mba_designs')
+        .select(candidateColumns)
+        .eq('status', 'PUBLISHED')
+        .eq('skip_update', false)
+        .not('published_products', 'is', null)
+        .or('sales_total.eq.0,sales_total.is.null')
+        .is('mba_hub_updated_at', null)
+        .order('created_date', { ascending: true, nullsFirst: false })
+        .limit(300),
+      supabase
+        .from('mba_designs')
+        .select(candidateColumns)
+        .eq('status', 'PUBLISHED')
+        .eq('skip_update', false)
+        .not('published_products', 'is', null)
+        .or('sales_total.eq.0,sales_total.is.null')
+        .not('mba_hub_updated_at', 'is', null)
+        .order('mba_hub_updated_at', { ascending: true, nullsFirst: false })
+        .limit(300)
+    ]);
+
+    const queryError = neverUpdatedResult.error || previouslyUpdatedResult.error;
+    if (queryError) {
+      console.error('[UpdateBackfillService] ❌ Supabase Abfrage-Fehler:', queryError.message);
       return null;
     }
+
+    const uniqueCandidates = new Map<string, any>();
+    for (const candidate of [...(neverUpdatedResult.data || []), ...(previouslyUpdatedResult.data || [])]) {
+      if (candidate?.design_id) uniqueCandidates.set(String(candidate.design_id), candidate);
+    }
+    const candidates = sortCandidatesByHubUpdatePriority(Array.from(uniqueCandidates.values()));
 
     if (!candidates || candidates.length === 0) {
       console.log('[UpdateBackfillService] ℹ️ Keine Designs mit status="PUBLISHED", 0 Sales und gefüllter published_products Spalte in mba_designs gefunden.');
@@ -157,11 +192,13 @@ export class UpdateBackfillService {
         continue;
       }
 
-      console.log(`[UpdateBackfillService] 🎯 Valider Kandidat gefunden: Design ${dId} (0 Sales, ${activeCount} aktive Produkte in published_products, zuletzt geupdatet: ${cand.updated_date || 'nie'}).`);
+      const priorityDate = cand.mba_hub_updated_at || cand.created_date;
+      console.log(`[UpdateBackfillService] 🎯 Valider Kandidat gefunden: Design ${dId} (0 Sales, ${activeCount} aktive Produkte, Hub-Prioritätsdatum: ${priorityDate || 'nicht verfügbar'}).`);
       return {
         designId: dId,
         activeProductsCount: activeCount,
-        updatedDate: cand.updated_date
+        updatedDate: cand.updated_date,
+        priorityDate
       };
     }
 
@@ -312,8 +349,12 @@ export class UpdateBackfillService {
     if (this.intervalId) return;
 
     console.log('[UpdateBackfillService] ⏱️ Update-Backfill Scheduler gestartet (Prüfintervall: 10s).');
+    void UpdateMetadataService.retryPendingConfirmedUpdates().catch(err => {
+      console.warn('[UpdateBackfillService] Initialer Metadaten-Nachlauf fehlgeschlagen:', err?.message || err);
+    });
     this.intervalId = setInterval(async () => {
       try {
+        await UpdateMetadataService.retryPendingConfirmedUpdates();
         const settings = loadSettings();
         if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
           // Pre-Flight Check: OpenRouter Guthaben & Circuit Breaker

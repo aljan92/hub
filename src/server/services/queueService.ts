@@ -41,6 +41,12 @@ export interface UploadRecoveryMetadata {
   remoteResponse?: RemoteResponseInfo;
   remoteBaseline?: RemoteBaselineInfo;
   intendedRemoteFingerprint?: string;
+  hubMetadataSync?: {
+    status: 'PENDING' | 'SUCCESS';
+    attemptedAt: string;
+    completedAt?: string;
+    error?: string;
+  };
   remoteVerification?: RemoteVerificationInfo;
   manualOverride?: {
     action: 'FORCE_RETRY' | 'MARK_CONFIRMED' | 'CANCEL';

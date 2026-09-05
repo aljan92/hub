@@ -221952,6 +221952,12 @@ var init_syncEngine = __esm2({
       static async mergeAndUpsertDesigns(mapped) {
         const supabase = this.getSupabase();
         if (mapped.length === 0) return 0;
+        mapped = mapped.map((record) => {
+          const sanitized = { ...record };
+          delete sanitized.mba_hub_updated_at;
+          delete sanitized.skip_update;
+          return sanitized;
+        });
         const designIds = mapped.map((m) => m.design_id);
         const existing = /* @__PURE__ */ new Map();
         for (let i = 0; i < designIds.length; i += 200) {
@@ -226245,11 +226251,100 @@ var init_taskRecoveryService = __esm2({
   }
 });
 
+// src/server/services/updateMetadataService.ts
+function normalizeAmazonDesignId(value2) {
+  return typeof value2 === "string" ? value2.replace(/^#/, "").replace(/-U$/, "").trim() : "";
+}
+function isUpdateQueueItem(item) {
+  return item.type === "update" || String(item.type || "").toUpperCase() === "UPDATE" || String(item.source || "").toUpperCase() === "UPDATE" || String(item.taskId || "").endsWith("-U");
+}
+async function writeSuccessfulUpdateMetadata(supabase, designId, confirmedAt) {
+  const normalizedId = normalizeAmazonDesignId(designId);
+  if (!normalizedId) throw new Error("Keine g\xFCltige Amazon Design-ID f\xFCr Supabase-Metadaten vorhanden.");
+  if (!Number.isFinite(Date.parse(confirmedAt))) throw new Error("Ung\xFCltiger Amazon-Best\xE4tigungszeitpunkt.");
+  const { data, error } = await supabase.from("mba_designs").update({
+    mba_hub_updated_at: confirmedAt,
+    skip_update: false
+  }).eq("design_id", normalizedId).select("design_id").maybeSingle();
+  if (error) throw new Error(`Supabase-Update-Metadaten fehlgeschlagen: ${error.message || String(error)}`);
+  if (!data?.design_id) throw new Error(`Supabase-Datensatz f\xFCr Design ${normalizedId} nicht gefunden.`);
+}
+var UpdateMetadataService;
+var init_updateMetadataService = __esm2({
+  "src/server/services/updateMetadataService.ts"() {
+    "use strict";
+    init_dist4();
+    init_settingsService();
+    init_queueService();
+    UpdateMetadataService = class {
+      static RETRY_INTERVAL_MS = 5 * 60 * 1e3;
+      static REQUEST_TIMEOUT_MS = 15e3;
+      static async markSuccessfulUpdate(designId, confirmedAt) {
+        const settings = loadSettings();
+        if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+          return { success: false, error: "Supabase URL oder Service Role Key fehlt." };
+        }
+        try {
+          const supabase = createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), {
+            auth: { persistSession: false, autoRefreshToken: false }
+          });
+          let timeoutId;
+          try {
+            await Promise.race([
+              writeSuccessfulUpdateMetadata(supabase, designId, confirmedAt),
+              new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error("Supabase-Metadaten Timeout nach 15 Sekunden.")), this.REQUEST_TIMEOUT_MS);
+              })
+            ]);
+          } finally {
+            if (timeoutId) clearTimeout(timeoutId);
+          }
+          return { success: true };
+        } catch (err) {
+          return { success: false, error: err?.message || "Unbekannter Supabase-Metadatenfehler." };
+        }
+      }
+      /**
+       * Retry only the metadata write for Amazon-confirmed update uploads.
+       * This never starts or repeats an Amazon action.
+       */
+      static async retryPendingConfirmedUpdates() {
+        const now = Date.now();
+        const items = QueueService.loadQueue().filter(
+          (item) => isUpdateQueueItem(item) && item.uploadRecovery?.phase === "AMAZON_CONFIRMED" && item.uploadRecovery?.hubMetadataSync?.status !== "SUCCESS" && (!item.uploadRecovery?.hubMetadataSync?.attemptedAt || !Number.isFinite(Date.parse(item.uploadRecovery.hubMetadataSync.attemptedAt)) || now - Date.parse(item.uploadRecovery.hubMetadataSync.attemptedAt) >= this.RETRY_INTERVAL_MS)
+        );
+        let succeeded = 0;
+        for (const item of items) {
+          const designId = normalizeAmazonDesignId(item.designId || item.uploadRecovery?.amazonDesignId);
+          const confirmedAt = item.uploadRecovery?.amazonConfirmedAt;
+          if (!designId || !confirmedAt) continue;
+          const result2 = await this.markSuccessfulUpdate(designId, confirmedAt);
+          QueueService.updateItemUploadRecovery(item.id, {
+            hubMetadataSync: result2.success ? { status: "SUCCESS", attemptedAt: (/* @__PURE__ */ new Date()).toISOString(), completedAt: (/* @__PURE__ */ new Date()).toISOString() } : { status: "PENDING", attemptedAt: (/* @__PURE__ */ new Date()).toISOString(), error: result2.error }
+          });
+          if (result2.success) succeeded += 1;
+        }
+        return { attempted: items.length, succeeded };
+      }
+    };
+  }
+});
+
 // src/server/services/updateBackfillService.ts
 var updateBackfillService_exports = {};
 __export2(updateBackfillService_exports, {
-  UpdateBackfillService: () => UpdateBackfillService
+  UpdateBackfillService: () => UpdateBackfillService,
+  getHubUpdatePriorityTimestamp: () => getHubUpdatePriorityTimestamp,
+  sortCandidatesByHubUpdatePriority: () => sortCandidatesByHubUpdatePriority
 });
+function getHubUpdatePriorityTimestamp(candidate) {
+  const raw = candidate.mba_hub_updated_at || candidate.created_date;
+  const parsed = raw ? Date.parse(raw) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+function sortCandidatesByHubUpdatePriority(candidates) {
+  return [...candidates].sort((a, b) => getHubUpdatePriorityTimestamp(a) - getHubUpdatePriorityTimestamp(b));
+}
 var UpdateBackfillService;
 var init_updateBackfillService = __esm2({
   "src/server/services/updateBackfillService.ts"() {
@@ -226261,6 +226356,7 @@ var init_updateBackfillService = __esm2({
     init_updatePipelineService();
     init_llmService();
     init_taskRecoveryService();
+    init_updateMetadataService();
     UpdateBackfillService = class {
       static inFlightDesigns = /* @__PURE__ */ new Set();
       static isRunningLoop = false;
@@ -226332,11 +226428,21 @@ var init_updateBackfillService = __esm2({
         const excludedIds = this.getExcludedDesignIds(extraExcludedIds);
         const maxActiveProducts = settings.queueUpdateMaxActiveProducts ?? 100;
         console.log(`[UpdateBackfillService] \u{1F50D} Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
-        const { data: candidates, error } = await supabase.from("mba_designs").select("design_id, asin_standard_tshirt_us, created_date, updated_date, published_products, asins, status, sales_total").eq("status", "PUBLISHED").not("published_products", "is", null).or("sales_total.eq.0,sales_total.is.null").order("updated_date", { ascending: true, nullsFirst: true }).limit(300);
-        if (error) {
-          console.error("[UpdateBackfillService] \u274C Supabase Abfrage-Fehler:", error.message);
+        const candidateColumns = "design_id, asin_standard_tshirt_us, created_date, updated_date, mba_hub_updated_at, skip_update, published_products, asins, status, sales_total";
+        const [neverUpdatedResult, previouslyUpdatedResult] = await Promise.all([
+          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).not("published_products", "is", null).or("sales_total.eq.0,sales_total.is.null").is("mba_hub_updated_at", null).order("created_date", { ascending: true, nullsFirst: false }).limit(300),
+          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).not("published_products", "is", null).or("sales_total.eq.0,sales_total.is.null").not("mba_hub_updated_at", "is", null).order("mba_hub_updated_at", { ascending: true, nullsFirst: false }).limit(300)
+        ]);
+        const queryError = neverUpdatedResult.error || previouslyUpdatedResult.error;
+        if (queryError) {
+          console.error("[UpdateBackfillService] \u274C Supabase Abfrage-Fehler:", queryError.message);
           return null;
         }
+        const uniqueCandidates = /* @__PURE__ */ new Map();
+        for (const candidate of [...neverUpdatedResult.data || [], ...previouslyUpdatedResult.data || []]) {
+          if (candidate?.design_id) uniqueCandidates.set(String(candidate.design_id), candidate);
+        }
+        const candidates = sortCandidatesByHubUpdatePriority(Array.from(uniqueCandidates.values()));
         if (!candidates || candidates.length === 0) {
           console.log('[UpdateBackfillService] \u2139\uFE0F Keine Designs mit status="PUBLISHED", 0 Sales und gef\xFCllter published_products Spalte in mba_designs gefunden.');
           return null;
@@ -226370,11 +226476,13 @@ var init_updateBackfillService = __esm2({
             console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: Bereits ${activeCount} aktive Produkte (Limit: < ${maxActiveProducts}).`);
             continue;
           }
-          console.log(`[UpdateBackfillService] \u{1F3AF} Valider Kandidat gefunden: Design ${dId} (0 Sales, ${activeCount} aktive Produkte in published_products, zuletzt geupdatet: ${cand.updated_date || "nie"}).`);
+          const priorityDate = cand.mba_hub_updated_at || cand.created_date;
+          console.log(`[UpdateBackfillService] \u{1F3AF} Valider Kandidat gefunden: Design ${dId} (0 Sales, ${activeCount} aktive Produkte, Hub-Priorit\xE4tsdatum: ${priorityDate || "nicht verf\xFCgbar"}).`);
           return {
             designId: dId,
             activeProductsCount: activeCount,
-            updatedDate: cand.updated_date
+            updatedDate: cand.updated_date,
+            priorityDate
           };
         }
         console.log("[UpdateBackfillService] \u2139\uFE0F Alle abgefragten Designs \xFCberschritten das Produktlimit oder sind bereits in Bearbeitung.");
@@ -226492,8 +226600,12 @@ var init_updateBackfillService = __esm2({
       static startScheduler() {
         if (this.intervalId) return;
         console.log("[UpdateBackfillService] \u23F1\uFE0F Update-Backfill Scheduler gestartet (Pr\xFCfintervall: 10s).");
+        void UpdateMetadataService.retryPendingConfirmedUpdates().catch((err) => {
+          console.warn("[UpdateBackfillService] Initialer Metadaten-Nachlauf fehlgeschlagen:", err?.message || err);
+        });
         this.intervalId = setInterval(async () => {
           try {
+            await UpdateMetadataService.retryPendingConfirmedUpdates();
             const settings = loadSettings();
             if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
               const circuit = LLMService.isCircuitBroken();
@@ -231927,6 +232039,7 @@ async function verifyListingReadback({ expectations, timeoutMs = 5e3 }) {
 }
 
 // src/server/services/uploadWorkerService.ts
+init_updateMetadataService();
 var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
   static isPausedBeforePublish = false;
@@ -233337,12 +233450,30 @@ var UploadWorkerService = class _UploadWorkerService {
         }
         this.log(`\u23F3 Warte auf finale Amazon-Best\xE4tigung (#redirect-manage)...`, "Warte auf Best\xE4tigung...");
         await page.waitForSelector('#redirect-manage, a[href*="/manage"]', { timeout: 6e4 });
+        const amazonConfirmedAt = (/* @__PURE__ */ new Date()).toISOString();
         QueueService.updateItemUploadRecovery(item.id, {
           phase: "AMAZON_CONFIRMED",
           action: "PUBLISH",
-          amazonConfirmedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          amazonDesignId: capturedDesignId
+          amazonConfirmedAt,
+          amazonDesignId: capturedDesignId,
+          ...isUpdate ? {
+            hubMetadataSync: {
+              status: "PENDING",
+              attemptedAt: amazonConfirmedAt
+            }
+          } : {}
         });
+        if (isUpdate) {
+          const metadataResult = await UpdateMetadataService.markSuccessfulUpdate(cleanDesignId, amazonConfirmedAt);
+          QueueService.updateItemUploadRecovery(item.id, {
+            hubMetadataSync: metadataResult.success ? { status: "SUCCESS", attemptedAt: (/* @__PURE__ */ new Date()).toISOString(), completedAt: (/* @__PURE__ */ new Date()).toISOString() } : { status: "PENDING", attemptedAt: (/* @__PURE__ */ new Date()).toISOString(), error: metadataResult.error }
+          });
+          if (metadataResult.success) {
+            this.log("\u2705 Supabase: Hub-Updatezeitpunkt gespeichert und Update-Ausschluss aufgehoben.");
+          } else {
+            this.log(`\u26A0\uFE0F Amazon-Update best\xE4tigt; Supabase-Metadaten werden separat erneut versucht (${metadataResult.error}).`);
+          }
+        }
         this.log(`\u{1F389} Design erfolgreich auf Amazon Merch ver\xF6ffentlicht!`, "Erfolgreich ver\xF6ffentlicht \u2713", 100, 100);
       } else {
         this.log(`\u{1F4BE} Klicke 'Save Draft' Button f\xFCr Entwurf-Speicherung...`, "Speichere Entwurf...", 95, 100);

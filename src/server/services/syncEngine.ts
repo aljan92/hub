@@ -468,6 +468,15 @@ export class SyncEngine {
     const supabase = this.getSupabase();
     if (mapped.length === 0) return 0;
 
+    // Hub-owned lifecycle fields are written only by the confirmed Update
+    // pipeline. Amazon sync payloads must never reset or infer them.
+    mapped = mapped.map(record => {
+      const sanitized = { ...record };
+      delete sanitized.mba_hub_updated_at;
+      delete sanitized.skip_update;
+      return sanitized;
+    });
+
     const designIds = mapped.map(m => m.design_id);
     const existing = new Map<string, any>();
 
