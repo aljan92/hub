@@ -16,8 +16,6 @@ out/
 
 # Documentation & notes (local private only)
 *.md
-!brain.md
-!HERMES_API.md
 docs/
 
 # Runtime data and persistence
