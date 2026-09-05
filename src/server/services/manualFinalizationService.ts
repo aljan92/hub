@@ -7,11 +7,16 @@ import { TaskExecutionLock } from './taskExecutionLock';
 import { getGeneratableVariants } from './productCatalogService';
 import { UpdatePipelineService } from './updatePipelineService';
 import { canRepeatFinalization, hasFailedFinalization } from '../../types/finalizationRetry';
+import { PipelineExecutionCoordinator } from './pipelineExecutionCoordinator';
 
 export class ManualFinalizationService {
   private static running = false;
 
   public static async repeat(taskId: string) {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.repeatExclusive(taskId));
+  }
+
+  private static async repeatExclusive(taskId: string) {
     if (this.running || TaskExecutionLock.isLocked(taskId)) throw new Error('Eine Finalisierung oder Task-Verarbeitung läuft bereits.');
     if (QueueService.isCorrupted()) throw new Error('Queue-Speicher ist im Sicherheitsmodus; keine Finalisierung möglich.');
     const task = TaskLogService.getTask(taskId);

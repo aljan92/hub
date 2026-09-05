@@ -171,6 +171,8 @@ export const QueueView: React.FC = () => {
   const [updateAutoBackfill, setUpdateAutoBackfill] = useState<boolean>(false);
   const [updateMaxActiveProducts, setUpdateMaxActiveProducts] = useState<number>(100);
   const [savingTargetCount, setSavingTargetCount] = useState<boolean>(false);
+  const updateTargetCountRef = useRef<number>(10);
+  const updateTargetSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isTriggeringBackfill, setIsTriggeringBackfill] = useState<boolean>(false);
   const [backfillToast, setBackfillToast] = useState<{ message: string; success: boolean } | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
@@ -332,7 +334,8 @@ export const QueueView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (queueState.updateTargetCount !== undefined) {
+    if (queueState.updateTargetCount !== undefined && !savingTargetCount) {
+      updateTargetCountRef.current = queueState.updateTargetCount;
       setUpdateTargetCount(queueState.updateTargetCount);
     }
     if (queueState.updateAutoBackfillEnabled !== undefined) {
@@ -341,24 +344,33 @@ export const QueueView: React.FC = () => {
     if (queueState.updateMaxActiveProducts !== undefined) {
       setUpdateMaxActiveProducts(queueState.updateMaxActiveProducts);
     }
-  }, [queueState.updateTargetCount, queueState.updateAutoBackfillEnabled, queueState.updateMaxActiveProducts]);
+  }, [queueState.updateTargetCount, queueState.updateAutoBackfillEnabled, queueState.updateMaxActiveProducts, savingTargetCount]);
 
-  const handleSetUpdateTargetCount = async (count: number) => {
-    const clamped = Math.max(1, Math.min(50, count));
+  useEffect(() => () => {
+    if (updateTargetSaveTimerRef.current) clearTimeout(updateTargetSaveTimerRef.current);
+  }, []);
+
+  const handleAdjustUpdateTargetCount = (delta: number) => {
+    const clamped = Math.max(1, Math.min(50, updateTargetCountRef.current + delta));
+    updateTargetCountRef.current = clamped;
     setUpdateTargetCount(clamped);
     setSavingTargetCount(true);
-    try {
-      await fetch('/api/v1/queue/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queueUpdateTargetCount: clamped })
-      });
-      fetchQueue();
-    } catch (e) {
-      console.warn('Failed to update target count:', e);
-    } finally {
-      setSavingTargetCount(false);
-    }
+    if (updateTargetSaveTimerRef.current) clearTimeout(updateTargetSaveTimerRef.current);
+    updateTargetSaveTimerRef.current = setTimeout(async () => {
+      try {
+        await fetch('/api/v1/queue/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ queueUpdateTargetCount: updateTargetCountRef.current })
+        });
+        fetchQueue();
+      } catch (e) {
+        console.warn('Failed to update target count:', e);
+      } finally {
+        setSavingTargetCount(false);
+        updateTargetSaveTimerRef.current = null;
+      }
+    }, 300);
   };
 
   const handleToggleAutoBackfill = async (enabled: boolean) => {
@@ -2120,8 +2132,8 @@ export const QueueView: React.FC = () => {
                   <div className="flex items-center space-x-1">
                     <button
                       type="button"
-                      onClick={() => handleSetUpdateTargetCount(updateTargetCount - 1)}
-                      disabled={updateTargetCount <= 1 || savingTargetCount}
+                      onClick={() => handleAdjustUpdateTargetCount(-1)}
+                      disabled={updateTargetCount <= 1}
                       className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
                     >
                       <Minus className="w-3.5 h-3.5" />
@@ -2131,8 +2143,8 @@ export const QueueView: React.FC = () => {
                     </span>
                     <button
                       type="button"
-                      onClick={() => handleSetUpdateTargetCount(updateTargetCount + 1)}
-                      disabled={updateTargetCount >= 50 || savingTargetCount}
+                      onClick={() => handleAdjustUpdateTargetCount(1)}
+                      disabled={updateTargetCount >= 50}
                       className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />

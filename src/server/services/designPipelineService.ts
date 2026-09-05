@@ -11,6 +11,7 @@ import { VectorizerService } from './vectorizerService';
 import { SvgRenderService } from './svgRenderService';
 import { LLMService } from './llmService';
 import { TaskExecutionLock } from './taskExecutionLock';
+import { PipelineExecutionCoordinator } from './pipelineExecutionCoordinator';
 
 export class DesignPipelineService {
   /**
@@ -179,6 +180,10 @@ export class DesignPipelineService {
    * Executes a single specific step
    */
   static async runStep(taskId: string, stepName: string): Promise<{ success: boolean; error?: string; result?: any }> {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.runStepExclusive(taskId, stepName));
+  }
+
+  private static async runStepExclusive(taskId: string, stepName: string): Promise<{ success: boolean; error?: string; result?: any }> {
     const norm = stepName.toUpperCase().trim();
     switch (norm) {
       case 'D1':
@@ -229,6 +234,23 @@ export class DesignPipelineService {
    */
   static async runFromStep(
     taskId: string, 
+    startStep: 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6' | 'D7' | 'D8' = 'D1',
+    owner: 'NORMAL' | 'RECOVERY' | 'USER_ACTION' = 'NORMAL'
+  ): Promise<{ success: boolean; currentStep?: string; pausedAtCheckpoint?: string; error?: string }> {
+    return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
+      return this.runFromStepWithTaskLock(taskId, startStep, owner);
+    }, () => {
+      TaskLogService.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TASK_HANDOFF',
+        title: '⏳ Wartet auf freien Verarbeitungsslot',
+        content: { phase: 'WAITING_FOR_PIPELINE_SLOT', status: 'WAITING' }
+      });
+    });
+  }
+
+  private static async runFromStepWithTaskLock(
+    taskId: string,
     startStep: 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6' | 'D7' | 'D8' = 'D1',
     owner: 'NORMAL' | 'RECOVERY' | 'USER_ACTION' = 'NORMAL'
   ): Promise<{ success: boolean; currentStep?: string; pausedAtCheckpoint?: string; error?: string }> {

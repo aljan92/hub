@@ -20,6 +20,7 @@ export function sortCandidatesByHubUpdatePriority<T extends { mba_hub_updated_at
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
   private static isRunningLoop = false;
+  private static activeCycle: Promise<{ success: boolean; message: string; designId?: string }> | null = null;
   private static intervalId: NodeJS.Timeout | null = null;
   private static lastWarningTime = 0;
   private static readonly WARNING_THROTTLE_MS = 5 * 60 * 1000; // 5 Minuten Drosselung
@@ -332,6 +333,21 @@ export class UpdateBackfillService {
    * Run one backfill cycle (pulls 1 design and runs U1–U7 or pauses at Tasks review)
    */
   public static async runBackfillCycle(forceSingle = false): Promise<{ success: boolean; message: string; designId?: string }> {
+    if (this.activeCycle) {
+      return { success: false, message: 'Ein Update-Design wird bereits gezogen oder verarbeitet. Der neue Auslöser wurde zusammengefasst.' };
+    }
+    this.isRunningLoop = true;
+    const cycle = this.runBackfillCycleExclusive(forceSingle);
+    this.activeCycle = cycle;
+    try {
+      return await cycle;
+    } finally {
+      if (this.activeCycle === cycle) this.activeCycle = null;
+      this.isRunningLoop = false;
+    }
+  }
+
+  private static async runBackfillCycleExclusive(forceSingle = false): Promise<{ success: boolean; message: string; designId?: string }> {
     const settings = loadSettings();
 
     if (!forceSingle && !settings.queueUpdateAutoBackfillEnabled) {

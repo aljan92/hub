@@ -12,6 +12,7 @@ import { VisionOptimizationService } from './visionOptimizationService';
 import { ListingValidationService } from './listingValidationService';
 import { AssetValidationService } from './assetValidationService';
 import { TaskExecutionLock } from './taskExecutionLock';
+import { PipelineExecutionCoordinator } from './pipelineExecutionCoordinator';
 import type { FinalizationParams } from './finalizationService';
 
 export interface UpdatePipelineRunResult {
@@ -800,6 +801,23 @@ export class UpdatePipelineService {
     startStep: 'U2' | 'U3' | 'U4' | 'U5' | 'U6' | 'U7' = 'U4',
     owner: 'NORMAL' | 'RECOVERY' | 'USER_ACTION' = 'NORMAL'
   ): Promise<UpdatePipelineRunResult> {
+    return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
+      return this.runFromStepWithTaskLock(taskId, startStep, owner);
+    }, () => {
+      TaskLogService.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'TASK_HANDOFF',
+        title: '⏳ Wartet auf freien Verarbeitungsslot',
+        content: { phase: 'WAITING_FOR_PIPELINE_SLOT', status: 'WAITING' }
+      });
+    });
+  }
+
+  private static async runFromStepWithTaskLock(
+    taskId: string,
+    startStep: 'U2' | 'U3' | 'U4' | 'U5' | 'U6' | 'U7' = 'U4',
+    owner: 'NORMAL' | 'RECOVERY' | 'USER_ACTION' = 'NORMAL'
+  ): Promise<UpdatePipelineRunResult> {
     console.log(`[UpdatePipeline] 🚀 Führe Pipeline ab Step ${startStep} für Task ${taskId} aus (Owner: ${owner})...`);
 
     if (!TaskExecutionLock.acquire(taskId, owner)) {
@@ -879,6 +897,12 @@ export class UpdatePipelineService {
    * (Pauses after U3 at Checkpoint 2 if aiAutonomyEnabled is false)
    */
   static async runUpdatePipeline(designId: string): Promise<UpdatePipelineRunResult> {
+    return PipelineExecutionCoordinator.runExclusive(`UPDATE:${designId}`, async () => {
+      return this.runUpdatePipelineExclusive(designId);
+    });
+  }
+
+  private static async runUpdatePipelineExclusive(designId: string): Promise<UpdatePipelineRunResult> {
     // U1: Extract raw data & create task log
     const u1 = await this.stepU1_ExtractMerchData(designId);
     if (!u1.success || !u1.task) return { success: false, error: u1.error, failedStep: 'U1' };
@@ -970,6 +994,10 @@ export class UpdatePipelineService {
    * Run a single step (for Retry or Step-Back)
    */
   static async runStep(taskId: string, step: string): Promise<{ success: boolean; data?: any; error?: string }> {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.runStepExclusive(taskId, step));
+  }
+
+  private static async runStepExclusive(taskId: string, step: string): Promise<{ success: boolean; data?: any; error?: string }> {
     switch (step.toUpperCase()) {
       case 'U1': {
         const task = this.getTask(taskId);

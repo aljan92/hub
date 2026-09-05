@@ -19,6 +19,7 @@ import {
 } from '../utils/atomicFileStorage';
 import { TaskRepository } from '../storage/taskRepository';
 import { TaskExecutionLock } from './taskExecutionLock';
+import { PipelineExecutionCoordinator } from './pipelineExecutionCoordinator';
 import type { FinalizationParams } from './finalizationService';
 
 export * from '../../types/tasks';
@@ -203,7 +204,8 @@ export class TaskLogService {
     const taskId = typeof taskOrId === 'string' ? taskOrId : taskOrId.id;
     const running = this.finalizations.get(taskId);
     if (running) return running;
-    const work = this.finalizeDesignTask(taskId).finally(() => this.finalizations.delete(taskId));
+    const work = PipelineExecutionCoordinator.runExclusive(taskId, () => this.finalizeDesignTask(taskId))
+      .finally(() => this.finalizations.delete(taskId));
     this.finalizations.set(taskId, work);
     return work;
   }
@@ -317,6 +319,16 @@ export class TaskLogService {
    * Run the LLM Session via OpenRouter
    */
   static async processTaskWithOpenRouter(taskId: string, options?: { skipPreFlight?: boolean }) {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithOpenRouterExclusive(taskId, options), () => {
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(), type: 'TASK_HANDOFF',
+        title: '⏳ Wartet auf freien Verarbeitungsslot',
+        content: { phase: 'WAITING_FOR_PIPELINE_SLOT', status: 'WAITING' }
+      });
+    });
+  }
+
+  private static async processTaskWithOpenRouterExclusive(taskId: string, options?: { skipPreFlight?: boolean }) {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
 
@@ -559,6 +571,10 @@ export class TaskLogService {
    * Run Ideogram image generation and download design to NAS
    */
   static async processTaskWithIdeogram(taskId: string, promptText: string) {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithIdeogramExclusive(taskId, promptText));
+  }
+
+  private static async processTaskWithIdeogramExclusive(taskId: string, promptText: string) {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
 
@@ -686,6 +702,10 @@ export class TaskLogService {
    * Run Multimodal Vision Analysis on the generated design with OpenRouter
    */
   static async analyzeDesignWithOpenRouter(taskId: string, localFilePath: string, imageUrl: string) {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.analyzeDesignWithOpenRouterExclusive(taskId, localFilePath, imageUrl));
+  }
+
+  private static async analyzeDesignWithOpenRouterExclusive(taskId: string, localFilePath: string, imageUrl: string) {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
 
@@ -882,6 +902,10 @@ export class TaskLogService {
    * Automatically generate Master English MBA SEO Listing and proceed to Trademark Loop
    */
   static async generateListingWithOpenRouter(taskId: string) {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.generateListingWithOpenRouterExclusive(taskId));
+  }
+
+  private static async generateListingWithOpenRouterExclusive(taskId: string) {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
 
@@ -1307,6 +1331,10 @@ export class TaskLogService {
   }
 
   static async vectorizeDesignTask(taskId: string): Promise<void> {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.vectorizeDesignTaskExclusive(taskId));
+  }
+
+  private static async vectorizeDesignTaskExclusive(taskId: string): Promise<void> {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
 

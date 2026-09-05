@@ -221580,6 +221580,52 @@ var init_taskExecutionLock = __esm2({
   }
 });
 
+// src/server/services/pipelineExecutionCoordinator.ts
+var import_node_async_hooks, PipelineExecutionCoordinator;
+var init_pipelineExecutionCoordinator = __esm2({
+  "src/server/services/pipelineExecutionCoordinator.ts"() {
+    "use strict";
+    import_node_async_hooks = require("node:async_hooks");
+    PipelineExecutionCoordinator = class {
+      static activeTaskId = null;
+      static waiters = [];
+      static context = new import_node_async_hooks.AsyncLocalStorage();
+      static getSnapshot() {
+        return {
+          activeTaskId: this.activeTaskId,
+          waitingTaskIds: this.waiters.map((waiter) => waiter.taskId)
+        };
+      }
+      static async runExclusive(taskId, work, onWaiting) {
+        const cleanTaskId = String(taskId || "").trim() || "unknown-task";
+        if (this.context.getStore()) return work();
+        if (this.activeTaskId !== null) {
+          await onWaiting?.();
+          await new Promise((resolve) => this.waiters.push({ taskId: cleanTaskId, resolve }));
+        } else {
+          this.activeTaskId = cleanTaskId;
+        }
+        try {
+          return await this.context.run({ taskId: cleanTaskId }, work);
+        } finally {
+          const next = this.waiters.shift();
+          if (next) {
+            this.activeTaskId = next.taskId;
+            next.resolve();
+          } else {
+            this.activeTaskId = null;
+          }
+        }
+      }
+      /** Test-only reset; production code must let active work release normally. */
+      static resetForTests() {
+        this.activeTaskId = null;
+        this.waiters.splice(0).forEach((waiter) => waiter.resolve());
+      }
+    };
+  }
+});
+
 // src/server/services/schedulerClock.ts
 function getSchedulerClock(now = /* @__PURE__ */ new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -223960,6 +224006,7 @@ var init_updatePipelineService = __esm2({
     init_listingValidationService();
     init_assetValidationService();
     init_taskExecutionLock();
+    init_pipelineExecutionCoordinator();
     UpdatePipelineService = class {
       /**
        * Helper to retrieve a task safely
@@ -224626,6 +224673,18 @@ Bullets: ${oldBullets}`
        * Run pipeline from a specific step forward (e.g. after Checkpoint 2 manual approval or crash recovery)
        */
       static async runFromStep(taskId, startStep = "U4", owner = "NORMAL") {
+        return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
+          return this.runFromStepWithTaskLock(taskId, startStep, owner);
+        }, () => {
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\u23F3 Wartet auf freien Verarbeitungsslot",
+            content: { phase: "WAITING_FOR_PIPELINE_SLOT", status: "WAITING" }
+          });
+        });
+      }
+      static async runFromStepWithTaskLock(taskId, startStep = "U4", owner = "NORMAL") {
         console.log(`[UpdatePipeline] \u{1F680} F\xFChre Pipeline ab Step ${startStep} f\xFCr Task ${taskId} aus (Owner: ${owner})...`);
         if (!TaskExecutionLock.acquire(taskId, owner)) {
           console.warn(`[UpdatePipeline] \u26A0\uFE0F Task ${taskId} wird bereits ausgef\xFChrt (${JSON.stringify(TaskExecutionLock.getLockInfo(taskId))}). Abgebrochen.`);
@@ -224691,6 +224750,11 @@ Bullets: ${oldBullets}`
        * (Pauses after U3 at Checkpoint 2 if aiAutonomyEnabled is false)
        */
       static async runUpdatePipeline(designId) {
+        return PipelineExecutionCoordinator.runExclusive(`UPDATE:${designId}`, async () => {
+          return this.runUpdatePipelineExclusive(designId);
+        });
+      }
+      static async runUpdatePipelineExclusive(designId) {
         const u1 = await this.stepU1_ExtractMerchData(designId);
         if (!u1.success || !u1.task) return { success: false, error: u1.error, failedStep: "U1" };
         const taskId = u1.task.id;
@@ -224756,6 +224820,9 @@ Bullets: ${oldBullets}`
        * Run a single step (for Retry or Step-Back)
        */
       static async runStep(taskId, step) {
+        return PipelineExecutionCoordinator.runExclusive(taskId, () => this.runStepExclusive(taskId, step));
+      }
+      static async runStepExclusive(taskId, step) {
         switch (step.toUpperCase()) {
           case "U1": {
             const task = this.getTask(taskId);
@@ -224795,6 +224862,7 @@ var init_designPipelineService = __esm2({
     init_trademarkService();
     init_llmService();
     init_taskExecutionLock();
+    init_pipelineExecutionCoordinator();
     DesignPipelineService = class {
       /**
        * Helper to retrieve task safely
@@ -224944,6 +225012,9 @@ var init_designPipelineService = __esm2({
        * Executes a single specific step
        */
       static async runStep(taskId, stepName) {
+        return PipelineExecutionCoordinator.runExclusive(taskId, () => this.runStepExclusive(taskId, stepName));
+      }
+      static async runStepExclusive(taskId, stepName) {
         const norm = stepName.toUpperCase().trim();
         switch (norm) {
           case "D1":
@@ -224992,6 +225063,18 @@ var init_designPipelineService = __esm2({
        * Runs Design Creation Pipeline sequentially from a specific step forward
        */
       static async runFromStep(taskId, startStep = "D1", owner = "NORMAL") {
+        return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
+          return this.runFromStepWithTaskLock(taskId, startStep, owner);
+        }, () => {
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\u23F3 Wartet auf freien Verarbeitungsslot",
+            content: { phase: "WAITING_FOR_PIPELINE_SLOT", status: "WAITING" }
+          });
+        });
+      }
+      static async runFromStepWithTaskLock(taskId, startStep = "D1", owner = "NORMAL") {
         console.log(`[DesignPipeline] \u{1F680} F\xFChre Design Pipeline ab Step ${startStep} f\xFCr Task ${taskId} aus (Owner: ${owner})...`);
         if (!TaskExecutionLock.acquire(taskId, owner)) {
           console.warn(`[DesignPipeline] \u26A0\uFE0F Task ${taskId} wird bereits ausgef\xFChrt (${JSON.stringify(TaskExecutionLock.getLockInfo(taskId))}). Abgebrochen.`);
@@ -226418,6 +226501,7 @@ var init_updateBackfillService = __esm2({
     UpdateBackfillService = class {
       static inFlightDesigns = /* @__PURE__ */ new Set();
       static isRunningLoop = false;
+      static activeCycle = null;
       static intervalId = null;
       static lastWarningTime = 0;
       static WARNING_THROTTLE_MS = 5 * 60 * 1e3;
@@ -226658,6 +226742,20 @@ var init_updateBackfillService = __esm2({
        * Run one backfill cycle (pulls 1 design and runs U1–U7 or pauses at Tasks review)
        */
       static async runBackfillCycle(forceSingle = false) {
+        if (this.activeCycle) {
+          return { success: false, message: "Ein Update-Design wird bereits gezogen oder verarbeitet. Der neue Ausl\xF6ser wurde zusammengefasst." };
+        }
+        this.isRunningLoop = true;
+        const cycle = this.runBackfillCycleExclusive(forceSingle);
+        this.activeCycle = cycle;
+        try {
+          return await cycle;
+        } finally {
+          if (this.activeCycle === cycle) this.activeCycle = null;
+          this.isRunningLoop = false;
+        }
+      }
+      static async runBackfillCycleExclusive(forceSingle = false) {
         const settings = loadSettings();
         if (!forceSingle && !settings.queueUpdateAutoBackfillEnabled) {
           return { success: false, message: "Automatik ist ausgeschaltet." };
@@ -227845,6 +227943,7 @@ var init_taskLogService = __esm2({
     init_listingSanitizationService();
     init_taskRepository();
     init_taskExecutionLock();
+    init_pipelineExecutionCoordinator();
     init_tasks();
     init_tasks();
     TaskLogService2 = class {
@@ -227989,7 +228088,7 @@ var init_taskLogService = __esm2({
         const taskId = typeof taskOrId === "string" ? taskOrId : taskOrId.id;
         const running = this.finalizations.get(taskId);
         if (running) return running;
-        const work = this.finalizeDesignTask(taskId).finally(() => this.finalizations.delete(taskId));
+        const work = PipelineExecutionCoordinator.runExclusive(taskId, () => this.finalizeDesignTask(taskId)).finally(() => this.finalizations.delete(taskId));
         this.finalizations.set(taskId, work);
         return work;
       }
@@ -228089,6 +228188,16 @@ var init_taskLogService = __esm2({
        * Run the LLM Session via OpenRouter
        */
       static async processTaskWithOpenRouter(taskId, options2) {
+        return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithOpenRouterExclusive(taskId, options2), () => {
+          this.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "TASK_HANDOFF",
+            title: "\u23F3 Wartet auf freien Verarbeitungsslot",
+            content: { phase: "WAITING_FOR_PIPELINE_SLOT", status: "WAITING" }
+          });
+        });
+      }
+      static async processTaskWithOpenRouterExclusive(taskId, options2) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
         const settings = loadSettings();
@@ -228293,6 +228402,9 @@ ${JSON.stringify(task.payload, null, 2)}`;
        * Run Ideogram image generation and download design to NAS
        */
       static async processTaskWithIdeogram(taskId, promptText) {
+        return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithIdeogramExclusive(taskId, promptText));
+      }
+      static async processTaskWithIdeogramExclusive(taskId, promptText) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
         const settings = loadSettings();
@@ -228403,6 +228515,9 @@ ${JSON.stringify(task.payload, null, 2)}`;
        * Run Multimodal Vision Analysis on the generated design with OpenRouter
        */
       static async analyzeDesignWithOpenRouter(taskId, localFilePath, imageUrl) {
+        return PipelineExecutionCoordinator.runExclusive(taskId, () => this.analyzeDesignWithOpenRouterExclusive(taskId, localFilePath, imageUrl));
+      }
+      static async analyzeDesignWithOpenRouterExclusive(taskId, localFilePath, imageUrl) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
         const settings = loadSettings();
@@ -228574,6 +228689,9 @@ Beantworte die Analysefragen streng als JSON!`;
        * Automatically generate Master English MBA SEO Listing and proceed to Trademark Loop
        */
       static async generateListingWithOpenRouter(taskId) {
+        return PipelineExecutionCoordinator.runExclusive(taskId, () => this.generateListingWithOpenRouterExclusive(taskId));
+      }
+      static async generateListingWithOpenRouterExclusive(taskId) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
         const settings = loadSettings();
@@ -228942,6 +229060,9 @@ Beantworte die Analysefragen streng als JSON!`;
         }
       }
       static async vectorizeDesignTask(taskId) {
+        return PipelineExecutionCoordinator.runExclusive(taskId, () => this.vectorizeDesignTaskExclusive(taskId));
+      }
+      static async vectorizeDesignTaskExclusive(taskId) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
         if (task.source === "UPDATE" || task.suffix === "U" || task.id.endsWith("-U")) {
@@ -234045,9 +234166,13 @@ function canRepeatFinalization(task) {
 }
 
 // src/server/services/manualFinalizationService.ts
+init_pipelineExecutionCoordinator();
 var ManualFinalizationService = class {
   static running = false;
   static async repeat(taskId) {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.repeatExclusive(taskId));
+  }
+  static async repeatExclusive(taskId) {
     if (this.running || TaskExecutionLock.isLocked(taskId)) throw new Error("Eine Finalisierung oder Task-Verarbeitung l\xE4uft bereits.");
     if (QueueService.isCorrupted()) throw new Error("Queue-Speicher ist im Sicherheitsmodus; keine Finalisierung m\xF6glich.");
     const task = TaskLogService2.getTask(taskId);
@@ -235723,7 +235848,8 @@ app.patch("/api/v1/queue/settings", (req, res) => {
     };
     saveSettings(updated);
     const state = QueueService.rebalanceQueue();
-    if (updated.queueUpdateAutoBackfillEnabled) {
+    const backfillRelevantSettingChanged = queueUpdateTargetCount !== void 0 || updateTargetCount !== void 0 || queueUpdateAutoBackfillEnabled !== void 0 || updateAutoBackfillEnabled !== void 0;
+    if (updated.queueUpdateAutoBackfillEnabled && backfillRelevantSettingChanged) {
       const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
       UpdateBackfillService2.runBackfillCycle(false).catch((err) => {
         console.error("[UpdateBackfillService] Fehler beim sofortigen Backfill-Trigger:", err.message);
