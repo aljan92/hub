@@ -546,9 +546,9 @@ export const ProductsView: React.FC = () => {
 
       {/* Main 2-Column Workspace */}
       {products.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start lg:items-stretch">
           {/* Left Column: Product List & Filters (5 Cols) */}
-          <div className="lg:col-span-5 space-y-4">
+          <div className="lg:col-span-5 space-y-4 lg:flex lg:flex-col">
             {/* Search & Filter Bar */}
             <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-3 backdrop-blur-md space-y-3">
               <div className="relative">
@@ -608,7 +608,7 @@ export const ProductsView: React.FC = () => {
             </div>
 
             {/* Product Cards List */}
-            <div className="space-y-2.5 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
+            <div className="space-y-2.5 max-h-[calc(100vh-320px)] overflow-y-auto pr-1 lg:max-h-none lg:flex-1 lg:min-h-0">
               {filteredProducts.map((product) => {
                 const isSelected = selectedProduct?.id === product.id;
                 const slotCount = product.availableMarketplaces.length;
@@ -718,42 +718,37 @@ export const ProductsView: React.FC = () => {
                 </div>
 
                 {/* Nice Trademark Class Configuration Box */}
-                <div className="bg-slate-900/80 border border-indigo-500/30 rounded-2xl p-4 space-y-3 shadow-xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="bg-slate-900/80 border border-indigo-500/30 rounded-2xl p-3 space-y-2 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                     <div className="flex items-center space-x-2.5">
-                      <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 shrink-0">
+                      <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 shrink-0">
                         <ShieldCheck className="w-4 h-4" />
                       </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-100 flex items-center gap-2">
-                          <span>Nizza-Klasse (Trademark Schutz)</span>
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-                            {selectedProduct.niceClass == null ? 'Nicht zugeordnet' : `Klasse ${selectedProduct.niceClass}`}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-400">
-                          Bestimmt, bei welchen Trademark-Klassenkonflikten dieses Produkt gezielt freigegeben oder gesperrt wird.
-                        </div>
+                      <div className="text-xs font-bold text-slate-100 flex items-center gap-2">
+                        <span>Nizza-Klasse</span>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                          {selectedProduct.niceClass == null ? 'Nicht zugeordnet' : `Klasse ${selectedProduct.niceClass}`}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2 shrink-0">
+                    <div className="flex items-center sm:justify-end min-w-0">
                       <select
                         value={selectedProduct.niceClass ?? ''}
                         onChange={(e) => handleUpdateNiceClass(selectedProduct.id, e.target.value === '' ? null : Number(e.target.value))}
                         disabled={updatingNiceClassProductId === selectedProduct.id}
-                        className="bg-slate-800 border border-indigo-500/40 rounded-xl px-3 py-1.5 text-xs text-indigo-200 font-bold focus:outline-none focus:border-indigo-400 shadow-inner cursor-pointer"
+                        className="w-full sm:w-44 bg-slate-800 border border-indigo-500/40 rounded-lg px-2.5 py-1.5 text-xs text-indigo-200 font-bold focus:outline-none focus:border-indigo-400 shadow-inner cursor-pointer disabled:cursor-wait disabled:opacity-60"
                       >
                         <option value="">Nicht zugeordnet</option>
-                        <option value={25}>Kl. 25 – Bekleidung &amp; Textilien (Shirts, Hoodies, Pullover, Tank Tops)</option>
-                        <option value={18}>Kl. 18 – Taschen, Rucksäcke &amp; Lederwaren (Tote Bag, Sport-Rucksack)</option>
-                        <option value={20}>Kl. 20 – Möbel, Kissen &amp; Wohnen (Throw Pillow)</option>
-                        <option value={21}>Kl. 21 – Trinkbehälter &amp; Haushaltswaren (Tumbler, Tassen, Flaschen)</option>
-                        <option value={9}>Kl. 9 – Elektronik &amp; Cases (iPhone &amp; Samsung Cases, PopSockets)</option>
-                        <option value={16}>Kl. 16 – Papier- &amp; Schreibwaren (Hardcover Journal)</option>
-                        <option value={14}>Kl. 14 – Schmuck &amp; Uhren</option>
-                        <option value={24}>Kl. 24 – Decken &amp; Heimtextilien</option>
-                        <option value={28}>Kl. 28 – Spiele &amp; Sportartikel</option>
+                        <option value={25}>Klasse 25</option>
+                        <option value={18}>Klasse 18</option>
+                        <option value={20}>Klasse 20</option>
+                        <option value={21}>Klasse 21</option>
+                        <option value={9}>Klasse 9</option>
+                        <option value={16}>Klasse 16</option>
+                        <option value={14}>Klasse 14</option>
+                        <option value={24}>Klasse 24</option>
+                        <option value={28}>Klasse 28</option>
                       </select>
                     </div>
                   </div>
