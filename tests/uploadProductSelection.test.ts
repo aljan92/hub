@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { buildUploadProductSelection, getLiveMarketplacesForProduct } from '../src/server/services/uploadProductSelection';
+import {
+  buildUploadProductSelection,
+  getLiveMarketplacesForProduct,
+  isAmazonDesignProcessingNotice,
+  reconcileUpdateSelectionFromDom
+} from '../src/server/services/uploadProductSelection';
 import { normalizeCatalogProductId } from '../src/server/services/queueService';
 
 const additions = { STANDARD_TSHIRT: ['US'], VNECK: [] };
@@ -31,4 +36,26 @@ assert.deepEqual(
   'Dynamic catalog aliases must identify already-live product types'
 );
 assert.deepEqual(getLiveMarketplacesForProduct(live, 'TRAVEL_TUMBLER'), [], 'Unpublished product types remain artwork-configurable');
-console.log('PASS: update union, live-only products, slot immutability, new designs, aliases and fail-closed metadata checks');
+
+const reconciled = reconcileUpdateSelectionFromDom([
+  { productId: 'STANDARD_TSHIRT', marketplace: 'US', checked: true, readonly: true },
+  { productId: 'STANDARD_TSHIRT', marketplace: 'DE', checked: false, readonly: false },
+  { productId: 'STANDARD_TSHIRT', marketplace: 'GB', checked: true, readonly: false },
+  { productId: 'REMOVED_BY_CATALOG', marketplace: 'US', checked: true, readonly: true }
+], { STANDARD_TSHIRT: ['US', 'DE', 'GB'] });
+assert.deepEqual(reconciled.liveSummary, {
+  STANDARD_TSHIRT: { marketplaces: ['US'] },
+  REMOVED_BY_CATALOG: { marketplaces: ['US'] }
+}, 'Readonly DOM state is authoritative even for products absent from the local catalog');
+assert.deepEqual(reconciled.additionsMap, { STANDARD_TSHIRT: ['DE', 'GB'] }, 'Every editable catalog combination remains part of the update delta');
+assert.deepEqual(reconciled.selectionMap.STANDARD_TSHIRT, ['US', 'DE', 'GB']);
+assert.equal(reconciled.liveSlotCount, 2);
+assert.equal(reconciled.additionSlotCount, 2);
+assert.throws(() => reconcileUpdateSelectionFromDom([], {}), /keine auswertbaren/);
+assert.throws(() => reconcileUpdateSelectionFromDom([
+  { productId: 'MUG', marketplace: 'US', checked: true, readonly: true },
+  { productId: 'MUG', marketplace: 'US', checked: true, readonly: true }
+], { MUG: ['US'] }), /Doppelte DOM-Checkbox/);
+assert.equal(isAmazonDesignProcessingNotice('This design cannot be edited at this time because products are under review or processing.'), true);
+assert.equal(isAmazonDesignProcessingNotice('This design can be edited.'), false);
+console.log('PASS: update union, authoritative DOM reconciliation, processing notice, aliases and fail-closed checks');

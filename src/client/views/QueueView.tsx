@@ -57,6 +57,9 @@ interface QueueItem {
   status: QueueItemStatus;
   isLocked: boolean;
   isPaused?: boolean;
+  pauseKind?: 'MANUAL' | 'AMAZON_PROCESSING';
+  pausedUntil?: string;
+  pauseReason?: string;
   allocatedSlots: number;
   totalBaseSlots: number;
   activeProductsMap: Record<string, string[]>;
@@ -1540,7 +1543,9 @@ export const QueueView: React.FC = () => {
                               {isUploading 
                                 ? '🟣 Lädt hoch...' 
                                 : isPaused
-                                  ? '⏸️ Pausiert'
+                                  ? item.pauseKind === 'AMAZON_PROCESSING' && item.pausedUntil
+                                    ? `⏳ Amazon bis ${new Date(item.pausedUntil).toLocaleString('de-DE', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}`
+                                    : '⏸️ Pausiert'
                                   : isUpdate
                                     ? canUploadToday
                                       ? `🟣 ${(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} Slots • Heute Live`
@@ -2030,6 +2035,14 @@ export const QueueView: React.FC = () => {
                         <p className="text-xs text-slate-400 font-mono mt-0.5">
                           {item.brand} • {item.totalBaseSlots || 106} Basis-Slots
                         </p>
+                        {item.pauseKind === 'AMAZON_PROCESSING' && item.pausedUntil && (
+                          <p className="text-xs text-amber-300 mt-1">
+                            Amazon-Prüfung/Verarbeitung • automatische Freigabe am{' '}
+                            {new Date(item.pausedUntil).toLocaleString('de-DE', {
+                              day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </p>
+                        )}
                       </div>
                     </div>
 

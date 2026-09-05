@@ -126,6 +126,9 @@ export interface QueueItem {
   status: QueueItemStatus;
   isLocked: boolean; // Hero-Design Lock: protects from dynamic slot dropping
   isPaused?: boolean; // Paused by user: excluded from balancing and auto-upload
+  pauseKind?: 'MANUAL' | 'AMAZON_PROCESSING';
+  pausedUntil?: string;
+  pauseReason?: string;
   allocatedSlots: number;
   totalBaseSlots: number;
   activeProductsMap: Record<string, string[]>; // productId -> array of active marketplaces (e.g. ['US', 'DE', 'GB'])
@@ -449,6 +452,7 @@ export class QueueService {
    */
   public static getState(): QueueState {
     this.ensureLoaded();
+    if (this.releaseExpiredProcessingPauses()) return this.rebalanceQueue();
     const settings = loadSettings();
     const mode = settings.queueUploadMode || 'draft';
     const isDraftMode = mode === 'draft';
@@ -890,8 +894,68 @@ export class QueueService {
     if (!item) return null;
 
     item.isPaused = !item.isPaused;
+    if (item.isPaused) {
+      item.pauseKind = 'MANUAL';
+      item.pausedUntil = undefined;
+      item.pauseReason = undefined;
+    } else {
+      item.pauseKind = undefined;
+      item.pausedUntil = undefined;
+      item.pauseReason = undefined;
+    }
     this.saveQueue();
     this.rebalanceQueue();
+    return item;
+  }
+
+  public static pauseForAmazonProcessing(queueId: string, hours = 12): QueueItem | null {
+    this.ensureLoaded();
+    const item = this.items.find(i => i.id === queueId);
+    if (!item) return null;
+    item.status = 'WAITING';
+    item.isPaused = true;
+    item.pauseKind = 'AMAZON_PROCESSING';
+    item.pausedUntil = new Date(Date.now() + Math.max(1, hours) * 60 * 60 * 1000).toISOString();
+    item.pauseReason = 'Amazon bearbeitet oder prüft dieses Design derzeit.';
+    item.errorMessage = undefined;
+    this.saveQueue();
+    this.rebalanceQueue();
+    return item;
+  }
+
+  private static releaseExpiredProcessingPauses(now = Date.now()): boolean {
+    let changed = false;
+    for (const item of this.items) {
+      if (!item.isPaused || item.pauseKind !== 'AMAZON_PROCESSING' || !item.pausedUntil) continue;
+      const expiresAt = Date.parse(item.pausedUntil);
+      if (!Number.isFinite(expiresAt) || expiresAt > now) continue;
+      item.isPaused = false;
+      item.pauseKind = undefined;
+      item.pausedUntil = undefined;
+      item.pauseReason = undefined;
+      changed = true;
+    }
+    if (changed) this.saveQueue();
+    return changed;
+  }
+
+  public static reconcileUpdateDomState(
+    queueId: string,
+    liveSummary: Record<string, { marketplaces: string[] }>,
+    additionsMap: Record<string, string[]>,
+    liveSlotCount: number
+  ): QueueItem | null {
+    this.ensureLoaded();
+    const item = this.items.find(i => i.id === queueId);
+    if (!item) return null;
+    item.liveProductSummary = liveSummary;
+    item.liveStats = { ...(item.liveStats || {}), productSummary: liveSummary, publishedCount: liveSlotCount };
+    item.publishedProductsCount = liveSlotCount;
+    item.activeProductsMap = additionsMap;
+    item.totalBaseSlots = Object.values(additionsMap).reduce((sum, marketplaces) => sum + marketplaces.length, 0);
+    item.allocatedSlots = item.totalBaseSlots;
+    item.droppedSlotsMap = {};
+    this.saveQueue();
     return item;
   }
 

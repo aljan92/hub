@@ -227042,6 +227042,7 @@ var init_queueService = __esm2({
        */
       static getState() {
         this.ensureLoaded();
+        if (this.releaseExpiredProcessingPauses()) return this.rebalanceQueue();
         const settings = loadSettings();
         const mode = settings.queueUploadMode || "draft";
         const isDraftMode = mode === "draft";
@@ -227371,8 +227372,60 @@ var init_queueService = __esm2({
         const item = this.items.find((i) => i.id === queueId);
         if (!item) return null;
         item.isPaused = !item.isPaused;
+        if (item.isPaused) {
+          item.pauseKind = "MANUAL";
+          item.pausedUntil = void 0;
+          item.pauseReason = void 0;
+        } else {
+          item.pauseKind = void 0;
+          item.pausedUntil = void 0;
+          item.pauseReason = void 0;
+        }
         this.saveQueue();
         this.rebalanceQueue();
+        return item;
+      }
+      static pauseForAmazonProcessing(queueId, hours = 12) {
+        this.ensureLoaded();
+        const item = this.items.find((i) => i.id === queueId);
+        if (!item) return null;
+        item.status = "WAITING";
+        item.isPaused = true;
+        item.pauseKind = "AMAZON_PROCESSING";
+        item.pausedUntil = new Date(Date.now() + Math.max(1, hours) * 60 * 60 * 1e3).toISOString();
+        item.pauseReason = "Amazon bearbeitet oder pr\xFCft dieses Design derzeit.";
+        item.errorMessage = void 0;
+        this.saveQueue();
+        this.rebalanceQueue();
+        return item;
+      }
+      static releaseExpiredProcessingPauses(now = Date.now()) {
+        let changed = false;
+        for (const item of this.items) {
+          if (!item.isPaused || item.pauseKind !== "AMAZON_PROCESSING" || !item.pausedUntil) continue;
+          const expiresAt = Date.parse(item.pausedUntil);
+          if (!Number.isFinite(expiresAt) || expiresAt > now) continue;
+          item.isPaused = false;
+          item.pauseKind = void 0;
+          item.pausedUntil = void 0;
+          item.pauseReason = void 0;
+          changed = true;
+        }
+        if (changed) this.saveQueue();
+        return changed;
+      }
+      static reconcileUpdateDomState(queueId, liveSummary, additionsMap, liveSlotCount) {
+        this.ensureLoaded();
+        const item = this.items.find((i) => i.id === queueId);
+        if (!item) return null;
+        item.liveProductSummary = liveSummary;
+        item.liveStats = { ...item.liveStats || {}, productSummary: liveSummary, publishedCount: liveSlotCount };
+        item.publishedProductsCount = liveSlotCount;
+        item.activeProductsMap = additionsMap;
+        item.totalBaseSlots = Object.values(additionsMap).reduce((sum, marketplaces) => sum + marketplaces.length, 0);
+        item.allocatedSlots = item.totalBaseSlots;
+        item.droppedSlotsMap = {};
+        this.saveQueue();
         return item;
       }
       /**
@@ -232094,6 +232147,62 @@ init_taskRepository();
 
 // src/server/services/uploadProductSelection.ts
 init_queueService();
+var SUPPORTED_MARKETPLACES = /* @__PURE__ */ new Set(["US", "GB", "DE", "FR", "IT", "ES", "JP"]);
+var addMarketplace = (target, productId, marketplace) => {
+  if (!target[productId]) target[productId] = [];
+  if (!target[productId].includes(marketplace)) target[productId].push(marketplace);
+};
+function reconcileUpdateSelectionFromDom(states, catalogSelection) {
+  if (!Array.isArray(states) || states.length === 0) {
+    throw new Error("FAILED_PRODUCT_SELECTION: Select-Products-DOM enth\xE4lt keine auswertbaren Marktplatz-Checkboxen.");
+  }
+  const allowed = /* @__PURE__ */ new Map();
+  for (const [rawProductId, rawMarketplaces] of Object.entries(catalogSelection || {})) {
+    const productId = normalizeCatalogProductId(rawProductId);
+    if (!Array.isArray(rawMarketplaces)) {
+      throw new Error(`FAILED_PRODUCT_SELECTION: Ung\xFCltige Katalog-Marktpl\xE4tze f\xFCr ${rawProductId}`);
+    }
+    allowed.set(productId, new Set(rawMarketplaces.map((value2) => normalizeMarketplaceCode(String(value2)))));
+  }
+  const selectionMap = {};
+  const additionsMap = {};
+  const liveMap = {};
+  const seen = /* @__PURE__ */ new Set();
+  for (const state of states) {
+    const productId = normalizeCatalogProductId(state.productId);
+    const marketplace = normalizeMarketplaceCode(state.marketplace);
+    if (!productId || !SUPPORTED_MARKETPLACES.has(marketplace)) continue;
+    const key = `${productId}:${marketplace}`;
+    if (seen.has(key)) {
+      throw new Error(`FAILED_PRODUCT_SELECTION: Doppelte DOM-Checkbox f\xFCr ${key}`);
+    }
+    seen.add(key);
+    if (!(productId in selectionMap)) selectionMap[productId] = [];
+    if (state.readonly && state.checked) {
+      addMarketplace(selectionMap, productId, marketplace);
+      addMarketplace(liveMap, productId, marketplace);
+      continue;
+    }
+    if (!state.readonly && allowed.get(productId)?.has(marketplace)) {
+      addMarketplace(selectionMap, productId, marketplace);
+      addMarketplace(additionsMap, productId, marketplace);
+    }
+  }
+  const liveSummary = Object.fromEntries(
+    Object.entries(liveMap).map(([productId, marketplaces]) => [productId, { marketplaces }])
+  );
+  return {
+    selectionMap,
+    additionsMap,
+    liveSummary,
+    liveSlotCount: Object.values(liveMap).reduce((sum, marketplaces) => sum + marketplaces.length, 0),
+    additionSlotCount: Object.values(additionsMap).reduce((sum, marketplaces) => sum + marketplaces.length, 0)
+  };
+}
+function isAmazonDesignProcessingNotice(text2) {
+  const normalized = String(text2 || "").replace(/\s+/g, " ").trim().toLowerCase();
+  return normalized.includes("this design cannot be edited at this time") && (normalized.includes("under review") || normalized.includes("processing"));
+}
 function getLiveMarketplacesForProduct(liveSummary, productId) {
   if (!liveSummary || typeof liveSummary !== "object" || Array.isArray(liveSummary)) return [];
   const normalizedProductId = normalizeCatalogProductId(productId);
@@ -232112,7 +232221,7 @@ function buildUploadProductSelection(plannedAdditions, isUpdate, liveSummary) {
     }
     const id = normalizeCatalogProductId(product);
     const normalized = marketplaces.map((mp) => normalizeMarketplaceCode(String(mp)));
-    if (normalized.some((mp) => !["US", "GB", "DE", "FR", "IT", "ES", "JP"].includes(mp))) {
+    if (normalized.some((mp) => !SUPPORTED_MARKETPLACES.has(mp))) {
       throw new Error(`FAILED_PRODUCT_SELECTION: Unbekannter Marktplatz f\xFCr ${product}`);
     }
     selected[id] = [.../* @__PURE__ */ new Set([...selected[id] || [], ...normalized])];
@@ -232202,6 +232311,10 @@ async function verifyListingReadback({ expectations, timeoutMs = 5e3 }) {
 
 // src/server/services/uploadWorkerService.ts
 init_updateMetadataService();
+var AmazonProcessingPauseError = class extends Error {
+};
+var UpdateSelectionRebalancedError = class extends Error {
+};
 var UploadWorkerService = class _UploadWorkerService {
   static isUploading = false;
   static isPausedBeforePublish = false;
@@ -232333,6 +232446,10 @@ var UploadWorkerService = class _UploadWorkerService {
     if (!targetItem) {
       return { success: false, message: "Kein bereitstehendes Design in der Queue gefunden." };
     }
+    if (targetItem.isPaused) {
+      const until = targetItem.pausedUntil ? ` bis ${new Date(targetItem.pausedUntil).toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}` : "";
+      return { success: false, message: `Dieses Design ist pausiert${until}.` };
+    }
     if (TaskExecutionLock.isLocked(targetItem.taskId)) {
       return { success: false, message: "Task wird gerade vorbereitet; Upload bleibt gesperrt." };
     }
@@ -232431,6 +232548,12 @@ var UploadWorkerService = class _UploadWorkerService {
         await page.waitForURL("**/designs/**", { timeout: 18e4 });
         this.log(`\u2705 Login erkannt! Fahre mit Upload fort...`, "Login erfolgreich");
       }
+      if (isUpdate) {
+        const pageText = await page.locator("body").innerText().catch(() => "");
+        if (isAmazonDesignProcessingNotice(pageText)) {
+          throw new AmazonProcessingPauseError("Amazon meldet: Design ist derzeit under review oder processing.");
+        }
+      }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       let pngAbsolutePath = "";
       if (item.pngPath && import_fs87.default.existsSync(item.pngPath)) {
@@ -232525,11 +232648,69 @@ var UploadWorkerService = class _UploadWorkerService {
         for (const p of catalog2.products) {
           productAmazonKeys[p.id] = p.amazon?.key || p.amazon?.checkboxClass || p.id;
         }
-        const selectionMap = buildUploadProductSelection(
+        let selectionMap = buildUploadProductSelection(
           item.activeProductsMap,
-          isUpdate,
-          item.liveProductSummary || item.liveStats?.productSummary
+          false
         );
+        if (isUpdate) {
+          const modalSnapshot = await page.evaluate((keys) => {
+            const modal = Array.from(document.querySelectorAll(".modal-content, .modal-dialog, merch-modal, .modal")).find((el) => {
+              const rect = el.getBoundingClientRect();
+              return rect.height > 0 && rect.width > 0;
+            });
+            if (!modal) return [];
+            const keyEntries = Object.entries(keys).sort((a, b) => b[1].length - a[1].length);
+            const isChecked = (cb) => {
+              const input = cb.querySelector('input[type="checkbox"]');
+              if (input) return input.checked;
+              const aria = cb.getAttribute("aria-checked");
+              if (aria === "true") return true;
+              if (aria === "false") return false;
+              const iconClass = String(cb.querySelector(".sci-icon, i")?.className || "").toLowerCase();
+              return !iconClass.includes("blank") && (iconClass.includes("check-box") || iconClass.includes("checkbox") || iconClass.includes("checked"));
+            };
+            return Array.from(modal.querySelectorAll("flowcheckbox")).flatMap((cb) => {
+              const className = String(cb.className || "");
+              const marketplace = className.match(/-(US|GB|DE|FR|IT|ES|JP)(?:\s|$)/i)?.[1]?.toUpperCase();
+              if (!marketplace) return [];
+              const matched = keyEntries.find(
+                ([productId, amazonKey]) => className.includes(`${amazonKey}-${marketplace}`) || className.includes(`${productId}-${marketplace}`)
+              );
+              if (!matched) return [];
+              const input = cb.querySelector('input[type="checkbox"]');
+              const readonly = Boolean(
+                cb.querySelector("span.readonly") || input?.readOnly || input?.disabled || cb.hasAttribute("readonly") || cb.getAttribute("aria-disabled") === "true"
+              );
+              return [{ productId: matched[0], marketplace, checked: isChecked(cb), readonly }];
+            });
+          }, productAmazonKeys);
+          const fullCatalogSelection = {};
+          const blocked = new Set((item.tmBlockedProductIds || []).map((id) => normalizeCatalogProductId(id)));
+          for (const product of catalog2.products) {
+            if (product.available === false || blocked.has(normalizeCatalogProductId(product.id))) continue;
+            fullCatalogSelection[product.id] = Array.isArray(product.availableMarketplaces) ? product.availableMarketplaces : ["US"];
+          }
+          const reconciled = reconcileUpdateSelectionFromDom(modalSnapshot, fullCatalogSelection);
+          const previouslyReservedSlots = Math.max(0, item.allocatedSlots || 0);
+          QueueService.reconcileUpdateDomState(
+            item.id,
+            reconciled.liveSummary,
+            reconciled.additionsMap,
+            reconciled.liveSlotCount
+          );
+          selectionMap = reconciled.selectionMap;
+          this.log(
+            `\u{1F504} Amazon-Livezustand \xFCbernommen: ${reconciled.liveSlotCount} live, ${reconciled.additionSlotCount} neu einzuplanen.`,
+            "Amazon-Produktstand abgeglichen..."
+          );
+          if (reconciled.additionSlotCount > previouslyReservedSlots) {
+            QueueService.updateItemStatus(item.id, "WAITING");
+            QueueService.rebalanceQueue();
+            throw new UpdateSelectionRebalancedError(
+              `Aktueller Amazon-Stand ben\xF6tigt ${reconciled.additionSlotCount} statt ${previouslyReservedSlots} reservierter Slots.`
+            );
+          }
+        }
         const modalResult = await page.evaluate(async (params2) => {
           const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
           const modal = Array.from(document.querySelectorAll(".modal-content, .modal-dialog, merch-modal, .modal")).find((el) => {
@@ -232577,6 +232758,11 @@ var UploadWorkerService = class _UploadWorkerService {
               }
               const shouldBeChecked = desiredMarketplaces.has(mp);
               let currentState = isChecked(cb);
+              const input = cb.querySelector('input[type="checkbox"]');
+              const isReadonly = Boolean(
+                cb.querySelector("span.readonly") || input?.readOnly || input?.disabled || cb.hasAttribute("readonly") || cb.getAttribute("aria-disabled") === "true"
+              );
+              if (isReadonly) continue;
               if (currentState !== shouldBeChecked) {
                 cb.click();
                 modifiedCount++;
@@ -233747,6 +233933,22 @@ var UploadWorkerService = class _UploadWorkerService {
       this.stepIndex = 100;
       this.broadcastStatus();
     } catch (err) {
+      if (err instanceof AmazonProcessingPauseError) {
+        const paused = QueueService.pauseForAmazonProcessing(item.id, 12);
+        const retryAt = paused?.pausedUntil ? new Date(paused.pausedUntil).toLocaleString("de-DE", { timeZone: "Europe/Berlin" }) : "in 12 Stunden";
+        this.log(`\u23F8\uFE0F Amazon verarbeitet/pr\xFCft das Design. Update bis ${retryAt} pausiert; danach automatische Wiederfreigabe.`, "12 Stunden pausiert");
+        this.isUploading = false;
+        this.abortRequested = false;
+        this.broadcastStatus();
+        return;
+      }
+      if (err instanceof UpdateSelectionRebalancedError) {
+        this.log(`\u{1F504} ${err.message} Queue wurde mit dem aktuellen Amazon-Stand neu ausbalanciert.`, "Neu eingeplant");
+        this.isUploading = false;
+        this.abortRequested = false;
+        this.broadcastStatus();
+        return;
+      }
       const wasUserCancelled = this.abortRequested;
       const errorMsg = wasUserCancelled ? "Upload vom Benutzer vor dem Amazon-Request abgebrochen." : err.message || "Unbekannter Fehler w\xE4hrend des Uploads";
       this.log(wasUserCancelled ? `\u{1F6D1} ${errorMsg}` : `\u274C Upload Fehler: ${errorMsg}`, wasUserCancelled ? "Abgebrochen" : `Fehler: ${errorMsg}`);

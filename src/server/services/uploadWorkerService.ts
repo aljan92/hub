@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { BrowserSessionService } from './browserSessionService';
-import { QueueService, QueueItem, ProductUploadResult, ProductUploadStatus, UploadResultSummary } from './queueService';
+import { QueueService, QueueItem, ProductUploadResult, ProductUploadStatus, UploadResultSummary, normalizeCatalogProductId } from './queueService';
 import { ProductCatalogService, MerchProduct, ARTWORK_VARIANT_REGISTRY } from './productCatalogService';
 import { ArtworkResizeService } from './artworkResizeService';
 import { ListingSanitizationService } from './listingSanitizationService';
@@ -11,7 +11,12 @@ import { AmazonRecoveryVerificationService } from './amazonRecoveryVerificationS
 import { TaskRepository } from '../storage/taskRepository';
 import { RemoteBaselineInfo } from '../../types/tasks';
 import { Page } from 'playwright';
-import { buildUploadProductSelection, getLiveMarketplacesForProduct } from './uploadProductSelection';
+import {
+  buildUploadProductSelection,
+  getLiveMarketplacesForProduct,
+  isAmazonDesignProcessingNotice,
+  reconcileUpdateSelectionFromDom
+} from './uploadProductSelection';
 import { getUploadFitPolicy } from './uploadFitPolicy';
 import { isUploadColorBlocked } from './uploadColorPolicy';
 import { TaskExecutionLock } from './taskExecutionLock';
@@ -32,6 +37,9 @@ export interface UploadProgressState {
   logs: string[];
   error?: string;
 }
+
+class AmazonProcessingPauseError extends Error {}
+class UpdateSelectionRebalancedError extends Error {}
 
 export class UploadWorkerService {
   private static isUploading = false;
@@ -191,6 +199,13 @@ export class UploadWorkerService {
       return { success: false, message: 'Kein bereitstehendes Design in der Queue gefunden.' };
     }
 
+    if (targetItem.isPaused) {
+      const until = targetItem.pausedUntil
+        ? ` bis ${new Date(targetItem.pausedUntil).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}`
+        : '';
+      return { success: false, message: `Dieses Design ist pausiert${until}.` };
+    }
+
     if (TaskExecutionLock.isLocked(targetItem.taskId)) {
       return { success: false, message: 'Task wird gerade vorbereitet; Upload bleibt gesperrt.' };
     }
@@ -347,6 +362,13 @@ export class UploadWorkerService {
         this.log(`✅ Login erkannt! Fahre mit Upload fort...`, 'Login erfolgreich');
       }
 
+      if (isUpdate) {
+        const pageText = await page.locator('body').innerText().catch(() => '');
+        if (isAmazonDesignProcessingNotice(pageText)) {
+          throw new AmazonProcessingPauseError('Amazon meldet: Design ist derzeit under review oder processing.');
+        }
+      }
+
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
 
       // 3. Prepare PNG File (if applicable)
@@ -467,13 +489,76 @@ export class UploadWorkerService {
           productAmazonKeys[p.id] = p.amazon?.key || p.amazon?.checkboxClass || p.id;
         }
 
-        // Preserve published combinations without changing queue slot allocation
-        // or the list of products requiring new configuration/artwork.
-        const selectionMap = buildUploadProductSelection(
+        let selectionMap = buildUploadProductSelection(
           item.activeProductsMap,
-          isUpdate,
-          item.liveProductSummary || item.liveStats?.productSummary
+          false
         );
+
+        if (isUpdate) {
+          const modalSnapshot = await page.evaluate((keys: Record<string, string>) => {
+            const modal = Array.from(document.querySelectorAll('.modal-content, .modal-dialog, merch-modal, .modal'))
+              .find(el => {
+                const rect = el.getBoundingClientRect();
+                return rect.height > 0 && rect.width > 0;
+              });
+            if (!modal) return [];
+            const keyEntries = Object.entries(keys).sort((a, b) => b[1].length - a[1].length);
+            const isChecked = (cb: Element): boolean => {
+              const input = cb.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+              if (input) return input.checked;
+              const aria = cb.getAttribute('aria-checked');
+              if (aria === 'true') return true;
+              if (aria === 'false') return false;
+              const iconClass = String(cb.querySelector('.sci-icon, i')?.className || '').toLowerCase();
+              return !iconClass.includes('blank') && (iconClass.includes('check-box') || iconClass.includes('checkbox') || iconClass.includes('checked'));
+            };
+            return Array.from(modal.querySelectorAll('flowcheckbox')).flatMap(cb => {
+              const className = String(cb.className || '');
+              const marketplace = className.match(/-(US|GB|DE|FR|IT|ES|JP)(?:\s|$)/i)?.[1]?.toUpperCase();
+              if (!marketplace) return [];
+              const matched = keyEntries.find(([productId, amazonKey]) =>
+                className.includes(`${amazonKey}-${marketplace}`) || className.includes(`${productId}-${marketplace}`)
+              );
+              if (!matched) return [];
+              const input = cb.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+              const readonly = Boolean(
+                cb.querySelector('span.readonly') || input?.readOnly || input?.disabled
+                || cb.hasAttribute('readonly') || cb.getAttribute('aria-disabled') === 'true'
+              );
+              return [{ productId: matched[0], marketplace, checked: isChecked(cb), readonly }];
+            });
+          }, productAmazonKeys);
+
+          const fullCatalogSelection: Record<string, string[]> = {};
+          const blocked = new Set((item.tmBlockedProductIds || []).map(id => normalizeCatalogProductId(id)));
+          for (const product of catalog.products) {
+            if (product.available === false || blocked.has(normalizeCatalogProductId(product.id))) continue;
+            fullCatalogSelection[product.id] = Array.isArray(product.availableMarketplaces)
+              ? product.availableMarketplaces
+              : ['US'];
+          }
+          const reconciled = reconcileUpdateSelectionFromDom(modalSnapshot, fullCatalogSelection);
+          const previouslyReservedSlots = Math.max(0, item.allocatedSlots || 0);
+          QueueService.reconcileUpdateDomState(
+            item.id,
+            reconciled.liveSummary,
+            reconciled.additionsMap,
+            reconciled.liveSlotCount
+          );
+          selectionMap = reconciled.selectionMap;
+          this.log(
+            `🔄 Amazon-Livezustand übernommen: ${reconciled.liveSlotCount} live, ${reconciled.additionSlotCount} neu einzuplanen.`,
+            'Amazon-Produktstand abgeglichen...'
+          );
+
+          if (reconciled.additionSlotCount > previouslyReservedSlots) {
+            QueueService.updateItemStatus(item.id, 'WAITING');
+            QueueService.rebalanceQueue();
+            throw new UpdateSelectionRebalancedError(
+              `Aktueller Amazon-Stand benötigt ${reconciled.additionSlotCount} statt ${previouslyReservedSlots} reservierter Slots.`
+            );
+          }
+        }
 
         // Perform fast double-check state synchronization inside the modal
         const modalResult = await page.evaluate(async (params: { activeMap: Record<string, string[]>; productAmazonKeys: Record<string, string> }) => {
@@ -531,6 +616,13 @@ export class UploadWorkerService {
 
               const shouldBeChecked = desiredMarketplaces.has(mp);
               let currentState = isChecked(cb);
+
+              const input = cb.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+              const isReadonly = Boolean(
+                cb.querySelector('span.readonly') || input?.readOnly || input?.disabled
+                || cb.hasAttribute('readonly') || cb.getAttribute('aria-disabled') === 'true'
+              );
+              if (isReadonly) continue;
 
               if (currentState !== shouldBeChecked) {
                 cb.click();
@@ -2060,6 +2152,22 @@ export class UploadWorkerService {
       this.broadcastStatus();
 
     } catch (err: any) {
+      if (err instanceof AmazonProcessingPauseError) {
+        const paused = QueueService.pauseForAmazonProcessing(item.id, 12);
+        const retryAt = paused?.pausedUntil ? new Date(paused.pausedUntil).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' }) : 'in 12 Stunden';
+        this.log(`⏸️ Amazon verarbeitet/prüft das Design. Update bis ${retryAt} pausiert; danach automatische Wiederfreigabe.`, '12 Stunden pausiert');
+        this.isUploading = false;
+        this.abortRequested = false;
+        this.broadcastStatus();
+        return;
+      }
+      if (err instanceof UpdateSelectionRebalancedError) {
+        this.log(`🔄 ${err.message} Queue wurde mit dem aktuellen Amazon-Stand neu ausbalanciert.`, 'Neu eingeplant');
+        this.isUploading = false;
+        this.abortRequested = false;
+        this.broadcastStatus();
+        return;
+      }
       const wasUserCancelled = this.abortRequested;
       const errorMsg = wasUserCancelled
         ? 'Upload vom Benutzer vor dem Amazon-Request abgebrochen.'
