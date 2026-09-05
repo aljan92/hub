@@ -49933,6 +49933,8 @@ var init_settingsService = __esm2({
       queueUpdateTargetCount: 10,
       queueUpdateAutoBackfillEnabled: false,
       queueUpdateMaxActiveProducts: 100,
+      updateAutoBackfillTokenFailureCount: 0,
+      updateAutoBackfillTokenFailureThreshold: 3,
       costPerImage: 0.08,
       costPerVectorization: 0.05,
       openRouterMinBalanceThreshold: 1,
@@ -224632,11 +224634,11 @@ Bullets: ${oldBullets}`
         try {
           if (startStep === "U2") {
             const u2 = await this.stepU2_DownloadArtwork(taskId);
-            if (!u2.success) return { success: false, error: u2.error };
+            if (!u2.success) return { success: false, error: u2.error, failedStep: "U2" };
           }
           if (startStep === "U2" || startStep === "U3") {
             const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-            if (!u3.success) return { success: false, error: u3.error };
+            if (!u3.success) return { success: false, error: u3.error, failedStep: "U3", tokenRelevantFailure: true };
             const task = this.getTask(taskId);
             const settings = loadSettings();
             const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
@@ -224660,11 +224662,11 @@ Bullets: ${oldBullets}`
           }
           if (startStep === "U2" || startStep === "U3" || startStep === "U4") {
             const u4 = await this.stepU4_RewriteListing(taskId);
-            if (!u4.success) return { success: false, error: u4.error };
+            if (!u4.success) return { success: false, error: u4.error, failedStep: "U4", tokenRelevantFailure: true };
           }
           if (startStep === "U2" || startStep === "U3" || startStep === "U4" || startStep === "U5") {
             const u5 = await this.stepU5_TrademarkCheck(taskId);
-            if (!u5.success) return { success: false, error: u5.error };
+            if (!u5.success) return { success: false, error: u5.error, failedStep: "U5", tokenRelevantFailure: true };
             const task = this.getTask(taskId);
             if (task?.status === "AWAITING_TM_REVIEW") {
               return { success: true, task, pausedAtCheckpoint: "TM_REVIEW" };
@@ -224672,11 +224674,11 @@ Bullets: ${oldBullets}`
           }
           if (startStep === "U2" || startStep === "U3" || startStep === "U4" || startStep === "U5" || startStep === "U6") {
             const u6 = await this.stepU6_TranslateListing(taskId);
-            if (!u6.success) return { success: false, error: u6.error };
+            if (!u6.success) return { success: false, error: u6.error, failedStep: "U6", tokenRelevantFailure: true };
           }
           if (startStep === "U2" || startStep === "U3" || startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U7") {
             const u7 = await this.stepU7_Enqueue(taskId);
-            if (!u7.success) return { success: false, error: u7.error };
+            if (!u7.success) return { success: false, error: u7.error, failedStep: "U7" };
           }
           const finalTask = this.getTask(taskId);
           return { success: true, task: finalTask };
@@ -224690,12 +224692,12 @@ Bullets: ${oldBullets}`
        */
       static async runUpdatePipeline(designId) {
         const u1 = await this.stepU1_ExtractMerchData(designId);
-        if (!u1.success || !u1.task) return { success: false, error: u1.error };
+        if (!u1.success || !u1.task) return { success: false, error: u1.error, failedStep: "U1" };
         const taskId = u1.task.id;
         const u2 = await this.stepU2_DownloadArtwork(taskId);
-        if (!u2.success) return { success: false, error: u2.error };
+        if (!u2.success) return { success: false, task: this.getTask(taskId), error: u2.error, failedStep: "U2" };
         const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-        if (!u3.success) return { success: false, error: u3.error };
+        if (!u3.success) return { success: false, task: this.getTask(taskId), error: u3.error, failedStep: "U3", tokenRelevantFailure: true };
         const settings = loadSettings();
         const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
         const isDefective = u3.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || u3.analysisResult?.overall_verdict === "REJECTED";
@@ -224730,7 +224732,8 @@ Bullets: ${oldBullets}`
           });
           return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: "DESIGN_REVIEW" };
         }
-        return await this.runFromStep(taskId, "U4");
+        const result2 = await this.runFromStep(taskId, "U4");
+        return result2.success || result2.task ? result2 : { ...result2, task: this.getTask(taskId) };
       }
       /**
        * Resume pipeline from current state (e.g. U3 -> U7)
@@ -226419,6 +226422,75 @@ var init_updateBackfillService = __esm2({
       static lastWarningTime = 0;
       static WARNING_THROTTLE_MS = 5 * 60 * 1e3;
       // 5 Minuten Drosselung
+      static getTokenburnProtection(settings = loadSettings()) {
+        const threshold = Math.max(1, settings.updateAutoBackfillTokenFailureThreshold ?? 3);
+        const failureCount = Math.max(0, settings.updateAutoBackfillTokenFailureCount ?? 0);
+        return {
+          failureCount,
+          threshold,
+          paused: Boolean(settings.updateAutoBackfillTokenPausedAt) || failureCount >= threshold,
+          pausedAt: settings.updateAutoBackfillTokenPausedAt,
+          reason: settings.updateAutoBackfillTokenPauseReason,
+          lastFailedTaskId: settings.updateAutoBackfillTokenLastFailedTaskId,
+          lastFailedStep: settings.updateAutoBackfillTokenLastFailedStep
+        };
+      }
+      static resetTokenburnProtection() {
+        saveSettings({
+          queueUpdateAutoBackfillEnabled: true,
+          updateAutoBackfillTokenFailureCount: 0,
+          updateAutoBackfillTokenPausedAt: void 0,
+          updateAutoBackfillTokenPauseReason: void 0,
+          updateAutoBackfillTokenLastFailedTaskId: void 0,
+          updateAutoBackfillTokenLastFailedStep: void 0
+        });
+        return { success: true, message: "Tokenburn-Schutz zur\xFCckgesetzt. Update-Automatik ist wieder aktiv." };
+      }
+      static resetTokenburnFailureCount() {
+        const settings = loadSettings();
+        if ((settings.updateAutoBackfillTokenFailureCount ?? 0) > 0 || settings.updateAutoBackfillTokenPausedAt) {
+          saveSettings({
+            updateAutoBackfillTokenFailureCount: 0,
+            updateAutoBackfillTokenPausedAt: void 0,
+            updateAutoBackfillTokenPauseReason: void 0,
+            updateAutoBackfillTokenLastFailedTaskId: void 0,
+            updateAutoBackfillTokenLastFailedStep: void 0
+          });
+        }
+      }
+      static registerTokenburnFailure(taskId, step, error) {
+        const settings = loadSettings();
+        const threshold = Math.max(1, settings.updateAutoBackfillTokenFailureThreshold ?? 3);
+        const failureCount = Math.min(threshold, Math.max(0, settings.updateAutoBackfillTokenFailureCount ?? 0) + 1);
+        const paused = failureCount >= threshold;
+        const reason = `Tokenrelevanter Update-Fehler${step ? ` in ${step}` : ""}: ${error}`;
+        saveSettings({
+          updateAutoBackfillTokenFailureCount: failureCount,
+          ...paused ? {
+            queueUpdateAutoBackfillEnabled: false,
+            updateAutoBackfillTokenPausedAt: (/* @__PURE__ */ new Date()).toISOString(),
+            updateAutoBackfillTokenPauseReason: reason
+          } : {},
+          updateAutoBackfillTokenLastFailedTaskId: taskId,
+          updateAutoBackfillTokenLastFailedStep: step
+        });
+        if (paused && taskId) {
+          TaskLogService2.addEvent(taskId, {
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            type: "ERROR",
+            title: `\u{1F6E1}\uFE0F Tokenburn-Schutz aktiviert (${failureCount}/${threshold})`,
+            content: {
+              phase: "UPDATE_AUTOMATION_GUARD",
+              reason,
+              failedStep: step,
+              failureCount,
+              threshold,
+              action: "UPDATE_AUTO_BACKFILL_PAUSED"
+            }
+          });
+        }
+        return { paused, failureCount, threshold };
+      }
       /**
        * Collect all design IDs that must NOT be pulled again
        * (Already in Queue, active in Tasks, currently in flight, or reserved for recovery)
@@ -226590,6 +226662,10 @@ var init_updateBackfillService = __esm2({
         if (!forceSingle && !settings.queueUpdateAutoBackfillEnabled) {
           return { success: false, message: "Automatik ist ausgeschaltet." };
         }
+        const protection = this.getTokenburnProtection(settings);
+        if (!forceSingle && protection.paused) {
+          return { success: false, message: `Update-Automatik durch Tokenburn-Schutz pausiert (${protection.failureCount}/${protection.threshold}).` };
+        }
         const counts = this.getActiveUpdateCount();
         const targetCount = settings.queueUpdateTargetCount ?? 10;
         if (!forceSingle && counts.currentCount >= targetCount) {
@@ -226621,6 +226697,7 @@ var init_updateBackfillService = __esm2({
             console.log(`[UpdateBackfillService] \u{1F680} (Versuch ${attempt}/${maxAttempts}) Starte Update-Workflow f\xFCr Design ${designId}...`);
             const result2 = await UpdatePipelineService.runUpdatePipeline(designId);
             if (result2.success) {
+              if (!forceSingle) this.resetTokenburnFailureCount();
               return {
                 success: true,
                 designId,
@@ -226628,6 +226705,15 @@ var init_updateBackfillService = __esm2({
               };
             } else {
               lastError = result2.error || "Fehler beim Abruf der Merch-Daten";
+              if (!forceSingle && result2.tokenRelevantFailure) {
+                const tokenburn = this.registerTokenburnFailure(result2.task?.id, result2.failedStep, lastError);
+                if (tokenburn.paused) {
+                  return {
+                    success: false,
+                    message: `Tokenburn-Schutz aktiviert (${tokenburn.failureCount}/${tokenburn.threshold}). Update-Automatik wurde pausiert.`
+                  };
+                }
+              }
               console.warn(`[UpdateBackfillService] \u26A0\uFE0F Design ${designId} auf Amazon nicht abrufbar (${lastError}). \xDCberspringe und teste n\xE4chsten Kandidaten...`);
               cycleFailedIds.add(designId);
               if (LLMService.isCircuitBroken().broken || lastError.includes("402") || lastError.includes("Circuit Breaker")) {
@@ -226662,7 +226748,8 @@ var init_updateBackfillService = __esm2({
           try {
             await UpdateMetadataService.retryPendingConfirmedUpdates();
             const settings = loadSettings();
-            if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
+            const tokenburn = this.getTokenburnProtection(settings);
+            if (settings.queueUpdateAutoBackfillEnabled && !tokenburn.paused && !this.isRunningLoop) {
               const circuit = LLMService.isCircuitBroken();
               const balance = await LLMService.getAvailableBalance();
               const threshold = settings.openRouterMinBalanceThreshold ?? 1;
@@ -227041,6 +227128,12 @@ var init_queueService = __esm2({
           updateTargetCount: settings.queueUpdateTargetCount ?? 10,
           updateAutoBackfillEnabled: settings.queueUpdateAutoBackfillEnabled ?? false,
           updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100,
+          updateAutoBackfillTokenFailureCount: settings.updateAutoBackfillTokenFailureCount ?? 0,
+          updateAutoBackfillTokenFailureThreshold: settings.updateAutoBackfillTokenFailureThreshold ?? 3,
+          updateAutoBackfillTokenPausedAt: settings.updateAutoBackfillTokenPausedAt,
+          updateAutoBackfillTokenPauseReason: settings.updateAutoBackfillTokenPauseReason,
+          updateAutoBackfillTokenLastFailedTaskId: settings.updateAutoBackfillTokenLastFailedTaskId,
+          updateAutoBackfillTokenLastFailedStep: settings.updateAutoBackfillTokenLastFailedStep,
           updateCurrentCount: (() => {
             try {
               const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
@@ -235443,6 +235536,16 @@ app.post("/api/v1/queue/update-backfill/run-once", async (req, res) => {
   try {
     const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
     const result2 = await UpdateBackfillService2.runBackfillCycle(true);
+    const state = QueueService.getState();
+    res.json({ ...result2, state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/queue/update-backfill/tokenburn/reset", (req, res) => {
+  try {
+    const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
+    const result2 = UpdateBackfillService2.resetTokenburnProtection();
     const state = QueueService.getState();
     res.json({ ...result2, state });
   } catch (err) {

@@ -52,6 +52,12 @@ export interface AppSettings {
   queueUpdateTargetCount: number;      // e.g. 10
   queueUpdateAutoBackfillEnabled: boolean; // e.g. false (defaults to OFF)
   queueUpdateMaxActiveProducts: number;    // e.g. 100 (skip designs with >= 100 live products)
+  updateAutoBackfillTokenFailureCount: number;
+  updateAutoBackfillTokenFailureThreshold: number;
+  updateAutoBackfillTokenPausedAt?: string;
+  updateAutoBackfillTokenPauseReason?: string;
+  updateAutoBackfillTokenLastFailedTaskId?: string;
+  updateAutoBackfillTokenLastFailedStep?: string;
   costPerImage: number;            // e.g. 0.08 ($ / image)
   costPerVectorization: number;    // e.g. 0.05 ($ / vectorization)
   costStatsResetTimestamp?: string;// e.g. ISO string for stats reset
@@ -113,6 +119,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   queueUpdateTargetCount: 10,
   queueUpdateAutoBackfillEnabled: false,
   queueUpdateMaxActiveProducts: 100,
+  updateAutoBackfillTokenFailureCount: 0,
+  updateAutoBackfillTokenFailureThreshold: 3,
   costPerImage: 0.08,
   costPerVectorization: 0.05,
   openRouterMinBalanceThreshold: 1.00,

@@ -170,6 +170,12 @@ export interface QueueState {
   updateAutoBackfillEnabled?: boolean;
   updateMaxActiveProducts?: number;
   updateCurrentCount?: number;
+  updateAutoBackfillTokenFailureCount?: number;
+  updateAutoBackfillTokenFailureThreshold?: number;
+  updateAutoBackfillTokenPausedAt?: string;
+  updateAutoBackfillTokenPauseReason?: string;
+  updateAutoBackfillTokenLastFailedTaskId?: string;
+  updateAutoBackfillTokenLastFailedStep?: string;
   catalogProducts?: any[];
 }
 
@@ -538,6 +544,12 @@ export class QueueService {
       updateTargetCount: settings.queueUpdateTargetCount ?? 10,
       updateAutoBackfillEnabled: settings.queueUpdateAutoBackfillEnabled ?? false,
       updateMaxActiveProducts: settings.queueUpdateMaxActiveProducts ?? 100,
+      updateAutoBackfillTokenFailureCount: settings.updateAutoBackfillTokenFailureCount ?? 0,
+      updateAutoBackfillTokenFailureThreshold: settings.updateAutoBackfillTokenFailureThreshold ?? 3,
+      updateAutoBackfillTokenPausedAt: settings.updateAutoBackfillTokenPausedAt,
+      updateAutoBackfillTokenPauseReason: settings.updateAutoBackfillTokenPauseReason,
+      updateAutoBackfillTokenLastFailedTaskId: settings.updateAutoBackfillTokenLastFailedTaskId,
+      updateAutoBackfillTokenLastFailedStep: settings.updateAutoBackfillTokenLastFailedStep,
       updateCurrentCount: (() => {
         try {
           const { UpdateBackfillService } = require('./updateBackfillService');

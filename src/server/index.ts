@@ -1831,6 +1831,18 @@ app.post('/api/v1/queue/update-backfill/run-once', async (req, res) => {
   }
 });
 
+// Reset the persistent tokenburn guard and explicitly resume update auto-backfill.
+app.post('/api/v1/queue/update-backfill/tokenburn/reset', (req, res) => {
+  try {
+    const { UpdateBackfillService } = require('./services/updateBackfillService');
+    const result = UpdateBackfillService.resetTokenburnProtection();
+    const state = QueueService.getState();
+    res.json({ ...result, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ==================== UPLOAD WORKER API ====================
 
 // Start Automated Upload

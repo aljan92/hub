@@ -102,6 +102,12 @@ interface QueueState {
   updateAutoBackfillEnabled?: boolean;
   updateMaxActiveProducts?: number;
   updateCurrentCount?: number;
+  updateAutoBackfillTokenFailureCount?: number;
+  updateAutoBackfillTokenFailureThreshold?: number;
+  updateAutoBackfillTokenPausedAt?: string;
+  updateAutoBackfillTokenPauseReason?: string;
+  updateAutoBackfillTokenLastFailedTaskId?: string;
+  updateAutoBackfillTokenLastFailedStep?: string;
   scheduledLiveSlotsToday?: number;
   scheduledDraftProductsToday?: number;
   catalogProducts?: any[];
@@ -416,6 +422,25 @@ export const QueueView: React.FC = () => {
       setBackfillToast({ message: `Fehler: ${err.message}`, success: false });
     } finally {
       setTimeout(() => setBackfillToast(null), 4000);
+    }
+  };
+
+  const handleResetTokenburnProtection = async () => {
+    setBackfillToast(null);
+    try {
+      const res = await fetch('/api/v1/queue/update-backfill/tokenburn/reset', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        if (data.state) setQueueState(data.state);
+        setUpdateAutoBackfill(true);
+        setBackfillToast({ message: data.message || 'Tokenburn-Schutz zurückgesetzt. Automatik wieder aktiv.', success: true });
+      } else {
+        setBackfillToast({ message: data.error || 'Tokenburn-Schutz konnte nicht zurückgesetzt werden.', success: false });
+      }
+    } catch (err: any) {
+      setBackfillToast({ message: `Fehler: ${err.message}`, success: false });
+    } finally {
+      setTimeout(() => setBackfillToast(null), 6000);
     }
   };
 
@@ -736,6 +761,10 @@ export const QueueView: React.FC = () => {
   const isUploadIdle = !uploadProgress.isUploading
     && uploadProgress.currentStep === 'Bereit'
     && uploadProgress.logs.length === 0;
+  const tokenburnFailureCount = queueState.updateAutoBackfillTokenFailureCount ?? 0;
+  const tokenburnFailureThreshold = queueState.updateAutoBackfillTokenFailureThreshold ?? 3;
+  const isTokenburnPaused = Boolean(queueState.updateAutoBackfillTokenPausedAt)
+    || tokenburnFailureCount >= tokenburnFailureThreshold;
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -2055,15 +2084,20 @@ export const QueueView: React.FC = () => {
                   <span className="text-xs font-semibold text-slate-300">Automatik:</span>
                   <button
                     type="button"
-                    onClick={() => handleToggleAutoBackfill(!updateAutoBackfill)}
+                    onClick={() => isTokenburnPaused
+                      ? handleResetTokenburnProtection()
+                      : handleToggleAutoBackfill(!updateAutoBackfill)}
                     className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center space-x-1.5 ${
-                      updateAutoBackfill 
+                      isTokenburnPaused
+                        ? 'bg-rose-600/20 text-rose-300 border-rose-500/50'
+                        : updateAutoBackfill
                         ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-950/40' 
                         : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
                     }`}
+                    title={isTokenburnPaused ? 'Tokenburn-Schutz zurücksetzen und Automatik bewusst wieder aktivieren' : undefined}
                   >
                     <Power className="w-3 h-3" />
-                    <span>{updateAutoBackfill ? 'AKTIV' : 'AUS'}</span>
+                    <span>{isTokenburnPaused ? 'SCHUTZ PAUSIERT' : updateAutoBackfill ? 'AKTIV' : 'AUS'}</span>
                   </button>
                 </div>
 
@@ -2129,7 +2163,7 @@ export const QueueView: React.FC = () => {
                         type="button"
                         onClick={handleResetUpdatePool}
                         className="ml-1.5 p-1 rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
-                        title="In-Flight Locks & Zähler zurücksetzen"
+                        title="In-Flight Locks zurücksetzen"
                       >
                         <RotateCcw className="w-3 h-3" />
                       </button>
@@ -2180,6 +2214,28 @@ export const QueueView: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {isTokenburnPaused && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2.5 text-xs">
+                <div className="flex items-start gap-2 text-rose-200">
+                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                  <div>
+                    <p className="font-bold">Tokenburn-Schutz: Update-Automatik pausiert ({tokenburnFailureCount}/{tokenburnFailureThreshold})</p>
+                    <p className="mt-0.5 text-rose-300/80">
+                      {queueState.updateAutoBackfillTokenLastFailedStep ? `${queueState.updateAutoBackfillTokenLastFailedStep}: ` : ''}
+                      {queueState.updateAutoBackfillTokenPauseReason || 'Drei tokenrelevante Fehler in automatischen Update-Vorbereitungen.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResetTokenburnProtection}
+                  className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-400/40 transition-colors"
+                >
+                  Schutz zurücksetzen & aktivieren
+                </button>
+              </div>
+            )}
 
             {/* Backfill Feedback Toast */}
             {backfillToast && (

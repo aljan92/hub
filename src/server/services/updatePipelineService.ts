@@ -14,6 +14,15 @@ import { AssetValidationService } from './assetValidationService';
 import { TaskExecutionLock } from './taskExecutionLock';
 import type { FinalizationParams } from './finalizationService';
 
+export interface UpdatePipelineRunResult {
+  success: boolean;
+  task?: DesignTaskLog;
+  pausedAtCheckpoint?: string;
+  error?: string;
+  failedStep?: 'U1' | 'U2' | 'U3' | 'U4' | 'U5' | 'U6' | 'U7';
+  tokenRelevantFailure?: boolean;
+}
+
 export class UpdatePipelineService {
   /**
    * Helper to retrieve a task safely
@@ -790,7 +799,7 @@ export class UpdatePipelineService {
     taskId: string, 
     startStep: 'U2' | 'U3' | 'U4' | 'U5' | 'U6' | 'U7' = 'U4',
     owner: 'NORMAL' | 'RECOVERY' | 'USER_ACTION' = 'NORMAL'
-  ): Promise<{ success: boolean; task?: DesignTaskLog; pausedAtCheckpoint?: string; error?: string }> {
+  ): Promise<UpdatePipelineRunResult> {
     console.log(`[UpdatePipeline] 🚀 Führe Pipeline ab Step ${startStep} für Task ${taskId} aus (Owner: ${owner})...`);
 
     if (!TaskExecutionLock.acquire(taskId, owner)) {
@@ -801,12 +810,12 @@ export class UpdatePipelineService {
     try {
       if (startStep === 'U2') {
         const u2 = await this.stepU2_DownloadArtwork(taskId);
-        if (!u2.success) return { success: false, error: u2.error };
+        if (!u2.success) return { success: false, error: u2.error, failedStep: 'U2' };
       }
 
       if (startStep === 'U2' || startStep === 'U3') {
         const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-        if (!u3.success) return { success: false, error: u3.error };
+        if (!u3.success) return { success: false, error: u3.error, failedStep: 'U3', tokenRelevantFailure: true };
 
         // Post-Analysis Decision Gate: Check autonomy, defective quality, or rejection
         const task = this.getTask(taskId);
@@ -835,12 +844,12 @@ export class UpdatePipelineService {
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4') {
         const u4 = await this.stepU4_RewriteListing(taskId);
-        if (!u4.success) return { success: false, error: u4.error };
+        if (!u4.success) return { success: false, error: u4.error, failedStep: 'U4', tokenRelevantFailure: true };
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5') {
         const u5 = await this.stepU5_TrademarkCheck(taskId);
-        if (!u5.success) return { success: false, error: u5.error };
+        if (!u5.success) return { success: false, error: u5.error, failedStep: 'U5', tokenRelevantFailure: true };
 
         const task = this.getTask(taskId);
         if (task?.status === 'AWAITING_TM_REVIEW') {
@@ -850,12 +859,12 @@ export class UpdatePipelineService {
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5' || startStep === 'U6') {
         const u6 = await this.stepU6_TranslateListing(taskId);
-        if (!u6.success) return { success: false, error: u6.error };
+        if (!u6.success) return { success: false, error: u6.error, failedStep: 'U6', tokenRelevantFailure: true };
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5' || startStep === 'U6' || startStep === 'U7') {
         const u7 = await this.stepU7_Enqueue(taskId);
-        if (!u7.success) return { success: false, error: u7.error };
+        if (!u7.success) return { success: false, error: u7.error, failedStep: 'U7' };
       }
 
       const finalTask = this.getTask(taskId);
@@ -869,19 +878,19 @@ export class UpdatePipelineService {
    * Run entire pipeline sequentially from a Design-ID
    * (Pauses after U3 at Checkpoint 2 if aiAutonomyEnabled is false)
    */
-  static async runUpdatePipeline(designId: string): Promise<{ success: boolean; task?: DesignTaskLog; pausedAtCheckpoint?: string; error?: string }> {
+  static async runUpdatePipeline(designId: string): Promise<UpdatePipelineRunResult> {
     // U1: Extract raw data & create task log
     const u1 = await this.stepU1_ExtractMerchData(designId);
-    if (!u1.success || !u1.task) return { success: false, error: u1.error };
+    if (!u1.success || !u1.task) return { success: false, error: u1.error, failedStep: 'U1' };
     const taskId = u1.task.id;
 
     // U2: Download Master-Artwork PNG
     const u2 = await this.stepU2_DownloadArtwork(taskId);
-    if (!u2.success) return { success: false, error: u2.error };
+    if (!u2.success) return { success: false, task: this.getTask(taskId), error: u2.error, failedStep: 'U2' };
 
     // U3: Vision & Listing Analysis
     const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-    if (!u3.success) return { success: false, error: u3.error };
+    if (!u3.success) return { success: false, task: this.getTask(taskId), error: u3.error, failedStep: 'U3', tokenRelevantFailure: true };
 
     // Check AI Autonomy Switch & Quality Assessment for Update Pipeline
     const settings = loadSettings();
@@ -930,7 +939,8 @@ export class UpdatePipelineService {
     }
 
     // If autonomy is enabled and design quality is approved, proceed automatically through U4 -> U7
-    return await this.runFromStep(taskId, 'U4');
+    const result = await this.runFromStep(taskId, 'U4');
+    return result.success || result.task ? result : { ...result, task: this.getTask(taskId) };
   }
 
   /**

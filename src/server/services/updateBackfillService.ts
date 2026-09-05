@@ -24,6 +24,79 @@ export class UpdateBackfillService {
   private static lastWarningTime = 0;
   private static readonly WARNING_THROTTLE_MS = 5 * 60 * 1000; // 5 Minuten Drosselung
 
+  public static getTokenburnProtection(settings = loadSettings()) {
+    const threshold = Math.max(1, settings.updateAutoBackfillTokenFailureThreshold ?? 3);
+    const failureCount = Math.max(0, settings.updateAutoBackfillTokenFailureCount ?? 0);
+    return {
+      failureCount,
+      threshold,
+      paused: Boolean(settings.updateAutoBackfillTokenPausedAt) || failureCount >= threshold,
+      pausedAt: settings.updateAutoBackfillTokenPausedAt,
+      reason: settings.updateAutoBackfillTokenPauseReason,
+      lastFailedTaskId: settings.updateAutoBackfillTokenLastFailedTaskId,
+      lastFailedStep: settings.updateAutoBackfillTokenLastFailedStep
+    };
+  }
+
+  public static resetTokenburnProtection(): { success: boolean; message: string } {
+    saveSettings({
+      queueUpdateAutoBackfillEnabled: true,
+      updateAutoBackfillTokenFailureCount: 0,
+      updateAutoBackfillTokenPausedAt: undefined,
+      updateAutoBackfillTokenPauseReason: undefined,
+      updateAutoBackfillTokenLastFailedTaskId: undefined,
+      updateAutoBackfillTokenLastFailedStep: undefined
+    });
+    return { success: true, message: 'Tokenburn-Schutz zurückgesetzt. Update-Automatik ist wieder aktiv.' };
+  }
+
+  private static resetTokenburnFailureCount(): void {
+    const settings = loadSettings();
+    if ((settings.updateAutoBackfillTokenFailureCount ?? 0) > 0 || settings.updateAutoBackfillTokenPausedAt) {
+      saveSettings({
+        updateAutoBackfillTokenFailureCount: 0,
+        updateAutoBackfillTokenPausedAt: undefined,
+        updateAutoBackfillTokenPauseReason: undefined,
+        updateAutoBackfillTokenLastFailedTaskId: undefined,
+        updateAutoBackfillTokenLastFailedStep: undefined
+      });
+    }
+  }
+
+  public static registerTokenburnFailure(taskId: string | undefined, step: string | undefined, error: string): { paused: boolean; failureCount: number; threshold: number } {
+    const settings = loadSettings();
+    const threshold = Math.max(1, settings.updateAutoBackfillTokenFailureThreshold ?? 3);
+    const failureCount = Math.min(threshold, Math.max(0, settings.updateAutoBackfillTokenFailureCount ?? 0) + 1);
+    const paused = failureCount >= threshold;
+    const reason = `Tokenrelevanter Update-Fehler${step ? ` in ${step}` : ''}: ${error}`;
+    saveSettings({
+      updateAutoBackfillTokenFailureCount: failureCount,
+      ...(paused ? {
+        queueUpdateAutoBackfillEnabled: false,
+        updateAutoBackfillTokenPausedAt: new Date().toISOString(),
+        updateAutoBackfillTokenPauseReason: reason
+      } : {}),
+      updateAutoBackfillTokenLastFailedTaskId: taskId,
+      updateAutoBackfillTokenLastFailedStep: step
+    });
+    if (paused && taskId) {
+      TaskLogService.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'ERROR',
+        title: `🛡️ Tokenburn-Schutz aktiviert (${failureCount}/${threshold})`,
+        content: {
+          phase: 'UPDATE_AUTOMATION_GUARD',
+          reason,
+          failedStep: step,
+          failureCount,
+          threshold,
+          action: 'UPDATE_AUTO_BACKFILL_PAUSED'
+        }
+      });
+    }
+    return { paused, failureCount, threshold };
+  }
+
   /**
    * Collect all design IDs that must NOT be pulled again
    * (Already in Queue, active in Tasks, currently in flight, or reserved for recovery)
@@ -265,6 +338,11 @@ export class UpdateBackfillService {
       return { success: false, message: 'Automatik ist ausgeschaltet.' };
     }
 
+    const protection = this.getTokenburnProtection(settings);
+    if (!forceSingle && protection.paused) {
+      return { success: false, message: `Update-Automatik durch Tokenburn-Schutz pausiert (${protection.failureCount}/${protection.threshold}).` };
+    }
+
     const counts = this.getActiveUpdateCount();
     const targetCount = settings.queueUpdateTargetCount ?? 10;
 
@@ -307,6 +385,7 @@ export class UpdateBackfillService {
         const result = await UpdatePipelineService.runUpdatePipeline(designId);
 
         if (result.success) {
+          if (!forceSingle) this.resetTokenburnFailureCount();
           return {
             success: true,
             designId,
@@ -316,6 +395,15 @@ export class UpdateBackfillService {
           };
         } else {
           lastError = result.error || 'Fehler beim Abruf der Merch-Daten';
+          if (!forceSingle && result.tokenRelevantFailure) {
+            const tokenburn = this.registerTokenburnFailure(result.task?.id, result.failedStep, lastError);
+            if (tokenburn.paused) {
+              return {
+                success: false,
+                message: `Tokenburn-Schutz aktiviert (${tokenburn.failureCount}/${tokenburn.threshold}). Update-Automatik wurde pausiert.`
+              };
+            }
+          }
           console.warn(`[UpdateBackfillService] ⚠️ Design ${designId} auf Amazon nicht abrufbar (${lastError}). Überspringe und teste nächsten Kandidaten...`);
           cycleFailedIds.add(designId);
 
@@ -356,7 +444,8 @@ export class UpdateBackfillService {
       try {
         await UpdateMetadataService.retryPendingConfirmedUpdates();
         const settings = loadSettings();
-        if (settings.queueUpdateAutoBackfillEnabled && !this.isRunningLoop) {
+        const tokenburn = this.getTokenburnProtection(settings);
+        if (settings.queueUpdateAutoBackfillEnabled && !tokenburn.paused && !this.isRunningLoop) {
           // Pre-Flight Check: OpenRouter Guthaben & Circuit Breaker
           const circuit = LLMService.isCircuitBroken();
           const balance = await LLMService.getAvailableBalance();
