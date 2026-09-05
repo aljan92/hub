@@ -156,6 +156,7 @@ export interface QueueState {
   scheduledItemsCount: number;
   overflowItemsCount: number;
   uploadScheduleTime: string; // e.g. "04:00" or "off"
+  uploadScheduleEnabled: boolean;
   maxDropPerDesign: number;
   autoBalance: boolean;
   maxDroppableCapacity: number;
@@ -521,7 +522,8 @@ export class QueueService {
       scheduledDraftProductsToday,
       scheduledItemsCount,
       overflowItemsCount,
-      uploadScheduleTime: settings.queueUploadScheduleTime || 'off',
+      uploadScheduleTime: settings.queueUploadScheduleTime || '04:00',
+      uploadScheduleEnabled: settings.queueUploadScheduleEnabled ?? false,
       maxDropPerDesign: maxDrop,
       autoBalance: settings.queueAutoBalance ?? true,
       maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),

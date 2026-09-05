@@ -44,6 +44,7 @@ export interface AppSettings {
   aiAutonomyDesignEnabled: boolean;
   aiAutonomyUpdateEnabled: boolean;
   queueUploadScheduleTime: string; // e.g. "04:00" or "off"
+  queueUploadScheduleEnabled: boolean;
   queueMaxDropPerDesign: number;   // e.g. 10
   queueAutoBalance: boolean;       // e.g. true
   queueUploadMode: 'draft' | 'live' | 'hybrid'; // e.g. 'draft', 'live', or 'hybrid'
@@ -103,7 +104,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiAutonomyEnabled: false,
   aiAutonomyDesignEnabled: false,
   aiAutonomyUpdateEnabled: false,
-  queueUploadScheduleTime: 'off',
+  queueUploadScheduleTime: '04:00',
+  queueUploadScheduleEnabled: false,
   queueMaxDropPerDesign: 10,
   queueAutoBalance: true,
   queueUploadMode: 'draft',
@@ -149,12 +151,19 @@ export function loadSettings(): AppSettings {
     try {
       const fileData = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(fileData);
+      const legacySchedule = parsed.queueUploadScheduleTime ?? DEFAULT_SETTINGS.queueUploadScheduleTime;
       const settings = {
         ...DEFAULT_SETTINGS,
         ...parsed,
-        queueUploadScheduleTime: normalizeUploadScheduleTime(parsed.queueUploadScheduleTime ?? DEFAULT_SETTINGS.queueUploadScheduleTime)
+        queueUploadScheduleTime: normalizeUploadScheduleTime(legacySchedule) === 'off'
+          ? DEFAULT_SETTINGS.queueUploadScheduleTime
+          : normalizeUploadScheduleTime(legacySchedule),
+        queueUploadScheduleEnabled: typeof parsed.queueUploadScheduleEnabled === 'boolean'
+          ? parsed.queueUploadScheduleEnabled
+          : legacySchedule !== 'off'
       };
-      const scheduleWasNormalized = settings.queueUploadScheduleTime !== parsed.queueUploadScheduleTime;
+      const scheduleWasNormalized = settings.queueUploadScheduleTime !== parsed.queueUploadScheduleTime
+        || settings.queueUploadScheduleEnabled !== parsed.queueUploadScheduleEnabled;
       if (!settings.mcpApiKey) {
         settings.mcpApiKey = generateApiKey();
         const merged = { ...settings, mcpApiKey: settings.mcpApiKey };

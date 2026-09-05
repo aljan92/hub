@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildUploadProductSelection } from '../src/server/services/uploadProductSelection';
+import { buildUploadProductSelection, getLiveMarketplacesForProduct } from '../src/server/services/uploadProductSelection';
 import { normalizeCatalogProductId } from '../src/server/services/queueService';
 
 const additions = { STANDARD_TSHIRT: ['US'], VNECK: [] };
@@ -20,4 +20,15 @@ assert.deepEqual(buildUploadProductSelection({ STANDARD_TSHIRT: ['GB'] }, true, 
 assert.throws(() => buildUploadProductSelection(additions, true), /Live-Marktplatzdaten/);
 assert.throws(() => buildUploadProductSelection(additions, true, { VNECK: {} }), /Ungültige Marktplatzdaten/);
 assert.throws(() => buildUploadProductSelection(additions, true, { VNECK: ['INVALID'] }), /Unbekannter Marktplatz/);
+assert.deepEqual(
+  getLiveMarketplacesForProduct({ TUMBLER: { marketplaces: ['US', 'UK'] } }, 'TUMBLER'),
+  ['US', 'GB'],
+  'Partially live products must be recognized as artwork-locked across marketplaces'
+);
+assert.deepEqual(
+  getLiveMarketplacesForProduct({ MUG: ['DE'] }, 'CERAMIC_MUG'),
+  ['DE'],
+  'Dynamic catalog aliases must identify already-live product types'
+);
+assert.deepEqual(getLiveMarketplacesForProduct(live, 'TRAVEL_TUMBLER'), [], 'Unpublished product types remain artwork-configurable');
 console.log('PASS: update union, live-only products, slot immutability, new designs, aliases and fail-closed metadata checks');

@@ -89,6 +89,7 @@ interface QueueState {
   scheduledItemsCount?: number;
   overflowItemsCount?: number;
   uploadScheduleTime: string;
+  uploadScheduleEnabled: boolean;
   maxDropPerDesign: number;
   autoBalance: boolean;
   maxDroppableCapacity: number;
@@ -108,6 +109,7 @@ type QueueMode = 'draft' | 'live' | 'hybrid';
 
 interface QueueSettingsUpdate {
   uploadScheduleTime?: string;
+  uploadScheduleEnabled?: boolean;
   maxDropPerDesign?: number;
   uploadMode?: QueueMode;
   draftProductsPerDesign?: number;
@@ -145,7 +147,8 @@ export const QueueView: React.FC = () => {
     usedSlotsToday: 0,
     totalDailySlots: 200,
     scheduledSlotsToday: 0,
-    uploadScheduleTime: 'off',
+    uploadScheduleTime: '04:00',
+    uploadScheduleEnabled: false,
     maxDropPerDesign: 10,
     autoBalance: true,
     maxDroppableCapacity: 0
@@ -1200,21 +1203,19 @@ export const QueueView: React.FC = () => {
                 {/* Enable/Disable Toggle */}
                 <button
                   onClick={() => {
-                    const nextVal = queueState.uploadScheduleTime === 'off' ? '04:00' : 'off';
-                    handleUpdateSettings({ uploadScheduleTime: nextVal });
+                    handleUpdateSettings({ uploadScheduleEnabled: !queueState.uploadScheduleEnabled });
                   }}
                   className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all ${
-                    queueState.uploadScheduleTime !== 'off'
+                    queueState.uploadScheduleEnabled
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                       : 'bg-slate-800 text-slate-400 border-slate-700'
                   }`}
                 >
-                  {queueState.uploadScheduleTime !== 'off' ? 'Aktiv' : 'Aus'}
+                  {queueState.uploadScheduleEnabled ? 'Aktiv' : 'Aus'}
                 </button>
 
                 {/* Stable hour/minute selects instead of browser-dependent native time input */}
-                {queueState.uploadScheduleTime !== 'off' && (
-                  <div className="flex items-center gap-1 font-mono">
+                <div className="flex items-center gap-1 font-mono">
                     <select
                       aria-label="Upload-Stunde"
                       value={queueState.uploadScheduleTime.split(':')[0]}
@@ -1239,8 +1240,7 @@ export const QueueView: React.FC = () => {
                         <option key={minute} value={minute}>{minute}</option>
                       ))}
                     </select>
-                  </div>
-                )}
+                </div>
               </div>
 
               {/* Stepper for Max Drop Tolerance per Design */}

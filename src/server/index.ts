@@ -1760,6 +1760,7 @@ app.patch('/api/v1/queue/settings', (req, res) => {
   try {
     const { 
       uploadScheduleTime, 
+      uploadScheduleEnabled,
       maxDropPerDesign, 
       autoBalance, 
       uploadMode, 
@@ -1787,6 +1788,7 @@ app.patch('/api/v1/queue/settings', (req, res) => {
     const updated = {
       ...current,
       queueUploadScheduleTime: uploadScheduleTime !== undefined ? uploadScheduleTime : current.queueUploadScheduleTime,
+      queueUploadScheduleEnabled: uploadScheduleEnabled !== undefined ? Boolean(uploadScheduleEnabled) : current.queueUploadScheduleEnabled,
       queueMaxDropPerDesign: maxDropPerDesign !== undefined ? Number(maxDropPerDesign) : current.queueMaxDropPerDesign,
       queueAutoBalance: autoBalance !== undefined ? Boolean(autoBalance) : current.queueAutoBalance,
       queueUploadMode: uploadMode !== undefined ? uploadMode : current.queueUploadMode,

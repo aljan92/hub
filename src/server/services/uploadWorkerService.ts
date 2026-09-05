@@ -11,7 +11,7 @@ import { AmazonRecoveryVerificationService } from './amazonRecoveryVerificationS
 import { TaskRepository } from '../storage/taskRepository';
 import { RemoteBaselineInfo } from '../../types/tasks';
 import { Page } from 'playwright';
-import { buildUploadProductSelection } from './uploadProductSelection';
+import { buildUploadProductSelection, getLiveMarketplacesForProduct } from './uploadProductSelection';
 import { getUploadFitPolicy } from './uploadFitPolicy';
 import { isUploadColorBlocked } from './uploadColorPolicy';
 import { TaskExecutionLock } from './taskExecutionLock';
@@ -1295,6 +1295,13 @@ export class UploadWorkerService {
         // Dynamic Artwork Replacement via ProductArtworkConfig
         const artworkConfig = product.artwork;
         if (artworkConfig?.customResizeEnabled) {
+          const existingLiveMarketplaces = isUpdate
+            ? getLiveMarketplacesForProduct(item.liveProductSummary || item.liveStats?.productSummary, product.id)
+            : [];
+
+          if (existingLiveMarketplaces.length > 0) {
+            this.log(`🔒 ${product.displayName}: Spezial-Artwork bleibt unverändert, da der Produkttyp bereits auf ${existingLiveMarketplaces.join(', ')} live ist.`);
+          } else {
           const rawAvoid = String(avoidColor || 'none').trim().toLowerCase();
           const avoidKey: 'white' | 'black' | 'none' = 
             (rawAvoid.includes('white') || rawAvoid.includes('weiß')) ? 'white' :
@@ -1539,6 +1546,7 @@ export class UploadWorkerService {
               currentProductStatus = 'FAILED_ARTWORK_UPLOAD';
               currentProductFailureReason = `Kein File-Upload-Feld im DOM für ${product.displayName} gefunden`;
             }
+          }
           }
         }
 

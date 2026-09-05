@@ -1,5 +1,19 @@
 import { normalizeCatalogProductId, normalizeMarketplaceCode } from './queueService';
 
+export function getLiveMarketplacesForProduct(
+  liveSummary: Record<string, unknown> | null | undefined,
+  productId: string
+): string[] {
+  if (!liveSummary || typeof liveSummary !== 'object' || Array.isArray(liveSummary)) return [];
+  const normalizedProductId = normalizeCatalogProductId(productId);
+  const matchingKey = Object.keys(liveSummary).find(key => normalizeCatalogProductId(key) === normalizedProductId);
+  if (!matchingKey) return [];
+  const info = liveSummary[matchingKey];
+  const marketplaces = Array.isArray(info) ? info : (info as { marketplaces?: unknown } | null)?.marketplaces;
+  if (!Array.isArray(marketplaces)) return [];
+  return [...new Set(marketplaces.map(value => normalizeMarketplaceCode(String(value))))];
+}
+
 /** Queue allocation is a delta for updates, not the full Amazon checkbox state. */
 export function buildUploadProductSelection(
   plannedAdditions: Record<string, string[]>,

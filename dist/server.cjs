@@ -49816,12 +49816,14 @@ function loadSettings() {
     try {
       const fileData = import_fs71.default.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(fileData);
+      const legacySchedule = parsed.queueUploadScheduleTime ?? DEFAULT_SETTINGS.queueUploadScheduleTime;
       const settings = {
         ...DEFAULT_SETTINGS,
         ...parsed,
-        queueUploadScheduleTime: normalizeUploadScheduleTime(parsed.queueUploadScheduleTime ?? DEFAULT_SETTINGS.queueUploadScheduleTime)
+        queueUploadScheduleTime: normalizeUploadScheduleTime(legacySchedule) === "off" ? DEFAULT_SETTINGS.queueUploadScheduleTime : normalizeUploadScheduleTime(legacySchedule),
+        queueUploadScheduleEnabled: typeof parsed.queueUploadScheduleEnabled === "boolean" ? parsed.queueUploadScheduleEnabled : legacySchedule !== "off"
       };
-      const scheduleWasNormalized = settings.queueUploadScheduleTime !== parsed.queueUploadScheduleTime;
+      const scheduleWasNormalized = settings.queueUploadScheduleTime !== parsed.queueUploadScheduleTime || settings.queueUploadScheduleEnabled !== parsed.queueUploadScheduleEnabled;
       if (!settings.mcpApiKey) {
         settings.mcpApiKey = generateApiKey();
         const merged = { ...settings, mcpApiKey: settings.mcpApiKey };
@@ -49922,7 +49924,8 @@ var init_settingsService = __esm2({
       aiAutonomyEnabled: false,
       aiAutonomyDesignEnabled: false,
       aiAutonomyUpdateEnabled: false,
-      queueUploadScheduleTime: "off",
+      queueUploadScheduleTime: "04:00",
+      queueUploadScheduleEnabled: false,
       queueMaxDropPerDesign: 10,
       queueAutoBalance: true,
       queueUploadMode: "draft",
@@ -226989,7 +226992,8 @@ var init_queueService = __esm2({
           scheduledDraftProductsToday,
           scheduledItemsCount,
           overflowItemsCount,
-          uploadScheduleTime: settings.queueUploadScheduleTime || "off",
+          uploadScheduleTime: settings.queueUploadScheduleTime || "04:00",
+          uploadScheduleEnabled: settings.queueUploadScheduleEnabled ?? false,
           maxDropPerDesign: maxDrop,
           autoBalance: settings.queueAutoBalance ?? true,
           maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),
@@ -231959,6 +231963,16 @@ init_taskRepository();
 
 // src/server/services/uploadProductSelection.ts
 init_queueService();
+function getLiveMarketplacesForProduct(liveSummary, productId) {
+  if (!liveSummary || typeof liveSummary !== "object" || Array.isArray(liveSummary)) return [];
+  const normalizedProductId = normalizeCatalogProductId(productId);
+  const matchingKey = Object.keys(liveSummary).find((key) => normalizeCatalogProductId(key) === normalizedProductId);
+  if (!matchingKey) return [];
+  const info = liveSummary[matchingKey];
+  const marketplaces = Array.isArray(info) ? info : info?.marketplaces;
+  if (!Array.isArray(marketplaces)) return [];
+  return [...new Set(marketplaces.map((value2) => normalizeMarketplaceCode(String(value2))))];
+}
 function buildUploadProductSelection(plannedAdditions, isUpdate, liveSummary) {
   const selected = {};
   const merge = (product, marketplaces) => {
@@ -233014,185 +233028,190 @@ var UploadWorkerService = class _UploadWorkerService {
         }
         const artworkConfig = product.artwork;
         if (artworkConfig?.customResizeEnabled) {
-          const rawAvoid = String(avoidColor || "none").trim().toLowerCase();
-          const avoidKey = rawAvoid.includes("white") || rawAvoid.includes("wei\xDF") ? "white" : rawAvoid.includes("black") || rawAvoid.includes("schwarz") ? "black" : "none";
-          const configuredVariantId = artworkConfig.resizeByAvoidColor?.[avoidKey];
-          if (!configuredVariantId || configuredVariantId === "MASTER") {
-            this.log(`\u{1F3A8} ${product.displayName}: Master Design konfiguriert f\xFCr avoidColor="${avoidKey}". Behalte Master-Artwork.`);
+          const existingLiveMarketplaces = isUpdate ? getLiveMarketplacesForProduct(item.liveProductSummary || item.liveStats?.productSummary, product.id) : [];
+          if (existingLiveMarketplaces.length > 0) {
+            this.log(`\u{1F512} ${product.displayName}: Spezial-Artwork bleibt unver\xE4ndert, da der Produkttyp bereits auf ${existingLiveMarketplaces.join(", ")} live ist.`);
           } else {
-            const selectedVariant = ARTWORK_VARIANT_REGISTRY[configuredVariantId];
-            if (!selectedVariant) {
-              const err = `FAILED_ARTWORK_RESOLUTION: Unbekannte Artwork-Variante "${configuredVariantId}" f\xFCr ${product.displayName}`;
-              currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
-              currentProductFailureReason = err;
-              this.log(`\u274C ${err}`);
-              continue;
-            }
-            let targetArtworkPath;
-            if (selectedVariant.storageType === "legacy" && selectedVariant.artifactKey) {
-              targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey];
-            } else if (selectedVariant.storageType === "productVariants") {
-              targetArtworkPath = item.resizedAssets?.productVariants?.[selectedVariant.id];
-            }
-            if (!targetArtworkPath || !import_fs87.default.existsSync(targetArtworkPath)) {
-              const err = `FAILED_ARTWORK_RESOLUTION: Asset f\xFCr Variante "${selectedVariant.id}" (${selectedVariant.label}) f\xFCr ${product.displayName} nicht gefunden (storageType: ${selectedVariant.storageType})`;
-              currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
-              currentProductFailureReason = err;
-              this.log(`\u274C ${err}`);
-              continue;
-            }
-            const isBrushApplied = selectedVariant.id.includes("BRUSH");
-            this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit ${selectedVariant.label} [${selectedVariant.id}] (${isBrushApplied ? "Black Brush weil avoid white" : "Two-Sided Standard"})...`);
-            const deleteResult = await page.evaluate(async (params2) => {
-              const { pid, amazonKey, cardId } = params2;
-              let card = document.getElementById(cardId) || document.getElementById(`${amazonKey}-card`) || document.getElementById(`${amazonKey.toLowerCase()}-card`) || document.getElementById(`${pid}-card`) || document.getElementById(`${pid.toLowerCase()}-card`);
-              if (!card) {
-                const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
-                card = allCards.find((c) => {
-                  const idUpper = (c.id || "").toUpperCase();
-                  const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
-                  return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid);
-                }) || null;
+            const rawAvoid = String(avoidColor || "none").trim().toLowerCase();
+            const avoidKey = rawAvoid.includes("white") || rawAvoid.includes("wei\xDF") ? "white" : rawAvoid.includes("black") || rawAvoid.includes("schwarz") ? "black" : "none";
+            const configuredVariantId = artworkConfig.resizeByAvoidColor?.[avoidKey];
+            if (!configuredVariantId || configuredVariantId === "MASTER") {
+              this.log(`\u{1F3A8} ${product.displayName}: Master Design konfiguriert f\xFCr avoidColor="${avoidKey}". Behalte Master-Artwork.`);
+            } else {
+              const selectedVariant = ARTWORK_VARIANT_REGISTRY[configuredVariantId];
+              if (!selectedVariant) {
+                const err = `FAILED_ARTWORK_RESOLUTION: Unbekannte Artwork-Variante "${configuredVariantId}" f\xFCr ${product.displayName}`;
+                currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
+                currentProductFailureReason = err;
+                this.log(`\u274C ${err}`);
+                continue;
               }
-              const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-              let inputContainer = card;
-              if (card) {
-                const cardRect = card.getBoundingClientRect();
-                const validEditors = allEditors.filter((ed) => {
-                  const edRect = ed.getBoundingClientRect();
-                  return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
-                });
-                if (validEditors.length > 0) {
-                  inputContainer = validEditors[0];
+              let targetArtworkPath;
+              if (selectedVariant.storageType === "legacy" && selectedVariant.artifactKey) {
+                targetArtworkPath = item.resizedAssets?.[selectedVariant.artifactKey];
+              } else if (selectedVariant.storageType === "productVariants") {
+                targetArtworkPath = item.resizedAssets?.productVariants?.[selectedVariant.id];
+              }
+              if (!targetArtworkPath || !import_fs87.default.existsSync(targetArtworkPath)) {
+                const err = `FAILED_ARTWORK_RESOLUTION: Asset f\xFCr Variante "${selectedVariant.id}" (${selectedVariant.label}) f\xFCr ${product.displayName} nicht gefunden (storageType: ${selectedVariant.storageType})`;
+                currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
+                currentProductFailureReason = err;
+                this.log(`\u274C ${err}`);
+                continue;
+              }
+              const isBrushApplied = selectedVariant.id.includes("BRUSH");
+              this.log(`\u{1F3A8} Ersetze Artwork f\xFCr ${product.displayName} mit ${selectedVariant.label} [${selectedVariant.id}] (${isBrushApplied ? "Black Brush weil avoid white" : "Two-Sided Standard"})...`);
+              const deleteResult = await page.evaluate(async (params2) => {
+                const { pid, amazonKey, cardId } = params2;
+                let card = document.getElementById(cardId) || document.getElementById(`${amazonKey}-card`) || document.getElementById(`${amazonKey.toLowerCase()}-card`) || document.getElementById(`${pid}-card`) || document.getElementById(`${pid.toLowerCase()}-card`);
+                if (!card) {
+                  const allCards = Array.from(document.querySelectorAll('[id*="-card"], [class*="-card"], .card, .product-card'));
+                  card = allCards.find((c) => {
+                    const idUpper = (c.id || "").toUpperCase();
+                    const clsUpper = Array.from(c.classList).join(" ").toUpperCase();
+                    return idUpper.includes(amazonKey) || clsUpper.includes(amazonKey) || idUpper.includes(pid);
+                  }) || null;
+                }
+                const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+                let inputContainer = card;
+                if (card) {
+                  const cardRect = card.getBoundingClientRect();
+                  const validEditors = allEditors.filter((ed) => {
+                    const edRect = ed.getBoundingClientRect();
+                    return edRect.top >= cardRect.bottom - 100 && ed.innerHTML.length > 20;
+                  });
+                  if (validEditors.length > 0) {
+                    inputContainer = validEditors[0];
+                  } else if (allEditors.length > 0) {
+                    inputContainer = allEditors[allEditors.length - 1];
+                  }
                 } else if (allEditors.length > 0) {
                   inputContainer = allEditors[allEditors.length - 1];
                 }
-              } else if (allEditors.length > 0) {
-                inputContainer = allEditors[allEditors.length - 1];
+                let clickedDelete = false;
+                let deleteButton = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || document.querySelector(`#${amazonKey}-card .delete-button`) || document.querySelector(`#${amazonKey.toLowerCase()}-card .delete-button`) || document.querySelector(`#${pid}-card .delete-button`);
+                if (deleteButton) {
+                  deleteButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+                  deleteButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+                  deleteButton.click();
+                  clickedDelete = true;
+                }
+                return { clickedDelete };
+              }, {
+                pid: product.id,
+                amazonKey: product.amazon?.key || product.id,
+                cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`
+              });
+              if (deleteResult.clickedDelete) {
+                this.log(`\u23F3 ${product.displayName}: Altes Artwork gel\xF6scht, warte auf Bereitstellung des Dropzone-Felds...`);
+                await page.waitForTimeout(800);
               }
-              let clickedDelete = false;
-              let deleteButton = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || inputContainer?.querySelector(".delete-button, .sci-icon.sci-delete-forever") || document.querySelector(`#${amazonKey}-card .delete-button`) || document.querySelector(`#${amazonKey.toLowerCase()}-card .delete-button`) || document.querySelector(`#${pid}-card .delete-button`);
-              if (deleteButton) {
-                deleteButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-                deleteButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-                deleteButton.click();
-                clickedDelete = true;
-              }
-              return { clickedDelete };
-            }, {
-              pid: product.id,
-              amazonKey: product.amazon?.key || product.id,
-              cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`
-            });
-            if (deleteResult.clickedDelete) {
-              this.log(`\u23F3 ${product.displayName}: Altes Artwork gel\xF6scht, warte auf Bereitstellung des Dropzone-Felds...`);
-              await page.waitForTimeout(800);
-            }
-            const locateInputResult = await page.evaluate(async (params2) => {
-              const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
-              const { pid, amazonKey } = params2;
-              let foundInput = null;
-              let retries = 0;
-              while (!foundInput && retries < 15) {
-                let uploadLabel = document.querySelector(`label.file-upload-input[for="${amazonKey}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${amazonKey.toLowerCase()}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${pid}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for*="${amazonKey}"]`) || document.querySelector(".product-editor label.file-upload-input") || document.querySelector("label.file-upload-input") || document.querySelector('label[for*="DESIGN"]');
-                if (uploadLabel) {
-                  const forAttr = uploadLabel.getAttribute("for");
-                  if (forAttr) {
-                    const el = document.getElementById(forAttr);
-                    if (el instanceof HTMLInputElement && el.type === "file") {
-                      foundInput = el;
-                    } else if (el) {
-                      foundInput = el.querySelector('input[type="file"]');
+              const locateInputResult = await page.evaluate(async (params2) => {
+                const sleep2 = (ms) => new Promise((res) => setTimeout(res, ms));
+                const { pid, amazonKey } = params2;
+                let foundInput = null;
+                let retries = 0;
+                while (!foundInput && retries < 15) {
+                  let uploadLabel = document.querySelector(`label.file-upload-input[for="${amazonKey}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${amazonKey.toLowerCase()}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for="${pid}-DESIGN-wizzy"]`) || document.querySelector(`label.file-upload-input[for*="${amazonKey}"]`) || document.querySelector(".product-editor label.file-upload-input") || document.querySelector("label.file-upload-input") || document.querySelector('label[for*="DESIGN"]');
+                  if (uploadLabel) {
+                    const forAttr = uploadLabel.getAttribute("for");
+                    if (forAttr) {
+                      const el = document.getElementById(forAttr);
+                      if (el instanceof HTMLInputElement && el.type === "file") {
+                        foundInput = el;
+                      } else if (el) {
+                        foundInput = el.querySelector('input[type="file"]');
+                      }
                     }
                   }
-                }
-                if (!foundInput) {
-                  const directInput = document.getElementById(`${amazonKey}-DESIGN-wizzy`) || document.getElementById(`${amazonKey.toLowerCase()}-DESIGN-wizzy`) || document.getElementById(`${pid}-DESIGN-wizzy`) || document.querySelector(`#${amazonKey}-card input[type="file"]`) || document.querySelector(`#${amazonKey.toLowerCase()}-card input[type="file"]`) || document.querySelector(`#${pid}-card input[type="file"]`) || document.querySelector('.product-editor input[type="file"]') || document.querySelector('.dropzone-container input[type="file"]');
-                  if (directInput && directInput.tagName === "INPUT" && directInput.type === "file") {
-                    foundInput = directInput;
-                    break;
+                  if (!foundInput) {
+                    const directInput = document.getElementById(`${amazonKey}-DESIGN-wizzy`) || document.getElementById(`${amazonKey.toLowerCase()}-DESIGN-wizzy`) || document.getElementById(`${pid}-DESIGN-wizzy`) || document.querySelector(`#${amazonKey}-card input[type="file"]`) || document.querySelector(`#${amazonKey.toLowerCase()}-card input[type="file"]`) || document.querySelector(`#${pid}-card input[type="file"]`) || document.querySelector('.product-editor input[type="file"]') || document.querySelector('.dropzone-container input[type="file"]');
+                    if (directInput && directInput.tagName === "INPUT" && directInput.type === "file") {
+                      foundInput = directInput;
+                      break;
+                    }
+                  }
+                  if (!foundInput) {
+                    await sleep2(200);
+                    retries++;
                   }
                 }
-                if (!foundInput) {
-                  await sleep2(200);
-                  retries++;
+                if (foundInput) {
+                  const uniqueId = `mba-upload-input-${pid.toLowerCase()}-${Date.now()}`;
+                  foundInput.id = uniqueId;
+                  return { success: true, inputId: uniqueId };
                 }
-              }
-              if (foundInput) {
-                const uniqueId = `mba-upload-input-${pid.toLowerCase()}-${Date.now()}`;
-                foundInput.id = uniqueId;
-                return { success: true, inputId: uniqueId };
-              }
-              return { success: false, inputId: "" };
-            }, {
-              pid: product.id,
-              amazonKey: product.amazon?.key || product.id
-            });
-            let finalInputLocator = locateInputResult.inputId ? page.locator(`#${locateInputResult.inputId}`) : null;
-            if (!finalInputLocator || await finalInputLocator.count() === 0) {
-              const amazonKey = product.amazon?.key || product.id;
-              const fallbackSelector = `#${amazonKey}-card input[type="file"], #${amazonKey.toLowerCase()}-card input[type="file"], #${product.id}-card input[type="file"], .product-editor input[type="file"], .dropzone-container input[type="file"], input[type="file"].file-upload-input`;
-              const fb = page.locator(fallbackSelector).first();
-              if (await fb.count() > 0) {
-                finalInputLocator = fb;
-              }
-            }
-            if (finalInputLocator && await finalInputLocator.count() > 0) {
-              try {
-                await finalInputLocator.setInputFiles(targetArtworkPath);
-                if (locateInputResult.inputId) {
-                  await page.evaluate((id) => {
-                    const el = document.getElementById(id);
-                    if (el) {
-                      el.dispatchEvent(new Event("input", { bubbles: true }));
-                      el.dispatchEvent(new Event("change", { bubbles: true }));
-                    }
-                  }, locateInputResult.inputId);
-                }
-                this.log(`\u23F3 ${product.displayName}: Artwork zugewiesen (${import_path81.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
-                let uploadDone = false;
-                const pollStart = Date.now();
+                return { success: false, inputId: "" };
+              }, {
+                pid: product.id,
+                amazonKey: product.amazon?.key || product.id
+              });
+              let finalInputLocator = locateInputResult.inputId ? page.locator(`#${locateInputResult.inputId}`) : null;
+              if (!finalInputLocator || await finalInputLocator.count() === 0) {
                 const amazonKey = product.amazon?.key || product.id;
-                while (Date.now() - pollStart < 1e4) {
-                  await page.waitForTimeout(500);
-                  const isFinished = await page.evaluate((ak) => {
-                    const card = document.getElementById(`${ak.toLowerCase()}-card`) || document.getElementById(`${ak.toUpperCase()}-card`) || document.getElementById(`config-${ak.toLowerCase()}`) || document.getElementById(`config-${ak.toUpperCase()}`);
-                    const delOnCard = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-                    if (delOnCard && (delOnCard.offsetParent !== null || delOnCard.getBoundingClientRect().width > 0)) {
-                      return true;
-                    }
-                    const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
-                    const container = allEditors[allEditors.length - 1];
-                    const delBtn = container?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
-                    if (delBtn && (delBtn.offsetParent !== null || delBtn.getBoundingClientRect().width > 0)) {
-                      return true;
-                    }
-                    const hasProgress = Boolean(document.querySelector(".upload-progress, .progress-bar, flowprogressbar, .loading-spinner"));
-                    if (!hasProgress && container?.querySelector('.asset img, img[class*="design"], canvas.design-canvas') !== null) {
-                      return true;
-                    }
-                    return false;
-                  }, amazonKey);
-                  if (isFinished) {
-                    uploadDone = true;
-                    break;
-                  }
+                const fallbackSelector = `#${amazonKey}-card input[type="file"], #${amazonKey.toLowerCase()}-card input[type="file"], #${product.id}-card input[type="file"], .product-editor input[type="file"], .dropzone-container input[type="file"], input[type="file"].file-upload-input`;
+                const fb = page.locator(fallbackSelector).first();
+                if (await fb.count() > 0) {
+                  finalInputLocator = fb;
                 }
-                if (uploadDone) {
-                  await page.waitForTimeout(500);
-                  this.log(`\u2713 ${product.displayName}: Artwork erfolgreich hochgeladen & best\xE4tigt \u2713`);
-                } else {
-                  this.log(`\u2139\uFE0F ${product.displayName}: Upload angesto\xDFen, fahre fort...`);
-                }
-              } catch (upErr) {
-                this.log(`\u274C Fehler beim Hochladen des Resized Artworks f\xFCr ${product.displayName}: ${upErr.message}`);
-                currentProductStatus = "FAILED_ARTWORK_UPLOAD";
-                currentProductFailureReason = `Artwork-Upload-Fehler: ${upErr.message}`;
               }
-            } else {
-              this.log(`\u274C ${product.displayName}: Kein Upload-Feld im DOM gefunden f\xFCr ${selectedVariant.id}!`);
-              currentProductStatus = "FAILED_ARTWORK_UPLOAD";
-              currentProductFailureReason = `Kein File-Upload-Feld im DOM f\xFCr ${product.displayName} gefunden`;
+              if (finalInputLocator && await finalInputLocator.count() > 0) {
+                try {
+                  await finalInputLocator.setInputFiles(targetArtworkPath);
+                  if (locateInputResult.inputId) {
+                    await page.evaluate((id) => {
+                      const el = document.getElementById(id);
+                      if (el) {
+                        el.dispatchEvent(new Event("input", { bubbles: true }));
+                        el.dispatchEvent(new Event("change", { bubbles: true }));
+                      }
+                    }, locateInputResult.inputId);
+                  }
+                  this.log(`\u23F3 ${product.displayName}: Artwork zugewiesen (${import_path81.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
+                  let uploadDone = false;
+                  const pollStart = Date.now();
+                  const amazonKey = product.amazon?.key || product.id;
+                  while (Date.now() - pollStart < 1e4) {
+                    await page.waitForTimeout(500);
+                    const isFinished = await page.evaluate((ak) => {
+                      const card = document.getElementById(`${ak.toLowerCase()}-card`) || document.getElementById(`${ak.toUpperCase()}-card`) || document.getElementById(`config-${ak.toLowerCase()}`) || document.getElementById(`config-${ak.toUpperCase()}`);
+                      const delOnCard = card?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                      if (delOnCard && (delOnCard.offsetParent !== null || delOnCard.getBoundingClientRect().width > 0)) {
+                        return true;
+                      }
+                      const allEditors = Array.from(document.querySelectorAll(".product-editor, product-editor, .product-config-panel"));
+                      const container = allEditors[allEditors.length - 1];
+                      const delBtn = container?.querySelector(".delete-button, .sci-icon.sci-delete-forever");
+                      if (delBtn && (delBtn.offsetParent !== null || delBtn.getBoundingClientRect().width > 0)) {
+                        return true;
+                      }
+                      const hasProgress = Boolean(document.querySelector(".upload-progress, .progress-bar, flowprogressbar, .loading-spinner"));
+                      if (!hasProgress && container?.querySelector('.asset img, img[class*="design"], canvas.design-canvas') !== null) {
+                        return true;
+                      }
+                      return false;
+                    }, amazonKey);
+                    if (isFinished) {
+                      uploadDone = true;
+                      break;
+                    }
+                  }
+                  if (uploadDone) {
+                    await page.waitForTimeout(500);
+                    this.log(`\u2713 ${product.displayName}: Artwork erfolgreich hochgeladen & best\xE4tigt \u2713`);
+                  } else {
+                    this.log(`\u2139\uFE0F ${product.displayName}: Upload angesto\xDFen, fahre fort...`);
+                  }
+                } catch (upErr) {
+                  this.log(`\u274C Fehler beim Hochladen des Resized Artworks f\xFCr ${product.displayName}: ${upErr.message}`);
+                  currentProductStatus = "FAILED_ARTWORK_UPLOAD";
+                  currentProductFailureReason = `Artwork-Upload-Fehler: ${upErr.message}`;
+                }
+              } else {
+                this.log(`\u274C ${product.displayName}: Kein Upload-Feld im DOM gefunden f\xFCr ${selectedVariant.id}!`);
+                currentProductStatus = "FAILED_ARTWORK_UPLOAD";
+                currentProductFailureReason = `Kein File-Upload-Feld im DOM f\xFCr ${product.displayName} gefunden`;
+              }
             }
           }
         }
@@ -233615,14 +233634,16 @@ var UploadWorkerService = class _UploadWorkerService {
 // src/server/services/uploadScheduleService.ts
 init_settingsService();
 var SCHEDULE_PATTERN = /^(?:[01]\d|2[0-3]):(?:[0-5]\d)$/;
-function hasUploadScheduleStarted(schedule, now = /* @__PURE__ */ new Date()) {
+function isUploadScheduleMinute(schedule, now = /* @__PURE__ */ new Date()) {
   if (!SCHEDULE_PATTERN.test(schedule)) return false;
   const [hour, minute] = schedule.split(":").map(Number);
-  return now.getHours() > hour || now.getHours() === hour && now.getMinutes() >= minute;
+  return now.getHours() === hour && now.getMinutes() === minute;
 }
 var UploadScheduleService = class {
   static intervalId = null;
   static startRequestRunning = false;
+  static activeTriggerKey = null;
+  static lastTriggerKey = null;
   static startScheduler() {
     if (this.intervalId) return;
     const tick = () => void this.runTick();
@@ -233635,14 +233656,30 @@ var UploadScheduleService = class {
     this.intervalId = null;
   }
   static async runTick(now = /* @__PURE__ */ new Date()) {
-    if (this.startRequestRunning || UploadWorkerService.getStatus().isUploading) return;
     const settings = loadSettings();
-    const schedule = settings.queueUploadScheduleTime || "off";
-    if (schedule === "off" || !hasUploadScheduleStarted(schedule, now)) return;
+    if (!settings.queueUploadScheduleEnabled) {
+      this.activeTriggerKey = null;
+      return;
+    }
+    const schedule = settings.queueUploadScheduleTime || "04:00";
+    const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const triggerKey = `${localDate}|${schedule}`;
+    if (isUploadScheduleMinute(schedule, now) && this.lastTriggerKey !== triggerKey) {
+      this.lastTriggerKey = triggerKey;
+      this.activeTriggerKey = triggerKey;
+      console.log(`[UploadSchedule] Trigger reached exactly at ${schedule}. Queue automation activated.`);
+    }
+    if (this.activeTriggerKey !== triggerKey) return;
+    if (this.startRequestRunning || UploadWorkerService.getStatus().isUploading) return;
     this.startRequestRunning = true;
     try {
       const result2 = await UploadWorkerService.startUpload(void 0, settings.queueUploadMode || "draft", false);
-      if (result2.success) console.log(`[UploadSchedule] ${result2.message}`);
+      if (result2.success) {
+        console.log(`[UploadSchedule] ${result2.message}`);
+      } else if (result2.message.includes("Kein bereitstehendes Design")) {
+        this.activeTriggerKey = null;
+        console.log("[UploadSchedule] Scheduled queue run completed; no further ready designs.");
+      }
     } catch (error) {
       console.error("[UploadSchedule] Automatic upload start failed:", error?.message || error);
     } finally {
@@ -235318,6 +235355,7 @@ app.patch("/api/v1/queue/settings", (req, res) => {
   try {
     const {
       uploadScheduleTime,
+      uploadScheduleEnabled,
       maxDropPerDesign,
       autoBalance,
       uploadMode,
@@ -235339,6 +235377,7 @@ app.patch("/api/v1/queue/settings", (req, res) => {
     const updated = {
       ...current,
       queueUploadScheduleTime: uploadScheduleTime !== void 0 ? uploadScheduleTime : current.queueUploadScheduleTime,
+      queueUploadScheduleEnabled: uploadScheduleEnabled !== void 0 ? Boolean(uploadScheduleEnabled) : current.queueUploadScheduleEnabled,
       queueMaxDropPerDesign: maxDropPerDesign !== void 0 ? Number(maxDropPerDesign) : current.queueMaxDropPerDesign,
       queueAutoBalance: autoBalance !== void 0 ? Boolean(autoBalance) : current.queueAutoBalance,
       queueUploadMode: uploadMode !== void 0 ? uploadMode : current.queueUploadMode,
