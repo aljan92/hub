@@ -1,12 +1,14 @@
 import { loadSettings } from './settingsService';
 import { UploadWorkerService } from './uploadWorkerService';
+import { getSchedulerClock } from './schedulerClock';
 
 const SCHEDULE_PATTERN = /^(?:[01]\d|2[0-3]):(?:[0-5]\d)$/;
 
 export function isUploadScheduleMinute(schedule: string, now = new Date()): boolean {
   if (!SCHEDULE_PATTERN.test(schedule)) return false;
   const [hour, minute] = schedule.split(':').map(Number);
-  return now.getHours() === hour && now.getMinutes() === minute;
+  const clock = getSchedulerClock(now);
+  return clock.hour === hour && clock.minute === minute;
 }
 
 /**
@@ -39,8 +41,8 @@ export class UploadScheduleService {
     }
 
     const schedule = settings.queueUploadScheduleTime || '04:00';
-    const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const triggerKey = `${localDate}|${schedule}`;
+    const clock = getSchedulerClock(now);
+    const triggerKey = `${clock.date}|${schedule}`;
 
     if (isUploadScheduleMinute(schedule, now) && this.lastTriggerKey !== triggerKey) {
       this.lastTriggerKey = triggerKey;

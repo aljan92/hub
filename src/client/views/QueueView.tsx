@@ -90,6 +90,8 @@ interface QueueState {
   overflowItemsCount?: number;
   uploadScheduleTime: string;
   uploadScheduleEnabled: boolean;
+  uploadSchedulerCurrentTime?: string;
+  uploadSchedulerTimeZone?: string;
   maxDropPerDesign: number;
   autoBalance: boolean;
   maxDroppableCapacity: number;
@@ -1241,6 +1243,14 @@ export const QueueView: React.FC = () => {
                       ))}
                     </select>
                 </div>
+                {queueState.uploadSchedulerCurrentTime && (
+                  <span
+                    className="text-[10px] text-slate-500 font-mono tabular-nums"
+                    title={`Maßgebliche Schedulerzeit (${queueState.uploadSchedulerTimeZone || 'Europe/Berlin'})`}
+                  >
+                    Server {queueState.uploadSchedulerCurrentTime}
+                  </span>
+                )}
               </div>
 
               {/* Stepper for Max Drop Tolerance per Design */}

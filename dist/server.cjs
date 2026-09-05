@@ -221578,6 +221578,41 @@ var init_taskExecutionLock = __esm2({
   }
 });
 
+// src/server/services/schedulerClock.ts
+function getSchedulerClock(now = /* @__PURE__ */ new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: UPLOAD_SCHEDULER_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(now);
+  const value2 = (type3) => parts.find((part) => part.type === type3)?.value || "00";
+  const year = value2("year");
+  const month = value2("month");
+  const day = value2("day");
+  const hour = Number(value2("hour"));
+  const minute = Number(value2("minute"));
+  const second = Number(value2("second"));
+  return {
+    date: `${year}-${month}-${day}`,
+    time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`,
+    hour,
+    minute,
+    second
+  };
+}
+var UPLOAD_SCHEDULER_TIME_ZONE;
+var init_schedulerClock = __esm2({
+  "src/server/services/schedulerClock.ts"() {
+    "use strict";
+    UPLOAD_SCHEDULER_TIME_ZONE = "Europe/Berlin";
+  }
+});
+
 // src/server/services/syncEngine.ts
 var MP_MAP, VARIANT_PRODUCT_TYPES, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, SyncEngine;
 var init_syncEngine = __esm2({
@@ -226700,6 +226735,7 @@ var init_queueService = __esm2({
     init_productCatalogService();
     init_listingSanitizationService();
     init_settingsService();
+    init_schedulerClock();
     init_taskRepository();
     init_atomicFileStorage();
     NON_US_DROP_ORDER = ["JP", "ES", "IT", "FR", "DE", "GB"];
@@ -226994,6 +227030,8 @@ var init_queueService = __esm2({
           overflowItemsCount,
           uploadScheduleTime: settings.queueUploadScheduleTime || "04:00",
           uploadScheduleEnabled: settings.queueUploadScheduleEnabled ?? false,
+          uploadSchedulerCurrentTime: getSchedulerClock().time,
+          uploadSchedulerTimeZone: UPLOAD_SCHEDULER_TIME_ZONE,
           maxDropPerDesign: maxDrop,
           autoBalance: settings.queueAutoBalance ?? true,
           maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),
@@ -233633,11 +233671,13 @@ var UploadWorkerService = class _UploadWorkerService {
 
 // src/server/services/uploadScheduleService.ts
 init_settingsService();
+init_schedulerClock();
 var SCHEDULE_PATTERN = /^(?:[01]\d|2[0-3]):(?:[0-5]\d)$/;
 function isUploadScheduleMinute(schedule, now = /* @__PURE__ */ new Date()) {
   if (!SCHEDULE_PATTERN.test(schedule)) return false;
   const [hour, minute] = schedule.split(":").map(Number);
-  return now.getHours() === hour && now.getMinutes() === minute;
+  const clock = getSchedulerClock(now);
+  return clock.hour === hour && clock.minute === minute;
 }
 var UploadScheduleService = class {
   static intervalId = null;
@@ -233662,8 +233702,8 @@ var UploadScheduleService = class {
       return;
     }
     const schedule = settings.queueUploadScheduleTime || "04:00";
-    const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const triggerKey = `${localDate}|${schedule}`;
+    const clock = getSchedulerClock(now);
+    const triggerKey = `${clock.date}|${schedule}`;
     if (isUploadScheduleMinute(schedule, now) && this.lastTriggerKey !== triggerKey) {
       this.lastTriggerKey = triggerKey;
       this.activeTriggerKey = triggerKey;

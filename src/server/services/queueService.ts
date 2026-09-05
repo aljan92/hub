@@ -3,6 +3,7 @@ import path from 'path';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
 import { ListingSanitizationService } from './listingSanitizationService';
 import { loadSettings, saveSettings } from './settingsService';
+import { getSchedulerClock, UPLOAD_SCHEDULER_TIME_ZONE } from './schedulerClock';
 import { TaskRepository } from '../storage/taskRepository';
 import { atomicWriteJson, loadJsonWithBackupRecovery, isFileInFailSafe } from '../utils/atomicFileStorage';
 
@@ -157,6 +158,8 @@ export interface QueueState {
   overflowItemsCount: number;
   uploadScheduleTime: string; // e.g. "04:00" or "off"
   uploadScheduleEnabled: boolean;
+  uploadSchedulerCurrentTime: string;
+  uploadSchedulerTimeZone: string;
   maxDropPerDesign: number;
   autoBalance: boolean;
   maxDroppableCapacity: number;
@@ -524,6 +527,8 @@ export class QueueService {
       overflowItemsCount,
       uploadScheduleTime: settings.queueUploadScheduleTime || '04:00',
       uploadScheduleEnabled: settings.queueUploadScheduleEnabled ?? false,
+      uploadSchedulerCurrentTime: getSchedulerClock().time,
+      uploadSchedulerTimeZone: UPLOAD_SCHEDULER_TIME_ZONE,
       maxDropPerDesign: maxDrop,
       autoBalance: settings.queueAutoBalance ?? true,
       maxDroppableCapacity: ProductCatalogService.getMaxDroppableSlots(),
