@@ -231965,7 +231965,9 @@ var UploadWorkerService = class _UploadWorkerService {
       stepIndex: this.stepIndex,
       totalSteps: this.totalSteps,
       percent,
-      logs: this.logs.slice(-30)
+      // The current run is bounded to 200 entries in log(); return it in full so
+      // the Queue UI can expand/copy the complete run without persistence.
+      logs: [...this.logs]
     };
   }
   static log(message, stepName, currentStep, totalSteps) {

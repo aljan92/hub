@@ -32,7 +32,8 @@ import {
   Database,
   Power,
   Loader2,
-  Palette
+  Palette,
+  Copy
 } from 'lucide-react';
 import { BrowserScreencast } from '../components/BrowserScreencast';
 
@@ -171,7 +172,20 @@ export const QueueView: React.FC = () => {
   const requestedModeRef = useRef<QueueMode | null>(null);
   const modeSaveRunningRef = useRef(false);
   const [isScreencastOpen, setIsScreencastOpen] = useState<boolean>(false);
-  const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressState>({
+    isUploading: false,
+    currentQueueId: null,
+    taskId: null,
+    designTitle: null,
+    mode: 'draft',
+    currentStep: 'Bereit',
+    stepIndex: 0,
+    totalSteps: 100,
+    percent: 0,
+    logs: []
+  });
+  const [isUploadLogExpanded, setIsUploadLogExpanded] = useState(false);
+  const [isUploadLogCopied, setIsUploadLogCopied] = useState(false);
   const [isRefreshingSlots, setIsRefreshingSlots] = useState<boolean>(false);
 
   const handleRefreshSlots = async () => {
@@ -205,6 +219,17 @@ export const QueueView: React.FC = () => {
     try {
       localStorage.setItem('mba_pause_before_publish', JSON.stringify(nextVal));
     } catch {}
+  };
+
+  const handleCopyUploadLog = async () => {
+    if (uploadProgress.logs.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(uploadProgress.logs.join('\n'));
+      setIsUploadLogCopied(true);
+      window.setTimeout(() => setIsUploadLogCopied(false), 2000);
+    } catch (err) {
+      console.warn('[Queue] Upload log copy error:', err);
+    }
   };
 
   // 1-Second Delayed Hover Popover State
@@ -718,7 +743,10 @@ export const QueueView: React.FC = () => {
     ? Math.min(100, Math.round(((queueState.scheduledLiveSlotsToday ?? queueState.scheduledSlotsToday) / queueState.freeDailySlots) * 100))
     : 0;
 
-  const isUploadActive = uploadProgress?.isUploading ?? false;
+  const isUploadActive = uploadProgress.isUploading;
+  const isUploadIdle = !uploadProgress.isUploading
+    && uploadProgress.currentStep === 'Bereit'
+    && uploadProgress.logs.length === 0;
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -809,17 +837,18 @@ export const QueueView: React.FC = () => {
           {/* Pause Before Publish Toggle (Inspection Mode) */}
           <button
             onClick={handleTogglePauseBeforePublish}
-            className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center space-x-1.5 transition-all shadow-sm ${
+            aria-pressed={pauseBeforePublish}
+            aria-label={pauseBeforePublish ? 'Prüfmodus vor Publish deaktivieren' : 'Prüfmodus vor Publish aktivieren'}
+            className={`relative p-2.5 rounded-xl border flex items-center justify-center transition-all shadow-sm ${
               pauseBeforePublish
                 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-amber-500/10'
                 : 'bg-slate-900/90 text-slate-400 border-slate-800 hover:text-slate-200'
             }`}
             title={pauseBeforePublish ? 'Prüfmodus AKTIV: Upload stoppt vor dem Klick auf Publish zur visuellen Kontrolle im Screencast.' : 'Prüfmodus AUS: Bot klickt nach dem Ausfüllen automatisch auf Publish.'}
           >
-            <Pause className={`w-3.5 h-3.5 ${pauseBeforePublish ? 'text-amber-400' : 'text-slate-500'}`} />
-            <span>Vor Publish pausieren</span>
+            <Pause className={`w-4 h-4 ${pauseBeforePublish ? 'text-amber-400' : 'text-slate-500'}`} />
             {pauseBeforePublish && (
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping ml-0.5" />
+              <span className="absolute right-1 top-1 w-1.5 h-1.5 rounded-full bg-amber-400" />
             )}
           </button>
 
@@ -936,21 +965,24 @@ export const QueueView: React.FC = () => {
         </button>
       </div>
 
-      {/* Live Upload Progress Banner (if upload is running or recently finished) */}
-      {uploadProgress && (uploadProgress.isUploading || uploadProgress.currentStep !== 'Bereit') && (
-        <div className={`border rounded-2xl p-4.5 shadow-lg backdrop-blur-md transition-all ${
-          uploadProgress.isPausedBeforePublish
-            ? 'bg-amber-950/40 border-amber-500/50 shadow-amber-500/20'
-            : uploadProgress.isUploading 
-              ? 'bg-primary-950/40 border-primary-500/40 shadow-primary-500/10 animate-pulse'
-              : uploadProgress.error 
-                ? 'bg-rose-950/40 border-rose-500/40 shadow-rose-500/10'
-                : 'bg-emerald-950/40 border-emerald-500/40 shadow-emerald-500/10'
+      {/* Upload progress remains visible in idle, active, paused, completed and failed states. */}
+      <div className={`border rounded-2xl p-4.5 shadow-lg backdrop-blur-md transition-all ${
+          isUploadIdle
+            ? 'bg-slate-950/40 border-slate-800 shadow-slate-950/10'
+            : uploadProgress.isPausedBeforePublish
+              ? 'bg-amber-950/40 border-amber-500/50 shadow-amber-500/20'
+              : uploadProgress.isUploading
+                ? 'bg-primary-950/40 border-primary-500/40 shadow-primary-500/10'
+                : uploadProgress.error
+                  ? 'bg-rose-950/40 border-rose-500/40 shadow-rose-500/10'
+                  : 'bg-emerald-950/40 border-emerald-500/40 shadow-emerald-500/10'
         }`}>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
             <div className="flex items-center space-x-3">
               <div className={`p-2 rounded-xl border ${
-                uploadProgress.isPausedBeforePublish
+                isUploadIdle
+                  ? 'bg-slate-900 text-slate-400 border-slate-700'
+                  : uploadProgress.isPausedBeforePublish
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
                   : uploadProgress.isUploading 
                     ? 'bg-primary-500/20 text-primary-300 border-primary-500/30' 
@@ -958,7 +990,9 @@ export const QueueView: React.FC = () => {
                       ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
                       : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
               }`}>
-                {uploadProgress.isPausedBeforePublish ? (
+                {isUploadIdle ? (
+                  <Clock className="w-5 h-5" />
+                ) : uploadProgress.isPausedBeforePublish ? (
                   <Pause className="w-5 h-5 text-amber-400" />
                 ) : uploadProgress.isUploading ? (
                   <RefreshCw className="w-5 h-5 animate-spin" />
@@ -971,17 +1005,19 @@ export const QueueView: React.FC = () => {
               <div>
                 <div className="flex items-center space-x-2">
                   <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
-                    Task #{uploadProgress.taskId || '—'}
+                    {isUploadIdle ? 'UPLOAD-STATUS' : `Task #${uploadProgress.taskId || '—'}`}
                   </span>
                   <h3 className="text-sm font-bold text-slate-100">
-                    {uploadProgress.designTitle || 'Aktiver Upload-Vorgang'}
+                    {uploadProgress.designTitle || (isUploadIdle ? 'Kein Upload aktiv' : 'Aktiver Upload-Vorgang')}
                   </h3>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                    uploadProgress.mode === 'publish'
+                    isUploadIdle
+                      ? 'bg-slate-900 text-slate-400 border-slate-700'
+                      : uploadProgress.mode === 'publish'
                       ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
                       : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                   }`}>
-                    {uploadProgress.mode === 'publish' ? '🔴 LIVE PUBLISH' : '🟡 DRAFT'}
+                    {isUploadIdle ? 'BEREIT' : uploadProgress.mode === 'publish' ? '🔴 LIVE PUBLISH' : '🟡 DRAFT'}
                   </span>
                   {uploadProgress.isPausedBeforePublish && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
@@ -1043,19 +1079,40 @@ export const QueueView: React.FC = () => {
             />
           </div>
 
-          {/* Real-time terminal log feed */}
-          {uploadProgress.logs && uploadProgress.logs.length > 0 && (
-            <div className="bg-slate-950/80 rounded-xl p-2.5 font-mono text-[11px] text-slate-300 max-h-24 overflow-y-auto space-y-1 border border-slate-800/80">
-              {uploadProgress.logs.slice(-4).map((log, idx) => (
-                <div key={idx} className="truncate">
-                  <span className="text-slate-600 mr-1.5">&gt;</span>
-                  {log}
-                </div>
-              ))}
+          {/* Current-run terminal log feed (in-memory only, intentionally not persistent). */}
+          {uploadProgress.logs.length > 0 && (
+            <div className="bg-slate-950/80 rounded-xl border border-slate-800/80 overflow-hidden">
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadLogExpanded(prev => !prev)}
+                  className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-300 hover:text-white transition-colors"
+                  aria-expanded={isUploadLogExpanded}
+                >
+                  {isUploadLogExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  <span>Upload-Log ({uploadProgress.logs.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyUploadLog}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-all"
+                  title="Vollständiges Log dieses Upload-Durchlaufs kopieren"
+                >
+                  {isUploadLogCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{isUploadLogCopied ? 'Kopiert' : 'Alles kopieren'}</span>
+                </button>
+              </div>
+              <div className={`p-2.5 font-mono text-[11px] text-slate-300 overflow-y-auto space-y-1 ${isUploadLogExpanded ? 'max-h-80' : 'max-h-24'}`}>
+                {(isUploadLogExpanded ? uploadProgress.logs : uploadProgress.logs.slice(-4)).map((log, idx) => (
+                  <div key={`${idx}-${log}`} className={isUploadLogExpanded ? 'whitespace-pre-wrap break-words' : 'truncate'}>
+                    <span className="text-slate-600 mr-1.5">&gt;</span>
+                    {log}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
-        </div>
-      )}
+      </div>
 
       {/* ================= TAB 1: WARTESCHLANGE ================= */}
       {activeTab === 'queue' && (
