@@ -52,7 +52,7 @@ interface MerchProduct {
   lastUpdated: string;
   isDropAllowed?: boolean;
   dropPriorityOrder?: number;
-  niceClass?: number;
+  niceClass?: number | null;
   artwork?: {
     customResizeEnabled?: boolean;
     resizeByAvoidColor?: {
@@ -113,6 +113,8 @@ export const ProductsView: React.FC = () => {
   const [maxDroppableCapacity, setMaxDroppableCapacity] = useState(0);
   const [queueTolerance, setQueueTolerance] = useState(10);
   const [isUpdatingDropConfig, setIsUpdatingDropConfig] = useState(false);
+  const [updatingNiceClassProductId, setUpdatingNiceClassProductId] = useState<string | null>(null);
+  const [niceClassError, setNiceClassError] = useState<string | null>(null);
   const [artworkVariants, setArtworkVariants] = useState<Array<{ id: string; label: string; artifactKey?: string; storageType?: string }>>([]);
 
   const handleUpdateArtworkConfig = async (productId: string, updatedArtwork: any) => {
@@ -314,23 +316,32 @@ export const ProductsView: React.FC = () => {
     }
   };
 
-  const handleUpdateNiceClass = async (productId: string, newClass: number) => {
-    const updatedProducts = products.map(p => {
-      if (p.id === productId) {
-        return { ...p, niceClass: newClass };
-      }
-      return p;
-    });
-    setProducts(updatedProducts);
+  const handleUpdateNiceClass = async (productId: string, newClass: number | null) => {
+    const previousClass = products.find(p => p.id === productId)?.niceClass ?? null;
+    setNiceClassError(null);
+    setUpdatingNiceClassProductId(productId);
+    setProducts(prev => prev.map(p => p.id === productId ? { ...p, niceClass: newClass } : p));
 
     try {
-      await fetch('/api/v1/products/nice-class', {
+      const response = await fetch('/api/v1/products/nice-class', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId, niceClass: newClass })
       });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Speichern fehlgeschlagen (HTTP ${response.status})`);
+      }
+      if (Array.isArray(data.catalog?.products)) {
+        setProducts(data.catalog.products);
+      }
     } catch (err) {
       console.error('Nice class update error:', err);
+      setProducts(prev => prev.map(p => p.id === productId ? { ...p, niceClass: previousClass } : p));
+      setNiceClassError(err instanceof Error ? err.message : 'Nizza-Klasse konnte nicht gespeichert werden.');
+      fetchCatalogData();
+    } finally {
+      setUpdatingNiceClassProductId(null);
     }
   };
 
@@ -620,7 +631,7 @@ export const ProductsView: React.FC = () => {
                             {product.displayName}
                           </div>
                           <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                            Kl. {product.niceClass || 25}
+                            {product.niceClass == null ? 'Nicht zugeordnet' : `Kl. ${product.niceClass}`}
                           </span>
                           {product.isDropAllowed && (
                             <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -691,7 +702,7 @@ export const ProductsView: React.FC = () => {
                         {selectedProduct.id}
                       </span>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                        Nizza-Klasse {selectedProduct.niceClass || 25}
+                        {selectedProduct.niceClass == null ? 'Nizza-Klasse nicht zugeordnet' : `Nizza-Klasse ${selectedProduct.niceClass}`}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
@@ -717,7 +728,7 @@ export const ProductsView: React.FC = () => {
                         <div className="text-xs font-bold text-slate-100 flex items-center gap-2">
                           <span>Nizza-Klasse (Trademark Schutz)</span>
                           <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-                            Klasse {selectedProduct.niceClass || 25}
+                            {selectedProduct.niceClass == null ? 'Nicht zugeordnet' : `Klasse ${selectedProduct.niceClass}`}
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-400">
@@ -728,10 +739,12 @@ export const ProductsView: React.FC = () => {
 
                     <div className="flex items-center space-x-2 shrink-0">
                       <select
-                        value={selectedProduct.niceClass || 25}
-                        onChange={(e) => handleUpdateNiceClass(selectedProduct.id, Number(e.target.value))}
+                        value={selectedProduct.niceClass ?? ''}
+                        onChange={(e) => handleUpdateNiceClass(selectedProduct.id, e.target.value === '' ? null : Number(e.target.value))}
+                        disabled={updatingNiceClassProductId === selectedProduct.id}
                         className="bg-slate-800 border border-indigo-500/40 rounded-xl px-3 py-1.5 text-xs text-indigo-200 font-bold focus:outline-none focus:border-indigo-400 shadow-inner cursor-pointer"
                       >
+                        <option value="">Nicht zugeordnet</option>
                         <option value={25}>Kl. 25 – Bekleidung &amp; Textilien (Shirts, Hoodies, Pullover, Tank Tops)</option>
                         <option value={18}>Kl. 18 – Taschen, Rucksäcke &amp; Lederwaren (Tote Bag, Sport-Rucksack)</option>
                         <option value={20}>Kl. 20 – Möbel, Kissen &amp; Wohnen (Throw Pillow)</option>
@@ -744,6 +757,11 @@ export const ProductsView: React.FC = () => {
                       </select>
                     </div>
                   </div>
+                  {niceClassError && (
+                    <div className="text-[11px] text-red-300" role="alert">
+                      Nizza-Klasse nicht gespeichert: {niceClassError}
+                    </div>
+                  )}
                 </div>
 
                 {/* Slot-Optimizer & Drop Candidate Configuration Box */}

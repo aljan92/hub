@@ -51,7 +51,7 @@ async function runTests() {
   assert(niceClassCount === 34, `Expected 34 Nice Classes in overrides, got ${niceClassCount}`);
   assert(nonNoneAvoidRuleCount === 56, `Expected 56 non-none avoidRules (54 historical + 2 pepper), got ${nonNoneAvoidRuleCount}`);
   assert(droppableCount === 30, `Expected 30 droppable products, got ${droppableCount}`);
-  assert(artworkConfigsCount === 4, `Expected 4 special artwork configs, got ${artworkConfigsCount}`);
+  assert(artworkConfigsCount === 8, `Expected 8 special artwork configs, got ${artworkConfigsCount}`);
   console.log(`✅ Test 2 Passed: Overrides validated (34 products, ${niceClassCount} niceClasses, ${nonNoneAvoidRuleCount} avoidRules, ${droppableCount} droppables, ${artworkConfigsCount} special artworks).\n`);
 
   // Test 3: Catalog dynamic merging
@@ -169,6 +169,20 @@ async function runTests() {
   const class16Products = ProductCatalogService.getBlockedProductIdsForNiceClasses([16]);
   assert(class16Products.includes('HARDCOVER_JOURNAL'), 'Class 16 must block HARDCOVER_JOURNAL');
   console.log('✅ Test 8 Passed: Trademark Nice Class blocking verified across Classes 9, 16, 18, 20, 21.\n');
+
+  // Test 8b: nullable Nice Class override persists across a simulated restart
+  console.log('Test 8b: Verify nullable Nice Class override persistence across reload');
+  ProductCatalogService.updateProductNiceClass('CERAMIC_MUG', null);
+  let persistedOverrides = JSON.parse(fs.readFileSync(overridesPath, 'utf-8'));
+  assert(persistedOverrides.overrides.CERAMIC_MUG.niceClass === null, 'Nullable Nice Class was not persisted in overrides');
+  (ProductCatalogService as any).isLoaded = false;
+  assert(ProductCatalogService.getProduct('CERAMIC_MUG')?.niceClass === null, 'Nullable Nice Class did not survive reload');
+  assert(!ProductCatalogService.getBlockedProductIdsForNiceClasses([21]).includes('CERAMIC_MUG'), 'Unassigned product must not be blocked as Class 21');
+
+  ProductCatalogService.updateProductNiceClass('CERAMIC_MUG', 21);
+  (ProductCatalogService as any).isLoaded = false;
+  assert(ProductCatalogService.getProduct('CERAMIC_MUG')?.niceClass === 21, 'Nice Class restore did not survive reload');
+  console.log('✅ Test 8b Passed: Nullable override and assigned class survive reload.\n');
 
   // Test 9: Artwork Variant Resolution (New Matrix Schema)
   console.log('Test 9: Verify Artwork Variant Resolution (Custom Resize Matrix)');

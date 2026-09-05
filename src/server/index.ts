@@ -2010,14 +2010,25 @@ app.post('/api/v1/products/color-avoid-rule', (req, res) => {
 app.post('/api/v1/products/nice-class', (req, res) => {
   try {
     const { productId, niceClass } = req.body;
-    if (!productId || typeof niceClass !== 'number' || isNaN(niceClass)) {
-      return res.status(400).json({ success: false, error: 'productId und niceClass (number) erforderlich' });
+    if (typeof productId !== 'string' || !productId.trim()) {
+      return res.status(400).json({ success: false, error: 'productId erforderlich' });
     }
-    const catalog = ProductCatalogService.updateProductNiceClass(productId, niceClass);
+    if (niceClass !== null && (
+      typeof niceClass !== 'number'
+      || !Number.isInteger(niceClass)
+      || niceClass < 1
+      || niceClass > 45
+    )) {
+      return res.status(400).json({ success: false, error: 'niceClass muss null oder eine ganze Zahl zwischen 1 und 45 sein' });
+    }
+    const normalizedProductId = productId.trim();
+    const catalog = ProductCatalogService.updateProductNiceClass(normalizedProductId, niceClass);
     res.json({
       success: true,
       catalog,
-      message: `Nizza-Klasse für ${productId} auf Kl. ${niceClass} aktualisiert.`
+      message: niceClass === null
+        ? `Nizza-Klasse für ${normalizedProductId} entfernt (nicht zugeordnet).`
+        : `Nizza-Klasse für ${normalizedProductId} auf Kl. ${niceClass} aktualisiert.`
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
