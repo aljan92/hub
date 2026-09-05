@@ -29,6 +29,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ tier }) => {
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [credits, setCredits] = useState<{
     openrouter?: { 
       usage?: number; 
@@ -84,6 +85,11 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const fetchCreditsAndCosts = (forceFresh = false) => {
     fetch(`/api/v1/credits${forceFresh ? '?forceFresh=true' : ''}`)
@@ -198,10 +204,20 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
                 MBA HUB
               </h1>
               <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase rounded-full bg-primary-500/10 text-primary-400 border border-primary-500/20">
-                v1.0 • TOS 6.0
+                v1.0
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-medium hidden sm:block">Merch by Amazon Command Center</p>
+            <time
+              className="text-[11px] text-slate-400 font-mono font-medium hidden sm:block tabular-nums"
+              dateTime={currentTime.toISOString()}
+              title="Lokale Systemzeit"
+            >
+              {currentTime.toLocaleTimeString('de-DE', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+              })}
+            </time>
           </div>
         </div>
 
