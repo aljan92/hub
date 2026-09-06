@@ -1889,6 +1889,30 @@ export class TaskLogService {
     return TaskRepository.cancelActiveUpdateTasks();
   }
 
+  /** Persistently closes one task, independent of its current review checkpoint. */
+  static cancelTask(taskId: string, reason = 'Vom Benutzer im Tasks-&-Review-Menü abgebrochen.') {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+    if (task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED') {
+      throw new Error('Ein bereits abgeschlossener oder übergebener Task kann hier nicht mehr abgebrochen werden.');
+    }
+
+    const saved = this.updateTaskStatus(taskId, {
+      status: 'CANCELLED',
+      checkpoint: undefined,
+      hasError: false,
+      errorDetails: reason
+    });
+    if (!saved) throw new Error('Task-Abbruch konnte nicht gespeichert werden.');
+    this.addEvent(taskId, {
+      timestamp: new Date().toISOString(),
+      type: 'TASK_HANDOFF',
+      title: 'Task manuell abgebrochen',
+      content: { action: 'CANCEL', reason }
+    });
+    return { success: true, message: `Task ${taskId} wurde dauerhaft abgebrochen.` };
+  }
+
   static getTaskUsageMetrics(resetTimestamp: number) {
     return TaskRepository.getTaskUsageMetrics(resetTimestamp);
   }
@@ -2022,10 +2046,11 @@ export class TaskLogService {
     if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
 
     if (params.action === 'DISCARD' || params.action === 'REJECT') {
-      task.status = 'REJECTED';
-      task.checkpoint = undefined;
-      task.hasError = false;
-      task.errorDetails = 'Task im Checkpoint 2 (Design-Prüfung) manuell abgebrochen.';
+      const saved = this.updateTaskStatus(taskId, {
+        status: 'CANCELLED', checkpoint: undefined, hasError: false,
+        errorDetails: 'Task im Checkpoint 2 (Design-Prüfung) manuell abgebrochen.'
+      });
+      if (!saved) throw new Error('Task-Abbruch konnte nicht gespeichert werden.');
 
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -2037,9 +2062,6 @@ export class TaskLogService {
         }
       });
 
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-
       return { success: true, message: `Task ${taskId} wurde abgebrochen und verworfen.` };
     }
 
@@ -2050,6 +2072,8 @@ export class TaskLogService {
       task.hasError = false;
       task.errorDetails = undefined;
 
+      if (!this.updateTaskStatus(taskId, task)) throw new Error('Neustart konnte nicht gespeichert werden.');
+
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'IDEOGRAM_REQUEST',
@@ -2059,9 +2083,6 @@ export class TaskLogService {
           reason: 'Manuell in Tasks zur Neugenerierung freigegeben'
         }
       });
-
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
 
       this.processTaskWithIdeogram(taskId, promptToUse).catch(err => {
         console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
@@ -2151,6 +2172,8 @@ export class TaskLogService {
         task.checkpoint = undefined;
         task.hasError = false;
 
+        if (!this.updateTaskStatus(taskId, task)) throw new Error('Review-Freigabe konnte nicht gespeichert werden.');
+
         this.addEvent(taskId, {
           timestamp: new Date().toISOString(),
           type: 'LISTING_REQUEST',
@@ -2159,9 +2182,6 @@ export class TaskLogService {
             answers: params.answers || 'KI-Antworten übernommen'
           }
         });
-
-        this.saveLogs(this.loadLogs());
-        this.emitUpdate(task);
 
         const { UpdatePipelineService } = require('./updatePipelineService');
         UpdatePipelineService.runFromStep(taskId, 'U4').catch((err: any) => {
@@ -2175,6 +2195,8 @@ export class TaskLogService {
       task.checkpoint = undefined;
       task.hasError = false;
 
+      if (!this.updateTaskStatus(taskId, task)) throw new Error('Review-Freigabe konnte nicht gespeichert werden.');
+
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'LISTING_REQUEST',
@@ -2183,9 +2205,6 @@ export class TaskLogService {
           answers: params.answers || 'KI-Antworten 1:1 übernommen'
         }
       });
-
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
 
       this.generateListingWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Listing generation failed after design review for task ${taskId}:`, err);
@@ -2360,8 +2379,9 @@ export class TaskLogService {
     if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
 
     if (params.action === 'DISCARD') {
-      task.status = 'REJECTED';
-      task.checkpoint = undefined;
+      if (!this.updateTaskStatus(taskId, { status: 'CANCELLED', checkpoint: undefined, hasError: false })) {
+        throw new Error('Task konnte nicht verworfen werden.');
+      }
 
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -2370,8 +2390,6 @@ export class TaskLogService {
         content: { verdict: 'REJECTED', reason: 'Pre-Flight Quote Markenkonflikt verworfen.' }
       });
 
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
       return { success: true, message: 'Task verworfen.' };
     }
 
@@ -2383,8 +2401,7 @@ export class TaskLogService {
       task.checkpoint = undefined;
       task.events = task.events.slice(0, 1); // keep incoming payload
 
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
+      if (!this.updateTaskStatus(taskId, task)) throw new Error('Task-Neustart konnte nicht gespeichert werden.');
 
       this.processTaskWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Restart with new quote failed for task ${taskId}:`, err);
@@ -2397,15 +2414,14 @@ export class TaskLogService {
       task.status = 'PROCESSING';
       task.checkpoint = undefined;
 
+      if (!this.updateTaskStatus(taskId, task)) throw new Error('Pre-Flight-Freigabe konnte nicht gespeichert werden.');
+
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'SESSION_START',
         title: `Pre-Flight Override bestätigt (Human Loop: Trotz TM-Treffer fortfahren)`,
         content: `Quote "${task.payload?.quote}" manuell für Generierung freigegeben.`
       });
-
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
 
       this.processTaskWithOpenRouter(taskId, { skipPreFlight: true }).catch(err => {
         console.error(`[TaskLogService] Override pre-flight failed for task ${taskId}:`, err);
@@ -2560,6 +2576,8 @@ export class TaskLogService {
       task.checkpoint = undefined;
       task.hasError = false;
 
+      if (!this.updateTaskStatus(taskId, task)) throw new Error('Neu-Vektorisierung konnte nicht gespeichert werden.');
+
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'VECTORIZE_REQUEST',
@@ -2570,9 +2588,6 @@ export class TaskLogService {
         }
       });
 
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
-
       this.vectorizeDesignTask(taskId).catch(err => {
         console.error(`[TaskLogService] Re-vectorize failed for task ${taskId}:`, err);
       });
@@ -2581,8 +2596,9 @@ export class TaskLogService {
     }
 
     if (params.action === 'REJECT') {
-      task.status = 'REJECTED';
-      task.checkpoint = undefined;
+      if (!this.updateTaskStatus(taskId, { status: 'CANCELLED', checkpoint: undefined, hasError: false })) {
+        throw new Error('Task konnte nicht verworfen werden.');
+      }
 
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -2593,9 +2609,6 @@ export class TaskLogService {
           reason: 'Design / Vektorisierung manuell im Tasks-Workspace verworfen.'
         }
       });
-
-      this.saveLogs(this.loadLogs());
-      this.emitUpdate(task);
 
       return { success: true, message: 'Task verworfen.' };
     }

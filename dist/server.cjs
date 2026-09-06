@@ -229546,6 +229546,28 @@ Beantworte die Analysefragen streng als JSON!`;
       static cancelActiveUpdateTasks() {
         return TaskRepository.cancelActiveUpdateTasks();
       }
+      /** Persistently closes one task, independent of its current review checkpoint. */
+      static cancelTask(taskId, reason = "Vom Benutzer im Tasks-&-Review-Men\xFC abgebrochen.") {
+        const task = this.getTaskLogById(taskId);
+        if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+        if (task.status === "COMPLETED" || task.status === "UPDATE_QUEUED") {
+          throw new Error("Ein bereits abgeschlossener oder \xFCbergebener Task kann hier nicht mehr abgebrochen werden.");
+        }
+        const saved = this.updateTaskStatus(taskId, {
+          status: "CANCELLED",
+          checkpoint: void 0,
+          hasError: false,
+          errorDetails: reason
+        });
+        if (!saved) throw new Error("Task-Abbruch konnte nicht gespeichert werden.");
+        this.addEvent(taskId, {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          type: "TASK_HANDOFF",
+          title: "Task manuell abgebrochen",
+          content: { action: "CANCEL", reason }
+        });
+        return { success: true, message: `Task ${taskId} wurde dauerhaft abgebrochen.` };
+      }
       static getTaskUsageMetrics(resetTimestamp) {
         return TaskRepository.getTaskUsageMetrics(resetTimestamp);
       }
@@ -229644,10 +229666,13 @@ Beantworte die Analysefragen streng als JSON!`;
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
         if (params2.action === "DISCARD" || params2.action === "REJECT") {
-          task.status = "REJECTED";
-          task.checkpoint = void 0;
-          task.hasError = false;
-          task.errorDetails = "Task im Checkpoint 2 (Design-Pr\xFCfung) manuell abgebrochen.";
+          const saved = this.updateTaskStatus(taskId, {
+            status: "CANCELLED",
+            checkpoint: void 0,
+            hasError: false,
+            errorDetails: "Task im Checkpoint 2 (Design-Pr\xFCfung) manuell abgebrochen."
+          });
+          if (!saved) throw new Error("Task-Abbruch konnte nicht gespeichert werden.");
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
@@ -229657,8 +229682,6 @@ Beantworte die Analysefragen streng als JSON!`;
               reason: "Benutzer hat den Task bei der Design-/Fragenpr\xFCfung abgebrochen."
             }
           });
-          this.saveLogs(this.loadLogs());
-          this.emitUpdate(task);
           return { success: true, message: `Task ${taskId} wurde abgebrochen und verworfen.` };
         }
         if (params2.action === "REGENERATE_IMAGE") {
@@ -229667,6 +229690,7 @@ Beantworte die Analysefragen streng als JSON!`;
           task.checkpoint = void 0;
           task.hasError = false;
           task.errorDetails = void 0;
+          if (!this.updateTaskStatus(taskId, task)) throw new Error("Neustart konnte nicht gespeichert werden.");
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "IDEOGRAM_REQUEST",
@@ -229676,8 +229700,6 @@ Beantworte die Analysefragen streng als JSON!`;
               reason: "Manuell in Tasks zur Neugenerierung freigegeben"
             }
           });
-          this.saveLogs(this.loadLogs());
-          this.emitUpdate(task);
           this.processTaskWithIdeogram(taskId, promptToUse).catch((err) => {
             console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
           });
@@ -229755,6 +229777,7 @@ Beantworte die Analysefragen streng als JSON!`;
             task.status = "UPDATE_REWRITING";
             task.checkpoint = void 0;
             task.hasError = false;
+            if (!this.updateTaskStatus(taskId, task)) throw new Error("Review-Freigabe konnte nicht gespeichert werden.");
             this.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "LISTING_REQUEST",
@@ -229763,8 +229786,6 @@ Beantworte die Analysefragen streng als JSON!`;
                 answers: params2.answers || "KI-Antworten \xFCbernommen"
               }
             });
-            this.saveLogs(this.loadLogs());
-            this.emitUpdate(task);
             const { UpdatePipelineService: UpdatePipelineService2 } = (init_updatePipelineService(), __toCommonJS2(updatePipelineService_exports));
             UpdatePipelineService2.runFromStep(taskId, "U4").catch((err) => {
               console.error(`[TaskLogService] Update-Pipeline Weiterf\xFChrung fehlgeschlagen f\xFCr Task ${taskId}:`, err);
@@ -229774,6 +229795,7 @@ Beantworte die Analysefragen streng als JSON!`;
           task.status = "GENERATING_LISTING";
           task.checkpoint = void 0;
           task.hasError = false;
+          if (!this.updateTaskStatus(taskId, task)) throw new Error("Review-Freigabe konnte nicht gespeichert werden.");
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "LISTING_REQUEST",
@@ -229782,8 +229804,6 @@ Beantworte die Analysefragen streng als JSON!`;
               answers: params2.answers || "KI-Antworten 1:1 \xFCbernommen"
             }
           });
-          this.saveLogs(this.loadLogs());
-          this.emitUpdate(task);
           this.generateListingWithOpenRouter(taskId).catch((err) => {
             console.error(`[TaskLogService] Listing generation failed after design review for task ${taskId}:`, err);
           });
@@ -229925,16 +229945,15 @@ Beantworte die Analysefragen streng als JSON!`;
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
         if (params2.action === "DISCARD") {
-          task.status = "REJECTED";
-          task.checkpoint = void 0;
+          if (!this.updateTaskStatus(taskId, { status: "CANCELLED", checkpoint: void 0, hasError: false })) {
+            throw new Error("Task konnte nicht verworfen werden.");
+          }
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TM_REFINE_RESPONSE",
             title: `Pre-Flight Konflikt: Task verworfen & geschlossen`,
             content: { verdict: "REJECTED", reason: "Pre-Flight Quote Markenkonflikt verworfen." }
           });
-          this.saveLogs(this.loadLogs());
-          this.emitUpdate(task);
           return { success: true, message: "Task verworfen." };
         }
         if (params2.action === "RESTART") {
@@ -229944,8 +229963,7 @@ Beantworte die Analysefragen streng als JSON!`;
           task.status = "PROCESSING";
           task.checkpoint = void 0;
           task.events = task.events.slice(0, 1);
-          this.saveLogs(this.loadLogs());
-          this.emitUpdate(task);
+          if (!this.updateTaskStatus(taskId, task)) throw new Error("Task-Neustart konnte nicht gespeichert werden.");
           this.processTaskWithOpenRouter(taskId).catch((err) => {
             console.error(`[TaskLogService] Restart with new quote failed for task ${taskId}:`, err);
           });
@@ -229954,14 +229972,13 @@ Beantworte die Analysefragen streng als JSON!`;
         if (params2.action === "OVERRIDE") {
           task.status = "PROCESSING";
           task.checkpoint = void 0;
+          if (!this.updateTaskStatus(taskId, task)) throw new Error("Pre-Flight-Freigabe konnte nicht gespeichert werden.");
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "SESSION_START",
             title: `Pre-Flight Override best\xE4tigt (Human Loop: Trotz TM-Treffer fortfahren)`,
             content: `Quote "${task.payload?.quote}" manuell f\xFCr Generierung freigegeben.`
           });
-          this.saveLogs(this.loadLogs());
-          this.emitUpdate(task);
           this.processTaskWithOpenRouter(taskId, { skipPreFlight: true }).catch((err) => {
             console.error(`[TaskLogService] Override pre-flight failed for task ${taskId}:`, err);
           });
@@ -230086,6 +230103,7 @@ Beantworte die Analysefragen streng als JSON!`;
           task.status = "VECTORIZING_DESIGN";
           task.checkpoint = void 0;
           task.hasError = false;
+          if (!this.updateTaskStatus(taskId, task)) throw new Error("Neu-Vektorisierung konnte nicht gespeichert werden.");
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "VECTORIZE_REQUEST",
@@ -230095,16 +230113,15 @@ Beantworte die Analysefragen streng als JSON!`;
               reason: "Manuell in Tasks zur Neu-Vektorisierung \xFCbergeben"
             }
           });
-          this.saveLogs(this.loadLogs());
-          this.emitUpdate(task);
           this.vectorizeDesignTask(taskId).catch((err) => {
             console.error(`[TaskLogService] Re-vectorize failed for task ${taskId}:`, err);
           });
           return { success: true, message: "Vektorisierung wird neu ausgef\xFChrt." };
         }
         if (params2.action === "REJECT") {
-          task.status = "REJECTED";
-          task.checkpoint = void 0;
+          if (!this.updateTaskStatus(taskId, { status: "CANCELLED", checkpoint: void 0, hasError: false })) {
+            throw new Error("Task konnte nicht verworfen werden.");
+          }
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "SVG_EDIT_RESPONSE",
@@ -230114,8 +230131,6 @@ Beantworte die Analysefragen streng als JSON!`;
               reason: "Design / Vektorisierung manuell im Tasks-Workspace verworfen."
             }
           });
-          this.saveLogs(this.loadLogs());
-          this.emitUpdate(task);
           return { success: true, message: "Task verworfen." };
         }
         throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
@@ -235287,6 +235302,22 @@ app.get("/api/v1/tasks/:taskId", (req, res) => {
     return res.status(404).json({ success: false, error: `Task ${req.params.taskId} nicht gefunden` });
   }
   res.json({ success: true, task });
+});
+app.post("/api/v1/tasks/:taskId/cancel", (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const task = TaskLogService2.getTaskLogById(taskId);
+    const result2 = TaskLogService2.cancelTask(taskId, req.body?.reason);
+    let updateAutomationDisabled = false;
+    if (task?.source === "UPDATE" || task?.suffix === "U") {
+      saveSettings({ queueUpdateAutoBackfillEnabled: false });
+      updateAutomationDisabled = true;
+    }
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    res.json({ ...result2, updateAutomationDisabled });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
 });
 app.post("/api/v1/tasks/:taskId/submit-design-review", async (req, res) => {
   const { taskId } = req.params;

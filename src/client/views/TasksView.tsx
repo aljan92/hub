@@ -155,7 +155,7 @@ export const TasksView: React.FC = () => {
   const [filter, setFilter] = useState<'ALL' | 'PRE_FLIGHT' | 'DESIGN' | 'TRADEMARK' | 'SVG'>('ALL');
   const [aiAutonomyDesignEnabled, setAiAutonomyDesignEnabled] = useState(false);
   const [aiAutonomyUpdateEnabled, setAiAutonomyUpdateEnabled] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittingTaskIds, setSubmittingTaskIds] = useState<Set<string>>(() => new Set());
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Checkpoint 1 (Pre-Flight) State
@@ -297,7 +297,9 @@ export const TasksView: React.FC = () => {
   const activeTaskDetailRef = useRef<DesignTaskLog | null>(null);
   const detailAbortControllerRef = useRef<AbortController | null>(null);
   const detailRequestSequenceRef = useRef(0);
+  const listRequestSequenceRef = useRef(0);
   const latestSummaryUpdatedAtRef = useRef<Record<string, string>>({});
+  const suppressedTaskIdsRef = useRef<Map<string, number>>(new Map());
   selectedTaskIdRef.current = selectedTaskId;
   activeTaskDetailRef.current = activeTaskDetail;
 
@@ -351,20 +353,31 @@ export const TasksView: React.FC = () => {
 
   // Fetch Tasks
   const fetchTasks = async (isBackground = false) => {
+    const requestSequence = ++listRequestSequenceRef.current;
     if (!isBackground) setLoading(true);
     try {
       const res = await fetch('/api/v1/tasks');
       const data = await res.json();
-      if (data.success && Array.isArray(data.tasks)) {
-        setTasks(data.tasks);
+      if (requestSequence === listRequestSequenceRef.current && data.success && Array.isArray(data.tasks)) {
+        const visibleTasks = data.tasks.filter((task: TaskSummary) => {
+          const suppressedAt = suppressedTaskIdsRef.current.get(task.id);
+          if (!suppressedAt) return true;
+          const updatedAt = task.updatedAt ? Date.parse(task.updatedAt) : 0;
+          if (updatedAt > suppressedAt) {
+            suppressedTaskIdsRef.current.delete(task.id);
+            return true;
+          }
+          return false;
+        });
+        setTasks(visibleTasks);
         setSelectedTaskId(prevId => {
-          if (data.tasks.length === 0) return '';
+          if (visibleTasks.length === 0) return '';
           // If previous selection still exists in the task list, retain it!
-          if (prevId && data.tasks.some((t: TaskSummary) => t.id === prevId)) {
+          if (prevId && visibleTasks.some((t: TaskSummary) => t.id === prevId)) {
             return prevId;
           }
           // Otherwise default to first task
-          return data.tasks[0].id;
+          return visibleTasks[0].id;
         });
       }
     } catch (err) {
@@ -381,6 +394,10 @@ export const TasksView: React.FC = () => {
       }
       setTasks(prev => {
         const isAwaiting = isTaskAwaitingUserAction(updatedSummary.status);
+        const suppressedAt = suppressedTaskIdsRef.current.get(updatedSummary.id);
+        const updatedAt = updatedSummary.updatedAt ? Date.parse(updatedSummary.updatedAt) : 0;
+        if (isAwaiting && suppressedAt && updatedAt <= suppressedAt) return prev;
+        if (isAwaiting && suppressedAt) suppressedTaskIdsRef.current.delete(updatedSummary.id);
         const exists = prev.some(t => t.id === updatedSummary.id);
         if (isAwaiting) {
           if (exists) {
@@ -407,8 +424,10 @@ export const TasksView: React.FC = () => {
       }
     },
     onTaskCreated: (newSummary) => {
-      if (isTaskAwaitingUserAction(newSummary.status)) {
-        setTasks(prev => [newSummary, ...prev]);
+      if (isTaskAwaitingUserAction(newSummary.status) && !suppressedTaskIdsRef.current.has(newSummary.id)) {
+        setTasks(prev => prev.some(task => task.id === newSummary.id)
+          ? prev.map(task => task.id === newSummary.id ? newSummary : task)
+          : [newSummary, ...prev]);
       }
     },
     onReconnect: () => {
@@ -475,6 +494,14 @@ export const TasksView: React.FC = () => {
   }, [isConnected]);
 
   const activeTask = activeTaskDetail;
+  const isSubmitting = Boolean(selectedTaskId && submittingTaskIds.has(selectedTaskId));
+
+  useEffect(() => {
+    if (selectedTaskId && !tasks.some(task => task.id === selectedTaskId)) {
+      setSelectedTaskId(tasks[0]?.id || '');
+      setActiveTaskDetail(null);
+    }
+  }, [tasks, selectedTaskId]);
 
   // Sync active task form fields when selection changes
   useEffect(() => {
@@ -557,6 +584,40 @@ export const TasksView: React.FC = () => {
     }
   }, [selectedTaskId, activeTask?.status]);
 
+  const matchesCurrentFilter = useCallback((task: TaskSummary) => {
+    if (filter === 'PRE_FLIGHT') return task.status === 'AWAITING_PRE_FLIGHT_REVIEW';
+    if (filter === 'DESIGN') return task.status === 'AWAITING_DESIGN_REVIEW' || task.status === 'UPDATE_ANALYZED';
+    if (filter === 'TRADEMARK') return task.status === 'AWAITING_TM_REVIEW';
+    if (filter === 'SVG') return task.status === 'AWAITING_SVG_REVIEW';
+    return true;
+  }, [filter]);
+
+  const beginTaskAction = useCallback((taskId: string) => {
+    suppressedTaskIdsRef.current.set(taskId, Date.now());
+    setSubmittingTaskIds(prev => new Set(prev).add(taskId));
+    detailAbortControllerRef.current?.abort();
+    setTasks(prev => {
+      const remaining = prev.filter(task => task.id !== taskId);
+      const next = remaining.find(matchesCurrentFilter) || remaining[0];
+      setSelectedTaskId(next?.id || '');
+      return remaining;
+    });
+    setActiveTaskDetail(null);
+  }, [matchesCurrentFilter]);
+
+  const finishTaskAction = useCallback((taskId: string, success: boolean) => {
+    setSubmittingTaskIds(prev => {
+      const next = new Set(prev);
+      next.delete(taskId);
+      return next;
+    });
+    if (!success) {
+      suppressedTaskIdsRef.current.delete(taskId);
+      setSelectedTaskId(taskId);
+    }
+    void fetchTasks(true);
+  }, []);
+
   const toggleAudience = (aud: string) => {
     setSelectedAudiences(prev => {
       if (prev.includes(aud)) {
@@ -571,31 +632,35 @@ export const TasksView: React.FC = () => {
   // Actions for Checkpoint 1: Pre-Flight
   const handlePreFlightAction = async (action: 'OVERRIDE' | 'RESTART' | 'DISCARD') => {
     if (!activeTask) return;
-    setIsSubmitting(true);
+    const taskId = activeTask.id;
+    beginTaskAction(taskId);
+    let success = false;
     try {
-      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/override-preflight`, {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/override-preflight`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, newQuote: editQuote })
       });
       const data = await res.json();
       if (data.success) {
+        success = true;
         showNotification('success', data.message);
-        fetchTasks();
       } else {
         showNotification('error', data.error || 'Aktion fehlgeschlagen');
       }
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler');
     } finally {
-      setIsSubmitting(false);
+      finishTaskAction(taskId, success);
     }
   };
 
   // Actions for Checkpoint 2: Design Review
   const handleDesignReview = async (action: 'APPROVE' | 'REGENERATE_IMAGE' | 'DISCARD' | 'REJECT') => {
     if (!activeTask) return;
-    setIsSubmitting(true);
+    const taskId = activeTask.id;
+    beginTaskAction(taskId);
+    let success = false;
     try {
       const answers = {
         niche1: editNiche1,
@@ -608,10 +673,13 @@ export const TasksView: React.FC = () => {
         maxColors: selectedMaxColors
       };
 
-      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/submit-design-review`, {
+      const endpoint = action === 'DISCARD'
+        ? `/api/v1/tasks/${encodeURIComponent(taskId)}/cancel`
+        : `/api/v1/tasks/${encodeURIComponent(taskId)}/submit-design-review`;
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify(action === 'DISCARD' ? { reason: 'Im Design-Review manuell abgebrochen.' } : {
           action,
           answers,
           updatedPrompt: editablePrompt
@@ -619,15 +687,15 @@ export const TasksView: React.FC = () => {
       });
       const data = await res.json();
       if (data.success) {
+        success = true;
         showNotification('success', data.message);
-        fetchTasks();
       } else {
         showNotification('error', data.error || 'Übermittlung fehlgeschlagen');
       }
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler');
     } finally {
-      setIsSubmitting(false);
+      finishTaskAction(taskId, success);
     }
   };
 
@@ -664,9 +732,11 @@ export const TasksView: React.FC = () => {
 
   const handleTmDecision = async (action: 'APPROVE' | 'REJECT') => {
     if (!activeTask) return;
-    setIsSubmitting(true);
+    const taskId = activeTask.id;
+    beginTaskAction(taskId);
+    let success = false;
     try {
-      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/submit-tm-review`, {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/submit-tm-review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -676,24 +746,26 @@ export const TasksView: React.FC = () => {
       });
       const data = await res.json();
       if (data.success) {
+        success = true;
         showNotification('success', data.message);
-        fetchTasks();
       } else {
         showNotification('error', data.error || 'Speichern fehlgeschlagen');
       }
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler');
     } finally {
-      setIsSubmitting(false);
+      finishTaskAction(taskId, success);
     }
   };
 
   // Actions for Checkpoint 4: SVG Vector & Background Review
   const handleSvgDecision = async (action: 'APPROVE' | 'REGENERATE_VECTOR' | 'REJECT', maxColorsOverride?: number) => {
     if (!activeTask) return;
-    setIsSubmitting(true);
+    const taskId = activeTask.id;
+    beginTaskAction(taskId);
+    let success = false;
     try {
-      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/submit-svg-review`, {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/submit-svg-review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -704,15 +776,15 @@ export const TasksView: React.FC = () => {
       });
       const data = await res.json();
       if (data.success) {
+        success = true;
         showNotification('success', data.message);
-        fetchTasks();
       } else {
         showNotification('error', data.error || 'Aktion fehlgeschlagen');
       }
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler');
     } finally {
-      setIsSubmitting(false);
+      finishTaskAction(taskId, success);
     }
   };
 

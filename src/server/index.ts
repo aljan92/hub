@@ -1103,6 +1103,23 @@ app.get('/api/v1/tasks/:taskId', (req, res) => {
   res.json({ success: true, task });
 });
 
+app.post('/api/v1/tasks/:taskId/cancel', (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const task = TaskLogService.getTaskLogById(taskId);
+    const result = TaskLogService.cancelTask(taskId, req.body?.reason);
+    let updateAutomationDisabled = false;
+    if (task?.source === 'UPDATE' || task?.suffix === 'U') {
+      saveSettings({ queueUpdateAutoBackfillEnabled: false });
+      updateAutomationDisabled = true;
+    }
+    broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
+    res.json({ ...result, updateAutomationDisabled });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/v1/tasks/:taskId/submit-design-review', async (req, res) => {
   const { taskId } = req.params;
   const { action, answers, updatedPrompt } = req.body;

@@ -28,6 +28,7 @@ export type TaskStatus =
   | 'UPDATE_QUEUED'
   | 'COMPLETED'
   | 'REJECTED'
+  | 'CANCELLED'
   | 'ERROR';
 
 /**
