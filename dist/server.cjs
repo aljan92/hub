@@ -221388,7 +221388,6 @@ var init_taskRepository = __esm2({
       FROM tasks
       WHERE (source = 'UPDATE' OR suffix = 'U')
         AND status NOT IN ('REJECTED', 'CANCELLED', 'ERROR')
-        AND has_error = 0
     `).all();
         const ids = /* @__PURE__ */ new Set();
         for (const r of rows) {
@@ -227671,7 +227670,8 @@ var init_queueService = __esm2({
           }
           if (isUpdateItem(upItem)) {
             const alreadyPublished = upItem.publishedProductsCount ?? upItem.liveStats?.publishedCount ?? 0;
-            const netSlots = Math.max(0, total - alreadyPublished);
+            const hasLiveDetail = Boolean(upItem.liveProductSummary && Object.keys(upItem.liveProductSummary).length > 0);
+            const netSlots = hasLiveDetail ? total : Math.max(0, total - alreadyPublished);
             upItem.allocatedSlots = netSlots;
             uploadingSlotsReserved += netSlots;
           } else {
@@ -232555,11 +232555,14 @@ var UploadWorkerService = class _UploadWorkerService {
     } else {
       const newWaiting = state.items.filter((i) => i.status === "WAITING" && !i.isPaused && !isUpdate(i));
       const updateWaiting = state.items.filter((i) => i.status === "WAITING" && !i.isPaused && isUpdate(i));
+      const uploadableUpdateWaiting = updateWaiting.filter(
+        (i) => (i.totalBaseSlots ?? 0) === 0 || (i.allocatedSlots ?? 0) > 0
+      );
       if (queueMode === "hybrid") {
-        targetItem = updateWaiting.length > 0 ? updateWaiting[0] : newWaiting[0];
+        targetItem = uploadableUpdateWaiting.length > 0 ? uploadableUpdateWaiting[0] : newWaiting[0];
       } else if (queueMode === "live") {
         const newWithSlots = newWaiting.filter((i) => i.allocatedSlots && i.allocatedSlots > 0);
-        targetItem = newWithSlots.length > 0 ? newWithSlots[0] : updateWaiting[0];
+        targetItem = newWithSlots.length > 0 ? newWithSlots[0] : uploadableUpdateWaiting[0];
       } else {
         targetItem = newWaiting.length > 0 ? newWaiting[0] : void 0;
       }
@@ -232575,6 +232578,9 @@ var UploadWorkerService = class _UploadWorkerService {
       return { success: false, message: "Task wird gerade vorbereitet; Upload bleibt gesperrt." };
     }
     const isUpdateItem = isUpdate(targetItem);
+    if (isUpdateItem && (targetItem.totalBaseSlots ?? 0) > 0 && (targetItem.allocatedSlots ?? 0) <= 0) {
+      return { success: false, message: "Update wartet auf freie, zugeteilte Tages-Slots." };
+    }
     const effectiveMode = isUpdateItem ? "publish" : queueMode === "live" || mode === "publish" ? "publish" : "draft";
     this.isUploading = true;
     this.isPausedBeforePublish = false;
@@ -234064,7 +234070,7 @@ var UploadWorkerService = class _UploadWorkerService {
         return;
       }
       if (err instanceof UpdateSelectionRebalancedError) {
-        this.log(`\u{1F504} ${err.message} Queue wurde mit dem aktuellen Amazon-Stand neu ausbalanciert.`, "Neu eingeplant");
+        this.log(`\u{1F504} ${err.message} Queue wurde mit dem aktuellen Amazon-Stand neu ausbalanciert. Das Update startet automatisch erneut, sobald die ben\xF6tigten Slots zugeteilt sind.`, "Neu eingeplant \u2013 wartet auf Slots");
         this.isUploading = false;
         this.abortRequested = false;
         this.broadcastStatus();

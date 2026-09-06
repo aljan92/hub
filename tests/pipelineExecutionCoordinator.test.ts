@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { PipelineExecutionCoordinator } from '../src/server/services/pipelineExecutionCoordinator';
 import { UpdateBackfillService } from '../src/server/services/updateBackfillService';
 
@@ -37,6 +38,15 @@ assert.deepEqual(order, [
 ], 'Pipelines execute FIFO while nested continuation remains re-entrant');
 assert.deepEqual(PipelineExecutionCoordinator.getSnapshot(), { activeTaskId: null, waitingTaskIds: [] });
 
+const repositorySource = fs.readFileSync(new URL('../src/server/storage/taskRepository.ts', import.meta.url), 'utf8');
+const activeUpdateQuery = repositorySource.match(/getActiveUpdateDesignIds\(\)[\s\S]*?return ids;/)?.[0] || '';
+assert.doesNotMatch(activeUpdateQuery, /has_error\s*=\s*0/, 'Manual-review updates with warning/error context must remain excluded from candidate selection');
+
+const workerSource = fs.readFileSync(new URL('../src/server/services/uploadWorkerService.ts', import.meta.url), 'utf8');
+assert.match(workerSource, /uploadableUpdateWaiting[\s\S]*allocatedSlots/, 'Known update deltas without slot allocation must not be selected repeatedly');
+const queueSource = fs.readFileSync(new URL('../src/server/services/queueService.ts', import.meta.url), 'utf8');
+assert.match(queueSource, /hasLiveDetail \? total : Math\.max\(0, total - alreadyPublished\)/, 'Detailed update deltas must not subtract published slots twice');
+
 const service = UpdateBackfillService as any;
 const originalExclusive = service.runBackfillCycleExclusive;
 let backfillCalls = 0;
@@ -59,4 +69,4 @@ try {
   service.runBackfillCycleExclusive = originalExclusive;
 }
 
-console.log('PASS pipeline coordinator: FIFO capacity one, re-entrancy, waiting state and atomic backfill single-flight');
+console.log('PASS pipeline coordinator: FIFO capacity one, review release, candidate exclusion, slot eligibility and atomic backfill single-flight');

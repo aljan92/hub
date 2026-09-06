@@ -181,14 +181,17 @@ export class UploadWorkerService {
     } else {
       const newWaiting = state.items.filter(i => i.status === 'WAITING' && !i.isPaused && !isUpdate(i));
       const updateWaiting = state.items.filter(i => i.status === 'WAITING' && !i.isPaused && isUpdate(i));
+      const uploadableUpdateWaiting = updateWaiting.filter(i =>
+        (i.totalBaseSlots ?? 0) === 0 || (i.allocatedSlots ?? 0) > 0
+      );
 
       if (queueMode === 'hybrid') {
         // Hybrid: Prio 1 Updates (Live), Prio 2 New Designs (Draft)
-        targetItem = updateWaiting.length > 0 ? updateWaiting[0] : newWaiting[0];
+        targetItem = uploadableUpdateWaiting.length > 0 ? uploadableUpdateWaiting[0] : newWaiting[0];
       } else if (queueMode === 'live') {
         // Live: Prio 1 New Designs (Live with slots), Prio 2 Updates
         const newWithSlots = newWaiting.filter(i => (i.allocatedSlots && i.allocatedSlots > 0));
-        targetItem = newWithSlots.length > 0 ? newWithSlots[0] : updateWaiting[0];
+        targetItem = newWithSlots.length > 0 ? newWithSlots[0] : uploadableUpdateWaiting[0];
       } else {
         // Draft: Only New Designs as Draft
         targetItem = newWaiting.length > 0 ? newWaiting[0] : undefined;
@@ -211,6 +214,9 @@ export class UploadWorkerService {
     }
 
     const isUpdateItem = isUpdate(targetItem);
+    if (isUpdateItem && (targetItem.totalBaseSlots ?? 0) > 0 && (targetItem.allocatedSlots ?? 0) <= 0) {
+      return { success: false, message: 'Update wartet auf freie, zugeteilte Tages-Slots.' };
+    }
     // Update designs are ALWAYS Live (publish). New designs follow queueMode or passed mode.
     const effectiveMode: 'draft' | 'publish' = isUpdateItem ? 'publish' : (queueMode === 'live' || mode === 'publish' ? 'publish' : 'draft');
 
@@ -2162,7 +2168,7 @@ export class UploadWorkerService {
         return;
       }
       if (err instanceof UpdateSelectionRebalancedError) {
-        this.log(`🔄 ${err.message} Queue wurde mit dem aktuellen Amazon-Stand neu ausbalanciert.`, 'Neu eingeplant');
+        this.log(`🔄 ${err.message} Queue wurde mit dem aktuellen Amazon-Stand neu ausbalanciert. Das Update startet automatisch erneut, sobald die benötigten Slots zugeteilt sind.`, 'Neu eingeplant – wartet auf Slots');
         this.isUploading = false;
         this.abortRequested = false;
         this.broadcastStatus();

@@ -1145,7 +1145,10 @@ export class QueueService {
       }
       if (isUpdateItem(upItem)) {
         const alreadyPublished = upItem.publishedProductsCount ?? upItem.liveStats?.publishedCount ?? 0;
-        const netSlots = Math.max(0, total - alreadyPublished);
+        // With detailed live metadata activeProductsMap already contains only
+        // the missing delta. Subtracting published slots again under-reserves it.
+        const hasLiveDetail = Boolean(upItem.liveProductSummary && Object.keys(upItem.liveProductSummary).length > 0);
+        const netSlots = hasLiveDetail ? total : Math.max(0, total - alreadyPublished);
         upItem.allocatedSlots = netSlots;
         uploadingSlotsReserved += netSlots;
       } else {

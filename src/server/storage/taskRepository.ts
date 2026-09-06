@@ -812,7 +812,6 @@ export class TaskRepository {
       FROM tasks
       WHERE (source = 'UPDATE' OR suffix = 'U')
         AND status NOT IN ('REJECTED', 'CANCELLED', 'ERROR')
-        AND has_error = 0
     `).all();
 
     const ids = new Set<string>();
