@@ -227589,6 +227589,22 @@ var init_queueService = __esm2({
         this.saveQueue();
         return this.rebalanceQueue();
       }
+      /** Applies the complete client order atomically and rebalances the resulting plan. */
+      static reorderItemsByIds(itemIds) {
+        this.ensureLoaded();
+        const currentIds = this.items.map((item) => item.id);
+        const requestedIds = itemIds.map(String);
+        if (requestedIds.length !== currentIds.length || new Set(requestedIds).size !== requestedIds.length || currentIds.some((id) => !requestedIds.includes(id))) {
+          throw new Error("Queue-Reihenfolge ist veraltet oder unvollst\xE4ndig. Bitte Ansicht aktualisieren.");
+        }
+        const byId = new Map(this.items.map((item) => [item.id, item]));
+        this.items = requestedIds.map((id) => byId.get(id));
+        this.items.forEach((item, index) => {
+          item.sortOrder = index;
+        });
+        this.saveQueue();
+        return this.rebalanceQueue();
+      }
       /**
        * Clear completed or all items
        */
@@ -235858,7 +235874,7 @@ app.post("/api/v1/queue/reorder", (req, res) => {
     if (!Array.isArray(itemIds)) {
       return res.status(400).json({ success: false, error: "itemIds array is required" });
     }
-    const state = QueueService.reorderItems(itemIds);
+    const state = QueueService.reorderItemsByIds(itemIds);
     res.json({ success: true, state });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

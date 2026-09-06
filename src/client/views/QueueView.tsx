@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { isUpdateScheduledToday as isUpdateInTodayPlan } from '../utils/queueTodayPlan';
 import { 
   UploadCloud, 
   Play, 
@@ -178,8 +179,8 @@ export const QueueView: React.FC = () => {
   const [backfillToast, setBackfillToast] = useState<{ message: string; success: boolean } | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [globalMode, setGlobalMode] = useState<QueueMode>('draft');
   const [pendingMode, setPendingMode] = useState<QueueMode | null>(null);
   const [modeSaveError, setModeSaveError] = useState<string | null>(null);
@@ -622,36 +623,43 @@ export const QueueView: React.FC = () => {
   };
 
   // Drag & Drop handlers
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedIndex(index);
-    e.dataTransfer.setData('text/plain', index.toString());
+  const handleDragStart = (e: React.DragEvent, itemId: string) => {
+    setDraggedItemId(itemId);
+    e.dataTransfer.setData('text/plain', itemId);
   };
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
+  const handleDragOver = (e: React.DragEvent, itemId: string) => {
     e.preventDefault();
-    if (dragOverIndex !== index) {
-      setDragOverIndex(index);
+    if (dragOverItemId !== itemId) {
+      setDragOverItemId(itemId);
     }
   };
 
   const handleDragLeave = () => {
-    setDragOverIndex(null);
+    setDragOverItemId(null);
   };
 
-  const handleDrop = async (e: React.DragEvent, targetIndex: number) => {
+  const handleDrop = async (e: React.DragEvent, targetItemId: string) => {
     e.preventDefault();
-    setDragOverIndex(null);
-    if (draggedIndex === null || draggedIndex === targetIndex) {
-      setDraggedIndex(null);
+    setDragOverItemId(null);
+    if (!draggedItemId || draggedItemId === targetItemId) {
+      setDraggedItemId(null);
       return;
     }
 
     const newItems = [...queueState.items];
-    const [movedItem] = newItems.splice(draggedIndex, 1);
-    newItems.splice(targetIndex, 0, movedItem);
+    const sourceIndex = newItems.findIndex(item => item.id === draggedItemId);
+    const targetIndex = newItems.findIndex(item => item.id === targetItemId);
+    if (sourceIndex < 0 || targetIndex < 0) {
+      setDraggedItemId(null);
+      return;
+    }
+    const [movedItem] = newItems.splice(sourceIndex, 1);
+    const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    newItems.splice(adjustedTargetIndex, 0, movedItem);
 
     setQueueState(prev => ({ ...prev, items: newItems }));
-    setDraggedIndex(null);
+    setDraggedItemId(null);
 
     try {
       const itemIds = newItems.map(i => i.id);
@@ -752,7 +760,8 @@ export const QueueView: React.FC = () => {
   };
 
   const activeNewDesigns = queueState.items.filter(i => isNewItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING' || (i.status as any) === 'SCHEDULED_TODAY' || (i.status as any) === 'WAITING_FOR_SLOTS'));
-  const activeUpdateDesigns = queueState.items.filter(i => isUpdateItem(i) && (!i.isPaused) && ((i.status as any) === 'WAITING' || (i.status as any) === 'UPLOADING'));
+  const isUpdateScheduledToday = (item: QueueItem) => isUpdateInTodayPlan(item, currentMode);
+  const activeUpdateDesigns = queueState.items.filter(i => isUpdateItem(i) && isUpdateScheduledToday(i));
 
   // Tab 1 (Warteschlange) Ordering:
   // - Hybrid Mode: Prio 1 Updates (Live) -> Prio 2 New Designs (Draft)
@@ -1433,8 +1442,8 @@ export const QueueView: React.FC = () => {
                   const isDraftMode = currentMode === 'draft';
                   const canUploadToday = !isPaused && (isUpdate || isDraftMode || (item.allocatedSlots && item.allocatedSlots > 0));
                   const isExpanded = expandedItemId === item.id;
-                  const isDragging = draggedIndex === index;
-                  const isDragOver = dragOverIndex === index;
+                  const isDragging = draggedItemId === item.id;
+                  const isDragOver = dragOverItemId === item.id;
                   const droppedCount = Object.values(item.droppedSlotsMap || {}).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
 
                   // Border & Glow styling:
@@ -1457,10 +1466,10 @@ export const QueueView: React.FC = () => {
                     <div
                       key={item.id}
                       draggable={!isUploading}
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDragStart={(e) => handleDragStart(e, item.id)}
+                      onDragOver={(e) => handleDragOver(e, item.id)}
                       onDragLeave={handleDragLeave}
-                      onDrop={(e) => handleDrop(e, index)}
+                      onDrop={(e) => handleDrop(e, item.id)}
                       className={`bg-surface/90 border rounded-2xl p-4 shadow-sm backdrop-blur-md transition-all overflow-hidden relative ${
                         isDragging ? 'opacity-40 scale-[0.99] border-dashed border-accent-cyan' : ''
                       } ${
@@ -2345,7 +2354,7 @@ export const QueueView: React.FC = () => {
                               </h4>
                               
                               {(() => {
-                                const isScheduledToday = !item.isPaused && ((item.allocatedSlots && item.allocatedSlots > 0) || item.totalBaseSlots === 0);
+                                const isScheduledToday = isUpdateScheduledToday(item);
                                 const netSlotCount = (item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0));
                                 return (
                                   <>

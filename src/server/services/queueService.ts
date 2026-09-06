@@ -1022,6 +1022,24 @@ export class QueueService {
     return this.rebalanceQueue();
   }
 
+  /** Applies the complete client order atomically and rebalances the resulting plan. */
+  public static reorderItemsByIds(itemIds: string[]): QueueState {
+    this.ensureLoaded();
+    const currentIds = this.items.map(item => item.id);
+    const requestedIds = itemIds.map(String);
+    if (requestedIds.length !== currentIds.length
+      || new Set(requestedIds).size !== requestedIds.length
+      || currentIds.some(id => !requestedIds.includes(id))) {
+      throw new Error('Queue-Reihenfolge ist veraltet oder unvollständig. Bitte Ansicht aktualisieren.');
+    }
+
+    const byId = new Map(this.items.map(item => [item.id, item]));
+    this.items = requestedIds.map(id => byId.get(id)!);
+    this.items.forEach((item, index) => { item.sortOrder = index; });
+    this.saveQueue();
+    return this.rebalanceQueue();
+  }
+
   /**
    * Clear completed or all items
    */

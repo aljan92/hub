@@ -1765,7 +1765,7 @@ app.post('/api/v1/queue/reorder', (req, res) => {
     if (!Array.isArray(itemIds)) {
       return res.status(400).json({ success: false, error: 'itemIds array is required' });
     }
-    const state = QueueService.reorderItems(itemIds);
+    const state = QueueService.reorderItemsByIds(itemIds);
     res.json({ success: true, state });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
