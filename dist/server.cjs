@@ -223297,12 +223297,20 @@ var init_amazonInspectService = __esm2({
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
           const pageRejectionInfo = await newTab.evaluate(() => {
             const alertElements = Array.from(document.querySelectorAll('.alert-danger, .alert-warning, .error-banner, .validation-error, [role="alert"]'));
-            const alertText = alertElements.map((a) => a.textContent?.trim() || "").filter(Boolean).join(" | ");
+            const alertTexts = alertElements.map((a) => a.textContent?.trim() || "").filter(Boolean);
             const bodyText = document.body.innerText || "";
-            const hasKeywords = /rejected|policy violation|content policy|copyright violation|trademark violation/i.test(bodyText);
+            const isPolicyNotice = (text2) => {
+              const normalized = text2.replace(/\s+/g, " ").trim().toLowerCase();
+              const hasPolicyLanguage = /\brejected\b|policy violation|content policy|copyright violation|trademark violation/.test(normalized);
+              if (!hasPolicyLanguage && /daily limit|daily upload limit|more products than your daily limit|rate limit|upload-limit|tageslimit/.test(normalized)) return false;
+              if (!hasPolicyLanguage && /this design cannot be edited at this time|under review or processing/.test(normalized)) return false;
+              return hasPolicyLanguage;
+            };
+            const policyAlerts = alertTexts.filter(isPolicyNotice);
+            const hasKeywords = isPolicyNotice(bodyText);
             return {
-              hasAlert: alertElements.length > 0 || hasKeywords,
-              alertText: alertText || (hasKeywords ? "Amazon Rejection / Policy Violation Text auf Seite erkannt" : "")
+              hasAlert: policyAlerts.length > 0 || hasKeywords,
+              alertText: policyAlerts.join(" | ") || (hasKeywords ? "Amazon Rejection / Policy Violation Text auf Seite erkannt" : "")
             };
           });
           let domLiveSummary = {};
@@ -223458,12 +223466,20 @@ var init_amazonInspectService = __esm2({
           await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
           const pageRejectionInfo = await newTab.evaluate(() => {
             const alertElements = Array.from(document.querySelectorAll('.alert-danger, .alert-warning, .error-banner, .validation-error, [role="alert"]'));
-            const alertText = alertElements.map((a) => a.textContent?.trim() || "").filter(Boolean).join(" | ");
+            const alertTexts = alertElements.map((a) => a.textContent?.trim() || "").filter(Boolean);
             const bodyText = document.body.innerText || "";
-            const hasKeywords = /rejected|policy violation|content policy|copyright violation|trademark violation/i.test(bodyText);
+            const isPolicyNotice = (text2) => {
+              const normalized = text2.replace(/\s+/g, " ").trim().toLowerCase();
+              const hasPolicyLanguage = /\brejected\b|policy violation|content policy|copyright violation|trademark violation/.test(normalized);
+              if (!hasPolicyLanguage && /daily limit|daily upload limit|more products than your daily limit|rate limit|upload-limit|tageslimit/.test(normalized)) return false;
+              if (!hasPolicyLanguage && /this design cannot be edited at this time|under review or processing/.test(normalized)) return false;
+              return hasPolicyLanguage;
+            };
+            const policyAlerts = alertTexts.filter(isPolicyNotice);
+            const hasKeywords = isPolicyNotice(bodyText);
             return {
-              hasAlert: alertElements.length > 0 || hasKeywords,
-              alertText: alertText || (hasKeywords ? "Amazon Rejection / Policy Violation Text auf Seite erkannt" : "")
+              hasAlert: policyAlerts.length > 0 || hasKeywords,
+              alertText: policyAlerts.join(" | ") || (hasKeywords ? "Amazon Rejection / Policy Violation Text auf Seite erkannt" : "")
             };
           });
           const selectBtnSelector = '#select-marketplace-button-original, button:has-text("Select Products"), button:has-text("Produkte ausw\xE4hlen"), button.btn-outline-primary:has-text("Select"), [id*="select-marketplace"]';

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { PipelineExecutionCoordinator } from '../src/server/services/pipelineExecutionCoordinator';
 import { UpdateBackfillService } from '../src/server/services/updateBackfillService';
+import { isAmazonPolicyOrRejectionNotice } from '../src/server/services/amazonInspectService';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -46,6 +47,9 @@ const workerSource = fs.readFileSync(new URL('../src/server/services/uploadWorke
 assert.match(workerSource, /uploadableUpdateWaiting[\s\S]*allocatedSlots/, 'Known update deltas without slot allocation must not be selected repeatedly');
 const queueSource = fs.readFileSync(new URL('../src/server/services/queueService.ts', import.meta.url), 'utf8');
 assert.match(queueSource, /hasLiveDetail \? total : Math\.max\(0, total - alreadyPublished\)/, 'Detailed update deltas must not subtract published slots twice');
+assert.equal(isAmazonPolicyOrRejectionNotice('You’re trying to create more products than your daily limit of -19. If you want to publish today, choose fewer products.'), false, 'Daily capacity warning is not a policy rejection');
+assert.equal(isAmazonPolicyOrRejectionNotice('This design cannot be edited at this time because products are under review or processing.'), false, 'Processing lock is not a policy rejection');
+assert.equal(isAmazonPolicyOrRejectionNotice('This product was rejected for a content policy violation.'), true, 'Explicit policy rejection remains detected');
 
 const service = UpdateBackfillService as any;
 const originalExclusive = service.runBackfillCycleExclusive;

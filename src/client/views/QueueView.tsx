@@ -173,6 +173,7 @@ export const QueueView: React.FC = () => {
   const [savingTargetCount, setSavingTargetCount] = useState<boolean>(false);
   const updateTargetCountRef = useRef<number>(10);
   const updateTargetSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateTargetSaveRunningRef = useRef<boolean>(false);
   const [isTriggeringBackfill, setIsTriggeringBackfill] = useState<boolean>(false);
   const [backfillToast, setBackfillToast] = useState<{ message: string; success: boolean } | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
@@ -291,7 +292,7 @@ export const QueueView: React.FC = () => {
       if (data.success) {
         // A GET that started before a mode PATCH must not overwrite its newer
         // response. The next poll will retrieve the committed state.
-        if (modeSaveRunningRef.current) return;
+        if (modeSaveRunningRef.current || updateTargetSaveRunningRef.current) return;
         if (data.uploadMode) {
           confirmedModeRef.current = data.uploadMode;
           setGlobalMode(data.uploadMode);
@@ -334,7 +335,7 @@ export const QueueView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (queueState.updateTargetCount !== undefined && !savingTargetCount) {
+    if (queueState.updateTargetCount !== undefined && !updateTargetSaveRunningRef.current) {
       updateTargetCountRef.current = queueState.updateTargetCount;
       setUpdateTargetCount(queueState.updateTargetCount);
     }
@@ -353,22 +354,27 @@ export const QueueView: React.FC = () => {
   const handleAdjustUpdateTargetCount = (delta: number) => {
     const clamped = Math.max(1, Math.min(50, updateTargetCountRef.current + delta));
     updateTargetCountRef.current = clamped;
+    updateTargetSaveRunningRef.current = true;
     setUpdateTargetCount(clamped);
     setSavingTargetCount(true);
     if (updateTargetSaveTimerRef.current) clearTimeout(updateTargetSaveTimerRef.current);
     updateTargetSaveTimerRef.current = setTimeout(async () => {
       try {
-        await fetch('/api/v1/queue/settings', {
+        const response = await fetch('/api/v1/queue/settings', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ queueUpdateTargetCount: updateTargetCountRef.current })
         });
-        fetchQueue();
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Vorhaltewert konnte nicht gespeichert werden.');
+        if (data.state) setQueueState(data.state);
       } catch (e) {
         console.warn('Failed to update target count:', e);
       } finally {
+        updateTargetSaveRunningRef.current = false;
         setSavingTargetCount(false);
         updateTargetSaveTimerRef.current = null;
+        void fetchQueue();
       }
     }, 300);
   };
