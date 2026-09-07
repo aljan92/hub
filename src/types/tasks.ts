@@ -1,6 +1,19 @@
 export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER' | 'UPDATE';
 export type TaskSuffix = 'H' | 'T' | 'D' | 'U';
 
+export type ImageProvider = 'IDEOGRAM' | 'GPT_IMAGE_2';
+
+export interface ImageGenerationSnapshot {
+  provider: ImageProvider;
+  model: string;
+  aspectRatio: string;
+  renderingSpeed?: string;
+  style?: string;
+  magicPrompt?: string;
+  quality?: 'auto' | 'low' | 'medium' | 'high';
+  background?: 'auto' | 'opaque' | 'transparent';
+}
+
 export type TaskStatus = 
   | 'RECEIVED'
   | 'PROCESSING'
@@ -128,6 +141,7 @@ export interface DesignTaskLog {
   inQueue?: boolean;
   eventsCount?: number;
   payload: Record<string, any>;
+  imageGeneration?: ImageGenerationSnapshot;
   events: SessionEvent[];
   niche1?: string;
   niche2?: string;

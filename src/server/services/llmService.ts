@@ -406,14 +406,22 @@ export class LLMService {
     niche1: string,
     niche2: string,
     quote: string,
-    stylePreset: string
+    stylePreset: string,
+    imageProvider: 'IDEOGRAM' | 'GPT_IMAGE_2' = 'IDEOGRAM',
+    background: 'auto' | 'opaque' | 'transparent' = 'opaque'
   ): Promise<string> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
-    const systemPrompt = `You are an expert prompt engineer specializing in Ideogram 3.0 T-shirt graphics for Merch by Amazon.
+    const providerName = imageProvider === 'GPT_IMAGE_2' ? 'OpenAI GPT Image 2' : 'Ideogram 3.0';
+    const backgroundInstruction = background === 'transparent'
+      ? 'Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, or background texture.'
+      : background === 'auto'
+        ? 'Keep the design isolated with no mockup, shirt, person, or realistic scene; allow the image provider to choose the background treatment.'
+        : 'Request an isolated design on a clean, flat, solid contrasting background with no mockup, shirt, person, or realistic scene.';
+    const systemPrompt = `You are an expert prompt engineer specializing in ${providerName} T-shirt graphics for Merch by Amazon.
 Your goal is to craft a highly descriptive, visually stunning, clean vector prompt that produces high-converting apparel designs.
 Requirements:
-1. Emphasize isolated vector graphics on a solid clean background.
+1. ${backgroundInstruction}
 2. If a quote is provided, include the exact text inside quotation marks and request bold, legible typography.
 3. Keep the prompt under 90 words, focused strictly on visual aesthetic, style, lighting, and composition. No promo or buzzwords like 4K. Output ONLY the raw prompt text.`;
 

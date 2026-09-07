@@ -1007,12 +1007,14 @@ app.post('/api/v1/update/backfill/reset', (req, res) => {
 // 5. Designer: Optimize Prompt via LLM
 app.post('/api/v1/designer/prompt', async (req, res) => {
   try {
-    const { niche1, niche2, quote, stylePreset } = req.body;
+    const { niche1, niche2, quote, stylePreset, imageProvider, background } = req.body;
     const prompt = await LLMService.generateIdeogramPrompt(
       niche1 || '',
       niche2 || '',
       quote || '',
-      stylePreset || 'vintage-distressed'
+      stylePreset || 'vintage-distressed',
+      imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM',
+      background || 'opaque'
     );
     res.json({ success: true, prompt });
   } catch (err: any) {
@@ -1023,14 +1025,14 @@ app.post('/api/v1/designer/prompt', async (req, res) => {
 // 6. Designer: Generate Image & Send to Tasks
 app.post('/api/v1/designer/generate', async (req, res) => {
   try {
-    const { prompt, aspectRatio, niche1, niche2, quote } = req.body;
+    const { prompt, niche1, niche2, quote, imageProvider } = req.body;
     const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'local';
 
     const taskLog = TaskLogService.createTaskLog({
       source: 'DESIGNER',
       payload: {
         prompt,
-        aspectRatio,
+        imageProvider: imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM',
         niche1,
         niche2,
         quote

@@ -3,6 +3,7 @@ import path from 'path';
 import { loadSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
 import { IdeogramService } from './ideogramService';
+import { OpenRouterImageService } from './openRouterImageService';
 import { TrademarkService } from './trademarkService';
 import { BannedWordsService } from './bannedWordsService';
 import { VectorizerService } from './vectorizerService';
@@ -32,6 +33,7 @@ import {
   DesignTaskLog,
   RetryStepType,
   TaskSummary,
+  ImageGenerationSnapshot,
   toTaskSummary
 } from '../../types/tasks';
 
@@ -146,6 +148,24 @@ export class TaskLogService {
     const suffix = this.getSuffixForSource(params.source);
     const id = this.formatTaskId(counter, suffix);
     const now = new Date().toISOString();
+    const settings = loadSettings();
+    const requestedProvider = params.payload?.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM';
+    const imageGeneration: ImageGenerationSnapshot | undefined = params.source === 'UPDATE' ? undefined : requestedProvider === 'GPT_IMAGE_2'
+      ? {
+          provider: 'GPT_IMAGE_2',
+          model: OpenRouterImageService.MODEL,
+          quality: settings.gptImageQuality,
+          aspectRatio: settings.gptImageAspectRatio,
+          background: settings.gptImageBackground
+        }
+      : {
+          provider: 'IDEOGRAM',
+          model: settings.ideogramModel || 'V_3',
+          renderingSpeed: settings.ideogramRenderingSpeed || 'DEFAULT',
+          aspectRatio: settings.ideogramAspectRatio || '10x16',
+          style: settings.ideogramStyle || 'GENERAL',
+          magicPrompt: settings.ideogramMagicPromptOption || 'AUTO'
+        };
 
     const incomingTitle = params.source === 'HERMES' 
       ? 'Eingang von Hermes' 
@@ -174,6 +194,7 @@ export class TaskLogService {
       keywords: params.payload?.keywords || undefined,
       hermesKeywords: params.payload?.hermesKeywords || (Array.isArray(params.payload?.keywords) ? params.payload.keywords : undefined),
       payload: params.payload || {},
+      imageGeneration,
       events: [initialEvent],
       hasError: Boolean(params.hasError),
       errorDetails: params.errorDetails
@@ -444,8 +465,12 @@ export class TaskLogService {
     }
 
     // 2. Prepare System Prompt & User Message
-    const systemPrompt = SystemPromptService.getPromptGeneratorPrompt();
-    const userMessage = `Input:\n${JSON.stringify(task.payload, null, 2)}`;
+    const imageGeneration = task.imageGeneration;
+    const providerDirective = imageGeneration?.provider === 'GPT_IMAGE_2'
+      ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || 'transparent'}. ${imageGeneration.background === 'transparent' ? 'Explicitly require a genuine transparent alpha background.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
+      : '\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.';
+    const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
+    const userMessage = `Input:\n${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, null, 2)}`;
 
     // Log Event: Senden an OpenRouter
     this.addEvent(taskId, {
@@ -551,8 +576,8 @@ export class TaskLogService {
 
       console.log(`[TaskLogService] ⚡ Task ${taskId} erfolgreich generiert in ${latencyMs}ms (${usage?.total || 0} Tokens)`);
 
-      // 5. Automatically trigger Ideogram Image Generation
-      await this.processTaskWithIdeogram(taskId, extractedPrompt);
+      // 5. Automatically trigger the image provider stored on this task
+      await this.processTaskWithImageGenerator(taskId, extractedPrompt);
     } catch (err: any) {
       const latencyMs = Date.now() - start;
       const errorMsg = err.message || 'Verbindungsfehler zur OpenRouter API';
@@ -567,132 +592,141 @@ export class TaskLogService {
     }
   }
 
-  /**
-   * Run Ideogram image generation and download design to NAS
-   */
-  static async processTaskWithIdeogram(taskId: string, promptText: string) {
-    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithIdeogramExclusive(taskId, promptText));
+  static async processTaskWithImageGenerator(taskId: string, promptText?: string) {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithImageGeneratorExclusive(taskId, promptText));
   }
 
-  private static async processTaskWithIdeogramExclusive(taskId: string, promptText: string) {
+  /** Backward-compatible entry point used by older callers and recovery paths. */
+  static async processTaskWithIdeogram(taskId: string, promptText?: string) {
+    return this.processTaskWithImageGenerator(taskId, promptText);
+  }
+
+  private static async processTaskWithImageGeneratorExclusive(taskId: string, promptText?: string) {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
 
     const settings = loadSettings();
-    const model = settings.ideogramModel || 'V_3';
-    const renderingSpeed = settings.ideogramRenderingSpeed || 'DEFAULT';
-    const aspectRatio = settings.ideogramAspectRatio || '10x16';
-    const styleType = settings.ideogramStyle || 'GENERAL';
-    const magicPromptOption = settings.ideogramMagicPromptOption || 'AUTO';
+    const snapshot: ImageGenerationSnapshot = task.imageGeneration || task.payload?.imageGeneration || {
+      provider: 'IDEOGRAM', model: settings.ideogramModel || 'V_3',
+      renderingSpeed: settings.ideogramRenderingSpeed || 'DEFAULT',
+      aspectRatio: settings.ideogramAspectRatio || '10x16',
+      style: settings.ideogramStyle || 'GENERAL',
+      magicPrompt: settings.ideogramMagicPromptOption || 'AUTO'
+    };
+    const prompt = promptText || task.resultPrompt || task.payload?.prompt || task.payload?.quote || '';
+    const isGptImage = snapshot.provider === 'GPT_IMAGE_2';
+    const providerLabel = isGptImage ? 'GPT Image 2' : 'Ideogram';
+    const model = snapshot.model;
 
     this.updateTaskStatus(taskId, { status: 'GENERATING_IMAGE' });
 
-    if (!settings.ideogramApiKey) {
+    if ((isGptImage && !settings.openRouterApiKey) || (!isGptImage && !settings.ideogramApiKey)) {
+      const missingKey = isGptImage ? 'OpenRouter API Key' : 'Ideogram API Key';
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'ERROR',
-        title: 'Fehler: Kein Ideogram API-Token',
-        content: 'Bitte trage deinen Ideogram API Token in den Settings ein.'
+        title: `Fehler: Kein ${missingKey}`,
+        content: `Bitte trage deinen ${missingKey} in den Settings ein.`
       });
-      this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: 'Kein Ideogram API Key in Settings' });
+      this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: `${missingKey} fehlt in den Settings` });
       return;
     }
 
-    // 1. Log Event: Senden an Ideogram
     this.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'IDEOGRAM_REQUEST',
-      title: `Senden an Ideogram (${model})`,
+      title: `Senden an ${providerLabel} (${model})`,
       content: {
-        prompt: promptText,
+        prompt,
+        provider: snapshot.provider,
         model,
-        renderingSpeed,
-        aspectRatio,
-        style: styleType,
-        magicPrompt: magicPromptOption
+        renderingSpeed: snapshot.renderingSpeed,
+        aspectRatio: snapshot.aspectRatio,
+        style: snapshot.style,
+        magicPrompt: snapshot.magicPrompt,
+        quality: snapshot.quality,
+        background: snapshot.background
       },
-      metadata: {
-        model
-      }
+      metadata: { model, provider: providerLabel }
     });
 
-    // 2. Execute call to Ideogram API
     const start = Date.now();
     try {
-      const result = await IdeogramService.generateImage({
-        prompt: promptText,
-        model,
-        renderingSpeed,
-        aspectRatio,
-        styleType,
-        magicPromptOption
-      });
-
-      const latencyMs = Date.now() - start;
-
-      // 3. Cache image locally to data/designs/ on NAS
       const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
       const designsDir = path.resolve(process.cwd(), 'data', 'designs');
       if (!fs.existsSync(designsDir)) {
         try { fs.mkdirSync(designsDir, { recursive: true }); } catch (e) {}
       }
-      const localFilename = `${cleanId}.png`;
-      const localFilePath = path.join(designsDir, localFilename);
+      const localFilePath = path.join(designsDir, `${cleanId}.png`);
       const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
+      let sourceUrl = localUrl;
 
-      try {
+      if (isGptImage) {
+        const result = await OpenRouterImageService.generateImage({
+          prompt,
+          quality: snapshot.quality || 'high',
+          aspectRatio: snapshot.aspectRatio || '3:4',
+          background: snapshot.background || 'transparent'
+        });
+        fs.writeFileSync(localFilePath, result.bytes);
+      } else {
+        const result = await IdeogramService.generateImage({
+          prompt,
+          model,
+          renderingSpeed: snapshot.renderingSpeed,
+          aspectRatio: snapshot.aspectRatio,
+          styleType: snapshot.style,
+          magicPromptOption: snapshot.magicPrompt
+        });
+        sourceUrl = result.imageUrl;
         const imgRes = await fetch(result.imageUrl);
-        if (imgRes.ok) {
-          const arrayBuffer = await imgRes.arrayBuffer();
-          fs.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
-          console.log(`[TaskLogService] 💾 Bild für Task ${taskId} lokal gespeichert: ${localFilePath}`);
-
-          // Pre-generate U4 Preview in the background for Step D5 Listing
-          const previewFilePath = path.join(designsDir, `${cleanId}.u4-preview.png`);
-          VisionOptimizationService.prepareU4PreviewImage(localFilePath, previewFilePath).catch(err => {
-            console.warn(`[TaskLogService] Background preview pre-generation failed for ${taskId}:`, err.message);
-          });
-        }
-      } catch (e) {
-        console.warn(`[TaskLogService] Konnte Bild für Task ${taskId} nicht lokal cachen:`, e);
+        if (!imgRes.ok) throw new Error(`Ideogram-Bild konnte nicht heruntergeladen werden (HTTP ${imgRes.status}).`);
+        fs.writeFileSync(localFilePath, Buffer.from(await imgRes.arrayBuffer()));
       }
+      console.log(`[TaskLogService] 💾 Bild für Task ${taskId} lokal gespeichert: ${localFilePath}`);
 
-      // 4. Log Event: Empfangen von Ideogram
+      const previewFilePath = path.join(designsDir, `${cleanId}.u4-preview.png`);
+      VisionOptimizationService.prepareU4PreviewImage(localFilePath, previewFilePath).catch(err => {
+        console.warn(`[TaskLogService] Background preview pre-generation failed for ${taskId}:`, err.message);
+      });
+
+      const latencyMs = Date.now() - start;
+
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'IDEOGRAM_RESPONSE',
-        title: `Empfangen von Ideogram (Bild generiert)`,
+        title: `Empfangen von ${providerLabel} (Bild generiert)`,
         content: {
-          imageUrl: result.imageUrl,
+          imageUrl: sourceUrl,
           localUrl,
-          prompt: promptText
+          prompt,
+          provider: snapshot.provider
         },
-        metadata: {
-          latencyMs,
-          model
-        }
+        metadata: { latencyMs, model, provider: providerLabel }
       });
 
       this.updateTaskStatus(taskId, {
         status: 'ANALYZING_DESIGN',
-        imageUrl: result.imageUrl,
+        imageUrl: sourceUrl,
         localImagePath: localUrl,
         hasError: false
       });
 
-      console.log(`[TaskLogService] 🖼️ Ideogram Bild für Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
+      console.log(`[TaskLogService] 🖼️ ${providerLabel} Bild für Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
 
-      // 5. Automatically trigger Vision Design Analysis & Verification
-      await this.analyzeDesignWithOpenRouter(taskId, localFilePath, result.imageUrl);
+      await this.analyzeDesignWithOpenRouter(taskId, localFilePath, sourceUrl);
     } catch (err: any) {
       const latencyMs = Date.now() - start;
-      const errorMsg = err.message || 'Fehler bei der Ideogram Bildgenerierung';
+      const errorMsg = err.message || `Fehler bei der ${providerLabel} Bildgenerierung`;
+      if (isGptImage && (err?.status === 402 || err?.status === 403)) {
+        LLMService.tripCircuitBreaker(errorMsg);
+      }
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'ERROR',
-        title: 'Fehler bei Ideogram',
+        title: `Fehler bei ${providerLabel}`,
         content: errorMsg,
-        metadata: { latencyMs, model }
+        metadata: { latencyMs, model, provider: providerLabel }
       });
       this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: errorMsg });
     }
@@ -1652,7 +1686,7 @@ export class TaskLogService {
       this.generatePromptWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Retry Prompt failed for task ${taskId}:`, err);
       });
-      return { success: true, message: 'Ideogram Prompt-Generierung neu gestartet.' };
+      return { success: true, message: 'Bildprompt-Generierung neu gestartet.' };
     }
 
     if (stepType === 'IDEOGRAM_REQUEST') {
@@ -1671,10 +1705,10 @@ export class TaskLogService {
       currentTask.errorDetails = undefined;
       this.saveLogs(logs);
 
-      this.processTaskWithIdeogram(taskId).catch(err => {
-        console.error(`[TaskLogService] Retry Ideogram failed for task ${taskId}:`, err);
+      this.processTaskWithImageGenerator(taskId).catch(err => {
+        console.error(`[TaskLogService] Retry image generation failed for task ${taskId}:`, err);
       });
-      return { success: true, message: 'Ideogram Bild-Generierung neu gestartet.' };
+      return { success: true, message: 'Bildgenerierung mit gespeichertem Provider neu gestartet.' };
     }
 
     if (stepType === 'ANALYSIS_REQUEST') {
@@ -2077,18 +2111,18 @@ export class TaskLogService {
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'IDEOGRAM_REQUEST',
-        title: `Ideogram Bildgenerierung erneut angefordert (Human Loop: Quote/Design korrigiert)`,
+        title: `Bildgenerierung erneut angefordert (Human Loop: Quote/Design korrigiert)`,
         content: {
           prompt: promptToUse,
           reason: 'Manuell in Tasks zur Neugenerierung freigegeben'
         }
       });
 
-      this.processTaskWithIdeogram(taskId, promptToUse).catch(err => {
+      this.processTaskWithImageGenerator(taskId, promptToUse).catch(err => {
         console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
       });
 
-      return { success: true, message: 'Bildgenerierung mit Ideogram neu gestartet.' };
+      return { success: true, message: 'Bildgenerierung mit gespeichertem Provider neu gestartet.' };
     }
 
     if (params.action === 'APPROVE') {

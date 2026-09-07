@@ -1735,6 +1735,11 @@ export const PromptLogView: React.FC = () => {
                       {event.type === 'IDEOGRAM_REQUEST' && (
                         <div className="bg-slate-950 rounded-xl p-3 border border-purple-500/30 space-y-2">
                           <div className="flex flex-wrap gap-1.5 text-[11px] font-mono">
+                            {event.content?.provider && (
+                              <span className="bg-slate-900 text-purple-300 px-2 py-0.5 rounded border border-slate-800">
+                                Provider: {event.content.provider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram'}
+                              </span>
+                            )}
                             <span className="bg-slate-900 text-purple-300 px-2 py-0.5 rounded border border-slate-800">
                               Speed: {event.content?.renderingSpeed || 'default'}
                             </span>
@@ -1744,6 +1749,12 @@ export const PromptLogView: React.FC = () => {
                             <span className="bg-slate-900 text-purple-300 px-2 py-0.5 rounded border border-slate-800">
                               Style: {event.content?.style || 'AUTO'}
                             </span>
+                            {event.content?.quality && (
+                              <span className="bg-slate-900 text-purple-300 px-2 py-0.5 rounded border border-slate-800">Quality: {event.content.quality}</span>
+                            )}
+                            {event.content?.background && (
+                              <span className="bg-slate-900 text-purple-300 px-2 py-0.5 rounded border border-slate-800">Background: {event.content.background}</span>
+                            )}
                           </div>
                           <p className="text-xs text-slate-300 font-mono bg-slate-900 p-2 rounded-lg border border-slate-800 line-clamp-2">
                             {event.content?.prompt || JSON.stringify(event.content)}

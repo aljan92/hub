@@ -17,6 +17,9 @@ export interface AppSettings {
   ideogramAspectRatio: string;
   ideogramStyle: string;
   ideogramMagicPromptOption: string;
+  gptImageQuality: 'auto' | 'low' | 'medium' | 'high';
+  gptImageAspectRatio: '1:1' | '3:2' | '2:3' | '4:3' | '3:4' | '16:9' | '9:16' | '21:9' | 'auto';
+  gptImageBackground: 'auto' | 'opaque' | 'transparent';
   vectorizerApiKey: string;
   vectorizerApiSecret: string;
   vectorizerModePreview: 'test' | 'production';
@@ -84,6 +87,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   ideogramAspectRatio: '10x16',
   ideogramStyle: 'GENERAL',
   ideogramMagicPromptOption: 'AUTO',
+  gptImageQuality: 'high',
+  gptImageAspectRatio: '3:4',
+  gptImageBackground: 'transparent',
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || '',
   vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || '',
   vectorizerModePreview: 'test',

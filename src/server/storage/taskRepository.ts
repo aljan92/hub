@@ -202,7 +202,7 @@ export class TaskRepository {
 
     if (Array.isArray(task.events)) {
       for (const ev of task.events) {
-        if (ev.type === 'IDEOGRAM_RESPONSE') imageGenCount++;
+        if (ev.type === 'IDEOGRAM_RESPONSE' && ev.content?.provider !== 'GPT_IMAGE_2') imageGenCount++;
         if (ev.type === 'VECTORIZE_RESPONSE') vectorCount++;
         if (ev.metadata?.costUsd) openRouterCost += Number(ev.metadata.costUsd) || 0;
       }

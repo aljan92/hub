@@ -168,7 +168,7 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
 
   if (task.status === 'GENERATING_IMAGE') {
     return {
-      label: 'Ideogram Bild...',
+      label: 'Bildgenerierung...',
       badgeClass: 'bg-purple-500/15 text-purple-300 border-purple-500/30 animate-pulse',
       dotBg: 'bg-purple-400',
       category: 'IDEOGRAM',

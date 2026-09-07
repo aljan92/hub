@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Sparkles, 
   ShieldCheck, 
@@ -13,11 +13,13 @@ import {
 } from 'lucide-react';
 
 export const DesignerView: React.FC = () => {
+  type ImageProvider = 'IDEOGRAM' | 'GPT_IMAGE_2';
   const [niche1, setNiche1] = useState('Vintage Retro');
   const [niche2, setNiche2] = useState('Coffee Lovers');
   const [quote, setQuote] = useState('Powered by Caffeine and Chaos');
   const [stylePreset, setStylePreset] = useState('vintage-distressed');
-  const [aspectRatio, setAspectRatio] = useState('1:1');
+  const [imageProvider, setImageProvider] = useState<ImageProvider>('IDEOGRAM');
+  const [providerSettings, setProviderSettings] = useState<any>({});
   const [generatedPrompt, setGeneratedPrompt] = useState(
     'T-shirt graphic design of "Powered by Caffeine and Chaos", retro vintage 1970s distressed aesthetic, vector illustration, isolated on clean solid background, bold typography, warm color palette, commercial merchandise print ready.'
   );
@@ -26,6 +28,18 @@ export const DesignerView: React.FC = () => {
   const [tmResult, setTmResult] = useState<{ safe: boolean; details?: string; blocked?: string[] } | null>(null);
   const [isOptimizingPrompt, setIsOptimizingPrompt] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/v1/settings')
+      .then(res => res.json())
+      .then(data => data.success && setProviderSettings(data.settings || {}))
+      .catch(() => {});
+  }, []);
+
+  const providerLabel = imageProvider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0';
+  const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
+    ? `${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${String(providerSettings.gptImageBackground || 'transparent').toUpperCase()}`
+    : `${providerSettings.ideogramModel || 'V_3'} · ${providerSettings.ideogramAspectRatio || '10x16'} · Magic Prompt ${providerSettings.ideogramMagicPromptOption || 'AUTO'}`;
 
   // 1. Live Trademark Pre-Check against USPTO / EUIPO / DPMA
   const handlePreTMCheck = async () => {
@@ -62,7 +76,10 @@ export const DesignerView: React.FC = () => {
       const res = await fetch('/api/v1/designer/prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ niche1, niche2, quote, stylePreset }),
+        body: JSON.stringify({
+          niche1, niche2, quote, stylePreset, imageProvider,
+          background: imageProvider === 'GPT_IMAGE_2' ? (providerSettings.gptImageBackground || 'transparent') : 'opaque'
+        }),
       });
       const data = await res.json();
       if (data.success && data.prompt) {
@@ -75,7 +92,7 @@ export const DesignerView: React.FC = () => {
     }
   };
 
-  // 3. Generate Design via Ideogram 3.0 API & Place in Tasks
+  // 3. Generate design with the selected provider and place it in Tasks
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
@@ -84,7 +101,7 @@ export const DesignerView: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: generatedPrompt,
-          aspectRatio,
+          imageProvider,
           niche1,
           niche2,
           quote,
@@ -113,7 +130,7 @@ export const DesignerView: React.FC = () => {
             <Sparkles className="w-6 h-6 mr-2 text-primary-400" />
             Designer &amp; Prompt Generator
           </h2>
-          <p className="text-sm text-slate-400">Erstelle optimierte Ideogram 3.0 Prompts mit echtem Trademark-Precheck.</p>
+          <p className="text-sm text-slate-400">Erstelle optimierte Bildprompts mit echtem Trademark-Precheck.</p>
         </div>
       </div>
 
@@ -210,7 +227,7 @@ export const DesignerView: React.FC = () => {
               </div>
             )}
 
-            {/* Style & Aspect Ratio */}
+            {/* Style & Image Provider */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800/80">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">Style-Preset</label>
@@ -228,15 +245,14 @@ export const DesignerView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Seitenverhältnis (Aspect Ratio)</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Bildgenerator</label>
                 <select
-                  value={aspectRatio}
-                  onChange={(e) => setAspectRatio(e.target.value)}
+                  value={imageProvider}
+                  onChange={(e) => setImageProvider(e.target.value as ImageProvider)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-primary-500"
                 >
-                  <option value="1:1">1:1 Quadratisch (Standard)</option>
-                  <option value="3:4">3:4 Hochformat (Apparel)</option>
-                  <option value="4:5">4:5 Optimiert</option>
+                  <option value="IDEOGRAM">Ideogram 3.0</option>
+                  <option value="GPT_IMAGE_2">OpenAI GPT Image 2</option>
                 </select>
               </div>
             </div>
@@ -249,7 +265,7 @@ export const DesignerView: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
                 <Layers className="w-4 h-4 mr-2 text-primary-400" />
-                Ideogram 3.0 Prompt
+                {providerLabel} Prompt
               </h3>
               <button
                 type="button"
@@ -272,11 +288,11 @@ export const DesignerView: React.FC = () => {
             <div className="space-y-2 pt-2">
               <div className="flex items-center justify-between text-xs text-slate-400">
                 <span>Generator Modell:</span>
-                <span className="font-semibold text-slate-200">Ideogram 3.0 (V_2_TURBO)</span>
+                <span className="font-semibold text-slate-200">{providerLabel}</span>
               </div>
               <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Magischer Prompt:</span>
-                <span className="font-semibold text-emerald-400">Aktiviert (Auto-Enhance)</span>
+                <span>Settings:</span>
+                <span className="font-semibold text-emerald-400 text-right">{effectiveSettings}</span>
               </div>
             </div>
 
@@ -288,7 +304,7 @@ export const DesignerView: React.FC = () => {
               {isGenerating ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Sende an Ideogram 3.0...</span>
+                  <span>Sende an {providerLabel}...</span>
                 </>
               ) : (
                 <>

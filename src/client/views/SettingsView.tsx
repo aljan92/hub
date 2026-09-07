@@ -70,6 +70,9 @@ export const SettingsView: React.FC = () => {
   const [ideogramAspectRatio, setIdeogramAspectRatio] = useState<string>(initialSettings.ideogramAspectRatio || '10x16');
   const [ideogramStyle, setIdeogramStyle] = useState<string>(initialSettings.ideogramStyle || 'GENERAL');
   const [ideogramMagicPromptOption, setIdeogramMagicPromptOption] = useState<string>(initialSettings.ideogramMagicPromptOption || 'AUTO');
+  const [gptImageQuality, setGptImageQuality] = useState<'auto' | 'low' | 'medium' | 'high'>(initialSettings.gptImageQuality || 'high');
+  const [gptImageAspectRatio, setGptImageAspectRatio] = useState<string>(initialSettings.gptImageAspectRatio || '3:4');
+  const [gptImageBackground, setGptImageBackground] = useState<'auto' | 'opaque' | 'transparent'>(initialSettings.gptImageBackground || 'transparent');
   const [availableIdeogramModels, setAvailableIdeogramModels] = useState<{ id: string; name: string }[]>([
     { id: 'V_3', name: 'Ideogram 3.0 (T-Shirt & Vektor Spezialist)' },
     { id: 'V_4', name: 'Ideogram 4.0 (Neueste Generation & Transparent)' },
@@ -163,6 +166,9 @@ export const SettingsView: React.FC = () => {
           setIdeogramAspectRatio(s.ideogramAspectRatio || '10x16');
           setIdeogramStyle(s.ideogramStyle || 'GENERAL');
           setIdeogramMagicPromptOption(s.ideogramMagicPromptOption || 'AUTO');
+          setGptImageQuality(s.gptImageQuality || 'high');
+          setGptImageAspectRatio(s.gptImageAspectRatio || '3:4');
+          setGptImageBackground(s.gptImageBackground || 'transparent');
           setVectorizerApiKey(s.vectorizerApiKey || '');
           setVectorizerApiSecret(s.vectorizerApiSecret || '');
           setVectorizerModePreview(s.vectorizerModePreview || 'test');
@@ -319,6 +325,9 @@ export const SettingsView: React.FC = () => {
         ideogramAspectRatio,
         ideogramStyle,
         ideogramMagicPromptOption,
+        gptImageQuality,
+        gptImageAspectRatio,
+        gptImageBackground,
         vectorizerApiKey,
         vectorizerApiSecret,
         vectorizerModePreview,
@@ -813,6 +822,65 @@ export const SettingsView: React.FC = () => {
               </select>
             </div>
           </div>
+        </div>
+
+        {/* OpenAI GPT Image 2 via OpenRouter */}
+        <div className="glass-card p-5 rounded-2xl space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
+              <Sparkles className="w-4 h-4 mr-2 text-emerald-400" />
+              OpenAI GPT Image 2
+            </h3>
+            <span className="text-[10px] font-mono text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 rounded-lg px-2 py-1">
+              via OpenRouter
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Verwendet den OpenRouter API Key aus der LLM-Karte. Modell und Timeout sind fest auf <span className="font-mono text-slate-300">openai/gpt-image-2</span> und 180 Sekunden eingestellt.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-slate-800/80">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Quality</label>
+              <select value={gptImageQuality} onChange={(e) => setGptImageQuality(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none font-mono">
+                <option value="high">HIGH (Standard)</option>
+                <option value="medium">MEDIUM</option>
+                <option value="low">LOW</option>
+                <option value="auto">AUTO</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Aspect Ratio</label>
+              <select value={gptImageAspectRatio} onChange={(e) => setGptImageAspectRatio(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none font-mono">
+                <option value="3:4">3:4 (Standard Apparel)</option>
+                <option value="2:3">2:3 (Hochformat)</option>
+                <option value="1:1">1:1 (Quadrat)</option>
+                <option value="4:3">4:3 (Querformat)</option>
+                <option value="3:2">3:2</option>
+                <option value="16:9">16:9</option>
+                <option value="9:16">9:16</option>
+                <option value="21:9">21:9</option>
+                <option value="auto">AUTO</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Background</label>
+              <select value={gptImageBackground} onChange={(e) => setGptImageBackground(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none font-mono">
+                <option value="transparent">TRANSPARENT (Experimentell)</option>
+                <option value="opaque">OPAQUE</option>
+                <option value="auto">AUTO</option>
+              </select>
+            </div>
+          </div>
+
+          {gptImageBackground === 'transparent' && (
+            <div className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-xl p-3">
+              Transparent wird bewusst getestet. Falls der aktuelle OpenRouter-Endpunkt den Parameter ablehnt, stoppt die Task mit einer klaren Fehlermeldung und verwendet keinen stillen Fallback.
+            </div>
+          )}
         </div>
 
         {/* 4. Vectorizer.ai Card (Dedicated & Extended) */}

@@ -4,7 +4,6 @@ import { DesignTaskLog, TaskStatus, SessionEvent } from '../../types/tasks';
 import { TaskLogService } from './taskLogService';
 import { loadSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
-import { IdeogramService } from './ideogramService';
 import { TrademarkService } from './trademarkService';
 import { BannedWordsService } from './bannedWordsService';
 import { VectorizerService } from './vectorizerService';
@@ -59,10 +58,10 @@ export class DesignPipelineService {
   }
 
   /**
-   * Step D2: Generate Ideogram Prompt via OpenRouter
+   * Step D2: Generate image prompt via OpenRouter
    */
   static async stepD2_GeneratePrompt(taskId: string): Promise<{ success: boolean; prompt?: string; error?: string }> {
-    console.log(`[DesignPipeline] 🧠 Starte Step D2 (Ideogram Prompt Generation) für Task ${taskId}...`);
+    console.log(`[DesignPipeline] 🧠 Starte Step D2 (Image Prompt Generation) für Task ${taskId}...`);
     
     // Pre-Flight Check: OpenRouter Guthaben & Circuit Breaker
     const circuit = LLMService.isCircuitBroken();
@@ -87,12 +86,12 @@ export class DesignPipelineService {
   }
 
   /**
-   * Step D3: Image Generation via Ideogram API (V_3)
+   * Step D3: Image generation through the provider stored on the task
    */
   static async stepD3_GenerateImage(taskId: string): Promise<{ success: boolean; imageUrl?: string; localPath?: string; error?: string }> {
-    console.log(`[DesignPipeline] 🎨 Starte Step D3 (Ideogram Bild-Generierung) für Task ${taskId}...`);
+    console.log(`[DesignPipeline] 🎨 Starte Step D3 (Bildgenerierung) für Task ${taskId}...`);
     try {
-      await TaskLogService.processTaskWithIdeogram(taskId);
+      await TaskLogService.processTaskWithImageGenerator(taskId);
       const updated = this.getTask(taskId);
       return { success: true, imageUrl: updated?.imageUrl, localPath: updated?.localImagePath };
     } catch (err: any) {
