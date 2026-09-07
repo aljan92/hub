@@ -91,11 +91,18 @@ export class CostTrackingService {
     const vectorizationsCost = Number((vectorizationsCount * costPerVectorization).toFixed(4));
     const totalCosts = Number((openRouterCost + imagesCost + vectorizationsCost).toFixed(2));
 
-    // 3. Count designs in Warteschlange (WAITING + UPLOADING) and Hochgeladen (COMPLETED)
+    // 3. Count only designs created by MBA Hub. Update items keep contributing
+    // their processing costs, but must not increase the per-design divisor.
     const queueState = QueueService.getState();
     const items = queueState.items || [];
-    const waitingDesignsCount = items.filter(i => i.status === 'WAITING' || i.status === 'UPLOADING').length;
-    const completedDesignsCount = items.filter(i => i.status === 'COMPLETED').length;
+    const newDesignItems = items.filter(i => !(
+      i.type === 'update'
+      || i.source === 'UPDATE'
+      || String(i.taskId || '').endsWith('-U')
+      || String(i.id || '').startsWith('update_')
+    ));
+    const waitingDesignsCount = newDesignItems.filter(i => i.status === 'WAITING' || i.status === 'UPLOADING').length;
+    const completedDesignsCount = newDesignItems.filter(i => i.status === 'COMPLETED').length;
     const activeDesignsCount = waitingDesignsCount + completedDesignsCount;
 
     const costPerDesign = activeDesignsCount > 0 

@@ -1445,7 +1445,7 @@ export const SettingsView: React.FC = () => {
               </div>
 
               <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Designs (Queue + Live)</div>
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Neue Designs (Queue + Live)</div>
                 <div className="text-base font-bold text-slate-200 font-mono">{costStats.activeDesignsCount || 0}</div>
                 <div className="text-[10px] text-slate-500 font-mono">{costStats.waitingDesignsCount || 0} Wartend • {costStats.completedDesignsCount || 0} Live</div>
               </div>

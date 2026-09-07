@@ -234383,8 +234383,9 @@ var CostTrackingService = class {
     const totalCosts = Number((openRouterCost + imagesCost + vectorizationsCost).toFixed(2));
     const queueState = QueueService.getState();
     const items = queueState.items || [];
-    const waitingDesignsCount = items.filter((i) => i.status === "WAITING" || i.status === "UPLOADING").length;
-    const completedDesignsCount = items.filter((i) => i.status === "COMPLETED").length;
+    const newDesignItems = items.filter((i) => !(i.type === "update" || i.source === "UPDATE" || String(i.taskId || "").endsWith("-U") || String(i.id || "").startsWith("update_")));
+    const waitingDesignsCount = newDesignItems.filter((i) => i.status === "WAITING" || i.status === "UPLOADING").length;
+    const completedDesignsCount = newDesignItems.filter((i) => i.status === "COMPLETED").length;
     const activeDesignsCount = waitingDesignsCount + completedDesignsCount;
     const costPerDesign = activeDesignsCount > 0 ? Number((totalCosts / activeDesignsCount).toFixed(2)) : 0;
     return {

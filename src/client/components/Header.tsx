@@ -239,7 +239,7 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
           {costStats && (
             <div 
               className="flex items-center space-x-1.5 bg-slate-900/90 border border-purple-500/30 px-3 py-1.5 rounded-xl text-xs font-mono shadow-sm"
-              title={`Durchschnittskosten pro Design:\nTotal Ausgaben ($${costStats.totalCosts.toFixed(2)}) / ${costStats.activeDesignsCount} aktive Designs in Warteschlange & Hochgeladen`}
+              title={`Durchschnittskosten pro neuem MBA-Hub-Design:\nTotal Ausgaben ($${costStats.totalCosts.toFixed(2)}) / ${costStats.activeDesignsCount} neue Designs in Warteschlange & Hochgeladen`}
             >
               <Tag className="w-3.5 h-3.5 text-purple-400 shrink-0" />
               <span className="text-slate-400 text-[11px]">Ø/Design:</span>
