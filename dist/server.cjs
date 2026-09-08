@@ -54018,16 +54018,16 @@ var init_openRouterImageService = __esm2({
       static MODEL = "openai/gpt-image-2";
       static TIMEOUT_MS = 18e4;
       static buildRequestBody(options2) {
+        const transportBackground = options2.background === "transparent" ? "opaque" : options2.background;
         const requestBody = {
           model: this.MODEL,
           prompt: options2.prompt,
           quality: options2.quality,
           aspect_ratio: options2.aspectRatio,
-          background: options2.background,
+          background: transportBackground,
           n: 1,
           stream: false
         };
-        if (options2.background === "transparent") requestBody.output_format = "png";
         return requestBody;
       }
       static async generateImage(options2) {
@@ -54051,8 +54051,7 @@ var init_openRouterImageService = __esm2({
             const json = await response2.json().catch(() => ({}));
             if (!response2.ok) {
               const detail = json?.error?.message || response2.statusText || "Unbekannter API-Fehler";
-              const transparentHint = response2.status === 400 && options2.background === "transparent" ? " Der aktuelle GPT-Image-2-Endpunkt unterst\xFCtzt transparent m\xF6glicherweise nicht; bitte Background in den Settings auf opaque oder auto stellen." : "";
-              const error = new Error(`GPT Image 2 \xFCber OpenRouter: HTTP ${response2.status} \u2013 ${detail}.${transparentHint}`);
+              const error = new Error(`GPT Image 2 \xFCber OpenRouter: HTTP ${response2.status} \u2013 ${detail}.`);
               error.status = response2.status;
               if (response2.status === 429 && attempt < 3) {
                 lastError = error;

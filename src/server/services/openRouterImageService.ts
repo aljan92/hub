@@ -17,16 +17,18 @@ export class OpenRouterImageService {
   static readonly TIMEOUT_MS = 180000;
 
   static buildRequestBody(options: OpenRouterImageOptions): Record<string, unknown> {
+    // OpenRouter's OpenAI route currently rejects transparent. Keep transparent as
+    // the prompt intent while using its accepted opaque transport parameter.
+    const transportBackground = options.background === 'transparent' ? 'opaque' : options.background;
     const requestBody: Record<string, unknown> = {
       model: this.MODEL,
       prompt: options.prompt,
       quality: options.quality,
       aspect_ratio: options.aspectRatio,
-      background: options.background,
+      background: transportBackground,
       n: 1,
       stream: false
     };
-    if (options.background === 'transparent') requestBody.output_format = 'png';
     return requestBody;
   }
 
@@ -54,10 +56,7 @@ export class OpenRouterImageService {
         const json = await response.json().catch(() => ({}));
         if (!response.ok) {
           const detail = json?.error?.message || response.statusText || 'Unbekannter API-Fehler';
-          const transparentHint = response.status === 400 && options.background === 'transparent'
-            ? ' Der aktuelle GPT-Image-2-Endpunkt unterstützt transparent möglicherweise nicht; bitte Background in den Settings auf opaque oder auto stellen.'
-            : '';
-          const error = new Error(`GPT Image 2 über OpenRouter: HTTP ${response.status} – ${detail}.${transparentHint}`);
+          const error = new Error(`GPT Image 2 über OpenRouter: HTTP ${response.status} – ${detail}.`);
           (error as any).status = response.status;
           if (response.status === 429 && attempt < 3) {
             lastError = error;

@@ -14,10 +14,9 @@ assert.deepEqual(transparent, {
   prompt: 'print-ready test design',
   quality: 'high',
   aspect_ratio: '3:4',
-  background: 'transparent',
+  background: 'opaque',
   n: 1,
-  stream: false,
-  output_format: 'png'
+  stream: false
 });
 
 const opaque = OpenRouterImageService.buildRequestBody({
