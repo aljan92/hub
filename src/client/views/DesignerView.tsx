@@ -75,8 +75,11 @@ export const DesignerView: React.FC = () => {
   };
 
   const providerLabel = imageProvider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0';
+  const gptBackgroundLabel = providerSettings.gptImageBackground === 'transparent'
+    ? 'FREISTELLUNG (DEEP BLUE)'
+    : String(providerSettings.gptImageBackground || 'transparent').toUpperCase();
   const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
-    ? `${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${String(providerSettings.gptImageBackground || 'transparent').toUpperCase()}`
+    ? `${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${gptBackgroundLabel}`
     : `${providerSettings.ideogramModel || 'V_3'} · ${providerSettings.ideogramAspectRatio || '10x16'} · Magic Prompt ${providerSettings.ideogramMagicPromptOption || 'AUTO'}`;
 
   // 1. Live Trademark Pre-Check against USPTO / EUIPO / DPMA
