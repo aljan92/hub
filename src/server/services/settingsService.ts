@@ -20,6 +20,7 @@ export interface AppSettings {
   gptImageQuality: 'auto' | 'low' | 'medium' | 'high';
   gptImageAspectRatio: '1:1' | '3:2' | '2:3' | '4:3' | '3:4' | '16:9' | '9:16' | '21:9' | 'auto';
   gptImageBackground: 'auto' | 'opaque' | 'transparent';
+  designerImageProvider: 'IDEOGRAM' | 'GPT_IMAGE_2';
   vectorizerApiKey: string;
   vectorizerApiSecret: string;
   vectorizerModePreview: 'test' | 'production';
@@ -74,6 +75,14 @@ export function generateApiKey(): string {
   return `mba_${crypto.randomBytes(20).toString('hex')}`;
 }
 
+export function resolveImageProvider(
+  requestedProvider: unknown,
+  configuredProvider: AppSettings['designerImageProvider']
+): AppSettings['designerImageProvider'] {
+  if (requestedProvider === 'GPT_IMAGE_2' || requestedProvider === 'IDEOGRAM') return requestedProvider;
+  return configuredProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM';
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
   llmProvider: (process.env.LLM_PROVIDER as 'openrouter' | 'openai') || 'openrouter',
@@ -90,6 +99,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   gptImageQuality: 'high',
   gptImageAspectRatio: '3:4',
   gptImageBackground: 'transparent',
+  designerImageProvider: 'IDEOGRAM',
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || '',
   vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || '',
   vectorizerModePreview: 'test',

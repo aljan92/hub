@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { OpenRouterImageService } from '../src/server/services/openRouterImageService';
+import { resolveImageProvider } from '../src/server/services/settingsService';
 
 const transparent = OpenRouterImageService.buildRequestBody({
   prompt: 'print-ready test design',
@@ -26,5 +27,9 @@ const opaque = OpenRouterImageService.buildRequestBody({
   background: 'opaque'
 });
 assert.equal(opaque.output_format, undefined, 'Opaque requests should use the provider output default');
+
+assert.equal(resolveImageProvider(undefined, 'GPT_IMAGE_2'), 'GPT_IMAGE_2', 'Hermes tasks inherit the configured provider');
+assert.equal(resolveImageProvider(undefined, 'IDEOGRAM'), 'IDEOGRAM');
+assert.equal(resolveImageProvider('IDEOGRAM', 'GPT_IMAGE_2'), 'IDEOGRAM', 'An explicit payload provider wins');
 
 console.log('PASS GPT Image 2 request contract');

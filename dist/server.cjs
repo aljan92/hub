@@ -49790,6 +49790,10 @@ var init_dist4 = __esm2({
 function generateApiKey() {
   return `mba_${import_crypto2.default.randomBytes(20).toString("hex")}`;
 }
+function resolveImageProvider(requestedProvider, configuredProvider) {
+  if (requestedProvider === "GPT_IMAGE_2" || requestedProvider === "IDEOGRAM") return requestedProvider;
+  return configuredProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM";
+}
 function getSettingsFilePath() {
   const dataDir = import_path66.default.resolve(process.cwd(), "data");
   if (!import_fs71.default.existsSync(dataDir)) {
@@ -49901,6 +49905,7 @@ var init_settingsService = __esm2({
       gptImageQuality: "high",
       gptImageAspectRatio: "3:4",
       gptImageBackground: "transparent",
+      designerImageProvider: "IDEOGRAM",
       vectorizerApiKey: process.env.VECTORIZER_API_KEY || "",
       vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || "",
       vectorizerModePreview: "test",
@@ -228158,7 +228163,7 @@ var init_taskLogService = __esm2({
         const id = this.formatTaskId(counter, suffix);
         const now = (/* @__PURE__ */ new Date()).toISOString();
         const settings = loadSettings();
-        const requestedProvider = params2.payload?.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM";
+        const requestedProvider = resolveImageProvider(params2.payload?.imageProvider, settings.designerImageProvider);
         const imageGeneration = params2.source === "UPDATE" ? void 0 : requestedProvider === "GPT_IMAGE_2" ? {
           provider: "GPT_IMAGE_2",
           model: OpenRouterImageService.MODEL,

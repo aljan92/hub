@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { loadSettings } from './settingsService';
+import { loadSettings, resolveImageProvider } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
 import { IdeogramService } from './ideogramService';
 import { OpenRouterImageService } from './openRouterImageService';
@@ -149,7 +149,7 @@ export class TaskLogService {
     const id = this.formatTaskId(counter, suffix);
     const now = new Date().toISOString();
     const settings = loadSettings();
-    const requestedProvider = params.payload?.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM';
+    const requestedProvider = resolveImageProvider(params.payload?.imageProvider, settings.designerImageProvider);
     const imageGeneration: ImageGenerationSnapshot | undefined = params.source === 'UPDATE' ? undefined : requestedProvider === 'GPT_IMAGE_2'
       ? {
           provider: 'GPT_IMAGE_2',

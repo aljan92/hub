@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Sparkles, 
   ShieldCheck, 
@@ -18,13 +18,8 @@ export const DesignerView: React.FC = () => {
   const [niche2, setNiche2] = useState('Coffee Lovers');
   const [quote, setQuote] = useState('Powered by Caffeine and Chaos');
   const [stylePreset, setStylePreset] = useState('vintage-distressed');
-  const [imageProvider, setImageProvider] = useState<ImageProvider>(() => {
-    try {
-      return localStorage.getItem('mba_designer_image_provider') === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM';
-    } catch {
-      return 'IDEOGRAM';
-    }
-  });
+  const [imageProvider, setImageProvider] = useState<ImageProvider>('IDEOGRAM');
+  const providerSettingsLoaded = useRef(false);
   const [providerSettings, setProviderSettings] = useState<any>({});
   const [generatedPrompt, setGeneratedPrompt] = useState(
     'T-shirt graphic design of "Powered by Caffeine and Chaos", retro vintage 1970s distressed aesthetic, vector illustration, isolated on clean solid background, bold typography, warm color palette, commercial merchandise print ready.'
@@ -38,12 +33,32 @@ export const DesignerView: React.FC = () => {
   useEffect(() => {
     fetch('/api/v1/settings')
       .then(res => res.json())
-      .then(data => data.success && setProviderSettings(data.settings || {}))
+      .then(data => {
+        if (!data.success) return;
+        const settings = data.settings || {};
+        setProviderSettings(settings);
+        let legacyProvider: ImageProvider | null = null;
+        try {
+          const saved = localStorage.getItem('mba_designer_image_provider');
+          legacyProvider = saved === 'GPT_IMAGE_2' || saved === 'IDEOGRAM' ? saved : null;
+          localStorage.removeItem('mba_designer_image_provider');
+        } catch {}
+        const configuredProvider = settings.designerImageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM';
+        providerSettingsLoaded.current = true;
+        setImageProvider(legacyProvider || configuredProvider);
+      })
       .catch(() => {});
   }, []);
 
   useEffect(() => {
-    try { localStorage.setItem('mba_designer_image_provider', imageProvider); } catch {}
+    if (!providerSettingsLoaded.current) return;
+    fetch('/api/v1/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ designerImageProvider: imageProvider })
+    }).then(res => res.json()).then(data => {
+      if (data.success) setProviderSettings(data.settings || {});
+    }).catch(() => {});
   }, [imageProvider]);
 
   const providerLabel = imageProvider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0';
