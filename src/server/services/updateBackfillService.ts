@@ -17,6 +17,12 @@ export function sortCandidatesByHubUpdatePriority<T extends { mba_hub_updated_at
   return [...candidates].sort((a, b) => getHubUpdatePriorityTimestamp(a) - getHubUpdatePriorityTimestamp(b));
 }
 
+export function hasVerifiedZeroSales(candidate: { sales_total?: unknown; sales_history_synced?: unknown }): boolean {
+  if (candidate.sales_history_synced !== true || candidate.sales_total === null || candidate.sales_total === undefined) return false;
+  const salesTotal = Number(candidate.sales_total);
+  return Number.isFinite(salesTotal) && salesTotal === 0;
+}
+
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
   private static isRunningLoop = false;
@@ -181,7 +187,7 @@ export class UpdateBackfillService {
 
     console.log(`[UpdateBackfillService] 🔍 Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
 
-    const candidateColumns = 'design_id, asin_standard_tshirt_us, created_date, updated_date, mba_hub_updated_at, skip_update, published_products, asins, status, sales_total';
+    const candidateColumns = 'design_id, asin_standard_tshirt_us, created_date, updated_date, mba_hub_updated_at, skip_update, published_products, asins, status, sales_total, sales_history_synced';
 
     // PostgREST cannot order by COALESCE without an RPC/view. Fetch the oldest
     // slice of both groups, then merge them by the same effective timestamp.
@@ -191,8 +197,9 @@ export class UpdateBackfillService {
         .select(candidateColumns)
         .eq('status', 'PUBLISHED')
         .eq('skip_update', false)
+        .eq('sales_history_synced', true)
+        .eq('sales_total', 0)
         .not('published_products', 'is', null)
-        .or('sales_total.eq.0,sales_total.is.null')
         .is('mba_hub_updated_at', null)
         .order('created_date', { ascending: true, nullsFirst: false })
         .limit(300),
@@ -201,8 +208,9 @@ export class UpdateBackfillService {
         .select(candidateColumns)
         .eq('status', 'PUBLISHED')
         .eq('skip_update', false)
+        .eq('sales_history_synced', true)
+        .eq('sales_total', 0)
         .not('published_products', 'is', null)
-        .or('sales_total.eq.0,sales_total.is.null')
         .not('mba_hub_updated_at', 'is', null)
         .order('mba_hub_updated_at', { ascending: true, nullsFirst: false })
         .limit(300)
@@ -240,9 +248,8 @@ export class UpdateBackfillService {
       }
 
       // Filter 2: Strictly verify 0 sales (protect bestsellers and selling designs)
-      const salesTotal = Number((cand as any).sales_total ?? 0);
-      if (salesTotal > 0) {
-        console.log(`[UpdateBackfillService] ⏭️ Design ${dId} übersprungen: ${salesTotal} Verkäufe vorhanden (nur Designs mit 0 Sales erlaubt).`);
+      if (!hasVerifiedZeroSales(cand)) {
+        console.log(`[UpdateBackfillService] ⏭️ Design ${dId} übersprungen: Sales nicht vollständig synchronisiert oder sales_total ist nicht exakt 0.`);
         continue;
       }
 

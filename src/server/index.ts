@@ -33,6 +33,7 @@ import { UpdatePipelineService } from './services/updatePipelineService';
 import { DesignPipelineService } from './services/designPipelineService';
 import { TrademarkWhitelistService } from './services/trademarkWhitelistService';
 import { UpdateBackfillService } from './services/updateBackfillService';
+import { UpdateMetadataService } from './services/updateMetadataService';
 import { VisionOptimizationService } from './services/visionOptimizationService';
 import { TaskRecoveryService } from './services/taskRecoveryService';
 import { AmazonRecoveryVerificationService } from './services/amazonRecoveryVerificationService';
@@ -1118,6 +1119,35 @@ app.post('/api/v1/tasks/:taskId/cancel', (req, res) => {
     }
     broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
     res.json({ ...result, updateAutomationDisabled });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/tasks/:taskId/skip-update', async (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const task = TaskLogService.getTaskLogById(taskId);
+    if (!task) return res.status(404).json({ success: false, error: `Task ${taskId} nicht gefunden` });
+    if (task.source !== 'UPDATE' && task.suffix !== 'U') {
+      return res.status(400).json({ success: false, error: 'Skip Update ist nur für Update-Tasks verfügbar.' });
+    }
+    if (!['UPDATE_ANALYZED', 'AWAITING_DESIGN_REVIEW', 'AWAITING_TM_REVIEW'].includes(task.status)) {
+      return res.status(409).json({ success: false, error: 'Skip Update ist nur während einer manuellen Prüfung verfügbar.' });
+    }
+
+    const designId = String(task.payload?.designId || '').trim();
+    if (!designId) return res.status(400).json({ success: false, error: 'Dem Update-Task fehlt die Amazon Design-ID.' });
+
+    const updateResult = await UpdateMetadataService.markSkipUpdate(designId);
+    if (!updateResult.success) {
+      return res.status(502).json({ success: false, error: updateResult.error || 'Skip Update konnte nicht gespeichert werden.' });
+    }
+
+    const result = TaskLogService.cancelTask(taskId, 'Design dauerhaft von automatischen Updates ausgeschlossen (skip_update=true).');
+    UpdateBackfillService.releaseInFlight(designId);
+    broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
+    res.json({ ...result, message: 'Skip Update wurde gesetzt. Das Design wird künftig nicht mehr automatisch aktualisiert.' });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
   }

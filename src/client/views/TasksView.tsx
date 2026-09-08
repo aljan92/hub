@@ -655,6 +655,27 @@ export const TasksView: React.FC = () => {
     }
   };
 
+  const handleSkipUpdate = async () => {
+    if (!activeTask) return;
+    const taskId = activeTask.id;
+    beginTaskAction(taskId);
+    let success = false;
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/skip-update`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        success = true;
+        showNotification('success', data.message);
+      } else {
+        showNotification('error', data.error || 'Skip Update konnte nicht gesetzt werden');
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Verbindungsfehler');
+    } finally {
+      finishTaskAction(taskId, success);
+    }
+  };
+
   // Actions for Checkpoint 2: Design Review
   const handleDesignReview = async (action: 'APPROVE' | 'REGENERATE_IMAGE' | 'DISCARD' | 'REJECT') => {
     if (!activeTask) return;
@@ -1032,7 +1053,19 @@ export const TasksView: React.FC = () => {
                   </div>
 
                   {/* Top Status Badge */}
-                  <div>
+                  <div className="flex items-center gap-2">
+                    {activeTask.source === 'UPDATE' && ['UPDATE_ANALYZED', 'AWAITING_DESIGN_REVIEW', 'AWAITING_TM_REVIEW'].includes(activeTask.status) && (
+                      <button
+                        type="button"
+                        onClick={handleSkipUpdate}
+                        disabled={isSubmitting}
+                        title="Setzt skip_update=true in Supabase und schließt nur diesen Update-Task."
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-rose-950/60 text-rose-300 border border-rose-500/30 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Skip Update</span>
+                      </button>
+                    )}
                     <TaskStatusBadge task={activeTask} size="md" />
                   </div>
                 </div>

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { QueueService } from '../src/server/services/queueService';
-import { getHubUpdatePriorityTimestamp, sortCandidatesByHubUpdatePriority } from '../src/server/services/updateBackfillService';
-import { isUpdateQueueItem, UpdateMetadataService, writeSuccessfulUpdateMetadata } from '../src/server/services/updateMetadataService';
+import { getHubUpdatePriorityTimestamp, hasVerifiedZeroSales, sortCandidatesByHubUpdatePriority } from '../src/server/services/updateBackfillService';
+import { isUpdateQueueItem, UpdateMetadataService, writeSkipUpdateFlag, writeSuccessfulUpdateMetadata } from '../src/server/services/updateMetadataService';
 
 async function run() {
   const ordered = sortCandidatesByHubUpdatePriority([
@@ -43,6 +43,16 @@ async function run() {
   assert.equal(table, 'mba_designs');
   assert.deepEqual(values, { mba_hub_updated_at: confirmedAt, skip_update: false });
   assert.deepEqual(filter, ['design_id', 'amazon-design-1']);
+
+  await writeSkipUpdateFlag(fakeClient, '#amazon-design-2-U');
+  assert.deepEqual(values, { skip_update: true });
+  assert.deepEqual(filter, ['design_id', 'amazon-design-2']);
+
+  assert.equal(hasVerifiedZeroSales({ sales_total: 0, sales_history_synced: true }), true);
+  assert.equal(hasVerifiedZeroSales({ sales_total: '0', sales_history_synced: true }), true);
+  assert.equal(hasVerifiedZeroSales({ sales_total: null, sales_history_synced: true }), false);
+  assert.equal(hasVerifiedZeroSales({ sales_total: 0, sales_history_synced: false }), false);
+  assert.equal(hasVerifiedZeroSales({ sales_total: 1, sales_history_synced: true }), false);
 
   const missingClient: any = {
     from: () => ({
@@ -95,9 +105,16 @@ async function run() {
   const syncSource = fs.readFileSync(new URL('../src/server/services/syncEngine.ts', import.meta.url), 'utf8');
   assert.match(syncSource, /delete sanitized\.mba_hub_updated_at/);
   assert.match(syncSource, /delete sanitized\.skip_update/);
+  const fullSalesStart = syncSource.indexOf('public static async runFullSalesHistory');
+  const zeroSalesBaseline = syncSource.indexOf('sales_total: 0', fullSalesStart);
+  assert(fullSalesStart >= 0 && zeroSalesBaseline > fullSalesStart, 'Zero-sales baseline must only be written by full sales history sync');
+  const quickSalesStart = syncSource.indexOf('public static async runSmartSalesSync');
+  assert.doesNotMatch(syncSource.slice(quickSalesStart, fullSalesStart), /sales_total:\s*0/, 'Quick sales sync must not reset all-time sales');
 
   const backfillSource = fs.readFileSync(new URL('../src/server/services/updateBackfillService.ts', import.meta.url), 'utf8');
   assert.match(backfillSource, /\.eq\('skip_update', false\)/, 'Automatic selection must exclude skip_update=true');
+  assert.match(backfillSource, /\.eq\('sales_history_synced', true\)/, 'Automatic selection must require verified sales history');
+  assert.match(backfillSource, /\.eq\('sales_total', 0\)/, 'Automatic selection must require exactly zero sales');
 
   const uploadSource = fs.readFileSync(new URL('../src/server/services/uploadWorkerService.ts', import.meta.url), 'utf8');
   const confirmedBoundary = uploadSource.indexOf("phase: 'AMAZON_CONFIRMED'");

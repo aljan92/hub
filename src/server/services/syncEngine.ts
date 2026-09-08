@@ -941,6 +941,14 @@ export class SyncEngine {
 
       const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
       if (analytics && Array.isArray(analytics.sales)) {
+        const { error: resetError } = await supabase.from('mba_designs').update({
+          sales_total: 0,
+          royalties_total_eur: 0,
+          royalties_total_usd: 0,
+          sales_history_synced: true
+        }).not('design_id', 'is', null);
+        if (resetError) throw new Error(`Null-Sales-Grundstand konnte nicht gespeichert werden: ${resetError.message}`);
+
         const salesMap = new Map<string, { units: number; royaltiesEur: number; royaltiesUsd: number }>();
         for (const row of analytics.sales) {
           const dId = row.designId;

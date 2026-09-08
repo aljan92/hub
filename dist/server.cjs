@@ -223180,6 +223180,13 @@ var init_syncEngine = __esm2({
           const endStr = end.toISOString().split("T")[0];
           const analytics = await this.fetchSalesAnalytics(page, startStr, endStr);
           if (analytics && Array.isArray(analytics.sales)) {
+            const { error: resetError } = await supabase.from("mba_designs").update({
+              sales_total: 0,
+              royalties_total_eur: 0,
+              royalties_total_usd: 0,
+              sales_history_synced: true
+            }).not("design_id", "is", null);
+            if (resetError) throw new Error(`Null-Sales-Grundstand konnte nicht gespeichert werden: ${resetError.message}`);
             const salesMap = /* @__PURE__ */ new Map();
             for (const row of analytics.sales) {
               const dId = row.designId;
@@ -227155,6 +227162,13 @@ async function writeSuccessfulUpdateMetadata(supabase, designId, confirmedAt) {
   if (error) throw new Error(`Supabase-Update-Metadaten fehlgeschlagen: ${error.message || String(error)}`);
   if (!data?.design_id) throw new Error(`Supabase-Datensatz f\xFCr Design ${normalizedId} nicht gefunden.`);
 }
+async function writeSkipUpdateFlag(supabase, designId) {
+  const normalizedId = normalizeAmazonDesignId(designId);
+  if (!normalizedId) throw new Error("Keine g\xFCltige Amazon Design-ID f\xFCr Skip Update vorhanden.");
+  const { data, error } = await supabase.from("mba_designs").update({ skip_update: true }).eq("design_id", normalizedId).select("design_id").maybeSingle();
+  if (error) throw new Error(`Skip Update konnte in Supabase nicht gesetzt werden: ${error.message || String(error)}`);
+  if (!data?.design_id) throw new Error(`Supabase-Datensatz f\xFCr Design ${normalizedId} nicht gefunden.`);
+}
 var UpdateMetadataService;
 var init_updateMetadataService = __esm2({
   "src/server/services/updateMetadataService.ts"() {
@@ -227190,6 +227204,21 @@ var init_updateMetadataService = __esm2({
           return { success: false, error: err?.message || "Unbekannter Supabase-Metadatenfehler." };
         }
       }
+      static async markSkipUpdate(designId) {
+        const settings = loadSettings();
+        if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+          return { success: false, error: "Supabase URL oder Service Role Key fehlt." };
+        }
+        try {
+          const supabase = createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), {
+            auth: { persistSession: false, autoRefreshToken: false }
+          });
+          await writeSkipUpdateFlag(supabase, designId);
+          return { success: true };
+        } catch (err) {
+          return { success: false, error: err?.message || "Unbekannter Supabase-Fehler beim Setzen von Skip Update." };
+        }
+      }
       /**
        * Retry only the metadata write for Amazon-confirmed update uploads.
        * This never starts or repeats an Amazon action.
@@ -227221,6 +227250,7 @@ var updateBackfillService_exports = {};
 __export2(updateBackfillService_exports, {
   UpdateBackfillService: () => UpdateBackfillService,
   getHubUpdatePriorityTimestamp: () => getHubUpdatePriorityTimestamp,
+  hasVerifiedZeroSales: () => hasVerifiedZeroSales,
   sortCandidatesByHubUpdatePriority: () => sortCandidatesByHubUpdatePriority
 });
 function getHubUpdatePriorityTimestamp(candidate) {
@@ -227230,6 +227260,11 @@ function getHubUpdatePriorityTimestamp(candidate) {
 }
 function sortCandidatesByHubUpdatePriority(candidates) {
   return [...candidates].sort((a, b) => getHubUpdatePriorityTimestamp(a) - getHubUpdatePriorityTimestamp(b));
+}
+function hasVerifiedZeroSales(candidate) {
+  if (candidate.sales_history_synced !== true || candidate.sales_total === null || candidate.sales_total === void 0) return false;
+  const salesTotal = Number(candidate.sales_total);
+  return Number.isFinite(salesTotal) && salesTotal === 0;
 }
 var UpdateBackfillService;
 var init_updateBackfillService = __esm2({
@@ -227384,10 +227419,10 @@ var init_updateBackfillService = __esm2({
         const excludedIds = this.getExcludedDesignIds(extraExcludedIds);
         const maxActiveProducts = settings.queueUpdateMaxActiveProducts ?? 100;
         console.log(`[UpdateBackfillService] \u{1F50D} Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
-        const candidateColumns = "design_id, asin_standard_tshirt_us, created_date, updated_date, mba_hub_updated_at, skip_update, published_products, asins, status, sales_total";
+        const candidateColumns = "design_id, asin_standard_tshirt_us, created_date, updated_date, mba_hub_updated_at, skip_update, published_products, asins, status, sales_total, sales_history_synced";
         const [neverUpdatedResult, previouslyUpdatedResult] = await Promise.all([
-          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).not("published_products", "is", null).or("sales_total.eq.0,sales_total.is.null").is("mba_hub_updated_at", null).order("created_date", { ascending: true, nullsFirst: false }).limit(300),
-          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).not("published_products", "is", null).or("sales_total.eq.0,sales_total.is.null").not("mba_hub_updated_at", "is", null).order("mba_hub_updated_at", { ascending: true, nullsFirst: false }).limit(300)
+          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).eq("sales_history_synced", true).eq("sales_total", 0).not("published_products", "is", null).is("mba_hub_updated_at", null).order("created_date", { ascending: true, nullsFirst: false }).limit(300),
+          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).eq("sales_history_synced", true).eq("sales_total", 0).not("published_products", "is", null).not("mba_hub_updated_at", "is", null).order("mba_hub_updated_at", { ascending: true, nullsFirst: false }).limit(300)
         ]);
         const queryError = neverUpdatedResult.error || previouslyUpdatedResult.error;
         if (queryError) {
@@ -227412,9 +227447,8 @@ var init_updateBackfillService = __esm2({
           if (excludedIds.has(dId)) {
             continue;
           }
-          const salesTotal = Number(cand.sales_total ?? 0);
-          if (salesTotal > 0) {
-            console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: ${salesTotal} Verk\xE4ufe vorhanden (nur Designs mit 0 Sales erlaubt).`);
+          if (!hasVerifiedZeroSales(cand)) {
+            console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: Sales nicht vollst\xE4ndig synchronisiert oder sales_total ist nicht exakt 0.`);
             continue;
           }
           let activeCount = 0;
@@ -235263,6 +235297,7 @@ init_updatePipelineService();
 init_designPipelineService();
 init_trademarkWhitelistService();
 init_updateBackfillService();
+init_updateMetadataService();
 init_visionOptimizationService();
 init_taskRecoveryService();
 init_amazonRecoveryVerificationService();
@@ -236172,6 +236207,31 @@ app.post("/api/v1/tasks/:taskId/cancel", (req, res) => {
     }
     broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
     res.json({ ...result2, updateAutomationDisabled });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/tasks/:taskId/skip-update", async (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const task = TaskLogService2.getTaskLogById(taskId);
+    if (!task) return res.status(404).json({ success: false, error: `Task ${taskId} nicht gefunden` });
+    if (task.source !== "UPDATE" && task.suffix !== "U") {
+      return res.status(400).json({ success: false, error: "Skip Update ist nur f\xFCr Update-Tasks verf\xFCgbar." });
+    }
+    if (!["UPDATE_ANALYZED", "AWAITING_DESIGN_REVIEW", "AWAITING_TM_REVIEW"].includes(task.status)) {
+      return res.status(409).json({ success: false, error: "Skip Update ist nur w\xE4hrend einer manuellen Pr\xFCfung verf\xFCgbar." });
+    }
+    const designId = String(task.payload?.designId || "").trim();
+    if (!designId) return res.status(400).json({ success: false, error: "Dem Update-Task fehlt die Amazon Design-ID." });
+    const updateResult = await UpdateMetadataService.markSkipUpdate(designId);
+    if (!updateResult.success) {
+      return res.status(502).json({ success: false, error: updateResult.error || "Skip Update konnte nicht gespeichert werden." });
+    }
+    const result2 = TaskLogService2.cancelTask(taskId, "Design dauerhaft von automatischen Updates ausgeschlossen (skip_update=true).");
+    UpdateBackfillService.releaseInFlight(designId);
+    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    res.json({ ...result2, message: "Skip Update wurde gesetzt. Das Design wird k\xFCnftig nicht mehr automatisch aktualisiert." });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }

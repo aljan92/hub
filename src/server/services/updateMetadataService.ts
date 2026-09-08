@@ -50,6 +50,22 @@ export async function writeSuccessfulUpdateMetadata(
   if (!data?.design_id) throw new Error(`Supabase-Datensatz für Design ${normalizedId} nicht gefunden.`);
 }
 
+export async function writeSkipUpdateFlag(
+  supabase: SupabaseClientLike,
+  designId: string
+): Promise<void> {
+  const normalizedId = normalizeAmazonDesignId(designId);
+  if (!normalizedId) throw new Error('Keine gültige Amazon Design-ID für Skip Update vorhanden.');
+  const { data, error } = await supabase
+    .from('mba_designs')
+    .update({ skip_update: true })
+    .eq('design_id', normalizedId)
+    .select('design_id')
+    .maybeSingle();
+  if (error) throw new Error(`Skip Update konnte in Supabase nicht gesetzt werden: ${error.message || String(error)}`);
+  if (!data?.design_id) throw new Error(`Supabase-Datensatz für Design ${normalizedId} nicht gefunden.`);
+}
+
 export class UpdateMetadataService {
   private static readonly RETRY_INTERVAL_MS = 5 * 60 * 1000;
   private static readonly REQUEST_TIMEOUT_MS = 15_000;
@@ -78,6 +94,22 @@ export class UpdateMetadataService {
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Unbekannter Supabase-Metadatenfehler.' };
+    }
+  }
+
+  public static async markSkipUpdate(designId: string): Promise<{ success: boolean; error?: string }> {
+    const settings = loadSettings();
+    if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
+      return { success: false, error: 'Supabase URL oder Service Role Key fehlt.' };
+    }
+    try {
+      const supabase = createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), {
+        auth: { persistSession: false, autoRefreshToken: false }
+      }) as unknown as SupabaseClientLike;
+      await writeSkipUpdateFlag(supabase, designId);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Unbekannter Supabase-Fehler beim Setzen von Skip Update.' };
     }
   }
 
