@@ -21,6 +21,7 @@ export interface AppSettings {
   gptImageAspectRatio: '1:1' | '3:2' | '2:3' | '4:3' | '3:4' | '16:9' | '9:16' | '21:9' | 'auto';
   gptImageBackground: 'auto' | 'opaque' | 'transparent';
   designerImageProvider: 'IDEOGRAM' | 'GPT_IMAGE_2';
+  designerPromptPoolEnabled: boolean;
   vectorizerApiKey: string;
   vectorizerApiSecret: string;
   vectorizerModePreview: 'test' | 'production';
@@ -100,6 +101,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   gptImageAspectRatio: '3:4',
   gptImageBackground: 'transparent',
   designerImageProvider: 'IDEOGRAM',
+  designerPromptPoolEnabled: false,
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || '',
   vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || '',
   vectorizerModePreview: 'test',

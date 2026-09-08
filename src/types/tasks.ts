@@ -14,6 +14,15 @@ export interface ImageGenerationSnapshot {
   background?: 'auto' | 'opaque' | 'transparent';
 }
 
+export interface PromptPoolSnapshot {
+  enabled: boolean;
+  selectedReferences: Array<{
+    id: number;
+    title: string;
+    role: 'MATCH' | 'ADJACENT' | 'WILDCARD';
+  }>;
+}
+
 export type TaskStatus = 
   | 'RECEIVED'
   | 'PROCESSING'
@@ -142,6 +151,7 @@ export interface DesignTaskLog {
   eventsCount?: number;
   payload: Record<string, any>;
   imageGeneration?: ImageGenerationSnapshot;
+  promptPool?: PromptPoolSnapshot;
   events: SessionEvent[];
   niche1?: string;
   niche2?: string;

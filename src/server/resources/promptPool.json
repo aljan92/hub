@@ -1,0 +1,329 @@
+[
+  {
+    "id": 1,
+    "title": "Groovy Retro Stacked Text",
+    "tags": [
+      "groovy",
+      "text-only"
+    ],
+    "audience": "feminine / neutral",
+    "bestFor": "upbeat, positive, feminine or playful phrases",
+    "template": "Retro groovy t-shirt design graphic with the text \"[PHRASE]\" in thick, layered, wavy 70s-style typography with soft pastel tones of dusty pink, mustard yellow, sage green, and cream, the words stacked in gently arched lines with a subtle drop-shadow offset behind each letter, isolated on a solid pure black background, the background colour is not found in the design for easy background removal, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 2,
+    "title": "Vintage Crosshatch Engraving Subject",
+    "tags": [
+      "vintage",
+      "single-colour"
+    ],
+    "audience": "neutral (skews masculine with the right subject)",
+    "bestFor": "classy, hobby, or dark-humour phrases with a strong central object or animal",
+    "template": "A nostalgic monochrome t-shirt design graphic of [SUBJECT — pick one object or animal that fits the phrase] rendered with detailed crosshatch and engraving effects in a single ink colour, like a 19th-century woodcut illustration, with the text \"[PHRASE]\" set above and below the illustration in a classic mix of bold serif capitals and elegant cursive script, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 3,
+    "title": "Y2K Bootleg Rap-Tee Collage",
+    "tags": [
+      "bootleg",
+      "meme"
+    ],
+    "audience": "neutral (meme culture, any gender)",
+    "bestFor": "ironic hype phrases, \"alpha\"/sigma jokes, over-the-top confidence phrases",
+    "template": "A Y2K bootleg rap-tee style t-shirt design graphic featuring a dramatic airbrushed collage of [SUBJECT — a muscular or intense animal/character matching the phrase] shown twice at different scales, surrounded by lightning bolts, flames, sparkles, and a starry night sky, with the text \"[PHRASE]\" in large chrome-effect graffiti-style lettering across the top and a smaller repeated echo of the phrase in flaming letters at the bottom, saturated 2000s airbrush colours, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 4,
+    "title": "Groovy Frog & Mushrooms",
+    "tags": [
+      "groovy",
+      "cottage"
+    ],
+    "audience": "neutral / feminine",
+    "bestFor": "chill, nature, good-vibes phrases",
+    "template": "A 70s groovy t-shirt design graphic of a happy retro frog sitting on a large spotted mushroom surrounded by smaller mushrooms, daisies and curling vines, illustrated in a warm flat retro palette of avocado green, mustard, burnt orange and cream with simple grain shading, and \"[PHRASE]\" in thick wavy groovy lettering arched around the top of the scene in matching cream, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 5,
+    "title": "Melting Drip Bubble Letters",
+    "tags": [
+      "playful",
+      "text-only"
+    ],
+    "audience": "neutral",
+    "bestFor": "lazy-day, no-thoughts, silly-mood phrases",
+    "template": "A playful t-shirt design graphic with \"[PHRASE]\" in thick rounded bubble letters that appear to be melting, with long glossy drips running down from the bottom edges of the letters, flat soft-pink and white colouring with simple highlights, stacked across two or three lines, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 6,
+    "title": "Post-Impressionist Swirl Painting",
+    "tags": [
+      "vangogh"
+    ],
+    "audience": "neutral",
+    "bestFor": "phrases pairing something mundane or silly with high art, dreamy phrases",
+    "template": "A whimsical t-shirt design graphic inspired by post-impressionist swirling night-sky paintings, featuring [SUBJECT matching the phrase] in the foreground rendered with expressive thick oil-paint brushstrokes, behind it a star-filled sky swirling in rich blues, yellows and teals with glowing orbs of light, with \"[PHRASE]\" in hand-painted serif capitals along the bottom edge, the entire design isolated on a solid pure black background, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 7,
+    "title": "Naive Doodle Line Art",
+    "tags": [
+      "single-colour",
+      "doodle"
+    ],
+    "audience": "neutral / feminine",
+    "bestFor": "wholesome, quirky, understated phrases",
+    "template": "A minimalist single-colour line art t-shirt design graphic of [SUBJECT matching the phrase] in a naive hand-drawn doodle style with slightly wobbly indigo-blue ink lines and moderate detail, charmingly unfinished like a sketchbook page, with \"[PHRASE]\" handwritten beneath in a casual lowercase script as if scribbled with the same pen, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 8,
+    "title": "Skull & Roses Pastel Goth",
+    "tags": [
+      "goth",
+      "feminine-edgy"
+    ],
+    "audience": "feminine",
+    "bestFor": "spooky, sassy, dark-but-cute phrases",
+    "template": "A pastel goth t-shirt design graphic of a smooth stylised skull wrapped in blooming roses and trailing leaves, illustrated with bold clean outlines and flat shading in a palette of soft lavender, blush pink, sage and cream against deep charcoal linework, small sparkles and a tiny crescent moon accenting the composition, with \"[PHRASE]\" beneath in a rounded gothic-flavoured display font in lavender, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 9,
+    "title": "Bigfoot Retro Sunburst",
+    "tags": [
+      "retro",
+      "outdoors"
+    ],
+    "audience": "masculine / neutral",
+    "bestFor": "introvert, hide-away, outdoors-humour phrases",
+    "template": "A retro t-shirt design graphic of bigfoot mid-stride flashing a peace sign, illustrated in a textured vintage style in warm browns, in front of a large circle of alternating sunburst rays in faded orange and cream with simple pine trees along the bottom edge, and \"[PHRASE]\" in bold chunky retro letters arched above the circle, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 10,
+    "title": "Pastel Rainbow Arc",
+    "tags": [
+      "cute",
+      "retro"
+    ],
+    "audience": "feminine / kids",
+    "bestFor": "positive, happy, kids or feminine phrases",
+    "template": "A t-shirt design graphic of a soft pastel retro rainbow arc made of five thick bands in dusty pink, peach, cream, sage and muted blue, with a few small four-pointed stars floating around it, and \"[PHRASE]\" beneath the arc in a rounded friendly serif font in matching cream, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 11,
+    "title": "Stipple Portrait + Landmark",
+    "tags": [
+      "vintage",
+      "single-colour"
+    ],
+    "audience": "neutral / masculine",
+    "bestFor": "location pride phrases, chunky-animal humour",
+    "template": "Isolated on a solid pure black background, a highly detailed t-shirt design graphic featuring a side-profile portrait of [SUBJECT matching the phrase] in minimalist stipple-art style, rendered in a single warm tone using dense dots and fine cross-hatching for depth, with a famous skyline or landmark silhouette delicately stippled in the background, and \"[PHRASE]\" in a bold rounded bubble-style font matching the illustration colour, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 12,
+    "title": "Japanese Woodblock Poster",
+    "tags": [
+      "vintage"
+    ],
+    "audience": "neutral / masculine",
+    "bestFor": "food phrases, martial-arts or zen-humour phrases",
+    "template": "A vintage Japanese woodblock-poster style t-shirt design graphic featuring [SUBJECT matching the phrase] as the central figure in a dynamic pose, rendered with bold outlines, flat muted colours and subtle paper-grain shading, framed by a thin rectangular border with small vertical Japanese-style characters in one corner and a red rectangular seal stamp in another, with \"[PHRASE]\" in bold brush-style lettering along the bottom, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 13,
+    "title": "Psychedelic Meme Bubble Text",
+    "tags": [
+      "psychedelic",
+      "edgy",
+      "text-led"
+    ],
+    "audience": "neutral (alt/edgy, any gender)",
+    "bestFor": "dark-humour, meme-culture, alternative phrases",
+    "template": "A bold retro 70s psychedelic t-shirt design graphic featuring the phrase \"[PHRASE]\" in large wavy bubble letters. The typography fades from coral orange to vibrant purple, creating a gradient effect. The design includes a skeletal hand flashing a rock ’n’ roll gesture and a small skeleton face icon tucked beside one key word. Tiny sparkles are scattered around the text for extra flair. The entire design is centered and isolated on a solid pure black background, giving it a dark humor and edgy aesthetic perfect for alternative fashion."
+  },
+  {
+    "id": 14,
+    "title": "Western Character Howdy",
+    "tags": [
+      "western",
+      "character"
+    ],
+    "audience": "neutral",
+    "bestFor": "country greetings, southern-sass, cowboy phrases",
+    "template": "A western t-shirt design graphic of [SUBJECT — an animal matching the phrase] wearing a cowboy hat and bandana, tipping the hat with one paw, illustrated in a warm vintage style with grain shading in tan, rust and cream, small desert plants and a horseshoe at its feet, with \"[PHRASE]\" in bold western slab-serif lettering arched above and a small rope flourish beneath, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 15,
+    "title": "Ransom-Note Scrapbook",
+    "tags": [
+      "scrapbook"
+    ],
+    "audience": "neutral",
+    "bestFor": "chaotic-energy phrases, teacher/test-day phrases, group trip phrases",
+    "template": "A playful ransom-note style t-shirt design graphic spelling \"[PHRASE]\" with each letter cut from a different mismatched piece — torn newspaper, notebook paper, coloured card, tape strips — in varied fonts, sizes and slight rotations, arranged in tidy chaotic lines, accented with a few hand-drawn doodle stars and paperclips, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 16,
+    "title": "Kawaii Kitten Cloud",
+    "tags": [
+      "kawaii",
+      "hyper-cute"
+    ],
+    "audience": "feminine / kids",
+    "bestFor": "dreamy, magical, cute-overload phrases",
+    "template": "A kawaii 2D flat vector art t-shirt design featuring an adorable wide-eyed calico kitten sitting on a fluffy purple cloud, surrounded by sparkles, floating hearts, and cartoon butterflies with playful faces and vibrant wings. Behind the kitten is a large pastel rainbow in shades of cyan, pink, and lavender, with whimsical stars and bubbles scattered throughout the background, and \"[PHRASE]\" in a chunky rounded kawaii font beneath the cloud. The overall composition has a cheerful, slightly chaotic, and hyper-cute aesthetic, set against a pure black background."
+  },
+  {
+    "id": 17,
+    "title": "Flowers Through the Letters",
+    "tags": [
+      "typography",
+      "floral"
+    ],
+    "audience": "feminine",
+    "bestFor": "sassy club phrases, soft-contrast statement phrases",
+    "template": "A bold t-shirt design graphic featuring the large distressed white text \"[PHRASE]\" in chunky vintage-style serif lettering, with colorful illustrated flowers like roses, lilies, and orchids growing through and around the letters, adding a soft contrast to the bold typography, the florals in vibrant hues of red, yellow, pink, blue, and purple with green leaves for balance, grunge texture overlay for a worn aesthetic, centered on a pure black background."
+  },
+  {
+    "id": 18,
+    "title": "Kawaii Animal With Boba",
+    "tags": [
+      "kawaii",
+      "cute"
+    ],
+    "audience": "feminine / kids",
+    "bestFor": "treat-lover, cosy, cute-obsession phrases",
+    "template": "A kawaii t-shirt design graphic of [SUBJECT — a chubby cute animal matching the phrase] happily hugging an oversized boba milk tea cup with both paws, a striped straw and floating tapioca pearls, illustrated with soft rounded shapes, blush cheeks and tiny sparkles in a palette of cream, brown sugar tan and soft pink, with \"[PHRASE]\" beneath in a chunky rounded font in cream, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 19,
+    "title": "Western Stacked Type + Pattern Fill",
+    "tags": [
+      "western"
+    ],
+    "audience": "feminine (leopard print reads feminine)",
+    "bestFor": "country/western phrases, sassy southern phrases",
+    "template": "A western-style t-shirt design graphic with \"[PHRASE]\" stacked in large bold vintage western fonts, alternating lines filled with leopard print and distressed solid colours in warm tan, rust and cream, flanked by small illustrated cowboy boots, horseshoes and sparkles, slight arch to the top line, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 20,
+    "title": "Double-Exposure Silhouette",
+    "tags": [
+      "nature",
+      "masculine"
+    ],
+    "audience": "masculine",
+    "bestFor": "outdoors, adventure, wild-spirit phrases",
+    "template": "A t-shirt design graphic of the clean silhouette of [SUBJECT — an animal matching the phrase] filled entirely with a detailed nature scene — pine forest, mountain ridge and a rising moon — in a cool palette of deep teal, forest green and cream, double-exposure effect with the scene contained inside the silhouette's outline, and \"[PHRASE]\" beneath in wide-spaced uppercase serif in cream, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 21,
+    "title": "Floral Block With Woven Words",
+    "tags": [
+      "floral",
+      "retro"
+    ],
+    "audience": "feminine",
+    "bestFor": "trait-list phrases (3-4 descriptive words), appreciation phrases",
+    "template": "A retro floral t-shirt design graphic in a bold block-style layout featuring large stylized poppies and daisies in warm burnt orange and deep red hues, intertwined with soft sage green leaves and stems. Delicate white daisy accents are scattered throughout the composition, adding light contrast. The words \"[PHRASE — 3-4 descriptive words]\" are creatively integrated across the design in a vintage-inspired serif font, curving along stems, wrapped around petals, and weaving through negative space for a dynamic and harmonious layout. Earthy and cohesive color palette on a solid pure black background, 2D flat vector art style."
+  },
+  {
+    "id": 22,
+    "title": "Scattered Sketch Trinket Collage",
+    "tags": [
+      "vintage",
+      "single-colour"
+    ],
+    "audience": "neutral",
+    "bestFor": "phrases about a lifestyle or obsession with many small associated objects",
+    "template": "A whimsical t-shirt design graphic of eight to ten small hand-drawn vintage-sketch trinkets related to [THEME of the phrase] — rendered in fine single-colour ink linework and scattered playfully across the composition like treasures on a desk — with \"[PHRASE]\" handwritten in a warm serif script across the centre, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 23,
+    "title": "Tie-Dye Script + Stacked Block",
+    "tags": [
+      "tie-dye",
+      "school"
+    ],
+    "audience": "feminine (teachers) / kids",
+    "bestFor": "school, grade-level, teacher phrases (small intro word + big stacked words)",
+    "template": "A vibrant t-shirt design featuring the first word of \"[PHRASE]\" in a playful script font with a rainbow tie-dye texture, positioned at the top beneath two outlined apples with heart details. Below it, the remaining words of \"[PHRASE]\" are written in bold, uppercase block letters stacked directly underneath each other in the same style and texture, creating a balanced stacked layout. At the bottom, a cluster of colorful tie-dye flowers and butterflies completes the composition. The entire design is set against a solid pure black background."
+  },
+  {
+    "id": 24,
+    "title": "Unimpressed Cat Portrait",
+    "tags": [
+      "vintage",
+      "humour"
+    ],
+    "audience": "neutral / feminine",
+    "bestFor": "antisocial, sarcastic, cat-attitude phrases",
+    "template": "A vintage t-shirt design graphic of a fluffy cat sitting upright with a magnificently unimpressed expression, eyes half-closed, facing slightly away, illustrated in a detailed retro style with grain shading in cream, grey and warm tan, a few small sparkles around it, with \"[PHRASE]\" in a mix of bold serif capitals and casual script beneath the cat, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 25,
+    "title": "Strawberry Grid With Bows",
+    "tags": [
+      "cute",
+      "retro-grid"
+    ],
+    "audience": "feminine",
+    "bestFor": "sweet hobby/job phrases split into a top and bottom cursive line",
+    "template": "A t-shirt design graphic with a solid pure black background featuring a 3x3 grid of strawberries arranged in a 9-square layout. The first half of \"[PHRASE]\" is written in white cursive font at the top, and the second half is written in white cursive font at the bottom. Each strawberry is drawn in a minimalist style with a red outline and a small red bow at the top. The strawberries alternate between bright red and pale pink colors, each with green leaves and white seeds. The strawberries are contained within thin red rectangular frames with rounded corners with bows at the top of each frame. The design has a retro, vintage aesthetic with a limited color palette of red, black, and white. The strawberries are arranged in a symmetrical pattern, with 4 red strawberries and 5 pink strawberries."
+  },
+  {
+    "id": 26,
+    "title": "Silly Goose Job Club",
+    "tags": [
+      "cute",
+      "jobs"
+    ],
+    "audience": "feminine",
+    "bestFor": "profession-pride phrases (SILLY GOOSE + [JOB] CLUB format)",
+    "template": "A t-shirt design featuring a cute goose wearing a floral bow and holding a tumbler cup, standing confidently in front of a soft gingham background panel. Surrounding the goose are items related to [JOB matching the phrase] plus heart-shaped icons, with bright daisies scattered throughout the composition. The first half of \"[PHRASE]\" appears in bold lettering above the design, and the second half is placed below in the same bold font. The color palette is clean and vibrant rather than pastel, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge)."
+  },
+  {
+    "id": 27,
+    "title": "Tight Shipwreck Captain",
+    "tags": [
+      "vintage",
+      "nautical"
+    ],
+    "audience": "masculine",
+    "bestFor": "self-deprecating captain/boat/dad phrases split top and bottom",
+    "template": "A vintage-style t-shirt design in distressed navy blue ink on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), featuring a rugged bearded sea captain with a pipe in his mouth, wearing a classic captain’s hat with an anchor emblem and a seagull perched on his shoulder. The illustration is detailed with sketch-like linework and framed with ornate nautical flourishes. Bold, weathered text above and below the illustration reads the first half of \"[PHRASE]\" on top and the second half underneath in large, impactful lettering. The overall style mimics retro maritime signage with a tongue-in-cheek twist."
+  },
+  {
+    "id": 28,
+    "title": "T-Rex Tea Party",
+    "tags": [
+      "cartoon",
+      "pun"
+    ],
+    "audience": "kids / neutral",
+    "bestFor": "dino puns, kids, silly-polite phrases",
+    "template": "A charming retro cartoon t-shirt design graphic of a green T-rex sitting upright and daintily holding a tiny floral teacup with one little arm, pinky raised, a small saucer and teapot nearby, illustrated in a warm vintage cartoon style with grain shading in green, teal, cream and dusty pink, with \"[PHRASE]\" in bouncy retro serif lettering arched above, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 29,
+    "title": "Coastal Crab on Stripes",
+    "tags": [
+      "coastal",
+      "retro"
+    ],
+    "audience": "neutral / masculine",
+    "bestFor": "grumpy, beach-humour, crabby phrases",
+    "template": "A retro coastal t-shirt design graphic of a big red crab with both claws raised, illustrated in a warm vintage style with textured shading, standing in front of a rounded-top panel of wide vertical stripes in cream and faded navy, the claws overlapping the panel’s edges, with \"[PHRASE]\" in bold vintage serif capitals arched above the panel, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup."
+  },
+  {
+    "id": 30,
+    "title": "Pastel Goth Grim Reaper",
+    "tags": [
+      "pastel-goth",
+      "dark-humour"
+    ],
+    "audience": "feminine / neutral (pastel goth)",
+    "bestFor": "bleak-but-cute two-part phrases (setup top, punchline bottom)",
+    "template": "A sarcastic pastel goth t-shirt design featuring a cute grim reaper sitting on fluffy clouds with black bat wings and a scythe, sipping from a tiny coffee mug. A pastel rainbow arches above the character, surrounded by stars, bats, and sparkly shapes. The first half of \"[PHRASE]\" is placed at the top and the second half at the bottom, both in a single-color soft lavender font with no outline or bubble effect. The entire design is isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge)."
+  }
+]

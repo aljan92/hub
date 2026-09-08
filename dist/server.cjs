@@ -1294,8 +1294,8 @@ var require_node = __commonJS2({
           }
           break;
         case "FILE":
-          var fs21 = require("fs");
-          stream2 = new fs21.SyncWriteStream(fd2, { autoClose: false });
+          var fs22 = require("fs");
+          stream2 = new fs22.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -14082,11 +14082,11 @@ var require_mime_types = __commonJS2({
       }
       return exts[0];
     }
-    function lookup(path19) {
-      if (!path19 || typeof path19 !== "string") {
+    function lookup(path20) {
+      if (!path20 || typeof path20 !== "string") {
         return false;
       }
-      var extension3 = extname("x." + path19).toLowerCase().substr(1);
+      var extension3 = extname("x." + path20).toLowerCase().substr(1);
       if (!extension3) {
         return false;
       }
@@ -17727,8 +17727,8 @@ var require_node2 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs21 = require("fs");
-          stream2 = new fs21.SyncWriteStream(fd2, { autoClose: false });
+          var fs22 = require("fs");
+          stream2 = new fs22.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18446,8 +18446,8 @@ var require_node3 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs21 = require("fs");
-          stream2 = new fs21.SyncWriteStream(fd2, { autoClose: false });
+          var fs22 = require("fs");
+          stream2 = new fs22.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18535,7 +18535,7 @@ var require_path_to_regexp = __commonJS2({
   "node_modules/path-to-regexp/index.js"(exports2, module3) {
     module3.exports = pathToRegexp;
     var MATCHING_GROUP_REGEXP = /\\.|\((?:\?<(.*?)>)?(?!\?)/g;
-    function pathToRegexp(path19, keys, options2) {
+    function pathToRegexp(path20, keys, options2) {
       options2 = options2 || {};
       keys = keys || [];
       var strict = options2.strict;
@@ -18549,8 +18549,8 @@ var require_path_to_regexp = __commonJS2({
       var pos = 0;
       var backtrack = "";
       var m;
-      if (path19 instanceof RegExp) {
-        while (m = MATCHING_GROUP_REGEXP.exec(path19.source)) {
+      if (path20 instanceof RegExp) {
+        while (m = MATCHING_GROUP_REGEXP.exec(path20.source)) {
           if (m[0][0] === "\\") continue;
           keys.push({
             name: m[1] || name++,
@@ -18558,18 +18558,18 @@ var require_path_to_regexp = __commonJS2({
             offset: m.index
           });
         }
-        return path19;
+        return path20;
       }
-      if (Array.isArray(path19)) {
-        path19 = path19.map(function(value2) {
+      if (Array.isArray(path20)) {
+        path20 = path20.map(function(value2) {
           return pathToRegexp(value2, keys, options2).source;
         });
-        return new RegExp(path19.join("|"), flags);
+        return new RegExp(path20.join("|"), flags);
       }
-      if (typeof path19 !== "string") {
+      if (typeof path20 !== "string") {
         throw new TypeError("path must be a string, array of strings, or regular expression");
       }
-      path19 = path19.replace(
+      path20 = path20.replace(
         /\\.|(\/)?(\.)?:(\w+)(\(.*?\))?(\*)?(\?)?|[.*]|\/\(/g,
         function(match, slash, format, key, capture, star, optional, offset) {
           if (match[0] === "\\") {
@@ -18586,7 +18586,7 @@ var require_path_to_regexp = __commonJS2({
           if (slash || format) {
             backtrack = "";
           } else {
-            backtrack += path19.slice(pos, offset);
+            backtrack += path20.slice(pos, offset);
           }
           pos = offset + match.length;
           if (match === "*") {
@@ -18616,7 +18616,7 @@ var require_path_to_regexp = __commonJS2({
           return result2;
         }
       );
-      while (m = MATCHING_GROUP_REGEXP.exec(path19)) {
+      while (m = MATCHING_GROUP_REGEXP.exec(path20)) {
         if (m[0][0] === "\\") continue;
         if (keysOffset + i === keys.length || keys[keysOffset + i].offset > m.index) {
           keys.splice(keysOffset + i, 0, {
@@ -18628,13 +18628,13 @@ var require_path_to_regexp = __commonJS2({
         }
         i++;
       }
-      path19 += strict ? "" : path19[path19.length - 1] === "/" ? "?" : "/?";
+      path20 += strict ? "" : path20[path20.length - 1] === "/" ? "?" : "/?";
       if (end) {
-        path19 += "$";
-      } else if (path19[path19.length - 1] !== "/") {
-        path19 += lookahead ? "(?=/|$)" : "(?:/|$)";
+        path20 += "$";
+      } else if (path20[path20.length - 1] !== "/") {
+        path20 += lookahead ? "(?=/|$)" : "(?:/|$)";
       }
-      return new RegExp("^" + path19, flags);
+      return new RegExp("^" + path20, flags);
     }
   }
 });
@@ -18647,19 +18647,19 @@ var require_layer = __commonJS2({
     var debug17 = require_src3()("express:router:layer");
     var hasOwnProperty2 = Object.prototype.hasOwnProperty;
     module3.exports = Layer;
-    function Layer(path19, options2, fn) {
+    function Layer(path20, options2, fn) {
       if (!(this instanceof Layer)) {
-        return new Layer(path19, options2, fn);
+        return new Layer(path20, options2, fn);
       }
-      debug17("new %o", path19);
+      debug17("new %o", path20);
       var opts = options2 || {};
       this.handle = fn;
       this.name = fn.name || "<anonymous>";
       this.params = void 0;
       this.path = void 0;
-      this.regexp = pathRegexp(path19, this.keys = [], opts);
-      this.regexp.fast_star = path19 === "*";
-      this.regexp.fast_slash = path19 === "/" && opts.end === false;
+      this.regexp = pathRegexp(path20, this.keys = [], opts);
+      this.regexp.fast_star = path20 === "*";
+      this.regexp.fast_slash = path20 === "/" && opts.end === false;
     }
     Layer.prototype.handle_error = function handle_error(error, req, res, next) {
       var fn = this.handle;
@@ -18683,20 +18683,20 @@ var require_layer = __commonJS2({
         next(err);
       }
     };
-    Layer.prototype.match = function match(path19) {
+    Layer.prototype.match = function match(path20) {
       var match2;
-      if (path19 != null) {
+      if (path20 != null) {
         if (this.regexp.fast_slash) {
           this.params = {};
           this.path = "";
           return true;
         }
         if (this.regexp.fast_star) {
-          this.params = { "0": decode_param(path19) };
-          this.path = path19;
+          this.params = { "0": decode_param(path20) };
+          this.path = path20;
           return true;
         }
-        match2 = this.regexp.exec(path19);
+        match2 = this.regexp.exec(path20);
       }
       if (!match2) {
         this.params = void 0;
@@ -18789,10 +18789,10 @@ var require_route = __commonJS2({
     var slice = Array.prototype.slice;
     var toString = Object.prototype.toString;
     module3.exports = Route3;
-    function Route3(path19) {
-      this.path = path19;
+    function Route3(path20) {
+      this.path = path20;
       this.stack = [];
-      debug17("new %o", path19);
+      debug17("new %o", path20);
       this.methods = {};
     }
     Route3.prototype._handles_method = function _handles_method(method) {
@@ -19004,8 +19004,8 @@ var require_router = __commonJS2({
         if (++sync > 100) {
           return setImmediate(next, err);
         }
-        var path19 = getPathname(req);
-        if (path19 == null) {
+        var path20 = getPathname(req);
+        if (path20 == null) {
           return done(layerError);
         }
         var layer;
@@ -19013,7 +19013,7 @@ var require_router = __commonJS2({
         var route2;
         while (match !== true && idx < stack.length) {
           layer = stack[idx++];
-          match = matchLayer(layer, path19);
+          match = matchLayer(layer, path20);
           route2 = layer.route;
           if (typeof match !== "boolean") {
             layerError = layerError || match;
@@ -19051,18 +19051,18 @@ var require_router = __commonJS2({
           } else if (route2) {
             layer.handle_request(req, res, next);
           } else {
-            trim_prefix(layer, layerError, layerPath, path19);
+            trim_prefix(layer, layerError, layerPath, path20);
           }
           sync = 0;
         });
       }
-      function trim_prefix(layer, layerError, layerPath, path19) {
+      function trim_prefix(layer, layerError, layerPath, path20) {
         if (layerPath.length !== 0) {
-          if (layerPath !== path19.slice(0, layerPath.length)) {
+          if (layerPath !== path20.slice(0, layerPath.length)) {
             next(layerError);
             return;
           }
-          var c = path19[layerPath.length];
+          var c = path20[layerPath.length];
           if (c && c !== "/" && c !== ".") return next(layerError);
           debug17("trim prefix (%s) from url %s", layerPath, req.url);
           removed = layerPath;
@@ -19140,7 +19140,7 @@ var require_router = __commonJS2({
     };
     proto.use = function use(fn) {
       var offset = 0;
-      var path19 = "/";
+      var path20 = "/";
       if (typeof fn !== "function") {
         var arg = fn;
         while (Array.isArray(arg) && arg.length !== 0) {
@@ -19148,7 +19148,7 @@ var require_router = __commonJS2({
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path19 = fn;
+          path20 = fn;
         }
       }
       var callbacks = flatten(slice.call(arguments, offset));
@@ -19160,8 +19160,8 @@ var require_router = __commonJS2({
         if (typeof fn !== "function") {
           throw new TypeError("Router.use() requires a middleware function but got a " + gettype(fn));
         }
-        debug17("use %o %s", path19, fn.name || "<anonymous>");
-        var layer = new Layer(path19, {
+        debug17("use %o %s", path20, fn.name || "<anonymous>");
+        var layer = new Layer(path20, {
           sensitive: this.caseSensitive,
           strict: false,
           end: false
@@ -19171,9 +19171,9 @@ var require_router = __commonJS2({
       }
       return this;
     };
-    proto.route = function route2(path19) {
-      var route3 = new Route3(path19);
-      var layer = new Layer(path19, {
+    proto.route = function route2(path20) {
+      var route3 = new Route3(path20);
+      var layer = new Layer(path20, {
         sensitive: this.caseSensitive,
         strict: this.strict,
         end: true
@@ -19183,8 +19183,8 @@ var require_router = __commonJS2({
       return route3;
     };
     methods.concat("all").forEach(function(method) {
-      proto[method] = function(path19) {
-        var route2 = this.route(path19);
+      proto[method] = function(path20) {
+        var route2 = this.route(path20);
         route2[method].apply(route2, slice.call(arguments, 1));
         return this;
       };
@@ -19220,9 +19220,9 @@ var require_router = __commonJS2({
       }
       return toString.call(obj).replace(objectRegExp, "$1");
     }
-    function matchLayer(layer, path19) {
+    function matchLayer(layer, path20) {
       try {
-        return layer.match(path19);
+        return layer.match(path20);
       } catch (err) {
         return err;
       }
@@ -19340,13 +19340,13 @@ var require_view = __commonJS2({
   "node_modules/express/lib/view.js"(exports2, module3) {
     "use strict";
     var debug17 = require_src3()("express:view");
-    var path19 = require("path");
-    var fs21 = require("fs");
-    var dirname = path19.dirname;
-    var basename = path19.basename;
-    var extname = path19.extname;
-    var join = path19.join;
-    var resolve = path19.resolve;
+    var path20 = require("path");
+    var fs22 = require("fs");
+    var dirname = path20.dirname;
+    var basename = path20.basename;
+    var extname = path20.extname;
+    var join = path20.join;
+    var resolve = path20.resolve;
     module3.exports = View;
     function View(name, options2) {
       var opts = options2 || {};
@@ -19375,17 +19375,17 @@ var require_view = __commonJS2({
       this.path = this.lookup(fileName);
     }
     View.prototype.lookup = function lookup(name) {
-      var path20;
+      var path21;
       var roots = [].concat(this.root);
       debug17('lookup "%s"', name);
-      for (var i = 0; i < roots.length && !path20; i++) {
+      for (var i = 0; i < roots.length && !path21; i++) {
         var root = roots[i];
         var loc = resolve(root, name);
         var dir = dirname(loc);
         var file = basename(loc);
-        path20 = this.resolve(dir, file);
+        path21 = this.resolve(dir, file);
       }
-      return path20;
+      return path21;
     };
     View.prototype.render = function render(options2, callback) {
       debug17('render "%s"', this.path);
@@ -19393,21 +19393,21 @@ var require_view = __commonJS2({
     };
     View.prototype.resolve = function resolve2(dir, file) {
       var ext = this.ext;
-      var path20 = join(dir, file);
-      var stat = tryStat(path20);
+      var path21 = join(dir, file);
+      var stat = tryStat(path21);
       if (stat && stat.isFile()) {
-        return path20;
+        return path21;
       }
-      path20 = join(dir, basename(file, ext), "index" + ext);
-      stat = tryStat(path20);
+      path21 = join(dir, basename(file, ext), "index" + ext);
+      stat = tryStat(path21);
       if (stat && stat.isFile()) {
-        return path20;
+        return path21;
       }
     };
-    function tryStat(path20) {
-      debug17('stat "%s"', path20);
+    function tryStat(path21) {
+      debug17('stat "%s"', path21);
       try {
-        return fs21.statSync(path20);
+        return fs22.statSync(path21);
       } catch (e) {
         return void 0;
       }
@@ -20012,8 +20012,8 @@ var require_node4 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs21 = require("fs");
-          stream2 = new fs21.SyncWriteStream(fd2, { autoClose: false });
+          var fs22 = require("fs");
+          stream2 = new fs22.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -20185,8 +20185,8 @@ var require_types = __commonJS2({
 // node_modules/mime/mime.js
 var require_mime = __commonJS2({
   "node_modules/mime/mime.js"(exports2, module3) {
-    var path19 = require("path");
-    var fs21 = require("fs");
+    var path20 = require("path");
+    var fs22 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -20207,7 +20207,7 @@ var require_mime = __commonJS2({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs21.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs22.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -20215,8 +20215,8 @@ var require_mime = __commonJS2({
       this.define(map);
       this._loading = null;
     };
-    Mime.prototype.lookup = function(path20, fallback) {
-      var ext = path20.replace(/^.*[\.\/\\]/, "").toLowerCase();
+    Mime.prototype.lookup = function(path21, fallback) {
+      var ext = path21.replace(/^.*[\.\/\\]/, "").toLowerCase();
       return this.types[ext] || fallback || this.default_type;
     };
     Mime.prototype.extension = function(mimeType) {
@@ -20445,33 +20445,33 @@ var require_send = __commonJS2({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs21 = require("fs");
+    var fs22 = require("fs");
     var mime8 = require_mime();
     var ms = require_ms5();
     var onFinished = require_on_finished();
     var parseRange = require_range_parser();
-    var path19 = require("path");
+    var path20 = require("path");
     var statuses = require_statuses();
     var Stream2 = require("stream");
     var util2 = require("util");
-    var extname = path19.extname;
-    var join = path19.join;
-    var normalize = path19.normalize;
-    var resolve = path19.resolve;
-    var sep = path19.sep;
+    var extname = path20.extname;
+    var join = path20.join;
+    var normalize = path20.normalize;
+    var resolve = path20.resolve;
+    var sep = path20.sep;
     var BYTES_RANGE_REGEXP = /^ *bytes=/;
     var MAX_MAXAGE = 60 * 60 * 24 * 365 * 1e3;
     var UP_PATH_REGEXP = /(?:^|[\\/])\.\.(?:[\\/]|$)/;
     module3.exports = send;
     module3.exports.mime = mime8;
-    function send(req, path20, options2) {
-      return new SendStream(req, path20, options2);
+    function send(req, path21, options2) {
+      return new SendStream(req, path21, options2);
     }
-    function SendStream(req, path20, options2) {
+    function SendStream(req, path21, options2) {
       Stream2.call(this);
       var opts = options2 || {};
       this.options = opts;
-      this.path = path20;
+      this.path = path21;
       this.req = req;
       this._acceptRanges = opts.acceptRanges !== void 0 ? Boolean(opts.acceptRanges) : true;
       this._cacheControl = opts.cacheControl !== void 0 ? Boolean(opts.cacheControl) : true;
@@ -20517,8 +20517,8 @@ var require_send = __commonJS2({
       this._index = index2;
       return this;
     }, "send.index: pass index as option");
-    SendStream.prototype.root = function root(path20) {
-      this._root = resolve(String(path20));
+    SendStream.prototype.root = function root(path21) {
+      this._root = resolve(String(path21));
       debug17("root %s", this._root);
       return this;
     };
@@ -20631,10 +20631,10 @@ var require_send = __commonJS2({
       var lastModified = this.res.getHeader("Last-Modified");
       return parseHttpDate(lastModified) <= parseHttpDate(ifRange);
     };
-    SendStream.prototype.redirect = function redirect(path20) {
+    SendStream.prototype.redirect = function redirect(path21) {
       var res = this.res;
       if (hasListeners(this, "directory")) {
-        this.emit("directory", res, path20);
+        this.emit("directory", res, path21);
         return;
       }
       if (this.hasTrailingSlash()) {
@@ -20654,42 +20654,42 @@ var require_send = __commonJS2({
     SendStream.prototype.pipe = function pipe(res) {
       var root = this._root;
       this.res = res;
-      var path20 = decode(this.path);
-      if (path20 === -1) {
+      var path21 = decode(this.path);
+      if (path21 === -1) {
         this.error(400);
         return res;
       }
-      if (~path20.indexOf("\0")) {
+      if (~path21.indexOf("\0")) {
         this.error(400);
         return res;
       }
       var parts;
       if (root !== null) {
-        if (path20) {
-          path20 = normalize("." + sep + path20);
+        if (path21) {
+          path21 = normalize("." + sep + path21);
         }
-        if (UP_PATH_REGEXP.test(path20)) {
-          debug17('malicious path "%s"', path20);
+        if (UP_PATH_REGEXP.test(path21)) {
+          debug17('malicious path "%s"', path21);
           this.error(403);
           return res;
         }
-        parts = path20.split(sep);
-        path20 = normalize(join(root, path20));
+        parts = path21.split(sep);
+        path21 = normalize(join(root, path21));
       } else {
-        if (UP_PATH_REGEXP.test(path20)) {
-          debug17('malicious path "%s"', path20);
+        if (UP_PATH_REGEXP.test(path21)) {
+          debug17('malicious path "%s"', path21);
           this.error(403);
           return res;
         }
-        parts = normalize(path20).split(sep);
-        path20 = resolve(path20);
+        parts = normalize(path21).split(sep);
+        path21 = resolve(path21);
       }
       if (containsDotFile(parts)) {
         var access = this._dotfiles;
         if (access === void 0) {
           access = parts[parts.length - 1][0] === "." ? this._hidden ? "allow" : "ignore" : "allow";
         }
-        debug17('%s dotfile "%s"', access, path20);
+        debug17('%s dotfile "%s"', access, path21);
         switch (access) {
           case "allow":
             break;
@@ -20703,13 +20703,13 @@ var require_send = __commonJS2({
         }
       }
       if (this._index.length && this.hasTrailingSlash()) {
-        this.sendIndex(path20);
+        this.sendIndex(path21);
         return res;
       }
-      this.sendFile(path20);
+      this.sendFile(path21);
       return res;
     };
-    SendStream.prototype.send = function send2(path20, stat) {
+    SendStream.prototype.send = function send2(path21, stat) {
       var len = stat.size;
       var options2 = this.options;
       var opts = {};
@@ -20721,9 +20721,9 @@ var require_send = __commonJS2({
         this.headersAlreadySent();
         return;
       }
-      debug17('pipe "%s"', path20);
-      this.setHeader(path20, stat);
-      this.type(path20);
+      debug17('pipe "%s"', path21);
+      this.setHeader(path21, stat);
+      this.type(path21);
       if (this.isConditionalGET()) {
         if (this.isPreconditionFailure()) {
           this.error(412);
@@ -20772,28 +20772,28 @@ var require_send = __commonJS2({
         res.end();
         return;
       }
-      this.stream(path20, opts);
+      this.stream(path21, opts);
     };
-    SendStream.prototype.sendFile = function sendFile(path20) {
+    SendStream.prototype.sendFile = function sendFile(path21) {
       var i = 0;
       var self2 = this;
-      debug17('stat "%s"', path20);
-      fs21.stat(path20, function onstat(err, stat) {
-        if (err && err.code === "ENOENT" && !extname(path20) && path20[path20.length - 1] !== sep) {
+      debug17('stat "%s"', path21);
+      fs22.stat(path21, function onstat(err, stat) {
+        if (err && err.code === "ENOENT" && !extname(path21) && path21[path21.length - 1] !== sep) {
           return next(err);
         }
         if (err) return self2.onStatError(err);
-        if (stat.isDirectory()) return self2.redirect(path20);
-        self2.emit("file", path20, stat);
-        self2.send(path20, stat);
+        if (stat.isDirectory()) return self2.redirect(path21);
+        self2.emit("file", path21, stat);
+        self2.send(path21, stat);
       });
       function next(err) {
         if (self2._extensions.length <= i) {
           return err ? self2.onStatError(err) : self2.error(404);
         }
-        var p = path20 + "." + self2._extensions[i++];
+        var p = path21 + "." + self2._extensions[i++];
         debug17('stat "%s"', p);
-        fs21.stat(p, function(err2, stat) {
+        fs22.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20801,7 +20801,7 @@ var require_send = __commonJS2({
         });
       }
     };
-    SendStream.prototype.sendIndex = function sendIndex(path20) {
+    SendStream.prototype.sendIndex = function sendIndex(path21) {
       var i = -1;
       var self2 = this;
       function next(err) {
@@ -20809,9 +20809,9 @@ var require_send = __commonJS2({
           if (err) return self2.onStatError(err);
           return self2.error(404);
         }
-        var p = join(path20, self2._index[i]);
+        var p = join(path21, self2._index[i]);
         debug17('stat "%s"', p);
-        fs21.stat(p, function(err2, stat) {
+        fs22.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -20820,10 +20820,10 @@ var require_send = __commonJS2({
       }
       next();
     };
-    SendStream.prototype.stream = function stream(path20, options2) {
+    SendStream.prototype.stream = function stream(path21, options2) {
       var self2 = this;
       var res = this.res;
-      var stream2 = fs21.createReadStream(path20, options2);
+      var stream2 = fs22.createReadStream(path21, options2);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -20838,10 +20838,10 @@ var require_send = __commonJS2({
         self2.emit("end");
       });
     };
-    SendStream.prototype.type = function type3(path20) {
+    SendStream.prototype.type = function type3(path21) {
       var res = this.res;
       if (res.getHeader("Content-Type")) return;
-      var type4 = mime8.lookup(path20);
+      var type4 = mime8.lookup(path21);
       if (!type4) {
         debug17("no content-type");
         return;
@@ -20850,9 +20850,9 @@ var require_send = __commonJS2({
       debug17("content-type %s", type4);
       res.setHeader("Content-Type", type4 + (charset ? "; charset=" + charset : ""));
     };
-    SendStream.prototype.setHeader = function setHeader3(path20, stat) {
+    SendStream.prototype.setHeader = function setHeader3(path21, stat) {
       var res = this.res;
-      this.emit("headers", res, path20, stat);
+      this.emit("headers", res, path21, stat);
       if (this._acceptRanges && !res.getHeader("Accept-Ranges")) {
         debug17("accept ranges");
         res.setHeader("Accept-Ranges", "bytes");
@@ -20911,9 +20911,9 @@ var require_send = __commonJS2({
       }
       return err instanceof Error ? createError(status, err, { expose: false }) : createError(status, err);
     }
-    function decode(path20) {
+    function decode(path21) {
       try {
-        return decodeURIComponent(path20);
+        return decodeURIComponent(path21);
       } catch (err) {
         return -1;
       }
@@ -21822,10 +21822,10 @@ var require_utils2 = __commonJS2({
     var querystring = require("querystring");
     exports2.etag = createETagGenerator({ weak: false });
     exports2.wetag = createETagGenerator({ weak: true });
-    exports2.isAbsolute = function(path19) {
-      if ("/" === path19[0]) return true;
-      if (":" === path19[1] && ("\\" === path19[2] || "/" === path19[2])) return true;
-      if ("\\\\" === path19.substring(0, 2)) return true;
+    exports2.isAbsolute = function(path20) {
+      if ("/" === path20[0]) return true;
+      if (":" === path20[1] && ("\\" === path20[2] || "/" === path20[2])) return true;
+      if ("\\\\" === path20.substring(0, 2)) return true;
     };
     exports2.flatten = deprecate.function(
       flatten,
@@ -22037,7 +22037,7 @@ var require_application = __commonJS2({
     };
     app2.use = function use(fn) {
       var offset = 0;
-      var path19 = "/";
+      var path20 = "/";
       if (typeof fn !== "function") {
         var arg = fn;
         while (Array.isArray(arg) && arg.length !== 0) {
@@ -22045,7 +22045,7 @@ var require_application = __commonJS2({
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path19 = fn;
+          path20 = fn;
         }
       }
       var fns = flatten(slice.call(arguments, offset));
@@ -22056,12 +22056,12 @@ var require_application = __commonJS2({
       var router = this._router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router.use(path19, fn2);
+          return router.use(path20, fn2);
         }
-        debug17(".use app under %s", path19);
-        fn2.mountpath = path19;
+        debug17(".use app under %s", path20);
+        fn2.mountpath = path20;
         fn2.parent = this;
-        router.use(path19, function mounted_app(req, res, next) {
+        router.use(path20, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             setPrototypeOf(req, orig.request);
@@ -22073,9 +22073,9 @@ var require_application = __commonJS2({
       }, this);
       return this;
     };
-    app2.route = function route2(path19) {
+    app2.route = function route2(path20) {
       this.lazyrouter();
-      return this._router.route(path19);
+      return this._router.route(path20);
     };
     app2.engine = function engine(ext, fn) {
       if (typeof fn !== "function") {
@@ -22126,7 +22126,7 @@ var require_application = __commonJS2({
       }
       return this;
     };
-    app2.path = function path19() {
+    app2.path = function path20() {
       return this.parent ? this.parent.path() + this.mountpath : "";
     };
     app2.enabled = function enabled(setting) {
@@ -22142,19 +22142,19 @@ var require_application = __commonJS2({
       return this.set(setting, false);
     };
     methods.forEach(function(method) {
-      app2[method] = function(path19) {
+      app2[method] = function(path20) {
         if (method === "get" && arguments.length === 1) {
-          return this.set(path19);
+          return this.set(path20);
         }
         this.lazyrouter();
-        var route2 = this._router.route(path19);
+        var route2 = this._router.route(path20);
         route2[method].apply(route2, slice.call(arguments, 1));
         return this;
       };
     });
-    app2.all = function all(path19) {
+    app2.all = function all(path20) {
       this.lazyrouter();
-      var route2 = this._router.route(path19);
+      var route2 = this._router.route(path20);
       var args = slice.call(arguments, 1);
       for (var i = 0; i < methods.length; i++) {
         route2[methods[i]].apply(route2, args);
@@ -22913,7 +22913,7 @@ var require_request = __commonJS2({
       var subdomains2 = !isIP(hostname) ? hostname.split(".").reverse() : [hostname];
       return subdomains2.slice(offset);
     });
-    defineGetter(req, "path", function path19() {
+    defineGetter(req, "path", function path20() {
       return parse(this).pathname;
     });
     defineGetter(req, "hostname", function hostname() {
@@ -23235,7 +23235,7 @@ var require_response = __commonJS2({
     var http2 = require("http");
     var isAbsolute = require_utils2().isAbsolute;
     var onFinished = require_on_finished();
-    var path19 = require("path");
+    var path20 = require("path");
     var statuses = require_statuses();
     var merge = require_utils_merge();
     var sign = require_cookie_signature().sign;
@@ -23244,9 +23244,9 @@ var require_response = __commonJS2({
     var setCharset = require_utils2().setCharset;
     var cookie = require_cookie();
     var send = require_send();
-    var extname = path19.extname;
+    var extname = path20.extname;
     var mime8 = send.mime;
-    var resolve = path19.resolve;
+    var resolve = path20.resolve;
     var vary = require_vary();
     var res = Object.create(http2.ServerResponse.prototype);
     module3.exports = res;
@@ -23423,26 +23423,26 @@ var require_response = __commonJS2({
       this.type("txt");
       return this.send(body);
     };
-    res.sendFile = function sendFile(path20, options2, callback) {
+    res.sendFile = function sendFile(path21, options2, callback) {
       var done = callback;
       var req = this.req;
       var res2 = this;
       var next = req.next;
       var opts = options2 || {};
-      if (!path20) {
+      if (!path21) {
         throw new TypeError("path argument is required to res.sendFile");
       }
-      if (typeof path20 !== "string") {
+      if (typeof path21 !== "string") {
         throw new TypeError("path must be a string to res.sendFile");
       }
       if (typeof options2 === "function") {
         done = options2;
         opts = {};
       }
-      if (!opts.root && !isAbsolute(path20)) {
+      if (!opts.root && !isAbsolute(path21)) {
         throw new TypeError("path must be absolute or specify root to res.sendFile");
       }
-      var pathname = encodeURI(path20);
+      var pathname = encodeURI(path21);
       var file = send(req, pathname, opts);
       sendfile(res2, file, opts, function(err) {
         if (done) return done(err);
@@ -23452,7 +23452,7 @@ var require_response = __commonJS2({
         }
       });
     };
-    res.sendfile = function(path20, options2, callback) {
+    res.sendfile = function(path21, options2, callback) {
       var done = callback;
       var req = this.req;
       var res2 = this;
@@ -23462,7 +23462,7 @@ var require_response = __commonJS2({
         done = options2;
         opts = {};
       }
-      var file = send(req, path20, opts);
+      var file = send(req, path21, opts);
       sendfile(res2, file, opts, function(err) {
         if (done) return done(err);
         if (err && err.code === "EISDIR") return next();
@@ -23475,7 +23475,7 @@ var require_response = __commonJS2({
       res.sendfile,
       "res.sendfile: Use res.sendFile instead"
     );
-    res.download = function download(path20, filename, options2, callback) {
+    res.download = function download(path21, filename, options2, callback) {
       var done = callback;
       var name = filename;
       var opts = options2 || null;
@@ -23492,7 +23492,7 @@ var require_response = __commonJS2({
         opts = filename;
       }
       var headers = {
-        "Content-Disposition": contentDisposition(name || path20)
+        "Content-Disposition": contentDisposition(name || path21)
       };
       if (opts && opts.headers) {
         var keys = Object.keys(opts.headers);
@@ -23505,7 +23505,7 @@ var require_response = __commonJS2({
       }
       opts = Object.create(opts);
       opts.headers = headers;
-      var fullPath = !opts.root ? resolve(path20) : path20;
+      var fullPath = !opts.root ? resolve(path21) : path21;
       return this.sendFile(fullPath, opts, done);
     };
     res.contentType = res.type = function contentType(type3) {
@@ -23806,11 +23806,11 @@ var require_serve_static = __commonJS2({
         }
         var forwardError = !fallthrough;
         var originalUrl = parseUrl.original(req);
-        var path19 = parseUrl(req).pathname;
-        if (path19 === "/" && originalUrl.pathname.substr(-1) !== "/") {
-          path19 = "";
+        var path20 = parseUrl(req).pathname;
+        if (path20 === "/" && originalUrl.pathname.substr(-1) !== "/") {
+          path20 = "";
         }
-        var stream = send(req, path19, opts);
+        var stream = send(req, path20, opts);
         stream.on("directory", onDirectory);
         if (setHeaders) {
           stream.on("headers", setHeaders);
@@ -27965,8 +27965,8 @@ var require_package = __commonJS2({
 // node_modules/dotenv/lib/main.js
 var require_main = __commonJS2({
   "node_modules/dotenv/lib/main.js"(exports2, module3) {
-    var fs21 = require("fs");
-    var path19 = require("path");
+    var fs22 = require("fs");
+    var path20 = require("path");
     var os = require("os");
     var crypto4 = require("crypto");
     var packageJson = require_package();
@@ -28074,7 +28074,7 @@ var require_main = __commonJS2({
       if (options2 && options2.path && options2.path.length > 0) {
         if (Array.isArray(options2.path)) {
           for (const filepath of options2.path) {
-            if (fs21.existsSync(filepath)) {
+            if (fs22.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -28082,15 +28082,15 @@ var require_main = __commonJS2({
           possibleVaultPath = options2.path.endsWith(".vault") ? options2.path : `${options2.path}.vault`;
         }
       } else {
-        possibleVaultPath = path19.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path20.resolve(process.cwd(), ".env.vault");
       }
-      if (fs21.existsSync(possibleVaultPath)) {
+      if (fs22.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path19.join(os.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path20.join(os.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options2) {
       const debug17 = Boolean(options2 && options2.debug);
@@ -28107,7 +28107,7 @@ var require_main = __commonJS2({
       return { parsed };
     }
     function configDotenv(options2) {
-      const dotenvPath = path19.resolve(process.cwd(), ".env");
+      const dotenvPath = path20.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug17 = Boolean(options2 && options2.debug);
       const quiet = options2 && "quiet" in options2 ? options2.quiet : true;
@@ -28131,13 +28131,13 @@ var require_main = __commonJS2({
       }
       let lastError;
       const parsedAll = {};
-      for (const path20 of optionPaths) {
+      for (const path21 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs21.readFileSync(path20, { encoding }));
+          const parsed = DotenvModule.parse(fs22.readFileSync(path21, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options2);
         } catch (e) {
           if (debug17) {
-            _debug(`Failed to load ${path20} ${e.message}`);
+            _debug(`Failed to load ${path21} ${e.message}`);
           }
           lastError = e;
         }
@@ -28152,7 +28152,7 @@ var require_main = __commonJS2({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative = path19.relative(process.cwd(), filePath);
+            const relative = path20.relative(process.cwd(), filePath);
             shortPaths.push(relative);
           } catch (e) {
             if (debug17) {
@@ -28692,13 +28692,13 @@ function __disposeResources(env) {
   }
   return next();
 }
-function __rewriteRelativeImportExtension(path19, preserveJsx) {
-  if (typeof path19 === "string" && /^\.\.?\//.test(path19)) {
-    return path19.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext, cm) {
+function __rewriteRelativeImportExtension(path20, preserveJsx) {
+  if (typeof path20 === "string" && /^\.\.?\//.test(path20)) {
+    return path20.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext, cm) {
       return tsx ? preserveJsx ? ".jsx" : ".js" : d && (!ext || !cm) ? m : d + ext + "." + cm.toLowerCase() + "js";
     });
   }
-  return path19;
+  return path20;
 }
 var extendStatics, __assign, __createBinding, __setModuleDefault, ownKeys, _SuppressedError, tslib_es6_default;
 var init_tslib_es6 = __esm2({
@@ -37301,8 +37301,8 @@ var require_main3 = __commonJS2({
 });
 
 // node_modules/iceberg-js/dist/index.mjs
-function buildUrl(baseUrl, path19, query) {
-  const url = new URL(path19, baseUrl);
+function buildUrl(baseUrl, path20, query) {
+  const url = new URL(path20, baseUrl);
   if (query) {
     for (const [key, value2] of Object.entries(query)) {
       if (value2 !== void 0) {
@@ -37332,12 +37332,12 @@ function createFetchClient(options2) {
   return {
     async request({
       method,
-      path: path19,
+      path: path20,
       query,
       body,
       headers
     }) {
-      const url = buildUrl(options2.baseUrl, path19, query);
+      const url = buildUrl(options2.baseUrl, path20, query);
       const authHeaders = await buildAuthHeaders(options2.auth);
       const res = await fetchFn(url, {
         method,
@@ -38005,7 +38005,7 @@ var init_dist3 = __esm2({
       if (bucketName.includes("/") || bucketName.includes("\\")) return false;
       return /^[\w!.\*'() &$@=;:+,?-]+$/.test(bucketName);
     };
-    encodeStoragePath = (path19) => path19.split("/").map(encodeURIComponent).join("/");
+    encodeStoragePath = (path20) => path20.split("/").map(encodeURIComponent).join("/");
     _getErrorMessage = (err) => {
       if (typeof err === "object" && err !== null) {
         const e = err;
@@ -38237,7 +38237,7 @@ var init_dist3 = __esm2({
       * @param path The relative file path. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
       * @param fileBody The body of the file to be stored in the bucket.
       */
-      async uploadOrUpdate(method, path19, fileBody, fileOptions) {
+      async uploadOrUpdate(method, path20, fileBody, fileOptions) {
         var _this = this;
         return _this.handleOperation(async () => {
           let body;
@@ -38261,7 +38261,7 @@ var init_dist3 = __esm2({
             if ((typeof ReadableStream !== "undefined" && body instanceof ReadableStream || body && typeof body === "object" && "pipe" in body && typeof body.pipe === "function") && !options2.duplex) options2.duplex = "half";
           }
           if (fileOptions === null || fileOptions === void 0 ? void 0 : fileOptions.headers) for (const [key, value2] of Object.entries(fileOptions.headers)) headers = setHeader2(headers, key, value2);
-          const cleanPath = _this._removeEmptyFolders(path19);
+          const cleanPath = _this._removeEmptyFolders(path20);
           const _path = _this._getFinalPath(cleanPath);
           const data = await (method == "PUT" ? put : post)(_this.fetch, `${_this.url}/object/${_path}`, body, _objectSpread22({ headers }, (options2 === null || options2 === void 0 ? void 0 : options2.duplex) ? { duplex: options2.duplex } : {}));
           return {
@@ -38338,8 +38338,8 @@ var init_dist3 = __esm2({
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Upload file using `ArrayBuffer` from base64 file data instead, see example below.
       */
-      async upload(path19, fileBody, fileOptions) {
-        return this.uploadOrUpdate("POST", path19, fileBody, fileOptions);
+      async upload(path20, fileBody, fileOptions) {
+        return this.uploadOrUpdate("POST", path20, fileBody, fileOptions);
       }
       /**
       * Upload a file with a token generated from `createSignedUploadUrl`.
@@ -38379,9 +38379,9 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: none
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async uploadToSignedUrl(path19, token, fileBody, fileOptions) {
+      async uploadToSignedUrl(path20, token, fileBody, fileOptions) {
         var _this3 = this;
-        const cleanPath = _this3._removeEmptyFolders(path19);
+        const cleanPath = _this3._removeEmptyFolders(path20);
         const _path = _this3._getFinalPath(cleanPath);
         const url = new URL(_this3.url + `/object/upload/sign/${_path}`);
         url.searchParams.set("token", token);
@@ -38450,10 +38450,10 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `insert`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async createSignedUploadUrl(path19, options2) {
+      async createSignedUploadUrl(path20, options2) {
         var _this4 = this;
         return _this4.handleOperation(async () => {
-          let _path = _this4._getFinalPath(path19);
+          let _path = _this4._getFinalPath(path20);
           const headers = _objectSpread22({}, _this4.headers);
           if (options2 === null || options2 === void 0 ? void 0 : options2.upsert) headers["x-upsert"] = "true";
           const data = await post(_this4.fetch, `${_this4.url}/object/upload/sign/${_path}`, {}, { headers });
@@ -38462,7 +38462,7 @@ var init_dist3 = __esm2({
           if (!token) throw new StorageError("No token returned by API");
           return {
             signedUrl: url.toString(),
-            path: path19,
+            path: path20,
             token
           };
         });
@@ -38522,8 +38522,8 @@ var init_dist3 = __esm2({
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Update file using `ArrayBuffer` from base64 file data instead, see example below.
       */
-      async update(path19, fileBody, fileOptions) {
-        return this.uploadOrUpdate("PUT", path19, fileBody, fileOptions);
+      async update(path20, fileBody, fileOptions) {
+        return this.uploadOrUpdate("PUT", path20, fileBody, fileOptions);
       }
       /**
       * Moves an existing file to a new path in the same bucket.
@@ -38674,10 +38674,10 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async createSignedUrl(path19, expiresIn, options2) {
+      async createSignedUrl(path20, expiresIn, options2) {
         var _this8 = this;
         return _this8.handleOperation(async () => {
-          let _path = _this8._getFinalPath(path19);
+          let _path = _this8._getFinalPath(path20);
           const hasTransform = typeof (options2 === null || options2 === void 0 ? void 0 : options2.transform) === "object" && options2.transform !== null && Object.keys(options2.transform).length > 0;
           let data = await post(_this8.fetch, `${_this8.url}/object/sign/${_path}`, _objectSpread22({ expiresIn }, hasTransform ? { transform: options2.transform } : {}), { headers: _this8.headers });
           const query = new URLSearchParams();
@@ -38812,13 +38812,13 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      download(path19, options2, parameters) {
+      download(path20, options2, parameters) {
         const renderPath = typeof (options2 === null || options2 === void 0 ? void 0 : options2.transform) === "object" && options2.transform !== null && Object.keys(options2.transform).length > 0 ? "render/image/authenticated" : "object";
         const query = new URLSearchParams();
         if (options2 === null || options2 === void 0 ? void 0 : options2.transform) this.applyTransformOptsToQuery(query, options2.transform);
         if ((options2 === null || options2 === void 0 ? void 0 : options2.cacheNonce) != null) query.set("cacheNonce", String(options2.cacheNonce));
         const queryString = query.toString();
-        const _path = this._getFinalPath(path19);
+        const _path = this._getFinalPath(path20);
         const downloadFn = () => get(this.fetch, `${this.url}/${renderPath}/${_path}${queryString ? `?${queryString}` : ""}`, {
           headers: this.headers,
           noResolveJson: true
@@ -38849,9 +38849,9 @@ var init_dist3 = __esm2({
       * }
       * ```
       */
-      async info(path19) {
+      async info(path20) {
         var _this10 = this;
-        const _path = _this10._getFinalPath(path19);
+        const _path = _this10._getFinalPath(path20);
         return _this10.handleOperation(async () => {
           return recursiveToCamel(await get(_this10.fetch, `${_this10.url}/object/info/${_path}`, { headers: _this10.headers }));
         });
@@ -38872,9 +38872,9 @@ var init_dist3 = __esm2({
       *   .exists('folder/avatar1.png')
       * ```
       */
-      async exists(path19) {
+      async exists(path20) {
         var _this11 = this;
-        const _path = _this11._getFinalPath(path19);
+        const _path = _this11._getFinalPath(path20);
         try {
           await head(_this11.fetch, `${_this11.url}/object/${_path}`, { headers: _this11.headers });
           return {
@@ -38953,8 +38953,8 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: none
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      getPublicUrl(path19, options2) {
-        const _path = this._getFinalPath(path19);
+      getPublicUrl(path20, options2) {
+        const _path = this._getFinalPath(path20);
         const query = new URLSearchParams();
         if (options2 === null || options2 === void 0 ? void 0 : options2.download) query.set("download", options2.download === true ? "" : options2.download);
         if (options2 === null || options2 === void 0 ? void 0 : options2.transform) this.applyTransformOptsToQuery(query, options2.transform);
@@ -39043,10 +39043,10 @@ var init_dist3 = __esm2({
       *   .purgeCache('folder/avatar1.png', { transformations: true })
       * ```
       */
-      async purgeCache(path19, options2, parameters) {
+      async purgeCache(path20, options2, parameters) {
         var _this13 = this;
         return _this13.handleOperation(async () => {
-          const _path = encodeStoragePath(_this13._getFinalPath(path19));
+          const _path = encodeStoragePath(_this13._getFinalPath(path20));
           const query = new URLSearchParams();
           if (options2 === null || options2 === void 0 ? void 0 : options2.transformations) query.set("transformations", "true");
           const queryString = query.toString();
@@ -39144,13 +39144,13 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async list(path19, options2, parameters) {
+      async list(path20, options2, parameters) {
         var _this14 = this;
         return _this14.handleOperation(async () => {
           const sortBy = (options2 === null || options2 === void 0 ? void 0 : options2.sortBy) ? _objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS.sortBy), options2.sortBy) : DEFAULT_SEARCH_OPTIONS.sortBy;
           const body = _objectSpread22(_objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS), options2), {}, {
             sortBy,
-            prefix: path19 || ""
+            prefix: path20 || ""
           });
           return await post(_this14.fetch, `${_this14.url}/object/list/${_this14.bucketId}`, body, { headers: _this14.headers }, parameters);
         });
@@ -39216,11 +39216,11 @@ var init_dist3 = __esm2({
         if (typeof Buffer !== "undefined") return Buffer.from(data).toString("base64");
         return btoa(data);
       }
-      _getFinalPath(path19) {
-        return `${this.bucketId}/${path19.replace(/^\/+/, "")}`;
+      _getFinalPath(path20) {
+        return `${this.bucketId}/${path20.replace(/^\/+/, "")}`;
       }
-      _removeEmptyFolders(path19) {
-        return path19.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
+      _removeEmptyFolders(path20) {
+        return path20.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
       }
       /** Modifies the `query`, appending values the from `transform` */
       applyTransformOptsToQuery(query, transform2) {
@@ -41322,9 +41322,9 @@ var require_helpers = __commonJS2({
       const fragment = hashIndex === -1 ? "" : redirectTo.slice(hashIndex);
       const queryIndex = base.indexOf("?");
       if (queryIndex !== -1) {
-        const path19 = base.slice(0, queryIndex);
+        const path20 = base.slice(0, queryIndex);
         const remaining = base.slice(queryIndex + 1).split("&").filter((pair) => pair !== "" && pair !== constants_1.PKCE_FLOW_ID_PARAM && !pair.startsWith(`${constants_1.PKCE_FLOW_ID_PARAM}=`));
-        base = remaining.length > 0 ? `${path19}?${remaining.join("&")}` : path19;
+        base = remaining.length > 0 ? `${path20}?${remaining.join("&")}` : path20;
       }
       const separator = base.includes("?") ? "&" : "?";
       return `${base}${separator}${constants_1.PKCE_FLOW_ID_PARAM}=${encodeURIComponent(flowId)}${fragment}`;
@@ -49906,6 +49906,7 @@ var init_settingsService = __esm2({
       gptImageAspectRatio: "3:4",
       gptImageBackground: "transparent",
       designerImageProvider: "IDEOGRAM",
+      designerPromptPoolEnabled: false,
       vectorizerApiKey: process.env.VECTORIZER_API_KEY || "",
       vectorizerApiSecret: process.env.VECTORIZER_API_SECRET || "",
       vectorizerModePreview: "test",
@@ -53921,8 +53922,8 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
         let imagePayload = fourPanelImageBase64OrPath;
         if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
           try {
-            const fs21 = await import("fs");
-            const buffer = fs21.readFileSync(imagePayload);
+            const fs22 = await import("fs");
+            const buffer = fs22.readFileSync(imagePayload);
             imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
           } catch (e) {
           }
@@ -107310,7 +107311,7 @@ ${end.comment}` : end.comment;
     var LineDiff = class extends Diff {
       constructor() {
         super(...arguments);
-        this.tokenize = tokenize2;
+        this.tokenize = tokenize3;
       }
       equals(left, right, options2) {
         if (options2.ignoreWhitespace) {
@@ -107339,7 +107340,7 @@ ${end.comment}` : end.comment;
       options2 = generateOptions(options2, { ignoreWhitespace: true });
       return lineDiff.diff(oldStr, newStr, options2);
     }
-    function tokenize2(value2, options2) {
+    function tokenize3(value2, options2) {
       if (options2.stripTrailingCr) {
         value2 = value2.replace(/\r\n/g, "\n");
       }
@@ -107399,7 +107400,7 @@ ${end.comment}` : end.comment;
     var JsonDiff = class extends Diff {
       constructor() {
         super(...arguments);
-        this.tokenize = tokenize2;
+        this.tokenize = tokenize3;
       }
       get useLongestToken() {
         return true;
@@ -111079,11 +111080,11 @@ ${end.comment}` : end.comment;
       return (f) => f.length === len && f !== "." && f !== "..";
     };
     var defaultPlatform = typeof process === "object" && process ? typeof process.env === "object" && process.env && process.env.__MINIMATCH_TESTING_PLATFORM__ || process.platform : "posix";
-    var path19 = {
+    var path20 = {
       win32: { sep: "\\" },
       posix: { sep: "/" }
     };
-    var sep = defaultPlatform === "win32" ? path19.win32.sep : path19.posix.sep;
+    var sep = defaultPlatform === "win32" ? path20.win32.sep : path20.posix.sep;
     minimatch.sep = sep;
     var GLOBSTAR = /* @__PURE__ */ Symbol("globstar **");
     minimatch.GLOBSTAR = GLOBSTAR;
@@ -221914,6 +221915,446 @@ var init_pipelineExecutionCoordinator = __esm2({
   }
 });
 
+// src/server/resources/promptPool.json
+var promptPool_default;
+var init_promptPool = __esm2({
+  "src/server/resources/promptPool.json"() {
+    promptPool_default = [
+      {
+        id: 1,
+        title: "Groovy Retro Stacked Text",
+        tags: [
+          "groovy",
+          "text-only"
+        ],
+        audience: "feminine / neutral",
+        bestFor: "upbeat, positive, feminine or playful phrases",
+        template: 'Retro groovy t-shirt design graphic with the text "[PHRASE]" in thick, layered, wavy 70s-style typography with soft pastel tones of dusty pink, mustard yellow, sage green, and cream, the words stacked in gently arched lines with a subtle drop-shadow offset behind each letter, isolated on a solid pure black background, the background colour is not found in the design for easy background removal, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 2,
+        title: "Vintage Crosshatch Engraving Subject",
+        tags: [
+          "vintage",
+          "single-colour"
+        ],
+        audience: "neutral (skews masculine with the right subject)",
+        bestFor: "classy, hobby, or dark-humour phrases with a strong central object or animal",
+        template: 'A nostalgic monochrome t-shirt design graphic of [SUBJECT \u2014 pick one object or animal that fits the phrase] rendered with detailed crosshatch and engraving effects in a single ink colour, like a 19th-century woodcut illustration, with the text "[PHRASE]" set above and below the illustration in a classic mix of bold serif capitals and elegant cursive script, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 3,
+        title: "Y2K Bootleg Rap-Tee Collage",
+        tags: [
+          "bootleg",
+          "meme"
+        ],
+        audience: "neutral (meme culture, any gender)",
+        bestFor: 'ironic hype phrases, "alpha"/sigma jokes, over-the-top confidence phrases',
+        template: 'A Y2K bootleg rap-tee style t-shirt design graphic featuring a dramatic airbrushed collage of [SUBJECT \u2014 a muscular or intense animal/character matching the phrase] shown twice at different scales, surrounded by lightning bolts, flames, sparkles, and a starry night sky, with the text "[PHRASE]" in large chrome-effect graffiti-style lettering across the top and a smaller repeated echo of the phrase in flaming letters at the bottom, saturated 2000s airbrush colours, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 4,
+        title: "Groovy Frog & Mushrooms",
+        tags: [
+          "groovy",
+          "cottage"
+        ],
+        audience: "neutral / feminine",
+        bestFor: "chill, nature, good-vibes phrases",
+        template: 'A 70s groovy t-shirt design graphic of a happy retro frog sitting on a large spotted mushroom surrounded by smaller mushrooms, daisies and curling vines, illustrated in a warm flat retro palette of avocado green, mustard, burnt orange and cream with simple grain shading, and "[PHRASE]" in thick wavy groovy lettering arched around the top of the scene in matching cream, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 5,
+        title: "Melting Drip Bubble Letters",
+        tags: [
+          "playful",
+          "text-only"
+        ],
+        audience: "neutral",
+        bestFor: "lazy-day, no-thoughts, silly-mood phrases",
+        template: 'A playful t-shirt design graphic with "[PHRASE]" in thick rounded bubble letters that appear to be melting, with long glossy drips running down from the bottom edges of the letters, flat soft-pink and white colouring with simple highlights, stacked across two or three lines, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 6,
+        title: "Post-Impressionist Swirl Painting",
+        tags: [
+          "vangogh"
+        ],
+        audience: "neutral",
+        bestFor: "phrases pairing something mundane or silly with high art, dreamy phrases",
+        template: 'A whimsical t-shirt design graphic inspired by post-impressionist swirling night-sky paintings, featuring [SUBJECT matching the phrase] in the foreground rendered with expressive thick oil-paint brushstrokes, behind it a star-filled sky swirling in rich blues, yellows and teals with glowing orbs of light, with "[PHRASE]" in hand-painted serif capitals along the bottom edge, the entire design isolated on a solid pure black background, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 7,
+        title: "Naive Doodle Line Art",
+        tags: [
+          "single-colour",
+          "doodle"
+        ],
+        audience: "neutral / feminine",
+        bestFor: "wholesome, quirky, understated phrases",
+        template: 'A minimalist single-colour line art t-shirt design graphic of [SUBJECT matching the phrase] in a naive hand-drawn doodle style with slightly wobbly indigo-blue ink lines and moderate detail, charmingly unfinished like a sketchbook page, with "[PHRASE]" handwritten beneath in a casual lowercase script as if scribbled with the same pen, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 8,
+        title: "Skull & Roses Pastel Goth",
+        tags: [
+          "goth",
+          "feminine-edgy"
+        ],
+        audience: "feminine",
+        bestFor: "spooky, sassy, dark-but-cute phrases",
+        template: 'A pastel goth t-shirt design graphic of a smooth stylised skull wrapped in blooming roses and trailing leaves, illustrated with bold clean outlines and flat shading in a palette of soft lavender, blush pink, sage and cream against deep charcoal linework, small sparkles and a tiny crescent moon accenting the composition, with "[PHRASE]" beneath in a rounded gothic-flavoured display font in lavender, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 9,
+        title: "Bigfoot Retro Sunburst",
+        tags: [
+          "retro",
+          "outdoors"
+        ],
+        audience: "masculine / neutral",
+        bestFor: "introvert, hide-away, outdoors-humour phrases",
+        template: 'A retro t-shirt design graphic of bigfoot mid-stride flashing a peace sign, illustrated in a textured vintage style in warm browns, in front of a large circle of alternating sunburst rays in faded orange and cream with simple pine trees along the bottom edge, and "[PHRASE]" in bold chunky retro letters arched above the circle, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 10,
+        title: "Pastel Rainbow Arc",
+        tags: [
+          "cute",
+          "retro"
+        ],
+        audience: "feminine / kids",
+        bestFor: "positive, happy, kids or feminine phrases",
+        template: 'A t-shirt design graphic of a soft pastel retro rainbow arc made of five thick bands in dusty pink, peach, cream, sage and muted blue, with a few small four-pointed stars floating around it, and "[PHRASE]" beneath the arc in a rounded friendly serif font in matching cream, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 11,
+        title: "Stipple Portrait + Landmark",
+        tags: [
+          "vintage",
+          "single-colour"
+        ],
+        audience: "neutral / masculine",
+        bestFor: "location pride phrases, chunky-animal humour",
+        template: 'Isolated on a solid pure black background, a highly detailed t-shirt design graphic featuring a side-profile portrait of [SUBJECT matching the phrase] in minimalist stipple-art style, rendered in a single warm tone using dense dots and fine cross-hatching for depth, with a famous skyline or landmark silhouette delicately stippled in the background, and "[PHRASE]" in a bold rounded bubble-style font matching the illustration colour, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 12,
+        title: "Japanese Woodblock Poster",
+        tags: [
+          "vintage"
+        ],
+        audience: "neutral / masculine",
+        bestFor: "food phrases, martial-arts or zen-humour phrases",
+        template: 'A vintage Japanese woodblock-poster style t-shirt design graphic featuring [SUBJECT matching the phrase] as the central figure in a dynamic pose, rendered with bold outlines, flat muted colours and subtle paper-grain shading, framed by a thin rectangular border with small vertical Japanese-style characters in one corner and a red rectangular seal stamp in another, with "[PHRASE]" in bold brush-style lettering along the bottom, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 13,
+        title: "Psychedelic Meme Bubble Text",
+        tags: [
+          "psychedelic",
+          "edgy",
+          "text-led"
+        ],
+        audience: "neutral (alt/edgy, any gender)",
+        bestFor: "dark-humour, meme-culture, alternative phrases",
+        template: 'A bold retro 70s psychedelic t-shirt design graphic featuring the phrase "[PHRASE]" in large wavy bubble letters. The typography fades from coral orange to vibrant purple, creating a gradient effect. The design includes a skeletal hand flashing a rock \u2019n\u2019 roll gesture and a small skeleton face icon tucked beside one key word. Tiny sparkles are scattered around the text for extra flair. The entire design is centered and isolated on a solid pure black background, giving it a dark humor and edgy aesthetic perfect for alternative fashion.'
+      },
+      {
+        id: 14,
+        title: "Western Character Howdy",
+        tags: [
+          "western",
+          "character"
+        ],
+        audience: "neutral",
+        bestFor: "country greetings, southern-sass, cowboy phrases",
+        template: 'A western t-shirt design graphic of [SUBJECT \u2014 an animal matching the phrase] wearing a cowboy hat and bandana, tipping the hat with one paw, illustrated in a warm vintage style with grain shading in tan, rust and cream, small desert plants and a horseshoe at its feet, with "[PHRASE]" in bold western slab-serif lettering arched above and a small rope flourish beneath, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 15,
+        title: "Ransom-Note Scrapbook",
+        tags: [
+          "scrapbook"
+        ],
+        audience: "neutral",
+        bestFor: "chaotic-energy phrases, teacher/test-day phrases, group trip phrases",
+        template: 'A playful ransom-note style t-shirt design graphic spelling "[PHRASE]" with each letter cut from a different mismatched piece \u2014 torn newspaper, notebook paper, coloured card, tape strips \u2014 in varied fonts, sizes and slight rotations, arranged in tidy chaotic lines, accented with a few hand-drawn doodle stars and paperclips, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 16,
+        title: "Kawaii Kitten Cloud",
+        tags: [
+          "kawaii",
+          "hyper-cute"
+        ],
+        audience: "feminine / kids",
+        bestFor: "dreamy, magical, cute-overload phrases",
+        template: 'A kawaii 2D flat vector art t-shirt design featuring an adorable wide-eyed calico kitten sitting on a fluffy purple cloud, surrounded by sparkles, floating hearts, and cartoon butterflies with playful faces and vibrant wings. Behind the kitten is a large pastel rainbow in shades of cyan, pink, and lavender, with whimsical stars and bubbles scattered throughout the background, and "[PHRASE]" in a chunky rounded kawaii font beneath the cloud. The overall composition has a cheerful, slightly chaotic, and hyper-cute aesthetic, set against a pure black background.'
+      },
+      {
+        id: 17,
+        title: "Flowers Through the Letters",
+        tags: [
+          "typography",
+          "floral"
+        ],
+        audience: "feminine",
+        bestFor: "sassy club phrases, soft-contrast statement phrases",
+        template: 'A bold t-shirt design graphic featuring the large distressed white text "[PHRASE]" in chunky vintage-style serif lettering, with colorful illustrated flowers like roses, lilies, and orchids growing through and around the letters, adding a soft contrast to the bold typography, the florals in vibrant hues of red, yellow, pink, blue, and purple with green leaves for balance, grunge texture overlay for a worn aesthetic, centered on a pure black background.'
+      },
+      {
+        id: 18,
+        title: "Kawaii Animal With Boba",
+        tags: [
+          "kawaii",
+          "cute"
+        ],
+        audience: "feminine / kids",
+        bestFor: "treat-lover, cosy, cute-obsession phrases",
+        template: 'A kawaii t-shirt design graphic of [SUBJECT \u2014 a chubby cute animal matching the phrase] happily hugging an oversized boba milk tea cup with both paws, a striped straw and floating tapioca pearls, illustrated with soft rounded shapes, blush cheeks and tiny sparkles in a palette of cream, brown sugar tan and soft pink, with "[PHRASE]" beneath in a chunky rounded font in cream, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 19,
+        title: "Western Stacked Type + Pattern Fill",
+        tags: [
+          "western"
+        ],
+        audience: "feminine (leopard print reads feminine)",
+        bestFor: "country/western phrases, sassy southern phrases",
+        template: 'A western-style t-shirt design graphic with "[PHRASE]" stacked in large bold vintage western fonts, alternating lines filled with leopard print and distressed solid colours in warm tan, rust and cream, flanked by small illustrated cowboy boots, horseshoes and sparkles, slight arch to the top line, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 20,
+        title: "Double-Exposure Silhouette",
+        tags: [
+          "nature",
+          "masculine"
+        ],
+        audience: "masculine",
+        bestFor: "outdoors, adventure, wild-spirit phrases",
+        template: `A t-shirt design graphic of the clean silhouette of [SUBJECT \u2014 an animal matching the phrase] filled entirely with a detailed nature scene \u2014 pine forest, mountain ridge and a rising moon \u2014 in a cool palette of deep teal, forest green and cream, double-exposure effect with the scene contained inside the silhouette's outline, and "[PHRASE]" beneath in wide-spaced uppercase serif in cream, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.`
+      },
+      {
+        id: 21,
+        title: "Floral Block With Woven Words",
+        tags: [
+          "floral",
+          "retro"
+        ],
+        audience: "feminine",
+        bestFor: "trait-list phrases (3-4 descriptive words), appreciation phrases",
+        template: 'A retro floral t-shirt design graphic in a bold block-style layout featuring large stylized poppies and daisies in warm burnt orange and deep red hues, intertwined with soft sage green leaves and stems. Delicate white daisy accents are scattered throughout the composition, adding light contrast. The words "[PHRASE \u2014 3-4 descriptive words]" are creatively integrated across the design in a vintage-inspired serif font, curving along stems, wrapped around petals, and weaving through negative space for a dynamic and harmonious layout. Earthy and cohesive color palette on a solid pure black background, 2D flat vector art style.'
+      },
+      {
+        id: 22,
+        title: "Scattered Sketch Trinket Collage",
+        tags: [
+          "vintage",
+          "single-colour"
+        ],
+        audience: "neutral",
+        bestFor: "phrases about a lifestyle or obsession with many small associated objects",
+        template: 'A whimsical t-shirt design graphic of eight to ten small hand-drawn vintage-sketch trinkets related to [THEME of the phrase] \u2014 rendered in fine single-colour ink linework and scattered playfully across the composition like treasures on a desk \u2014 with "[PHRASE]" handwritten in a warm serif script across the centre, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 23,
+        title: "Tie-Dye Script + Stacked Block",
+        tags: [
+          "tie-dye",
+          "school"
+        ],
+        audience: "feminine (teachers) / kids",
+        bestFor: "school, grade-level, teacher phrases (small intro word + big stacked words)",
+        template: 'A vibrant t-shirt design featuring the first word of "[PHRASE]" in a playful script font with a rainbow tie-dye texture, positioned at the top beneath two outlined apples with heart details. Below it, the remaining words of "[PHRASE]" are written in bold, uppercase block letters stacked directly underneath each other in the same style and texture, creating a balanced stacked layout. At the bottom, a cluster of colorful tie-dye flowers and butterflies completes the composition. The entire design is set against a solid pure black background.'
+      },
+      {
+        id: 24,
+        title: "Unimpressed Cat Portrait",
+        tags: [
+          "vintage",
+          "humour"
+        ],
+        audience: "neutral / feminine",
+        bestFor: "antisocial, sarcastic, cat-attitude phrases",
+        template: 'A vintage t-shirt design graphic of a fluffy cat sitting upright with a magnificently unimpressed expression, eyes half-closed, facing slightly away, illustrated in a detailed retro style with grain shading in cream, grey and warm tan, a few small sparkles around it, with "[PHRASE]" in a mix of bold serif capitals and casual script beneath the cat, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 25,
+        title: "Strawberry Grid With Bows",
+        tags: [
+          "cute",
+          "retro-grid"
+        ],
+        audience: "feminine",
+        bestFor: "sweet hobby/job phrases split into a top and bottom cursive line",
+        template: 'A t-shirt design graphic with a solid pure black background featuring a 3x3 grid of strawberries arranged in a 9-square layout. The first half of "[PHRASE]" is written in white cursive font at the top, and the second half is written in white cursive font at the bottom. Each strawberry is drawn in a minimalist style with a red outline and a small red bow at the top. The strawberries alternate between bright red and pale pink colors, each with green leaves and white seeds. The strawberries are contained within thin red rectangular frames with rounded corners with bows at the top of each frame. The design has a retro, vintage aesthetic with a limited color palette of red, black, and white. The strawberries are arranged in a symmetrical pattern, with 4 red strawberries and 5 pink strawberries.'
+      },
+      {
+        id: 26,
+        title: "Silly Goose Job Club",
+        tags: [
+          "cute",
+          "jobs"
+        ],
+        audience: "feminine",
+        bestFor: "profession-pride phrases (SILLY GOOSE + [JOB] CLUB format)",
+        template: 'A t-shirt design featuring a cute goose wearing a floral bow and holding a tumbler cup, standing confidently in front of a soft gingham background panel. Surrounding the goose are items related to [JOB matching the phrase] plus heart-shaped icons, with bright daisies scattered throughout the composition. The first half of "[PHRASE]" appears in bold lettering above the design, and the second half is placed below in the same bold font. The color palette is clean and vibrant rather than pastel, isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge).'
+      },
+      {
+        id: 27,
+        title: "Tight Shipwreck Captain",
+        tags: [
+          "vintage",
+          "nautical"
+        ],
+        audience: "masculine",
+        bestFor: "self-deprecating captain/boat/dad phrases split top and bottom",
+        template: 'A vintage-style t-shirt design in distressed navy blue ink on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge), featuring a rugged bearded sea captain with a pipe in his mouth, wearing a classic captain\u2019s hat with an anchor emblem and a seagull perched on his shoulder. The illustration is detailed with sketch-like linework and framed with ornate nautical flourishes. Bold, weathered text above and below the illustration reads the first half of "[PHRASE]" on top and the second half underneath in large, impactful lettering. The overall style mimics retro maritime signage with a tongue-in-cheek twist.'
+      },
+      {
+        id: 28,
+        title: "T-Rex Tea Party",
+        tags: [
+          "cartoon",
+          "pun"
+        ],
+        audience: "kids / neutral",
+        bestFor: "dino puns, kids, silly-polite phrases",
+        template: 'A charming retro cartoon t-shirt design graphic of a green T-rex sitting upright and daintily holding a tiny floral teacup with one little arm, pinky raised, a small saucer and teapot nearby, illustrated in a warm vintage cartoon style with grain shading in green, teal, cream and dusty pink, with "[PHRASE]" in bouncy retro serif lettering arched above, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 29,
+        title: "Coastal Crab on Stripes",
+        tags: [
+          "coastal",
+          "retro"
+        ],
+        audience: "neutral / masculine",
+        bestFor: "grumpy, beach-humour, crabby phrases",
+        template: 'A retro coastal t-shirt design graphic of a big red crab with both claws raised, illustrated in a warm vintage style with textured shading, standing in front of a rounded-top panel of wide vertical stripes in cream and faded navy, the claws overlapping the panel\u2019s edges, with "[PHRASE]" in bold vintage serif capitals arched above the panel, isolated on a solid pure black background, the background colour is not found in the design, t-shirt design graphic BUT not an actual mockup.'
+      },
+      {
+        id: 30,
+        title: "Pastel Goth Grim Reaper",
+        tags: [
+          "pastel-goth",
+          "dark-humour"
+        ],
+        audience: "feminine / neutral (pastel goth)",
+        bestFor: "bleak-but-cute two-part phrases (setup top, punchline bottom)",
+        template: 'A sarcastic pastel goth t-shirt design featuring a cute grim reaper sitting on fluffy clouds with black bat wings and a scythe, sipping from a tiny coffee mug. A pastel rainbow arches above the character, surrounded by stars, bats, and sparkly shapes. The first half of "[PHRASE]" is placed at the top and the second half at the bottom, both in a single-color soft lavender font with no outline or bubble effect. The entire design is isolated on a fully opaque solid pure white background which is painted as part of the artwork itself (never transparent, no alpha channel, the white canvas completely filled edge to edge).'
+      }
+    ];
+  }
+});
+
+// src/server/services/promptPoolService.ts
+function tokenize2(value2) {
+  return new Set(String(value2 || "").toLowerCase().split(/[^a-z0-9äöüß]+/i).filter((word) => word.length >= 3));
+}
+function entryFamily(entry) {
+  return entry.tags[0] || entry.title.toLowerCase();
+}
+var import_fs79, import_path74, HISTORY_LIMIT, PromptPoolService;
+var init_promptPoolService = __esm2({
+  "src/server/services/promptPoolService.ts"() {
+    "use strict";
+    import_fs79 = __toESM2(require("fs"), 1);
+    import_path74 = __toESM2(require("path"), 1);
+    init_promptPool();
+    init_atomicFileStorage();
+    HISTORY_LIMIT = 15;
+    PromptPoolService = class {
+      static historyFile = import_path74.default.resolve(process.cwd(), "data", "prompt_pool_history.json");
+      static entries = promptPool_default.filter(
+        (entry) => Number.isInteger(entry.id) && entry.id > 0 && Boolean(entry.title?.trim()) && Array.isArray(entry.tags) && Boolean(entry.template?.trim())
+      );
+      static getEntries() {
+        return this.entries.map((entry) => ({ ...entry, tags: [...entry.tags] }));
+      }
+      static validatePool() {
+        if (this.entries.length !== promptPool_default.length) {
+          return { valid: false, count: this.entries.length, error: "Mindestens ein Prompt-Pool-Eintrag ist ung\xFCltig." };
+        }
+        const ids = new Set(this.entries.map((entry) => entry.id));
+        if (ids.size !== this.entries.length) return { valid: false, count: this.entries.length, error: "Prompt-Pool-IDs sind nicht eindeutig." };
+        return { valid: this.entries.length > 0, count: this.entries.length };
+      }
+      static score(entry, input, recentIds) {
+        const inputTokens = tokenize2(Object.values(input).join(" "));
+        const tagTokens = tokenize2(entry.tags.join(" "));
+        const descriptorTokens = tokenize2(`${entry.title} ${entry.bestFor} ${entry.audience}`);
+        let score = 0;
+        for (const token of inputTokens) {
+          if (tagTokens.has(token)) score += 6;
+          if (descriptorTokens.has(token)) score += 3;
+        }
+        const style = String(input.style || "").toLowerCase();
+        if (style.includes("text only")) score += entry.tags.some((tag) => /text|typography/.test(tag)) ? 12 : -12;
+        const audience = String(input.audience || "").toLowerCase();
+        if (audience && entry.audience.toLowerCase().includes(audience)) score += 5;
+        const recentIndex = recentIds.lastIndexOf(entry.id);
+        if (recentIndex >= 0) score -= 18 + recentIndex;
+        return score;
+      }
+      static selectReferences(input, recentIds = [], random = Math.random) {
+        if (!this.validatePool().valid) return [];
+        const ranked = this.entries.map((entry) => ({ entry, score: this.score(entry, input, recentIds), tie: random() })).sort((a, b) => b.score - a.score || b.tie - a.tie);
+        const selected = [];
+        const match = ranked[0]?.entry;
+        if (match) selected.push({ entry: match, role: "MATCH" });
+        const adjacent = ranked.find((item) => item.entry.id !== match?.id && entryFamily(item.entry) !== (match ? entryFamily(match) : ""))?.entry;
+        if (adjacent) selected.push({ entry: adjacent, role: "ADJACENT" });
+        const usedIds = new Set(selected.map((item) => item.entry.id));
+        const usedFamilies = new Set(selected.map((item) => entryFamily(item.entry)));
+        const wildcardCandidates = this.entries.filter((entry) => !usedIds.has(entry.id) && !usedFamilies.has(entryFamily(entry)) && !recentIds.includes(entry.id));
+        const fallbackCandidates = this.entries.filter((entry) => !usedIds.has(entry.id));
+        const candidates = wildcardCandidates.length ? wildcardCandidates : fallbackCandidates;
+        if (candidates.length) {
+          const wildcard = candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
+          selected.push({ entry: wildcard, role: "WILDCARD" });
+        }
+        return selected.map(({ entry, role }) => ({ id: entry.id, title: entry.title, role }));
+      }
+      static loadHistory() {
+        try {
+          const parsed = JSON.parse(import_fs79.default.readFileSync(this.historyFile, "utf-8"));
+          return Array.isArray(parsed?.recentIds) ? parsed.recentIds.filter(Number.isInteger).slice(-HISTORY_LIMIT) : [];
+        } catch {
+          return [];
+        }
+      }
+      static selectAndRecord(input) {
+        const recentIds = this.loadHistory();
+        const references = this.selectReferences(input, recentIds);
+        if (references.length) {
+          const next = [...recentIds, ...references.map((ref) => ref.id)].slice(-HISTORY_LIMIT);
+          atomicWriteJson(this.historyFile, { recentIds: next, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+        }
+        return references;
+      }
+      static buildReferenceSection(references) {
+        if (!references.length) return "";
+        const entriesById = new Map(this.entries.map((entry) => [entry.id, entry]));
+        const rendered = references.map((reference) => {
+          const entry = entriesById.get(reference.id);
+          return entry ? `[${reference.role}] #${entry.id} ${entry.title}
+${entry.template}` : "";
+        }).filter(Boolean);
+        if (!rendered.length) return "";
+        return `CREATIVE REFERENCES
+
+These references are optional inspiration. Do not copy them verbatim. Use, combine, transform, or reject their visual principles. Ignore every background instruction inside the references. The D2 system prompt and current provider directive take precedence.
+
+${rendered.join("\n\n")}`;
+      }
+    };
+  }
+});
+
 // src/server/services/schedulerClock.ts
 function getSchedulerClock(now = /* @__PURE__ */ new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -223134,12 +223575,12 @@ var init_syncEngine = __esm2({
 });
 
 // src/server/services/amazonInspectService.ts
-var import_fs79, import_path74, FIND_LISTINGS_URL2, PRODUCT_CONFIG_URL2, ALL_STATUSES2, AmazonInspectService;
+var import_fs80, import_path75, FIND_LISTINGS_URL2, PRODUCT_CONFIG_URL2, ALL_STATUSES2, AmazonInspectService;
 var init_amazonInspectService = __esm2({
   "src/server/services/amazonInspectService.ts"() {
     "use strict";
-    import_fs79 = __toESM2(require("fs"), 1);
-    import_path74 = __toESM2(require("path"), 1);
+    import_fs80 = __toESM2(require("fs"), 1);
+    import_path75 = __toESM2(require("path"), 1);
     init_browserSessionService();
     init_syncEngine();
     init_taskLogService();
@@ -223518,13 +223959,13 @@ var init_amazonInspectService = __esm2({
         if (!cleanDesignId || !cleanTaskId) {
           return { success: false, error: "Task-ID oder Design-ID fehlt." };
         }
-        const designsDir = import_path74.default.resolve(process.cwd(), "data", "designs");
-        if (!import_fs79.default.existsSync(designsDir)) {
-          import_fs79.default.mkdirSync(designsDir, { recursive: true });
+        const designsDir = import_path75.default.resolve(process.cwd(), "data", "designs");
+        if (!import_fs80.default.existsSync(designsDir)) {
+          import_fs80.default.mkdirSync(designsDir, { recursive: true });
         }
         const safeId = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const filename = `${safeId}.png`;
-        const filePath = import_path74.default.join(designsDir, filename);
+        const filePath = import_path75.default.join(designsDir, filename);
         const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
         console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download & DOM-Live-Inspektion f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
         TaskLogService2.updateTaskStatus(cleanTaskId, {
@@ -223574,14 +224015,14 @@ var init_amazonInspectService = __esm2({
           }, extractResult.fullResUrl);
           const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
           const buffer = Buffer.from(base64Clean, "base64");
-          const designsDir2 = import_path74.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs79.default.existsSync(designsDir2)) {
-            import_fs79.default.mkdirSync(designsDir2, { recursive: true });
+          const designsDir2 = import_path75.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs80.default.existsSync(designsDir2)) {
+            import_fs80.default.mkdirSync(designsDir2, { recursive: true });
           }
           const safeId2 = cleanTaskId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const filename2 = `${safeId2}.png`;
-          const filePath2 = import_path74.default.join(designsDir2, filename2);
-          import_fs79.default.writeFileSync(filePath2, buffer);
+          const filePath2 = import_path75.default.join(designsDir2, filename2);
+          import_fs80.default.writeFileSync(filePath2, buffer);
           console.log(`[AmazonInspectService] \u{1F4BE} Original-Design f\xFCr ${cleanTaskId} erfolgreich gespeichert: ${filePath2} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(cleanTaskId)}`;
           const pageRejectionInfo = await newTab.evaluate(() => {
@@ -223861,12 +224302,12 @@ var init_amazonInspectService = __esm2({
 });
 
 // src/server/services/assetValidationService.ts
-var import_fs80, import_path75, AssetValidationService;
+var import_fs81, import_path76, AssetValidationService;
 var init_assetValidationService = __esm2({
   "src/server/services/assetValidationService.ts"() {
     "use strict";
-    import_fs80 = __toESM2(require("fs"), 1);
-    import_path75 = __toESM2(require("path"), 1);
+    import_fs81 = __toESM2(require("fs"), 1);
+    import_path76 = __toESM2(require("path"), 1);
     AssetValidationService = class {
       /**
        * Validates whether a given file path is a valid, readable PNG (or JPG) image.
@@ -223875,14 +224316,14 @@ var init_assetValidationService = __esm2({
       static isValidPngImage(filePath, minSizeBytes = 1e4) {
         if (!filePath) return false;
         try {
-          const resolved = import_path75.default.resolve(filePath);
-          if (!import_fs80.default.existsSync(resolved)) return false;
-          const stats2 = import_fs80.default.statSync(resolved);
+          const resolved = import_path76.default.resolve(filePath);
+          if (!import_fs81.default.existsSync(resolved)) return false;
+          const stats2 = import_fs81.default.statSync(resolved);
           if (!stats2.isFile() || stats2.size < minSizeBytes) return false;
-          const fd = import_fs80.default.openSync(resolved, "r");
+          const fd = import_fs81.default.openSync(resolved, "r");
           const buffer = Buffer.alloc(8);
-          import_fs80.default.readSync(fd, buffer, 0, 8, 0);
-          import_fs80.default.closeSync(fd);
+          import_fs81.default.readSync(fd, buffer, 0, 8, 0);
+          import_fs81.default.closeSync(fd);
           const isPng = buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71;
           const isJpg = buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255;
           return isPng || isJpg;
@@ -223896,11 +224337,11 @@ var init_assetValidationService = __esm2({
       static isValidSvgFile(filePath, minSizeBytes = 20) {
         if (!filePath) return false;
         try {
-          const resolved = import_path75.default.resolve(filePath);
-          if (!import_fs80.default.existsSync(resolved)) return false;
-          const stats2 = import_fs80.default.statSync(resolved);
+          const resolved = import_path76.default.resolve(filePath);
+          if (!import_fs81.default.existsSync(resolved)) return false;
+          const stats2 = import_fs81.default.statSync(resolved);
           if (!stats2.isFile() || stats2.size < minSizeBytes) return false;
-          const content = import_fs80.default.readFileSync(resolved, "utf-8");
+          const content = import_fs81.default.readFileSync(resolved, "utf-8");
           const trimmed = content.trim();
           const hasOpeningTag = trimmed.includes("<svg") || trimmed.includes("<?xml");
           const hasClosingTag = trimmed.includes("</svg>");
@@ -223938,12 +224379,12 @@ var init_assetValidationService = __esm2({
        */
       static validateProductVariantDimensions(filePath, expectedWidth, expectedHeight) {
         try {
-          const resolved = import_path75.default.resolve(filePath);
-          if (!import_fs80.default.existsSync(resolved)) return false;
-          const fd = import_fs80.default.openSync(resolved, "r");
+          const resolved = import_path76.default.resolve(filePath);
+          if (!import_fs81.default.existsSync(resolved)) return false;
+          const fd = import_fs81.default.openSync(resolved, "r");
           const buffer = Buffer.alloc(24);
-          import_fs80.default.readSync(fd, buffer, 0, 24, 0);
-          import_fs80.default.closeSync(fd);
+          import_fs81.default.readSync(fd, buffer, 0, 24, 0);
+          import_fs81.default.closeSync(fd);
           const isPng = buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71;
           if (!isPng) return false;
           const width = buffer.readUInt32BE(16);
@@ -223962,11 +224403,11 @@ var finalizationService_exports = {};
 __export2(finalizationService_exports, {
   FinalizationService: () => FinalizationService
 });
-var import_fs81, import_node_crypto2, FinalizationService;
+var import_fs82, import_node_crypto2, FinalizationService;
 var init_finalizationService = __esm2({
   "src/server/services/finalizationService.ts"() {
     "use strict";
-    import_fs81 = __toESM2(require("fs"), 1);
+    import_fs82 = __toESM2(require("fs"), 1);
     import_node_crypto2 = require("node:crypto");
     init_taskLogService();
     init_queueService();
@@ -224082,7 +224523,7 @@ var init_finalizationService = __esm2({
           title: "\u{1F4D0} Artwork-Vorbereitung (gemeinsame Quellen- und Formatpr\xFCfung)...",
           content: { phase: "ARTWORK_PREPARATION", status: "RUNNING" }
         });
-        if (!masterPngPath || !import_fs81.default.existsSync(masterPngPath)) {
+        if (!masterPngPath || !import_fs82.default.existsSync(masterPngPath)) {
           const err = `Master-Artwork nicht gefunden unter: ${masterPngPath}`;
           console.error(`[FinalizationService] \u274C ${err}`);
           TaskLogService2.addEvent(taskId, {
@@ -224139,7 +224580,7 @@ var init_finalizationService = __esm2({
           { name: "Drinkware Brush", path: resizedAssets.drinkwareBrushPath }
         ];
         for (const f of requiredFiles) {
-          if (!f.path || !import_fs81.default.existsSync(f.path)) {
+          if (!f.path || !import_fs82.default.existsSync(f.path)) {
             const err = `Generiertes Asset "${f.name}" nicht auf Disk gefunden: ${f.path}`;
             console.error(`[FinalizationService] \u274C ${err}`);
             TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
@@ -224149,7 +224590,7 @@ var init_finalizationService = __esm2({
         const productVariants = resizedAssets.productVariants || {};
         for (const variant of generatableVariants) {
           const variantPath = productVariants[variant.id];
-          if (!variantPath || !import_fs81.default.existsSync(variantPath)) {
+          if (!variantPath || !import_fs82.default.existsSync(variantPath)) {
             const err = `Product-Variant "${variant.id}" (${variant.label}) nicht auf Disk gefunden: ${variantPath}`;
             console.error(`[FinalizationService] \u274C ${err}`);
             TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
@@ -224294,12 +224735,12 @@ var updatePipelineService_exports = {};
 __export2(updatePipelineService_exports, {
   UpdatePipelineService: () => UpdatePipelineService
 });
-var import_fs82, import_path76, UpdatePipelineService;
+var import_fs83, import_path77, UpdatePipelineService;
 var init_updatePipelineService = __esm2({
   "src/server/services/updatePipelineService.ts"() {
     "use strict";
-    import_fs82 = __toESM2(require("fs"), 1);
-    import_path76 = __toESM2(require("path"), 1);
+    import_fs83 = __toESM2(require("fs"), 1);
+    import_path77 = __toESM2(require("path"), 1);
     init_taskLogService();
     init_amazonInspectService();
     init_settingsService();
@@ -224347,8 +224788,8 @@ var init_updatePipelineService = __esm2({
         const designId = task.payload?.designId;
         if (!designId) return { success: false, error: `Keine Design-ID im Task ${taskId} hinterlegt` };
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const mbaPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+        const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
         const existingValidPath = task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 5e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(mbaPath, 5e4) ? mbaPath : AssetValidationService.isValidPngImage(rawPath, 5e4) ? rawPath : null;
         if (existingValidPath) {
           console.log(`[UpdatePipeline] \u267B\uFE0F G\xFCltiges Master Artwork existiert bereits lokal (${existingValidPath}). \xDCberspringe Download.`);
@@ -224369,9 +224810,9 @@ var init_updatePipelineService = __esm2({
           });
           return { success: false, error: res.error };
         }
-        const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
-        const u4PreviewPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
-        if (targetPath && import_fs82.default.existsSync(targetPath)) {
+        const targetPath = task.localMbaPngPath && import_fs83.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs83.default.existsSync(mbaPath) ? mbaPath : import_fs83.default.existsSync(rawPath) ? rawPath : null;
+        const u4PreviewPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+        if (targetPath && import_fs83.default.existsSync(targetPath)) {
           VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
             if (r.savedPath) {
               TaskLogService2.updateTaskStatus(taskId, {
@@ -224411,22 +224852,22 @@ var init_updatePipelineService = __esm2({
         let imageBase64 = null;
         let gridPreviewUrl;
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const mbaPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
-        const gridOutputPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
-        const u4PreviewPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+        const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+        const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const targetPath = task.localMbaPngPath && import_fs83.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs83.default.existsSync(mbaPath) ? mbaPath : import_fs83.default.existsSync(rawPath) ? rawPath : null;
+        const gridOutputPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
+        const u4PreviewPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
         if (targetPath) {
           try {
             const { base64DataUrl, savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridOutputPath);
             imageBase64 = base64DataUrl;
-            if (savedPath || import_fs82.default.existsSync(gridOutputPath)) {
+            if (savedPath || import_fs83.default.existsSync(gridOutputPath)) {
               gridPreviewUrl = `/api/v1/designs/grid2x2/${encodeURIComponent(taskId)}`;
             }
           } catch (err) {
             console.warn(`[UpdatePipeline] Konnte Bild f\xFCr Vision nicht optimieren:`, err);
           }
-          if (!import_fs82.default.existsSync(u4PreviewPath)) {
+          if (!import_fs83.default.existsSync(u4PreviewPath)) {
             VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
               if (r.savedPath) {
                 TaskLogService2.updateTaskStatus(taskId, {
@@ -224617,16 +225058,16 @@ Bullets: ${oldBullets}`
         let u4ImageBase64;
         let u4ImageSourceType = "ORIGINAL_FALLBACK";
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const mbaPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-        const rawPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const targetPath = task.localMbaPngPath && import_fs82.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs82.default.existsSync(mbaPath) ? mbaPath : import_fs82.default.existsSync(rawPath) ? rawPath : null;
-        const u4PreviewPath = import_path76.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
-        if (targetPath && import_fs82.default.existsSync(targetPath)) {
-          if (import_fs82.default.existsSync(u4PreviewPath)) {
+        const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+        const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const targetPath = task.localMbaPngPath && import_fs83.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs83.default.existsSync(mbaPath) ? mbaPath : import_fs83.default.existsSync(rawPath) ? rawPath : null;
+        const u4PreviewPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+        if (targetPath && import_fs83.default.existsSync(targetPath)) {
+          if (import_fs83.default.existsSync(u4PreviewPath)) {
             try {
-              const stats2 = import_fs82.default.statSync(u4PreviewPath);
+              const stats2 = import_fs83.default.statSync(u4PreviewPath);
               if (stats2.size > 1e3) {
-                const buf = import_fs82.default.readFileSync(u4PreviewPath);
+                const buf = import_fs83.default.readFileSync(u4PreviewPath);
                 u4ImageBase64 = `data:image/png;base64,${buf.toString("base64")}`;
                 u4ImageSourceType = "PREVIEW_1125x1350";
                 console.log(`[UpdatePipeline] \u{1F5BC}\uFE0F Verwende vorhandene 1125x1350 U4-Preview (${u4PreviewPath}, ${(buf.length / 1024).toFixed(1)} KB)`);
@@ -224655,7 +225096,7 @@ Bullets: ${oldBullets}`
           if (!u4ImageBase64) {
             try {
               console.warn(`[UpdatePipeline] \u{1F504} FALLBACK: Verwende Original-PNG f\xFCr U4-Call (${targetPath})...`);
-              const buf = import_fs82.default.readFileSync(targetPath);
+              const buf = import_fs83.default.readFileSync(targetPath);
               u4ImageBase64 = `data:image/png;base64,${buf.toString("base64")}`;
               u4ImageSourceType = "ORIGINAL_FALLBACK";
             } catch (e) {
@@ -225110,7 +225551,7 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u25B6\uFE0F Setze Pipeline ab aktuellem Stand f\xFCr Task ${taskId} fort...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        if (!task.localMbaPngPath || !import_fs82.default.existsSync(task.localMbaPngPath)) {
+        if (!task.localMbaPngPath || !import_fs83.default.existsSync(task.localMbaPngPath)) {
           const u2 = await this.stepU2_DownloadArtwork(taskId);
           if (!u2.success) return { success: false, error: u2.error };
         }
@@ -225999,12 +226440,12 @@ var init_amazonRecoveryVerificationService = __esm2({
 });
 
 // src/server/services/taskRecoveryService.ts
-var import_fs83, import_path77, TaskRecoveryService;
+var import_fs84, import_path78, TaskRecoveryService;
 var init_taskRecoveryService = __esm2({
   "src/server/services/taskRecoveryService.ts"() {
     "use strict";
-    import_fs83 = __toESM2(require("fs"), 1);
-    import_path77 = __toESM2(require("path"), 1);
+    import_fs84 = __toESM2(require("fs"), 1);
+    import_path78 = __toESM2(require("path"), 1);
     init_queueService();
     init_taskRepository();
     init_taskLogService();
@@ -226496,8 +226937,8 @@ var init_taskRecoveryService = __esm2({
             case "UPDATE_EXTRACTED":
               return await UpdatePipelineService.runFromStep(taskId, "U2", "RECOVERY");
             case "UPDATE_DOWNLOADING_ARTWORK": {
-              const mbaPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-              const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+              const mbaPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+              const rawPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
               const existingPath = task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 5e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(mbaPath, 5e4) ? mbaPath : AssetValidationService.isValidPngImage(rawPath, 5e4) ? rawPath : null;
               if (existingPath) {
                 TaskLogService2.addEvent(taskId, {
@@ -226592,7 +227033,7 @@ var init_taskRecoveryService = __esm2({
           case "PROMPT_READY":
             return await DesignPipelineService.runFromStep(taskId, "D3", "RECOVERY");
           case "GENERATING_IMAGE": {
-            const rawPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+            const rawPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
             const targetPng = task.localImagePath && AssetValidationService.isValidPngImage(task.localImagePath, 1e4) ? task.localImagePath : task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 1e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(rawPath, 1e4) ? rawPath : null;
             if (targetPng) {
               TaskLogService2.addEvent(taskId, {
@@ -226647,7 +227088,7 @@ var init_taskRecoveryService = __esm2({
             return await TaskLogService2.completeTaskAndEnqueue(taskId);
           }
           case "VECTORIZING_DESIGN": {
-            const svgPath = import_path77.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+            const svgPath = import_path78.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
             const targetSvg = task.localSvgPath && AssetValidationService.isValidSvgFile(task.localSvgPath, 20) ? task.localSvgPath : AssetValidationService.isValidSvgFile(svgPath, 20) ? svgPath : null;
             if (targetSvg) {
               TaskLogService2.addEvent(taskId, {
@@ -226657,11 +227098,11 @@ var init_taskRecoveryService = __esm2({
                 content: { path: targetSvg }
               });
               try {
-                const svgContent = import_fs83.default.readFileSync(targetSvg, "utf-8");
+                const svgContent = import_fs84.default.readFileSync(targetSvg, "utf-8");
                 const fourPanelFilename = `${cleanId}_4panel.png`;
-                const fourPanelFilePath = import_path77.default.resolve(process.cwd(), "data", "designs", fourPanelFilename);
+                const fourPanelFilePath = import_path78.default.resolve(process.cwd(), "data", "designs", fourPanelFilename);
                 const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgContent);
-                import_fs83.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+                import_fs84.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
                 const auditRes = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
                 if (auditRes.cutout_verdict === "REJECTED") {
                   console.log(`[TaskRecovery] \u23F8\uFE0F SVG Audit verlangt manuelle \xDCberpr\xFCfung f\xFCr Task ${taskId}. Pausiere bei AWAITING_SVG_REVIEW.`);
@@ -226674,10 +227115,10 @@ var init_taskRecoveryService = __esm2({
                   return { success: true, pausedAtCheckpoint: "SVG_REVIEW" };
                 }
                 const mbaFilename = `${cleanId}_mba.png`;
-                const mbaFilePath = import_path77.default.resolve(process.cwd(), "data", "designs", mbaFilename);
+                const mbaFilePath = import_path78.default.resolve(process.cwd(), "data", "designs", mbaFilename);
                 if (!AssetValidationService.isValidPngImage(mbaFilePath, 5e4)) {
                   const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgContent);
-                  import_fs83.default.writeFileSync(mbaFilePath, mbaBuffer);
+                  import_fs84.default.writeFileSync(mbaFilePath, mbaBuffer);
                   TaskLogService2.updateTaskStatus(taskId, { localMbaPngPath: mbaFilePath });
                 }
                 return await DesignPipelineService.stepD8_Enqueue(taskId);
@@ -227215,12 +227656,12 @@ function normalizeCatalogProductId(raw) {
   const matched = ProductCatalogService.findProductByAmazonKey(s);
   return matched ? matched.id : s;
 }
-var import_fs84, import_path78, NON_US_DROP_ORDER, QueueService;
+var import_fs85, import_path79, NON_US_DROP_ORDER, QueueService;
 var init_queueService = __esm2({
   "src/server/services/queueService.ts"() {
     "use strict";
-    import_fs84 = __toESM2(require("fs"), 1);
-    import_path78 = __toESM2(require("path"), 1);
+    import_fs85 = __toESM2(require("fs"), 1);
+    import_path79 = __toESM2(require("path"), 1);
     init_productCatalogService();
     init_listingSanitizationService();
     init_settingsService();
@@ -227229,16 +227670,16 @@ var init_queueService = __esm2({
     init_atomicFileStorage();
     NON_US_DROP_ORDER = ["JP", "ES", "IT", "FR", "DE", "GB"];
     QueueService = class {
-      static queueFilePath = import_path78.default.resolve(process.cwd(), "data", "upload_queue.json");
+      static queueFilePath = import_path79.default.resolve(process.cwd(), "data", "upload_queue.json");
       static items = [];
       static isLoaded = false;
       static isStorageCorrupted = false;
       static dailySlotsInfo = { free: 200, used: 0, total: 200 };
       static setCustomQueuePath(customPath) {
         if (customPath) {
-          this.queueFilePath = import_path78.default.resolve(customPath);
+          this.queueFilePath = import_path79.default.resolve(customPath);
         } else {
-          this.queueFilePath = import_path78.default.resolve(process.cwd(), "data", "upload_queue.json");
+          this.queueFilePath = import_path79.default.resolve(process.cwd(), "data", "upload_queue.json");
         }
         this.isLoaded = false;
         this.isStorageCorrupted = false;
@@ -227256,7 +227697,7 @@ var init_queueService = __esm2({
        */
       static loadQueue() {
         try {
-          if (import_fs84.default.existsSync(this.queueFilePath)) {
+          if (import_fs85.default.existsSync(this.queueFilePath)) {
             const recovery = loadJsonWithBackupRecovery(this.queueFilePath, {
               backupExt: ".bak",
               validate: (data) => Array.isArray(data),
@@ -228245,12 +228686,12 @@ __export2(taskLogService_exports, {
   isTaskAwaitingUserAction: () => isTaskAwaitingUserAction,
   toTaskSummary: () => toTaskSummary
 });
-var import_fs85, import_path79, TaskLogService2;
+var import_fs86, import_path80, TaskLogService2;
 var init_taskLogService = __esm2({
   "src/server/services/taskLogService.ts"() {
     "use strict";
-    import_fs85 = __toESM2(require("fs"), 1);
-    import_path79 = __toESM2(require("path"), 1);
+    import_fs86 = __toESM2(require("fs"), 1);
+    import_path80 = __toESM2(require("path"), 1);
     init_settingsService();
     init_systemPromptService();
     init_ideogramService();
@@ -228266,10 +228707,11 @@ var init_taskLogService = __esm2({
     init_taskRepository();
     init_taskExecutionLock();
     init_pipelineExecutionCoordinator();
+    init_promptPoolService();
     init_tasks();
     init_tasks();
     TaskLogService2 = class {
-      static dataDir = import_path79.default.resolve(process.cwd(), "data");
+      static dataDir = import_path80.default.resolve(process.cwd(), "data");
       static eventBroadcaster = null;
       static setBroadcaster(fn) {
         this.eventBroadcaster = fn;
@@ -228382,6 +228824,20 @@ var init_taskLogService = __esm2({
           style: settings.ideogramStyle || "GENERAL",
           magicPrompt: settings.ideogramMagicPromptOption || "AUTO"
         };
+        const promptPoolEnabled = typeof params2.payload?.promptPoolEnabled === "boolean" ? params2.payload.promptPoolEnabled : settings.designerPromptPoolEnabled;
+        const promptPool = params2.source === "UPDATE" ? void 0 : {
+          enabled: promptPoolEnabled,
+          selectedReferences: promptPoolEnabled ? PromptPoolService.selectAndRecord({
+            niche1: params2.payload?.niche1 || params2.payload?.niche,
+            niche2: params2.payload?.niche2,
+            subniche: params2.payload?.subniche,
+            quote: params2.payload?.quote,
+            style: params2.payload?.style || params2.payload?.stylePreset,
+            feeling: params2.payload?.feeling || params2.payload?.feelings,
+            audience: params2.payload?.audience,
+            customInstruction: params2.payload?.customInstruction || params2.payload?.custominstruction || params2.payload?.["custom instruction"]
+          }) : []
+        };
         const incomingTitle = params2.source === "HERMES" ? "Eingang von Hermes" : params2.source === "TEST" ? "Eingang von Test (Playground)" : params2.source === "UPDATE" ? "Eingang von Amazon Merch (Update-Pipeline)" : "Eingang von Designer";
         const initialEvent = {
           timestamp: now,
@@ -228404,6 +228860,7 @@ var init_taskLogService = __esm2({
           hermesKeywords: params2.payload?.hermesKeywords || (Array.isArray(params2.payload?.keywords) ? params2.payload.keywords : void 0),
           payload: params2.payload || {},
           imageGeneration,
+          promptPool,
           events: [initialEvent],
           hasError: Boolean(params2.hasError),
           errorDetails: params2.errorDetails
@@ -228640,15 +229097,20 @@ var init_taskLogService = __esm2({
 
 CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || "transparent"}. ${imageGeneration.background === "transparent" ? "Explicitly require a genuine transparent alpha background." : "Keep the artwork isolated and free of product mockups or scenes."}` : "\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.";
         const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
+        const referenceSection = task.promptPool?.enabled ? PromptPoolService.buildReferenceSection(task.promptPool.selectedReferences) : "";
         const userMessage = `Input:
-${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, null, 2)}`;
+${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, null, 2)}${referenceSection ? `
+
+${referenceSection}` : ""}`;
         this.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "LLM_REQUEST",
           title: `Senden an ${provider}`,
           content: {
             systemPrompt,
-            userMessage
+            userMessage,
+            promptPoolMode: task.promptPool?.enabled ? "PROMPT_POOL" : "STANDARD",
+            promptPoolReferences: task.promptPool?.selectedReferences || []
           },
           metadata: {
             model
@@ -228744,6 +229206,24 @@ ${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, nul
       static async processTaskWithImageGenerator(taskId, promptText) {
         return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithImageGeneratorExclusive(taskId, promptText));
       }
+      static refreshPromptPoolSettings(task) {
+        const enabled = loadSettings().designerPromptPoolEnabled;
+        const snapshot3 = {
+          enabled,
+          selectedReferences: enabled ? PromptPoolService.selectAndRecord({
+            niche1: task.niche1 || task.payload?.niche1 || task.payload?.niche,
+            niche2: task.niche2 || task.payload?.niche2,
+            subniche: task.subniche || task.payload?.subniche,
+            quote: task.quote || task.payload?.quote,
+            style: task.payload?.style || task.payload?.stylePreset,
+            feeling: task.payload?.feeling || task.payload?.feelings,
+            audience: task.customAnswers?.audience || task.payload?.audience,
+            customInstruction: task.payload?.customInstruction || task.payload?.custominstruction || task.payload?.["custom instruction"]
+          }) : []
+        };
+        task.promptPool = snapshot3;
+        return snapshot3;
+      }
       /** Keep the task's chosen provider, but refresh that provider's mutable settings for a manual rerun. */
       static refreshImageGenerationSettings(task) {
         const settings = loadSettings();
@@ -228817,14 +229297,14 @@ ${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, nul
         const start3 = Date.now();
         try {
           const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-          const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs85.default.existsSync(designsDir)) {
+          const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs86.default.existsSync(designsDir)) {
             try {
-              import_fs85.default.mkdirSync(designsDir, { recursive: true });
+              import_fs86.default.mkdirSync(designsDir, { recursive: true });
             } catch (e) {
             }
           }
-          const localFilePath = import_path79.default.join(designsDir, `${cleanId}.png`);
+          const localFilePath = import_path80.default.join(designsDir, `${cleanId}.png`);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
           let sourceUrl = localUrl;
           if (isGptImage) {
@@ -228834,7 +229314,7 @@ ${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, nul
               aspectRatio: snapshot3.aspectRatio || "3:4",
               background: snapshot3.background || "transparent"
             });
-            import_fs85.default.writeFileSync(localFilePath, result2.bytes);
+            import_fs86.default.writeFileSync(localFilePath, result2.bytes);
           } else {
             const result2 = await IdeogramService.generateImage({
               prompt,
@@ -228847,10 +229327,10 @@ ${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, nul
             sourceUrl = result2.imageUrl;
             const imgRes = await fetch(result2.imageUrl);
             if (!imgRes.ok) throw new Error(`Ideogram-Bild konnte nicht heruntergeladen werden (HTTP ${imgRes.status}).`);
-            import_fs85.default.writeFileSync(localFilePath, Buffer.from(await imgRes.arrayBuffer()));
+            import_fs86.default.writeFileSync(localFilePath, Buffer.from(await imgRes.arrayBuffer()));
           }
           console.log(`[TaskLogService] \u{1F4BE} Bild f\xFCr Task ${taskId} lokal gespeichert: ${localFilePath}`);
-          const previewFilePath = import_path79.default.join(designsDir, `${cleanId}.u4-preview.png`);
+          const previewFilePath = import_path80.default.join(designsDir, `${cleanId}.u4-preview.png`);
           VisionOptimizationService.prepareU4PreviewImage(localFilePath, previewFilePath).catch((err) => {
             console.warn(`[TaskLogService] Background preview pre-generation failed for ${taskId}:`, err.message);
           });
@@ -228945,7 +229425,7 @@ Beantworte die Analysefragen streng als JSON!`;
           }
         });
         let imageSource = imageUrl;
-        if (import_fs85.default.existsSync(localFilePath)) {
+        if (import_fs86.default.existsSync(localFilePath)) {
           try {
             const { base64DataUrl } = await VisionOptimizationService.prepareVisionImage(localFilePath);
             imageSource = base64DataUrl || imageSource;
@@ -229095,18 +229575,18 @@ Beantworte die Analysefragen streng als JSON!`;
         const targetGroup = Array.isArray(task.analysisResult?.target_group?.selected) ? task.analysisResult.target_group.selected.join(", ") : "Men, Women, Youth";
         const avoidColors = task.analysisResult?.avoid_product_colors?.avoid || "None";
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-        const previewFilePath = import_path79.default.join(designsDir, `${cleanId}.u4-preview.png`);
-        const mbaFilePath = import_path79.default.join(designsDir, `${cleanId}_mba.png`);
-        const rawFilePath = import_path79.default.join(designsDir, `${cleanId}.png`);
-        const targetOriginalPath = task.localMbaPngPath && import_fs85.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs85.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs85.default.existsSync(rawFilePath) ? rawFilePath : void 0;
+        const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+        const previewFilePath = import_path80.default.join(designsDir, `${cleanId}.u4-preview.png`);
+        const mbaFilePath = import_path80.default.join(designsDir, `${cleanId}_mba.png`);
+        const rawFilePath = import_path80.default.join(designsDir, `${cleanId}.png`);
+        const targetOriginalPath = task.localMbaPngPath && import_fs86.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task.localImagePath && import_fs86.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs86.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs86.default.existsSync(rawFilePath) ? rawFilePath : void 0;
         let listingImageBase64 = void 0;
         let listingImageSourceType = "NONE";
         let optimizationMeta = void 0;
         if (targetOriginalPath) {
-          if (import_fs85.default.existsSync(previewFilePath)) {
+          if (import_fs86.default.existsSync(previewFilePath)) {
             try {
-              const previewBuf = import_fs85.default.readFileSync(previewFilePath);
+              const previewBuf = import_fs86.default.readFileSync(previewFilePath);
               if (previewBuf.length > 500) {
                 listingImageBase64 = `data:image/png;base64,${previewBuf.toString("base64")}`;
                 listingImageSourceType = "PREVIEW_1125x1350";
@@ -229143,7 +229623,7 @@ Beantworte die Analysefragen streng als JSON!`;
           if (!listingImageBase64) {
             try {
               console.warn(`[TaskLogService] \u{1F504} FALLBACK: Verwende Originalbild f\xFCr Listing-Vision-Call (${targetOriginalPath})...`);
-              const origBuf = import_fs85.default.readFileSync(targetOriginalPath);
+              const origBuf = import_fs86.default.readFileSync(targetOriginalPath);
               listingImageBase64 = `data:image/png;base64,${origBuf.toString("base64")}`;
               listingImageSourceType = "ORIGINAL_FALLBACK";
               optimizationMeta = {
@@ -229465,9 +229945,9 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         const maxColors = task.customAnswers?.maxColors ?? task.analysisResult?.color_analysis?.color_count ?? 2;
         const cleanId = task.id.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const canonicalImagePath = import_path79.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-        const localImagePath = task.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : canonicalImagePath;
-        const hasLocalImage = import_fs85.default.existsSync(localImagePath);
+        const canonicalImagePath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const localImagePath = task.localImagePath && import_fs86.default.existsSync(task.localImagePath) ? task.localImagePath : canonicalImagePath;
+        const hasLocalImage = import_fs86.default.existsSync(localImagePath);
         const remoteImageUrl = typeof task.imageUrl === "string" && /^https?:\/\//i.test(task.imageUrl) ? task.imageUrl : void 0;
         if (!hasLocalImage && !remoteImageUrl) {
           console.warn(`[TaskLogService] \u26A0\uFE0F Kein Bild f\xFCr Vektorisierung bei Task ${taskId} gefunden.`);
@@ -229503,25 +229983,25 @@ Beantworte die Analysefragen streng als JSON!`;
         try {
           let svgText = "";
           if (hasLocalImage) {
-            const buffer = import_fs85.default.readFileSync(localImagePath);
+            const buffer = import_fs86.default.readFileSync(localImagePath);
             svgText = await VectorizerService.vectorizeBuffer(buffer, "image/png", false, { maxColors });
           } else if (remoteImageUrl) {
             svgText = await VectorizerService.vectorizeImage(remoteImageUrl, false, { maxColors });
           }
           const latencyMs = Date.now() - start3;
-          const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-          if (!import_fs85.default.existsSync(designsDir)) {
+          const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+          if (!import_fs86.default.existsSync(designsDir)) {
             try {
-              import_fs85.default.mkdirSync(designsDir, { recursive: true });
+              import_fs86.default.mkdirSync(designsDir, { recursive: true });
             } catch (e) {
             }
           }
           const origFilename = `${cleanId}_original.svg`;
-          const origFilePath = import_path79.default.join(designsDir, origFilename);
-          import_fs85.default.writeFileSync(origFilePath, svgText, "utf-8");
+          const origFilePath = import_path80.default.join(designsDir, origFilename);
+          import_fs86.default.writeFileSync(origFilePath, svgText, "utf-8");
           const svgFilename = `${cleanId}.svg`;
-          const svgFilePath = import_path79.default.join(designsDir, svgFilename);
-          import_fs85.default.writeFileSync(svgFilePath, svgText, "utf-8");
+          const svgFilePath = import_path80.default.join(designsDir, svgFilename);
+          import_fs86.default.writeFileSync(svgFilePath, svgText, "utf-8");
           const ts = Date.now();
           const origSvgUrl = `/api/v1/designs/svg-original/${encodeURIComponent(taskId)}?t=${ts}`;
           const localSvgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${ts}`;
@@ -229556,7 +230036,7 @@ Beantworte die Analysefragen streng als JSON!`;
             const bgResult = await SvgRenderService.autoRemoveCornerBackground(svgText);
             if (bgResult.success && bgResult.removedCount > 0) {
               svgText = bgResult.modifiedSvg;
-              import_fs85.default.writeFileSync(svgFilePath, svgText, "utf-8");
+              import_fs86.default.writeFileSync(svgFilePath, svgText, "utf-8");
               task.svgContent = svgText;
               this.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -229570,9 +230050,9 @@ Beantworte die Analysefragen streng als JSON!`;
             }
             console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Multifarben-Testbild f\xFCr Task ${taskId}...`);
             const fourPanelFilename = `${cleanId}_4panel.png`;
-            const fourPanelFilePath = import_path79.default.join(designsDir, fourPanelFilename);
+            const fourPanelFilePath = import_path80.default.join(designsDir, fourPanelFilename);
             const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-            import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+            import_fs86.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
             const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${Date.now()}`;
             task.localFourPanelImagePath = fourPanelFilePath;
             task.fourPanelImageUrl = fourPanelUrl;
@@ -229612,9 +230092,9 @@ Beantworte die Analysefragen streng als JSON!`;
             if (auditResult.cutout_verdict === "APPROVED") {
               console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
               const mbaFilename = `${cleanId}_mba.png`;
-              const mbaFilePath = import_path79.default.join(designsDir, mbaFilename);
+              const mbaFilePath = import_path80.default.join(designsDir, mbaFilename);
               const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgText);
-              import_fs85.default.writeFileSync(mbaFilePath, mbaBuffer);
+              import_fs86.default.writeFileSync(mbaFilePath, mbaBuffer);
               const mbaUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${Date.now()}`;
               task.localMbaPngPath = mbaFilePath;
               task.mbaPngUrl = mbaUrl;
@@ -229645,9 +230125,9 @@ Beantworte die Analysefragen streng als JSON!`;
           } else {
             try {
               const fourPanelFilename = `${cleanId}_4panel.png`;
-              const fourPanelFilePath = import_path79.default.join(designsDir, fourPanelFilename);
+              const fourPanelFilePath = import_path80.default.join(designsDir, fourPanelFilename);
               const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(svgText);
-              import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+              import_fs86.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
               task.localFourPanelImagePath = fourPanelFilePath;
               task.fourPanelImageUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}`;
               this.persistArtworkState(task);
@@ -229721,6 +230201,7 @@ Beantworte die Analysefragen streng als JSON!`;
           currentTask.resultPrompt = void 0;
           currentTask.hasError = false;
           currentTask.errorDetails = void 0;
+          this.refreshPromptPoolSettings(currentTask);
           this.saveLogs(logs);
           this.generatePromptWithOpenRouter(taskId).catch((err) => {
             console.error(`[TaskLogService] Retry Prompt failed for task ${taskId}:`, err);
@@ -229966,15 +230447,15 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         let deletedFiles = 0;
         try {
-          const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-          if (import_fs85.default.existsSync(designsDir)) {
-            const files = import_fs85.default.readdirSync(designsDir);
+          const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+          if (import_fs86.default.existsSync(designsDir)) {
+            const files = import_fs86.default.readdirSync(designsDir);
             for (const file of files) {
               if (file === ".gitkeep") continue;
               try {
-                const filePath = import_path79.default.join(designsDir, file);
-                if (import_fs85.default.statSync(filePath).isFile()) {
-                  import_fs85.default.unlinkSync(filePath);
+                const filePath = import_path80.default.join(designsDir, file);
+                if (import_fs86.default.statSync(filePath).isFile()) {
+                  import_fs86.default.unlinkSync(filePath);
                   deletedFiles++;
                 }
               } catch (e) {
@@ -229985,15 +230466,15 @@ Beantworte die Analysefragen streng als JSON!`;
           console.warn("[TaskLogService] Konnte data/designs/ nicht leeren:", err);
         }
         try {
-          const dataDir = import_path79.default.resolve(process.cwd(), "data");
-          if (import_fs85.default.existsSync(dataDir)) {
-            const files = import_fs85.default.readdirSync(dataDir);
+          const dataDir = import_path80.default.resolve(process.cwd(), "data");
+          if (import_fs86.default.existsSync(dataDir)) {
+            const files = import_fs86.default.readdirSync(dataDir);
             for (const file of files) {
               if (file.endsWith("_grid2x2.jpg") || file.endsWith(".u4-preview.png") || file.endsWith("_mba.png") || file.endsWith("_orig.svg") || file.endsWith("_4panel.jpg") || file.endsWith(".svg") || file.startsWith("test_")) {
                 try {
-                  const filePath = import_path79.default.join(dataDir, file);
-                  if (import_fs85.default.statSync(filePath).isFile()) {
-                    import_fs85.default.unlinkSync(filePath);
+                  const filePath = import_path80.default.join(dataDir, file);
+                  if (import_fs86.default.statSync(filePath).isFile()) {
+                    import_fs86.default.unlinkSync(filePath);
                     deletedFiles++;
                   }
                 } catch (e) {
@@ -230017,10 +230498,10 @@ Beantworte die Analysefragen streng als JSON!`;
         if (deleted) {
           try {
             const safeId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-            const imgPath = import_path79.default.resolve(process.cwd(), "data", "designs", `${safeId}.png`);
-            if (import_fs85.default.existsSync(imgPath)) import_fs85.default.unlinkSync(imgPath);
-            const previewPath = import_path79.default.resolve(process.cwd(), "data", "designs", `${safeId}.u4-preview.png`);
-            if (import_fs85.default.existsSync(previewPath)) import_fs85.default.unlinkSync(previewPath);
+            const imgPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${safeId}.png`);
+            if (import_fs86.default.existsSync(imgPath)) import_fs86.default.unlinkSync(imgPath);
+            const previewPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${safeId}.u4-preview.png`);
+            if (import_fs86.default.existsSync(previewPath)) import_fs86.default.unlinkSync(previewPath);
           } catch (e) {
           }
           if (this.eventBroadcaster) {
@@ -230365,17 +230846,17 @@ Beantworte die Analysefragen streng als JSON!`;
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
+        const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
         if (params2.action === "APPROVE") {
           if (params2.editedSvgContent) {
-            if (!import_fs85.default.existsSync(designsDir)) {
+            if (!import_fs86.default.existsSync(designsDir)) {
               try {
-                import_fs85.default.mkdirSync(designsDir, { recursive: true });
+                import_fs86.default.mkdirSync(designsDir, { recursive: true });
               } catch (e) {
               }
             }
-            const svgFilePath = import_path79.default.join(designsDir, `${cleanId}.svg`);
-            import_fs85.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
+            const svgFilePath = import_path80.default.join(designsDir, `${cleanId}.svg`);
+            import_fs86.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
             task.svgContent = params2.editedSvgContent;
             task.localSvgPath = svgFilePath;
             task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
@@ -230384,8 +230865,8 @@ Beantworte die Analysefragen streng als JSON!`;
           const ts = Date.now();
           console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Testbild nach SVG-Freigabe f\xFCr Task ${taskId}...`);
           const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
-          const fourPanelFilePath = import_path79.default.join(designsDir, `${cleanId}_4panel.png`);
-          import_fs85.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+          const fourPanelFilePath = import_path80.default.join(designsDir, `${cleanId}_4panel.png`);
+          import_fs86.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
           task.localFourPanelImagePath = fourPanelFilePath;
           const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
           task.fourPanelImageUrl = fourPanelUrl;
@@ -230425,8 +230906,8 @@ Beantworte die Analysefragen streng als JSON!`;
           if (auditResult.cutout_verdict === "APPROVED") {
             console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
             const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
-            const mbaFilePath = import_path79.default.join(designsDir, `${cleanId}_mba.png`);
-            import_fs85.default.writeFileSync(mbaFilePath, mbaBuffer);
+            const mbaFilePath = import_path80.default.join(designsDir, `${cleanId}_mba.png`);
+            import_fs86.default.writeFileSync(mbaFilePath, mbaBuffer);
             task.localMbaPngPath = mbaFilePath;
             task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
             this.addEvent(taskId, {
@@ -230514,14 +230995,14 @@ Beantworte die Analysefragen streng als JSON!`;
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
-        const origFilePath = import_path79.default.join(designsDir, `${cleanId}_original.svg`);
-        const svgFilePath = import_path79.default.join(designsDir, `${cleanId}.svg`);
-        if (!import_fs85.default.existsSync(origFilePath)) {
+        const designsDir = import_path80.default.resolve(process.cwd(), "data", "designs");
+        const origFilePath = import_path80.default.join(designsDir, `${cleanId}_original.svg`);
+        const svgFilePath = import_path80.default.join(designsDir, `${cleanId}.svg`);
+        if (!import_fs86.default.existsSync(origFilePath)) {
           throw new Error(`Original-SVG f\xFCr Task ${taskId} nicht gefunden.`);
         }
-        const originalSvgContent = import_fs85.default.readFileSync(origFilePath, "utf-8");
-        import_fs85.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
+        const originalSvgContent = import_fs86.default.readFileSync(origFilePath, "utf-8");
+        import_fs86.default.writeFileSync(svgFilePath, originalSvgContent, "utf-8");
         task.svgContent = originalSvgContent;
         task.localSvgPath = svgFilePath;
         task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
@@ -231864,8 +232345,8 @@ var import_websocket_server = __toESM2(require_websocket_server(), 1);
 
 // src/server/index.ts
 var import_cors = __toESM2(require_lib3(), 1);
-var import_path82 = __toESM2(require("path"), 1);
-var import_fs88 = __toESM2(require("fs"), 1);
+var import_path83 = __toESM2(require("path"), 1);
+var import_fs89 = __toESM2(require("fs"), 1);
 var import_dotenv = __toESM2(require_main(), 1);
 var import_url3 = require("url");
 var import_child_process8 = require("child_process");
@@ -231876,8 +232357,8 @@ init_ideogramService();
 init_vectorizerService();
 
 // src/server/services/supabaseService.ts
-var import_fs86 = __toESM2(require("fs"), 1);
-var import_path80 = __toESM2(require("path"), 1);
+var import_fs87 = __toESM2(require("fs"), 1);
+var import_path81 = __toESM2(require("path"), 1);
 init_dist4();
 init_settingsService();
 var SupabaseService = class {
@@ -231945,11 +232426,11 @@ var SupabaseService = class {
     if (this.cachedStats && now - this.lastStatsFetch < 15e3) {
       return this.cachedStats;
     }
-    const statsFile = import_path80.default.resolve(process.cwd(), "data", "supabase_stats.json");
+    const statsFile = import_path81.default.resolve(process.cwd(), "data", "supabase_stats.json");
     const loadPersisted = () => {
       try {
-        if (import_fs86.default.existsSync(statsFile)) {
-          return JSON.parse(import_fs86.default.readFileSync(statsFile, "utf-8"));
+        if (import_fs87.default.existsSync(statsFile)) {
+          return JSON.parse(import_fs87.default.readFileSync(statsFile, "utf-8"));
         }
       } catch (e) {
       }
@@ -231991,9 +232472,9 @@ var SupabaseService = class {
       };
       if (result2.totalDesigns > 0 || result2.liveDesigns > 0) {
         try {
-          const dataDir = import_path80.default.resolve(process.cwd(), "data");
-          if (!import_fs86.default.existsSync(dataDir)) import_fs86.default.mkdirSync(dataDir, { recursive: true });
-          import_fs86.default.writeFileSync(statsFile, JSON.stringify(result2, null, 2), "utf-8");
+          const dataDir = import_path81.default.resolve(process.cwd(), "data");
+          if (!import_fs87.default.existsSync(dataDir)) import_fs87.default.mkdirSync(dataDir, { recursive: true });
+          import_fs87.default.writeFileSync(statsFile, JSON.stringify(result2, null, 2), "utf-8");
         } catch (e) {
         }
       }
@@ -232658,8 +233139,8 @@ var ProductScannerService = class {
 init_queueService();
 
 // src/server/services/uploadWorkerService.ts
-var import_path81 = __toESM2(require("path"), 1);
-var import_fs87 = __toESM2(require("fs"), 1);
+var import_path82 = __toESM2(require("path"), 1);
+var import_fs88 = __toESM2(require("fs"), 1);
 init_browserSessionService();
 init_queueService();
 init_productCatalogService();
@@ -233086,19 +233567,19 @@ var UploadWorkerService = class _UploadWorkerService {
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       let pngAbsolutePath = "";
-      if (item.pngPath && import_fs87.default.existsSync(item.pngPath)) {
-        pngAbsolutePath = import_path81.default.resolve(item.pngPath);
+      if (item.pngPath && import_fs88.default.existsSync(item.pngPath)) {
+        pngAbsolutePath = import_path82.default.resolve(item.pngPath);
       } else {
         const candidatePaths = [
-          import_path81.default.resolve(process.cwd(), "data", "designs", `${item.taskId}.png`),
-          import_path81.default.resolve(process.cwd(), "data", "designs", `${item.taskId.replace("#", "")}.png`),
-          import_path81.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`),
-          import_path81.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_master.png`),
-          import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}.png`),
-          import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}_master.png`)
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId}.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId.replace("#", "")}.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_mba_print.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${item.taskId}_master.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}.png`),
+          import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanDesignId}_master.png`)
         ];
         for (const cp of candidatePaths) {
-          if (import_fs87.default.existsSync(cp)) {
+          if (import_fs88.default.existsSync(cp)) {
             pngAbsolutePath = cp;
             break;
           }
@@ -233107,10 +233588,10 @@ var UploadWorkerService = class _UploadWorkerService {
       if (isUpdate) {
         this.log(`\u2139\uFE0F [UPDATE-MODUS] Bestehendes Listing wird bearbeitet \u2013 Artwork ist bereits auf Amazon vorhanden.`, "Update Modus", 25, 100);
       } else {
-        if (!pngAbsolutePath || !import_fs87.default.existsSync(pngAbsolutePath)) {
+        if (!pngAbsolutePath || !import_fs88.default.existsSync(pngAbsolutePath)) {
           throw new Error(`Druckfertige 4500x5400px PNG-Datei f\xFCr Task #${item.taskId} nicht gefunden.`);
         }
-        this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path81.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
+        this.log(`\u{1F4E4} Lade Master-PNG hoch (${import_path82.default.basename(pngAbsolutePath)})...`, "Lade PNG hoch...", 20, 100);
         const fileInput = await page.waitForSelector('.dropzone-container input[type="file"], input[type="file"].file-upload-input, input[type="file"]', {
           state: "attached",
           timeout: 2e4
@@ -233899,7 +234380,7 @@ var UploadWorkerService = class _UploadWorkerService {
               } else if (selectedVariant.storageType === "productVariants") {
                 targetArtworkPath = item.resizedAssets?.productVariants?.[selectedVariant.id];
               }
-              if (!targetArtworkPath || !import_fs87.default.existsSync(targetArtworkPath)) {
+              if (!targetArtworkPath || !import_fs88.default.existsSync(targetArtworkPath)) {
                 const err = `FAILED_ARTWORK_RESOLUTION: Asset f\xFCr Variante "${selectedVariant.id}" (${selectedVariant.label}) f\xFCr ${product.displayName} nicht gefunden (storageType: ${selectedVariant.storageType})`;
                 currentProductStatus = "FAILED_ARTWORK_RESOLUTION";
                 currentProductFailureReason = err;
@@ -234014,7 +234495,7 @@ var UploadWorkerService = class _UploadWorkerService {
                       }
                     }, locateInputResult.inputId);
                   }
-                  this.log(`\u23F3 ${product.displayName}: Artwork zugewiesen (${import_path81.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
+                  this.log(`\u23F3 ${product.displayName}: Artwork zugewiesen (${import_path82.default.basename(targetArtworkPath)}). Warte auf Upload-Abschluss...`);
                   let uploadDone = false;
                   const pollStart = Date.now();
                   const amazonKey = product.amazon?.key || product.id;
@@ -234787,7 +235268,7 @@ init_taskRecoveryService();
 init_amazonRecoveryVerificationService();
 var import_meta = {};
 import_dotenv.default.config();
-var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path82.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
+var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path83.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
 var app = (0, import_express.default)();
 var server2 = import_http4.default.createServer(app);
 var isSystemReady = false;
@@ -235119,26 +235600,26 @@ app.post("/api/v1/system/update", async (req, res) => {
     }
     const arrayBuffer = await response2.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const tempTarPath = import_path82.default.resolve(process.cwd(), ".temp_update.tar.gz");
-    import_fs88.default.writeFileSync(tempTarPath, buffer);
+    const tempTarPath = import_path83.default.resolve(process.cwd(), ".temp_update.tar.gz");
+    import_fs89.default.writeFileSync(tempTarPath, buffer);
     (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
     try {
-      import_fs88.default.unlinkSync(tempTarPath);
+      import_fs89.default.unlinkSync(tempTarPath);
     } catch (e) {
     }
-    const hostRepoPath = import_path82.default.resolve(process.cwd(), "host_repo");
-    if (import_fs88.default.existsSync(hostRepoPath)) {
+    const hostRepoPath = import_path83.default.resolve(process.cwd(), "host_repo");
+    if (import_fs89.default.existsSync(hostRepoPath)) {
       try {
-        import_fs88.default.writeFileSync(tempTarPath, buffer);
+        import_fs89.default.writeFileSync(tempTarPath, buffer);
         (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });
         try {
-          import_fs88.default.unlinkSync(tempTarPath);
+          import_fs89.default.unlinkSync(tempTarPath);
         } catch (e) {
         }
       } catch (e) {
@@ -235414,11 +235895,11 @@ app.post("/api/v1/design-pipeline/run", async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
-var heartbeatFile = import_path82.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
+var heartbeatFile = import_path83.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
 function loadHeartbeatState() {
   try {
-    if (import_fs88.default.existsSync(heartbeatFile)) {
-      const data = JSON.parse(import_fs88.default.readFileSync(heartbeatFile, "utf-8"));
+    if (import_fs89.default.existsSync(heartbeatFile)) {
+      const data = JSON.parse(import_fs89.default.readFileSync(heartbeatFile, "utf-8"));
       return {
         lastPingTime: Number(data.lastPingTime) || 0,
         lastPingIp: data.lastPingIp || "",
@@ -235441,9 +235922,9 @@ function recordHermesHeartbeat(req, metadata) {
   }
   console.log(`[MCP Heartbeat] \u{1F7E2} Heartbeat #${hermesHeartbeat.totalPings} von IP ${clientIp} registriert (Server-Zeit: ${(/* @__PURE__ */ new Date()).toLocaleTimeString()})`);
   try {
-    const dataDir = import_path82.default.resolve(process.cwd(), "data");
-    if (!import_fs88.default.existsSync(dataDir)) import_fs88.default.mkdirSync(dataDir, { recursive: true });
-    import_fs88.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
+    const dataDir = import_path83.default.resolve(process.cwd(), "data");
+    if (!import_fs89.default.existsSync(dataDir)) import_fs89.default.mkdirSync(dataDir, { recursive: true });
+    import_fs89.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
   } catch (e) {
   }
   const currentHermes = {
@@ -235610,13 +236091,14 @@ app.post("/api/v1/designer/prompt", async (req, res) => {
 });
 app.post("/api/v1/designer/generate", async (req, res) => {
   try {
-    const { prompt, niche1, niche2, quote: quote5, imageProvider } = req.body;
+    const { prompt, niche1, niche2, quote: quote5, imageProvider, promptPoolEnabled } = req.body;
     const clientIp = req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "local";
     const taskLog = TaskLogService2.createTaskLog({
       source: "DESIGNER",
       payload: {
         prompt,
         imageProvider: imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM",
+        promptPoolEnabled: Boolean(promptPoolEnabled),
         niche1,
         niche2,
         quote: quote5
@@ -235922,66 +236404,66 @@ app.post("/api/v1/systemprompts/reset", (req, res) => {
 });
 app.get("/api/v1/designs/image/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const mbaFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs88.default.existsSync(mbaFilePath)) {
+  if (import_fs89.default.existsSync(mbaFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs88.default.createReadStream(mbaFilePath).pipe(res);
+    return import_fs89.default.createReadStream(mbaFilePath).pipe(res);
   }
-  if (import_fs88.default.existsSync(rawFilePath)) {
+  if (import_fs89.default.existsSync(rawFilePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs88.default.createReadStream(rawFilePath).pipe(res);
+    return import_fs89.default.createReadStream(rawFilePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  if (task?.localImagePath && import_fs88.default.existsSync(task.localImagePath)) {
+  if (task?.localImagePath && import_fs89.default.existsSync(task.localImagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs88.default.createReadStream(task.localImagePath).pipe(res);
+    return import_fs89.default.createReadStream(task.localImagePath).pipe(res);
   }
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
   }
   const queueItems = QueueService.loadQueue();
   const qItem = queueItems.find((q) => q.id === req.params.taskId || q.taskId === req.params.taskId || q.designId === req.params.taskId);
-  if (qItem?.pngPath && import_fs88.default.existsSync(qItem.pngPath)) {
+  if (qItem?.pngPath && import_fs89.default.existsSync(qItem.pngPath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs88.default.createReadStream(qItem.pngPath).pipe(res);
+    return import_fs89.default.createReadStream(qItem.pngPath).pipe(res);
   }
-  if (qItem?.imagePath && import_fs88.default.existsSync(qItem.imagePath)) {
+  if (qItem?.imagePath && import_fs89.default.existsSync(qItem.imagePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs88.default.createReadStream(qItem.imagePath).pipe(res);
+    return import_fs89.default.createReadStream(qItem.imagePath).pipe(res);
   }
   res.status(404).send("Design image not found");
 });
 app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const gridFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
+  const gridFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs88.default.existsSync(gridFilePath)) {
+  if (import_fs89.default.existsSync(gridFilePath)) {
     try {
-      const stats2 = import_fs88.default.statSync(gridFilePath);
+      const stats2 = import_fs89.default.statSync(gridFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs88.default.createReadStream(gridFilePath).pipe(res);
+        return import_fs89.default.createReadStream(gridFilePath).pipe(res);
       }
     } catch (e) {
     }
   }
-  const mbaFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs88.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs88.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs88.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs88.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs89.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs89.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs89.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs89.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge 2x2 Grid f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
-      if (savedPath && import_fs88.default.existsSync(savedPath)) {
+      if (savedPath && import_fs89.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/jpeg");
-        return import_fs88.default.createReadStream(savedPath).pipe(res);
+        return import_fs89.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -235991,31 +236473,31 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
 });
 app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const previewFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+  const previewFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs88.default.existsSync(previewFilePath)) {
+  if (import_fs89.default.existsSync(previewFilePath)) {
     try {
-      const stats2 = import_fs88.default.statSync(previewFilePath);
+      const stats2 = import_fs89.default.statSync(previewFilePath);
       if (stats2.size > 1e3) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs88.default.createReadStream(previewFilePath).pipe(res);
+        return import_fs89.default.createReadStream(previewFilePath).pipe(res);
       }
     } catch (e) {
     }
   }
-  const mbaFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs88.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs88.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs88.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs88.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs89.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs89.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs89.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs89.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge U4 Preview f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
-      if (savedPath && import_fs88.default.existsSync(savedPath)) {
+      if (savedPath && import_fs89.default.existsSync(savedPath)) {
         res.setHeader("Content-Type", "image/png");
-        return import_fs88.default.createReadStream(savedPath).pipe(res);
+        return import_fs89.default.createReadStream(savedPath).pipe(res);
       }
     } catch (e) {
       console.warn(`[API] U4-Preview Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -236025,13 +236507,13 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
 });
 app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs88.default.existsSync(filePath)) {
+  if (import_fs89.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs88.default.createReadStream(filePath).pipe(res);
+    return import_fs89.default.createReadStream(filePath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -236042,18 +236524,18 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
 });
 app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
+  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs88.default.existsSync(filePath)) {
+  if (import_fs89.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs88.default.createReadStream(filePath).pipe(res);
+    return import_fs89.default.createReadStream(filePath).pipe(res);
   }
-  const fallbackPath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
-  if (import_fs88.default.existsSync(fallbackPath)) {
+  const fallbackPath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  if (import_fs89.default.existsSync(fallbackPath)) {
     res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs88.default.createReadStream(fallbackPath).pipe(res);
+    return import_fs89.default.createReadStream(fallbackPath).pipe(res);
   }
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
@@ -236064,25 +236546,25 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
 });
 app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs88.default.existsSync(filePath)) {
+  if (import_fs89.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs88.default.createReadStream(filePath).pipe(res);
+    return import_fs89.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("MBA PNG not found");
 });
 app.get("/api/v1/designs/4panel/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
+  const filePath = import_path83.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  if (import_fs88.default.existsSync(filePath)) {
+  if (import_fs89.default.existsSync(filePath)) {
     res.setHeader("Content-Type", "image/png");
-    return import_fs88.default.createReadStream(filePath).pipe(res);
+    return import_fs89.default.createReadStream(filePath).pipe(res);
   }
   res.status(404).send("4-Panel image not found");
 });
@@ -236555,14 +237037,14 @@ app.delete("/api/v1/products/catalog", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-var clientDistPath = import_path82.default.resolve(currentDir2, "client");
-var fallbackDistPath = import_path82.default.resolve(process.cwd(), "dist/client");
-var staticPath = import_fs88.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
-if (import_fs88.default.existsSync(staticPath)) {
+var clientDistPath = import_path83.default.resolve(currentDir2, "client");
+var fallbackDistPath = import_path83.default.resolve(process.cwd(), "dist/client");
+var staticPath = import_fs89.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
+if (import_fs89.default.existsSync(staticPath)) {
   console.log(`\u{1F4C2} Serving static frontend from ${staticPath}`);
   app.use(import_express.default.static(staticPath));
   app.get("*", (req, res) => {
-    res.sendFile(import_path82.default.join(staticPath, "index.html"));
+    res.sendFile(import_path83.default.join(staticPath, "index.html"));
   });
 }
 TaskRepository.init();

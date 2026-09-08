@@ -19,6 +19,7 @@ export const DesignerView: React.FC = () => {
   const [quote, setQuote] = useState('Powered by Caffeine and Chaos');
   const [stylePreset, setStylePreset] = useState('vintage-distressed');
   const [imageProvider, setImageProvider] = useState<ImageProvider>('IDEOGRAM');
+  const [promptPoolEnabled, setPromptPoolEnabled] = useState(false);
   const providerSettingsLoaded = useRef(false);
   const [providerSettings, setProviderSettings] = useState<any>({});
   const [generatedPrompt, setGeneratedPrompt] = useState(
@@ -37,6 +38,7 @@ export const DesignerView: React.FC = () => {
         if (!data.success) return;
         const settings = data.settings || {};
         setProviderSettings(settings);
+        setPromptPoolEnabled(Boolean(settings.designerPromptPoolEnabled));
         let legacyProvider: ImageProvider | null = null;
         try {
           const saved = localStorage.getItem('mba_designer_image_provider');
@@ -60,6 +62,17 @@ export const DesignerView: React.FC = () => {
       if (data.success) setProviderSettings(data.settings || {});
     }).catch(() => {});
   }, [imageProvider]);
+
+  const updatePromptPoolMode = (enabled: boolean) => {
+    setPromptPoolEnabled(enabled);
+    fetch('/api/v1/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ designerPromptPoolEnabled: enabled })
+    }).then(res => res.json()).then(data => {
+      if (data.success) setProviderSettings(data.settings || {});
+    }).catch(() => setPromptPoolEnabled(!enabled));
+  };
 
   const providerLabel = imageProvider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0';
   const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
@@ -127,6 +140,7 @@ export const DesignerView: React.FC = () => {
         body: JSON.stringify({
           prompt: generatedPrompt,
           imageProvider,
+          promptPoolEnabled,
           niche1,
           niche2,
           quote,
@@ -195,6 +209,27 @@ export const DesignerView: React.FC = () => {
         <div className="mt-4 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-2.5 text-xs">
           <span className="text-slate-500">Aktive Konfiguration</span>
           <span className="font-mono font-semibold text-emerald-300">{providerLabel} · {effectiveSettings}</span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl border border-slate-800 bg-slate-950/50 p-2">
+          <button
+            type="button"
+            onClick={() => updatePromptPoolMode(false)}
+            aria-pressed={!promptPoolEnabled}
+            className={`rounded-lg border px-3 py-2.5 text-left transition-all ${!promptPoolEnabled ? 'border-sky-400/60 bg-sky-500/15' : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'}`}
+          >
+            <div className="text-xs font-bold text-slate-100">Standard</div>
+            <div className="mt-1 text-[10px] text-slate-400">Nur der D2 Image Prompt Engineer</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => updatePromptPoolMode(true)}
+            aria-pressed={promptPoolEnabled}
+            className={`rounded-lg border px-3 py-2.5 text-left transition-all ${promptPoolEnabled ? 'border-fuchsia-400/60 bg-fuchsia-500/15' : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'}`}
+          >
+            <div className="text-xs font-bold text-slate-100">Prompt-Pool</div>
+            <div className="mt-1 text-[10px] text-slate-400">D2 plus Match, Adjacent und Wildcard</div>
+          </button>
         </div>
       </div>
 

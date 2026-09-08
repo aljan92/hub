@@ -1668,6 +1668,18 @@ export const PromptLogView: React.FC = () => {
 
                       {event.type === 'LLM_REQUEST' && (
                         <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 space-y-2">
+                          {event.content?.promptPoolMode && (
+                            <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                              <span className={`rounded-md border px-2 py-1 font-bold ${event.content.promptPoolMode === 'PROMPT_POOL' ? 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300' : 'border-sky-500/40 bg-sky-500/10 text-sky-300'}`}>
+                                {event.content.promptPoolMode === 'PROMPT_POOL' ? 'PROMPT-POOL' : 'STANDARD'}
+                              </span>
+                              {(event.content.promptPoolReferences || []).map((reference: any) => (
+                                <span key={`${reference.role}-${reference.id}`} className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">
+                                  {reference.role} #{reference.id} · {reference.title}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           {event.content?.systemPrompt && (
                             <JsonDetails title="System Prompt (Klick zum Aufklappen)" data={event.content.systemPrompt} />
                           )}

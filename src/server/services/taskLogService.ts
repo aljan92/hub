@@ -21,6 +21,7 @@ import {
 import { TaskRepository } from '../storage/taskRepository';
 import { TaskExecutionLock } from './taskExecutionLock';
 import { PipelineExecutionCoordinator } from './pipelineExecutionCoordinator';
+import { PromptPoolService } from './promptPoolService';
 import type { FinalizationParams } from './finalizationService';
 
 export * from '../../types/tasks';
@@ -34,6 +35,7 @@ import {
   RetryStepType,
   TaskSummary,
   ImageGenerationSnapshot,
+  PromptPoolSnapshot,
   toTaskSummary
 } from '../../types/tasks';
 
@@ -166,6 +168,24 @@ export class TaskLogService {
           style: settings.ideogramStyle || 'GENERAL',
           magicPrompt: settings.ideogramMagicPromptOption || 'AUTO'
         };
+    const promptPoolEnabled = typeof params.payload?.promptPoolEnabled === 'boolean'
+      ? params.payload.promptPoolEnabled
+      : settings.designerPromptPoolEnabled;
+    const promptPool: PromptPoolSnapshot | undefined = params.source === 'UPDATE' ? undefined : {
+      enabled: promptPoolEnabled,
+      selectedReferences: promptPoolEnabled
+        ? PromptPoolService.selectAndRecord({
+            niche1: params.payload?.niche1 || params.payload?.niche,
+            niche2: params.payload?.niche2,
+            subniche: params.payload?.subniche,
+            quote: params.payload?.quote,
+            style: params.payload?.style || params.payload?.stylePreset,
+            feeling: params.payload?.feeling || params.payload?.feelings,
+            audience: params.payload?.audience,
+            customInstruction: params.payload?.customInstruction || params.payload?.custominstruction || params.payload?.['custom instruction']
+          })
+        : []
+    };
 
     const incomingTitle = params.source === 'HERMES' 
       ? 'Eingang von Hermes' 
@@ -195,6 +215,7 @@ export class TaskLogService {
       hermesKeywords: params.payload?.hermesKeywords || (Array.isArray(params.payload?.keywords) ? params.payload.keywords : undefined),
       payload: params.payload || {},
       imageGeneration,
+      promptPool,
       events: [initialEvent],
       hasError: Boolean(params.hasError),
       errorDetails: params.errorDetails
@@ -470,7 +491,10 @@ export class TaskLogService {
       ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || 'transparent'}. ${imageGeneration.background === 'transparent' ? 'Explicitly require a genuine transparent alpha background.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
       : '\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.';
     const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
-    const userMessage = `Input:\n${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, null, 2)}`;
+    const referenceSection = task.promptPool?.enabled
+      ? PromptPoolService.buildReferenceSection(task.promptPool.selectedReferences)
+      : '';
+    const userMessage = `Input:\n${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, null, 2)}${referenceSection ? `\n\n${referenceSection}` : ''}`;
 
     // Log Event: Senden an OpenRouter
     this.addEvent(taskId, {
@@ -479,7 +503,9 @@ export class TaskLogService {
       title: `Senden an ${provider}`,
       content: {
         systemPrompt,
-        userMessage
+        userMessage,
+        promptPoolMode: task.promptPool?.enabled ? 'PROMPT_POOL' : 'STANDARD',
+        promptPoolReferences: task.promptPool?.selectedReferences || []
       },
       metadata: {
         model
@@ -594,6 +620,27 @@ export class TaskLogService {
 
   static async processTaskWithImageGenerator(taskId: string, promptText?: string) {
     return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithImageGeneratorExclusive(taskId, promptText));
+  }
+
+  private static refreshPromptPoolSettings(task: DesignTaskLog): PromptPoolSnapshot {
+    const enabled = loadSettings().designerPromptPoolEnabled;
+    const snapshot: PromptPoolSnapshot = {
+      enabled,
+      selectedReferences: enabled
+        ? PromptPoolService.selectAndRecord({
+            niche1: task.niche1 || task.payload?.niche1 || task.payload?.niche,
+            niche2: task.niche2 || task.payload?.niche2,
+            subniche: task.subniche || task.payload?.subniche,
+            quote: task.quote || task.payload?.quote,
+            style: task.payload?.style || task.payload?.stylePreset,
+            feeling: task.payload?.feeling || task.payload?.feelings,
+            audience: task.customAnswers?.audience || task.payload?.audience,
+            customInstruction: task.payload?.customInstruction || task.payload?.custominstruction || task.payload?.['custom instruction']
+          })
+        : []
+    };
+    task.promptPool = snapshot;
+    return snapshot;
   }
 
   /** Keep the task's chosen provider, but refresh that provider's mutable settings for a manual rerun. */
@@ -1717,6 +1764,7 @@ export class TaskLogService {
       currentTask.resultPrompt = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
+      this.refreshPromptPoolSettings(currentTask);
       this.saveLogs(logs);
 
       this.generatePromptWithOpenRouter(taskId).catch(err => {

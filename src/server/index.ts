@@ -1025,7 +1025,7 @@ app.post('/api/v1/designer/prompt', async (req, res) => {
 // 6. Designer: Generate Image & Send to Tasks
 app.post('/api/v1/designer/generate', async (req, res) => {
   try {
-    const { prompt, niche1, niche2, quote, imageProvider } = req.body;
+    const { prompt, niche1, niche2, quote, imageProvider, promptPoolEnabled } = req.body;
     const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'local';
 
     const taskLog = TaskLogService.createTaskLog({
@@ -1033,6 +1033,7 @@ app.post('/api/v1/designer/generate', async (req, res) => {
       payload: {
         prompt,
         imageProvider: imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM',
+        promptPoolEnabled: Boolean(promptPoolEnabled),
         niche1,
         niche2,
         quote
