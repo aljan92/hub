@@ -596,6 +596,32 @@ export class TaskLogService {
     return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithImageGeneratorExclusive(taskId, promptText));
   }
 
+  /** Keep the task's chosen provider, but refresh that provider's mutable settings for a manual rerun. */
+  private static refreshImageGenerationSettings(task: DesignTaskLog): ImageGenerationSnapshot {
+    const settings = loadSettings();
+    const provider = task.imageGeneration?.provider
+      || task.payload?.imageGeneration?.provider
+      || (task.payload?.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM');
+    const snapshot: ImageGenerationSnapshot = provider === 'GPT_IMAGE_2'
+      ? {
+          provider: 'GPT_IMAGE_2',
+          model: OpenRouterImageService.MODEL,
+          quality: settings.gptImageQuality,
+          aspectRatio: settings.gptImageAspectRatio,
+          background: settings.gptImageBackground
+        }
+      : {
+          provider: 'IDEOGRAM',
+          model: settings.ideogramModel || 'V_3',
+          renderingSpeed: settings.ideogramRenderingSpeed || 'DEFAULT',
+          aspectRatio: settings.ideogramAspectRatio || '10x16',
+          style: settings.ideogramStyle || 'GENERAL',
+          magicPrompt: settings.ideogramMagicPromptOption || 'AUTO'
+        };
+    task.imageGeneration = snapshot;
+    return snapshot;
+  }
+
   /** Backward-compatible entry point used by older callers and recovery paths. */
   static async processTaskWithIdeogram(taskId: string, promptText?: string) {
     return this.processTaskWithImageGenerator(taskId, promptText);
@@ -1703,12 +1729,13 @@ export class TaskLogService {
       currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
+      const refreshedSettings = this.refreshImageGenerationSettings(currentTask);
       this.saveLogs(logs);
 
       this.processTaskWithImageGenerator(taskId).catch(err => {
         console.error(`[TaskLogService] Retry image generation failed for task ${taskId}:`, err);
       });
-      return { success: true, message: 'Bildgenerierung mit gespeichertem Provider neu gestartet.' };
+      return { success: true, message: `Bildgenerierung mit ${refreshedSettings.provider} und aktuellen Settings neu gestartet.` };
     }
 
     if (stepType === 'ANALYSIS_REQUEST') {
@@ -2105,6 +2132,7 @@ export class TaskLogService {
       task.checkpoint = undefined;
       task.hasError = false;
       task.errorDetails = undefined;
+      const refreshedSettings = this.refreshImageGenerationSettings(task);
 
       if (!this.updateTaskStatus(taskId, task)) throw new Error('Neustart konnte nicht gespeichert werden.');
 
@@ -2122,7 +2150,7 @@ export class TaskLogService {
         console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
       });
 
-      return { success: true, message: 'Bildgenerierung mit gespeichertem Provider neu gestartet.' };
+      return { success: true, message: `Bildgenerierung mit ${refreshedSettings.provider} und aktuellen Settings neu gestartet.` };
     }
 
     if (params.action === 'APPROVE') {

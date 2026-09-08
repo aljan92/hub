@@ -228540,6 +228540,27 @@ ${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, nul
       static async processTaskWithImageGenerator(taskId, promptText) {
         return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithImageGeneratorExclusive(taskId, promptText));
       }
+      /** Keep the task's chosen provider, but refresh that provider's mutable settings for a manual rerun. */
+      static refreshImageGenerationSettings(task) {
+        const settings = loadSettings();
+        const provider = task.imageGeneration?.provider || task.payload?.imageGeneration?.provider || (task.payload?.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM");
+        const snapshot3 = provider === "GPT_IMAGE_2" ? {
+          provider: "GPT_IMAGE_2",
+          model: OpenRouterImageService.MODEL,
+          quality: settings.gptImageQuality,
+          aspectRatio: settings.gptImageAspectRatio,
+          background: settings.gptImageBackground
+        } : {
+          provider: "IDEOGRAM",
+          model: settings.ideogramModel || "V_3",
+          renderingSpeed: settings.ideogramRenderingSpeed || "DEFAULT",
+          aspectRatio: settings.ideogramAspectRatio || "10x16",
+          style: settings.ideogramStyle || "GENERAL",
+          magicPrompt: settings.ideogramMagicPromptOption || "AUTO"
+        };
+        task.imageGeneration = snapshot3;
+        return snapshot3;
+      }
       /** Backward-compatible entry point used by older callers and recovery paths. */
       static async processTaskWithIdeogram(taskId, promptText) {
         return this.processTaskWithImageGenerator(taskId, promptText);
@@ -229510,11 +229531,12 @@ Beantworte die Analysefragen streng als JSON!`;
           currentTask.trademarkRefineResult = void 0;
           currentTask.hasError = false;
           currentTask.errorDetails = void 0;
+          const refreshedSettings = this.refreshImageGenerationSettings(currentTask);
           this.saveLogs(logs);
           this.processTaskWithImageGenerator(taskId).catch((err) => {
             console.error(`[TaskLogService] Retry image generation failed for task ${taskId}:`, err);
           });
-          return { success: true, message: "Bildgenerierung mit gespeichertem Provider neu gestartet." };
+          return { success: true, message: `Bildgenerierung mit ${refreshedSettings.provider} und aktuellen Settings neu gestartet.` };
         }
         if (stepType === "ANALYSIS_REQUEST") {
           if (typeof eventIndex !== "number") {
@@ -229829,6 +229851,7 @@ Beantworte die Analysefragen streng als JSON!`;
           task.checkpoint = void 0;
           task.hasError = false;
           task.errorDetails = void 0;
+          const refreshedSettings = this.refreshImageGenerationSettings(task);
           if (!this.updateTaskStatus(taskId, task)) throw new Error("Neustart konnte nicht gespeichert werden.");
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -229842,7 +229865,7 @@ Beantworte die Analysefragen streng als JSON!`;
           this.processTaskWithImageGenerator(taskId, promptToUse).catch((err) => {
             console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
           });
-          return { success: true, message: "Bildgenerierung mit gespeichertem Provider neu gestartet." };
+          return { success: true, message: `Bildgenerierung mit ${refreshedSettings.provider} und aktuellen Settings neu gestartet.` };
         }
         if (params2.action === "APPROVE") {
           if (params2.answers) {
