@@ -413,7 +413,9 @@ export class LLMService {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
     const providerName = imageProvider === 'GPT_IMAGE_2' ? 'OpenAI GPT Image 2' : 'Ideogram 3.0';
-    const backgroundInstruction = background === 'transparent'
+    const backgroundInstruction = background === 'transparent' && imageProvider === 'GPT_IMAGE_2'
+      ? 'Request a perfectly uniform, flat, solid deep blue chroma-key background behind the isolated artwork. Reserve deep blue exclusively for that removable background: never use it in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decoration. Do not request transparency and do not draw a checkerboard or transparency-grid pattern.'
+      : background === 'transparent'
       ? 'Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, or background texture.'
       : background === 'auto'
         ? 'Keep the design isolated with no mockup, shirt, person, or realistic scene; allow the image provider to choose the background treatment.'

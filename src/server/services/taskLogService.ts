@@ -488,7 +488,7 @@ export class TaskLogService {
     // 2. Prepare System Prompt & User Message
     const imageGeneration = task.imageGeneration;
     const providerDirective = imageGeneration?.provider === 'GPT_IMAGE_2'
-      ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || 'transparent'}. ${imageGeneration.background === 'transparent' ? 'Explicitly require a genuine transparent alpha background.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
+      ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || 'transparent'}. ${imageGeneration.background === 'transparent' ? 'Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
       : '\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.';
     const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
     const referenceSection = task.promptPool?.enabled

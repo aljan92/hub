@@ -869,7 +869,7 @@ export const SettingsView: React.FC = () => {
             <div>
               <label className="block text-[11px] font-semibold text-slate-400 mb-1">Background</label>
               <select value={gptImageBackground} onChange={(e) => setGptImageBackground(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none font-mono">
-                <option value="transparent">TRANSPARENT (Prompt-Modus)</option>
+                <option value="transparent">FREISTELLUNG (DEEP BLUE)</option>
                 <option value="opaque">OPAQUE</option>
                 <option value="auto">AUTO</option>
               </select>
@@ -878,7 +878,7 @@ export const SettingsView: React.FC = () => {
 
           {gptImageBackground === 'transparent' && (
             <div className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3">
-              Der Prompt verlangt ein freigestelltes Design ohne Hintergrund. Für die OpenRouter-Kompatibilität wird technisch <span className="font-mono">background: opaque</span> gesendet.
+              GPT Image 2 erzeugt einen gleichmäßigen Deep-Blue-Freistellhintergrund, der im Motiv ausdrücklich verboten ist. Technisch wird kompatibel <span className="font-mono">background: opaque</span> gesendet.
             </div>
           )}
         </div>
