@@ -1422,12 +1422,22 @@ export class TaskLogService {
 
     const maxColors = task.customAnswers?.maxColors ?? task.analysisResult?.color_analysis?.color_count ?? 2;
     const cleanId = task.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const localImagePath = task.localImagePath || path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+    const canonicalImagePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+    const localImagePath = task.localImagePath && fs.existsSync(task.localImagePath)
+      ? task.localImagePath
+      : canonicalImagePath;
     const hasLocalImage = fs.existsSync(localImagePath);
+    const remoteImageUrl = typeof task.imageUrl === 'string' && /^https?:\/\//i.test(task.imageUrl)
+      ? task.imageUrl
+      : undefined;
 
-    if (!hasLocalImage && !task.imageUrl) {
+    if (!hasLocalImage && !remoteImageUrl) {
       console.warn(`[TaskLogService] ⚠️ Kein Bild für Vektorisierung bei Task ${taskId} gefunden.`);
-      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
+      this.updateTaskStatus(taskId, {
+        status: 'ERROR',
+        hasError: true,
+        errorDetails: `Lokale PNG-Datei für die Vektorisierung fehlt: ${canonicalImagePath}`
+      });
       return;
     }
 
@@ -1447,7 +1457,7 @@ export class TaskLogService {
         minArea: settings.vectorizerMinArea ?? 10,
         optimizedShapes: settings.vectorizerOptimizedShapes ?? true,
         gapFiller: settings.vectorizerGapFiller ?? false,
-        imageSource: hasLocalImage ? `data/designs/${cleanId}.png` : task.imageUrl
+        imageSource: hasLocalImage ? `data/designs/${cleanId}.png` : remoteImageUrl
       },
       metadata: {
         provider: 'Vectorizer.ai',
@@ -1461,8 +1471,8 @@ export class TaskLogService {
       if (hasLocalImage) {
         const buffer = fs.readFileSync(localImagePath);
         svgText = await VectorizerService.vectorizeBuffer(buffer, 'image/png', false, { maxColors });
-      } else if (task.imageUrl) {
-        svgText = await VectorizerService.vectorizeImage(task.imageUrl, false, { maxColors });
+      } else if (remoteImageUrl) {
+        svgText = await VectorizerService.vectorizeImage(remoteImageUrl, false, { maxColors });
       }
 
       const latencyMs = Date.now() - start;

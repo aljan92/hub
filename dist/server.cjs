@@ -229260,11 +229260,17 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         const maxColors = task.customAnswers?.maxColors ?? task.analysisResult?.color_analysis?.color_count ?? 2;
         const cleanId = task.id.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const localImagePath = task.localImagePath || import_path79.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const canonicalImagePath = import_path79.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+        const localImagePath = task.localImagePath && import_fs85.default.existsSync(task.localImagePath) ? task.localImagePath : canonicalImagePath;
         const hasLocalImage = import_fs85.default.existsSync(localImagePath);
-        if (!hasLocalImage && !task.imageUrl) {
+        const remoteImageUrl = typeof task.imageUrl === "string" && /^https?:\/\//i.test(task.imageUrl) ? task.imageUrl : void 0;
+        if (!hasLocalImage && !remoteImageUrl) {
           console.warn(`[TaskLogService] \u26A0\uFE0F Kein Bild f\xFCr Vektorisierung bei Task ${taskId} gefunden.`);
-          this.updateTaskStatus(taskId, { status: "COMPLETED", hasError: false });
+          this.updateTaskStatus(taskId, {
+            status: "ERROR",
+            hasError: true,
+            errorDetails: `Lokale PNG-Datei f\xFCr die Vektorisierung fehlt: ${canonicalImagePath}`
+          });
           return;
         }
         this.updateTaskStatus(taskId, { status: "VECTORIZING_DESIGN", hasError: false });
@@ -229281,7 +229287,7 @@ Beantworte die Analysefragen streng als JSON!`;
             minArea: settings.vectorizerMinArea ?? 10,
             optimizedShapes: settings.vectorizerOptimizedShapes ?? true,
             gapFiller: settings.vectorizerGapFiller ?? false,
-            imageSource: hasLocalImage ? `data/designs/${cleanId}.png` : task.imageUrl
+            imageSource: hasLocalImage ? `data/designs/${cleanId}.png` : remoteImageUrl
           },
           metadata: {
             provider: "Vectorizer.ai",
@@ -229294,8 +229300,8 @@ Beantworte die Analysefragen streng als JSON!`;
           if (hasLocalImage) {
             const buffer = import_fs85.default.readFileSync(localImagePath);
             svgText = await VectorizerService.vectorizeBuffer(buffer, "image/png", false, { maxColors });
-          } else if (task.imageUrl) {
-            svgText = await VectorizerService.vectorizeImage(task.imageUrl, false, { maxColors });
+          } else if (remoteImageUrl) {
+            svgText = await VectorizerService.vectorizeImage(remoteImageUrl, false, { maxColors });
           }
           const latencyMs = Date.now() - start3;
           const designsDir = import_path79.default.resolve(process.cwd(), "data", "designs");
