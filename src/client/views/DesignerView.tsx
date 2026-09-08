@@ -18,7 +18,13 @@ export const DesignerView: React.FC = () => {
   const [niche2, setNiche2] = useState('Coffee Lovers');
   const [quote, setQuote] = useState('Powered by Caffeine and Chaos');
   const [stylePreset, setStylePreset] = useState('vintage-distressed');
-  const [imageProvider, setImageProvider] = useState<ImageProvider>('IDEOGRAM');
+  const [imageProvider, setImageProvider] = useState<ImageProvider>(() => {
+    try {
+      return localStorage.getItem('mba_designer_image_provider') === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM';
+    } catch {
+      return 'IDEOGRAM';
+    }
+  });
   const [providerSettings, setProviderSettings] = useState<any>({});
   const [generatedPrompt, setGeneratedPrompt] = useState(
     'T-shirt graphic design of "Powered by Caffeine and Chaos", retro vintage 1970s distressed aesthetic, vector illustration, isolated on clean solid background, bold typography, warm color palette, commercial merchandise print ready.'
@@ -35,6 +41,10 @@ export const DesignerView: React.FC = () => {
       .then(data => data.success && setProviderSettings(data.settings || {}))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('mba_designer_image_provider', imageProvider); } catch {}
+  }, [imageProvider]);
 
   const providerLabel = imageProvider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0';
   const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
@@ -134,6 +144,45 @@ export const DesignerView: React.FC = () => {
         </div>
       </div>
 
+      {/* Prominent image generator selection */}
+      <div className="glass-card p-5 rounded-2xl border border-primary-500/30 bg-gradient-to-r from-primary-950/30 via-slate-950/80 to-emerald-950/20 shadow-lg shadow-primary-950/20">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-100 uppercase tracking-wider">
+              <Sparkles className="w-4 h-4 text-primary-400" />
+              Bildgenerator
+            </div>
+            <p className="text-xs text-slate-400 mt-1">Die Auswahl bleibt für den nächsten Besuch gespeichert und wird fest in jeder neuen Task hinterlegt.</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 min-w-full sm:min-w-[420px]">
+            <button
+              type="button"
+              onClick={() => setImageProvider('IDEOGRAM')}
+              aria-pressed={imageProvider === 'IDEOGRAM'}
+              className={`rounded-xl border px-4 py-3 text-left transition-all ${imageProvider === 'IDEOGRAM' ? 'border-purple-400/70 bg-purple-500/20 shadow-md shadow-purple-950/30' : 'border-slate-700 bg-slate-900/70 hover:border-slate-600'}`}
+            >
+              <div className="text-sm font-bold text-slate-100">Ideogram 3.0</div>
+              <div className="text-[10px] text-slate-400 mt-1">{providerSettings.ideogramModel || 'V_3'} · {providerSettings.ideogramAspectRatio || '10x16'}</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setImageProvider('GPT_IMAGE_2')}
+              aria-pressed={imageProvider === 'GPT_IMAGE_2'}
+              className={`rounded-xl border px-4 py-3 text-left transition-all ${imageProvider === 'GPT_IMAGE_2' ? 'border-emerald-400/70 bg-emerald-500/20 shadow-md shadow-emerald-950/30' : 'border-slate-700 bg-slate-900/70 hover:border-slate-600'}`}
+            >
+              <div className="text-sm font-bold text-slate-100">GPT Image 2</div>
+              <div className="text-[10px] text-slate-400 mt-1">via OpenRouter · {String(providerSettings.gptImageQuality || 'high').toUpperCase()} · {providerSettings.gptImageAspectRatio || '3:4'}</div>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-2.5 text-xs">
+          <span className="text-slate-500">Aktive Konfiguration</span>
+          <span className="font-mono font-semibold text-emerald-300">{providerLabel} · {effectiveSettings}</span>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Input Form (7 cols) */}
         <div className="lg:col-span-7 space-y-5">
@@ -227,8 +276,8 @@ export const DesignerView: React.FC = () => {
               </div>
             )}
 
-            {/* Style & Image Provider */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800/80">
+            {/* Style */}
+            <div className="pt-2 border-t border-slate-800/80">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">Style-Preset</label>
                 <select
@@ -241,18 +290,6 @@ export const DesignerView: React.FC = () => {
                   <option value="bold-typography">Bold Typography / Slogan</option>
                   <option value="cartoon-kawaii">Cute Kawaii Character</option>
                   <option value="cyberpunk-glow">Synthwave / Cyberpunk</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Bildgenerator</label>
-                <select
-                  value={imageProvider}
-                  onChange={(e) => setImageProvider(e.target.value as ImageProvider)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-primary-500"
-                >
-                  <option value="IDEOGRAM">Ideogram 3.0</option>
-                  <option value="GPT_IMAGE_2">OpenAI GPT Image 2</option>
                 </select>
               </div>
             </div>
