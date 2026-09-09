@@ -29,6 +29,7 @@ export interface SyncState {
   lastAsinSync: string | null;
   liveDesignsCount: number;
   unresolvedAsinsCount: number;
+  lastRun?: ProductSyncRuntime['lastRun'];
 }
 
 const MARKETPLACE_IDS = {
@@ -80,6 +81,7 @@ type ProductSyncRuntime = {
   version: 1;
   productWatermark: string | null;
   textVersions?: Record<string, string>;
+  resolverRetries?: Record<string, { attempts: number; nextAt: string; parentAsin: string; lastError: string }>;
   lastRun?: { runId: string; type: string; status: 'running' | 'complete' | 'partial' | 'truncated' | 'cancelled' | 'error'; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 };
 const SYNC_RUNTIME_PATH = path.resolve(process.cwd(), 'data', 'sync_runtime.json');
@@ -164,7 +166,8 @@ export class SyncEngine {
   }
 
   public static getState(): SyncState {
-    return { ...this.state };
+    try { return { ...this.state, lastRun: this.loadRuntime().lastRun }; }
+    catch { return { ...this.state }; }
   }
 
   public static updateCounts(live: number, unresolved: number) {
@@ -1187,32 +1190,49 @@ export class SyncEngine {
 
     try {
       const page = await this.getAmazonPage();
+      const runtime = this.loadRuntime();
+      const retryState = runtime.resolverRetries || {};
       const { data: unresolved, error } = await supabase.from('mba_designs')
         .select('design_id, published_products, ad_asins')
         .or('asin_resolved.eq.false,asin_resolved.is.null')
         .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
-        .limit(limit);
+        .order('updated_date', { ascending: true, nullsFirst: true })
+        .limit(Math.max(50, limit * 10));
 
       if (error) throw new Error(`ASIN-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
       if (!unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
 
+      let selected = 0;
       for (const item of unresolved) {
+        if (selected >= limit) break;
         if (this.shouldStop) break;
         const pubProducts: any[] = item.published_products || [];
-        const newAdAsins: any[] = this.buildAdAsins(pubProducts, item.ad_asins || []);
+        const newAdAsins: any[] = this.buildAdAsins(pubProducts, item.ad_asins || [], pubProducts);
 
-        const toResolve: { ad: any; parent: any }[] = [];
+        const toResolve: { ad: any; parent: any; retryKey: string }[] = [];
         for (const ad of newAdAsins) {
           if (!VARIANT_PRODUCT_TYPES.has((ad.type || '').toUpperCase())) continue;
           const parent = pubProducts.find(p => (p.type || '').toUpperCase() === (ad.type || '').toUpperCase() && (p.market || '').toLowerCase() === (ad.market || '').toLowerCase());
           if (!parent || !parent.asin) continue;
           if (!ad.asin || ad.asin === parent.asin) {
-            toResolve.push({ ad, parent });
+            const retryKey = `${item.design_id}:${String(ad.market).toLowerCase()}:${String(ad.type).toUpperCase()}`;
+            const retry = retryState[retryKey];
+            if (!retry || retry.parentAsin !== parent.asin || Date.parse(retry.nextAt) <= Date.now()) toResolve.push({ ad, parent, retryKey });
           }
         }
+        if (toResolve.length === 0) {
+          const alreadyResolved = newAdAsins.every((ad: any) => !VARIANT_PRODUCT_TYPES.has(String(ad.type || '').toUpperCase()) || (!!ad.asin && ad.asin !== ad.parentAsin));
+          if (alreadyResolved) {
+            const { error: confirmError } = await supabase.from('mba_designs').update({ ad_asins: newAdAsins, asin_resolved: true }).eq('design_id', item.design_id);
+            if (confirmError) errors++; else processed++;
+          }
+          continue;
+        }
+        selected++;
 
         let itemFailed = false;
-        for (const { ad, parent } of toResolve) {
+        for (const { ad, parent, retryKey } of toResolve) {
+          let failureReason = '';
           if (this.shouldStop) break;
           try {
             const domain = marketplaceDomains[ad.market?.toLowerCase()] || 'amazon.com';
@@ -1230,7 +1250,10 @@ export class SyncEngine {
             if (response.status === 404) {
               itemFailed = true;
               errors++;
+              failureReason = 'HTTP 404';
               this.addLog(`[ASIN Scanner] Produkt ${parent.asin} (${ad.market}) nicht gefunden (404). Auflösung bleibt offen.`, 'warn');
+              const attempts = (retryState[retryKey]?.parentAsin === parent.asin ? retryState[retryKey].attempts : 0) + 1;
+              retryState[retryKey] = { attempts, nextAt: new Date(Date.now() + Math.min(24 * 60 * 60 * 1000, 5 * 60 * 1000 * Math.pow(2, Math.min(attempts - 1, 8)))).toISOString(), parentAsin: parent.asin, lastError: failureReason };
               continue;
             }
 
@@ -1241,7 +1264,10 @@ export class SyncEngine {
               this.addLog(`[ASIN Scanner] ⚠️ Amazon Rate-Limit / Captcha für ${parent.asin} (${ad.market}). Pausiere...`, 'warn');
               itemFailed = true;
               errors++;
+              failureReason = `HTTP ${response.status} / CAPTCHA`;
               await this.sleep(3000);
+              const attempts = (retryState[retryKey]?.parentAsin === parent.asin ? retryState[retryKey].attempts : 0) + 1;
+              retryState[retryKey] = { attempts, nextAt: new Date(Date.now() + Math.min(24 * 60 * 60 * 1000, 5 * 60 * 1000 * Math.pow(2, Math.min(attempts - 1, 8)))).toISOString(), parentAsin: parent.asin, lastError: failureReason };
               continue;
             }
 
@@ -1302,16 +1328,26 @@ export class SyncEngine {
               } else {
                 itemFailed = true;
                 errors++;
+                failureReason = 'Keine eindeutig belegte Child-ASIN';
                 this.addLog(`[ASIN Scanner] Keine eindeutig belegte Child-ASIN für ${ad.type} (${ad.market}) gefunden. Auflösung bleibt offen.`, 'warn');
               }
             } else {
               itemFailed = true;
               errors++;
+              failureReason = 'Leere Amazon-Antwort';
             }
           } catch (e: any) {
             errors++;
             itemFailed = true;
+            failureReason = e.message || 'Unbekannter Resolverfehler';
             this.addLog(`[ASIN Scanner] Fehler bei ${parent.asin} (${ad.market}): ${e.message}`, 'error');
+          }
+          if (failureReason) {
+            const attempts = (retryState[retryKey]?.parentAsin === parent.asin ? retryState[retryKey].attempts : 0) + 1;
+            const delayMs = Math.min(24 * 60 * 60 * 1000, 5 * 60 * 1000 * Math.pow(2, Math.min(attempts - 1, 8)));
+            retryState[retryKey] = { attempts, nextAt: new Date(Date.now() + delayMs).toISOString(), parentAsin: parent.asin, lastError: failureReason };
+          } else if (ad.asin) {
+            delete retryState[retryKey];
           }
           await this.sleep(1800 + Math.random() * 800);
         }
@@ -1332,6 +1368,8 @@ export class SyncEngine {
           processed++;
         }
       }
+      runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5000));
+      this.saveRuntime(runtime);
     } catch (err: any) {
       console.warn('[SyncEngine] ASIN batch error:', err.message);
     }

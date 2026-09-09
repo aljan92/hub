@@ -43,6 +43,7 @@ interface SyncState {
   lastAsinSync: string | null;
   liveDesignsCount: number;
   unresolvedAsinsCount: number;
+  lastRun?: { status: string; type: string; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 }
 
 export const DatabaseView: React.FC = () => {
@@ -215,6 +216,12 @@ export const DatabaseView: React.FC = () => {
             <p className="text-xs text-slate-400">
               Direkte Synchronisierung zwischen Amazon Merch on Demand und PostgreSQL
             </p>
+            {syncState.lastRun && (
+              <p className="text-[10px] text-slate-500 mt-1">
+                Letzter Lauf: {syncState.lastRun.type} · {syncState.lastRun.status} · {syncState.lastRun.confirmed}/{syncState.lastRun.attempted} bestätigt
+                {syncState.lastRun.message ? ` · ${syncState.lastRun.message}` : ''}
+              </p>
+            )}
           </div>
         </div>
 
