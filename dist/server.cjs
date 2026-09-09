@@ -222420,7 +222420,7 @@ var init_schedulerClock = __esm2({
 });
 
 // src/server/services/syncEngine.ts
-var MP_MAP, VARIANT_PRODUCT_TYPES, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, SyncEngine;
+var MP_MAP, VARIANT_PRODUCT_TYPES, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SyncEngine;
 var init_syncEngine = __esm2({
   "src/server/services/syncEngine.ts"() {
     "use strict";
@@ -222452,6 +222452,29 @@ var init_syncEngine = __esm2({
     ALL_STATUSES = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
     FIND_LISTINGS_URL = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
     PRODUCT_CONFIG_URL = "https://merch.amazon.com/api/productconfiguration/get?id=";
+    PRODUCT_SYNC_COLUMNS = /* @__PURE__ */ new Set([
+      "design_id",
+      "listing_id",
+      "product_image_urn",
+      "asins",
+      "asin_standard_tshirt_us",
+      "price_standard_tshirt_us",
+      "created_date",
+      "updated_date",
+      "estimated_expiration_date",
+      "products_live_us",
+      "products_live_de",
+      "products_live_gb",
+      "products_live_fr",
+      "products_live_it",
+      "products_live_es",
+      "products_live_jp",
+      "published_products",
+      "ad_asins",
+      "asin_resolved",
+      "status",
+      "last_synced_at"
+    ]);
     SyncEngine = class _SyncEngine {
       static logs = [];
       static state = {
@@ -222667,8 +222690,8 @@ var init_syncEngine = __esm2({
               credentials: "include"
             });
             if (resp.ok) return await resp.json();
-            if (resp.status === 429 || resp.url?.includes("merch.amazon.com/429")) {
-              console.log(`[FindListings] Rate limited (429), warte ${backoff}ms (Versuch ${retries + 1}/10)...`);
+            if ([408, 429, 500, 502, 503, 504].includes(resp.status) || resp.url?.includes("merch.amazon.com/429")) {
+              console.log(`[FindListings] Tempor\xE4rer HTTP ${resp.status}, warte ${backoff}ms (Versuch ${retries + 1}/10)...`);
               await sleep2(backoff);
               backoff = Math.min(backoff * 1.5, 8e3);
               retries++;
@@ -222815,15 +222838,14 @@ var init_syncEngine = __esm2({
         if (mapped.length === 0) return 0;
         mapped = mapped.map((record) => {
           const sanitized = { ...record };
-          delete sanitized.mba_hub_updated_at;
-          delete sanitized.skip_update;
-          return sanitized;
+          return Object.fromEntries(Object.entries(sanitized).filter(([key]) => PRODUCT_SYNC_COLUMNS.has(key) || key === "_deleted_asins"));
         });
         const designIds = mapped.map((m) => m.design_id);
         const existing = /* @__PURE__ */ new Map();
         for (let i = 0; i < designIds.length; i += 200) {
           const batch = designIds.slice(i, i + 200);
-          const { data } = await supabase.from("mba_designs").select("design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins").in("design_id", batch);
+          const { data, error } = await supabase.from("mba_designs").select("design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins, asin_resolved").in("design_id", batch);
+          if (error) throw new Error(`Supabase-Bestandsread fehlgeschlagen: ${error.message || String(error)}`);
           if (data) data.forEach((d) => existing.set(d.design_id, d));
         }
         const merged = mapped.map((m) => {
@@ -222851,15 +222873,18 @@ var init_syncEngine = __esm2({
             ad_asins: this.buildAdAsins(pubProducts, ex.ad_asins || [])
           };
         });
-        for (let i = 0; i < merged.length; i += 200) {
-          const chunk = merged.slice(i, i + 200);
+        const writable = merged.map((record) => Object.fromEntries(Object.entries(record).filter(([key]) => PRODUCT_SYNC_COLUMNS.has(key))));
+        let confirmed = 0;
+        for (let i = 0; i < writable.length; i += 200) {
+          const chunk = writable.slice(i, i + 200);
           const { error } = await supabase.from("mba_designs").upsert(chunk, { onConflict: "design_id" });
           if (error) {
-            console.error("[SyncEngine] Error upserting designs chunk:", error);
+            throw new Error(`Supabase-Upsert fehlgeschlagen (Block ${Math.floor(i / 200) + 1}): ${error.message || String(error)}`);
           }
+          confirmed += chunk.length;
         }
         await this.refreshDBStats();
-        return merged.length;
+        return confirmed;
       }
       /**
        * Sanitizes raw ASIN string to extract the exact 10-char ASIN (e.g. 'MC_Assembly_1#B0FDKRXX21' -> 'B0FDKRXX21')
@@ -223193,6 +223218,7 @@ var init_syncEngine = __esm2({
        * 6. Run Full Sales History Sync
        */
       static async runFullSalesHistory() {
+        throw new Error("Full Sales ist vor\xFCbergehend gesperrt: Der Amazon-Vertrag und die atomare Snapshot-\xDCbernahme sind noch nicht verifiziert. Es wurden keine Sales-Daten ver\xE4ndert.");
         this.shouldStop = false;
         this.state.isScanning = true;
         this.state.activeScanType = "full_sales";
@@ -223271,7 +223297,8 @@ var init_syncEngine = __esm2({
         try {
           const page = await this.getAmazonPage();
           const { data: unresolved, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).limit(limit);
-          if (error || !unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
+          if (error) throw new Error(`ASIN-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
+          if (!unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
           for (const item of unresolved) {
             if (this.shouldStop) break;
             const pubProducts = item.published_products || [];
@@ -223285,6 +223312,7 @@ var init_syncEngine = __esm2({
                 toResolve.push({ ad, parent });
               }
             }
+            let itemFailed = false;
             for (const { ad, parent } of toResolve) {
               if (this.shouldStop) break;
               try {
@@ -223299,13 +223327,16 @@ var init_syncEngine = __esm2({
                   }
                 });
                 if (response2.status === 404) {
-                  this.addLog(`[ASIN Scanner] Produkt ${parent.asin} (${ad.market}) nicht gefunden (404). Parent-ASIN gesetzt.`, "warn");
-                  ad.asin = parent.asin;
+                  itemFailed = true;
+                  errors2++;
+                  this.addLog(`[ASIN Scanner] Produkt ${parent.asin} (${ad.market}) nicht gefunden (404). Aufl\xF6sung bleibt offen.`, "warn");
                   continue;
                 }
                 const html = await response2.text();
                 if (html.includes("/errors/validateCaptcha") || html.includes("Robot Check") || response2.status === 503 || response2.status === 403) {
                   this.addLog(`[ASIN Scanner] \u26A0\uFE0F Amazon Rate-Limit / Captcha f\xFCr ${parent.asin} (${ad.market}). Pausiere...`, "warn");
+                  itemFailed = true;
+                  errors2++;
                   await this.sleep(3e3);
                   continue;
                 }
@@ -223354,24 +223385,36 @@ var init_syncEngine = __esm2({
                     ad.asin = finalChildAsin;
                     this.addLog(`[ASIN Scanner] \u2713 Child-ASIN aufgel\xF6st f\xFCr ${ad.type} (${ad.market}): ${parent.asin} \u2794 ${finalChildAsin}`, "success");
                   } else {
-                    ad.asin = _SyncEngine.sanitizeAsin(parent.asin) || parent.asin;
-                    this.addLog(`[ASIN Scanner] Keine abweichende Child-ASIN f\xFCr ${ad.type} (${ad.market}) gefunden. Verwende ${ad.asin}.`, "info");
+                    itemFailed = true;
+                    errors2++;
+                    this.addLog(`[ASIN Scanner] Keine eindeutig belegte Child-ASIN f\xFCr ${ad.type} (${ad.market}) gefunden. Aufl\xF6sung bleibt offen.`, "warn");
                   }
                 } else {
-                  ad.asin = parent.asin;
+                  itemFailed = true;
+                  errors2++;
                 }
               } catch (e) {
                 errors2++;
-                ad.asin = parent.asin;
+                itemFailed = true;
                 this.addLog(`[ASIN Scanner] Fehler bei ${parent.asin} (${ad.market}): ${e.message}`, "error");
               }
               await this.sleep(1800 + Math.random() * 800);
             }
-            await supabase.from("mba_designs").update({
+            const fullyResolved = !itemFailed && newAdAsins.every((ad) => {
+              if (!VARIANT_PRODUCT_TYPES.has((ad.type || "").toUpperCase())) return true;
+              const parent = pubProducts.find((p) => (p.type || "").toUpperCase() === (ad.type || "").toUpperCase() && (p.market || "").toLowerCase() === (ad.market || "").toLowerCase());
+              return !!ad.asin && !!parent?.asin && ad.asin !== parent.asin;
+            });
+            const { error: updateError } = await supabase.from("mba_designs").update({
               ad_asins: newAdAsins,
-              asin_resolved: true
+              asin_resolved: fullyResolved
             }).eq("design_id", item.design_id);
-            processed++;
+            if (updateError) {
+              errors2++;
+              this.addLog(`[ASIN Scanner] Supabase-Write f\xFCr ${item.design_id} fehlgeschlagen: ${updateError.message || String(updateError)}`, "error");
+            } else if (fullyResolved) {
+              processed++;
+            }
           }
         } catch (err) {
           console.warn("[SyncEngine] ASIN batch error:", err.message);
@@ -232535,8 +232578,8 @@ var SupabaseService = class {
         rowCount: totalCount,
         liveCount,
         canRead: true,
-        canWrite: true,
-        details: `Verbunden \u2713 (${liveCount} Live Designs von ${totalCount} gesamt)`
+        canWrite: false,
+        details: `Lesen verbunden \u2713 (${liveCount} Live Designs von ${totalCount} gesamt); Schreibrecht nicht destruktiv gepr\xFCft`
       };
     } catch (err) {
       return {
@@ -232550,14 +232593,25 @@ var SupabaseService = class {
   }
   static cachedStats = null;
   static lastStatsFetch = 0;
+  static statsInFlight = null;
+  static STATS_TTL_MS = 5 * 60 * 1e3;
   /**
    * Get accurate Live Designs, Total Designs and Sales stats from Supabase (Cached & Persisted)
    */
   static async getStats() {
     const now = Date.now();
-    if (this.cachedStats && now - this.lastStatsFetch < 15e3) {
+    if (this.cachedStats && now - this.lastStatsFetch < this.STATS_TTL_MS) {
       return this.cachedStats;
     }
+    if (this.statsInFlight) return this.statsInFlight;
+    this.statsInFlight = this.fetchStats();
+    try {
+      return await this.statsInFlight;
+    } finally {
+      this.statsInFlight = null;
+    }
+  }
+  static async fetchStats() {
     const statsFile = import_path81.default.resolve(process.cwd(), "data", "supabase_stats.json");
     const loadPersisted = () => {
       try {
@@ -232584,6 +232638,7 @@ var SupabaseService = class {
       let sales30d = 0;
       let royalties30dEur = 0;
       let royalties30dUsd = 0;
+      const hasConfirmedSalesSnapshot = !salesRes.error && Array.isArray(salesRes.data);
       if (salesRes.data && Array.isArray(salesRes.data)) {
         for (const row of salesRes.data) {
           sales30d += row.sales_30d || 0;
@@ -232598,9 +232653,9 @@ var SupabaseService = class {
         totalDesigns: totalCount,
         liveDesigns: liveCount,
         unresolvedAsins: unresolvedCount,
-        sales30d: sales30d || persisted.sales30d || 0,
-        royalties30dEur: royalties30dEur ? Math.round(royalties30dEur * 100) / 100 : persisted.royalties30dEur || 0,
-        royalties30dUsd: royalties30dUsd ? Math.round(royalties30dUsd * 100) / 100 : persisted.royalties30dUsd || 0
+        sales30d: hasConfirmedSalesSnapshot ? sales30d : persisted.sales30d || 0,
+        royalties30dEur: hasConfirmedSalesSnapshot ? Math.round(royalties30dEur * 100) / 100 : persisted.royalties30dEur || 0,
+        royalties30dUsd: hasConfirmedSalesSnapshot ? Math.round(royalties30dUsd * 100) / 100 : persisted.royalties30dUsd || 0
       };
       if (result2.totalDesigns > 0 || result2.liveDesigns > 0) {
         try {
@@ -232611,7 +232666,7 @@ var SupabaseService = class {
         }
       }
       this.cachedStats = result2;
-      this.lastStatsFetch = now;
+      this.lastStatsFetch = Date.now();
       return result2;
     } catch (e) {
       return persisted;

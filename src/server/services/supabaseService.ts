@@ -63,8 +63,8 @@ export class SupabaseService {
         rowCount: totalCount,
         liveCount,
         canRead: true,
-        canWrite: true,
-        details: `Verbunden ✓ (${liveCount} Live Designs von ${totalCount} gesamt)`
+        canWrite: false,
+        details: `Lesen verbunden ✓ (${liveCount} Live Designs von ${totalCount} gesamt); Schreibrecht nicht destruktiv geprüft`
       };
     } catch (err: any) {
       return { 
@@ -79,6 +79,8 @@ export class SupabaseService {
 
   private static cachedStats: any = null;
   private static lastStatsFetch = 0;
+  private static statsInFlight: Promise<any> | null = null;
+  private static readonly STATS_TTL_MS = 5 * 60 * 1000;
 
   /**
    * Get accurate Live Designs, Total Designs and Sales stats from Supabase (Cached & Persisted)
@@ -92,9 +94,20 @@ export class SupabaseService {
     royalties30dUsd: number;
   }> {
     const now = Date.now();
-    if (this.cachedStats && now - this.lastStatsFetch < 15000) {
+    if (this.cachedStats && now - this.lastStatsFetch < this.STATS_TTL_MS) {
       return this.cachedStats;
     }
+    if (this.statsInFlight) return this.statsInFlight;
+
+    this.statsInFlight = this.fetchStats();
+    try {
+      return await this.statsInFlight;
+    } finally {
+      this.statsInFlight = null;
+    }
+  }
+
+  private static async fetchStats(): Promise<any> {
 
     const statsFile = path.resolve(process.cwd(), 'data', 'supabase_stats.json');
     const loadPersisted = () => {
@@ -134,6 +147,7 @@ export class SupabaseService {
       let sales30d = 0;
       let royalties30dEur = 0;
       let royalties30dUsd = 0;
+      const hasConfirmedSalesSnapshot = !salesRes.error && Array.isArray(salesRes.data);
 
       if (salesRes.data && Array.isArray(salesRes.data)) {
         for (const row of salesRes.data) {
@@ -151,9 +165,9 @@ export class SupabaseService {
         totalDesigns: totalCount,
         liveDesigns: liveCount,
         unresolvedAsins: unresolvedCount,
-        sales30d: sales30d || persisted.sales30d || 0,
-        royalties30dEur: royalties30dEur ? Math.round(royalties30dEur * 100) / 100 : (persisted.royalties30dEur || 0),
-        royalties30dUsd: royalties30dUsd ? Math.round(royalties30dUsd * 100) / 100 : (persisted.royalties30dUsd || 0),
+        sales30d: hasConfirmedSalesSnapshot ? sales30d : (persisted.sales30d || 0),
+        royalties30dEur: hasConfirmedSalesSnapshot ? Math.round(royalties30dEur * 100) / 100 : (persisted.royalties30dEur || 0),
+        royalties30dUsd: hasConfirmedSalesSnapshot ? Math.round(royalties30dUsd * 100) / 100 : (persisted.royalties30dUsd || 0),
       };
 
       if (result.totalDesigns > 0 || result.liveDesigns > 0) {
@@ -165,7 +179,7 @@ export class SupabaseService {
       }
 
       this.cachedStats = result;
-      this.lastStatsFetch = now;
+      this.lastStatsFetch = Date.now();
       return result;
     } catch (e) {
       return persisted;

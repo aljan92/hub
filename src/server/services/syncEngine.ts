@@ -65,6 +65,13 @@ const VARIANT_PRODUCT_TYPES = new Set([
 const ALL_STATUSES = ['DRAFT', 'TRANSLATING', 'REVIEW', 'DECLINED', 'AMAZON_REJECTED', 'PUBLISHING', 'TIMED_OUT', 'PROPAGATED', 'PUBLISHED', 'DELETED', 'LOCKED'];
 const FIND_LISTINGS_URL = 'https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings';
 const PRODUCT_CONFIG_URL = 'https://merch.amazon.com/api/productconfiguration/get?id=';
+const PRODUCT_SYNC_COLUMNS = new Set([
+  'design_id', 'listing_id', 'product_image_urn', 'asins', 'asin_standard_tshirt_us',
+  'price_standard_tshirt_us', 'created_date', 'updated_date', 'estimated_expiration_date',
+  'products_live_us', 'products_live_de', 'products_live_gb', 'products_live_fr',
+  'products_live_it', 'products_live_es', 'products_live_jp', 'published_products',
+  'ad_asins', 'asin_resolved', 'status', 'last_synced_at'
+]);
 
 export class SyncEngine {
   private static logs: SyncLogEntry[] = [];
@@ -313,8 +320,8 @@ export class SyncEngine {
 
         if (resp.ok) return await resp.json();
 
-        if (resp.status === 429 || resp.url?.includes('merch.amazon.com/429')) {
-          console.log(`[FindListings] Rate limited (429), warte ${backoff}ms (Versuch ${retries + 1}/10)...`);
+        if ([408, 429, 500, 502, 503, 504].includes(resp.status) || resp.url?.includes('merch.amazon.com/429')) {
+          console.log(`[FindListings] Temporärer HTTP ${resp.status}, warte ${backoff}ms (Versuch ${retries + 1}/10)...`);
           await sleep(backoff);
           backoff = Math.min(backoff * 1.5, 8000);
           retries++;
@@ -472,9 +479,7 @@ export class SyncEngine {
     // pipeline. Amazon sync payloads must never reset or infer them.
     mapped = mapped.map(record => {
       const sanitized = { ...record };
-      delete sanitized.mba_hub_updated_at;
-      delete sanitized.skip_update;
-      return sanitized;
+      return Object.fromEntries(Object.entries(sanitized).filter(([key]) => PRODUCT_SYNC_COLUMNS.has(key) || key === '_deleted_asins'));
     });
 
     const designIds = mapped.map(m => m.design_id);
@@ -482,9 +487,10 @@ export class SyncEngine {
 
     for (let i = 0; i < designIds.length; i += 200) {
       const batch = designIds.slice(i, i + 200);
-      const { data } = await supabase.from('mba_designs')
-        .select('design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins')
+      const { data, error } = await supabase.from('mba_designs')
+        .select('design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins, asin_resolved')
         .in('design_id', batch);
+      if (error) throw new Error(`Supabase-Bestandsread fehlgeschlagen: ${error.message || String(error)}`);
       if (data) data.forEach(d => existing.set(d.design_id, d));
     }
 
@@ -519,16 +525,19 @@ export class SyncEngine {
       };
     });
 
-    for (let i = 0; i < merged.length; i += 200) {
-      const chunk = merged.slice(i, i + 200);
+    const writable = merged.map(record => Object.fromEntries(Object.entries(record).filter(([key]) => PRODUCT_SYNC_COLUMNS.has(key))));
+    let confirmed = 0;
+    for (let i = 0; i < writable.length; i += 200) {
+      const chunk = writable.slice(i, i + 200);
       const { error } = await supabase.from('mba_designs').upsert(chunk, { onConflict: 'design_id' });
       if (error) {
-        console.error('[SyncEngine] Error upserting designs chunk:', error);
+        throw new Error(`Supabase-Upsert fehlgeschlagen (Block ${Math.floor(i / 200) + 1}): ${error.message || String(error)}`);
       }
+      confirmed += chunk.length;
     }
 
     await this.refreshDBStats();
-    return merged.length;
+    return confirmed;
   }
 
   /**
@@ -921,6 +930,8 @@ export class SyncEngine {
    * 6. Run Full Sales History Sync
    */
   public static async runFullSalesHistory(): Promise<{ processed: number }> {
+    throw new Error('Full Sales ist vorübergehend gesperrt: Der Amazon-Vertrag und die atomare Snapshot-Übernahme sind noch nicht verifiziert. Es wurden keine Sales-Daten verändert.');
+    /* istanbul ignore next */
     this.shouldStop = false;
     this.state.isScanning = true;
     this.state.activeScanType = 'full_sales';
@@ -1014,7 +1025,8 @@ export class SyncEngine {
         .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
         .limit(limit);
 
-      if (error || !unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
+      if (error) throw new Error(`ASIN-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
+      if (!unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
 
       for (const item of unresolved) {
         if (this.shouldStop) break;
@@ -1031,6 +1043,7 @@ export class SyncEngine {
           }
         }
 
+        let itemFailed = false;
         for (const { ad, parent } of toResolve) {
           if (this.shouldStop) break;
           try {
@@ -1047,8 +1060,9 @@ export class SyncEngine {
             });
 
             if (response.status === 404) {
-              this.addLog(`[ASIN Scanner] Produkt ${parent.asin} (${ad.market}) nicht gefunden (404). Parent-ASIN gesetzt.`, 'warn');
-              ad.asin = parent.asin;
+              itemFailed = true;
+              errors++;
+              this.addLog(`[ASIN Scanner] Produkt ${parent.asin} (${ad.market}) nicht gefunden (404). Auflösung bleibt offen.`, 'warn');
               continue;
             }
 
@@ -1057,6 +1071,8 @@ export class SyncEngine {
             // Detect CAPTCHA or Robot Check
             if (html.includes('/errors/validateCaptcha') || html.includes('Robot Check') || response.status === 503 || response.status === 403) {
               this.addLog(`[ASIN Scanner] ⚠️ Amazon Rate-Limit / Captcha für ${parent.asin} (${ad.market}). Pausiere...`, 'warn');
+              itemFailed = true;
+              errors++;
               await this.sleep(3000);
               continue;
             }
@@ -1116,25 +1132,37 @@ export class SyncEngine {
                 ad.asin = finalChildAsin;
                 this.addLog(`[ASIN Scanner] ✓ Child-ASIN aufgelöst für ${ad.type} (${ad.market}): ${parent.asin} ➔ ${finalChildAsin}`, 'success');
               } else {
-                ad.asin = SyncEngine.sanitizeAsin(parent.asin) || parent.asin;
-                this.addLog(`[ASIN Scanner] Keine abweichende Child-ASIN für ${ad.type} (${ad.market}) gefunden. Verwende ${ad.asin}.`, 'info');
+                itemFailed = true;
+                errors++;
+                this.addLog(`[ASIN Scanner] Keine eindeutig belegte Child-ASIN für ${ad.type} (${ad.market}) gefunden. Auflösung bleibt offen.`, 'warn');
               }
             } else {
-              ad.asin = parent.asin;
+              itemFailed = true;
+              errors++;
             }
           } catch (e: any) {
             errors++;
-            ad.asin = parent.asin;
+            itemFailed = true;
             this.addLog(`[ASIN Scanner] Fehler bei ${parent.asin} (${ad.market}): ${e.message}`, 'error');
           }
           await this.sleep(1800 + Math.random() * 800);
         }
 
-        await supabase.from('mba_designs').update({
+        const fullyResolved = !itemFailed && newAdAsins.every((ad: any) => {
+          if (!VARIANT_PRODUCT_TYPES.has((ad.type || '').toUpperCase())) return true;
+          const parent = pubProducts.find(p => (p.type || '').toUpperCase() === (ad.type || '').toUpperCase() && (p.market || '').toLowerCase() === (ad.market || '').toLowerCase());
+          return !!ad.asin && !!parent?.asin && ad.asin !== parent.asin;
+        });
+        const { error: updateError } = await supabase.from('mba_designs').update({
           ad_asins: newAdAsins,
-          asin_resolved: true
+          asin_resolved: fullyResolved
         }).eq('design_id', item.design_id);
-        processed++;
+        if (updateError) {
+          errors++;
+          this.addLog(`[ASIN Scanner] Supabase-Write für ${item.design_id} fehlgeschlagen: ${updateError.message || String(updateError)}`, 'error');
+        } else if (fullyResolved) {
+          processed++;
+        }
       }
     } catch (err: any) {
       console.warn('[SyncEngine] ASIN batch error:', err.message);
