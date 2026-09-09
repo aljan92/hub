@@ -103,8 +103,12 @@ async function run() {
   }
 
   const syncSource = fs.readFileSync(new URL('../src/server/services/syncEngine.ts', import.meta.url), 'utf8');
-  assert.match(syncSource, /delete sanitized\.mba_hub_updated_at/);
-  assert.match(syncSource, /delete sanitized\.skip_update/);
+  const allowlistStart = syncSource.indexOf('const PRODUCT_SYNC_COLUMNS');
+  const allowlistEnd = syncSource.indexOf(']);', allowlistStart);
+  assert(allowlistStart >= 0 && allowlistEnd > allowlistStart, 'Product sync must use an explicit write allowlist');
+  const productAllowlist = syncSource.slice(allowlistStart, allowlistEnd);
+  assert.doesNotMatch(productAllowlist, /mba_hub_updated_at/);
+  assert.doesNotMatch(productAllowlist, /skip_update/);
   const fullSalesStart = syncSource.indexOf('public static async runFullSalesHistory');
   const zeroSalesBaseline = syncSource.indexOf('sales_total: 0', fullSalesStart);
   assert(fullSalesStart >= 0 && zeroSalesBaseline > fullSalesStart, 'Zero-sales baseline must only be written by full sales history sync');

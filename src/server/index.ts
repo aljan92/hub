@@ -341,9 +341,9 @@ app.post('/api/v1/sync/run', async (req, res) => {
     } else if (type === 'full_listings') {
       SyncEngine.runDeepScanAll().catch(() => {});
     } else if (type === 'quick_sales') {
-      SyncEngine.runSmartSalesSync().catch(() => {});
+      return res.status(409).json({ success: false, error: 'Sales-Sync ist bis zur Verifikation des aktuellen Amazon-Antwortvertrags sicher gesperrt.' });
     } else if (type === 'full_sales') {
-      SyncEngine.runFullSalesHistory().catch(() => {});
+      return res.status(409).json({ success: false, error: 'Full Sales ist bis zur verifizierten atomaren Snapshot-Übernahme sicher gesperrt.' });
     } else if (type === 'resolve_asins') {
       SyncEngine.resolveChildAsinsBatch(10).catch(() => {});
     } else {
@@ -362,12 +362,7 @@ app.post('/api/v1/sync/stop', (req, res) => {
 });
 
 app.post('/api/v1/sync/reset-sales', async (req, res) => {
-  try {
-    await SyncEngine.resetSalesData();
-    res.json({ success: true, message: 'Sales-Daten zurückgesetzt' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  res.status(409).json({ success: false, error: 'Globales Zurücksetzen der Sales-Daten ist aus Datenschutz- und Konsistenzgründen gesperrt.' });
 });
 
 app.post('/api/v1/sync/reset-asins', async (req, res) => {

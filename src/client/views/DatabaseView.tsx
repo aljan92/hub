@@ -397,22 +397,16 @@ export const DatabaseView: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <button
-                  onClick={() => handleRunScan('quick_sales')}
-                  disabled={syncState.isScanning}
+                  disabled
                   className="px-3 py-2 rounded-xl bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 text-xs font-semibold transition-all disabled:opacity-50"
-                  title="Aktualisiert die Verkäufe der letzten 30 Tage"
+                  title="Vorübergehend gesperrt, bis Amazons aktueller Sales-Vertrag verifiziert ist"
                 >
                   Quick Update (30 Tage)
                 </button>
                 <button
-                  onClick={() => {
-                    if (confirm('Gesamte Sales-Historie laden? Das kann einige Minuten dauern.')) {
-                      handleRunScan('full_sales');
-                    }
-                  }}
-                  disabled={syncState.isScanning}
+                  disabled
                   className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold transition-all disabled:opacity-50"
-                  title="Synchronisiert alle Verkaufszahlen der gesamten Historie"
+                  title="Vorübergehend gesperrt, bis eine atomare Snapshot-Übernahme verifiziert ist"
                 >
                   Full Refresh (All-Time)
                 </button>
@@ -455,8 +449,9 @@ export const DatabaseView: React.FC = () => {
                 🔄 ASIN-Status resetten
               </button>
               <button
-                onClick={handleResetSales}
-                className="px-3 py-2 rounded-xl bg-rose-900/30 hover:bg-rose-900/50 text-rose-200 border border-rose-800/40 text-[11px] font-semibold transition-all"
+                disabled
+                className="px-3 py-2 rounded-xl bg-rose-900/30 text-rose-200 border border-rose-800/40 text-[11px] font-semibold transition-all opacity-50 cursor-not-allowed"
+                title="Gesperrt: bestätigte Sales-Daten werden nicht global zurückgesetzt"
               >
                 🗑️ Sales in DB resetten
               </button>

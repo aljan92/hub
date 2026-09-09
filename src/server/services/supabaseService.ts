@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { loadSettings } from './settingsService';
+import { atomicWriteJson } from '../utils/atomicFileStorage';
 
 export class SupabaseService {
   /**
@@ -82,6 +83,30 @@ export class SupabaseService {
   private static statsInFlight: Promise<any> | null = null;
   private static readonly STATS_TTL_MS = 5 * 60 * 1000;
 
+  private static recordStatsTraffic(results: any[]) {
+    const file = path.resolve(process.cwd(), 'data', 'supabase_query_metrics.json');
+    let metrics: any = { version: 1, families: {} };
+    try { if (fs.existsSync(file)) metrics = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+    const family = metrics.families.dashboard_stats || { calls: 0, rows: 0, estimatedBytes: 0, errors: 0 };
+    family.calls += 1;
+    family.rows += results.reduce((sum, result) => sum + (Array.isArray(result?.data) ? result.data.length : 0), 0);
+    family.estimatedBytes += Buffer.byteLength(JSON.stringify(results.map(result => result?.data || null)));
+    family.errors += results.filter(result => result?.error).length;
+    family.lastAt = new Date().toISOString();
+    metrics.families.dashboard_stats = family;
+    try { atomicWriteJson(file, metrics, { backup: true, space: 2 }); } catch {}
+  }
+
+  private static async fetchAllPositiveSales(supabase: any) {
+    const rows: any[] = [];
+    for (let from = 0; ; from += 1000) {
+      const result = await supabase.from('mba_designs').select('sales_30d, royalties_30d_eur, royalties_30d_usd').gt('sales_30d', 0).range(from, from + 999);
+      if (result.error) return { data: null, error: result.error };
+      rows.push(...(result.data || []));
+      if (!result.data || result.data.length < 1000) return { data: rows, error: null };
+    }
+  }
+
   /**
    * Get accurate Live Designs, Total Designs and Sales stats from Supabase (Cached & Persisted)
    */
@@ -138,11 +163,9 @@ export class SupabaseService {
           .select('design_id', { count: 'exact', head: true })
           .or('asin_resolved.eq.false,asin_resolved.is.null')
           .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING']),
-        supabase.from('mba_designs')
-          .select('sales_30d, royalties_30d_eur, royalties_30d_usd')
-          .gt('sales_30d', 0)
-          .limit(1000)
+        this.fetchAllPositiveSales(supabase)
       ]);
+      this.recordStatsTraffic([totalRes, liveRes, unresolvedRes, salesRes]);
 
       let sales30d = 0;
       let royalties30dEur = 0;

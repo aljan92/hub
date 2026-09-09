@@ -1,5 +1,9 @@
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import { getSupabaseClient, loadSettings, saveSettings } from './settingsService';
 import { BrowserSessionService } from './browserSessionService';
+import { atomicWriteJson, loadJsonWithBackupRecovery } from '../utils/atomicFileStorage';
 
 export interface SyncLogEntry {
   id: string;
@@ -72,6 +76,14 @@ const PRODUCT_SYNC_COLUMNS = new Set([
   'products_live_it', 'products_live_es', 'products_live_jp', 'published_products',
   'ad_asins', 'asin_resolved', 'status', 'last_synced_at'
 ]);
+type ProductSyncRuntime = {
+  version: 1;
+  productWatermark: string | null;
+  textVersions?: Record<string, string>;
+  lastRun?: { runId: string; type: string; status: 'running' | 'complete' | 'partial' | 'truncated' | 'cancelled' | 'error'; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
+};
+const SYNC_RUNTIME_PATH = path.resolve(process.cwd(), 'data', 'sync_runtime.json');
+const FULL_STAGE_PATH = path.resolve(process.cwd(), 'data', 'sync_full_stage.json');
 
 export class SyncEngine {
   private static logs: SyncLogEntry[] = [];
@@ -97,6 +109,38 @@ export class SyncEngine {
   private static shouldStop = false;
   private static autoUpdateTimer: NodeJS.Timeout | null = null;
   private static asinResolveTimer: NodeJS.Timeout | null = null;
+  private static textCatchupTimer: NodeJS.Timeout | null = null;
+  private static activeWorker: string | null = null;
+
+  private static loadRuntime(): ProductSyncRuntime {
+    const loaded = loadJsonWithBackupRecovery<ProductSyncRuntime>(SYNC_RUNTIME_PATH, {
+      defaultValue: { version: 1, productWatermark: null },
+      validate: value => value?.version === 1 && (value.productWatermark === null || typeof value.productWatermark === 'string')
+    });
+    if (!loaded.success) throw new Error(`Sync-Laufstatus ist beschädigt: ${loaded.error}`);
+    return loaded.data;
+  }
+
+  private static saveRuntime(runtime: ProductSyncRuntime) {
+    atomicWriteJson(SYNC_RUNTIME_PATH, runtime, { backup: true, space: 2 });
+  }
+
+  private static beginWorker(type: string): string {
+    if (this.activeWorker) throw new Error(`Sync-Worker '${this.activeWorker}' läuft bereits.`);
+    this.activeWorker = type;
+    const runId = crypto.randomUUID();
+    const runtime = this.loadRuntime();
+    runtime.lastRun = { runId, type, status: 'running', startedAt: new Date().toISOString(), pages: 0, attempted: 0, confirmed: 0 };
+    this.saveRuntime(runtime);
+    return runId;
+  }
+
+  private static finishWorker(runId: string, status: NonNullable<ProductSyncRuntime['lastRun']>['status'], details: Partial<NonNullable<ProductSyncRuntime['lastRun']>> = {}) {
+    const runtime = this.loadRuntime();
+    if (runtime.lastRun?.runId === runId) runtime.lastRun = { ...runtime.lastRun, ...details, status, finishedAt: new Date().toISOString() };
+    this.saveRuntime(runtime);
+    this.activeWorker = null;
+  }
 
   public static getLogs(): SyncLogEntry[] {
     return this.logs;
@@ -130,10 +174,7 @@ export class SyncEngine {
 
   public static stopScan() {
     this.shouldStop = true;
-    this.state.isScanning = false;
-    this.state.activeScanType = null;
-    this.state.scanStatus = 'ready';
-    this.state.lastStatusMessage = 'Scan manuell abgebrochen.';
+    this.state.lastStatusMessage = 'Abbruch angefordert; laufender Request wird sicher beendet.';
     this.addLog('Scan manuell abgebrochen.', 'warn');
   }
 
@@ -180,13 +221,21 @@ export class SyncEngine {
         } catch (e) {}
       }
     }, 60 * 1000);
+
+    this.textCatchupTimer = setInterval(async () => {
+      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+        try { await this.runDeepScanNew(); } catch (e: any) { this.addLog(`[Text-Catch-up] Fehler: ${e.message}`, 'error'); }
+      }
+    }, 6 * 60 * 60 * 1000);
   }
 
   private static stopSchedulers() {
     if (this.autoUpdateTimer) clearInterval(this.autoUpdateTimer);
     if (this.asinResolveTimer) clearInterval(this.asinResolveTimer);
+    if (this.textCatchupTimer) clearInterval(this.textCatchupTimer);
     this.autoUpdateTimer = null;
     this.asinResolveTimer = null;
+    this.textCatchupTimer = null;
   }
 
   private static sleep(ms: number) {
@@ -308,21 +357,31 @@ export class SyncEngine {
       let backoff = 1500;
 
       while (retries < 10) {
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(body),
-          credentials: 'include'
-        });
+        let resp: Response;
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 30000);
+          try {
+            resp = await fetch(url, { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'include', signal: controller.signal });
+          } finally { clearTimeout(timeout); }
+        } catch (error) {
+          if (retries >= 9) throw error;
+          await sleep(backoff + Math.floor(Math.random() * 500));
+          backoff = Math.min(backoff * 1.5, 8000);
+          retries++;
+          continue;
+        }
 
-        if (resp.ok) return await resp.json();
+        if (resp.ok) {
+          const data = await resp.json();
+          if (!data || !Array.isArray(data.results) || (data.pageToken != null && !Array.isArray(data.pageToken))) throw new Error('FindListings lieferte ein ungültiges Antwortschema.');
+          return data;
+        }
 
         if ([408, 429, 500, 502, 503, 504].includes(resp.status) || resp.url?.includes('merch.amazon.com/429')) {
           console.log(`[FindListings] Temporärer HTTP ${resp.status}, warte ${backoff}ms (Versuch ${retries + 1}/10)...`);
-          await sleep(backoff);
+          const retryAfter = Number(resp.headers.get('retry-after'));
+          await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 30000) : backoff + Math.floor(Math.random() * 500));
           backoff = Math.min(backoff * 1.5, 8000);
           retries++;
           continue;
@@ -342,14 +401,59 @@ export class SyncEngine {
    */
   private static async fetchProductConfig(page: any, designId: string) {
     return await page.evaluate(async ({ url }) => {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error(`ProductConfig HTTP ${res.status}`);
-      return await res.json();
+      let backoff = 1000;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+        try {
+          const res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'include', signal: controller.signal });
+          if (res.ok) return await res.json();
+          if (![408, 429, 500, 502, 503, 504].includes(res.status)) throw new Error(`ProductConfig HTTP ${res.status}`);
+        } catch (error) {
+          if (attempt === 4) throw error;
+        } finally { clearTimeout(timeout); }
+        await new Promise(resolve => setTimeout(resolve, backoff + Math.floor(Math.random() * 300)));
+        backoff = Math.min(backoff * 2, 8000);
+      }
+      throw new Error('ProductConfig retries exceeded');
     }, { url: `${PRODUCT_CONFIG_URL}${designId}` });
+  }
+
+  private static async refreshTextsForConfirmedDesigns(page: any, supabase: any, mapped: any[]): Promise<{ processed: number; errors: number }> {
+    if (mapped.length === 0) return { processed: 0, errors: 0 };
+    const runtime = this.loadRuntime();
+    const versions = runtime.textVersions || {};
+    const existing = new Map<string, any>();
+    const ids = mapped.map(item => item.design_id);
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await supabase.from('mba_designs').select('design_id, title_us, brand_us, text_data_other').in('design_id', ids.slice(i, i + 200));
+      if (error) throw new Error(`Text-Bestandsread fehlgeschlagen: ${error.message || String(error)}`);
+      for (const row of data || []) existing.set(row.design_id, row);
+    }
+    let processed = 0;
+    let errors = 0;
+    for (const item of mapped) {
+      if (this.shouldStop) break;
+      const row = existing.get(item.design_id);
+      const sourceVersion = item.updated_date || item.last_synced_at || '';
+      const missing = !row?.title_us || !row?.brand_us || !row?.text_data_other || Object.keys(row.text_data_other || {}).length === 0;
+      if (!missing && versions[item.design_id] === sourceVersion) continue;
+      try {
+        const payload = this.parseTextData(item.design_id, await this.fetchProductConfig(page, item.design_id));
+        if (!payload) throw new Error('ProductConfig enthält keine Textdaten.');
+        const { error } = await supabase.from('mba_designs').upsert(payload, { onConflict: 'design_id' });
+        if (error) throw new Error(error.message || String(error));
+        versions[item.design_id] = sourceVersion;
+        processed++;
+      } catch (error: any) {
+        errors++;
+        this.addLog(`[Textfolgejob] ${item.design_id} bleibt offen: ${error.message}`, 'warn');
+      }
+      await this.sleep(150);
+    }
+    runtime.textVersions = Object.fromEntries(Object.entries(versions).slice(-10000));
+    this.saveRuntime(runtime);
+    return { processed, errors };
   }
 
   /**
@@ -425,8 +529,16 @@ export class SyncEngine {
       }
       const d = designMap.get(dId);
       if (r.asin && !d.asins.includes(r.asin)) d.asins.push(r.asin);
-      const mp = r.marketplace?.toLowerCase() || (MP_MAP[r.marketplaceId] || 'us');
-      const pt = r.productType?.toLowerCase() || r.productType || '';
+      const mp = r.marketplace?.toLowerCase() || MP_MAP[r.marketplaceId];
+      if (!mp || !Object.values(MP_MAP).includes(mp)) {
+        this.addLog(`[Produkte] Unbekannter Marktplatz für Design ${dId}; Eintrag wurde sicher ausgelassen.`, 'warn');
+        continue;
+      }
+      const pt = String(r.productType || '').trim().toLowerCase();
+      if (!pt) {
+        this.addLog(`[Produkte] Fehlender Produkttyp für Design ${dId}; Eintrag wurde sicher ausgelassen.`, 'warn');
+        continue;
+      }
       const status = r.status || '';
       const LIVE_STATUSES = new Set(['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING', 'published', 'propagated', 'locked', 'timed_out', 'publishing', 'translating']);
       const isLive = status && LIVE_STATUSES.has(status);
@@ -507,21 +619,26 @@ export class SyncEngine {
       const allAsins = Array.from(new Set([...(ex.asins || []), ...(m.asins || [])]));
       
       // Merge published_products
-      const prodMap = new Map();
-      (ex.published_products || []).forEach((p: any) => prodMap.set(p.asin, p));
-      (m.published_products || []).forEach((p: any) => prodMap.set(p.asin, p));
-      if (m._deleted_asins) {
-        m._deleted_asins.forEach((asin: string) => prodMap.delete(asin));
-      }
+      const productKey = (p: any) => `${String(p.market || '').toLowerCase()}_${String(p.type || '').toUpperCase()}`;
+      const prodMap = new Map<string, any>();
+      (ex.published_products || []).forEach((p: any) => { if (p?.market && p?.type) prodMap.set(productKey(p), p); });
+      (m.published_products || []).forEach((p: any) => { if (p?.market && p?.type) prodMap.set(productKey(p), p); });
       const pubProducts = Array.from(prodMap.values());
+      const liveLists: Record<string, string[]> = {};
+      for (const market of Object.values(MP_MAP)) liveLists[`products_live_${market}`] = Array.from(new Set(pubProducts.filter((p: any) => p.market === market).map((p: any) => String(p.type).toLowerCase())));
+      const standardUs = pubProducts.find((p: any) => p.market === 'us' && String(p.type).toUpperCase() === 'STANDARD_TSHIRT');
+      const adAsins = this.buildAdAsins(pubProducts, ex.ad_asins || [], ex.published_products || []);
+      const fullyResolved = adAsins.every((ad: any) => !VARIANT_PRODUCT_TYPES.has(String(ad.type || '').toUpperCase()) || (!!ad.asin && ad.asin !== ad.parentAsin));
 
       return {
         ...m,
+        ...liveLists,
         asins: allAsins,
         published_products: pubProducts,
-        asin_standard_tshirt_us: m.asin_standard_tshirt_us || ex.asin_standard_tshirt_us,
+        asin_standard_tshirt_us: standardUs?.asin || ex.asin_standard_tshirt_us,
         price_standard_tshirt_us: m.price_standard_tshirt_us || ex.price_standard_tshirt_us,
-        ad_asins: this.buildAdAsins(pubProducts, ex.ad_asins || [])
+        ad_asins: adAsins,
+        asin_resolved: fullyResolved
       };
     });
 
@@ -555,28 +672,30 @@ export class SyncEngine {
     return clean;
   }
 
-  public static buildAdAsins(publishedProducts: any[], existingAdAsins: any[] = []) {
+  public static buildAdAsins(publishedProducts: any[], existingAdAsins: any[] = [], existingProducts: any[] = []) {
     const existingMap = new Map();
     existingAdAsins.forEach(ad => {
       if (ad.type && ad.market) {
         const clean = SyncEngine.sanitizeAsin(ad.asin);
-        existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, clean);
+        existingMap.set(`${ad.type.toUpperCase()}_${ad.market.toLowerCase()}`, { asin: clean, parentAsin: SyncEngine.sanitizeAsin(ad.parentAsin) });
       }
     });
 
     return publishedProducts.map(p => {
       const key = `${(p.type || '').toUpperCase()}_${(p.market || '').toLowerCase()}`;
-      const exAsin = existingMap.get(key);
+      const existing = existingMap.get(key);
+      const exAsin = existing?.asin;
       const cleanParentAsin = SyncEngine.sanitizeAsin(p.asin);
+      const oldParent = existing?.parentAsin || SyncEngine.sanitizeAsin(existingProducts.find(old => `${String(old.type || '').toUpperCase()}_${String(old.market || '').toLowerCase()}` === key)?.asin);
 
       if (VARIANT_PRODUCT_TYPES.has((p.type || '').toUpperCase())) {
-        if (exAsin && exAsin !== cleanParentAsin) {
-          return { asin: exAsin, type: p.type, market: p.market };
+        if (exAsin && exAsin !== cleanParentAsin && oldParent === cleanParentAsin) {
+          return { asin: exAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
         }
-        return { asin: null, type: p.type, market: p.market };
+        return { asin: null, parentAsin: cleanParentAsin, type: p.type, market: p.market };
       }
 
-      return { asin: cleanParentAsin, type: p.type, market: p.market };
+      return { asin: cleanParentAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
     });
   }
 
@@ -616,6 +735,9 @@ export class SyncEngine {
    * 1. Run Smart Sync (Quick Update Products)
    */
   public static async runSmartSync(): Promise<{ designCount: number }> {
+    const runId = this.beginWorker('quick_products');
+    const runStartedAt = new Date().toISOString();
+    let pages = 0;
     this.shouldStop = false;
     this.state.isScanning = true;
     this.state.activeScanType = 'quick_products';
@@ -630,22 +752,23 @@ export class SyncEngine {
       const supabase = this.getSupabase();
       let pageToken: any[] = [];
       const allResults: any[] = [];
-
-      const { data: latest } = await supabase
-        .from('mba_designs')
-        .select('updated_date')
-        .order('updated_date', { ascending: false })
-        .limit(1);
-      const lastUpdated = latest?.[0]?.updated_date || null;
+      const seenTokens = new Set<string>(['[]']);
+      const runtime = this.loadRuntime();
+      const lowerBoundary = runtime.productWatermark
+        ? new Date(Date.parse(runtime.productWatermark) - 24 * 60 * 60 * 1000).toISOString()
+        : null;
+      let coveredBoundary = false;
+      let hasMore = false;
 
       for (let p = 0; p < 10; p++) {
         if (this.shouldStop) break;
         const json = await this.fetchListingsPage(page, accountId, pageToken);
+        pages++;
         if (!json.results || json.results.length === 0) break;
 
         allResults.push(...json.results);
 
-        if (lastUpdated) {
+        if (lowerBoundary) {
           const oldestInBatch = json.results[json.results.length - 1];
           const oldestDate = oldestInBatch?.updatedDate;
           const safeDate = (v: any) => { 
@@ -656,17 +779,31 @@ export class SyncEngine {
             } catch (e) { return null; } 
           };
           const oldestIso = safeDate(oldestDate);
-          if (oldestIso && oldestIso <= lastUpdated) break;
+          if (oldestIso && oldestIso <= lowerBoundary) { coveredBoundary = true; break; }
         }
 
-        if (!json.pageToken || json.pageToken.length === 0) break;
+        if (!json.pageToken || json.pageToken.length === 0) { coveredBoundary = true; break; }
+        const tokenKey = JSON.stringify(json.pageToken);
+        if (seenTokens.has(tokenKey)) throw new Error('FindListings-Pagination wiederholt denselben Token ohne Fortschritt.');
+        seenTokens.add(tokenKey);
         pageToken = json.pageToken;
+        hasMore = true;
         await this.sleep(600);
       }
+
+      if (this.shouldStop) throw new Error('Scan manuell abgebrochen.');
 
       this.addLog(`[Quick Update Produkte] ${allResults.length} Einträge von Amazon geladen. Mappe auf Supabase...`, 'info');
       const mapped = this.mapListingsToSupabase(allResults);
       const count = await this.mergeAndUpsertDesigns(mapped);
+      const textResult = await this.refreshTextsForConfirmedDesigns(page, supabase, mapped);
+      if (textResult.processed || textResult.errors) this.addLog(`[Textfolgejob] ${textResult.processed} aktualisiert, ${textResult.errors} offen.`, textResult.errors ? 'warn' : 'success');
+      const completeCoverage = coveredBoundary && !(hasMore && pages >= 10 && !coveredBoundary);
+      if (completeCoverage && runtime.productWatermark) {
+        const watermarkRuntime = this.loadRuntime();
+        watermarkRuntime.productWatermark = runStartedAt;
+        this.saveRuntime(watermarkRuntime);
+      }
 
       const now = Date.now();
       this.state.lastQuickDesigns = now;
@@ -677,11 +814,13 @@ export class SyncEngine {
       this.addLog(`[Quick Update Produkte] Erfolgreich synchronisiert: ${count} Designs in Supabase aktualisiert ✓ (${this.state.liveDesignsCount} Live Designs).`, 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
+      this.finishWorker(runId, completeCoverage ? 'complete' : 'truncated', { pages, attempted: mapped.length, confirmed: count, message: completeCoverage ? undefined : 'Keine vertrauenswürdige Vollständigkeitsmarke; Full Refresh erforderlich.' });
       return { designCount: count };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
       this.addLog(`[Quick Update Produkte] Fehler: ${err.message}`, 'error');
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : 'error', { pages, message: err.message });
       throw err;
     } finally {
       this.state.isScanning = false;
@@ -693,6 +832,8 @@ export class SyncEngine {
    * 2. Run Full Reload (Full Refresh Products)
    */
   public static async runFullReload(): Promise<{ designCount: number }> {
+    const runId = this.beginWorker('full_products');
+    const runStartedAt = new Date().toISOString();
     this.shouldStop = false;
     this.state.isScanning = true;
     this.state.activeScanType = 'full_products';
@@ -707,35 +848,49 @@ export class SyncEngine {
       let pageToken: any[] = [];
       let pageNum = 0;
       const allResults: any[] = [];
+      const seenTokens = new Set<string>(['[]']);
 
       while (!this.shouldStop) {
+        if (pageNum >= 1000) throw new Error('Full Refresh überschritt das Sicherheitslimit von 1.000 Seiten.');
         pageNum++;
         this.addLog(`[Full Refresh] Lade Seite ${pageNum} von Amazon (je 500 Einträge)...`, 'info');
         const json = await this.fetchListingsPage(page, accountId, pageToken);
         if (!json.results || json.results.length === 0) break;
 
         allResults.push(...json.results);
+        atomicWriteJson(FULL_STAGE_PATH, { version: 1, runId, accountId, startedAt: runStartedAt, pageNum, pageToken: json.pageToken || [], results: allResults }, { backup: true });
         this.addLog(`[Full Refresh] Bisher ${allResults.length} Einträge gesammelt...`, 'info');
 
         if (!json.pageToken || json.pageToken.length === 0) break;
+        const tokenKey = JSON.stringify(json.pageToken);
+        if (seenTokens.has(tokenKey)) throw new Error('FindListings-Pagination wiederholt denselben Token ohne Fortschritt.');
+        seenTokens.add(tokenKey);
         pageToken = json.pageToken;
         await this.sleep(1000);
       }
 
+      if (this.shouldStop) throw new Error('Scan manuell abgebrochen.');
+
       this.addLog(`[Full Refresh] Mappe ${allResults.length} Einträge auf Supabase Schema...`, 'info');
       const mapped = this.mapListingsToSupabase(allResults);
       const totalSaved = await this.mergeAndUpsertDesigns(mapped);
+      const runtime = this.loadRuntime();
+      runtime.productWatermark = runStartedAt;
+      this.saveRuntime(runtime);
+      try { if (fs.existsSync(FULL_STAGE_PATH)) fs.unlinkSync(FULL_STAGE_PATH); } catch {}
 
       this.state.lastFullDesigns = Date.now();
       await this.refreshDBStats();
       this.addLog(`[Full Refresh Produkte] Beendet. ${totalSaved} Designs erfolgreich in Supabase synchronisiert ✓ (${this.state.liveDesignsCount} Live Designs).`, 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
+      this.finishWorker(runId, 'complete', { pages: pageNum, attempted: mapped.length, confirmed: totalSaved });
       return { designCount: totalSaved };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
       this.addLog(`[Full Refresh Produkte] Fehler: ${err.message}`, 'error');
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : 'error', { pages: 0, message: err.message });
       throw err;
     } finally {
       this.state.isScanning = false;
@@ -747,6 +902,7 @@ export class SyncEngine {
    * 3. Run Deep Scan New (Quick Update Listings)
    */
   public static async runDeepScanNew(): Promise<{ processed: number }> {
+    if (this.state.isScanning || this.activeWorker) throw new Error('Ein anderer Sync-Worker läuft bereits.');
     this.shouldStop = false;
     this.state.isScanning = true;
     this.state.activeScanType = 'quick_listings';
@@ -759,32 +915,38 @@ export class SyncEngine {
       const supabase = this.getSupabase();
       const page = await this.getAmazonPage();
 
-      const { data: missingDesigns, error } = await supabase.from('mba_designs')
-        .select('design_id')
-        .is('title_us', null)
-        .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
-        .limit(50);
-
-      if (error) throw error;
-
-      if (!missingDesigns || missingDesigns.length === 0) {
-        this.addLog('[Quick Update Listings] Keine fehlenden Texte gefunden. Alles aktuell! ✓', 'success');
-      } else {
-        this.addLog(`[Quick Update Listings] ${missingDesigns.length} Designs gefunden. Lade Texte...`, 'info');
+      let cursor = '';
+      let found = 0;
+      while (!this.shouldStop) {
+        let query = supabase.from('mba_designs').select('design_id').is('title_us', null)
+          .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
+          .order('design_id', { ascending: true }).limit(100);
+        if (cursor) query = query.gt('design_id', cursor);
+        const { data: missingDesigns, error } = await query;
+        if (error) throw error;
+        if (!missingDesigns || missingDesigns.length === 0) break;
+        found += missingDesigns.length;
+        cursor = missingDesigns[missingDesigns.length - 1].design_id;
+        this.addLog(`[Quick Update Listings] ${found} Designs geprüft. Lade Texte...`, 'info');
         for (const item of missingDesigns) {
           if (this.shouldStop) break;
           try {
-            const config = await this.fetchProductConfig(page, item.design_id);
-            const textData = this.parseTextData(item.design_id, config);
-            if (textData) {
-              await supabase.from('mba_designs').upsert(textData);
-              processed++;
-            }
+            const textData = this.parseTextData(item.design_id, await this.fetchProductConfig(page, item.design_id));
+            if (!textData) throw new Error('Keine Textdaten erhalten.');
+            const { error: writeError } = await supabase.from('mba_designs').upsert(textData, { onConflict: 'design_id' });
+            if (writeError) throw writeError;
+            processed++;
           } catch (e: any) {
-            console.warn(`[SyncEngine] Config error for ${item.design_id}:`, e.message);
+            this.addLog(`[Quick Update Listings] ${item.design_id} bleibt offen: ${e.message}`, 'warn');
           }
           await this.sleep(150);
         }
+        if (missingDesigns.length < 100) break;
+      }
+
+      if (found === 0) {
+        this.addLog('[Quick Update Listings] Keine fehlenden Texte gefunden. Alles aktuell! ✓', 'success');
+      } else {
         this.addLog(`[Quick Update Listings] ${processed} Texte erfolgreich aktualisiert! ✓`, 'success');
       }
 
@@ -808,6 +970,7 @@ export class SyncEngine {
    * 4. Run Deep Scan All (Full Refresh Listings)
    */
   public static async runDeepScanAll(): Promise<{ processed: number }> {
+    if (this.state.isScanning || this.activeWorker) throw new Error('Ein anderer Sync-Worker läuft bereits.');
     this.shouldStop = false;
     this.state.isScanning = true;
     this.state.activeScanType = 'full_listings';
@@ -835,7 +998,8 @@ export class SyncEngine {
             const config = await this.fetchProductConfig(page, item.design_id);
             const textData = this.parseTextData(item.design_id, config);
             if (textData) {
-              await supabase.from('mba_designs').upsert(textData);
+              const { error: writeError } = await supabase.from('mba_designs').upsert(textData, { onConflict: 'design_id' });
+              if (writeError) throw writeError;
               processed++;
             }
           } catch {}
@@ -867,6 +1031,7 @@ export class SyncEngine {
    * 5. Run Smart Sales Sync (Quick Sales)
    */
   public static async runSmartSalesSync(): Promise<{ processed: number }> {
+    if (this.state.isScanning || this.activeWorker) throw new Error('Ein anderer Sync-Worker läuft bereits.');
     this.shouldStop = false;
     this.state.isScanning = true;
     this.state.activeScanType = 'quick_sales';
@@ -1003,6 +1168,9 @@ export class SyncEngine {
    * 7. Resolve Child ASINs Batch
    */
   public static async resolveChildAsinsBatch(limit = 10): Promise<{ processed: number; errors: number }> {
+    const runId = this.beginWorker('resolve_asins');
+    this.state.isScanning = true;
+    this.state.activeScanType = 'resolve_asins';
     const supabase = this.getSupabase();
     let processed = 0;
     let errors = 0;
@@ -1170,6 +1338,9 @@ export class SyncEngine {
 
     this.state.lastAsinSync = new Date().toLocaleString('de-DE');
     await this.refreshDBStats();
+    this.finishWorker(runId, this.shouldStop ? 'cancelled' : (errors ? 'partial' : 'complete'), { pages: 0, attempted: processed + errors, confirmed: processed, message: errors ? `${errors} Auflösungen bleiben offen.` : undefined });
+    this.state.isScanning = false;
+    this.state.activeScanType = null;
     return { processed, errors };
   }
 
