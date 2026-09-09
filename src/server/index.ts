@@ -383,6 +383,15 @@ app.post('/api/v1/sync/logs/clear', (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/v1/debug/sales-contract', async (_req, res) => {
+  try {
+    const contract = await SyncEngine.inspectSalesContract();
+    res.json({ success: true, contract });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 2.0.2 Native CDP Browser Management (Start / Restart / Navigate / Status)
 app.post('/api/v1/browser/restart', async (req, res) => {
   try {

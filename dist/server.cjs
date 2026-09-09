@@ -222420,7 +222420,7 @@ var init_schedulerClock = __esm2({
 });
 
 // src/server/services/syncEngine.ts
-var import_fs80, import_path75, import_crypto3, MP_MAP, VARIANT_PRODUCT_TYPES, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, SyncEngine;
+var import_fs80, import_path75, import_crypto3, MARKETPLACE_IDS, MP_MAP, VARIANT_PRODUCT_TYPES, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, SyncEngine;
 var init_syncEngine = __esm2({
   "src/server/services/syncEngine.ts"() {
     "use strict";
@@ -222430,6 +222430,15 @@ var init_syncEngine = __esm2({
     init_settingsService();
     init_browserSessionService();
     init_atomicFileStorage();
+    MARKETPLACE_IDS = {
+      us: "ATVPDKIKX0DER",
+      de: "A1PA6795UKMFR9",
+      gb: "A1F83G8C2ARO7P",
+      fr: "A13V1IB3VIYZZH",
+      it: "APJ6JRA9NG5V4",
+      es: "A1RKKUPIHCS9HS",
+      jp: "A1VC38T7YXB528"
+    };
     MP_MAP = {
       ATVPDKIKX0DER: "us",
       A1PA6795UKMFR9: "de",
@@ -222841,6 +222850,37 @@ var init_syncEngine = __esm2({
           }
         }, { startDate, endDate });
       }
+      static async inspectSalesContract() {
+        if (this.state.isScanning || this.activeWorker) throw new Error("Ein anderer Sync-Worker l\xE4uft bereits.");
+        const page = await this.getAmazonPage();
+        const accountId = await this.getAccountId(page);
+        const to = /* @__PURE__ */ new Date();
+        const from = new Date(to.getTime() - 24 * 60 * 60 * 1e3);
+        const marketplaceIds = Object.values(MARKETPLACE_IDS);
+        return page.evaluate(async ({ accountId: accountId2, marketplaceIds: marketplaceIds2, fromDate, toDate }) => {
+          const params2 = new URLSearchParams();
+          marketplaceIds2.forEach((id) => params2.append("marketplaceId", id));
+          params2.set("fromDate", String(fromDate));
+          params2.set("toDate", String(toDate));
+          if (accountId2) params2.set("accountId", accountId2);
+          const response2 = await fetch(`/api/reporting/purchases/report?${params2.toString()}`, { credentials: "include", headers: { Accept: "application/json" } });
+          const contentType = response2.headers.get("content-type") || "";
+          const text2 = await response2.text();
+          if (!response2.ok) return { ok: false, status: response2.status, contentType, bodyKind: text2.trim().startsWith("<") ? "html" : "text", responseBytes: text2.length };
+          let data;
+          try {
+            data = JSON.parse(text2);
+          } catch {
+            return { ok: false, status: response2.status, contentType, bodyKind: "invalid-json", responseBytes: text2.length };
+          }
+          const topLevelKeys = data && typeof data === "object" ? Object.keys(data) : [];
+          const markets = topLevelKeys.map((key) => {
+            const rows = Array.isArray(data[key]) ? data[key] : [];
+            return { key, rows: rows.length, sampleFields: rows[0] && typeof rows[0] === "object" ? Object.keys(rows[0]).sort() : [] };
+          });
+          return { ok: true, status: response2.status, contentType, responseBytes: text2.length, topLevelKeys, markets };
+        }, { accountId, marketplaceIds, fromDate: from.setUTCHours(0, 0, 0, 0), toDate: to.setUTCHours(23, 59, 59, 999) });
+      }
       /**
        * Fetch live and unresolved counts from Supabase
        */
@@ -223091,7 +223131,8 @@ var init_syncEngine = __esm2({
           const allResults = [];
           const seenTokens = /* @__PURE__ */ new Set(["[]"]);
           const runtime = this.loadRuntime();
-          const lowerBoundary = runtime.productWatermark ? new Date(Date.parse(runtime.productWatermark) - 24 * 60 * 60 * 1e3).toISOString() : null;
+          const accountKey = import_crypto3.default.createHash("sha256").update(accountId || "unknown").digest("hex").slice(0, 16);
+          const lowerBoundary = runtime.accountKey === accountKey && runtime.productWatermark ? new Date(Date.parse(runtime.productWatermark) - 24 * 60 * 60 * 1e3).toISOString() : null;
           let coveredBoundary = false;
           let hasMore = false;
           for (let p = 0; p < 10; p++) {
@@ -223139,6 +223180,7 @@ var init_syncEngine = __esm2({
           if (completeCoverage && runtime.productWatermark) {
             const watermarkRuntime = this.loadRuntime();
             watermarkRuntime.productWatermark = runStartedAt;
+            watermarkRuntime.accountKey = accountKey;
             this.saveRuntime(watermarkRuntime);
           }
           const now = Date.now();
@@ -223146,9 +223188,12 @@ var init_syncEngine = __esm2({
           this.state.lastPeriodicSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
           this.state.lastPeriodicSyncCount = count;
           await this.refreshDBStats();
-          this.addLog(`[Quick Update Produkte] Erfolgreich synchronisiert: ${count} Designs in Supabase aktualisiert \u2713 (${this.state.liveDesignsCount} Live Designs).`, "success");
+          this.addLog(
+            completeCoverage ? `[Quick Update Produkte] Vollst\xE4ndig: ${count} Designs best\xE4tigt \u2713 (${this.state.liveDesignsCount} Live Designs).` : `[Quick Update Produkte] ${count} Designs best\xE4tigt, Lauf aber nicht vollst\xE4ndig abgedeckt. Full Refresh erforderlich.`,
+            completeCoverage ? "success" : "warn"
+          );
           this.state.scanStatus = "ready";
-          this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
+          this.state.lastStatusMessage = completeCoverage ? `Bereit (${this.state.liveDesignsCount} Live Designs)` : `Teilstand best\xE4tigt; historische Reconciliation offen`;
           this.finishWorker(runId, completeCoverage ? "complete" : "truncated", { pages, attempted: mapped.length, confirmed: count, message: completeCoverage ? void 0 : "Keine vertrauensw\xFCrdige Vollst\xE4ndigkeitsmarke; Full Refresh erforderlich." });
           return { designCount: count };
         } catch (err) {
@@ -223203,6 +223248,7 @@ var init_syncEngine = __esm2({
           const totalSaved = await this.mergeAndUpsertDesigns(mapped);
           const runtime = this.loadRuntime();
           runtime.productWatermark = runStartedAt;
+          runtime.accountKey = import_crypto3.default.createHash("sha256").update(accountId || "unknown").digest("hex").slice(0, 16);
           this.saveRuntime(runtime);
           try {
             if (import_fs80.default.existsSync(FULL_STAGE_PATH)) import_fs80.default.unlinkSync(FULL_STAGE_PATH);
@@ -235983,6 +236029,14 @@ app.get("/api/v1/sync/logs", (req, res) => {
 app.post("/api/v1/sync/logs/clear", (req, res) => {
   SyncEngine.clearLogs();
   res.json({ success: true });
+});
+app.get("/api/v1/debug/sales-contract", async (_req, res) => {
+  try {
+    const contract = await SyncEngine.inspectSalesContract();
+    res.json({ success: true, contract });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 app.post("/api/v1/browser/restart", async (req, res) => {
   try {

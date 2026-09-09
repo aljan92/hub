@@ -80,6 +80,7 @@ const PRODUCT_SYNC_COLUMNS = new Set([
 type ProductSyncRuntime = {
   version: 1;
   productWatermark: string | null;
+  accountKey?: string;
   textVersions?: Record<string, string>;
   resolverRetries?: Record<string, { attempts: number; nextAt: string; parentAsin: string; lastError: string }>;
   lastRun?: { runId: string; type: string; status: 'running' | 'complete' | 'partial' | 'truncated' | 'cancelled' | 'error'; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
@@ -479,6 +480,34 @@ export class SyncEngine {
     }, { startDate, endDate });
   }
 
+  public static async inspectSalesContract(): Promise<any> {
+    if (this.state.isScanning || this.activeWorker) throw new Error('Ein anderer Sync-Worker läuft bereits.');
+    const page = await this.getAmazonPage();
+    const accountId = await this.getAccountId(page);
+    const to = new Date();
+    const from = new Date(to.getTime() - 24 * 60 * 60 * 1000);
+    const marketplaceIds = Object.values(MARKETPLACE_IDS);
+    return page.evaluate(async ({ accountId, marketplaceIds, fromDate, toDate }) => {
+      const params = new URLSearchParams();
+      marketplaceIds.forEach(id => params.append('marketplaceId', id));
+      params.set('fromDate', String(fromDate));
+      params.set('toDate', String(toDate));
+      if (accountId) params.set('accountId', accountId);
+      const response = await fetch(`/api/reporting/purchases/report?${params.toString()}`, { credentials: 'include', headers: { Accept: 'application/json' } });
+      const contentType = response.headers.get('content-type') || '';
+      const text = await response.text();
+      if (!response.ok) return { ok: false, status: response.status, contentType, bodyKind: text.trim().startsWith('<') ? 'html' : 'text', responseBytes: text.length };
+      let data: any;
+      try { data = JSON.parse(text); } catch { return { ok: false, status: response.status, contentType, bodyKind: 'invalid-json', responseBytes: text.length }; }
+      const topLevelKeys = data && typeof data === 'object' ? Object.keys(data) : [];
+      const markets = topLevelKeys.map(key => {
+        const rows = Array.isArray(data[key]) ? data[key] : [];
+        return { key, rows: rows.length, sampleFields: rows[0] && typeof rows[0] === 'object' ? Object.keys(rows[0]).sort() : [] };
+      });
+      return { ok: true, status: response.status, contentType, responseBytes: text.length, topLevelKeys, markets };
+    }, { accountId, marketplaceIds, fromDate: from.setUTCHours(0, 0, 0, 0), toDate: to.setUTCHours(23, 59, 59, 999) });
+  }
+
   /**
    * Fetch live and unresolved counts from Supabase
    */
@@ -757,7 +786,8 @@ export class SyncEngine {
       const allResults: any[] = [];
       const seenTokens = new Set<string>(['[]']);
       const runtime = this.loadRuntime();
-      const lowerBoundary = runtime.productWatermark
+      const accountKey = crypto.createHash('sha256').update(accountId || 'unknown').digest('hex').slice(0, 16);
+      const lowerBoundary = runtime.accountKey === accountKey && runtime.productWatermark
         ? new Date(Date.parse(runtime.productWatermark) - 24 * 60 * 60 * 1000).toISOString()
         : null;
       let coveredBoundary = false;
@@ -805,6 +835,7 @@ export class SyncEngine {
       if (completeCoverage && runtime.productWatermark) {
         const watermarkRuntime = this.loadRuntime();
         watermarkRuntime.productWatermark = runStartedAt;
+        watermarkRuntime.accountKey = accountKey;
         this.saveRuntime(watermarkRuntime);
       }
 
@@ -814,9 +845,14 @@ export class SyncEngine {
       this.state.lastPeriodicSyncCount = count;
 
       await this.refreshDBStats();
-      this.addLog(`[Quick Update Produkte] Erfolgreich synchronisiert: ${count} Designs in Supabase aktualisiert ✓ (${this.state.liveDesignsCount} Live Designs).`, 'success');
+      this.addLog(
+        completeCoverage
+          ? `[Quick Update Produkte] Vollständig: ${count} Designs bestätigt ✓ (${this.state.liveDesignsCount} Live Designs).`
+          : `[Quick Update Produkte] ${count} Designs bestätigt, Lauf aber nicht vollständig abgedeckt. Full Refresh erforderlich.`,
+        completeCoverage ? 'success' : 'warn'
+      );
       this.state.scanStatus = 'ready';
-      this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
+      this.state.lastStatusMessage = completeCoverage ? `Bereit (${this.state.liveDesignsCount} Live Designs)` : `Teilstand bestätigt; historische Reconciliation offen`;
       this.finishWorker(runId, completeCoverage ? 'complete' : 'truncated', { pages, attempted: mapped.length, confirmed: count, message: completeCoverage ? undefined : 'Keine vertrauenswürdige Vollständigkeitsmarke; Full Refresh erforderlich.' });
       return { designCount: count };
     } catch (err: any) {
@@ -879,6 +915,7 @@ export class SyncEngine {
       const totalSaved = await this.mergeAndUpsertDesigns(mapped);
       const runtime = this.loadRuntime();
       runtime.productWatermark = runStartedAt;
+      runtime.accountKey = crypto.createHash('sha256').update(accountId || 'unknown').digest('hex').slice(0, 16);
       this.saveRuntime(runtime);
       try { if (fs.existsSync(FULL_STAGE_PATH)) fs.unlinkSync(FULL_STAGE_PATH); } catch {}
 
