@@ -34,6 +34,1189 @@ var __toESM2 = (mod, isNodeMode, target) => (target = mod != null ? __create2(__
 ));
 var __toCommonJS2 = (mod) => __copyProps2(__defProp2({}, "__esModule", { value: true }), mod);
 
+// src/server/services/reviewVersion.ts
+function reviewFingerprint(task) {
+  const { events, eventsCount, updatedAt, reviewVersion: reviewVersion2, trademarkWorkflowState, ...domain } = task;
+  return (0, import_node_crypto.createHash)("sha256").update(JSON.stringify(domain)).digest("hex");
+}
+function reviewVersion(task) {
+  return task.reviewVersion || `legacy:${reviewFingerprint(task)}`;
+}
+var import_node_crypto, ReviewConflict;
+var init_reviewVersion = __esm2({
+  "src/server/services/reviewVersion.ts"() {
+    "use strict";
+    import_node_crypto = require("node:crypto");
+    ReviewConflict = class extends Error {
+      constructor() {
+        super("Review ist veraltet oder geh\xF6rt zu einer anderen Task. Bitte aktuellen Review neu laden.");
+      }
+    };
+  }
+});
+
+// src/types/tasks.ts
+function isTaskAwaitingUserAction(status) {
+  return TASK_STATUSES_AWAITING_USER_ACTION_SET.has(status);
+}
+function toTaskSummary(task) {
+  const quote5 = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || void 0;
+  const niche1 = task.niche1 || task.payload?.niche1 || void 0;
+  const niche2 = task.niche2 || task.payload?.niche2 || void 0;
+  const subniche = task.subniche || task.payload?.subniche || void 0;
+  const designId = task.payload?.designId || void 0;
+  const imageUrl = task.imageUrl || task.u4PreviewUrl || task.mbaPngUrl || void 0;
+  const lastEvent = task.events && task.events.length > 0 ? task.events[task.events.length - 1] : void 0;
+  return {
+    id: task.id,
+    reviewVersion: task.reviewVersion,
+    counter: task.counter,
+    source: task.source,
+    suffix: task.suffix,
+    status: task.status,
+    checkpoint: task.checkpoint,
+    receivedAt: task.receivedAt,
+    updatedAt: task.updatedAt || lastEvent?.timestamp || task.receivedAt,
+    quote: quote5,
+    niche1,
+    niche2,
+    subniche,
+    imageUrl,
+    hasError: Boolean(task.hasError),
+    errorDetails: task.errorDetails,
+    eventsCount: Array.isArray(task.events) ? task.events.length : 0,
+    clientIp: task.clientIp,
+    designId,
+    inQueue: task.inQueue
+  };
+}
+var TASK_STATUSES_AWAITING_USER_ACTION, TASK_STATUSES_AWAITING_USER_ACTION_SET;
+var init_tasks = __esm2({
+  "src/types/tasks.ts"() {
+    "use strict";
+    TASK_STATUSES_AWAITING_USER_ACTION = [
+      "AWAITING_PRE_FLIGHT_REVIEW",
+      "AWAITING_DESIGN_REVIEW",
+      "AWAITING_TM_REVIEW",
+      "AWAITING_SVG_REVIEW",
+      "AWAITING_RECOVERY_REVIEW",
+      "UPDATE_ANALYZED"
+    ];
+    TASK_STATUSES_AWAITING_USER_ACTION_SET = new Set(TASK_STATUSES_AWAITING_USER_ACTION);
+  }
+});
+
+// src/server/utils/atomicFileStorage.ts
+function isFileInFailSafe(filePath) {
+  return failSafeRegistry.has(import_path66.default.resolve(filePath));
+}
+function atomicWriteFile(filePath, content, options2 = {}) {
+  const resolvedPath = import_path66.default.resolve(filePath);
+  const dir = import_path66.default.dirname(resolvedPath);
+  const backupExt = options2.backupExt || ".bak";
+  const shouldBackup = options2.backup !== false;
+  if (failSafeRegistry.has(resolvedPath)) {
+    throw new Error(
+      `[AtomicStorage] \u{1F6A8} REFUSED: File '${resolvedPath}' is in FAIL-SAFE (CORRUPTED) mode. Writes are blocked to prevent destructive data loss.`
+    );
+  }
+  if (!import_fs71.default.existsSync(dir)) {
+    import_fs71.default.mkdirSync(dir, { recursive: true });
+  }
+  const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const tmpPath = `${resolvedPath}.tmp.${nonce}`;
+  try {
+    const fd = import_fs71.default.openSync(tmpPath, "w");
+    try {
+      if (typeof content === "string") {
+        import_fs71.default.writeSync(fd, content, 0, "utf-8");
+      } else {
+        import_fs71.default.writeSync(fd, content);
+      }
+      import_fs71.default.fsyncSync(fd);
+    } finally {
+      import_fs71.default.closeSync(fd);
+    }
+    if (shouldBackup && import_fs71.default.existsSync(resolvedPath)) {
+      try {
+        const currentStats = import_fs71.default.statSync(resolvedPath);
+        if (currentStats.size > 0) {
+          const bakPath = `${resolvedPath}${backupExt}`;
+          const bakTmpPath = `${bakPath}.tmp.${nonce}`;
+          import_fs71.default.copyFileSync(resolvedPath, bakTmpPath);
+          const bakFd = import_fs71.default.openSync(bakTmpPath, "r");
+          try {
+            import_fs71.default.fsyncSync(bakFd);
+          } finally {
+            import_fs71.default.closeSync(bakFd);
+          }
+          import_fs71.default.renameSync(bakTmpPath, bakPath);
+        }
+      } catch (backupErr) {
+        console.warn(`[AtomicStorage] Warning: Failed to create backup for ${resolvedPath}:`, backupErr.message);
+      }
+    }
+    import_fs71.default.renameSync(tmpPath, resolvedPath);
+    try {
+      const dirFd = import_fs71.default.openSync(dir, "r");
+      try {
+        import_fs71.default.fsyncSync(dirFd);
+      } finally {
+        import_fs71.default.closeSync(dirFd);
+      }
+    } catch {
+    }
+  } catch (err) {
+    if (import_fs71.default.existsSync(tmpPath)) {
+      try {
+        import_fs71.default.unlinkSync(tmpPath);
+      } catch {
+      }
+    }
+    throw err;
+  }
+}
+function atomicWriteJson(filePath, data, options2 = {}) {
+  const space = options2.space !== void 0 ? options2.space : void 0;
+  const jsonStr = space !== void 0 ? JSON.stringify(data, null, space) : JSON.stringify(data);
+  if (!jsonStr) {
+    throw new Error(`[AtomicStorage] JSON serialization produced empty string for '${filePath}'`);
+  }
+  atomicWriteFile(filePath, jsonStr, options2);
+}
+function loadJsonWithBackupRecovery(filePath, options2 = {}) {
+  const resolvedPath = import_path66.default.resolve(filePath);
+  const backupExt = options2.backupExt || ".bak";
+  const bakPath = `${resolvedPath}${backupExt}`;
+  const validate2 = options2.validate || (() => true);
+  if (!import_fs71.default.existsSync(resolvedPath) && !import_fs71.default.existsSync(bakPath)) {
+    failSafeRegistry.delete(resolvedPath);
+    return {
+      success: true,
+      data: options2.defaultValue,
+      recoveredFromBackup: false,
+      corrupted: false
+    };
+  }
+  let mainValid = false;
+  let mainData = null;
+  let mainError = null;
+  if (import_fs71.default.existsSync(resolvedPath)) {
+    try {
+      const content = import_fs71.default.readFileSync(resolvedPath, "utf-8").trim();
+      if (content.length === 0) {
+        throw new Error("File is 0 bytes (empty/truncated)");
+      }
+      const parsed = JSON.parse(content);
+      if (!validate2(parsed)) {
+        throw new Error("Data validation check failed");
+      }
+      mainValid = true;
+      mainData = parsed;
+    } catch (err) {
+      mainError = err.message || "JSON parse error";
+    }
+  } else {
+    mainError = "Main file does not exist, but backup exists";
+  }
+  if (mainValid) {
+    failSafeRegistry.delete(resolvedPath);
+    return {
+      success: true,
+      data: mainData,
+      recoveredFromBackup: false,
+      corrupted: false
+    };
+  }
+  console.warn(`[AtomicStorage] \u26A0\uFE0F Corrupted or invalid JSON detected in '${resolvedPath}' (${mainError}). Checking backup '${bakPath}'...`);
+  if (import_fs71.default.existsSync(bakPath)) {
+    try {
+      const bakContent = import_fs71.default.readFileSync(bakPath, "utf-8").trim();
+      if (bakContent.length === 0) {
+        throw new Error("Backup file is 0 bytes (empty/truncated)");
+      }
+      const parsedBak = JSON.parse(bakContent);
+      if (!validate2(parsedBak)) {
+        throw new Error("Backup data validation check failed");
+      }
+      console.warn(`[AtomicStorage] \u{1F6E1}\uFE0F Valid backup found! Restoring '${resolvedPath}' from '${bakPath}'...`);
+      atomicWriteJson(resolvedPath, parsedBak, { backup: false, space: options2.defaultValue ? 2 : 0 });
+      failSafeRegistry.delete(resolvedPath);
+      return {
+        success: true,
+        data: parsedBak,
+        recoveredFromBackup: true,
+        corrupted: false
+      };
+    } catch (bakErr) {
+      console.error(`[AtomicStorage] \u274C Backup '${bakPath}' is ALSO corrupt or invalid:`, bakErr.message);
+    }
+  } else {
+    console.error(`[AtomicStorage] \u274C No backup file exists at '${bakPath}'!`);
+  }
+  console.error(
+    `[AtomicStorage] \u{1F6A8} CRITICAL: Main file '${resolvedPath}' and backup could not be parsed!`
+  );
+  console.error(
+    `[AtomicStorage] \u{1F6A8} TASK STORAGE WRITES HAVE BEEN DISABLED (FAIL-SAFE) TO PREVENT DESTRUCTIVE OVERWRITE.`
+  );
+  failSafeRegistry.add(resolvedPath);
+  return {
+    success: false,
+    data: null,
+    recoveredFromBackup: false,
+    corrupted: true,
+    error: `Both '${resolvedPath}' and backup are corrupt or unreadable (${mainError})`
+  };
+}
+var import_fs71, import_path66, failSafeRegistry;
+var init_atomicFileStorage = __esm2({
+  "src/server/utils/atomicFileStorage.ts"() {
+    "use strict";
+    import_fs71 = __toESM2(require("fs"), 1);
+    import_path66 = __toESM2(require("path"), 1);
+    failSafeRegistry = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/server/storage/taskRepository.ts
+var import_node_crypto2, import_fs72, import_path67, import_node_sqlite, TaskRepository;
+var init_taskRepository = __esm2({
+  "src/server/storage/taskRepository.ts"() {
+    "use strict";
+    import_node_crypto2 = require("node:crypto");
+    init_reviewVersion();
+    import_fs72 = __toESM2(require("fs"), 1);
+    import_path67 = __toESM2(require("path"), 1);
+    import_node_sqlite = require("node:sqlite");
+    init_tasks();
+    init_atomicFileStorage();
+    TaskRepository = class {
+      static db = null;
+      static dbPath = import_path67.default.resolve(process.cwd(), "data", "mba_hub.sqlite");
+      static legacyJsonPath = import_path67.default.resolve(process.cwd(), "data", "tasks_log.json");
+      static legacyCounterPath = import_path67.default.resolve(process.cwd(), "data", "tasks_counter.json");
+      static isInitialized = false;
+      static verifyNodeEngine() {
+        const [majorStr, minorStr] = process.versions.node.split(".");
+        const major2 = parseInt(majorStr, 10);
+        const minor = parseInt(minorStr, 10);
+        const isSupported = major2 > 22 || major2 === 22 && minor >= 5;
+        if (!isSupported) {
+          throw new Error(`[TaskRepository] node:sqlite requires Node.js >= 22.5.0. Current runtime is ${process.version}`);
+        }
+      }
+      /**
+       * Initializes the SQLite Database, sets WAL & FULL durability, applies schemas,
+       * and runs atomic migration from tasks_log.json if necessary.
+       */
+      static init(customDbPath) {
+        if (this.isInitialized && this.db && !customDbPath) return;
+        this.verifyNodeEngine();
+        const targetDbPath = customDbPath || this.dbPath;
+        const dbDir = import_path67.default.dirname(targetDbPath);
+        if (!import_fs72.default.existsSync(dbDir)) {
+          import_fs72.default.mkdirSync(dbDir, { recursive: true });
+        }
+        if (!import_fs72.default.existsSync(targetDbPath) && !customDbPath && import_fs72.default.existsSync(this.legacyJsonPath)) {
+          console.log("[TaskRepository] \u{1F4E6} Discovered existing tasks_log.json with no SQLite database. Starting atomic migration...");
+          this.executeMigrationFromLegacyJson(targetDbPath);
+        }
+        this.db = new import_node_sqlite.DatabaseSync(targetDbPath);
+        this.configurePragmas(this.db);
+        this.createSchema(this.db);
+        this.isInitialized = true;
+        console.log(`[TaskRepository] \u{1F6E1}\uFE0F SQLite Task Storage initialized at ${targetDbPath} (WAL Mode, synchronous=FULL).`);
+      }
+      /**
+       * Closes the database with a clean checkpoint.
+       */
+      static close() {
+        if (this.db) {
+          try {
+            console.log("[TaskRepository] \u{1F6D1} Checkpointing and closing SQLite database...");
+            this.db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+            this.db.close();
+          } catch (err) {
+            console.warn("[TaskRepository] Error during close:", err.message);
+          } finally {
+            this.db = null;
+            this.isInitialized = false;
+          }
+        }
+      }
+      /**
+       * Configures SQLite PRAGMAs for high durability & concurrency on NAS / Docker
+       */
+      static configurePragmas(db) {
+        db.exec("PRAGMA journal_mode = WAL;");
+        db.exec("PRAGMA synchronous = FULL;");
+        db.exec("PRAGMA busy_timeout = 5000;");
+        db.exec("PRAGMA foreign_keys = ON;");
+      }
+      /**
+       * Creates the application metadata and tasks tables with composite indexes
+       */
+      static createSchema(db) {
+        db.exec(`
+      CREATE TABLE IF NOT EXISTS metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        counter INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        suffix TEXT,
+        status TEXT NOT NULL,
+        checkpoint TEXT,
+        received_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        quote TEXT,
+        niche1 TEXT,
+        niche2 TEXT,
+        subniche TEXT,
+        image_url TEXT,
+        has_error INTEGER NOT NULL DEFAULT 0,
+        error_details TEXT,
+        design_id TEXT,
+        in_queue INTEGER NOT NULL DEFAULT 0,
+        events_count INTEGER NOT NULL DEFAULT 0,
+        client_ip TEXT,
+        image_generations_count INTEGER NOT NULL DEFAULT 0,
+        vectorizations_count INTEGER NOT NULL DEFAULT 0,
+        openrouter_cost_usd REAL NOT NULL DEFAULT 0.0,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tasks_counter ON tasks(counter DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_source_counter ON tasks(source, counter DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_status_counter ON tasks(status, counter DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_design_id ON tasks(design_id);
+      CREATE INDEX IF NOT EXISTS idx_tasks_received_at ON tasks(received_at DESC);
+    `);
+        const versionRow = db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get();
+        if (!versionRow) {
+          db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', '1')").run();
+          db.exec("PRAGMA user_version = 1;");
+        }
+      }
+      /**
+       * Central mapper: Converts canonical DesignTaskLog to strongly-typed projection columns.
+       */
+      static taskToColumns(task) {
+        const quote5 = task.quote || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || task.payload?.title || null;
+        const niche1 = task.niche1 || task.payload?.niche1 || null;
+        const niche2 = task.niche2 || task.payload?.niche2 || null;
+        const subniche = task.subniche || task.payload?.subniche || null;
+        const designId = task.payload?.designId || task.designId || null;
+        const imageUrl = task.imageUrl || null;
+        const errorDetails = task.errorDetails || null;
+        const clientIp = task.clientIp || null;
+        const eventsCount = Array.isArray(task.events) ? task.events.length : task.eventsCount || 0;
+        let imageGenCount = 0;
+        let vectorCount = 0;
+        let openRouterCost = 0;
+        if (Array.isArray(task.events)) {
+          for (const ev of task.events) {
+            if (ev.type === "IDEOGRAM_RESPONSE" && ev.content?.provider !== "GPT_IMAGE_2") imageGenCount++;
+            if (ev.type === "VECTORIZE_RESPONSE") vectorCount++;
+            if (ev.metadata?.costUsd) openRouterCost += Number(ev.metadata.costUsd) || 0;
+          }
+        } else {
+          if (imageUrl) imageGenCount++;
+          if (task.svgContent || task.localMbaPngPath) vectorCount++;
+        }
+        const payloadJson = JSON.stringify(task);
+        return {
+          id: task.id,
+          counter: task.counter || 0,
+          source: task.source || "HERMES",
+          suffix: task.suffix || null,
+          status: task.status || "RECEIVED",
+          checkpoint: task.checkpoint || null,
+          received_at: task.receivedAt || (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: task.updatedAt || task.receivedAt || (/* @__PURE__ */ new Date()).toISOString(),
+          quote: quote5,
+          niche1,
+          niche2,
+          subniche,
+          image_url: imageUrl,
+          has_error: task.hasError ? 1 : 0,
+          error_details: errorDetails,
+          design_id: designId,
+          in_queue: task.inQueue ? 1 : 0,
+          events_count: eventsCount,
+          client_ip: clientIp,
+          image_generations_count: imageGenCount,
+          vectorizations_count: vectorCount,
+          openrouter_cost_usd: openRouterCost,
+          payload_json: payloadJson
+        };
+      }
+      /**
+       * Central mapper: Reconstructs canonical DesignTaskLog from a database row.
+       */
+      static rowToTask(row) {
+        if (!row || !row.payload_json) {
+          throw new Error("[TaskRepository] Invalid row: payload_json is missing");
+        }
+        const task = JSON.parse(row.payload_json);
+        task.id = row.id;
+        task.counter = row.counter;
+        task.source = row.source;
+        task.suffix = row.suffix;
+        task.status = row.status;
+        task.checkpoint = row.checkpoint;
+        task.receivedAt = row.received_at;
+        task.updatedAt = row.updated_at;
+        task.quote = row.quote || task.quote;
+        task.niche1 = row.niche1 || task.niche1;
+        task.niche2 = row.niche2 || task.niche2;
+        task.subniche = row.subniche || task.subniche;
+        task.imageUrl = row.image_url || task.imageUrl;
+        task.hasError = Boolean(row.has_error);
+        task.errorDetails = row.error_details || task.errorDetails;
+        task.inQueue = Boolean(row.in_queue);
+        task.eventsCount = row.events_count;
+        task.clientIp = row.client_ip || task.clientIp;
+        return task;
+      }
+      /**
+       * Central mapper: Converts database row directly into lightweight TaskSummary without payload_json parsing.
+       */
+      static rowToSummary(row) {
+        return {
+          id: row.id,
+          counter: row.counter,
+          source: row.source,
+          suffix: row.suffix || void 0,
+          status: row.status,
+          checkpoint: row.checkpoint || void 0,
+          receivedAt: row.received_at,
+          updatedAt: row.updated_at,
+          quote: row.quote || void 0,
+          niche1: row.niche1 || void 0,
+          niche2: row.niche2 || void 0,
+          subniche: row.subniche || void 0,
+          imageUrl: row.image_url || void 0,
+          hasError: Boolean(row.has_error),
+          errorDetails: row.error_details || void 0,
+          eventsCount: row.events_count,
+          clientIp: row.client_ip || void 0,
+          designId: row.design_id || void 0,
+          inQueue: Boolean(row.in_queue)
+        };
+      }
+      /**
+       * Atomic migration of tasks_log.json using a separate temporary database (mba_hub.sqlite.migrating).
+       * If any error occurs, rolls back, discards temporary files, leaves tasks_log.json untouched,
+       * and throws error (Fail-Closed).
+       */
+      static executeMigrationFromLegacyJson(targetDbPath, customJsonPath) {
+        const jsonPath = customJsonPath || this.legacyJsonPath;
+        const tempDbPath = `${targetDbPath}.migrating`;
+        if (import_fs72.default.existsSync(tempDbPath)) import_fs72.default.unlinkSync(tempDbPath);
+        if (import_fs72.default.existsSync(`${tempDbPath}-wal`)) import_fs72.default.unlinkSync(`${tempDbPath}-wal`);
+        if (import_fs72.default.existsSync(`${tempDbPath}-shm`)) import_fs72.default.unlinkSync(`${tempDbPath}-shm`);
+        console.log(`[TaskRepository] \u23F3 Reading legacy JSON from ${jsonPath}...`);
+        const recovery = loadJsonWithBackupRecovery(jsonPath, {
+          backupExt: ".bak",
+          validate: (data) => Array.isArray(data),
+          defaultValue: []
+        });
+        if (!recovery.success || !Array.isArray(recovery.data)) {
+          throw new Error(`[TaskRepository] Failed to read or parse ${jsonPath}. Migration aborted.`);
+        }
+        const legacyTasks = recovery.data;
+        console.log(`[TaskRepository] \u{1F4C4} Found ${legacyTasks.length} legacy tasks to migrate.`);
+        let tempDb = null;
+        try {
+          tempDb = new import_node_sqlite.DatabaseSync(tempDbPath);
+          this.configurePragmas(tempDb);
+          this.createSchema(tempDb);
+          tempDb.exec("BEGIN IMMEDIATE;");
+          const insertStmt = tempDb.prepare(`
+        INSERT INTO tasks (
+          id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+          quote, niche1, niche2, subniche, image_url, has_error, error_details,
+          design_id, in_queue, events_count, client_ip,
+          image_generations_count, vectorizations_count, openrouter_cost_usd,
+          payload_json
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?,
+          ?
+        )
+      `);
+          let maxCounter = 0;
+          const seenIds = /* @__PURE__ */ new Set();
+          for (const task of legacyTasks) {
+            if (!task || !task.id) continue;
+            seenIds.add(task.id);
+            const counter = task.counter || 0;
+            if (counter > maxCounter) maxCounter = counter;
+            const cols = this.taskToColumns(task);
+            insertStmt.run(
+              cols.id,
+              cols.counter,
+              cols.source,
+              cols.suffix,
+              cols.status,
+              cols.checkpoint,
+              cols.received_at,
+              cols.updated_at,
+              cols.quote,
+              cols.niche1,
+              cols.niche2,
+              cols.subniche,
+              cols.image_url,
+              cols.has_error,
+              cols.error_details,
+              cols.design_id,
+              cols.in_queue,
+              cols.events_count,
+              cols.client_ip,
+              cols.image_generations_count,
+              cols.vectorizations_count,
+              cols.openrouter_cost_usd,
+              cols.payload_json
+            );
+          }
+          let counterToStore = maxCounter;
+          if (import_fs72.default.existsSync(this.legacyCounterPath)) {
+            try {
+              const rawCounter = JSON.parse(import_fs72.default.readFileSync(this.legacyCounterPath, "utf-8"));
+              if (rawCounter && typeof rawCounter.counter === "number") {
+                counterToStore = Math.max(counterToStore, rawCounter.counter);
+              }
+            } catch {
+            }
+          }
+          tempDb.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(counterToStore));
+          tempDb.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '1')").run();
+          tempDb.exec("COMMIT;");
+          const countRow = tempDb.prepare("SELECT COUNT(*) as count FROM tasks").get();
+          if (countRow.count !== seenIds.size) {
+            throw new Error(`[TaskRepository] Migration integrity error: Expected ${seenIds.size} rows, but found ${countRow.count} in database.`);
+          }
+          const checkpointRow = tempDb.prepare("PRAGMA wal_checkpoint(TRUNCATE);").get();
+          if (checkpointRow && checkpointRow.busy === 1) {
+            throw new Error(`[TaskRepository] PRAGMA wal_checkpoint(TRUNCATE) failed with busy status: ${JSON.stringify(checkpointRow)}`);
+          }
+          const integrityRow = tempDb.prepare("PRAGMA integrity_check;").get();
+          if (!integrityRow || integrityRow.integrity_check !== "ok") {
+            throw new Error(`[TaskRepository] PRAGMA integrity_check failed: ${JSON.stringify(integrityRow)}`);
+          }
+          tempDb.close();
+          tempDb = null;
+          const tempWalPath = `${tempDbPath}-wal`;
+          const tempShmPath = `${tempDbPath}-shm`;
+          if (import_fs72.default.existsSync(tempWalPath)) {
+            try {
+              import_fs72.default.unlinkSync(tempWalPath);
+            } catch {
+            }
+          }
+          if (import_fs72.default.existsSync(tempShmPath)) {
+            try {
+              import_fs72.default.unlinkSync(tempShmPath);
+            } catch {
+            }
+          }
+          import_fs72.default.renameSync(tempDbPath, targetDbPath);
+          console.log(`[TaskRepository] \u2705 Migration complete! Created ${targetDbPath} with ${countRow.count} tasks.`);
+          const backupJsonPath = import_path67.default.resolve(import_path67.default.dirname(jsonPath), "tasks_log.pre-sqlite-backup.json");
+          import_fs72.default.renameSync(jsonPath, backupJsonPath);
+          console.log(`[TaskRepository] \u{1F6E1}\uFE0F Original tasks_log.json preserved as ${backupJsonPath}.`);
+          if (import_fs72.default.existsSync(this.legacyCounterPath)) {
+            const backupCounterPath = import_path67.default.resolve(import_path67.default.dirname(this.legacyCounterPath), "tasks_counter.pre-sqlite-backup.json");
+            try {
+              import_fs72.default.renameSync(this.legacyCounterPath, backupCounterPath);
+            } catch {
+            }
+          }
+        } catch (err) {
+          if (tempDb) {
+            try {
+              tempDb.exec("ROLLBACK;");
+              tempDb.close();
+            } catch {
+            }
+          }
+          try {
+            if (import_fs72.default.existsSync(tempDbPath)) import_fs72.default.unlinkSync(tempDbPath);
+          } catch {
+          }
+          try {
+            if (import_fs72.default.existsSync(`${tempDbPath}-wal`)) import_fs72.default.unlinkSync(`${tempDbPath}-wal`);
+          } catch {
+          }
+          try {
+            if (import_fs72.default.existsSync(`${tempDbPath}-shm`)) import_fs72.default.unlinkSync(`${tempDbPath}-shm`);
+          } catch {
+          }
+          console.error("[TaskRepository] \u{1F6A8} CRITICAL MIGRATION FAILURE. Original JSON files left untouched:", err.message);
+          throw err;
+        }
+      }
+      static getDb() {
+        if (!this.db) {
+          this.init();
+        }
+        return this.db;
+      }
+      /**
+       * Atomically increments and returns the next sequential task counter.
+       */
+      static getNextCounter() {
+        const db = this.getDb();
+        db.exec("BEGIN IMMEDIATE;");
+        try {
+          let current = 0;
+          const row = db.prepare("SELECT value FROM metadata WHERE key = 'task_counter'").get();
+          if (row && row.value) {
+            current = parseInt(row.value, 10) || 0;
+          } else {
+            const maxRow = db.prepare("SELECT COALESCE(MAX(counter), 0) as maxCounter FROM tasks").get();
+            current = maxRow.maxCounter || 0;
+          }
+          current += 1;
+          db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(current));
+          db.exec("COMMIT;");
+          return current;
+        } catch (err) {
+          try {
+            db.exec("ROLLBACK;");
+          } catch {
+          }
+          throw err;
+        }
+      }
+      /**
+       * Inserts a new task atomically.
+       */
+      static createTask(task) {
+        const db = this.getDb();
+        db.exec("BEGIN IMMEDIATE;");
+        try {
+          if (!task.counter) {
+            let current = 0;
+            const row = db.prepare("SELECT value FROM metadata WHERE key = 'task_counter'").get();
+            if (row && row.value) {
+              current = parseInt(row.value, 10) || 0;
+            } else {
+              const maxRow = db.prepare("SELECT COALESCE(MAX(counter), 0) as maxCounter FROM tasks").get();
+              current = maxRow.maxCounter || 0;
+            }
+            current += 1;
+            task.counter = current;
+            db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(current));
+          }
+          if (!task.id) {
+            const padded = String(task.counter).padStart(3, "0");
+            task.id = task.suffix ? `#${padded}-${task.suffix}` : `#${padded}`;
+          }
+          task.receivedAt = task.receivedAt || (/* @__PURE__ */ new Date()).toISOString();
+          task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+          const cols = this.taskToColumns(task);
+          db.prepare(`
+        INSERT INTO tasks (
+          id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+          quote, niche1, niche2, subniche, image_url, has_error, error_details,
+          design_id, in_queue, events_count, client_ip,
+          image_generations_count, vectorizations_count, openrouter_cost_usd,
+          payload_json
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?,
+          ?
+        )
+      `).run(
+            cols.id,
+            cols.counter,
+            cols.source,
+            cols.suffix,
+            cols.status,
+            cols.checkpoint,
+            cols.received_at,
+            cols.updated_at,
+            cols.quote,
+            cols.niche1,
+            cols.niche2,
+            cols.subniche,
+            cols.image_url,
+            cols.has_error,
+            cols.error_details,
+            cols.design_id,
+            cols.in_queue,
+            cols.events_count,
+            cols.client_ip,
+            cols.image_generations_count,
+            cols.vectorizations_count,
+            cols.openrouter_cost_usd,
+            cols.payload_json
+          );
+          db.exec("COMMIT;");
+          return task;
+        } catch (err) {
+          try {
+            db.exec("ROLLBACK;");
+          } catch {
+          }
+          throw err;
+        }
+      }
+      /**
+       * Updates only the targeted task row. Loads existing task, merges partial updates,
+       * updates payload_json and indexed columns atomically.
+       */
+      static updateTask(taskId, updates, expectedReviewVersion, consumeReview = true) {
+        const db = this.getDb();
+        db.exec("BEGIN IMMEDIATE;");
+        try {
+          const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+          if (!row || !row.payload_json) {
+            db.exec("ROLLBACK;");
+            return null;
+          }
+          const existingTask = this.rowToTask(row);
+          if (expectedReviewVersion !== void 0 && reviewVersion(existingTask) !== expectedReviewVersion) throw new ReviewConflict();
+          if (updates.id !== void 0 && updates.id !== taskId) throw new ReviewConflict();
+          const beforeReview = reviewFingerprint(existingTask);
+          const previousVersion = reviewVersion(existingTask);
+          if (updates.payload) {
+            existingTask.payload = {
+              ...existingTask.payload,
+              ...updates.payload
+            };
+          }
+          for (const [key, value2] of Object.entries(updates)) {
+            if (key === "payload" || key === "reviewVersion") continue;
+            existingTask[key] = value2;
+          }
+          existingTask.reviewVersion = expectedReviewVersion !== void 0 && consumeReview || beforeReview !== reviewFingerprint(existingTask) ? (0, import_node_crypto2.randomUUID)() : previousVersion;
+          existingTask.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+          const cols = this.taskToColumns(existingTask);
+          db.prepare(`
+        UPDATE tasks SET
+          counter = ?,
+          source = ?,
+          suffix = ?,
+          status = ?,
+          checkpoint = ?,
+          received_at = ?,
+          updated_at = ?,
+          quote = ?,
+          niche1 = ?,
+          niche2 = ?,
+          subniche = ?,
+          image_url = ?,
+          has_error = ?,
+          error_details = ?,
+          design_id = ?,
+          in_queue = ?,
+          events_count = ?,
+          client_ip = ?,
+          image_generations_count = ?,
+          vectorizations_count = ?,
+          openrouter_cost_usd = ?,
+          payload_json = ?
+        WHERE id = ?
+      `).run(
+            cols.counter,
+            cols.source,
+            cols.suffix,
+            cols.status,
+            cols.checkpoint,
+            cols.received_at,
+            cols.updated_at,
+            cols.quote,
+            cols.niche1,
+            cols.niche2,
+            cols.subniche,
+            cols.image_url,
+            cols.has_error,
+            cols.error_details,
+            cols.design_id,
+            cols.in_queue,
+            cols.events_count,
+            cols.client_ip,
+            cols.image_generations_count,
+            cols.vectorizations_count,
+            cols.openrouter_cost_usd,
+            cols.payload_json,
+            taskId
+          );
+          db.exec("COMMIT;");
+          return existingTask;
+        } catch (err) {
+          try {
+            db.exec("ROLLBACK;");
+          } catch {
+          }
+          throw err;
+        }
+      }
+      /**
+       * Appends an event to a single task atomically with duplicate event compaction.
+       */
+      static addEvent(taskId, event) {
+        const db = this.getDb();
+        db.exec("BEGIN IMMEDIATE;");
+        try {
+          const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+          if (!row || !row.payload_json) {
+            db.exec("ROLLBACK;");
+            return null;
+          }
+          const task = this.rowToTask(row);
+          if (!Array.isArray(task.events)) {
+            task.events = [];
+          }
+          const lastEvent = task.events.length > 0 ? task.events[task.events.length - 1] : null;
+          const isConsecutiveDuplicate = lastEvent && lastEvent.type === event.type && lastEvent.title === event.title && JSON.stringify(lastEvent.content ?? null) === JSON.stringify(event.content ?? null);
+          if (isConsecutiveDuplicate && lastEvent) {
+            lastEvent.repeatCount = (lastEvent.repeatCount || 1) + 1;
+            lastEvent.lastRepeatedAt = event.timestamp || (/* @__PURE__ */ new Date()).toISOString();
+          } else {
+            task.events.push(event);
+          }
+          task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+          const cols = this.taskToColumns(task);
+          db.prepare(`
+        UPDATE tasks SET
+          updated_at = ?,
+          events_count = ?,
+          image_generations_count = ?,
+          vectorizations_count = ?,
+          openrouter_cost_usd = ?,
+          payload_json = ?
+        WHERE id = ?
+      `).run(
+            cols.updated_at,
+            cols.events_count,
+            cols.image_generations_count,
+            cols.vectorizations_count,
+            cols.openrouter_cost_usd,
+            cols.payload_json,
+            taskId
+          );
+          db.exec("COMMIT;");
+          return task;
+        } catch (err) {
+          try {
+            db.exec("ROLLBACK;");
+          } catch {
+          }
+          throw err;
+        }
+      }
+      /**
+       * Full reconstruction of DesignTaskLog from SQLite.
+       */
+      static getTaskById(taskId) {
+        const db = this.getDb();
+        const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+        if (!row) return null;
+        return this.rowToTask(row);
+      }
+      /**
+       * Fast summary retrieval without parsing payload_json.
+       */
+      static getTaskSummaryById(taskId) {
+        const db = this.getDb();
+        const row = db.prepare(`
+      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+             quote, niche1, niche2, subniche, image_url, has_error, error_details,
+             design_id, in_queue, events_count, client_ip
+      FROM tasks
+      WHERE id = ?
+    `).get(taskId);
+        if (!row) return null;
+        return this.rowToSummary(row);
+      }
+      /**
+       * Keyset pagination query directly from SQLite (WHERE counter < ? ORDER BY counter DESC LIMIT 21).
+       */
+      static getTaskSummariesPage(options2 = {}) {
+        const db = this.getDb();
+        const limit = Math.max(1, Math.min(100, options2.limit || 20));
+        const queryLimit = limit + 1;
+        const conditions = [];
+        const params2 = [];
+        if (options2.cursor) {
+          const cursorRow = db.prepare("SELECT counter FROM tasks WHERE id = ?").get(options2.cursor);
+          if (cursorRow && typeof cursorRow.counter === "number") {
+            conditions.push("counter < ?");
+            params2.push(cursorRow.counter);
+          }
+        }
+        if (options2.source && options2.source !== "ALL") {
+          conditions.push("source = ?");
+          params2.push(options2.source);
+        }
+        if (options2.status) {
+          conditions.push("status = ?");
+          params2.push(options2.status);
+        }
+        if (options2.checkpoint) {
+          conditions.push("checkpoint = ?");
+          params2.push(options2.checkpoint);
+        }
+        if (options2.search && options2.search.trim()) {
+          const q = `%${options2.search.trim()}%`;
+          conditions.push("(id LIKE ? OR quote LIKE ? OR niche1 LIKE ? OR niche2 LIKE ? OR design_id LIKE ?)");
+          params2.push(q, q, q, q, q);
+        }
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const sql = `
+      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+             quote, niche1, niche2, subniche, image_url, has_error, error_details,
+             design_id, in_queue, events_count, client_ip
+      FROM tasks
+      ${whereClause}
+      ORDER BY counter DESC
+      LIMIT ?
+    `;
+        const rows = db.prepare(sql).all(...params2, queryLimit);
+        const countSql = `SELECT COUNT(*) as total FROM tasks ${whereClause}`;
+        const totalRow = db.prepare(countSql).get(...params2);
+        const totalCount = totalRow ? totalRow.total : rows.length;
+        const hasMore = rows.length > limit;
+        const pageRows = hasMore ? rows.slice(0, limit) : rows;
+        const tasks = pageRows.map((r) => this.rowToSummary(r));
+        const nextCursor = hasMore && tasks.length > 0 ? tasks[tasks.length - 1].id : null;
+        return {
+          success: true,
+          tasks,
+          totalCount,
+          hasMore,
+          nextCursor
+        };
+      }
+      /**
+       * Retrieves all awaiting tasks for review sidebar directly via index.
+       */
+      static getAwaitingTaskSummaries() {
+        const db = this.getDb();
+        const placeholders = TASK_STATUSES_AWAITING_USER_ACTION.map(() => "?").join(", ");
+        const rows = db.prepare(`
+      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
+             quote, niche1, niche2, subniche, image_url, has_error, error_details,
+             design_id, in_queue, events_count, client_ip
+      FROM tasks
+      WHERE status IN (${placeholders})
+      ORDER BY counter DESC
+    `).all(...TASK_STATUSES_AWAITING_USER_ACTION);
+        return rows.map((r) => this.rowToSummary(r));
+      }
+      /**
+       * Fast query for active update design IDs (used by UpdateBackfillService).
+       */
+      static getActiveUpdateDesignIds() {
+        const db = this.getDb();
+        const rows = db.prepare(`
+      SELECT id, design_id
+      FROM tasks
+      WHERE (source = 'UPDATE' OR suffix = 'U')
+        AND status NOT IN ('REJECTED', 'CANCELLED', 'ERROR')
+    `).all();
+        const ids = /* @__PURE__ */ new Set();
+        for (const r of rows) {
+          if (r.design_id) ids.add(r.design_id.trim());
+          if (r.id) {
+            const clean = r.id.replace(/^#/, "").replace(/-U$/, "").trim();
+            ids.add(clean);
+          }
+        }
+        return ids;
+      }
+      /**
+       * Fast query for active update tasks in review (used by UpdateBackfillService.getActiveUpdateCount).
+       */
+      static getActiveReviewUpdateTasks() {
+        const db = this.getDb();
+        const rows = db.prepare(`
+      SELECT id, design_id
+      FROM tasks
+      WHERE (source = 'UPDATE' OR suffix = 'U')
+        AND status NOT IN ('COMPLETED', 'UPDATE_QUEUED', 'REJECTED', 'CANCELLED', 'ERROR')
+    `).all();
+        return rows.map((r) => ({
+          id: r.id,
+          designId: r.design_id || void 0
+        }));
+      }
+      /**
+       * Fast cancellation of matching update tasks (used by QueueService & UpdateBackfillService).
+       */
+      static cancelTasksByTarget(targetTaskId, targetDesignId) {
+        const db = this.getDb();
+        let query = `
+      UPDATE tasks
+      SET status = 'CANCELLED', updated_at = ?
+      WHERE (id = ? OR id = ?)
+        AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
+    `;
+        const params2 = [(/* @__PURE__ */ new Date()).toISOString(), targetTaskId, `#${targetTaskId}`];
+        if (targetDesignId) {
+          query = `
+        UPDATE tasks
+        SET status = 'CANCELLED', updated_at = ?
+        WHERE (id = ? OR id = ? OR design_id = ?)
+          AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
+      `;
+          params2.push(targetDesignId);
+        }
+        const info = db.prepare(query).run(...params2);
+        return Number(info.changes);
+      }
+      /**
+       * Cancels all hanging/stale update tasks (used by UpdateBackfillService.resetInFlightLocks).
+       */
+      static cancelActiveUpdateTasks() {
+        const db = this.getDb();
+        const info = db.prepare(`
+      UPDATE tasks
+      SET status = 'CANCELLED', updated_at = ?
+      WHERE (source = 'UPDATE' OR suffix = 'U')
+        AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
+    `).run((/* @__PURE__ */ new Date()).toISOString());
+        return Number(info.changes);
+      }
+      /**
+       * Direct aggregated query for CostTracking metrics (avoids parsing thousands of JSON payloads).
+       */
+      static getTaskUsageMetrics(resetTimestamp) {
+        const db = this.getDb();
+        const isoThreshold = resetTimestamp > 0 ? new Date(resetTimestamp).toISOString() : "1970-01-01T00:00:00.000Z";
+        const row = db.prepare(`
+      SELECT
+        COALESCE(SUM(image_generations_count), 0) as imageGenerationsCount,
+        COALESCE(SUM(vectorizations_count), 0) as vectorizationsCount,
+        COALESCE(SUM(openrouter_cost_usd), 0.0) as taskEventOpenRouterCost
+      FROM tasks
+      WHERE received_at >= ?
+    `).get(isoThreshold);
+        return {
+          imageGenerationsCount: Number(row.imageGenerationsCount) || 0,
+          vectorizationsCount: Number(row.vectorizationsCount) || 0,
+          taskEventOpenRouterCost: Number(row.taskEventOpenRouterCost) || 0
+        };
+      }
+      /**
+       * Deletes a single task row.
+       */
+      static deleteTask(taskId) {
+        const db = this.getDb();
+        const info = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+        return Number(info.changes) > 0;
+      }
+      /**
+       * Clears all tasks (for test suites or manual log clearing).
+       */
+      static clearAllTasks() {
+        const db = this.getDb();
+        db.exec("DELETE FROM tasks;");
+      }
+      /**
+       * Returns all tasks currently marked with in_queue = 1.
+       */
+      static getInQueueTasks() {
+        const db = this.getDb();
+        const rows = db.prepare("SELECT * FROM tasks WHERE in_queue = 1").all();
+        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
+      }
+      /**
+       * Returns tasks matching any of the specified statuses.
+       */
+      static getTasksByStatuses(statuses) {
+        if (!statuses || statuses.length === 0) return [];
+        const db = this.getDb();
+        const placeholders = statuses.map(() => "?").join(", ");
+        const rows = db.prepare(`SELECT * FROM tasks WHERE status IN (${placeholders})`).all(...statuses);
+        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
+      }
+      /**
+       * Returns total task count in SQLite.
+       */
+      static getTotalTaskCount() {
+        const db = this.getDb();
+        const row = db.prepare("SELECT COUNT(*) as count FROM tasks").get();
+        return row ? Number(row.count) : 0;
+      }
+    };
+  }
+});
+
+// src/server/services/taskExecutionLock.ts
+var TaskExecutionLock;
+var init_taskExecutionLock = __esm2({
+  "src/server/services/taskExecutionLock.ts"() {
+    "use strict";
+    TaskExecutionLock = class {
+      static activeLocks = /* @__PURE__ */ new Map();
+      /**
+       * Attempts to acquire execution lock for a given taskId.
+       * Re-entrant: If already acquired by the same owner, increments depth and returns true.
+       * Returns false if task is already running under a DIFFERENT owner.
+       */
+      static acquire(taskId, owner) {
+        const cleanId = taskId.trim();
+        const existing = this.activeLocks.get(cleanId);
+        if (existing) {
+          if (existing.owner === owner) {
+            existing.depth++;
+            return true;
+          }
+          return false;
+        }
+        this.activeLocks.set(cleanId, { owner, depth: 1, acquiredAt: (/* @__PURE__ */ new Date()).toISOString() });
+        return true;
+      }
+      /**
+       * Releases execution lock for a given taskId.
+       * Decrements depth and removes lock when depth reaches 0.
+       */
+      static release(taskId) {
+        const cleanId = taskId.trim();
+        const existing = this.activeLocks.get(cleanId);
+        if (existing) {
+          existing.depth--;
+          if (existing.depth <= 0) {
+            this.activeLocks.delete(cleanId);
+          }
+        }
+      }
+      /**
+       * Checks whether a task is currently executing.
+       */
+      static isLocked(taskId) {
+        return this.activeLocks.has(taskId.trim());
+      }
+      /**
+       * Returns current lock owner info if locked.
+       */
+      static getLockInfo(taskId) {
+        const existing = this.activeLocks.get(taskId.trim());
+        return existing ? { owner: existing.owner, acquiredAt: existing.acquiredAt } : void 0;
+      }
+      /**
+       * Clears all locks (used in tests or system resets).
+       */
+      static clear() {
+        this.activeLocks.clear();
+      }
+    };
+  }
+});
+
 // node_modules/depd/index.js
 var require_depd = __commonJS2({
   "node_modules/depd/index.js"(exports2, module3) {
@@ -26185,7 +27368,7 @@ var require_websocket = __commonJS2({
     var http2 = require("http");
     var net = require("net");
     var tls = require("tls");
-    var { randomBytes, createHash: createHash3 } = require("crypto");
+    var { randomBytes, createHash: createHash5 } = require("crypto");
     var { Duplex, Readable: Readable2 } = require("stream");
     var { URL: URL2 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -26853,7 +28036,7 @@ var require_websocket = __commonJS2({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash3("sha1").update(key + GUID).digest("base64");
+        const digest = createHash5("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -27222,7 +28405,7 @@ var require_websocket_server = __commonJS2({
     var EventEmitter = require("events");
     var http2 = require("http");
     var { Duplex } = require("stream");
-    var { createHash: createHash3 } = require("crypto");
+    var { createHash: createHash5 } = require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -27529,7 +28712,7 @@ var require_websocket_server = __commonJS2({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash3("sha1").update(key + GUID).digest("base64");
+        const digest = createHash5("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -49795,14 +50978,14 @@ function resolveImageProvider(requestedProvider, configuredProvider) {
   return configuredProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM";
 }
 function getSettingsFilePath() {
-  const dataDir = import_path66.default.resolve(process.cwd(), "data");
-  if (!import_fs71.default.existsSync(dataDir)) {
+  const dataDir = import_path68.default.resolve(process.cwd(), "data");
+  if (!import_fs73.default.existsSync(dataDir)) {
     try {
-      import_fs71.default.mkdirSync(dataDir, { recursive: true });
+      import_fs73.default.mkdirSync(dataDir, { recursive: true });
     } catch (e) {
     }
   }
-  return import_path66.default.join(dataDir, "settings.json");
+  return import_path68.default.join(dataDir, "settings.json");
 }
 function normalizeUploadScheduleTime(value2) {
   const schedule = String(value2 || "off");
@@ -49816,9 +50999,9 @@ function loadSettings() {
     return cachedSettings;
   }
   const filePath = getSettingsFilePath();
-  if (import_fs71.default.existsSync(filePath)) {
+  if (import_fs73.default.existsSync(filePath)) {
     try {
-      const fileData = import_fs71.default.readFileSync(filePath, "utf-8");
+      const fileData = import_fs73.default.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(fileData);
       const legacySchedule = parsed.queueUploadScheduleTime ?? DEFAULT_SETTINGS.queueUploadScheduleTime;
       const settings = {
@@ -49832,12 +51015,12 @@ function loadSettings() {
         settings.mcpApiKey = generateApiKey();
         const merged = { ...settings, mcpApiKey: settings.mcpApiKey };
         try {
-          import_fs71.default.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
+          import_fs73.default.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
         } catch (e) {
         }
       } else if (scheduleWasNormalized) {
         try {
-          import_fs71.default.writeFileSync(filePath, JSON.stringify(settings, null, 2), "utf-8");
+          import_fs73.default.writeFileSync(filePath, JSON.stringify(settings, null, 2), "utf-8");
         } catch (e) {
         }
       }
@@ -49850,7 +51033,7 @@ function loadSettings() {
     const initialKey = generateApiKey();
     const settings = { ...DEFAULT_SETTINGS, mcpApiKey: initialKey };
     try {
-      import_fs71.default.writeFileSync(filePath, JSON.stringify(settings, null, 2), "utf-8");
+      import_fs73.default.writeFileSync(filePath, JSON.stringify(settings, null, 2), "utf-8");
     } catch (e) {
     }
     cachedSettings = settings;
@@ -49865,7 +51048,7 @@ function saveSettings(newSettings) {
   cachedSettings = merged;
   const filePath = getSettingsFilePath();
   try {
-    import_fs71.default.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
+    import_fs73.default.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
     console.log("[Settings] Settings successfully saved to", filePath);
   } catch (err) {
     console.error("[Settings] Error saving settings.json:", err);
@@ -49881,12 +51064,12 @@ function getSupabaseClient() {
     auth: { persistSession: false }
   });
 }
-var import_fs71, import_path66, import_crypto2, DEFAULT_SETTINGS, cachedSettings;
+var import_fs73, import_path68, import_crypto2, DEFAULT_SETTINGS, cachedSettings;
 var init_settingsService = __esm2({
   "src/server/services/settingsService.ts"() {
     "use strict";
-    import_fs71 = __toESM2(require("fs"), 1);
-    import_path66 = __toESM2(require("path"), 1);
+    import_fs73 = __toESM2(require("fs"), 1);
+    import_path68 = __toESM2(require("path"), 1);
     init_dist4();
     import_crypto2 = __toESM2(require("crypto"), 1);
     DEFAULT_SETTINGS = {
@@ -49982,12 +51165,12 @@ function resolveBackgroundColor(config) {
 function getGeneratableVariants() {
   return Object.values(ARTWORK_VARIANT_REGISTRY).filter((v) => v.generator != null);
 }
-var import_fs72, import_path67, RESIZE_BACKGROUND_PROFILES, ARTWORK_VARIANT_REGISTRY, MERCH_COLOR_HEX_MAP, ProductCatalogService;
+var import_fs74, import_path69, RESIZE_BACKGROUND_PROFILES, ARTWORK_VARIANT_REGISTRY, MERCH_COLOR_HEX_MAP, ProductCatalogService;
 var init_productCatalogService = __esm2({
   "src/server/services/productCatalogService.ts"() {
     "use strict";
-    import_fs72 = __toESM2(require("fs"), 1);
-    import_path67 = __toESM2(require("path"), 1);
+    import_fs74 = __toESM2(require("fs"), 1);
+    import_path69 = __toESM2(require("path"), 1);
     RESIZE_BACKGROUND_PROFILES = {
       DARK_PRODUCT: { type: "solid", color: "#4E4A46" }
     };
@@ -50142,8 +51325,8 @@ var init_productCatalogService = __esm2({
       umber_tie_dye: "#5A3E31"
     };
     ProductCatalogService = class _ProductCatalogService {
-      static catalogFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog.json");
-      static overridesFilePath = import_path67.default.resolve(process.cwd(), "data", "product_catalog_overrides.json");
+      static catalogFilePath = import_path69.default.resolve(process.cwd(), "data", "product_catalog.json");
+      static overridesFilePath = import_path69.default.resolve(process.cwd(), "data", "product_catalog_overrides.json");
       static catalogData = {
         products: [],
         marketplaces: [],
@@ -50167,16 +51350,16 @@ var init_productCatalogService = __esm2({
        */
       static saveOverridesAtomic(data) {
         try {
-          const dataDir = import_path67.default.dirname(this.overridesFilePath);
-          if (!import_fs72.default.existsSync(dataDir)) {
-            import_fs72.default.mkdirSync(dataDir, { recursive: true });
+          const dataDir = import_path69.default.dirname(this.overridesFilePath);
+          if (!import_fs74.default.existsSync(dataDir)) {
+            import_fs74.default.mkdirSync(dataDir, { recursive: true });
           }
           data.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
           const tmpPath = `${this.overridesFilePath}.tmp`;
           const jsonStr = JSON.stringify(data, null, 2);
           JSON.parse(jsonStr);
-          import_fs72.default.writeFileSync(tmpPath, jsonStr, "utf-8");
-          import_fs72.default.renameSync(tmpPath, this.overridesFilePath);
+          import_fs74.default.writeFileSync(tmpPath, jsonStr, "utf-8");
+          import_fs74.default.renameSync(tmpPath, this.overridesFilePath);
           this.overridesData = data;
         } catch (err) {
           console.error("[ProductCatalogService] Failed to save product_catalog_overrides.json atomically:", err.message);
@@ -50188,8 +51371,8 @@ var init_productCatalogService = __esm2({
        */
       static loadOverrides() {
         try {
-          if (import_fs72.default.existsSync(this.overridesFilePath)) {
-            const raw = import_fs72.default.readFileSync(this.overridesFilePath, "utf-8");
+          if (import_fs74.default.existsSync(this.overridesFilePath)) {
+            const raw = import_fs74.default.readFileSync(this.overridesFilePath, "utf-8");
             const parsed = JSON.parse(raw);
             if (parsed && typeof parsed.overrides === "object") {
               this.overridesData = parsed;
@@ -50211,15 +51394,15 @@ var init_productCatalogService = __esm2({
        */
       static saveCatalogAtomic(data) {
         try {
-          const dataDir = import_path67.default.dirname(this.catalogFilePath);
-          if (!import_fs72.default.existsSync(dataDir)) {
-            import_fs72.default.mkdirSync(dataDir, { recursive: true });
+          const dataDir = import_path69.default.dirname(this.catalogFilePath);
+          if (!import_fs74.default.existsSync(dataDir)) {
+            import_fs74.default.mkdirSync(dataDir, { recursive: true });
           }
           const tmpPath = `${this.catalogFilePath}.tmp`;
           const jsonStr = JSON.stringify(data, null, 2);
           JSON.parse(jsonStr);
-          import_fs72.default.writeFileSync(tmpPath, jsonStr, "utf-8");
-          import_fs72.default.renameSync(tmpPath, this.catalogFilePath);
+          import_fs74.default.writeFileSync(tmpPath, jsonStr, "utf-8");
+          import_fs74.default.renameSync(tmpPath, this.catalogFilePath);
           this.catalogData = data;
         } catch (err) {
           console.error("[ProductCatalogService] Failed to save product_catalog.json atomically:", err.message);
@@ -50231,8 +51414,8 @@ var init_productCatalogService = __esm2({
        */
       static loadCatalog() {
         try {
-          if (import_fs72.default.existsSync(this.catalogFilePath)) {
-            const raw = import_fs72.default.readFileSync(this.catalogFilePath, "utf-8");
+          if (import_fs74.default.existsSync(this.catalogFilePath)) {
+            const raw = import_fs74.default.readFileSync(this.catalogFilePath, "utf-8");
             const parsed = JSON.parse(raw);
             if (parsed && Array.isArray(parsed.products)) {
               this.catalogData = {
@@ -50697,14 +51880,14 @@ var init_productCatalogService = __esm2({
 });
 
 // src/server/services/trademarkWhitelistService.ts
-var import_fs73, import_path68, TrademarkWhitelistService;
+var import_fs75, import_path70, TrademarkWhitelistService;
 var init_trademarkWhitelistService = __esm2({
   "src/server/services/trademarkWhitelistService.ts"() {
     "use strict";
-    import_fs73 = __toESM2(require("fs"), 1);
-    import_path68 = __toESM2(require("path"), 1);
+    import_fs75 = __toESM2(require("fs"), 1);
+    import_path70 = __toESM2(require("path"), 1);
     TrademarkWhitelistService = class {
-      static filePath = import_path68.default.join(process.cwd(), "data", "trademark_whitelist.json");
+      static filePath = import_path70.default.join(process.cwd(), "data", "trademark_whitelist.json");
       static defaultWhitelist = {
         GLOBAL: ["apparel", "collection", "vintage", "retro", "classic", "style", "clothing", "wear", "design", "graphic"],
         USPTO: ["girl", "girls", "boy", "boys", "mama", "papa", "queen", "king", "teacher", "mom", "dad", "nurse", "grandma", "grandpa"],
@@ -50716,11 +51899,11 @@ var init_trademarkWhitelistService = __esm2({
        */
       static getWhitelist() {
         try {
-          if (!import_fs73.default.existsSync(this.filePath)) {
+          if (!import_fs75.default.existsSync(this.filePath)) {
             this.saveWhitelist(this.defaultWhitelist);
             return this.defaultWhitelist;
           }
-          const data = import_fs73.default.readFileSync(this.filePath, "utf-8");
+          const data = import_fs75.default.readFileSync(this.filePath, "utf-8");
           const parsed = JSON.parse(data);
           return {
             GLOBAL: Array.isArray(parsed.GLOBAL) ? parsed.GLOBAL : this.defaultWhitelist.GLOBAL,
@@ -50738,11 +51921,11 @@ var init_trademarkWhitelistService = __esm2({
        */
       static saveWhitelist(data) {
         try {
-          const dir = import_path68.default.dirname(this.filePath);
-          if (!import_fs73.default.existsSync(dir)) {
-            import_fs73.default.mkdirSync(dir, { recursive: true });
+          const dir = import_path70.default.dirname(this.filePath);
+          if (!import_fs75.default.existsSync(dir)) {
+            import_fs75.default.mkdirSync(dir, { recursive: true });
           }
-          import_fs73.default.writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf-8");
+          import_fs75.default.writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf-8");
         } catch (err) {
           console.error("[TrademarkWhitelistService] Error saving whitelist:", err);
         }
@@ -50816,12 +51999,12 @@ var init_trademarkWhitelistService = __esm2({
 });
 
 // src/server/services/systemPromptService.ts
-var import_fs74, import_path69, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
+var import_fs76, import_path71, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
 var init_systemPromptService = __esm2({
   "src/server/services/systemPromptService.ts"() {
     "use strict";
-    import_fs74 = __toESM2(require("fs"), 1);
-    import_path69 = __toESM2(require("path"), 1);
+    import_fs76 = __toESM2(require("fs"), 1);
+    import_path71 = __toESM2(require("path"), 1);
     DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT = `You are an expert Image Prompt Engineer and Art Director specializing in original, commercially usable T-shirt graphics for print-on-demand products.
 
 Your task is to transform the supplied niches, quote, style, feeling, colors, and custom instructions into one distinctive, visually specific image-generation prompt.
@@ -52161,12 +53344,12 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
   "ja": { "brand": "...", "title": "...", "bullet1": "...", "bullet2": "...", "description": "..." }
 }`;
     SystemPromptService = class {
-      static promptFile = import_path69.default.resolve(process.cwd(), "data", "system_prompts.json");
+      static promptFile = import_path71.default.resolve(process.cwd(), "data", "system_prompts.json");
       static cachedPrompts = null;
       static ensureDataDir() {
-        const dir = import_path69.default.dirname(this.promptFile);
-        if (!import_fs74.default.existsSync(dir)) {
-          import_fs74.default.mkdirSync(dir, { recursive: true });
+        const dir = import_path71.default.dirname(this.promptFile);
+        if (!import_fs76.default.existsSync(dir)) {
+          import_fs76.default.mkdirSync(dir, { recursive: true });
         }
       }
       static loadPrompts() {
@@ -52174,9 +53357,9 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
           return this.cachedPrompts;
         }
         this.ensureDataDir();
-        if (import_fs74.default.existsSync(this.promptFile)) {
+        if (import_fs76.default.existsSync(this.promptFile)) {
           try {
-            const fileContent = import_fs74.default.readFileSync(this.promptFile, "utf-8");
+            const fileContent = import_fs76.default.readFileSync(this.promptFile, "utf-8");
             this.cachedPrompts = JSON.parse(fileContent);
             if (this.cachedPrompts) {
               if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
@@ -52201,7 +53384,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
               this.cachedPrompts.updateListingRewriter = this.cachedPrompts.listingGenerator;
               if (!this.cachedPrompts.updateLocalizationTranslator) this.cachedPrompts.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
               try {
-                import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
+                import_fs76.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
               } catch (e) {
               }
               return this.cachedPrompts;
@@ -52224,7 +53407,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
           updateLocalizationTranslator: DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT
         };
         try {
-          import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
+          import_fs76.default.writeFileSync(this.promptFile, JSON.stringify(this.cachedPrompts, null, 2), "utf-8");
         } catch (e) {
         }
         return this.cachedPrompts;
@@ -52303,7 +53486,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
         }
         this.cachedPrompts = prompts;
         try {
-          import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(prompts, null, 2), "utf-8");
+          import_fs76.default.writeFileSync(this.promptFile, JSON.stringify(prompts, null, 2), "utf-8");
           console.log("[SystemPromptService] \u{1F4BE} System-Prompts erfolgreich gespeichert.");
         } catch (e) {
           console.error("[SystemPromptService] Failed to save system_prompts.json:", e);
@@ -52327,7 +53510,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
         if (type3 === "updateLocalizationTranslator" || type3 === "all") current.updateLocalizationTranslator = DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT;
         this.cachedPrompts = current;
         try {
-          import_fs74.default.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), "utf-8");
+          import_fs76.default.writeFileSync(this.promptFile, JSON.stringify(current, null, 2), "utf-8");
         } catch (e) {
         }
         return this.getAllPrompts();
@@ -67129,7 +68312,7 @@ var require_utilsBundle = __commonJS2({
         var http22 = require("http");
         var net4 = require("net");
         var tls3 = require("tls");
-        var { randomBytes, createHash: createHash3 } = require("crypto");
+        var { randomBytes, createHash: createHash5 } = require("crypto");
         var { Duplex, Readable: Readable2 } = require("stream");
         var { URL: URL5 } = require("url");
         var PerMessageDeflate2 = require_permessage_deflate2();
@@ -67797,7 +68980,7 @@ var require_utilsBundle = __commonJS2({
               abortHandshake(websocket, socket, "Invalid Upgrade header");
               return;
             }
-            const digest = createHash3("sha1").update(key + GUID).digest("base64");
+            const digest = createHash5("sha1").update(key + GUID).digest("base64");
             if (res.headers["sec-websocket-accept"] !== digest) {
               abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
               return;
@@ -68160,7 +69343,7 @@ var require_utilsBundle = __commonJS2({
         var EventEmitter22 = require("events");
         var http22 = require("http");
         var { Duplex } = require("stream");
-        var { createHash: createHash3 } = require("crypto");
+        var { createHash: createHash5 } = require("crypto");
         var extension2 = require_extension2();
         var PerMessageDeflate2 = require_permessage_deflate2();
         var subprotocol2 = require_subprotocol2();
@@ -68467,7 +69650,7 @@ var require_utilsBundle = __commonJS2({
               );
             }
             if (this._state > RUNNING) return abortHandshake(socket, 503);
-            const digest = createHash3("sha1").update(key + GUID).digest("base64");
+            const digest = createHash5("sha1").update(key + GUID).digest("base64");
             const headers = [
               "HTTP/1.1 101 Switching Protocols",
               "Upgrade: websocket",
@@ -83225,10 +84408,10 @@ ${end.comment}` : end.comment;
             }
           }
           format() {
-            let active = (str) => this.styles.primary.underline(str);
+            let active2 = (str) => this.styles.primary.underline(str);
             let value2 = [
-              this.value ? this.disabled : active(this.disabled),
-              this.value ? active(this.enabled) : this.enabled
+              this.value ? this.disabled : active2(this.disabled),
+              this.value ? active2(this.enabled) : this.enabled
             ];
             return value2.join(this.styles.muted(" / "));
           }
@@ -141672,7 +142855,7 @@ ${value2}`, dataLines++;
         this._protocolVersion = version22;
       }
     };
-    var import_node_crypto4 = require("node:crypto");
+    var import_node_crypto6 = require("node:crypto");
     var import_node_tls = require("node:tls");
     var import_bytes = __toESM3(require_bytes2());
     function getRawBody(req, { limit, encoding }) {
@@ -141708,7 +142891,7 @@ ${value2}`, dataLines++;
       constructor(_endpoint, res, options2) {
         this._endpoint = _endpoint;
         this.res = res;
-        this._sessionId = (0, import_node_crypto4.randomUUID)();
+        this._sessionId = (0, import_node_crypto6.randomUUID)();
         this._options = options2 || { enableDnsRebindingProtection: false };
       }
       /**
@@ -218009,11 +219192,11 @@ ${c.title}:`);
             this._screencastRunning = false;
             this._recordingPath = null;
           }
-          async setScreencastActive(active) {
-            if (active && !this._screencastRunning) {
+          async setScreencastActive(active2) {
+            if (active2 && !this._screencastRunning) {
               this._screencastRunning = true;
               await this._startScreencast(this._page);
-            } else if (!active && this._screencastRunning) {
+            } else if (!active2 && this._screencastRunning) {
               this._screencastRunning = false;
               await this._page.screencast.stop().catch(() => {
               });
@@ -218852,23 +220035,23 @@ var init_playwright3 = __esm2({
 
 // src/server/services/browserSessionService.ts
 function findChromiumExecutable() {
-  if (process.env.CHROME_BIN && import_fs75.default.existsSync(process.env.CHROME_BIN)) {
+  if (process.env.CHROME_BIN && import_fs77.default.existsSync(process.env.CHROME_BIN)) {
     return process.env.CHROME_BIN;
   }
   const candidateDirs = [
     process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright",
-    import_path70.default.join(process.env.HOME || "/root", ".cache", "ms-playwright"),
-    import_path70.default.join(process.env.HOME || "/root", "Library", "Caches", "ms-playwright")
+    import_path72.default.join(process.env.HOME || "/root", ".cache", "ms-playwright"),
+    import_path72.default.join(process.env.HOME || "/root", "Library", "Caches", "ms-playwright")
   ];
   for (const dir of candidateDirs) {
-    if (import_fs75.default.existsSync(dir)) {
+    if (import_fs77.default.existsSync(dir)) {
       try {
         const files = [];
         const scan = (d, depth = 0) => {
           if (depth > 4) return;
-          const items = import_fs75.default.readdirSync(d, { withFileTypes: true });
+          const items = import_fs77.default.readdirSync(d, { withFileTypes: true });
           for (const item of items) {
-            const p = import_path70.default.join(d, item.name);
+            const p = import_path72.default.join(d, item.name);
             if (item.isDirectory()) scan(p, depth + 1);
             else files.push(p);
           }
@@ -218889,17 +220072,17 @@ function findChromiumExecutable() {
     "/usr/bin/chromium-browser"
   ];
   for (const sc of systemCandidates) {
-    if (import_fs75.default.existsSync(sc)) return sc;
+    if (import_fs77.default.existsSync(sc)) return sc;
   }
   return void 0;
 }
-var import_path70, import_fs75, BrowserSessionService;
+var import_path72, import_fs77, BrowserSessionService;
 var init_browserSessionService = __esm2({
   "src/server/services/browserSessionService.ts"() {
     "use strict";
     init_playwright3();
-    import_path70 = __toESM2(require("path"), 1);
-    import_fs75 = __toESM2(require("fs"), 1);
+    import_path72 = __toESM2(require("path"), 1);
+    import_fs77 = __toESM2(require("fs"), 1);
     BrowserSessionService = class _BrowserSessionService {
       static context = null;
       static sessions = /* @__PURE__ */ new Map();
@@ -218907,9 +220090,9 @@ var init_browserSessionService = __esm2({
       static frameBroadcasters = [];
       static isInitializing = false;
       static getProfileDir() {
-        const dir = import_path70.default.resolve(process.cwd(), "data", "chrome-profile");
-        if (!import_fs75.default.existsSync(dir)) {
-          import_fs75.default.mkdirSync(dir, { recursive: true });
+        const dir = import_path72.default.resolve(process.cwd(), "data", "chrome-profile");
+        if (!import_fs77.default.existsSync(dir)) {
+          import_fs77.default.mkdirSync(dir, { recursive: true });
         }
         return dir;
       }
@@ -219965,13 +221148,13 @@ function inject300Dpi(pngBuffer) {
   }
   return Buffer.concat(chunks);
 }
-var import_node_fs, import_node_path, import_node_crypto, currentDir, ArtworkResizeService;
+var import_node_fs, import_node_path, import_node_crypto3, currentDir, ArtworkResizeService;
 var init_artworkResizeService = __esm2({
   "src/server/services/artworkResizeService.ts"() {
     "use strict";
     import_node_fs = __toESM2(require("node:fs"), 1);
     import_node_path = __toESM2(require("node:path"), 1);
-    import_node_crypto = require("node:crypto");
+    import_node_crypto3 = require("node:crypto");
     init_artworkRenderSession();
     init_artworkRenderRuntime();
     init_artworkBrushRuntime();
@@ -220003,7 +221186,7 @@ var init_artworkResizeService = __esm2({
         return { kind: "PNG", path: pngPath };
       }
       static fingerprint(source12) {
-        return (0, import_node_crypto.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+        return (0, import_node_crypto3.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
       }
       static hasCurrentAssets(assets, fingerprint) {
         if (!assets || assets.renderFingerprint !== fingerprint) return false;
@@ -220018,7 +221201,7 @@ var init_artworkResizeService = __esm2({
             } finally {
               import_node_fs.default.closeSync(fd);
             }
-            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
+            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto3.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
           } catch {
             return false;
           }
@@ -220029,7 +221212,7 @@ var init_artworkResizeService = __esm2({
         const fingerprint = this.fingerprint(input);
         const files = await this.renderProfiles(taskId, input, artworkProfiles(), onProgress, fingerprint);
         const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants } = files;
-        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
+        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto3.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
         return { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants, renderFingerprint: fingerprint, renderFileHashes };
       }
       static async generateProductVariant(taskId, source12, id, config) {
@@ -220065,7 +221248,7 @@ var init_artworkResizeService = __esm2({
             onProgress?.("VARIANT", `\u{1F3A8} Render ${profile.key} (${profile.width}\xD7${profile.height})\u2026`);
             const start3 = Date.now();
             const output = import_node_path.default.join(dir, cleanId + "_" + profile.suffix + ".png");
-            const temporary = output + "." + (0, import_node_crypto.randomUUID)() + ".tmp";
+            const temporary = output + "." + (0, import_node_crypto3.randomUUID)() + ".tmp";
             let stage = "RENDER";
             try {
               let png;
@@ -220424,13 +221607,13 @@ async function getBrowser2() {
   }
   return sharedBrowser2;
 }
-var import_fs76, import_path71, sharedBrowser2, VisionOptimizationService;
+var import_fs78, import_path73, sharedBrowser2, VisionOptimizationService;
 var init_visionOptimizationService = __esm2({
   "src/server/services/visionOptimizationService.ts"() {
     "use strict";
     init_playwright3();
-    import_fs76 = __toESM2(require("fs"), 1);
-    import_path71 = __toESM2(require("path"), 1);
+    import_fs78 = __toESM2(require("fs"), 1);
+    import_path73 = __toESM2(require("path"), 1);
     init_browserSessionService();
     sharedBrowser2 = null;
     VisionOptimizationService = class {
@@ -220448,8 +221631,8 @@ var init_visionOptimizationService = __esm2({
           if (typeof input === "string") {
             if (input.startsWith("data:image")) {
               dataUri = input;
-            } else if (import_fs76.default.existsSync(input)) {
-              const fileBuf = import_fs76.default.readFileSync(input);
+            } else if (import_fs78.default.existsSync(input)) {
+              const fileBuf = import_fs78.default.readFileSync(input);
               dataUri = `data:image/png;base64,${fileBuf.toString("base64")}`;
             } else {
               throw new Error(`File not found: ${input}`);
@@ -220544,9 +221727,9 @@ var init_visionOptimizationService = __esm2({
             const screenshotBuf = await page.screenshot({ type: "jpeg", quality: 88 });
             if (outputPath) {
               try {
-                const dir = import_path71.default.dirname(outputPath);
-                if (!import_fs76.default.existsSync(dir)) import_fs76.default.mkdirSync(dir, { recursive: true });
-                import_fs76.default.writeFileSync(outputPath, screenshotBuf);
+                const dir = import_path73.default.dirname(outputPath);
+                if (!import_fs78.default.existsSync(dir)) import_fs78.default.mkdirSync(dir, { recursive: true });
+                import_fs78.default.writeFileSync(outputPath, screenshotBuf);
               } catch (e) {
                 console.warn("[VisionOptimizationService] Failed to save preview file:", e.message);
               }
@@ -220554,7 +221737,7 @@ var init_visionOptimizationService = __esm2({
             return {
               base64DataUrl: `data:image/jpeg;base64,${screenshotBuf.toString("base64")}`,
               is4Panel: true,
-              savedPath: outputPath && import_fs76.default.existsSync(outputPath) ? outputPath : void 0
+              savedPath: outputPath && import_fs78.default.existsSync(outputPath) ? outputPath : void 0
             };
           } finally {
             await context2.close().catch(() => {
@@ -220582,8 +221765,8 @@ var init_visionOptimizationService = __esm2({
           if (typeof input === "string") {
             if (input.startsWith("data:image")) {
               dataUri = input;
-            } else if (import_fs76.default.existsSync(input)) {
-              const fileBuf = import_fs76.default.readFileSync(input);
+            } else if (import_fs78.default.existsSync(input)) {
+              const fileBuf = import_fs78.default.readFileSync(input);
               dataUri = `data:image/png;base64,${fileBuf.toString("base64")}`;
             } else {
               throw new Error(`File not found: ${input}`);
@@ -220636,16 +221819,16 @@ var init_visionOptimizationService = __esm2({
             const screenshotBuf = await page.screenshot({ type: "png" });
             if (outputPath) {
               try {
-                const dir = import_path71.default.dirname(outputPath);
-                if (!import_fs76.default.existsSync(dir)) import_fs76.default.mkdirSync(dir, { recursive: true });
-                import_fs76.default.writeFileSync(outputPath, screenshotBuf);
+                const dir = import_path73.default.dirname(outputPath);
+                if (!import_fs78.default.existsSync(dir)) import_fs78.default.mkdirSync(dir, { recursive: true });
+                import_fs78.default.writeFileSync(outputPath, screenshotBuf);
               } catch (e) {
                 console.warn("[VisionOptimizationService] Failed to save U4 preview file:", e.message);
               }
             }
             return {
               base64DataUrl: `data:image/png;base64,${screenshotBuf.toString("base64")}`,
-              savedPath: outputPath && import_fs76.default.existsSync(outputPath) ? outputPath : void 0
+              savedPath: outputPath && import_fs78.default.existsSync(outputPath) ? outputPath : void 0
             };
           } finally {
             await context2.close().catch(() => {
@@ -220710,1160 +221893,6 @@ var init_listingSanitizationService = __esm2({
           }
         }
         return sanitized;
-      }
-    };
-  }
-});
-
-// src/types/tasks.ts
-function isTaskAwaitingUserAction(status) {
-  return TASK_STATUSES_AWAITING_USER_ACTION_SET.has(status);
-}
-function toTaskSummary(task) {
-  const quote5 = task.payload?.title || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || void 0;
-  const niche1 = task.niche1 || task.payload?.niche1 || void 0;
-  const niche2 = task.niche2 || task.payload?.niche2 || void 0;
-  const subniche = task.subniche || task.payload?.subniche || void 0;
-  const designId = task.payload?.designId || void 0;
-  const imageUrl = task.imageUrl || task.u4PreviewUrl || task.mbaPngUrl || void 0;
-  const lastEvent = task.events && task.events.length > 0 ? task.events[task.events.length - 1] : void 0;
-  return {
-    id: task.id,
-    counter: task.counter,
-    source: task.source,
-    suffix: task.suffix,
-    status: task.status,
-    checkpoint: task.checkpoint,
-    receivedAt: task.receivedAt,
-    updatedAt: lastEvent?.timestamp || task.receivedAt,
-    quote: quote5,
-    niche1,
-    niche2,
-    subniche,
-    imageUrl,
-    hasError: Boolean(task.hasError),
-    errorDetails: task.errorDetails,
-    eventsCount: Array.isArray(task.events) ? task.events.length : 0,
-    clientIp: task.clientIp,
-    designId,
-    inQueue: task.inQueue
-  };
-}
-var TASK_STATUSES_AWAITING_USER_ACTION, TASK_STATUSES_AWAITING_USER_ACTION_SET;
-var init_tasks = __esm2({
-  "src/types/tasks.ts"() {
-    "use strict";
-    TASK_STATUSES_AWAITING_USER_ACTION = [
-      "AWAITING_PRE_FLIGHT_REVIEW",
-      "AWAITING_DESIGN_REVIEW",
-      "AWAITING_TM_REVIEW",
-      "AWAITING_SVG_REVIEW",
-      "AWAITING_RECOVERY_REVIEW",
-      "UPDATE_ANALYZED"
-    ];
-    TASK_STATUSES_AWAITING_USER_ACTION_SET = new Set(TASK_STATUSES_AWAITING_USER_ACTION);
-  }
-});
-
-// src/server/utils/atomicFileStorage.ts
-function isFileInFailSafe(filePath) {
-  return failSafeRegistry.has(import_path72.default.resolve(filePath));
-}
-function atomicWriteFile(filePath, content, options2 = {}) {
-  const resolvedPath = import_path72.default.resolve(filePath);
-  const dir = import_path72.default.dirname(resolvedPath);
-  const backupExt = options2.backupExt || ".bak";
-  const shouldBackup = options2.backup !== false;
-  if (failSafeRegistry.has(resolvedPath)) {
-    throw new Error(
-      `[AtomicStorage] \u{1F6A8} REFUSED: File '${resolvedPath}' is in FAIL-SAFE (CORRUPTED) mode. Writes are blocked to prevent destructive data loss.`
-    );
-  }
-  if (!import_fs77.default.existsSync(dir)) {
-    import_fs77.default.mkdirSync(dir, { recursive: true });
-  }
-  const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const tmpPath = `${resolvedPath}.tmp.${nonce}`;
-  try {
-    const fd = import_fs77.default.openSync(tmpPath, "w");
-    try {
-      if (typeof content === "string") {
-        import_fs77.default.writeSync(fd, content, 0, "utf-8");
-      } else {
-        import_fs77.default.writeSync(fd, content);
-      }
-      import_fs77.default.fsyncSync(fd);
-    } finally {
-      import_fs77.default.closeSync(fd);
-    }
-    if (shouldBackup && import_fs77.default.existsSync(resolvedPath)) {
-      try {
-        const currentStats = import_fs77.default.statSync(resolvedPath);
-        if (currentStats.size > 0) {
-          const bakPath = `${resolvedPath}${backupExt}`;
-          const bakTmpPath = `${bakPath}.tmp.${nonce}`;
-          import_fs77.default.copyFileSync(resolvedPath, bakTmpPath);
-          const bakFd = import_fs77.default.openSync(bakTmpPath, "r");
-          try {
-            import_fs77.default.fsyncSync(bakFd);
-          } finally {
-            import_fs77.default.closeSync(bakFd);
-          }
-          import_fs77.default.renameSync(bakTmpPath, bakPath);
-        }
-      } catch (backupErr) {
-        console.warn(`[AtomicStorage] Warning: Failed to create backup for ${resolvedPath}:`, backupErr.message);
-      }
-    }
-    import_fs77.default.renameSync(tmpPath, resolvedPath);
-    try {
-      const dirFd = import_fs77.default.openSync(dir, "r");
-      try {
-        import_fs77.default.fsyncSync(dirFd);
-      } finally {
-        import_fs77.default.closeSync(dirFd);
-      }
-    } catch {
-    }
-  } catch (err) {
-    if (import_fs77.default.existsSync(tmpPath)) {
-      try {
-        import_fs77.default.unlinkSync(tmpPath);
-      } catch {
-      }
-    }
-    throw err;
-  }
-}
-function atomicWriteJson(filePath, data, options2 = {}) {
-  const space = options2.space !== void 0 ? options2.space : void 0;
-  const jsonStr = space !== void 0 ? JSON.stringify(data, null, space) : JSON.stringify(data);
-  if (!jsonStr) {
-    throw new Error(`[AtomicStorage] JSON serialization produced empty string for '${filePath}'`);
-  }
-  atomicWriteFile(filePath, jsonStr, options2);
-}
-function loadJsonWithBackupRecovery(filePath, options2 = {}) {
-  const resolvedPath = import_path72.default.resolve(filePath);
-  const backupExt = options2.backupExt || ".bak";
-  const bakPath = `${resolvedPath}${backupExt}`;
-  const validate2 = options2.validate || (() => true);
-  if (!import_fs77.default.existsSync(resolvedPath) && !import_fs77.default.existsSync(bakPath)) {
-    failSafeRegistry.delete(resolvedPath);
-    return {
-      success: true,
-      data: options2.defaultValue,
-      recoveredFromBackup: false,
-      corrupted: false
-    };
-  }
-  let mainValid = false;
-  let mainData = null;
-  let mainError = null;
-  if (import_fs77.default.existsSync(resolvedPath)) {
-    try {
-      const content = import_fs77.default.readFileSync(resolvedPath, "utf-8").trim();
-      if (content.length === 0) {
-        throw new Error("File is 0 bytes (empty/truncated)");
-      }
-      const parsed = JSON.parse(content);
-      if (!validate2(parsed)) {
-        throw new Error("Data validation check failed");
-      }
-      mainValid = true;
-      mainData = parsed;
-    } catch (err) {
-      mainError = err.message || "JSON parse error";
-    }
-  } else {
-    mainError = "Main file does not exist, but backup exists";
-  }
-  if (mainValid) {
-    failSafeRegistry.delete(resolvedPath);
-    return {
-      success: true,
-      data: mainData,
-      recoveredFromBackup: false,
-      corrupted: false
-    };
-  }
-  console.warn(`[AtomicStorage] \u26A0\uFE0F Corrupted or invalid JSON detected in '${resolvedPath}' (${mainError}). Checking backup '${bakPath}'...`);
-  if (import_fs77.default.existsSync(bakPath)) {
-    try {
-      const bakContent = import_fs77.default.readFileSync(bakPath, "utf-8").trim();
-      if (bakContent.length === 0) {
-        throw new Error("Backup file is 0 bytes (empty/truncated)");
-      }
-      const parsedBak = JSON.parse(bakContent);
-      if (!validate2(parsedBak)) {
-        throw new Error("Backup data validation check failed");
-      }
-      console.warn(`[AtomicStorage] \u{1F6E1}\uFE0F Valid backup found! Restoring '${resolvedPath}' from '${bakPath}'...`);
-      atomicWriteJson(resolvedPath, parsedBak, { backup: false, space: options2.defaultValue ? 2 : 0 });
-      failSafeRegistry.delete(resolvedPath);
-      return {
-        success: true,
-        data: parsedBak,
-        recoveredFromBackup: true,
-        corrupted: false
-      };
-    } catch (bakErr) {
-      console.error(`[AtomicStorage] \u274C Backup '${bakPath}' is ALSO corrupt or invalid:`, bakErr.message);
-    }
-  } else {
-    console.error(`[AtomicStorage] \u274C No backup file exists at '${bakPath}'!`);
-  }
-  console.error(
-    `[AtomicStorage] \u{1F6A8} CRITICAL: Main file '${resolvedPath}' and backup could not be parsed!`
-  );
-  console.error(
-    `[AtomicStorage] \u{1F6A8} TASK STORAGE WRITES HAVE BEEN DISABLED (FAIL-SAFE) TO PREVENT DESTRUCTIVE OVERWRITE.`
-  );
-  failSafeRegistry.add(resolvedPath);
-  return {
-    success: false,
-    data: null,
-    recoveredFromBackup: false,
-    corrupted: true,
-    error: `Both '${resolvedPath}' and backup are corrupt or unreadable (${mainError})`
-  };
-}
-var import_fs77, import_path72, failSafeRegistry;
-var init_atomicFileStorage = __esm2({
-  "src/server/utils/atomicFileStorage.ts"() {
-    "use strict";
-    import_fs77 = __toESM2(require("fs"), 1);
-    import_path72 = __toESM2(require("path"), 1);
-    failSafeRegistry = /* @__PURE__ */ new Set();
-  }
-});
-
-// src/server/storage/taskRepository.ts
-var import_fs78, import_path73, import_node_sqlite, TaskRepository;
-var init_taskRepository = __esm2({
-  "src/server/storage/taskRepository.ts"() {
-    "use strict";
-    import_fs78 = __toESM2(require("fs"), 1);
-    import_path73 = __toESM2(require("path"), 1);
-    import_node_sqlite = require("node:sqlite");
-    init_tasks();
-    init_atomicFileStorage();
-    TaskRepository = class {
-      static db = null;
-      static dbPath = import_path73.default.resolve(process.cwd(), "data", "mba_hub.sqlite");
-      static legacyJsonPath = import_path73.default.resolve(process.cwd(), "data", "tasks_log.json");
-      static legacyCounterPath = import_path73.default.resolve(process.cwd(), "data", "tasks_counter.json");
-      static isInitialized = false;
-      static verifyNodeEngine() {
-        const [majorStr, minorStr] = process.versions.node.split(".");
-        const major2 = parseInt(majorStr, 10);
-        const minor = parseInt(minorStr, 10);
-        const isSupported = major2 > 22 || major2 === 22 && minor >= 5;
-        if (!isSupported) {
-          throw new Error(`[TaskRepository] node:sqlite requires Node.js >= 22.5.0. Current runtime is ${process.version}`);
-        }
-      }
-      /**
-       * Initializes the SQLite Database, sets WAL & FULL durability, applies schemas,
-       * and runs atomic migration from tasks_log.json if necessary.
-       */
-      static init(customDbPath) {
-        if (this.isInitialized && this.db && !customDbPath) return;
-        this.verifyNodeEngine();
-        const targetDbPath = customDbPath || this.dbPath;
-        const dbDir = import_path73.default.dirname(targetDbPath);
-        if (!import_fs78.default.existsSync(dbDir)) {
-          import_fs78.default.mkdirSync(dbDir, { recursive: true });
-        }
-        if (!import_fs78.default.existsSync(targetDbPath) && !customDbPath && import_fs78.default.existsSync(this.legacyJsonPath)) {
-          console.log("[TaskRepository] \u{1F4E6} Discovered existing tasks_log.json with no SQLite database. Starting atomic migration...");
-          this.executeMigrationFromLegacyJson(targetDbPath);
-        }
-        this.db = new import_node_sqlite.DatabaseSync(targetDbPath);
-        this.configurePragmas(this.db);
-        this.createSchema(this.db);
-        this.isInitialized = true;
-        console.log(`[TaskRepository] \u{1F6E1}\uFE0F SQLite Task Storage initialized at ${targetDbPath} (WAL Mode, synchronous=FULL).`);
-      }
-      /**
-       * Closes the database with a clean checkpoint.
-       */
-      static close() {
-        if (this.db) {
-          try {
-            console.log("[TaskRepository] \u{1F6D1} Checkpointing and closing SQLite database...");
-            this.db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
-            this.db.close();
-          } catch (err) {
-            console.warn("[TaskRepository] Error during close:", err.message);
-          } finally {
-            this.db = null;
-            this.isInitialized = false;
-          }
-        }
-      }
-      /**
-       * Configures SQLite PRAGMAs for high durability & concurrency on NAS / Docker
-       */
-      static configurePragmas(db) {
-        db.exec("PRAGMA journal_mode = WAL;");
-        db.exec("PRAGMA synchronous = FULL;");
-        db.exec("PRAGMA busy_timeout = 5000;");
-        db.exec("PRAGMA foreign_keys = ON;");
-      }
-      /**
-       * Creates the application metadata and tasks tables with composite indexes
-       */
-      static createSchema(db) {
-        db.exec(`
-      CREATE TABLE IF NOT EXISTS metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS tasks (
-        id TEXT PRIMARY KEY,
-        counter INTEGER NOT NULL,
-        source TEXT NOT NULL,
-        suffix TEXT,
-        status TEXT NOT NULL,
-        checkpoint TEXT,
-        received_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        quote TEXT,
-        niche1 TEXT,
-        niche2 TEXT,
-        subniche TEXT,
-        image_url TEXT,
-        has_error INTEGER NOT NULL DEFAULT 0,
-        error_details TEXT,
-        design_id TEXT,
-        in_queue INTEGER NOT NULL DEFAULT 0,
-        events_count INTEGER NOT NULL DEFAULT 0,
-        client_ip TEXT,
-        image_generations_count INTEGER NOT NULL DEFAULT 0,
-        vectorizations_count INTEGER NOT NULL DEFAULT 0,
-        openrouter_cost_usd REAL NOT NULL DEFAULT 0.0,
-        payload_json TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_tasks_counter ON tasks(counter DESC);
-      CREATE INDEX IF NOT EXISTS idx_tasks_source_counter ON tasks(source, counter DESC);
-      CREATE INDEX IF NOT EXISTS idx_tasks_status_counter ON tasks(status, counter DESC);
-      CREATE INDEX IF NOT EXISTS idx_tasks_design_id ON tasks(design_id);
-      CREATE INDEX IF NOT EXISTS idx_tasks_received_at ON tasks(received_at DESC);
-    `);
-        const versionRow = db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get();
-        if (!versionRow) {
-          db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', '1')").run();
-          db.exec("PRAGMA user_version = 1;");
-        }
-      }
-      /**
-       * Central mapper: Converts canonical DesignTaskLog to strongly-typed projection columns.
-       */
-      static taskToColumns(task) {
-        const quote5 = task.quote || task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || task.payload?.title || null;
-        const niche1 = task.niche1 || task.payload?.niche1 || null;
-        const niche2 = task.niche2 || task.payload?.niche2 || null;
-        const subniche = task.subniche || task.payload?.subniche || null;
-        const designId = task.payload?.designId || task.designId || null;
-        const imageUrl = task.imageUrl || null;
-        const errorDetails = task.errorDetails || null;
-        const clientIp = task.clientIp || null;
-        const eventsCount = Array.isArray(task.events) ? task.events.length : task.eventsCount || 0;
-        let imageGenCount = 0;
-        let vectorCount = 0;
-        let openRouterCost = 0;
-        if (Array.isArray(task.events)) {
-          for (const ev of task.events) {
-            if (ev.type === "IDEOGRAM_RESPONSE" && ev.content?.provider !== "GPT_IMAGE_2") imageGenCount++;
-            if (ev.type === "VECTORIZE_RESPONSE") vectorCount++;
-            if (ev.metadata?.costUsd) openRouterCost += Number(ev.metadata.costUsd) || 0;
-          }
-        } else {
-          if (imageUrl) imageGenCount++;
-          if (task.svgContent || task.localMbaPngPath) vectorCount++;
-        }
-        const payloadJson = JSON.stringify(task);
-        return {
-          id: task.id,
-          counter: task.counter || 0,
-          source: task.source || "HERMES",
-          suffix: task.suffix || null,
-          status: task.status || "RECEIVED",
-          checkpoint: task.checkpoint || null,
-          received_at: task.receivedAt || (/* @__PURE__ */ new Date()).toISOString(),
-          updated_at: task.updatedAt || task.receivedAt || (/* @__PURE__ */ new Date()).toISOString(),
-          quote: quote5,
-          niche1,
-          niche2,
-          subniche,
-          image_url: imageUrl,
-          has_error: task.hasError ? 1 : 0,
-          error_details: errorDetails,
-          design_id: designId,
-          in_queue: task.inQueue ? 1 : 0,
-          events_count: eventsCount,
-          client_ip: clientIp,
-          image_generations_count: imageGenCount,
-          vectorizations_count: vectorCount,
-          openrouter_cost_usd: openRouterCost,
-          payload_json: payloadJson
-        };
-      }
-      /**
-       * Central mapper: Reconstructs canonical DesignTaskLog from a database row.
-       */
-      static rowToTask(row) {
-        if (!row || !row.payload_json) {
-          throw new Error("[TaskRepository] Invalid row: payload_json is missing");
-        }
-        const task = JSON.parse(row.payload_json);
-        task.id = row.id;
-        task.counter = row.counter;
-        task.source = row.source;
-        task.suffix = row.suffix;
-        task.status = row.status;
-        task.checkpoint = row.checkpoint;
-        task.receivedAt = row.received_at;
-        task.updatedAt = row.updated_at;
-        task.quote = row.quote || task.quote;
-        task.niche1 = row.niche1 || task.niche1;
-        task.niche2 = row.niche2 || task.niche2;
-        task.subniche = row.subniche || task.subniche;
-        task.imageUrl = row.image_url || task.imageUrl;
-        task.hasError = Boolean(row.has_error);
-        task.errorDetails = row.error_details || task.errorDetails;
-        task.inQueue = Boolean(row.in_queue);
-        task.eventsCount = row.events_count;
-        task.clientIp = row.client_ip || task.clientIp;
-        return task;
-      }
-      /**
-       * Central mapper: Converts database row directly into lightweight TaskSummary without payload_json parsing.
-       */
-      static rowToSummary(row) {
-        return {
-          id: row.id,
-          counter: row.counter,
-          source: row.source,
-          suffix: row.suffix || void 0,
-          status: row.status,
-          checkpoint: row.checkpoint || void 0,
-          receivedAt: row.received_at,
-          updatedAt: row.updated_at,
-          quote: row.quote || void 0,
-          niche1: row.niche1 || void 0,
-          niche2: row.niche2 || void 0,
-          subniche: row.subniche || void 0,
-          imageUrl: row.image_url || void 0,
-          hasError: Boolean(row.has_error),
-          errorDetails: row.error_details || void 0,
-          eventsCount: row.events_count,
-          clientIp: row.client_ip || void 0,
-          designId: row.design_id || void 0,
-          inQueue: Boolean(row.in_queue)
-        };
-      }
-      /**
-       * Atomic migration of tasks_log.json using a separate temporary database (mba_hub.sqlite.migrating).
-       * If any error occurs, rolls back, discards temporary files, leaves tasks_log.json untouched,
-       * and throws error (Fail-Closed).
-       */
-      static executeMigrationFromLegacyJson(targetDbPath, customJsonPath) {
-        const jsonPath = customJsonPath || this.legacyJsonPath;
-        const tempDbPath = `${targetDbPath}.migrating`;
-        if (import_fs78.default.existsSync(tempDbPath)) import_fs78.default.unlinkSync(tempDbPath);
-        if (import_fs78.default.existsSync(`${tempDbPath}-wal`)) import_fs78.default.unlinkSync(`${tempDbPath}-wal`);
-        if (import_fs78.default.existsSync(`${tempDbPath}-shm`)) import_fs78.default.unlinkSync(`${tempDbPath}-shm`);
-        console.log(`[TaskRepository] \u23F3 Reading legacy JSON from ${jsonPath}...`);
-        const recovery = loadJsonWithBackupRecovery(jsonPath, {
-          backupExt: ".bak",
-          validate: (data) => Array.isArray(data),
-          defaultValue: []
-        });
-        if (!recovery.success || !Array.isArray(recovery.data)) {
-          throw new Error(`[TaskRepository] Failed to read or parse ${jsonPath}. Migration aborted.`);
-        }
-        const legacyTasks = recovery.data;
-        console.log(`[TaskRepository] \u{1F4C4} Found ${legacyTasks.length} legacy tasks to migrate.`);
-        let tempDb = null;
-        try {
-          tempDb = new import_node_sqlite.DatabaseSync(tempDbPath);
-          this.configurePragmas(tempDb);
-          this.createSchema(tempDb);
-          tempDb.exec("BEGIN IMMEDIATE;");
-          const insertStmt = tempDb.prepare(`
-        INSERT INTO tasks (
-          id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-          quote, niche1, niche2, subniche, image_url, has_error, error_details,
-          design_id, in_queue, events_count, client_ip,
-          image_generations_count, vectorizations_count, openrouter_cost_usd,
-          payload_json
-        ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?,
-          ?
-        )
-      `);
-          let maxCounter = 0;
-          const seenIds = /* @__PURE__ */ new Set();
-          for (const task of legacyTasks) {
-            if (!task || !task.id) continue;
-            seenIds.add(task.id);
-            const counter = task.counter || 0;
-            if (counter > maxCounter) maxCounter = counter;
-            const cols = this.taskToColumns(task);
-            insertStmt.run(
-              cols.id,
-              cols.counter,
-              cols.source,
-              cols.suffix,
-              cols.status,
-              cols.checkpoint,
-              cols.received_at,
-              cols.updated_at,
-              cols.quote,
-              cols.niche1,
-              cols.niche2,
-              cols.subniche,
-              cols.image_url,
-              cols.has_error,
-              cols.error_details,
-              cols.design_id,
-              cols.in_queue,
-              cols.events_count,
-              cols.client_ip,
-              cols.image_generations_count,
-              cols.vectorizations_count,
-              cols.openrouter_cost_usd,
-              cols.payload_json
-            );
-          }
-          let counterToStore = maxCounter;
-          if (import_fs78.default.existsSync(this.legacyCounterPath)) {
-            try {
-              const rawCounter = JSON.parse(import_fs78.default.readFileSync(this.legacyCounterPath, "utf-8"));
-              if (rawCounter && typeof rawCounter.counter === "number") {
-                counterToStore = Math.max(counterToStore, rawCounter.counter);
-              }
-            } catch {
-            }
-          }
-          tempDb.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(counterToStore));
-          tempDb.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '1')").run();
-          tempDb.exec("COMMIT;");
-          const countRow = tempDb.prepare("SELECT COUNT(*) as count FROM tasks").get();
-          if (countRow.count !== seenIds.size) {
-            throw new Error(`[TaskRepository] Migration integrity error: Expected ${seenIds.size} rows, but found ${countRow.count} in database.`);
-          }
-          const checkpointRow = tempDb.prepare("PRAGMA wal_checkpoint(TRUNCATE);").get();
-          if (checkpointRow && checkpointRow.busy === 1) {
-            throw new Error(`[TaskRepository] PRAGMA wal_checkpoint(TRUNCATE) failed with busy status: ${JSON.stringify(checkpointRow)}`);
-          }
-          const integrityRow = tempDb.prepare("PRAGMA integrity_check;").get();
-          if (!integrityRow || integrityRow.integrity_check !== "ok") {
-            throw new Error(`[TaskRepository] PRAGMA integrity_check failed: ${JSON.stringify(integrityRow)}`);
-          }
-          tempDb.close();
-          tempDb = null;
-          const tempWalPath = `${tempDbPath}-wal`;
-          const tempShmPath = `${tempDbPath}-shm`;
-          if (import_fs78.default.existsSync(tempWalPath)) {
-            try {
-              import_fs78.default.unlinkSync(tempWalPath);
-            } catch {
-            }
-          }
-          if (import_fs78.default.existsSync(tempShmPath)) {
-            try {
-              import_fs78.default.unlinkSync(tempShmPath);
-            } catch {
-            }
-          }
-          import_fs78.default.renameSync(tempDbPath, targetDbPath);
-          console.log(`[TaskRepository] \u2705 Migration complete! Created ${targetDbPath} with ${countRow.count} tasks.`);
-          const backupJsonPath = import_path73.default.resolve(import_path73.default.dirname(jsonPath), "tasks_log.pre-sqlite-backup.json");
-          import_fs78.default.renameSync(jsonPath, backupJsonPath);
-          console.log(`[TaskRepository] \u{1F6E1}\uFE0F Original tasks_log.json preserved as ${backupJsonPath}.`);
-          if (import_fs78.default.existsSync(this.legacyCounterPath)) {
-            const backupCounterPath = import_path73.default.resolve(import_path73.default.dirname(this.legacyCounterPath), "tasks_counter.pre-sqlite-backup.json");
-            try {
-              import_fs78.default.renameSync(this.legacyCounterPath, backupCounterPath);
-            } catch {
-            }
-          }
-        } catch (err) {
-          if (tempDb) {
-            try {
-              tempDb.exec("ROLLBACK;");
-              tempDb.close();
-            } catch {
-            }
-          }
-          try {
-            if (import_fs78.default.existsSync(tempDbPath)) import_fs78.default.unlinkSync(tempDbPath);
-          } catch {
-          }
-          try {
-            if (import_fs78.default.existsSync(`${tempDbPath}-wal`)) import_fs78.default.unlinkSync(`${tempDbPath}-wal`);
-          } catch {
-          }
-          try {
-            if (import_fs78.default.existsSync(`${tempDbPath}-shm`)) import_fs78.default.unlinkSync(`${tempDbPath}-shm`);
-          } catch {
-          }
-          console.error("[TaskRepository] \u{1F6A8} CRITICAL MIGRATION FAILURE. Original JSON files left untouched:", err.message);
-          throw err;
-        }
-      }
-      static getDb() {
-        if (!this.db) {
-          this.init();
-        }
-        return this.db;
-      }
-      /**
-       * Atomically increments and returns the next sequential task counter.
-       */
-      static getNextCounter() {
-        const db = this.getDb();
-        db.exec("BEGIN IMMEDIATE;");
-        try {
-          let current = 0;
-          const row = db.prepare("SELECT value FROM metadata WHERE key = 'task_counter'").get();
-          if (row && row.value) {
-            current = parseInt(row.value, 10) || 0;
-          } else {
-            const maxRow = db.prepare("SELECT COALESCE(MAX(counter), 0) as maxCounter FROM tasks").get();
-            current = maxRow.maxCounter || 0;
-          }
-          current += 1;
-          db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(current));
-          db.exec("COMMIT;");
-          return current;
-        } catch (err) {
-          try {
-            db.exec("ROLLBACK;");
-          } catch {
-          }
-          throw err;
-        }
-      }
-      /**
-       * Inserts a new task atomically.
-       */
-      static createTask(task) {
-        const db = this.getDb();
-        db.exec("BEGIN IMMEDIATE;");
-        try {
-          if (!task.counter) {
-            let current = 0;
-            const row = db.prepare("SELECT value FROM metadata WHERE key = 'task_counter'").get();
-            if (row && row.value) {
-              current = parseInt(row.value, 10) || 0;
-            } else {
-              const maxRow = db.prepare("SELECT COALESCE(MAX(counter), 0) as maxCounter FROM tasks").get();
-              current = maxRow.maxCounter || 0;
-            }
-            current += 1;
-            task.counter = current;
-            db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('task_counter', ?)").run(String(current));
-          }
-          if (!task.id) {
-            const padded = String(task.counter).padStart(3, "0");
-            task.id = task.suffix ? `#${padded}-${task.suffix}` : `#${padded}`;
-          }
-          task.receivedAt = task.receivedAt || (/* @__PURE__ */ new Date()).toISOString();
-          task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-          const cols = this.taskToColumns(task);
-          db.prepare(`
-        INSERT INTO tasks (
-          id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-          quote, niche1, niche2, subniche, image_url, has_error, error_details,
-          design_id, in_queue, events_count, client_ip,
-          image_generations_count, vectorizations_count, openrouter_cost_usd,
-          payload_json
-        ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?,
-          ?
-        )
-      `).run(
-            cols.id,
-            cols.counter,
-            cols.source,
-            cols.suffix,
-            cols.status,
-            cols.checkpoint,
-            cols.received_at,
-            cols.updated_at,
-            cols.quote,
-            cols.niche1,
-            cols.niche2,
-            cols.subniche,
-            cols.image_url,
-            cols.has_error,
-            cols.error_details,
-            cols.design_id,
-            cols.in_queue,
-            cols.events_count,
-            cols.client_ip,
-            cols.image_generations_count,
-            cols.vectorizations_count,
-            cols.openrouter_cost_usd,
-            cols.payload_json
-          );
-          db.exec("COMMIT;");
-          return task;
-        } catch (err) {
-          try {
-            db.exec("ROLLBACK;");
-          } catch {
-          }
-          throw err;
-        }
-      }
-      /**
-       * Updates only the targeted task row. Loads existing task, merges partial updates,
-       * updates payload_json and indexed columns atomically.
-       */
-      static updateTask(taskId, updates) {
-        const db = this.getDb();
-        db.exec("BEGIN IMMEDIATE;");
-        try {
-          const row = db.prepare("SELECT payload_json FROM tasks WHERE id = ?").get(taskId);
-          if (!row || !row.payload_json) {
-            db.exec("ROLLBACK;");
-            return null;
-          }
-          const existingTask = JSON.parse(row.payload_json);
-          if (updates.payload) {
-            existingTask.payload = {
-              ...existingTask.payload,
-              ...updates.payload
-            };
-          }
-          for (const [key, value2] of Object.entries(updates)) {
-            if (key === "payload") continue;
-            existingTask[key] = value2;
-          }
-          existingTask.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-          const cols = this.taskToColumns(existingTask);
-          db.prepare(`
-        UPDATE tasks SET
-          counter = ?,
-          source = ?,
-          suffix = ?,
-          status = ?,
-          checkpoint = ?,
-          received_at = ?,
-          updated_at = ?,
-          quote = ?,
-          niche1 = ?,
-          niche2 = ?,
-          subniche = ?,
-          image_url = ?,
-          has_error = ?,
-          error_details = ?,
-          design_id = ?,
-          in_queue = ?,
-          events_count = ?,
-          client_ip = ?,
-          image_generations_count = ?,
-          vectorizations_count = ?,
-          openrouter_cost_usd = ?,
-          payload_json = ?
-        WHERE id = ?
-      `).run(
-            cols.counter,
-            cols.source,
-            cols.suffix,
-            cols.status,
-            cols.checkpoint,
-            cols.received_at,
-            cols.updated_at,
-            cols.quote,
-            cols.niche1,
-            cols.niche2,
-            cols.subniche,
-            cols.image_url,
-            cols.has_error,
-            cols.error_details,
-            cols.design_id,
-            cols.in_queue,
-            cols.events_count,
-            cols.client_ip,
-            cols.image_generations_count,
-            cols.vectorizations_count,
-            cols.openrouter_cost_usd,
-            cols.payload_json,
-            taskId
-          );
-          db.exec("COMMIT;");
-          return existingTask;
-        } catch (err) {
-          try {
-            db.exec("ROLLBACK;");
-          } catch {
-          }
-          throw err;
-        }
-      }
-      /**
-       * Appends an event to a single task atomically with duplicate event compaction.
-       */
-      static addEvent(taskId, event) {
-        const db = this.getDb();
-        db.exec("BEGIN IMMEDIATE;");
-        try {
-          const row = db.prepare("SELECT payload_json FROM tasks WHERE id = ?").get(taskId);
-          if (!row || !row.payload_json) {
-            db.exec("ROLLBACK;");
-            return null;
-          }
-          const task = JSON.parse(row.payload_json);
-          if (!Array.isArray(task.events)) {
-            task.events = [];
-          }
-          const lastEvent = task.events.length > 0 ? task.events[task.events.length - 1] : null;
-          const isConsecutiveDuplicate = lastEvent && lastEvent.type === event.type && lastEvent.title === event.title && JSON.stringify(lastEvent.content ?? null) === JSON.stringify(event.content ?? null);
-          if (isConsecutiveDuplicate && lastEvent) {
-            lastEvent.repeatCount = (lastEvent.repeatCount || 1) + 1;
-            lastEvent.lastRepeatedAt = event.timestamp || (/* @__PURE__ */ new Date()).toISOString();
-          } else {
-            task.events.push(event);
-          }
-          task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-          const cols = this.taskToColumns(task);
-          db.prepare(`
-        UPDATE tasks SET
-          updated_at = ?,
-          events_count = ?,
-          image_generations_count = ?,
-          vectorizations_count = ?,
-          openrouter_cost_usd = ?,
-          payload_json = ?
-        WHERE id = ?
-      `).run(
-            cols.updated_at,
-            cols.events_count,
-            cols.image_generations_count,
-            cols.vectorizations_count,
-            cols.openrouter_cost_usd,
-            cols.payload_json,
-            taskId
-          );
-          db.exec("COMMIT;");
-          return task;
-        } catch (err) {
-          try {
-            db.exec("ROLLBACK;");
-          } catch {
-          }
-          throw err;
-        }
-      }
-      /**
-       * Full reconstruction of DesignTaskLog from SQLite.
-       */
-      static getTaskById(taskId) {
-        const db = this.getDb();
-        const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-        if (!row) return null;
-        return this.rowToTask(row);
-      }
-      /**
-       * Fast summary retrieval without parsing payload_json.
-       */
-      static getTaskSummaryById(taskId) {
-        const db = this.getDb();
-        const row = db.prepare(`
-      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-             quote, niche1, niche2, subniche, image_url, has_error, error_details,
-             design_id, in_queue, events_count, client_ip
-      FROM tasks
-      WHERE id = ?
-    `).get(taskId);
-        if (!row) return null;
-        return this.rowToSummary(row);
-      }
-      /**
-       * Keyset pagination query directly from SQLite (WHERE counter < ? ORDER BY counter DESC LIMIT 21).
-       */
-      static getTaskSummariesPage(options2 = {}) {
-        const db = this.getDb();
-        const limit = Math.max(1, Math.min(100, options2.limit || 20));
-        const queryLimit = limit + 1;
-        const conditions = [];
-        const params2 = [];
-        if (options2.cursor) {
-          const cursorRow = db.prepare("SELECT counter FROM tasks WHERE id = ?").get(options2.cursor);
-          if (cursorRow && typeof cursorRow.counter === "number") {
-            conditions.push("counter < ?");
-            params2.push(cursorRow.counter);
-          }
-        }
-        if (options2.source && options2.source !== "ALL") {
-          conditions.push("source = ?");
-          params2.push(options2.source);
-        }
-        if (options2.status) {
-          conditions.push("status = ?");
-          params2.push(options2.status);
-        }
-        if (options2.checkpoint) {
-          conditions.push("checkpoint = ?");
-          params2.push(options2.checkpoint);
-        }
-        if (options2.search && options2.search.trim()) {
-          const q = `%${options2.search.trim()}%`;
-          conditions.push("(id LIKE ? OR quote LIKE ? OR niche1 LIKE ? OR niche2 LIKE ? OR design_id LIKE ?)");
-          params2.push(q, q, q, q, q);
-        }
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-        const sql = `
-      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-             quote, niche1, niche2, subniche, image_url, has_error, error_details,
-             design_id, in_queue, events_count, client_ip
-      FROM tasks
-      ${whereClause}
-      ORDER BY counter DESC
-      LIMIT ?
-    `;
-        const rows = db.prepare(sql).all(...params2, queryLimit);
-        const countSql = `SELECT COUNT(*) as total FROM tasks ${whereClause}`;
-        const totalRow = db.prepare(countSql).get(...params2);
-        const totalCount = totalRow ? totalRow.total : rows.length;
-        const hasMore = rows.length > limit;
-        const pageRows = hasMore ? rows.slice(0, limit) : rows;
-        const tasks = pageRows.map((r) => this.rowToSummary(r));
-        const nextCursor = hasMore && tasks.length > 0 ? tasks[tasks.length - 1].id : null;
-        return {
-          success: true,
-          tasks,
-          totalCount,
-          hasMore,
-          nextCursor
-        };
-      }
-      /**
-       * Retrieves all awaiting tasks for review sidebar directly via index.
-       */
-      static getAwaitingTaskSummaries() {
-        const db = this.getDb();
-        const placeholders = TASK_STATUSES_AWAITING_USER_ACTION.map(() => "?").join(", ");
-        const rows = db.prepare(`
-      SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
-             quote, niche1, niche2, subniche, image_url, has_error, error_details,
-             design_id, in_queue, events_count, client_ip
-      FROM tasks
-      WHERE status IN (${placeholders})
-      ORDER BY counter DESC
-    `).all(...TASK_STATUSES_AWAITING_USER_ACTION);
-        return rows.map((r) => this.rowToSummary(r));
-      }
-      /**
-       * Fast query for active update design IDs (used by UpdateBackfillService).
-       */
-      static getActiveUpdateDesignIds() {
-        const db = this.getDb();
-        const rows = db.prepare(`
-      SELECT id, design_id
-      FROM tasks
-      WHERE (source = 'UPDATE' OR suffix = 'U')
-        AND status NOT IN ('REJECTED', 'CANCELLED', 'ERROR')
-    `).all();
-        const ids = /* @__PURE__ */ new Set();
-        for (const r of rows) {
-          if (r.design_id) ids.add(r.design_id.trim());
-          if (r.id) {
-            const clean = r.id.replace(/^#/, "").replace(/-U$/, "").trim();
-            ids.add(clean);
-          }
-        }
-        return ids;
-      }
-      /**
-       * Fast query for active update tasks in review (used by UpdateBackfillService.getActiveUpdateCount).
-       */
-      static getActiveReviewUpdateTasks() {
-        const db = this.getDb();
-        const rows = db.prepare(`
-      SELECT id, design_id
-      FROM tasks
-      WHERE (source = 'UPDATE' OR suffix = 'U')
-        AND status NOT IN ('COMPLETED', 'UPDATE_QUEUED', 'REJECTED', 'CANCELLED', 'ERROR')
-    `).all();
-        return rows.map((r) => ({
-          id: r.id,
-          designId: r.design_id || void 0
-        }));
-      }
-      /**
-       * Fast cancellation of matching update tasks (used by QueueService & UpdateBackfillService).
-       */
-      static cancelTasksByTarget(targetTaskId, targetDesignId) {
-        const db = this.getDb();
-        let query = `
-      UPDATE tasks
-      SET status = 'CANCELLED', updated_at = ?
-      WHERE (id = ? OR id = ?)
-        AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
-    `;
-        const params2 = [(/* @__PURE__ */ new Date()).toISOString(), targetTaskId, `#${targetTaskId}`];
-        if (targetDesignId) {
-          query = `
-        UPDATE tasks
-        SET status = 'CANCELLED', updated_at = ?
-        WHERE (id = ? OR id = ? OR design_id = ?)
-          AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
-      `;
-          params2.push(targetDesignId);
-        }
-        const info = db.prepare(query).run(...params2);
-        return Number(info.changes);
-      }
-      /**
-       * Cancels all hanging/stale update tasks (used by UpdateBackfillService.resetInFlightLocks).
-       */
-      static cancelActiveUpdateTasks() {
-        const db = this.getDb();
-        const info = db.prepare(`
-      UPDATE tasks
-      SET status = 'CANCELLED', updated_at = ?
-      WHERE (source = 'UPDATE' OR suffix = 'U')
-        AND status NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
-    `).run((/* @__PURE__ */ new Date()).toISOString());
-        return Number(info.changes);
-      }
-      /**
-       * Direct aggregated query for CostTracking metrics (avoids parsing thousands of JSON payloads).
-       */
-      static getTaskUsageMetrics(resetTimestamp) {
-        const db = this.getDb();
-        const isoThreshold = resetTimestamp > 0 ? new Date(resetTimestamp).toISOString() : "1970-01-01T00:00:00.000Z";
-        const row = db.prepare(`
-      SELECT
-        COALESCE(SUM(image_generations_count), 0) as imageGenerationsCount,
-        COALESCE(SUM(vectorizations_count), 0) as vectorizationsCount,
-        COALESCE(SUM(openrouter_cost_usd), 0.0) as taskEventOpenRouterCost
-      FROM tasks
-      WHERE received_at >= ?
-    `).get(isoThreshold);
-        return {
-          imageGenerationsCount: Number(row.imageGenerationsCount) || 0,
-          vectorizationsCount: Number(row.vectorizationsCount) || 0,
-          taskEventOpenRouterCost: Number(row.taskEventOpenRouterCost) || 0
-        };
-      }
-      /**
-       * Deletes a single task row.
-       */
-      static deleteTask(taskId) {
-        const db = this.getDb();
-        const info = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
-        return Number(info.changes) > 0;
-      }
-      /**
-       * Clears all tasks (for test suites or manual log clearing).
-       */
-      static clearAllTasks() {
-        const db = this.getDb();
-        db.exec("DELETE FROM tasks;");
-      }
-      /**
-       * Returns all tasks currently marked with in_queue = 1.
-       */
-      static getInQueueTasks() {
-        const db = this.getDb();
-        const rows = db.prepare("SELECT * FROM tasks WHERE in_queue = 1").all();
-        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
-      }
-      /**
-       * Returns tasks matching any of the specified statuses.
-       */
-      static getTasksByStatuses(statuses) {
-        if (!statuses || statuses.length === 0) return [];
-        const db = this.getDb();
-        const placeholders = statuses.map(() => "?").join(", ");
-        const rows = db.prepare(`SELECT * FROM tasks WHERE status IN (${placeholders})`).all(...statuses);
-        return rows.map((r) => this.rowToTask(r)).filter((t) => t !== null);
-      }
-      /**
-       * Returns total task count in SQLite.
-       */
-      static getTotalTaskCount() {
-        const db = this.getDb();
-        const row = db.prepare("SELECT COUNT(*) as count FROM tasks").get();
-        return row ? Number(row.count) : 0;
-      }
-    };
-  }
-});
-
-// src/server/services/taskExecutionLock.ts
-var TaskExecutionLock;
-var init_taskExecutionLock = __esm2({
-  "src/server/services/taskExecutionLock.ts"() {
-    "use strict";
-    TaskExecutionLock = class {
-      static activeLocks = /* @__PURE__ */ new Map();
-      /**
-       * Attempts to acquire execution lock for a given taskId.
-       * Re-entrant: If already acquired by the same owner, increments depth and returns true.
-       * Returns false if task is already running under a DIFFERENT owner.
-       */
-      static acquire(taskId, owner) {
-        const cleanId = taskId.trim();
-        const existing = this.activeLocks.get(cleanId);
-        if (existing) {
-          if (existing.owner === owner) {
-            existing.depth++;
-            return true;
-          }
-          return false;
-        }
-        this.activeLocks.set(cleanId, { owner, depth: 1, acquiredAt: (/* @__PURE__ */ new Date()).toISOString() });
-        return true;
-      }
-      /**
-       * Releases execution lock for a given taskId.
-       * Decrements depth and removes lock when depth reaches 0.
-       */
-      static release(taskId) {
-        const cleanId = taskId.trim();
-        const existing = this.activeLocks.get(cleanId);
-        if (existing) {
-          existing.depth--;
-          if (existing.depth <= 0) {
-            this.activeLocks.delete(cleanId);
-          }
-        }
-      }
-      /**
-       * Checks whether a task is currently executing.
-       */
-      static isLocked(taskId) {
-        return this.activeLocks.has(taskId.trim());
-      }
-      /**
-       * Returns current lock owner info if locked.
-       */
-      static getLockInfo(taskId) {
-        const existing = this.activeLocks.get(taskId.trim());
-        return existing ? { owner: existing.owner, acquiredAt: existing.acquiredAt } : void 0;
-      }
-      /**
-       * Clears all locks (used in tests or system resets).
-       */
-      static clear() {
-        this.activeLocks.clear();
       }
     };
   }
@@ -224408,20 +224437,53 @@ var init_assetValidationService = __esm2({
 // src/server/services/finalizationService.ts
 var finalizationService_exports = {};
 __export2(finalizationService_exports, {
-  FinalizationService: () => FinalizationService
+  FinalizationService: () => FinalizationService,
+  createFinalizationOwnership: () => createFinalizationOwnership
 });
-var import_fs82, import_node_crypto2, FinalizationService;
+function finalizationInput(params2) {
+  const { prepareOnly, artifactRunId, ...input } = params2;
+  return (0, import_node_crypto4.createHash)("sha256").update(JSON.stringify(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
+}
+function finalizationTaskData(task) {
+  return (0, import_node_crypto4.createHash)("sha256").update(JSON.stringify(task && [
+    task.id,
+    task.source,
+    task.designId,
+    task.status,
+    task.checkpoint,
+    task.inQueue,
+    task.listingResult,
+    task.customAnswers,
+    task.svgContent,
+    task.localSvgPath,
+    task.localMbaPngPath,
+    task.localImagePath,
+    task.fitTypes,
+    task.blockedProducts
+  ])).digest("hex");
+}
+function createFinalizationOwnership(params2, task) {
+  if (task.id !== params2.taskId) throw new Error("Task-Identit\xE4t der Finalisierung stimmt nicht \xFCberein.");
+  return { taskId: task.id, input: finalizationInput(params2), taskData: finalizationTaskData(task) };
+}
+var import_fs82, import_node_crypto4, FinalizationService;
 var init_finalizationService = __esm2({
   "src/server/services/finalizationService.ts"() {
     "use strict";
     import_fs82 = __toESM2(require("fs"), 1);
-    import_node_crypto2 = require("node:crypto");
+    import_node_crypto4 = require("node:crypto");
     init_taskLogService();
     init_queueService();
     init_listingSanitizationService();
     init_listingValidationService();
     init_artworkResizeService();
     FinalizationService = class {
+      static assertPreparedOwnership(params2, result2, task) {
+        const expected = createFinalizationOwnership(params2, task);
+        if (result2.ownership?.taskId !== expected.taskId || result2.ownership.input !== expected.input || result2.ownership.taskData !== expected.taskData) {
+          throw new Error("Finalisierung geh\xF6rt zu einer anderen oder inzwischen ge\xE4nderten Task. Keine Queue-\xDCbernahme.");
+        }
+      }
       /**
        * Single unified finalization pipeline for both Design and Update pipelines.
        * Atomically executes:
@@ -224435,6 +224497,8 @@ var init_finalizationService = __esm2({
         const { taskId, pipeline: pipeline3 } = params2;
         console.log(`[FinalizationService] \u{1F680} Starte Unified Finalization f\xFCr Task #${taskId} (Pipeline: ${pipeline3})...`);
         const task = TaskLogService2.getTask(taskId);
+        if (!task) throw new Error("Task nicht mehr vorhanden");
+        const ownership = createFinalizationOwnership(params2, task);
         const masterPngPath = params2.masterPngPath || task?.localMbaPngPath || task?.localImagePath || "";
         TaskLogService2.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -224557,7 +224621,7 @@ var init_finalizationService = __esm2({
           if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint)) {
             resizedAssets = task.resizedAssets;
           } else {
-            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto2.randomUUID)() : taskId);
+            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto4.randomUUID)() : taskId);
             resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title, metrics) => {
               TaskLogService2.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -224612,9 +224676,9 @@ var init_finalizationService = __esm2({
           content: { phase: "ARTWORK_PREPARATION", status: "SUCCESS", assets: resizedAssets }
         });
         if (params2.prepareOnly) {
-          return { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
+          return { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
         }
-        return this.handoffPrepared(params2, { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
+        return this.handoffPrepared(params2, { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
       }
       /** Synchronous queue handoff of an already validated result. No rendering or earlier workflow steps. */
       static handoffPrepared(params2, result2) {
@@ -224622,6 +224686,7 @@ var init_finalizationService = __esm2({
         const { taskId, pipeline: pipeline3 } = params2;
         const task = TaskLogService2.getTask(taskId);
         if (!task) throw new Error("Task nicht mehr vorhanden");
+        this.assertPreparedOwnership(params2, result2, task);
         const resizedAssets = result2.resizedAssets;
         const { root: sanitizedRoot, listings: sanitizedListings } = result2.preparedListing;
         TaskLogService2.addEvent(taskId, {
@@ -231040,8 +231105,12 @@ Beantworte die Analysefragen streng als JSON!`;
         task.svgContent = originalSvgContent;
         task.localSvgPath = svgFilePath;
         task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
-        this.saveLogs(this.loadLogs());
-        this.emitUpdate(task);
+        const saved = this.updateTaskStatus(taskId, {
+          svgContent: originalSvgContent,
+          localSvgPath: svgFilePath,
+          svgUrl: task.svgUrl
+        });
+        if (!saved) throw new Error("SVG-Reset konnte nicht gespeichert werden.");
         return {
           success: true,
           svgContent: originalSvgContent,
@@ -232364,6 +232433,35 @@ __export2(index_exports, {
   getSystemReady: () => getSystemReady
 });
 module.exports = __toCommonJS2(index_exports);
+
+// src/server/services/reviewActionGuard.ts
+init_taskRepository();
+init_taskExecutionLock();
+init_reviewVersion();
+var active = /* @__PURE__ */ new Set();
+var hasActiveReviewAction = (taskId) => active.has(taskId);
+var allowed = {
+  "submit-design-review": ["AWAITING_DESIGN_REVIEW", "UPDATE_ANALYZED"],
+  "submit-tm-review": ["AWAITING_TM_REVIEW"],
+  "override-preflight": ["AWAITING_PRE_FLIGHT_REVIEW"],
+  "submit-svg-review": ["AWAITING_SVG_REVIEW"],
+  "reset-svg": ["AWAITING_SVG_REVIEW"]
+};
+function claimReviewAction(taskId, action, context2, operation) {
+  const value2 = context2;
+  if (!value2 || value2.taskId !== taskId || typeof value2.version !== "string" || !value2.version || active.has(taskId) || TaskExecutionLock.isLocked(taskId)) throw new ReviewConflict();
+  const task = TaskRepository.getTaskById(taskId);
+  const checkpoints = { AWAITING_DESIGN_REVIEW: "DESIGN_REVIEW", UPDATE_ANALYZED: "UPDATE_REVIEW", AWAITING_TM_REVIEW: "TM_REVIEW", AWAITING_PRE_FLIGHT_REVIEW: "PRE_FLIGHT", AWAITING_SVG_REVIEW: "SVG_REVIEW" };
+  if (!task || !allowed[action]?.includes(task.status) || task.checkpoint !== checkpoints[task.status]) throw new ReviewConflict();
+  if (!TaskRepository.updateTask(taskId, {}, value2.version, !(action === "submit-tm-review" && operation === "RECHECK"))) throw new ReviewConflict();
+  active.add(taskId);
+  return () => {
+    active.delete(taskId);
+  };
+}
+
+// src/server/index.ts
+init_reviewVersion();
 var import_express = __toESM2(require_express2(), 1);
 var import_http4 = __toESM2(require("http"), 1);
 
@@ -233195,13 +233293,13 @@ function reconcileUpdateSelectionFromDom(states, catalogSelection) {
   if (!Array.isArray(states) || states.length === 0) {
     throw new Error("FAILED_PRODUCT_SELECTION: Select-Products-DOM enth\xE4lt keine auswertbaren Marktplatz-Checkboxen.");
   }
-  const allowed = /* @__PURE__ */ new Map();
+  const allowed2 = /* @__PURE__ */ new Map();
   for (const [rawProductId, rawMarketplaces] of Object.entries(catalogSelection || {})) {
     const productId = normalizeCatalogProductId(rawProductId);
     if (!Array.isArray(rawMarketplaces)) {
       throw new Error(`FAILED_PRODUCT_SELECTION: Ung\xFCltige Katalog-Marktpl\xE4tze f\xFCr ${rawProductId}`);
     }
-    allowed.set(productId, new Set(rawMarketplaces.map((value2) => normalizeMarketplaceCode(String(value2)))));
+    allowed2.set(productId, new Set(rawMarketplaces.map((value2) => normalizeMarketplaceCode(String(value2)))));
   }
   const selectionMap = {};
   const additionsMap = {};
@@ -233222,7 +233320,7 @@ function reconcileUpdateSelectionFromDom(states, catalogSelection) {
       addMarketplace(liveMap, productId, marketplace);
       continue;
     }
-    if (!state.readonly && allowed.get(productId)?.has(marketplace)) {
+    if (!state.readonly && allowed2.get(productId)?.has(marketplace)) {
       addMarketplace(selectionMap, productId, marketplace);
       addMarketplace(additionsMap, productId, marketplace);
     }
@@ -235070,7 +235168,7 @@ var UploadScheduleService = class {
 
 // src/server/services/manualFinalizationService.ts
 var import_node_fs2 = __toESM2(require("node:fs"), 1);
-var import_node_crypto3 = require("node:crypto");
+var import_node_crypto5 = require("node:crypto");
 init_finalizationService();
 init_queueService();
 init_taskLogService();
@@ -235127,7 +235225,7 @@ var ManualFinalizationService = class {
       const result2 = await FinalizationService.finalizeForQueue({
         ...params2,
         prepareOnly: true,
-        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto3.randomUUID)()}`
+        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto5.randomUUID)()}`
       });
       if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error(result2.error || "Vorbereitung fehlgeschlagen");
       const assets = result2.resizedAssets;
@@ -235150,6 +235248,7 @@ var ManualFinalizationService = class {
       }
       const currentTask = TaskLogService2.getTask(taskId);
       if (!currentTask) throw new Error("Task wurde w\xE4hrend der Vorbereitung entfernt.");
+      FinalizationService.assertPreparedOwnership(params2, result2, currentTask);
       if (!item) {
         if (QueueService.isCorrupted() || inputFingerprint(currentTask) !== before || currentTask.inQueue || QueueService.getState().items.some((candidate) => candidate.taskId === taskId)) {
           throw new Error("Task oder Queue wurde inzwischen ge\xE4ndert; keine \xDCbernahme.");
@@ -236188,12 +236287,18 @@ app.delete("/api/v1/tasks/log", (req, res) => {
   broadcast("TASK_LOGS_CLEARED", {});
   res.json({ success: true, message: "All task logs cleared" });
 });
+app.use("/api/v1/tasks/:taskId", (req, res, next) => {
+  if (req.method !== "GET" && hasActiveReviewAction(req.params.taskId)) {
+    return res.status(409).json({ success: false, error: "F\xFCr diese Task l\xE4uft bereits eine Review-Aktion." });
+  }
+  next();
+});
 app.get("/api/v1/tasks/:taskId", (req, res) => {
   const task = TaskLogService2.getTaskLogById(req.params.taskId);
   if (!task) {
     return res.status(404).json({ success: false, error: `Task ${req.params.taskId} nicht gefunden` });
   }
-  res.json({ success: true, task });
+  res.json({ success: true, task: { ...task, reviewVersion: reviewVersion(task) } });
 });
 app.post("/api/v1/tasks/:taskId/cancel", (req, res) => {
   const { taskId } = req.params;
@@ -236236,6 +236341,16 @@ app.post("/api/v1/tasks/:taskId/skip-update", async (req, res) => {
     res.status(400).json({ success: false, error: err.message });
   }
 });
+app.post("/api/v1/tasks/:taskId/:reviewAction", (req, res, next) => {
+  if (!["submit-design-review", "submit-tm-review", "override-preflight", "submit-svg-review", "reset-svg"].includes(req.params.reviewAction)) return next();
+  try {
+    const release = claimReviewAction(req.params.taskId, req.params.reviewAction, req.body.reviewContext, req.body.action);
+    res.locals.releaseReview = release;
+    next();
+  } catch (error) {
+    res.status(409).json({ success: false, error: error.message });
+  }
+});
 app.post("/api/v1/tasks/:taskId/submit-design-review", async (req, res) => {
   const { taskId } = req.params;
   const { action, answers, updatedPrompt } = req.body;
@@ -236245,6 +236360,8 @@ app.post("/api/v1/tasks/:taskId/submit-design-review", async (req, res) => {
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 app.post("/api/v1/tasks/:taskId/submit-tm-review", async (req, res) => {
@@ -236256,6 +236373,8 @@ app.post("/api/v1/tasks/:taskId/submit-tm-review", async (req, res) => {
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 app.post("/api/v1/tasks/:taskId/override-preflight", async (req, res) => {
@@ -236267,6 +236386,8 @@ app.post("/api/v1/tasks/:taskId/override-preflight", async (req, res) => {
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 app.post("/api/v1/tasks/:taskId/submit-svg-review", async (req, res) => {
@@ -236278,6 +236399,8 @@ app.post("/api/v1/tasks/:taskId/submit-svg-review", async (req, res) => {
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 app.post("/api/v1/tasks/:taskId/reset-svg", async (req, res) => {
@@ -236288,6 +236411,8 @@ app.post("/api/v1/tasks/:taskId/reset-svg", async (req, res) => {
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 app.post("/api/v1/tasks/:taskId/submit-recovery-review", async (req, res) => {

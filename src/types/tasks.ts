@@ -136,6 +136,11 @@ export interface SessionEvent {
 }
 
 export interface DesignTaskLog {
+  fitTypes?: string[];
+  previewUrl?: string;
+  grid2x2Url?: string;
+  /** Persisted review concurrency token; unrelated logs do not change it. */
+  reviewVersion?: string;
   id: string;
   counter: number;
   source: TaskSource;
@@ -177,6 +182,7 @@ export interface DesignTaskLog {
   svgAuditResult?: any;
   analysisResult?: any;
   customAnswers?: {
+    keywords?: string | string[];
     niche1?: string;
     niche2?: string;
     subniche?: string;
@@ -339,6 +345,7 @@ export type RetryStepType =
   | 'UPDATE_U7_ENQUEUE';
 
 export interface TaskSummary {
+  reviewVersion?: string;
   id: string;
   counter: number;
   source: TaskSource;
@@ -371,13 +378,14 @@ export function toTaskSummary(task: DesignTaskLog): TaskSummary {
 
   return {
     id: task.id,
+    reviewVersion: task.reviewVersion,
     counter: task.counter,
     source: task.source,
     suffix: task.suffix,
     status: task.status,
     checkpoint: task.checkpoint,
     receivedAt: task.receivedAt,
-    updatedAt: lastEvent?.timestamp || task.receivedAt,
+    updatedAt: task.updatedAt || lastEvent?.timestamp || task.receivedAt,
     quote,
     niche1,
     niche2,

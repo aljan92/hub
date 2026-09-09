@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { TaskRepository } from '../src/server/storage/taskRepository';
 import { TaskLogService } from '../src/server/services/taskLogService';
-import { FinalizationService } from '../src/server/services/finalizationService';
+import { FinalizationService, createFinalizationOwnership } from '../src/server/services/finalizationService';
 import { QueueService } from '../src/server/services/queueService';
 import { LLMService } from '../src/server/services/llmService';
 import { VectorizerService } from '../src/server/services/vectorizerService';
@@ -31,7 +31,7 @@ const success=async(params:any)=>{
   assert(saved.svgContent);assert(fs.existsSync(saved.localSvgPath!));assert(fs.existsSync(saved.localMbaPngPath!));
   assert.equal(params.masterPngPath,saved.localMbaPngPath);
   assert.equal(ArtworkResizeService.source(saved,params.masterPngPath).kind,'SVG');
-  return FinalizationService.handoffPrepared(params,{success:true,resizedAssets:{mugStandardPath:'mug',mugBrushPath:'brush',drinkwareStandardPath:'drink',drinkwareBrushPath:'brush2'},preparedListing:{root:{title:params.title},listings:params.listings}});
+  return FinalizationService.handoffPrepared(params,{success:true,ownership:createFinalizationOwnership(params,saved),resizedAssets:{mugStandardPath:'mug',mugBrushPath:'brush',drinkwareStandardPath:'drink',drinkwareBrushPath:'brush2'},preparedListing:{root:{title:params.title},listings:params.listings}});
 };
 try {
   process.chdir(dir);TaskRepository.init(path.join(dir,'test.sqlite'));

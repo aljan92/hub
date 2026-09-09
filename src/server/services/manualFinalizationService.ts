@@ -69,6 +69,7 @@ export class ManualFinalizationService {
       }
       const currentTask = TaskLogService.getTask(taskId);
       if (!currentTask) throw new Error('Task wurde während der Vorbereitung entfernt.');
+      FinalizationService.assertPreparedOwnership(params, result, currentTask);
       if (!item) {
         if (QueueService.isCorrupted() || inputFingerprint(currentTask) !== before || currentTask.inQueue || QueueService.getState().items.some(candidate => candidate.taskId === taskId)) {
           throw new Error('Task oder Queue wurde inzwischen geändert; keine Übernahme.');

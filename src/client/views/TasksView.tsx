@@ -28,6 +28,8 @@ import {
 import { DesignTaskLog, TaskSummary, isTaskAwaitingUserAction } from '../../types/tasks';
 import { SvgEditor } from '../components/SvgEditor';
 import { TaskStatusBadge } from '../components/TaskStatusBadge';
+import { useReviewSession } from '../hooks/useReviewSession';
+import { createReviewDraft } from '../utils/reviewDraft';
 import { useTaskWebSocket } from '../hooks/useTaskWebSocket';
 
 // ---------------------------------------------------------------------------
@@ -150,6 +152,7 @@ export const TasksView: React.FC = () => {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [activeTaskDetail, setActiveTaskDetail] = useState<DesignTaskLog | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState<{taskId: string; message: string} | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string>('');
   const [filter, setFilter] = useState<'ALL' | 'PRE_FLIGHT' | 'DESIGN' | 'TRADEMARK' | 'SVG'>('ALL');
@@ -158,86 +161,8 @@ export const TasksView: React.FC = () => {
   const [submittingTaskIds, setSubmittingTaskIds] = useState<Set<string>>(() => new Set());
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Checkpoint 1 (Pre-Flight) State
-  const [editQuote, setEditQuote] = useState('');
-
-  // Checkpoint 2 (Design Review) State
-  const [selectedAudiences, setSelectedAudiences] = useState<string[]>(['Men', 'Women', 'Youth']);
-  const [selectedAvoidColor, setSelectedAvoidColor] = useState('None');
-  const [selectedBgMode, setSelectedBgMode] = useState('Automatisch');
-  const [selectedMaxColors, setSelectedMaxColors] = useState<number>(2);
-  const [editablePrompt, setEditablePrompt] = useState('');
   const [showImageZoom, setShowImageZoom] = useState(false);
   const [viewModeGrid, setViewModeGrid] = useState(true);
-  const [editNiche1, setEditNiche1] = useState('');
-  const [editNiche2, setEditNiche2] = useState('');
-  const [editSubniche, setEditSubniche] = useState('');
-  const [editKeywords, setEditKeywords] = useState('');
-
-  // Checkpoint 3 (Trademark Review) State
-  const [editableListing, setEditableListing] = useState({
-    brand: '',
-    title: '',
-    bullet1: '',
-    bullet2: '',
-    description: ''
-  });
-  const [liveTmResult, setLiveTmResult] = useState<any>(null);
-  const [isCheckingTm, setIsCheckingTm] = useState(false);
-
-  // Checkpoint 4 (SVG Review) State
-  const [editedSvgData, setEditedSvgData] = useState<string>('');
-  const [revectorizeMaxColors, setRevectorizeMaxColors] = useState<number>(2);
-
-  // Helper to extract listing fields safely from all sources
-  const extractListingFields = (task?: DesignTaskLog) => {
-    if (!task) return { brand: '', title: '', bullet1: '', bullet2: '', description: '' };
-
-    let lr: any = task.listingResult;
-    if (typeof lr === 'string') {
-      try {
-        let clean = lr.trim();
-        if (clean.startsWith('```')) clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-        lr = JSON.parse(clean);
-      } catch {}
-    }
-
-    const en = (lr && typeof lr === 'object') ? (lr.en || lr) : {};
-    const refined = task.trademarkRefineResult?.refined_listing || {};
-
-    let brand = refined.brand || en.brand || en.brandName || '';
-    let title = refined.title || en.title || en.designTitle || '';
-    let bullet1 = refined.bullet1 || en.bullet1 || en.bullet_1 || en.featureBullet1 || en.feature_bullet1 || '';
-    let bullet2 = refined.bullet2 || en.bullet2 || en.bullet_2 || en.featureBullet2 || en.feature_bullet2 || '';
-    let description = refined.description || en.description || en.product_description || en.productDescription || en.desc || '';
-
-    // Fallback scan across task events
-    if ((!description || !title) && Array.isArray(task.events)) {
-      for (let i = task.events.length - 1; i >= 0; i--) {
-        const ev = task.events[i];
-        if (ev.type === 'TM_REFINE_RESPONSE' && ev.content?.refined_listing) {
-          brand = brand || ev.content.refined_listing.brand || '';
-          title = title || ev.content.refined_listing.title || '';
-          bullet1 = bullet1 || ev.content.refined_listing.bullet1 || '';
-          bullet2 = bullet2 || ev.content.refined_listing.bullet2 || '';
-          description = description || ev.content.refined_listing.description || '';
-        }
-        if (ev.type === 'LISTING_RESPONSE' && ev.content) {
-          const listObj = ev.content.en || ev.content;
-          if (typeof listObj === 'object' && listObj !== null) {
-            brand = brand || listObj.brand || '';
-            title = title || listObj.title || '';
-            bullet1 = bullet1 || listObj.bullet1 || '';
-            bullet2 = bullet2 || listObj.bullet2 || '';
-            description = description || listObj.description || listObj.product_description || '';
-          }
-        }
-      }
-    }
-
-    return { brand, title, bullet1, bullet2, description };
-  };
-
   // Helper to extract old Amazon listing safely for UPDATE tasks
   const extractOldAmazonListing = (task?: DesignTaskLog) => {
     if (!task || !task.payload) return { brand: '-', title: '-', bullet1: '-', bullet2: '-', description: '-' };
@@ -297,46 +222,64 @@ export const TasksView: React.FC = () => {
   const activeTaskDetailRef = useRef<DesignTaskLog | null>(null);
   const detailAbortControllerRef = useRef<AbortController | null>(null);
   const detailRequestSequenceRef = useRef(0);
+  const detailInFlightRef = useRef<string | null>(null);
+  const detailFollowupRef = useRef(false);
   const listRequestSequenceRef = useRef(0);
   const latestSummaryUpdatedAtRef = useRef<Record<string, string>>({});
   const suppressedTaskIdsRef = useRef<Map<string, number>>(new Map());
   selectedTaskIdRef.current = selectedTaskId;
   activeTaskDetailRef.current = activeTaskDetail;
 
-  const fetchActiveTaskDetail = useCallback(async (taskId: string) => {
+  const fetchActiveTaskDetail = useCallback(async (taskId: string): Promise<void> => {
     if (!taskId) {
       setActiveTaskDetail(null);
       return;
     }
+    if (detailInFlightRef.current === taskId) {
+      detailFollowupRef.current = true;
+      return;
+    }
     detailAbortControllerRef.current?.abort();
+    detailInFlightRef.current = taskId;
+    detailFollowupRef.current = false;
     const controller = new AbortController();
     detailAbortControllerRef.current = controller;
     const requestSequence = ++detailRequestSequenceRef.current;
     const isInitialLoad = activeTaskDetailRef.current?.id !== taskId;
     if (isInitialLoad) setLoadingDetail(true);
+    setDetailError(null);
     try {
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
         signal: controller.signal
       });
       const data = await res.json();
-      if (data.success && data.task &&
+      if (!res.ok || !data.success || data.task?.id !== taskId || typeof data.task.reviewVersion !== 'string') throw new Error(data.error || 'Review-Details konnten nicht eindeutig geladen werden.');
+      if (data.success && data.task?.id === taskId &&
           selectedTaskIdRef.current === taskId &&
           detailRequestSequenceRef.current === requestSequence) {
         const latestSummaryUpdatedAt = latestSummaryUpdatedAtRef.current[taskId];
         const responseUpdatedAt = data.task.updatedAt;
         if (latestSummaryUpdatedAt && responseUpdatedAt && responseUpdatedAt < latestSummaryUpdatedAt) {
-          return;
+          throw new Error('Review-Details sind noch nicht aktuell. Bitte erneut laden.');
         }
         setActiveTaskDetail(data.task);
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         console.warn('[TasksView] Error loading task detail:', err);
+        if (detailRequestSequenceRef.current === requestSequence && selectedTaskIdRef.current === taskId) {
+          setDetailError({ taskId, message: err.message });
+        }
       }
     } finally {
       if (detailRequestSequenceRef.current === requestSequence) {
         detailAbortControllerRef.current = null;
+        detailInFlightRef.current = null;
         setLoadingDetail(false);
+        if (detailFollowupRef.current && selectedTaskIdRef.current === taskId) {
+          detailFollowupRef.current = false;
+          void fetchActiveTaskDetail(taskId);
+        }
       }
     }
   }, []);
@@ -345,6 +288,9 @@ export const TasksView: React.FC = () => {
     if (selectedTaskId) {
       fetchActiveTaskDetail(selectedTaskId);
     } else {
+      detailAbortControllerRef.current?.abort();
+      detailInFlightRef.current = null;
+      ++detailRequestSequenceRef.current;
       setActiveTaskDetail(null);
     }
   }, [selectedTaskId, fetchActiveTaskDetail]);
@@ -411,15 +357,8 @@ export const TasksView: React.FC = () => {
       });
 
       if (selectedTaskIdRef.current === updatedSummary.id) {
-        setActiveTaskDetail(prev => prev?.id === updatedSummary.id ? {
-          ...prev,
-          status: updatedSummary.status,
-          checkpoint: updatedSummary.checkpoint,
-          hasError: updatedSummary.hasError,
-          errorDetails: updatedSummary.errorDetails,
-          inQueue: updatedSummary.inQueue,
-          updatedAt: updatedSummary.updatedAt || prev.updatedAt
-        } : prev);
+        // Log-only events carry the same persisted review token: no detail fetch.
+        if (updatedSummary.reviewVersion && updatedSummary.reviewVersion === activeTaskDetailRef.current?.reviewVersion) return;
         fetchActiveTaskDetail(updatedSummary.id);
       }
     },
@@ -493,8 +432,40 @@ export const TasksView: React.FC = () => {
     return () => clearInterval(interval);
   }, [isConnected]);
 
-  const activeTask = activeTaskDetail;
-  const isSubmitting = Boolean(selectedTaskId && submittingTaskIds.has(selectedTaskId));
+  const activeTask = activeTaskDetail?.id === selectedTaskId ? activeTaskDetail : null;
+  const review = useReviewSession(activeTask, createReviewDraft);
+  const reviewContext = { taskId: review.taskId, version: review.version };
+  const editQuote = review.draft?.editQuote ?? '';
+  const setEditQuote = review.setter('editQuote');
+  const selectedAudiences = review.draft?.selectedAudiences ?? [];
+  const setSelectedAudiences = review.setter('selectedAudiences');
+  const selectedAvoidColor = review.draft?.selectedAvoidColor ?? '';
+  const setSelectedAvoidColor = review.setter('selectedAvoidColor');
+  const selectedBgMode = review.draft?.selectedBgMode ?? '';
+  const setSelectedBgMode = review.setter('selectedBgMode');
+  const selectedMaxColors = review.draft?.selectedMaxColors ?? 2;
+  const setSelectedMaxColors = review.setter('selectedMaxColors');
+  const editablePrompt = review.draft?.editablePrompt ?? '';
+  const setEditablePrompt = review.setter('editablePrompt');
+  const editNiche1 = review.draft?.editNiche1 ?? '';
+  const setEditNiche1 = review.setter('editNiche1');
+  const editNiche2 = review.draft?.editNiche2 ?? '';
+  const setEditNiche2 = review.setter('editNiche2');
+  const editSubniche = review.draft?.editSubniche ?? '';
+  const setEditSubniche = review.setter('editSubniche');
+  const editKeywords = review.draft?.editKeywords ?? '';
+  const setEditKeywords = review.setter('editKeywords');
+  const editableListing = review.draft?.editableListing ?? {brand: '', title: '', bullet1: '', bullet2: '', description: ''};
+  const setEditableListing = review.setter('editableListing');
+  const liveTmResult = review.draft?.liveTmResult ?? null;
+  const setLiveTmResult = review.setter('liveTmResult', false);
+  const isCheckingTm = review.draft?.isCheckingTm ?? false;
+  const setIsCheckingTm = review.setter('isCheckingTm', false);
+  const editedSvgData = review.draft?.editedSvgData ?? '';
+  const setEditedSvgData = review.setter('editedSvgData');
+  const revectorizeMaxColors = review.draft?.revectorizeMaxColors ?? 2;
+  const setRevectorizeMaxColors = review.setter('revectorizeMaxColors');
+  const isSubmitting = isCheckingTm || Boolean(selectedTaskId && submittingTaskIds.has(selectedTaskId));
 
   useEffect(() => {
     if (selectedTaskId && !tasks.some(task => task.id === selectedTaskId)) {
@@ -502,87 +473,6 @@ export const TasksView: React.FC = () => {
       setActiveTaskDetail(null);
     }
   }, [tasks, selectedTaskId]);
-
-  // Sync active task form fields when selection changes
-  useEffect(() => {
-    if (activeTask) {
-      // Pre-Flight Quote
-      setEditQuote(activeTask.payload?.quote || activeTask.payload?.quote_or_phrase || activeTask.payload?.text || '');
-
-      // Design Review fields
-      const pred = activeTask.analysisResult;
-      
-      // 2. Audience multi-selection (Men, Women, Youth) - Case Insensitive Normalization
-      let rawAudList: string[] = [];
-      if (activeTask.customAnswers?.audience && activeTask.customAnswers.audience !== 'Standard') {
-        rawAudList = Array.isArray(activeTask.customAnswers.audience)
-          ? activeTask.customAnswers.audience
-          : String(activeTask.customAnswers.audience).split(',');
-      } else if (pred?.target_group?.selected) {
-        rawAudList = Array.isArray(pred.target_group.selected)
-          ? pred.target_group.selected
-          : String(pred.target_group.selected).split(',');
-      } else if (pred?.fitTypes && pred.fitTypes !== 'Standard') {
-        rawAudList = Array.isArray(pred.fitTypes)
-          ? pred.fitTypes
-          : String(pred.fitTypes).split(',');
-      }
-
-      const normalizeAudienceName = (raw: string) => {
-        const low = raw.trim().toLowerCase();
-        if (low === 'men' || low === 'männer' || low === 'herren') return 'Men';
-        if (low === 'women' || low === 'frauen' || low === 'damen') return 'Women';
-        if (low === 'youth' || low === 'kinder' || low === 'kids' || low === 'jugend') return 'Youth';
-        return null;
-      };
-
-      const audiences = rawAudList.map(s => normalizeAudienceName(s)).filter((s): s is string => Boolean(s));
-      setSelectedAudiences(audiences.length > 0 ? Array.from(new Set(audiences)) : ['Men', 'Women', 'Youth']);
-
-      // 3. Avoid Color (Black, White, None)
-      const rawAvoid = (activeTask.customAnswers?.avoidColor || pred?.avoidColor || pred?.avoid_product_colors?.avoid || 'None').trim();
-      let normAvoid = 'None';
-      if (rawAvoid.toLowerCase().includes('black') || rawAvoid.toLowerCase().includes('schwarz')) {
-        normAvoid = 'Black';
-      } else if (rawAvoid.toLowerCase().includes('white') || rawAvoid.toLowerCase().includes('weiß')) {
-        normAvoid = 'White';
-      } else {
-        normAvoid = 'None';
-      }
-      setSelectedAvoidColor(normAvoid);
-
-      // 4. Background removal mode (Automatisch / Manuell)
-      const isManual = activeTask.customAnswers?.reuseBackground === 'Manuell' || activeTask.customAnswers?.reuseBackground === 'MANUAL' || activeTask.customAnswers?.reuseBackground === 'Ja (Hintergrund behalten)' || pred?.background_analysis?.removal_mode === 'MANUAL' || pred?.background_analysis?.is_design_element === true;
-      setSelectedBgMode(isManual ? 'Manuell' : 'Automatisch');
-
-      setSelectedMaxColors(activeTask.customAnswers?.maxColors ?? pred?.color_analysis?.color_count ?? 2);
-      setEditablePrompt(activeTask.resultPrompt || activeTask.payload?.quote || '');
-
-      // Niche Hierarchy & Keywords: Prioritize AI Vision QA findings so user sees AI prediction!
-      const aiN1 = activeTask.analysisResult?.niche_analysis?.niche1 || activeTask.analysisResult?.niche1 || '';
-      const aiN2 = activeTask.analysisResult?.niche_analysis?.niche2 || activeTask.analysisResult?.niche2 || '';
-      const aiSub = activeTask.analysisResult?.niche_analysis?.subniche || activeTask.analysisResult?.subniche || '';
-
-      const n1 = activeTask.niche1 || activeTask.customAnswers?.niche1 || aiN1 || activeTask.payload?.niche1 || '';
-      const n2 = activeTask.niche2 || activeTask.customAnswers?.niche2 || aiN2 || activeTask.payload?.niche2 || '';
-      const sub = activeTask.subniche || activeTask.customAnswers?.subniche || aiSub || activeTask.payload?.subniche || '';
-      const kw = activeTask.keywords || activeTask.customAnswers?.keywords || activeTask.payload?.keywords || activeTask.payload?.hermesKeywords || [];
-
-      setEditNiche1(n1);
-      setEditNiche2(n2 && n2.toLowerCase() !== 'none' ? n2 : '');
-      setEditSubniche(sub && sub.toLowerCase() !== 'none' ? sub : '');
-      setEditKeywords(Array.isArray(kw) ? kw.join(', ') : String(kw || ''));
-
-      // TM Review Listing fields
-      const fields = extractListingFields(activeTask);
-      setEditableListing(fields);
-      setLiveTmResult(activeTask.trademarkCheckResult || null);
-
-      // SVG Review fields
-      setEditedSvgData(activeTask.svgContent || '');
-      setRevectorizeMaxColors(activeTask.customAnswers?.maxColors ?? activeTask.analysisResult?.color_analysis?.color_count ?? 2);
-    }
-  }, [selectedTaskId, activeTask?.status]);
 
   const matchesCurrentFilter = useCallback((task: TaskSummary) => {
     if (filter === 'PRE_FLIGHT') return task.status === 'AWAITING_PRE_FLIGHT_REVIEW';
@@ -596,6 +486,9 @@ export const TasksView: React.FC = () => {
     suppressedTaskIdsRef.current.set(taskId, Date.now());
     setSubmittingTaskIds(prev => new Set(prev).add(taskId));
     detailAbortControllerRef.current?.abort();
+    detailInFlightRef.current = null;
+    detailFollowupRef.current = false;
+    ++detailRequestSequenceRef.current;
     setTasks(prev => {
       const remaining = prev.filter(task => task.id !== taskId);
       const next = remaining.find(matchesCurrentFilter) || remaining[0];
@@ -611,10 +504,7 @@ export const TasksView: React.FC = () => {
       next.delete(taskId);
       return next;
     });
-    if (!success) {
-      suppressedTaskIdsRef.current.delete(taskId);
-      setSelectedTaskId(taskId);
-    }
+    if (!success) suppressedTaskIdsRef.current.delete(taskId);
     void fetchTasks(true);
   }, []);
 
@@ -631,7 +521,7 @@ export const TasksView: React.FC = () => {
 
   // Actions for Checkpoint 1: Pre-Flight
   const handlePreFlightAction = async (action: 'OVERRIDE' | 'RESTART' | 'DISCARD') => {
-    if (!activeTask) return;
+    if (!activeTask || !review.ready || isCheckingTm || detailError?.taskId === activeTask.id) return;
     const taskId = activeTask.id;
     beginTaskAction(taskId);
     let success = false;
@@ -639,7 +529,7 @@ export const TasksView: React.FC = () => {
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/override-preflight`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, newQuote: editQuote })
+        body: JSON.stringify({ reviewContext, action, newQuote: editQuote })
       });
       const data = await res.json();
       if (data.success) {
@@ -656,7 +546,7 @@ export const TasksView: React.FC = () => {
   };
 
   const handleSkipUpdate = async () => {
-    if (!activeTask) return;
+    if (!activeTask || !review.ready || isCheckingTm || detailError?.taskId === activeTask.id) return;
     const taskId = activeTask.id;
     beginTaskAction(taskId);
     let success = false;
@@ -678,7 +568,7 @@ export const TasksView: React.FC = () => {
 
   // Actions for Checkpoint 2: Design Review
   const handleDesignReview = async (action: 'APPROVE' | 'REGENERATE_IMAGE' | 'DISCARD' | 'REJECT') => {
-    if (!activeTask) return;
+    if (!activeTask || !review.ready || isCheckingTm || detailError?.taskId === activeTask.id) return;
     const taskId = activeTask.id;
     beginTaskAction(taskId);
     let success = false;
@@ -701,6 +591,7 @@ export const TasksView: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(action === 'DISCARD' ? { reason: 'Im Design-Review manuell abgebrochen.' } : {
+          reviewContext,
           action,
           answers,
           updatedPrompt: editablePrompt
@@ -722,13 +613,14 @@ export const TasksView: React.FC = () => {
 
   // Actions for Checkpoint 3: Trademark Review
   const handleTmRecheck = async () => {
-    if (!activeTask) return;
+    if (!activeTask || !review.ready || isCheckingTm || detailError?.taskId === activeTask.id) return;
     setIsCheckingTm(true);
     try {
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/submit-tm-review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          reviewContext,
           action: 'RECHECK',
           refinedListing: editableListing
         })
@@ -743,6 +635,7 @@ export const TasksView: React.FC = () => {
         }
       } else {
         showNotification('error', data.error || 'Prüfung fehlgeschlagen');
+        if (selectedTaskIdRef.current === activeTask.id) void fetchActiveTaskDetail(activeTask.id);
       }
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler');
@@ -752,7 +645,7 @@ export const TasksView: React.FC = () => {
   };
 
   const handleTmDecision = async (action: 'APPROVE' | 'REJECT') => {
-    if (!activeTask) return;
+    if (!activeTask || !review.ready || isCheckingTm || detailError?.taskId === activeTask.id) return;
     const taskId = activeTask.id;
     beginTaskAction(taskId);
     let success = false;
@@ -761,6 +654,7 @@ export const TasksView: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          reviewContext,
           action,
           refinedListing: editableListing
         })
@@ -781,7 +675,7 @@ export const TasksView: React.FC = () => {
 
   // Actions for Checkpoint 4: SVG Vector & Background Review
   const handleSvgDecision = async (action: 'APPROVE' | 'REGENERATE_VECTOR' | 'REJECT', maxColorsOverride?: number) => {
-    if (!activeTask) return;
+    if (!activeTask || !review.ready || isCheckingTm || detailError?.taskId === activeTask.id) return;
     const taskId = activeTask.id;
     beginTaskAction(taskId);
     let success = false;
@@ -790,6 +684,7 @@ export const TasksView: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          reviewContext,
           action,
           editedSvgContent: editedSvgData || activeTask.svgContent,
           maxColors: maxColorsOverride || revectorizeMaxColors || activeTask.customAnswers?.maxColors || 2
@@ -918,7 +813,7 @@ export const TasksView: React.FC = () => {
             Alle Aufgaben wurden geprüft oder laufen im Hintergrund. Neue Designs von Hermes oder dem Designer erscheinen hier automatisch.
           </p>
           <button
-            onClick={fetchTasks}
+            onClick={() => { void fetchTasks(); if (selectedTaskId) void fetchActiveTaskDetail(selectedTaskId); }}
             className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 inline-flex items-center space-x-1.5 transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -980,7 +875,8 @@ export const TasksView: React.FC = () => {
                 return (
                   <div
                     key={t.id}
-                    onClick={() => setSelectedTaskId(t.id)}
+                    data-review-select={t.id}
+                    onClick={() => { if (!review.dirty || t.id === selectedTaskId || window.confirm('Ungespeicherte Eingaben verwerfen und Task wechseln?')) setSelectedTaskId(t.id); }}
                     className={`p-3 rounded-xl cursor-pointer transition-all border ${
                       isSelected 
                         ? 'bg-slate-900 border-primary-500/70 ring-1 ring-primary-500/30 shadow-md' 
@@ -1027,7 +923,17 @@ export const TasksView: React.FC = () => {
           </div>
 
           {/* Right Column: Review Workspace (8 cols) */}
-          {loadingDetail ? (
+          {detailError?.taskId === selectedTaskId ? (
+            <div className="lg:col-span-8 glass-panel p-8">
+              <p>{detailError.message}</p>
+              <button onClick={() => void fetchActiveTaskDetail(selectedTaskId)} className="mt-4 text-primary-400">Erneut laden</button>
+            </div>
+          ) : review.conflict ? (
+            <div className="lg:col-span-8 glass-panel p-8">
+              <p>Dieser Review wurde zwischenzeitlich geändert. Deine Eingaben wurden nicht übertragen.</p>
+              <button onClick={review.reload} className="mt-4 text-primary-400">Aktuellen Review laden und alte Eingaben verwerfen</button>
+            </div>
+          ) : loadingDetail || (activeTask && !review.ready) ? (
             <div className="lg:col-span-8 glass-panel p-12 rounded-2xl border border-slate-800 flex flex-col items-center justify-center space-y-3 min-h-[400px]">
               <RefreshCw className="w-7 h-7 text-primary-400 animate-spin" />
               <p className="text-xs font-semibold text-slate-300">Lade Review-Details...</p>
@@ -2302,6 +2208,11 @@ export const TasksView: React.FC = () => {
 
                     {/* SvgEditor Component */}
                     <SvgEditor
+                      key={`${activeTask.id}:${review.version}`}
+                      reviewContext={reviewContext}
+                      onMutationSettled={() => {
+                        if (selectedTaskIdRef.current === activeTask.id) void fetchActiveTaskDetail(activeTask.id);
+                      }}
                       taskId={activeTask.id}
                       initialSvgContent={activeTask.svgContent}
                       onSave={(updatedSvg) => setEditedSvgData(updatedSvg)}

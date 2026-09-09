@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'path';
 import { TaskLogService, DesignTaskLog } from './taskLogService';
 import { QueueService, QueueItem } from './queueService';
@@ -34,6 +34,7 @@ export interface FinalizationParams {
 }
 
 export interface FinalizationResult {
+  ownership?: { taskId: string; input: string; taskData: string };
   success: boolean;
   error?: string;
   queueItemId?: string;
@@ -41,7 +42,30 @@ export interface FinalizationResult {
   preparedListing?: { root: Record<string, string>; listings: Record<string, any> };
 }
 
+function finalizationInput(params: FinalizationParams): string {
+  const { prepareOnly, artifactRunId, ...input } = params;
+  // Stable field ordering also covers callers rebuilding the parameter object.
+  return createHash('sha256').update(JSON.stringify(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)))).digest('hex');
+}
+function finalizationTaskData(task: DesignTaskLog | undefined): string {
+  return createHash('sha256').update(JSON.stringify(task && [task.id, task.source, task.designId,
+    task.status, task.checkpoint, task.inQueue, task.listingResult, task.customAnswers, task.svgContent,
+    task.localSvgPath, task.localMbaPngPath, task.localImagePath, task.fitTypes, task.blockedProducts])).digest('hex');
+}
+
+export function createFinalizationOwnership(params: FinalizationParams, task: DesignTaskLog) {
+  if (task.id !== params.taskId) throw new Error('Task-Identität der Finalisierung stimmt nicht überein.');
+  return { taskId: task.id, input: finalizationInput(params), taskData: finalizationTaskData(task) };
+}
+
 export class FinalizationService {
+  public static assertPreparedOwnership(params: FinalizationParams, result: FinalizationResult, task: DesignTaskLog) {
+    const expected = createFinalizationOwnership(params, task);
+    if (result.ownership?.taskId !== expected.taskId || result.ownership.input !== expected.input || result.ownership.taskData !== expected.taskData) {
+      throw new Error('Finalisierung gehört zu einer anderen oder inzwischen geänderten Task. Keine Queue-Übernahme.');
+    }
+  }
+
   /**
    * Single unified finalization pipeline for both Design and Update pipelines.
    * Atomically executes:
@@ -55,6 +79,8 @@ export class FinalizationService {
     const { taskId, pipeline } = params;
     console.log(`[FinalizationService] 🚀 Starte Unified Finalization für Task #${taskId} (Pipeline: ${pipeline})...`);
     const task = TaskLogService.getTask(taskId);
+    if (!task) throw new Error('Task nicht mehr vorhanden');
+    const ownership = createFinalizationOwnership(params, task);
     const masterPngPath = params.masterPngPath || task?.localMbaPngPath || task?.localImagePath || '';
 
     // =========================================================================
@@ -268,10 +294,10 @@ export class FinalizationService {
     });
 
     if (params.prepareOnly) {
-      return { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
+      return { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
     }
 
-    return this.handoffPrepared(params, { success: true, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
+    return this.handoffPrepared(params, { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
   }
 
   /** Synchronous queue handoff of an already validated result. No rendering or earlier workflow steps. */
@@ -280,6 +306,7 @@ export class FinalizationService {
     const { taskId, pipeline } = params;
     const task = TaskLogService.getTask(taskId);
     if (!task) throw new Error('Task nicht mehr vorhanden');
+    this.assertPreparedOwnership(params, result, task);
     const resizedAssets = result.resizedAssets;
     const { root: sanitizedRoot, listings: sanitizedListings } = result.preparedListing;
 

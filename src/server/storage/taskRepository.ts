@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { reviewFingerprint, reviewVersion, ReviewConflict } from '../services/reviewVersion';
 import fs from 'fs';
 import path from 'path';
 import { DatabaseSync } from 'node:sqlite';
@@ -548,17 +550,21 @@ export class TaskRepository {
    * Updates only the targeted task row. Loads existing task, merges partial updates,
    * updates payload_json and indexed columns atomically.
    */
-  public static updateTask(taskId: string, updates: Partial<DesignTaskLog>): DesignTaskLog | null {
+  public static updateTask(taskId: string, updates: Partial<DesignTaskLog>, expectedReviewVersion?: string, consumeReview = true): DesignTaskLog | null {
     const db = this.getDb();
     db.exec('BEGIN IMMEDIATE;');
     try {
-      const row: any = db.prepare('SELECT payload_json FROM tasks WHERE id = ?').get(taskId);
+      const row: any = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
       if (!row || !row.payload_json) {
         db.exec('ROLLBACK;');
         return null;
       }
 
-      const existingTask: DesignTaskLog = JSON.parse(row.payload_json);
+      const existingTask = this.rowToTask(row);
+      if (expectedReviewVersion !== undefined && reviewVersion(existingTask) !== expectedReviewVersion) throw new ReviewConflict();
+      if (updates.id !== undefined && updates.id !== taskId) throw new ReviewConflict();
+      const beforeReview = reviewFingerprint(existingTask);
+      const previousVersion = reviewVersion(existingTask);
 
       // Deep merge payload if provided
       if (updates.payload) {
@@ -570,10 +576,12 @@ export class TaskRepository {
 
       // Merge other properties
       for (const [key, value] of Object.entries(updates)) {
-        if (key === 'payload') continue;
+        if (key === 'payload' || key === 'reviewVersion') continue;
         (existingTask as any)[key] = value;
       }
 
+      existingTask.reviewVersion = (expectedReviewVersion !== undefined && consumeReview) || beforeReview !== reviewFingerprint(existingTask)
+        ? randomUUID() : previousVersion;
       existingTask.updatedAt = new Date().toISOString();
 
       const cols = this.taskToColumns(existingTask);
@@ -627,13 +635,13 @@ export class TaskRepository {
     const db = this.getDb();
     db.exec('BEGIN IMMEDIATE;');
     try {
-      const row: any = db.prepare('SELECT payload_json FROM tasks WHERE id = ?').get(taskId);
+      const row: any = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
       if (!row || !row.payload_json) {
         db.exec('ROLLBACK;');
         return null;
       }
 
-      const task: DesignTaskLog = JSON.parse(row.payload_json);
+      const task = this.rowToTask(row);
       if (!Array.isArray(task.events)) {
         task.events = [];
       }

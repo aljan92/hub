@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ManualFinalizationService } from '../src/server/services/manualFinalizationService';
-import { FinalizationService } from '../src/server/services/finalizationService';
+import { FinalizationService, createFinalizationOwnership } from '../src/server/services/finalizationService';
 import { TaskLogService } from '../src/server/services/taskLogService';
 import { QueueService } from '../src/server/services/queueService';
 import { TaskExecutionLock } from '../src/server/services/taskExecutionLock';
@@ -35,7 +35,7 @@ try {
   QueueService.getState = (() => ({ items })) as any;
   QueueService.isCorrupted = () => false;
   QueueService.replacePreparedAssets = ((id: string, patch: any) => { commits++; assert.equal(id, 'queue-test'); Object.assign(items[0], patch); return items[0]; }) as any;
-  const success = async (params: any) => { prepare = params; assert(TaskExecutionLock.isLocked('test')); return { success: true, resizedAssets: assets, preparedListing: { root: { title: 'Clean' }, listings: {} } }; };
+  const success = async (params: any) => { prepare = params; assert(TaskExecutionLock.isLocked('test')); return { success: true, ownership: createFinalizationOwnership(params, TaskLogService.getTask(params.taskId)!), resizedAssets: assets, preparedListing: { root: { title: 'Clean' }, listings: {} } }; };
   FinalizationService.finalizeForQueue = success as any;
   reset();
   await ManualFinalizationService.repeat('test');

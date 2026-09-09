@@ -2759,8 +2759,10 @@ export class TaskLogService {
     task.localSvgPath = svgFilePath;
     task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}`;
 
-    this.saveLogs(this.loadLogs());
-    this.emitUpdate(task);
+    const saved = this.updateTaskStatus(taskId, {
+      svgContent: originalSvgContent, localSvgPath: svgFilePath, svgUrl: task.svgUrl
+    });
+    if (!saved) throw new Error('SVG-Reset konnte nicht gespeichert werden.');
 
     return {
       success: true,

@@ -192,7 +192,7 @@ async function runTests() {
     createdAt: new Date().toISOString(),
     events: []
   };
-  (TaskLogService as any).tasks = [...((TaskLogService as any).tasks || []), failTask];
+  TaskRepository.createTask(failTask as any);
 
   const failResult = await FinalizationService.finalizeForQueue({
     taskId: failTask.id,

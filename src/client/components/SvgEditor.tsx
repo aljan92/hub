@@ -18,8 +18,10 @@ export type SvgBackgroundMode = 'checkerboard' | 'dark' | 'black' | 'white' | 'g
 
 interface SvgEditorProps {
   taskId: string;
+  reviewContext?: { taskId?: string; version?: string };
   initialSvgContent?: string;
   onSave?: (editedSvgContent: string) => void;
+  onMutationSettled?: () => void;
   onApprove?: (editedSvgContent: string) => void;
   isSaving?: boolean;
 }
@@ -35,8 +37,10 @@ const cleanSvgString = (raw: string | undefined | null): string => {
 
 export const SvgEditor: React.FC<SvgEditorProps> = ({
   taskId,
+  reviewContext,
   initialSvgContent,
   onSave,
+  onMutationSettled,
   onApprove,
   isSaving = false
 }) => {
@@ -303,7 +307,9 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
     if (!confirm('Möchtest du alle Bearbeitungen verwerfen und das Original-SVG wiederherstellen?')) return;
     try {
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/reset-svg`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewContext })
       });
       const data = await res.json();
       if (data.success && data.svgContent) {
@@ -318,6 +324,8 @@ export const SvgEditor: React.FC<SvgEditorProps> = ({
       }
     } catch (err: any) {
       showToast('error', err.message || 'Verbindungsfehler beim Reset');
+    } finally {
+      onMutationSettled?.();
     }
   };
 

@@ -1,3 +1,5 @@
+import { claimReviewAction, hasActiveReviewAction } from './services/reviewActionGuard';
+import { reviewVersion } from './services/reviewVersion';
 import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -1099,12 +1101,19 @@ app.delete('/api/v1/tasks/log', (req, res) => {
   res.json({ success: true, message: 'All task logs cleared' });
 });
 
+app.use('/api/v1/tasks/:taskId', (req, res, next) => {
+  if (req.method !== 'GET' && hasActiveReviewAction(req.params.taskId)) {
+    return res.status(409).json({ success: false, error: 'Für diese Task läuft bereits eine Review-Aktion.' });
+  }
+  next();
+});
+
 app.get('/api/v1/tasks/:taskId', (req, res) => {
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (!task) {
     return res.status(404).json({ success: false, error: `Task ${req.params.taskId} nicht gefunden` });
   }
-  res.json({ success: true, task });
+  res.json({ success: true, task: { ...task, reviewVersion: reviewVersion(task) } });
 });
 
 app.post('/api/v1/tasks/:taskId/cancel', (req, res) => {
@@ -1153,6 +1162,19 @@ app.post('/api/v1/tasks/:taskId/skip-update', async (req, res) => {
   }
 });
 
+// Review-only browser contract. Internal pipeline calls remain independent.
+app.post('/api/v1/tasks/:taskId/:reviewAction', (req, res, next) => {
+  if (!['submit-design-review', 'submit-tm-review', 'override-preflight', 'submit-svg-review', 'reset-svg'].includes(req.params.reviewAction)) return next();
+  try {
+    const release = claimReviewAction(req.params.taskId, req.params.reviewAction, req.body.reviewContext, req.body.action);
+    // Release after the handler finishes, not on socket close: work may still run.
+    res.locals.releaseReview = release;
+    next();
+  } catch (error: any) {
+    res.status(409).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/v1/tasks/:taskId/submit-design-review', async (req, res) => {
   const { taskId } = req.params;
   const { action, answers, updatedPrompt } = req.body;
@@ -1162,6 +1184,8 @@ app.post('/api/v1/tasks/:taskId/submit-design-review', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 
@@ -1174,6 +1198,8 @@ app.post('/api/v1/tasks/:taskId/submit-tm-review', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 
@@ -1186,6 +1212,8 @@ app.post('/api/v1/tasks/:taskId/override-preflight', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 
@@ -1198,6 +1226,8 @@ app.post('/api/v1/tasks/:taskId/submit-svg-review', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 
@@ -1209,6 +1239,8 @@ app.post('/api/v1/tasks/:taskId/reset-svg', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  } finally {
+    res.locals.releaseReview?.();
   }
 });
 

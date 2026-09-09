@@ -29,6 +29,18 @@ try {
   let result=await FinalizationService.finalizeForQueue(params);
   assert(result.success,result.error);assert.equal(received.kind,'SVG');assert.equal(calls,1);assert(!result.resizedAssets?.trimmedPath);
   assert.equal(Object.keys(result.resizedAssets!.productVariants!).length,4);
+  const preparedA = result;
+  const taskA = task;
+  assert.throws(()=>FinalizationService.handoffPrepared({...params, taskId:'other'}, preparedA), /Identität|anderen/);
+  assert.throws(()=>FinalizationService.handoffPrepared({...params, title:'Foreign listing'}, preparedA), /anderen/);
+  task = {...taskA, listingResult:{en:{title:'Changed after preparation'}}};
+  assert.throws(()=>FinalizationService.handoffPrepared(params, preparedA), /geänderten/);
+  task = taskA;
+  let queued:any;
+  QueueService.enqueueDesign=((item:any)=>{queued=item;return {...item,id:'queue-fixture'};}) as any;
+  assert(FinalizationService.handoffPrepared(params,preparedA).success);
+  assert.equal(queued.taskId,'fixture');assert.equal(queued.title,params.title);assert.equal(queued.resizedAssets,preparedA.resizedAssets);
+  QueueService.enqueueDesign=(()=>{throw new Error('prepareOnly must not enqueue');}) as any;
   task={id:'fixture'};
   result=await FinalizationService.finalizeForQueue({...params,pipeline:'UPDATE'});
   assert(result.success,result.error);assert.equal(received.kind,'PNG');assert.equal(received.path,file);
