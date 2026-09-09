@@ -79,9 +79,22 @@ test('product identity replaces a rotated parent by market and type and invalida
 
 test('unknown marketplaces are never silently mapped to US', () => {
   const mapped = SyncEngine.mapListingsToSupabase([{ designId: 'D1', asin: 'B000000001', productType: 'MUG', marketplaceId: 'UNKNOWN', status: 'PUBLISHED' }]);
-  assert.equal(mapped.length, 1);
-  assert.deepEqual(mapped[0].published_products, []);
-  assert.deepEqual(mapped[0].products_live_us, []);
+  assert.equal(mapped.length, 0);
+});
+
+test('child ASIN resolver accepts only unambiguous variation evidence', () => {
+  assert.equal(
+    SyncEngine.extractVerifiedChildAsin('{"selectedVariationASIN":"B000000002"}', 'B000000001'),
+    'B000000002'
+  );
+  assert.equal(
+    SyncEngine.extractVerifiedChildAsin('{"dimensionToAsinMap":{"a":"B000000002","b":"B000000003"}}', 'B000000001'),
+    null
+  );
+  assert.equal(
+    SyncEngine.extractVerifiedChildAsin('{"asin":"B000000002"}', 'B000000001'),
+    null
+  );
 });
 
 test('verified child survives only while its parent identity is unchanged', () => {

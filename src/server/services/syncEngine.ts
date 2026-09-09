@@ -83,7 +83,7 @@ type ProductSyncRuntime = {
   accountKey?: string;
   textVersions?: Record<string, string>;
   resolverRetries?: Record<string, { attempts: number; nextAt: string; parentAsin: string; lastError: string }>;
-  lastRun?: { runId: string; type: string; status: 'running' | 'complete' | 'partial' | 'truncated' | 'cancelled' | 'error'; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
+  lastRun?: { runId: string; type: string; status: 'running' | 'complete' | 'partial' | 'truncated' | 'cancelled' | 'unknown_write_outcome' | 'error'; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 };
 const SYNC_RUNTIME_PATH = path.resolve(process.cwd(), 'data', 'sync_runtime.json');
 const FULL_STAGE_PATH = path.resolve(process.cwd(), 'data', 'sync_full_stage.json');
@@ -540,6 +540,16 @@ export class SyncEngine {
     for (const r of results) {
       const dId = r.designId;
       if (!dId) continue;
+      const mp = r.marketplace?.toLowerCase() || MP_MAP[r.marketplaceId];
+      if (!mp || !Object.values(MP_MAP).includes(mp)) {
+        this.addLog(`[Produkte] Unbekannter Marktplatz für Design ${dId}; Eintrag wurde sicher ausgelassen.`, 'warn');
+        continue;
+      }
+      const pt = String(r.productType || '').trim().toLowerCase();
+      if (!pt) {
+        this.addLog(`[Produkte] Fehlender Produkttyp für Design ${dId}; Eintrag wurde sicher ausgelassen.`, 'warn');
+        continue;
+      }
       if (!designMap.has(dId)) {
         designMap.set(dId, {
           design_id: dId,
@@ -561,16 +571,6 @@ export class SyncEngine {
       }
       const d = designMap.get(dId);
       if (r.asin && !d.asins.includes(r.asin)) d.asins.push(r.asin);
-      const mp = r.marketplace?.toLowerCase() || MP_MAP[r.marketplaceId];
-      if (!mp || !Object.values(MP_MAP).includes(mp)) {
-        this.addLog(`[Produkte] Unbekannter Marktplatz für Design ${dId}; Eintrag wurde sicher ausgelassen.`, 'warn');
-        continue;
-      }
-      const pt = String(r.productType || '').trim().toLowerCase();
-      if (!pt) {
-        this.addLog(`[Produkte] Fehlender Produkttyp für Design ${dId}; Eintrag wurde sicher ausgelassen.`, 'warn');
-        continue;
-      }
       const status = r.status || '';
       const LIVE_STATUSES = new Set(['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING', 'published', 'propagated', 'locked', 'timed_out', 'publishing', 'translating']);
       const isLive = status && LIVE_STATUSES.has(status);
@@ -641,9 +641,11 @@ export class SyncEngine {
     const merged = mapped.map(m => {
       const ex = existing.get(m.design_id);
       if (!ex) {
+        const adAsins = this.buildAdAsins(m.published_products, []);
         return {
           ...m,
-          ad_asins: this.buildAdAsins(m.published_products, [])
+          ad_asins: adAsins,
+          asin_resolved: adAsins.every((ad: any) => !VARIANT_PRODUCT_TYPES.has(String(ad.type || '').toUpperCase()) || (!!ad.asin && ad.asin !== ad.parentAsin))
         };
       }
 
@@ -702,6 +704,34 @@ export class SyncEngine {
     const genMatch = clean.match(/([A-Z0-9]{10})/);
     if (genMatch) return genMatch[1].toUpperCase();
     return clean;
+  }
+
+  /**
+   * Resolve only an unambiguous child ASIN. Selected/default variation markers
+   * are stronger evidence than a variation map; generic page ASINs are ignored.
+   */
+  public static extractVerifiedChildAsin(html: string, parentAsin: string): string | null {
+    const parent = this.sanitizeAsin(parentAsin);
+    const uniqueChildren = (values: any[]) => Array.from(new Set(values
+      .map(value => this.sanitizeAsin(value))
+      .filter((value): value is string => !!value && value !== parent)));
+
+    const direct = uniqueChildren([
+      ...Array.from(html.matchAll(/"selectedVariationASIN"\s*:\s*"([A-Z0-9]{10})"/g), match => match[1]),
+      ...Array.from(html.matchAll(/data-defaultAsin="([A-Z0-9]{10})"/g), match => match[1])
+    ]);
+    if (direct.length === 1) return direct[0];
+    if (direct.length > 1) return null;
+
+    const mapped: any[] = [];
+    for (const match of html.matchAll(/"dimensionToAsinMap"\s*:\s*({[^}]+})/g)) {
+      try { mapped.push(...Object.values(JSON.parse(match[1]))); } catch {}
+    }
+    for (const match of html.matchAll(/"asinToDimension"\s*:\s*({[^}]+})/g)) {
+      try { mapped.push(...Object.keys(JSON.parse(match[1]))); } catch {}
+    }
+    const candidates = uniqueChildren(mapped);
+    return candidates.length === 1 ? candidates[0] : null;
   }
 
   public static buildAdAsins(publishedProducts: any[], existingAdAsins: any[] = [], existingProducts: any[] = []) {
@@ -897,7 +927,8 @@ export class SyncEngine {
         if (!json.results || json.results.length === 0) break;
 
         allResults.push(...json.results);
-        atomicWriteJson(FULL_STAGE_PATH, { version: 1, runId, accountId, startedAt: runStartedAt, pageNum, pageToken: json.pageToken || [], results: allResults }, { backup: true });
+        const accountKey = crypto.createHash('sha256').update(accountId || 'unknown').digest('hex').slice(0, 16);
+        atomicWriteJson(FULL_STAGE_PATH, { version: 1, runId, accountKey, startedAt: runStartedAt, pageNum, pageToken: json.pageToken || [], results: allResults }, { backup: true });
         this.addLog(`[Full Refresh] Bisher ${allResults.length} Einträge gesammelt...`, 'info');
 
         if (!json.pageToken || json.pageToken.length === 0) break;
@@ -1309,55 +1340,7 @@ export class SyncEngine {
             }
 
             if (html) {
-              const matchDimensionMap = html.match(/"dimensionToAsinMap"\s*:\s*({[^}]+})/);
-              const matchAsinToDimension = html.match(/"asinToDimension"\s*:\s*({[^}]+})/);
-              const matchSelectedVar = html.match(/"selectedVariationASIN"\s*:\s*"([A-Z0-9]{10})"/);
-              const matchDataAsin = html.match(/data-defaultAsin="([A-Z0-9]{10})"/);
-              const matchDataCsa = html.match(/data-csa-c-item-id="([A-Z0-9]{10})"/);
-              const matchFallbackAsin = html.match(/"asin"\s*:\s*"([A-Z0-9]{10})"/);
-
-              let resolvedChild: string | null = null;
-              if (matchDimensionMap && matchDimensionMap[1]) {
-                try {
-                  const asinMap = JSON.parse(matchDimensionMap[1]);
-                  const asins = Object.values(asinMap)
-                    .map((a: any) => SyncEngine.sanitizeAsin(a))
-                    .filter((a: any) => a && a !== parent.asin);
-                  if (asins.length > 0) resolvedChild = asins[0] as string;
-                } catch {}
-              }
-
-              if (!resolvedChild && matchAsinToDimension && matchAsinToDimension[1]) {
-                try {
-                  const asinMap = JSON.parse(matchAsinToDimension[1]);
-                  const asins = Object.keys(asinMap)
-                    .map((a: any) => SyncEngine.sanitizeAsin(a))
-                    .filter((a: any) => a && a !== parent.asin);
-                  if (asins.length > 0) resolvedChild = asins[0] as string;
-                } catch {}
-              }
-
-              if (!resolvedChild && matchSelectedVar && matchSelectedVar[1]) {
-                const clean = SyncEngine.sanitizeAsin(matchSelectedVar[1]);
-                if (clean && clean !== parent.asin) resolvedChild = clean;
-              }
-
-              if (!resolvedChild && matchDataAsin && matchDataAsin[1]) {
-                const clean = SyncEngine.sanitizeAsin(matchDataAsin[1]);
-                if (clean && clean !== parent.asin) resolvedChild = clean;
-              }
-
-              if (!resolvedChild && matchDataCsa && matchDataCsa[1]) {
-                const clean = SyncEngine.sanitizeAsin(matchDataCsa[1]);
-                if (clean && clean !== parent.asin) resolvedChild = clean;
-              }
-
-              if (!resolvedChild && matchFallbackAsin && matchFallbackAsin[1]) {
-                const clean = SyncEngine.sanitizeAsin(matchFallbackAsin[1]);
-                if (clean && clean !== parent.asin) resolvedChild = clean;
-              }
-
-              const finalChildAsin = SyncEngine.sanitizeAsin(resolvedChild);
+              const finalChildAsin = SyncEngine.extractVerifiedChildAsin(html, parent.asin);
 
               if (finalChildAsin && finalChildAsin !== parent.asin) {
                 ad.asin = finalChildAsin;
