@@ -78,6 +78,8 @@ export class SupabaseService {
     }
   }
 
+  public static invalidateStats() { this.lastStatsFetch = 0; }
+
   private static cachedStats: any = null;
   private static lastStatsFetch = 0;
   private static statsInFlight: Promise<any> | null = null;

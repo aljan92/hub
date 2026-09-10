@@ -27,6 +27,7 @@ interface SyncLogEntry {
 }
 
 interface SyncState {
+  egress?: { mode: 'observe' | 'optimized'; baselineReady: boolean; pending: number; metrics: { family: string; calls: number; bytes: number }[] };
   isScanning: boolean;
   activeScanType: string | null;
   scanStatus: 'ready' | 'scanning' | 'error';
@@ -89,7 +90,7 @@ export const DatabaseView: React.FC = () => {
             setSyncState(prev => ({
               ...prev,
               liveDesignsCount: data.liveDesignsCount,
-              unresolvedAsinsCount: data.unresolvedAsinsCount || prev.unresolvedAsinsCount
+              unresolvedAsinsCount: data.unresolvedAsinsCount ?? prev.unresolvedAsinsCount
             }));
           }
         }
@@ -117,6 +118,18 @@ export const DatabaseView: React.FC = () => {
     }, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  const [egressError, setEgressError] = useState('');
+  const setEgress = async (body: { mode?: string; reset?: boolean }) => {
+    setEgressError('');
+    try {
+      const res = await fetch('/api/v1/sync/egress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Einstellung konnte nicht gespeichert werden.');
+      setSyncState(data.state);
+      fetchLogs();
+    } catch (error: any) { setEgressError(error.message); }
+  };
 
   const handleToggleAuto = async () => {
     const next = !syncState.autoUpdateEnabled;
@@ -278,6 +291,30 @@ export const DatabaseView: React.FC = () => {
         {/* Left Column: Sync Modules (7 Cols) */}
         <div className="lg:col-span-7 space-y-4">
           
+          <div className="p-5 rounded-2xl bg-surface/70 border border-slate-800/80 space-y-3">
+            <div className="text-sm font-bold text-white">Datenübertragung reduzieren</div>
+            <label className="flex items-center gap-3 text-sm text-slate-300">
+              <input type="checkbox" disabled={syncState.isScanning}
+                checked={syncState.egress?.mode === 'optimized'}
+                onChange={e => setEgress({ mode: e.target.checked ? 'optimized' : 'observe' })} />
+              Unveränderte Produkte überspringen
+            </label>
+            <p className="text-xs text-slate-400">
+              {syncState.egress?.baselineReady ? 'Vollständiger Produktabgleich bestätigt.' : 'Vor dem Überspringen einmal „Full Refresh“ unter Produkte erfolgreich ausführen.'}
+              {' '}Amazon wird weiterhin alle 15 Minuten geprüft, wenn Auto-Update aktiv ist.
+              Ohne Häkchen werden Änderungen nur zum Vergleich mitgeführt.
+            </p>
+            <p className="text-xs text-slate-400">{syncState.egress?.pending || 0} offene Folgeaufgaben. Wöchentlicher Vollabgleich bei aktivem Auto-Update.</p>
+            <button disabled={syncState.isScanning} onClick={() => setEgress({ reset: true })}
+              className="text-xs text-primary-400 disabled:opacity-40">Vergleichsstand nach Datenbank-Wiederherstellung zurücksetzen</button>
+            {egressError && <p role="alert" className="text-xs text-rose-400">{egressError}</p>}
+            {!!syncState.egress?.metrics?.length && <details className="text-xs text-slate-400">
+              <summary>Gemessene Sync-Abfragen</summary>
+              <p>Seit Beginn der Messung; Antwortgrößen geschätzt, keine Abrechnungswerte.</p>
+              {syncState.egress.metrics.map(m => <div key={m.family}>{m.family}: {m.calls} Anfragen · {(m.bytes / 1024).toFixed(1)} KiB</div>)}
+            </details>}
+          </div>
+
           {/* 1. Auto-Update Switch Card */}
           <div className="p-5 rounded-2xl bg-surface/70 border border-slate-800/80 backdrop-blur-md space-y-3">
             <div className="flex items-center justify-between">
@@ -287,7 +324,7 @@ export const DatabaseView: React.FC = () => {
                   Auto-Update im Hintergrund
                 </div>
                 <div className="text-xs text-slate-400">
-                  Automatischer zyklischer Hintergrund-Scan für Produkte, Listings &amp; Sales
+                  Prüft Produkte, Listingtexte und offene Child-ASINs. Sales derzeit gesperrt.
                 </div>
               </div>
 

@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { SyncStateRepository, syncScope, WEEK_MS } from '../storage/syncStateRepository';
+import { SupabaseService } from './supabaseService';
 import { getSupabaseClient, loadSettings, saveSettings } from './settingsService';
 import { BrowserSessionService } from './browserSessionService';
 import { atomicWriteJson, loadJsonWithBackupRecovery } from '../utils/atomicFileStorage';
@@ -29,6 +31,7 @@ export interface SyncState {
   lastAsinSync: string | null;
   liveDesignsCount: number;
   unresolvedAsinsCount: number;
+  egress?: { mode: 'observe' | 'optimized'; baselineReady: boolean; pending: number; metrics: any[] };
   lastRun?: ProductSyncRuntime['lastRun'];
 }
 
@@ -115,6 +118,103 @@ export class SyncEngine {
   private static textCatchupTimer: NodeJS.Timeout | null = null;
   private static activeWorker: string | null = null;
 
+  private static syncStore: SyncStateRepository | null = null;
+  private static currentScope: string | null = null;
+  private static countsFetchedAt = 0;
+  private static countsInFlight: Promise<void> | null = null;
+  private static weeklyAttemptAt = 0;
+
+  private static productScope(accountId: string) { return syncScope(loadSettings().supabaseUrl, accountId); }
+  private static optimized() { return loadSettings().syncEgressMode === 'optimized'; }
+
+  private static store() {
+    return this.syncStore ||= new SyncStateRepository();
+  }
+
+  public static setEgressMode(mode: 'observe' | 'optimized') {
+    if (this.state.isScanning || this.activeWorker) throw new Error('Bitte den laufenden Sync zuerst beenden.');
+    saveSettings({ syncEgressMode: mode });
+    this.addLog(mode === 'optimized' ? 'Änderungsvergleich aktiviert; Überspringen erst nach vollständigem Abgleich.' : 'Beobachtungsmodus: Produktdaten werden konservativ abgeglichen.');
+  }
+
+  public static invalidateSyncCache() {
+    if (this.state.isScanning || this.activeWorker) throw new Error('Bitte den laufenden Sync zuerst beenden.');
+    this.store().invalidate();
+    this.addLog('Bestätigter Vergleichsstand zurückgesetzt. Offene Arbeit bleibt erhalten; Full Refresh erforderlich.', 'warn');
+  }
+
+  private static recordTraffic(family: string, result: any) {
+    try { this.store().metric(family, result?.data, result?.error); } catch { /* Metrics must not hide a confirmed write. */ }
+  }
+
+  private static async applyProductChanges(page: any, accountId: string, rows: any[], force: boolean) {
+    const scope = this.productScope(accountId);
+    this.currentScope = scope;
+    const store = this.store();
+    const baseline = store.state(scope).full_at;
+    const skip = !force && !!baseline && this.optimized();
+    // Validate before staging: unrecognized identities must never become confirmations.
+    for (const row of rows) {
+      const market = typeof row.marketplace === 'string' ? row.marketplace.toLowerCase() : MP_MAP[row.marketplaceId];
+      const updated = typeof row.updatedDate === 'number' ? new Date(row.updatedDate * 1000) : new Date(row.updatedDate);
+      if (!row.updatedDate || !Number.isFinite(updated.getTime())) throw new Error('FindListings enthält ein ungültiges Änderungsdatum; keine Fortschrittsbestätigung.');
+      if (!row.designId || !market || !Object.values(MP_MAP).includes(market) || !String(row.productType || '').trim()) {
+        throw new Error('FindListings enthält eine unbekannte Design-/Markt-/Produktidentität; keine Fortschrittsbestätigung.');
+      }
+    }
+    const { jobs, unchanged } = store.stage(scope, rows, skip);
+    const mapped = this.mapListingsToSupabase([...jobs.values()].flat());
+    const count = await this.mergeAndUpsertDesigns(mapped, ids => {
+      store.confirm(scope, ids.flatMap(id => jobs.get(id) || []), force);
+      this.countsFetchedAt = 0; SupabaseService.invalidateStats();
+    });
+    const { processed, errors } = await this.drainTextJobs(page, scope);
+    if (count || processed) { this.countsFetchedAt = 0; SupabaseService.invalidateStats(); }
+    this.addLog(`[Änderungsvergleich] ${skip ? unchanged : 0} unverändert übersprungen (${unchanged} identisch), ${count} Produkte bestätigt, ${processed} Texte bestätigt, ${store.pending(scope)} Aufgaben offen (${skip ? 'optimiert' : 'vollständiger Abgleich'}).`);
+    return { scope, count, attempted: mapped.length, errors };
+  }
+
+  private static async drainTextJobs(page: any, scope: string) {
+    const store = this.store();
+    let processed = 0;
+    let errors = 0;
+    // Bounded independent text queue; failures survive product checkpoint advancement.
+    for (const designId of store.textJobs(scope)) {
+      if (this.shouldStop) break;
+      try {
+        const payload = this.parseTextData(designId, await this.fetchProductConfig(page, designId));
+        if (!payload) throw new Error('ProductConfig enthält keine Textdaten.');
+        const result = await this.getSupabase().from('mba_designs').upsert(payload, { onConflict: 'design_id' });
+        this.recordTraffic('text_write', result);
+        if (result.error) throw new Error(result.error.message);
+        store.textDone(scope, designId);
+        processed++;
+      } catch (error: any) {
+        store.textFailed(scope, designId);
+        errors++;
+        this.addLog(`[Textfolgejob] ${designId} bleibt offen: ${error.message}`, 'warn');
+      }
+    }
+    if (processed) SupabaseService.invalidateStats();
+    return { processed, errors };
+  }
+
+  public static async runQueuedTexts() {
+    const runId = this.beginWorker('queued_texts');
+    this.state.isScanning = true;
+    this.state.activeScanType = 'queued_texts';
+    this.shouldStop = false;
+    try {
+      const page = await this.getAmazonPage();
+      const scope = this.productScope(await this.getAccountId(page));
+      const result = await this.drainTextJobs(page, scope);
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : result.errors ? 'partial' : 'complete', { confirmed: result.processed });
+    } catch (error: any) {
+      this.finishWorker(runId, 'error', { message: error.message });
+      throw error;
+    } finally { this.state.isScanning = false; this.state.activeScanType = null; }
+  }
+
   private static loadRuntime(): ProductSyncRuntime {
     const loaded = loadJsonWithBackupRecovery<ProductSyncRuntime>(SYNC_RUNTIME_PATH, {
       defaultValue: { version: 1, productWatermark: null },
@@ -129,12 +229,12 @@ export class SyncEngine {
   }
 
   private static beginWorker(type: string): string {
-    if (this.activeWorker) throw new Error(`Sync-Worker '${this.activeWorker}' läuft bereits.`);
-    this.activeWorker = type;
+    if (this.activeWorker || this.state.isScanning) throw new Error(`Ein Sync-Worker läuft bereits (${this.activeWorker || this.state.activeScanType || 'Scan'}).`);
     const runId = crypto.randomUUID();
     const runtime = this.loadRuntime();
     runtime.lastRun = { runId, type, status: 'running', startedAt: new Date().toISOString(), pages: 0, attempted: 0, confirmed: 0 };
     this.saveRuntime(runtime);
+    this.activeWorker = type;
     return runId;
   }
 
@@ -167,7 +267,12 @@ export class SyncEngine {
   }
 
   public static getState(): SyncState {
-    try { return { ...this.state, lastRun: this.loadRuntime().lastRun }; }
+    try { return { ...this.state, lastRun: this.loadRuntime().lastRun, egress: {
+      mode: loadSettings().syncEgressMode || 'observe',
+      baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
+      pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
+      metrics: this.store().metrics()
+    } }; }
     catch { return { ...this.state }; }
   }
 
@@ -211,6 +316,12 @@ export class SyncEngine {
       if (this.state.autoUpdateEnabled && !this.state.isScanning) {
         try {
           await this.runSmartSync();
+          const fullAt = this.currentScope ? this.store().state(this.currentScope).full_at : null;
+          if (fullAt && Date.now() - fullAt >= WEEK_MS && Date.now() - this.weeklyAttemptAt >= 6 * 60 * 60 * 1000) {
+            this.weeklyAttemptAt = Date.now();
+            this.addLog('Wöchentlicher Kontrollabgleich fällig; prüfe alle Produkte unabhängig vom Cache.');
+            await this.runFullReload();
+          }
         } catch (e: any) {
           this.addLog(`[Auto-Update] Fehler: ${e.message}`, 'error');
         }
@@ -228,9 +339,9 @@ export class SyncEngine {
 
     this.textCatchupTimer = setInterval(async () => {
       if (this.state.autoUpdateEnabled && !this.state.isScanning) {
-        try { await this.runDeepScanNew(); } catch (e: any) { this.addLog(`[Text-Catch-up] Fehler: ${e.message}`, 'error'); }
+        try { await this.runQueuedTexts(); } catch (e: any) { this.addLog(`[Text-Catch-up] Fehler: ${e.message}`, 'error'); }
       }
-    }, 6 * 60 * 60 * 1000);
+    }, 5 * 60 * 1000);
   }
 
   private static stopSchedulers() {
@@ -284,7 +395,7 @@ export class SyncEngine {
    * Discover and cache Amazon Account-ID / ContentOwnerId
    */
   public static async getAccountId(page: any): Promise<string> {
-    if (this.cachedAccountId) return this.cachedAccountId;
+    // Re-verify each run: the browser may have switched Amazon accounts.
 
     // 1. Try extracting from cookies/DOM
     const extracted = await page.evaluate(() => {
@@ -423,43 +534,6 @@ export class SyncEngine {
     }, { url: `${PRODUCT_CONFIG_URL}${designId}` });
   }
 
-  private static async refreshTextsForConfirmedDesigns(page: any, supabase: any, mapped: any[]): Promise<{ processed: number; errors: number }> {
-    if (mapped.length === 0) return { processed: 0, errors: 0 };
-    const runtime = this.loadRuntime();
-    const versions = runtime.textVersions || {};
-    const existing = new Map<string, any>();
-    const ids = mapped.map(item => item.design_id);
-    for (let i = 0; i < ids.length; i += 200) {
-      const { data, error } = await supabase.from('mba_designs').select('design_id, title_us, brand_us, text_data_other').in('design_id', ids.slice(i, i + 200));
-      if (error) throw new Error(`Text-Bestandsread fehlgeschlagen: ${error.message || String(error)}`);
-      for (const row of data || []) existing.set(row.design_id, row);
-    }
-    let processed = 0;
-    let errors = 0;
-    for (const item of mapped) {
-      if (this.shouldStop) break;
-      const row = existing.get(item.design_id);
-      const sourceVersion = item.updated_date || item.last_synced_at || '';
-      const missing = !row?.title_us || !row?.brand_us || !row?.text_data_other || Object.keys(row.text_data_other || {}).length === 0;
-      if (!missing && versions[item.design_id] === sourceVersion) continue;
-      try {
-        const payload = this.parseTextData(item.design_id, await this.fetchProductConfig(page, item.design_id));
-        if (!payload) throw new Error('ProductConfig enthält keine Textdaten.');
-        const { error } = await supabase.from('mba_designs').upsert(payload, { onConflict: 'design_id' });
-        if (error) throw new Error(error.message || String(error));
-        versions[item.design_id] = sourceVersion;
-        processed++;
-      } catch (error: any) {
-        errors++;
-        this.addLog(`[Textfolgejob] ${item.design_id} bleibt offen: ${error.message}`, 'warn');
-      }
-      await this.sleep(150);
-    }
-    runtime.textVersions = Object.fromEntries(Object.entries(versions).slice(-10000));
-    this.saveRuntime(runtime);
-    return { processed, errors };
-  }
-
   /**
    * Fetch Sales Analytics from Amazon
    */
@@ -512,23 +586,14 @@ export class SyncEngine {
    * Fetch live and unresolved counts from Supabase
    */
   public static async refreshDBStats() {
-    try {
-      const supabase = getSupabaseClient();
-      if (!supabase) return;
-
-      const [liveRes, unresolvedRes] = await Promise.all([
-        supabase.from('mba_designs')
-          .select('design_id', { count: 'exact', head: true })
-          .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING']),
-        supabase.from('mba_designs')
-          .select('design_id', { count: 'exact', head: true })
-          .or('asin_resolved.eq.false,asin_resolved.is.null')
-          .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
-      ]);
-
-      this.state.liveDesignsCount = liveRes.count || 0;
-      this.state.unresolvedAsinsCount = unresolvedRes.count || 0;
-    } catch (e) {}
+    if (Date.now() - this.countsFetchedAt < 5 * 60 * 1000) return;
+    if (this.countsInFlight) return this.countsInFlight;
+    this.countsInFlight = (async () => {
+      const stats = await SupabaseService.getStats();
+      this.updateCounts(stats.liveDesigns, stats.unresolvedAsins);
+      this.countsFetchedAt = Date.now();
+    })();
+    try { await this.countsInFlight; } finally { this.countsInFlight = null; }
   }
 
   /**
@@ -615,7 +680,7 @@ export class SyncEngine {
   /**
    * Merge new design data with existing DB records before upserting (Never removes ASINs)
    */
-  public static async mergeAndUpsertDesigns(mapped: any[]) {
+  public static async mergeAndUpsertDesigns(mapped: any[], onConfirmed?: (ids: string[]) => void) {
     const supabase = this.getSupabase();
     if (mapped.length === 0) return 0;
 
@@ -634,6 +699,7 @@ export class SyncEngine {
       const { data, error } = await supabase.from('mba_designs')
         .select('design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins, asin_resolved')
         .in('design_id', batch);
+      this.recordTraffic('product_read', { data, error });
       if (error) throw new Error(`Supabase-Bestandsread fehlgeschlagen: ${error.message || String(error)}`);
       if (data) data.forEach(d => existing.set(d.design_id, d));
     }
@@ -679,15 +745,18 @@ export class SyncEngine {
     const writable = merged.map(record => Object.fromEntries(Object.entries(record).filter(([key]) => PRODUCT_SYNC_COLUMNS.has(key))));
     let confirmed = 0;
     for (let i = 0; i < writable.length; i += 200) {
+      if (this.shouldStop) throw new Error('Scan manuell abgebrochen; offene Blöcke bleiben vorgemerkt.');
       const chunk = writable.slice(i, i + 200);
-      const { error } = await supabase.from('mba_designs').upsert(chunk, { onConflict: 'design_id' });
+      const result = await supabase.from('mba_designs').upsert(chunk, { onConflict: 'design_id' });
+      this.recordTraffic('product_write', result);
+      const { error } = result;
       if (error) {
         throw new Error(`Supabase-Upsert fehlgeschlagen (Block ${Math.floor(i / 200) + 1}): ${error.message || String(error)}`);
       }
+      onConfirmed?.(chunk.map(record => String(record.design_id)));
       confirmed += chunk.length;
     }
 
-    await this.refreshDBStats();
     return confirmed;
   }
 
@@ -811,23 +880,23 @@ export class SyncEngine {
       const page = await this.getAmazonPage();
       const accountId = await this.getAccountId(page);
 
-      const supabase = this.getSupabase();
       let pageToken: any[] = [];
       const allResults: any[] = [];
       const seenTokens = new Set<string>(['[]']);
-      const runtime = this.loadRuntime();
-      const accountKey = crypto.createHash('sha256').update(accountId || 'unknown').digest('hex').slice(0, 16);
-      const lowerBoundary = runtime.accountKey === accountKey && runtime.productWatermark
-        ? new Date(Date.parse(runtime.productWatermark) - 24 * 60 * 60 * 1000).toISOString()
-        : null;
+      const scope = this.productScope(accountId);
+      const checkpoint = this.store().state(scope).watermark;
+      const lowerBoundary = checkpoint ? new Date(Date.parse(checkpoint) - 24 * 60 * 60 * 1000).toISOString() : null;
       let coveredBoundary = false;
-      let hasMore = false;
+
 
       for (let p = 0; p < 10; p++) {
         if (this.shouldStop) break;
         const json = await this.fetchListingsPage(page, accountId, pageToken);
         pages++;
-        if (!json.results || json.results.length === 0) break;
+        if (!json.results || json.results.length === 0) {
+          if (json.pageToken?.length) throw new Error('Leere FindListings-Seite mit Fortsetzungstoken.');
+          coveredBoundary = true; break;
+        }
 
         allResults.push(...json.results);
 
@@ -842,7 +911,7 @@ export class SyncEngine {
             } catch (e) { return null; } 
           };
           const oldestIso = safeDate(oldestDate);
-          if (oldestIso && oldestIso <= lowerBoundary) { coveredBoundary = true; break; }
+          if (oldestIso && oldestIso < lowerBoundary) { coveredBoundary = true; break; }
         }
 
         if (!json.pageToken || json.pageToken.length === 0) { coveredBoundary = true; break; }
@@ -850,31 +919,22 @@ export class SyncEngine {
         if (seenTokens.has(tokenKey)) throw new Error('FindListings-Pagination wiederholt denselben Token ohne Fortschritt.');
         seenTokens.add(tokenKey);
         pageToken = json.pageToken;
-        hasMore = true;
         await this.sleep(600);
       }
 
       if (this.shouldStop) throw new Error('Scan manuell abgebrochen.');
 
       this.addLog(`[Quick Update Produkte] ${allResults.length} Einträge von Amazon geladen. Mappe auf Supabase...`, 'info');
-      const mapped = this.mapListingsToSupabase(allResults);
-      const count = await this.mergeAndUpsertDesigns(mapped);
-      const textResult = await this.refreshTextsForConfirmedDesigns(page, supabase, mapped);
-      if (textResult.processed || textResult.errors) this.addLog(`[Textfolgejob] ${textResult.processed} aktualisiert, ${textResult.errors} offen.`, textResult.errors ? 'warn' : 'success');
-      const completeCoverage = coveredBoundary && !(hasMore && pages >= 10 && !coveredBoundary);
-      if (completeCoverage && runtime.productWatermark) {
-        const watermarkRuntime = this.loadRuntime();
-        watermarkRuntime.productWatermark = runStartedAt;
-        watermarkRuntime.accountKey = accountKey;
-        this.saveRuntime(watermarkRuntime);
-      }
+      const { count, attempted } = await this.applyProductChanges(page, accountId, allResults, false);
+      const completeCoverage = coveredBoundary;
+      if (this.shouldStop) throw new Error('Scan manuell abgebrochen.');
+      if (completeCoverage) this.store().checkpoint(scope, runStartedAt);
 
       const now = Date.now();
       this.state.lastQuickDesigns = now;
       this.state.lastPeriodicSync = new Date().toLocaleString('de-DE');
       this.state.lastPeriodicSyncCount = count;
 
-      await this.refreshDBStats();
       this.addLog(
         completeCoverage
           ? `[Quick Update Produkte] Vollständig: ${count} Designs bestätigt ✓ (${this.state.liveDesignsCount} Live Designs).`
@@ -883,7 +943,7 @@ export class SyncEngine {
       );
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = completeCoverage ? `Bereit (${this.state.liveDesignsCount} Live Designs)` : `Teilstand bestätigt; historische Reconciliation offen`;
-      this.finishWorker(runId, completeCoverage ? 'complete' : 'truncated', { pages, attempted: mapped.length, confirmed: count, message: completeCoverage ? undefined : 'Keine vertrauenswürdige Vollständigkeitsmarke; Full Refresh erforderlich.' });
+      this.finishWorker(runId, completeCoverage ? 'complete' : 'truncated', { pages, attempted, confirmed: count, message: completeCoverage ? undefined : 'Keine vertrauenswürdige Vollständigkeitsmarke; Full Refresh erforderlich.' });
       return { designCount: count };
     } catch (err: any) {
       this.state.scanStatus = 'error';
@@ -924,7 +984,10 @@ export class SyncEngine {
         pageNum++;
         this.addLog(`[Full Refresh] Lade Seite ${pageNum} von Amazon (je 500 Einträge)...`, 'info');
         const json = await this.fetchListingsPage(page, accountId, pageToken);
-        if (!json.results || json.results.length === 0) break;
+        if (!json.results || json.results.length === 0) {
+          if (json.pageToken?.length) throw new Error('Leere FindListings-Seite mit Fortsetzungstoken.');
+          break;
+        }
 
         allResults.push(...json.results);
         const accountKey = crypto.createHash('sha256').update(accountId || 'unknown').digest('hex').slice(0, 16);
@@ -942,8 +1005,10 @@ export class SyncEngine {
       if (this.shouldStop) throw new Error('Scan manuell abgebrochen.');
 
       this.addLog(`[Full Refresh] Mappe ${allResults.length} Einträge auf Supabase Schema...`, 'info');
-      const mapped = this.mapListingsToSupabase(allResults);
-      const totalSaved = await this.mergeAndUpsertDesigns(mapped);
+      const { count: totalSaved, attempted, scope } = await this.applyProductChanges(page, accountId, allResults, true);
+      if (this.shouldStop) throw new Error('Scan manuell abgebrochen.');
+      if (!allResults.length) throw new Error('Vollabgleich lieferte keine Produkte; Basisstand wird nicht freigegeben.');
+      this.store().checkpoint(scope, runStartedAt, true);
       const runtime = this.loadRuntime();
       runtime.productWatermark = runStartedAt;
       runtime.accountKey = crypto.createHash('sha256').update(accountId || 'unknown').digest('hex').slice(0, 16);
@@ -951,11 +1016,10 @@ export class SyncEngine {
       try { if (fs.existsSync(FULL_STAGE_PATH)) fs.unlinkSync(FULL_STAGE_PATH); } catch {}
 
       this.state.lastFullDesigns = Date.now();
-      await this.refreshDBStats();
       this.addLog(`[Full Refresh Produkte] Beendet. ${totalSaved} Designs erfolgreich in Supabase synchronisiert ✓ (${this.state.liveDesignsCount} Live Designs).`, 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = `Bereit (${this.state.liveDesignsCount} Live Designs)`;
-      this.finishWorker(runId, 'complete', { pages: pageNum, attempted: mapped.length, confirmed: totalSaved });
+      this.finishWorker(runId, 'complete', { pages: pageNum, attempted, confirmed: totalSaved });
       return { designCount: totalSaved };
     } catch (err: any) {
       this.state.scanStatus = 'error';
@@ -1267,6 +1331,7 @@ export class SyncEngine {
         .order('updated_date', { ascending: true, nullsFirst: true })
         .limit(Math.max(50, limit * 10));
 
+      this.recordTraffic('resolver_read', { data: unresolved, error });
       if (error) throw new Error(`ASIN-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
       if (!unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
 

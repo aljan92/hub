@@ -323,6 +323,15 @@ app.get('/api/v1/sync/state', async (req, res) => {
   }
 });
 
+app.post('/api/v1/sync/egress', (req, res) => {
+  try {
+    if (req.body.reset === true) SyncEngine.invalidateSyncCache();
+    else if (req.body.mode === 'observe' || req.body.mode === 'optimized') SyncEngine.setEgressMode(req.body.mode);
+    else return res.status(400).json({ success: false, error: 'Ungültiger Vergleichsmodus' });
+    res.json({ success: true, state: SyncEngine.getState() });
+  } catch (err: any) { res.status(409).json({ success: false, error: err.message }); }
+});
+
 app.post('/api/v1/sync/toggle-auto', (req, res) => {
   const { enabled } = req.body;
   SyncEngine.toggleAutoUpdate(!!enabled);

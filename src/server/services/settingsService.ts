@@ -44,6 +44,7 @@ export interface AppSettings {
   nasUser: string;
   autoSlotFillHour: number;
   autoSyncEnabled: boolean;
+  syncEgressMode?: 'observe' | 'optimized';
   mcpApiKey: string;
   aiAutonomyEnabled: boolean;
   aiAutonomyDesignEnabled: boolean;
