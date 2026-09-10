@@ -95,6 +95,7 @@ test('designer task creation is idempotent and sends no precomputed prompt aroun
 test('designer UI contains reset/history/model controls and no legacy prompt preview call', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'src/client/views/DesignerView.tsx'), 'utf8');
   assert.match(source, /designerSuggestionModel/);
+  assert.match(source, /\/api\/v1\/llm\/models\?refresh=true/);
   assert.match(source, /mba_designer_suggestion_history_v1/);
   assert.match(source, /niche1: current\.niche1, niche2: '', subniche: '', quote: '', style: ''/);
   assert.match(source, /\/api\/v1\/designer\/suggest/);

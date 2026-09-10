@@ -37,6 +37,9 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
   const [providerSettings, setProviderSettings] = useState<any>({});
   const [models, setModels] = useState<ModelItem[]>([]);
   const [suggestionModel, setSuggestionModel] = useState('');
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState('');
   const [loadingField, setLoadingField] = useState<SuggestionField | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<SuggestionField, string>>>({});
   const [isGenerating, setIsGenerating] = useState(false);
@@ -47,10 +50,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
   const historyRef = useRef<SuggestionHistory>(readHistory());
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/v1/settings').then(res => res.json()),
-      fetch('/api/v1/llm/models').then(res => res.json()).catch(() => ({ success: false }))
-    ]).then(([settingsData, modelData]) => {
+    fetch('/api/v1/settings').then(res => res.json()).then(settingsData => {
       if (settingsData.success) {
         const settings = settingsData.settings || {};
         setProviderSettings(settings);
@@ -59,7 +59,6 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
         setSuggestionModel(settings.designerSuggestionModel || '');
         providerSettingsLoaded.current = true;
       }
-      if (modelData.success && Array.isArray(modelData.models)) setModels(modelData.models);
     }).catch(() => {});
   }, []);
 
@@ -78,9 +77,33 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
   const modelOptions = useMemo(() => {
     const unique = new Map<string, ModelItem>();
     models.forEach(model => { if (model?.id) unique.set(model.id, model); });
-    if (suggestionModel && !unique.has(suggestionModel)) unique.set(suggestionModel, { id: suggestionModel, name: suggestionModel });
     return Array.from(unique.values());
-  }, [models, suggestionModel]);
+  }, [models]);
+
+  const openCurrentModelMenu = async () => {
+    if (modelsLoading) return;
+    setModelsLoading(true);
+    setModelsError('');
+    setModelMenuOpen(false);
+    try {
+      const response = await fetch('/api/v1/llm/models?refresh=true');
+      const data = await response.json();
+      if (!response.ok || !data.success || !Array.isArray(data.models)) throw new Error(data.error || 'Aktuelle Modellliste konnte nicht geladen werden.');
+      setModels(data.models);
+      setModelMenuOpen(true);
+    } catch (error: any) {
+      setModels([]);
+      setModelsError(error?.message || 'Aktuelle Modellliste konnte nicht geladen werden.');
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
+  const chooseSuggestionModel = (model: string) => {
+    setSuggestionModel(model);
+    setModelMenuOpen(false);
+    saveDesignerSetting({ designerSuggestionModel: model });
+  };
 
   const updateValue = (field: SuggestionField, value: string) => {
     setValues(current => ({ ...current, [field]: value }));
@@ -187,11 +210,19 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
     <div className="glass-card p-5 rounded-2xl space-y-4">
       <div>
         <label className="block text-xs font-semibold text-slate-300 mb-1.5">LLM-Modell für schnelle Vorschläge</label>
-        <select value={suggestionModel} onChange={event => { const value = event.target.value; setSuggestionModel(value); saveDesignerSetting({ designerSuggestionModel: value }); }}
-          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-primary-500">
-          <option value="">Grundmodell als Fallback ({providerSettings.llmModel || 'nicht geladen'})</option>
-          {modelOptions.map(model => <option key={model.id} value={model.id}>{model.name || model.id}</option>)}
-        </select>
+        <button type="button" onClick={openCurrentModelMenu} disabled={modelsLoading}
+          aria-expanded={modelMenuOpen} aria-haspopup="listbox"
+          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-primary-500 text-left flex items-center justify-between disabled:opacity-60">
+          <span>{modelsLoading ? 'Aktuelle Modellliste wird geladen …' : suggestionModel || `Grundmodell (${providerSettings.llmModel || 'nicht geladen'})`}</span>
+          <ChevronRight className={`w-3.5 h-3.5 transition-transform ${modelMenuOpen ? 'rotate-90' : ''}`} />
+        </button>
+        {modelMenuOpen && <div role="listbox" className="mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-1 shadow-xl">
+          <button type="button" role="option" aria-selected={!suggestionModel} onClick={() => chooseSuggestionModel('')}
+            className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800">Grundmodell ({providerSettings.llmModel || 'nicht geladen'})</button>
+          {modelOptions.map(model => <button type="button" role="option" aria-selected={suggestionModel === model.id} key={model.id} onClick={() => chooseSuggestionModel(model.id)}
+            className="w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-800"><span className="block font-medium">{model.name || model.id}</span><span className="block text-[10px] text-slate-500">{model.id}</span></button>)}
+        </div>}
+        {modelsError && <p className="mt-1 text-xs text-rose-400">{modelsError}</p>}
       </div>
 
       {fields.map(field => <div key={field.key}>

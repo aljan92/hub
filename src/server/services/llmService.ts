@@ -46,14 +46,7 @@ export interface DesignerSuggestionInput {
   model?: string;
 }
 
-let cachedModels: OpenRouterModelItem[] = [
-  { id: 'openai/gpt-5.6-sol', name: 'OpenAI: GPT-5.6 Sol' },
-  { id: 'deepseek/deepseek-v4-pro', name: 'DeepSeek: DeepSeek V4 Pro' },
-  { id: 'google/gemini-2.5-flash', name: 'Google: Gemini 2.5 Flash' },
-  { id: 'anthropic/claude-sonnet-4', name: 'Anthropic: Claude Sonnet 4' },
-  { id: 'openai/gpt-4o', name: 'OpenAI: GPT-4o' },
-  { id: 'meta-llama/llama-3.2-11b-vision-instruct', name: 'Meta: Llama 3.2 11B Vision' },
-];
+let cachedModels: OpenRouterModelItem[] = [];
 let lastModelsFetch = 0;
 
 export class LLMService {
@@ -194,50 +187,36 @@ export class LLMService {
     throw lastError || new Error('Designer-Vorschlag konnte weder mit dem gewählten noch mit dem Grundmodell erzeugt werden.');
   }
 
-  /**
-   * Fetch all models from OpenRouter dynamically (Instant response from cache)
-   */
-  static async getAvailableModels(): Promise<OpenRouterModelItem[]> {
+  /** Fetch the complete OpenRouter catalog. A forced refresh never returns a stale curated fallback. */
+  static async getAvailableModels(forceRefresh = false): Promise<OpenRouterModelItem[]> {
     const now = Date.now();
-    if (now - lastModelsFetch < 1000 * 60 * 30) {
+    if (!forceRefresh && cachedModels.length > 0 && now - lastModelsFetch < 1000 * 60 * 30) {
       return cachedModels;
     }
 
-    // Trigger background fetch
-    fetch('https://openrouter.ai/api/v1/models', {
+    const response = await fetch('https://openrouter.ai/api/v1/models', {
       headers: {
         'HTTP-Referer': 'https://mba-hub.local',
         'X-Title': 'MBA HUB'
       },
-      signal: AbortSignal.timeout(4000)
-    })
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (Array.isArray(data?.data)) {
-          const list: OpenRouterModelItem[] = data.data.map((m: any) => ({
-            id: m.id,
-            name: m.name || m.id,
-            contextLength: m.context_length,
-            promptPrice: m.pricing?.prompt ? `$${(parseFloat(m.pricing.prompt) * 1000000).toFixed(2)}/M` : undefined,
-            completionPrice: m.pricing?.completion ? `$${(parseFloat(m.pricing.completion) * 1000000).toFixed(2)}/M` : undefined,
-            description: m.description,
-          }));
-
-          const topKeywords = ['claude-3.5-sonnet', 'claude-3-5-sonnet', 'gpt-4o', 'gemini-2.0-flash', 'gemini-2.5', 'llama-3.2'];
-          list.sort((a, b) => {
-            const aIsTop = topKeywords.some(k => a.id.toLowerCase().includes(k));
-            const bIsTop = topKeywords.some(k => b.id.toLowerCase().includes(k));
-            if (aIsTop && !bIsTop) return -1;
-            if (!aIsTop && bIsTop) return 1;
-            return a.name.localeCompare(b.name);
-          });
-
-          cachedModels = list;
-          lastModelsFetch = now;
-        }
-      })
-      .catch(() => {});
-
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) throw new Error(`OpenRouter-Modellliste HTTP ${response.status}`);
+    const data = await response.json();
+    if (!Array.isArray(data?.data)) throw new Error('OpenRouter hat keine gültige Modellliste geliefert.');
+    const list: OpenRouterModelItem[] = data.data
+      .filter((model: any) => typeof model?.id === 'string' && model.id.trim())
+      .map((model: any) => ({
+        id: model.id,
+        name: model.name || model.id,
+        contextLength: model.context_length,
+        promptPrice: model.pricing?.prompt ? `$${(parseFloat(model.pricing.prompt) * 1000000).toFixed(2)}/M` : undefined,
+        completionPrice: model.pricing?.completion ? `$${(parseFloat(model.pricing.completion) * 1000000).toFixed(2)}/M` : undefined,
+        description: model.description
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    cachedModels = list;
+    lastModelsFetch = now;
     return cachedModels;
   }
 

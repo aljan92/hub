@@ -23,6 +23,7 @@ try {
   const suggestions = ['Gardening', 'Botany'];
   const suggestionBodies: any[] = [];
   const settingBodies: any[] = [];
+  const modelListRequests: string[] = [];
   let generatedBody: any = null;
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url());
@@ -36,6 +37,7 @@ try {
       return;
     }
     if (url.pathname === '/api/v1/llm/models') {
+      modelListRequests.push(url.search);
       await route.fulfill({ json: { success: true, models: [{ id: 'fast/model', name: 'Fast Model' }] } });
       return;
     }
@@ -55,9 +57,12 @@ try {
 
   await page.goto(`http://127.0.0.1:${(server.address() as any).port}`);
   await page.getByText('LLM-Modell für schnelle Vorschläge').waitFor();
-  await page.locator('select').first().selectOption('fast/model');
+  assert.deepEqual(modelListRequests, [], 'model catalog is not populated from startup suggestions');
+  await page.getByRole('button', { name: /Grundmodell \(base\/model\)/ }).click();
+  await page.getByRole('option', { name: /Fast Model/ }).click();
+  assert.deepEqual(modelListRequests, ['?refresh=true']);
   await page.getByRole('button', { name: 'Niche 1 per KI vorschlagen' }).click();
-  await page.locator('input[placeholder="z. B. Gardening"]').waitFor();
+  await page.waitForFunction(() => (document.querySelector('input[placeholder="z. B. Gardening"]') as HTMLInputElement)?.value === 'Gardening');
   assert.equal(await page.locator('input[placeholder="z. B. Gardening"]').inputValue(), 'Gardening');
   assert.equal(suggestionBodies[0].model, 'fast/model', 'visible model selection is request-bound even before persistence settles');
   assert.deepEqual(suggestionBodies[0].avoid, []);

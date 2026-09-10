@@ -512,7 +512,7 @@ app.post('/api/v1/system/update', async (req, res) => {
 // 2.1 Dynamic LLM Models & Credits
 app.get('/api/v1/llm/models', async (req, res) => {
   try {
-    const models = await LLMService.getAvailableModels();
+    const models = await LLMService.getAvailableModels(req.query.refresh === 'true');
     res.json({ success: true, models });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
