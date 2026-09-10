@@ -1,411 +1,232 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { 
-  Sparkles, 
-  ShieldCheck, 
-  ShieldAlert, 
-  RefreshCw, 
-  Send, 
-  Sliders, 
-  Tag, 
-  Type, 
-  Layers,
-  Wand2
-} from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, ChevronRight, Eraser, RefreshCw, Send, Sparkles, Tag, Type, Wand2 } from 'lucide-react';
+import type { ActiveTab } from '../components/Sidebar';
 
-export const DesignerView: React.FC = () => {
-  type ImageProvider = 'IDEOGRAM' | 'GPT_IMAGE_2';
-  const [niche1, setNiche1] = useState('Vintage Retro');
-  const [niche2, setNiche2] = useState('Coffee Lovers');
-  const [quote, setQuote] = useState('Powered by Caffeine and Chaos');
-  const [stylePreset, setStylePreset] = useState('vintage-distressed');
+type ImageProvider = 'IDEOGRAM' | 'GPT_IMAGE_2';
+type SuggestionField = 'niche1' | 'niche2' | 'subniche' | 'quote' | 'style';
+type FormValues = Record<SuggestionField, string>;
+type SuggestionHistory = Record<SuggestionField, string[]>;
+type ModelItem = { id: string; name?: string };
+
+const HISTORY_KEY = 'mba_designer_suggestion_history_v1';
+const emptyHistory = (): SuggestionHistory => ({ niche1: [], niche2: [], subniche: [], quote: [], style: [] });
+const STYLE_PRESETS = [
+  'Vintage distressed 1970s illustration with bold retro typography',
+  'Modern minimalist vector illustration with clean geometric typography',
+  'Bold stacked typography with small supporting illustrations',
+  'Cute kawaii character illustration with playful rounded typography',
+  'Detailed hand-drawn engraving with classic serif typography'
+];
+
+function readHistory(): SuggestionHistory {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
+    return Object.fromEntries(Object.keys(emptyHistory()).map(field => [
+      field,
+      Array.isArray(parsed[field]) ? parsed[field].filter((value: unknown) => typeof value === 'string').slice(-5) : []
+    ])) as SuggestionHistory;
+  } catch {
+    return emptyHistory();
+  }
+}
+
+export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }> = ({ onNavigateTab }) => {
+  const [values, setValues] = useState<FormValues>({ niche1: '', niche2: '', subniche: '', quote: '', style: '' });
   const [imageProvider, setImageProvider] = useState<ImageProvider>('IDEOGRAM');
   const [promptPoolEnabled, setPromptPoolEnabled] = useState(false);
-  const providerSettingsLoaded = useRef(false);
   const [providerSettings, setProviderSettings] = useState<any>({});
-  const [generatedPrompt, setGeneratedPrompt] = useState(
-    'T-shirt graphic design of "Powered by Caffeine and Chaos", retro vintage 1970s distressed aesthetic, vector illustration, isolated on clean solid background, bold typography, warm color palette, commercial merchandise print ready.'
-  );
-
-  const [isCheckingTM, setIsCheckingTM] = useState(false);
-  const [tmResult, setTmResult] = useState<{ safe: boolean; details?: string; blocked?: string[] } | null>(null);
-  const [isOptimizingPrompt, setIsOptimizingPrompt] = useState(false);
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [suggestionModel, setSuggestionModel] = useState('');
+  const [loadingField, setLoadingField] = useState<SuggestionField | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<SuggestionField, string>>>({});
   const [isGenerating, setIsGenerating] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [createdTaskId, setCreatedTaskId] = useState('');
+  const providerSettingsLoaded = useRef(false);
+  const generationInFlight = useRef(false);
+  const historyRef = useRef<SuggestionHistory>(readHistory());
 
   useEffect(() => {
-    fetch('/api/v1/settings')
-      .then(res => res.json())
-      .then(data => {
-        if (!data.success) return;
-        const settings = data.settings || {};
+    Promise.all([
+      fetch('/api/v1/settings').then(res => res.json()),
+      fetch('/api/v1/llm/models').then(res => res.json()).catch(() => ({ success: false }))
+    ]).then(([settingsData, modelData]) => {
+      if (settingsData.success) {
+        const settings = settingsData.settings || {};
         setProviderSettings(settings);
         setPromptPoolEnabled(Boolean(settings.designerPromptPoolEnabled));
-        let legacyProvider: ImageProvider | null = null;
-        try {
-          const saved = localStorage.getItem('mba_designer_image_provider');
-          legacyProvider = saved === 'GPT_IMAGE_2' || saved === 'IDEOGRAM' ? saved : null;
-          localStorage.removeItem('mba_designer_image_provider');
-        } catch {}
-        const configuredProvider = settings.designerImageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM';
+        setImageProvider(settings.designerImageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM');
+        setSuggestionModel(settings.designerSuggestionModel || '');
         providerSettingsLoaded.current = true;
-        setImageProvider(legacyProvider || configuredProvider);
-      })
-      .catch(() => {});
+      }
+      if (modelData.success && Array.isArray(modelData.models)) setModels(modelData.models);
+    }).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (!providerSettingsLoaded.current) return;
+  const saveDesignerSetting = (update: Record<string, unknown>) => {
     fetch('/api/v1/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ designerImageProvider: imageProvider })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update)
     }).then(res => res.json()).then(data => {
       if (data.success) setProviderSettings(data.settings || {});
     }).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (providerSettingsLoaded.current) saveDesignerSetting({ designerImageProvider: imageProvider });
   }, [imageProvider]);
 
-  const updatePromptPoolMode = (enabled: boolean) => {
-    setPromptPoolEnabled(enabled);
-    fetch('/api/v1/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ designerPromptPoolEnabled: enabled })
-    }).then(res => res.json()).then(data => {
-      if (data.success) setProviderSettings(data.settings || {});
-    }).catch(() => setPromptPoolEnabled(!enabled));
+  const modelOptions = useMemo(() => {
+    const unique = new Map<string, ModelItem>();
+    models.forEach(model => { if (model?.id) unique.set(model.id, model); });
+    if (suggestionModel && !unique.has(suggestionModel)) unique.set(suggestionModel, { id: suggestionModel, name: suggestionModel });
+    return Array.from(unique.values());
+  }, [models, suggestionModel]);
+
+  const updateValue = (field: SuggestionField, value: string) => {
+    setValues(current => ({ ...current, [field]: value }));
+    setFieldErrors(current => ({ ...current, [field]: undefined }));
+    setCreatedTaskId('');
+    setFormError('');
   };
 
-  const providerLabel = imageProvider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0';
-  const gptBackgroundLabel = providerSettings.gptImageBackground === 'transparent'
-    ? 'FREISTELLUNG (DEEP BLUE)'
-    : String(providerSettings.gptImageBackground || 'transparent').toUpperCase();
-  const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
-    ? `${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${gptBackgroundLabel}`
-    : `${providerSettings.ideogramModel || 'V_3'} · ${providerSettings.ideogramAspectRatio || '10x16'} · Magic Prompt ${providerSettings.ideogramMagicPromptOption || 'AUTO'}`;
+  const clearHistory = () => {
+    historyRef.current = emptyHistory();
+    try { localStorage.removeItem(HISTORY_KEY); } catch {}
+  };
 
-  // 1. Live Trademark Pre-Check against USPTO / EUIPO / DPMA
-  const handlePreTMCheck = async () => {
-    if (!quote) return;
-    setIsCheckingTM(true);
+  const handleReset = () => {
+    setValues(current => ({ niche1: current.niche1, niche2: '', subniche: '', quote: '', style: '' }));
+    clearHistory();
+    setFieldErrors({});
+    setFormError('');
+    setCreatedTaskId('');
+  };
+
+  const handleSuggest = async (field: SuggestionField) => {
+    if (loadingField) return;
+    setLoadingField(field);
+    setFieldErrors(current => ({ ...current, [field]: undefined }));
     try {
-      const res = await fetch('/api/v1/trademark/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quote, locale: 'en' }),
+      const response = await fetch('/api/v1/designer/suggest', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, values, avoid: historyRef.current[field], model: suggestionModel })
       });
-      const data = await res.json();
-      if (data.success) {
-        setTmResult({
-          safe: !data.hasInfringementClass25,
-          details: data.message,
-          blocked: data.blockedProducts,
-        });
-      }
-    } catch (err: any) {
-      setTmResult({
-        safe: false,
-        details: 'Fehler bei der Verbindung zum Trademark-Server.',
-      });
+      const data = await response.json();
+      if (!response.ok || !data.success || typeof data.suggestion !== 'string') throw new Error(data.error || 'Vorschlag konnte nicht erzeugt werden.');
+      updateValue(field, data.suggestion);
+      historyRef.current = { ...historyRef.current, [field]: [...historyRef.current[field], data.suggestion].slice(-5) };
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(historyRef.current)); } catch {}
+    } catch (error: any) {
+      setFieldErrors(current => ({ ...current, [field]: error?.message || 'Vorschlag konnte nicht erzeugt werden.' }));
     } finally {
-      setIsCheckingTM(false);
+      setLoadingField(null);
     }
   };
 
-  // 2. Optimize Prompt with LLM (OpenRouter / OpenAI)
-  const handleOptimizePrompt = async () => {
-    setIsOptimizingPrompt(true);
-    try {
-      const res = await fetch('/api/v1/designer/prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          niche1, niche2, quote, stylePreset, imageProvider,
-          background: imageProvider === 'GPT_IMAGE_2' ? (providerSettings.gptImageBackground || 'transparent') : 'opaque'
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.prompt) {
-        setGeneratedPrompt(data.prompt);
-      }
-    } catch (err) {
-      console.warn('Prompt optimization failed:', err);
-    } finally {
-      setIsOptimizingPrompt(false);
-    }
-  };
-
-  // 3. Generate design with the selected provider and place it in Tasks
   const handleGenerate = async () => {
+    if (generationInFlight.current) return;
+    if (!values.niche1.trim()) {
+      setFieldErrors(current => ({ ...current, niche1: 'Bitte zuerst Niche 1 ausfüllen.' }));
+      return;
+    }
+    generationInFlight.current = true;
     setIsGenerating(true);
+    setFormError('');
+    setCreatedTaskId('');
+    const requestId = globalThis.crypto?.randomUUID?.() || `designer_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     try {
-      const res = await fetch('/api/v1/designer/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: generatedPrompt,
-          imageProvider,
-          promptPoolEnabled,
-          niche1,
-          niche2,
-          quote,
-        }),
+      const response = await fetch('/api/v1/designer/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...values, imageProvider, promptPoolEnabled, requestId })
       });
-
-      const data = await res.json();
-      if (data.success) {
-        alert('🎉 Design erfolgreich generiert! Es wartet nun im Menü "Tasks" auf deine Prüfung & Freigabe.');
-      } else {
-        alert(`Fehler: ${data.error || 'Generierung fehlgeschlagen'}`);
-      }
-    } catch (err: any) {
-      alert(`Netzwerkfehler: ${err.message}`);
+      const data = await response.json();
+      if (!response.ok || !data.success || !data.taskId) throw new Error(data.error || 'Task konnte nicht angelegt werden.');
+      clearHistory();
+      setCreatedTaskId(data.taskId);
+    } catch (error: any) {
+      setFormError(error?.message || 'Task konnte nicht angelegt werden.');
     } finally {
+      generationInFlight.current = false;
       setIsGenerating(false);
     }
   };
 
-  return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* View Title */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-100 tracking-tight flex items-center">
-            <Sparkles className="w-6 h-6 mr-2 text-primary-400" />
-            Designer &amp; Prompt Generator
-          </h2>
-          <p className="text-sm text-slate-400">Erstelle optimierte Bildprompts mit echtem Trademark-Precheck.</p>
-        </div>
+  const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
+    ? `${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${providerSettings.gptImageBackground === 'transparent' ? 'FREISTELLUNG (DEEP BLUE)' : String(providerSettings.gptImageBackground || 'opaque').toUpperCase()}`
+    : `${providerSettings.ideogramModel || 'V_3'} · ${providerSettings.ideogramAspectRatio || '10x16'} · Magic Prompt ${providerSettings.ideogramMagicPromptOption || 'AUTO'}`;
+  const fields: Array<{ key: SuggestionField; label: string; placeholder: string; icon: React.ReactNode }> = [
+    { key: 'niche1', label: 'Niche 1', placeholder: 'z. B. Gardening', icon: <Tag className="w-3.5 h-3.5 text-primary-400" /> },
+    { key: 'niche2', label: 'Cross-Nische', placeholder: 'z. B. Cats', icon: <Tag className="w-3.5 h-3.5 text-accent-cyan" /> },
+    { key: 'subniche', label: 'Subnische', placeholder: 'z. B. Vegetable Gardening', icon: <Tag className="w-3.5 h-3.5 text-emerald-400" /> },
+    { key: 'quote', label: 'Quote', placeholder: 'z. B. Easily Distracted by Plants', icon: <Type className="w-3.5 h-3.5 text-accent-amber" /> },
+    { key: 'style', label: 'Style', placeholder: 'Leer lassen, damit D2 den Stil auswählt', icon: <Wand2 className="w-3.5 h-3.5 text-fuchsia-400" /> }
+  ];
+
+  return <div className="space-y-6 max-w-5xl mx-auto">
+    <div>
+      <h2 className="text-2xl font-bold text-slate-100 tracking-tight flex items-center"><Sparkles className="w-6 h-6 mr-2 text-primary-400" />Designer</h2>
+      <p className="text-sm text-slate-400 mt-1">Ideen schnell durchwechseln und als normale D2-Design-Task starten.</p>
+    </div>
+
+    <div className="glass-card p-5 rounded-2xl border border-primary-500/30 bg-gradient-to-r from-primary-950/30 via-slate-950/80 to-emerald-950/20">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {(['IDEOGRAM', 'GPT_IMAGE_2'] as ImageProvider[]).map(provider => <button key={provider} type="button" onClick={() => setImageProvider(provider)} aria-pressed={imageProvider === provider}
+          className={`rounded-xl border px-4 py-3 text-left transition-all ${imageProvider === provider ? 'border-primary-400/70 bg-primary-500/20' : 'border-slate-700 bg-slate-900/70 hover:border-slate-600'}`}>
+          <div className="text-sm font-bold text-slate-100">{provider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0'}</div>
+          <div className="text-[10px] text-slate-400 mt-1">{provider === imageProvider ? effectiveSettings : provider === 'GPT_IMAGE_2' ? 'via OpenRouter' : 'Ideogram API'}</div>
+        </button>)}
       </div>
-
-      {/* Prominent image generator selection */}
-      <div className="glass-card p-5 rounded-2xl border border-primary-500/30 bg-gradient-to-r from-primary-950/30 via-slate-950/80 to-emerald-950/20 shadow-lg shadow-primary-950/20">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-bold text-slate-100 uppercase tracking-wider">
-              <Sparkles className="w-4 h-4 text-primary-400" />
-              Bildgenerator
-            </div>
-            <p className="text-xs text-slate-400 mt-1">Die Auswahl bleibt für den nächsten Besuch gespeichert und wird fest in jeder neuen Task hinterlegt.</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 min-w-full sm:min-w-[420px]">
-            <button
-              type="button"
-              onClick={() => setImageProvider('IDEOGRAM')}
-              aria-pressed={imageProvider === 'IDEOGRAM'}
-              className={`rounded-xl border px-4 py-3 text-left transition-all ${imageProvider === 'IDEOGRAM' ? 'border-purple-400/70 bg-purple-500/20 shadow-md shadow-purple-950/30' : 'border-slate-700 bg-slate-900/70 hover:border-slate-600'}`}
-            >
-              <div className="text-sm font-bold text-slate-100">Ideogram 3.0</div>
-              <div className="text-[10px] text-slate-400 mt-1">{providerSettings.ideogramModel || 'V_3'} · {providerSettings.ideogramAspectRatio || '10x16'}</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setImageProvider('GPT_IMAGE_2')}
-              aria-pressed={imageProvider === 'GPT_IMAGE_2'}
-              className={`rounded-xl border px-4 py-3 text-left transition-all ${imageProvider === 'GPT_IMAGE_2' ? 'border-emerald-400/70 bg-emerald-500/20 shadow-md shadow-emerald-950/30' : 'border-slate-700 bg-slate-900/70 hover:border-slate-600'}`}
-            >
-              <div className="text-sm font-bold text-slate-100">GPT Image 2</div>
-              <div className="text-[10px] text-slate-400 mt-1">via OpenRouter · {String(providerSettings.gptImageQuality || 'high').toUpperCase()} · {providerSettings.gptImageAspectRatio || '3:4'}</div>
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-2.5 text-xs">
-          <span className="text-slate-500">Aktive Konfiguration</span>
-          <span className="font-mono font-semibold text-emerald-300">{providerLabel} · {effectiveSettings}</span>
-        </div>
-
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl border border-slate-800 bg-slate-950/50 p-2">
-          <button
-            type="button"
-            onClick={() => updatePromptPoolMode(false)}
-            aria-pressed={!promptPoolEnabled}
-            className={`rounded-lg border px-3 py-2.5 text-left transition-all ${!promptPoolEnabled ? 'border-sky-400/60 bg-sky-500/15' : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'}`}
-          >
-            <div className="text-xs font-bold text-slate-100">Standard</div>
-            <div className="mt-1 text-[10px] text-slate-400">Nur der D2 Image Prompt Engineer</div>
-          </button>
-          <button
-            type="button"
-            onClick={() => updatePromptPoolMode(true)}
-            aria-pressed={promptPoolEnabled}
-            className={`rounded-lg border px-3 py-2.5 text-left transition-all ${promptPoolEnabled ? 'border-fuchsia-400/60 bg-fuchsia-500/15' : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'}`}
-          >
-            <div className="text-xs font-bold text-slate-100">Prompt-Pool</div>
-            <div className="mt-1 text-[10px] text-slate-400">D2 plus Match, Adjacent und Wildcard</div>
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Input Form (7 cols) */}
-        <div className="lg:col-span-7 space-y-5">
-          <div className="glass-card p-5 rounded-2xl space-y-4">
-            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
-              <Sliders className="w-4 h-4 mr-2 text-accent-cyan" />
-              Nischen &amp; Slogan
-            </h3>
-
-            {/* Niche Inputs */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center">
-                  <Tag className="w-3.5 h-3.5 mr-1 text-primary-400" />
-                  Haupt-Nische (Niche 1)
-                </label>
-                <input
-                  type="text"
-                  value={niche1}
-                  onChange={(e) => setNiche1(e.target.value)}
-                  className="w-full bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary-500 transition-colors"
-                  placeholder="z.B. Retro Cats"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center">
-                  <Tag className="w-3.5 h-3.5 mr-1 text-accent-cyan" />
-                  Sub-Nische (Niche 2)
-                </label>
-                <input
-                  type="text"
-                  value={niche2}
-                  onChange={(e) => setNiche2(e.target.value)}
-                  className="w-full bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary-500 transition-colors"
-                  placeholder="z.B. 80s Synthwave"
-                />
-              </div>
-            </div>
-
-            {/* Quote / Slogan */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-300 flex items-center">
-                  <Type className="w-3.5 h-3.5 mr-1 text-accent-amber" />
-                  Sichtbarer Text / Spruch (Quote)
-                </label>
-                <button
-                  type="button"
-                  onClick={handlePreTMCheck}
-                  disabled={isCheckingTM || !quote}
-                  className="text-xs font-semibold text-primary-400 hover:text-primary-300 flex items-center space-x-1"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isCheckingTM ? 'animate-spin' : ''}`} />
-                  <span>{isCheckingTM ? 'Prüfe TM...' : 'Quote prüfen (Nizza 25)'}</span>
-                </button>
-              </div>
-              <input
-                type="text"
-                value={quote}
-                onChange={(e) => {
-                  setQuote(e.target.value);
-                  setTmResult(null);
-                }}
-                className="w-full bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary-500 transition-colors"
-                placeholder="z.B. Powered by Coffee"
-              />
-            </div>
-
-            {/* Trademark Check Result Alert */}
-            {tmResult && (
-              <div className={`p-3.5 rounded-xl border text-xs flex items-start space-x-2.5 ${
-                tmResult.safe 
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-              }`}>
-                {tmResult.safe ? (
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                ) : (
-                  <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                )}
-                <div>
-                  <div className="font-bold">{tmResult.safe ? 'Trademark Check bestanden ✓' : 'Trademark Konflikt erkannt!'}</div>
-                  <div className="text-[11px] opacity-90 mt-0.5">{tmResult.details}</div>
-                  {tmResult.blocked && tmResult.blocked.length > 0 && (
-                    <div className="text-[10px] text-amber-300 mt-1">
-                      Gesperrte Produkte: {tmResult.blocked.join(', ')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Style */}
-            <div className="pt-2 border-t border-slate-800/80">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Style-Preset</label>
-                <select
-                  value={stylePreset}
-                  onChange={(e) => setStylePreset(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-primary-500"
-                >
-                  <option value="vintage-distressed">Vintage Distressed / Retro 70s</option>
-                  <option value="modern-minimalist">Modern Minimalist Vector</option>
-                  <option value="bold-typography">Bold Typography / Slogan</option>
-                  <option value="cartoon-kawaii">Cute Kawaii Character</option>
-                  <option value="cyberpunk-glow">Synthwave / Cyberpunk</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Output & Action Preview (5 cols) */}
-        <div className="lg:col-span-5 space-y-5">
-          <div className="glass-card p-5 rounded-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
-                <Layers className="w-4 h-4 mr-2 text-primary-400" />
-                {providerLabel} Prompt
-              </h3>
-              <button
-                type="button"
-                onClick={handleOptimizePrompt}
-                disabled={isOptimizingPrompt}
-                className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-primary-600/20 text-primary-300 border border-primary-500/30 flex items-center space-x-1 hover:bg-primary-600/30 transition-colors disabled:opacity-50"
-              >
-                <Wand2 className={`w-3 h-3 ${isOptimizingPrompt ? 'animate-spin' : ''}`} />
-                <span>Prompt per KI optimieren</span>
-              </button>
-            </div>
-
-            <textarea
-              value={generatedPrompt}
-              onChange={(e) => setGeneratedPrompt(e.target.value)}
-              rows={5}
-              className="w-full bg-slate-950 p-4 rounded-xl border border-slate-800/80 font-mono text-xs text-slate-300 leading-relaxed focus:border-primary-500 focus:outline-none resize-none"
-            />
-
-            <div className="space-y-2 pt-2">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Generator Modell:</span>
-                <span className="font-semibold text-slate-200">{providerLabel}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Settings:</span>
-                <span className="font-semibold text-emerald-400 text-right">{effectiveSettings}</span>
-              </div>
-            </div>
-
-            <button
-              onClick={handleGenerate}
-              disabled={isGenerating}
-              className="w-full py-3.5 px-4 rounded-xl text-sm font-bold bg-gradient-to-r from-primary-600 to-accent-cyan hover:from-primary-500 hover:to-accent-cyan/90 text-white shadow-lg shadow-primary-500/25 flex items-center justify-center space-x-2 transition-all active:scale-98 disabled:opacity-50"
-            >
-              {isGenerating ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Sende an {providerLabel}...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  <span>Design generieren &amp; in Tasks ablegen</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => { setPromptPoolEnabled(false); saveDesignerSetting({ designerPromptPoolEnabled: false }); }} aria-pressed={!promptPoolEnabled}
+          className={`rounded-lg border px-3 py-2 text-xs font-bold ${!promptPoolEnabled ? 'border-sky-400/60 bg-sky-500/15 text-sky-200' : 'border-slate-800 text-slate-400'}`}>Standard D2</button>
+        <button type="button" onClick={() => { setPromptPoolEnabled(true); saveDesignerSetting({ designerPromptPoolEnabled: true }); }} aria-pressed={promptPoolEnabled}
+          className={`rounded-lg border px-3 py-2 text-xs font-bold ${promptPoolEnabled ? 'border-fuchsia-400/60 bg-fuchsia-500/15 text-fuchsia-200' : 'border-slate-800 text-slate-400'}`}>D2 + Prompt-Pool</button>
       </div>
     </div>
-  );
+
+    <div className="glass-card p-5 rounded-2xl space-y-4">
+      <div>
+        <label className="block text-xs font-semibold text-slate-300 mb-1.5">LLM-Modell für schnelle Vorschläge</label>
+        <select value={suggestionModel} onChange={event => { const value = event.target.value; setSuggestionModel(value); saveDesignerSetting({ designerSuggestionModel: value }); }}
+          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-primary-500">
+          <option value="">Grundmodell als Fallback ({providerSettings.llmModel || 'nicht geladen'})</option>
+          {modelOptions.map(model => <option key={model.id} value={model.id}>{model.name || model.id}</option>)}
+        </select>
+      </div>
+
+      {fields.map(field => <div key={field.key}>
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-1.5">{field.icon}{field.label}</label>
+        <div className="flex gap-2">
+          <input type="text" value={values[field.key]} onChange={event => updateValue(field.key, event.target.value)} placeholder={field.placeholder}
+            className="min-w-0 flex-1 bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary-500" />
+          <button type="button" onClick={() => handleSuggest(field.key)} disabled={Boolean(loadingField) || (field.key !== 'niche1' && !values.niche1.trim())}
+            title={`${field.label} per KI vorschlagen`} aria-label={`${field.label} per KI vorschlagen`}
+            className="w-11 shrink-0 rounded-xl border border-primary-500/30 bg-primary-600/15 text-primary-300 hover:bg-primary-600/30 disabled:opacity-40 flex items-center justify-center">
+            {loadingField === field.key ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          </button>
+        </div>
+        {field.key === 'style' && <select value="" onChange={event => { if (event.target.value) updateValue('style', event.target.value); }}
+          className="mt-2 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-[11px] text-slate-400 focus:outline-none focus:border-primary-500">
+          <option value="">Optional: Style-Preset übernehmen …</option>
+          {STYLE_PRESETS.map(style => <option key={style} value={style}>{style}</option>)}
+        </select>}
+        {fieldErrors[field.key] && <p className="mt-1 text-xs text-rose-400">{fieldErrors[field.key]}</p>}
+      </div>)}
+
+      {formError && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{formError}</div>}
+      {createdTaskId && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-emerald-300"><CheckCircle2 className="w-4 h-4" /><span>Task <strong>{createdTaskId}</strong> wurde angelegt.</span></div>
+        {onNavigateTab && <button type="button" onClick={() => onNavigateTab('tasks')} className="text-xs font-bold text-emerald-200 flex items-center">Zu Tasks <ChevronRight className="w-3.5 h-3.5" /></button>}
+      </div>}
+
+      <div className="pt-2 flex flex-col-reverse sm:flex-row gap-2">
+        <button type="button" onClick={handleReset} disabled={isGenerating || Boolean(loadingField)}
+          className="sm:w-36 py-3 rounded-xl border border-slate-700 text-sm font-bold text-slate-300 hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2"><Eraser className="w-4 h-4" />Leeren</button>
+        <button type="button" onClick={handleGenerate} disabled={isGenerating || Boolean(loadingField) || !values.niche1.trim()}
+          className="flex-1 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-primary-600 to-accent-cyan text-white shadow-lg shadow-primary-500/25 disabled:opacity-50 flex items-center justify-center gap-2">
+          {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{isGenerating ? 'Task wird angelegt …' : `Design mit ${imageProvider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0'}`}
+        </button>
+      </div>
+    </div>
+  </div>;
 };

@@ -8,6 +8,7 @@ export interface AppSettings {
   openRouterApiKey: string;
   llmProvider: 'openrouter' | 'openai';
   llmModel: string;
+  designerSuggestionModel?: string;
   llmTemperature: number;
   llmMaxTokens: number;
   llmTimeoutSeconds: number;
@@ -89,6 +90,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
   llmProvider: (process.env.LLM_PROVIDER as 'openrouter' | 'openai') || 'openrouter',
   llmModel: process.env.LLM_MODEL || 'anthropic/claude-3-5-sonnet',
+  designerSuggestionModel: '',
   llmTemperature: 0.35,
   llmMaxTokens: 3000,
   llmTimeoutSeconds: 90,

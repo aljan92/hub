@@ -21248,14 +21248,14 @@ var require_etag = __commonJS2({
   "node_modules/etag/index.js"(exports2, module3) {
     "use strict";
     module3.exports = etag;
-    var crypto6 = require("crypto");
+    var crypto7 = require("crypto");
     var Stats = require("fs").Stats;
     var toString = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-      var hash = crypto6.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
+      var hash = crypto7.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash + '"';
     }
@@ -24148,11 +24148,11 @@ var require_request = __commonJS2({
 // node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS2({
   "node_modules/cookie-signature/index.js"(exports2) {
-    var crypto6 = require("crypto");
+    var crypto7 = require("crypto");
     exports2.sign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
-      return val + "." + crypto6.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
+      return val + "." + crypto7.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
     };
     exports2.unsign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Signed cookie string must be provided.");
@@ -24161,7 +24161,7 @@ var require_cookie_signature = __commonJS2({
       return sha1(mac) == sha1(val) ? str : false;
     };
     function sha1(str) {
-      return crypto6.createHash("sha1").update(str).digest("hex");
+      return crypto7.createHash("sha1").update(str).digest("hex");
     }
   }
 });
@@ -29151,7 +29151,7 @@ var require_main = __commonJS2({
     var fs24 = require("fs");
     var path22 = require("path");
     var os = require("os");
-    var crypto6 = require("crypto");
+    var crypto7 = require("crypto");
     var packageJson = require_package();
     var version5 = packageJson.version;
     var LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
@@ -29370,7 +29370,7 @@ var require_main = __commonJS2({
       const authTag = ciphertext.subarray(-16);
       ciphertext = ciphertext.subarray(12, -16);
       try {
-        const aesgcm = crypto6.createDecipheriv("aes-256-gcm", key, nonce);
+        const aesgcm = crypto7.createDecipheriv("aes-256-gcm", key, nonce);
         aesgcm.setAuthTag(authTag);
         return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
       } catch (error) {
@@ -51076,6 +51076,7 @@ var init_settingsService = __esm2({
       openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
       llmProvider: process.env.LLM_PROVIDER || "openrouter",
       llmModel: process.env.LLM_MODEL || "anthropic/claude-3-5-sonnet",
+      designerSuggestionModel: "",
       llmTemperature: 0.35,
       llmMaxTokens: 3e3,
       llmTimeoutSeconds: 90,
@@ -54215,6 +54216,79 @@ var init_llmService = __esm2({
           headers,
           model: this.normalizeModelId(rawModel)
         };
+      }
+      static buildDesignerSuggestionMessages(input) {
+        const instructions = {
+          niche1: "Return one broad, recognizable evergreen interest niche with strong visual T-shirt potential. Avoid micro-niches, brands, copyrighted properties, seasonal events, and claims about measured sales or competition.",
+          niche2: "Return one independent cross-niche that combines naturally and visually with niche1. It must not be a synonym, subcategory, demographic, or simple restatement of niche1.",
+          subniche: "Return one useful, more specific facet within niche1. It must be a genuine subniche and not an unrelated cross-niche.",
+          quote: "Return one short, original, memorable English T-shirt quote fitting all supplied niche fields. Avoid brands, known slogans, attribution, trademark symbols, and generic filler. Return only the quote text in the JSON value.",
+          style: "Return one concrete English T-shirt design style fitting the supplied niches and quote. Include a concise illustration and typography direction, not marketplace or promotional language."
+        };
+        const clean = (value2) => String(value2 || "").trim().slice(0, 300);
+        const avoid = Array.from(new Set((input.avoid || []).map(clean).filter(Boolean))).slice(-5);
+        return {
+          system: `You generate one fast ideation suggestion for a print-on-demand designer form. ${instructions[input.field]} Reply in English with valid JSON only, exactly {"suggestion":"..."}. No markdown, explanation, alternatives, or extra keys. Keep the suggestion under 120 characters.`,
+          user: JSON.stringify({
+            targetField: input.field,
+            currentValues: {
+              niche1: clean(input.niche1),
+              niche2: clean(input.niche2),
+              subniche: clean(input.subniche),
+              quote: clean(input.quote),
+              style: clean(input.style)
+            },
+            avoid
+          })
+        };
+      }
+      static parseDesignerSuggestion(content, avoid = []) {
+        if (typeof content !== "string" || !content.trim()) throw new Error("Leere Antwort des Vorschlagsmodells.");
+        const parsed = this.extractJsonFromLlmResponse(content);
+        const suggestion = typeof parsed?.suggestion === "string" ? parsed.suggestion.trim().replace(/^['"]|['"]$/g, "").replace(/\s+/g, " ") : "";
+        if (!suggestion || suggestion.length > 120 || /[\r\n]/.test(suggestion)) {
+          throw new Error("Ung\xFCltiges Antwortformat des Vorschlagsmodells.");
+        }
+        const normalize = (value2) => value2.toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, " ").trim();
+        if (avoid.some((value2) => normalize(value2) === normalize(suggestion))) {
+          throw new Error("Das Vorschlagsmodell hat einen bereits verwendeten Wert wiederholt.");
+        }
+        return suggestion;
+      }
+      static async generateDesignerSuggestion(input) {
+        const settings = loadSettings();
+        const configured = String(input.model || settings.designerSuggestionModel || "").trim();
+        const fallback = this.normalizeModelId(settings.llmModel);
+        const selected = configured && /^[A-Za-z0-9._:/-]+$/.test(configured) ? this.normalizeModelId(configured) : fallback;
+        const modelCandidates = Array.from(/* @__PURE__ */ new Set([selected, fallback]));
+        const { url, headers } = this.getBaseUrlAndHeaders();
+        const messages = this.buildDesignerSuggestionMessages(input);
+        let lastError = null;
+        for (const model of modelCandidates) {
+          try {
+            const response2 = await this.executeFetch(url, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                model,
+                messages: [
+                  { role: "system", content: messages.system },
+                  { role: "user", content: messages.user }
+                ],
+                temperature: 0.9,
+                max_tokens: 80
+              }),
+              signal: AbortSignal.timeout(12e3)
+            });
+            if (!response2.ok) throw new Error(await this.parseHttpError(response2, "Designer-Vorschlag"));
+            const data = await response2.json();
+            const suggestion = this.parseDesignerSuggestion(data?.choices?.[0]?.message?.content, input.avoid);
+            return { suggestion, model };
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+          }
+        }
+        throw lastError || new Error("Designer-Vorschlag konnte weder mit dem gew\xE4hlten noch mit dem Grundmodell erzeugt werden.");
       }
       /**
        * Fetch all models from OpenRouter dynamically (Instant response from cache)
@@ -143283,7 +143357,7 @@ data: ${JSON.stringify(message)}
     var import_http24 = require("http2");
     var import_http222 = require("http2");
     var import_stream42 = require("stream");
-    var import_crypto7 = __toESM3(require("crypto"), 1);
+    var import_crypto8 = __toESM3(require("crypto"), 1);
     var RequestError = class extends Error {
       constructor(message, options2) {
         super(message, options2);
@@ -143622,7 +143696,7 @@ data: ${JSON.stringify(message)}
     };
     var X_ALREADY_SENT = "x-hono-already-sent";
     if (typeof global.crypto === "undefined") {
-      global.crypto = import_crypto7.default;
+      global.crypto = import_crypto8.default;
     }
     var outgoingEnded = /* @__PURE__ */ Symbol("outgoingEnded");
     var incomingDraining = /* @__PURE__ */ Symbol("incomingDraining");
@@ -235964,6 +236038,71 @@ init_updateMetadataService();
 init_visionOptimizationService();
 init_taskRecoveryService();
 init_amazonRecoveryVerificationService();
+
+// src/server/services/designerService.ts
+var import_crypto7 = __toESM2(require("crypto"), 1);
+init_llmService();
+init_settingsService();
+init_taskLogService();
+var DESIGN_FIELDS = ["niche1", "niche2", "subniche", "quote", "style"];
+var SUGGESTION_FIELDS = new Set(DESIGN_FIELDS);
+var recentCreations = /* @__PURE__ */ new Map();
+var DesignerService = class {
+  static normalizeValues(input) {
+    const values = Object.fromEntries(DESIGN_FIELDS.map((field) => [
+      field,
+      typeof input?.[field] === "string" ? input[field].trim().replace(/\s+/g, " ").slice(0, 300) : ""
+    ]));
+    if (!values.niche1) throw new Error("Niche 1 ist erforderlich.");
+    return values;
+  }
+  static normalizeSuggestionRequest(input) {
+    const field = String(input?.field || "");
+    if (!SUGGESTION_FIELDS.has(field)) throw new Error("Unbekanntes Vorschlagsfeld.");
+    const rawValues = input?.values && typeof input.values === "object" ? input.values : {};
+    const values = Object.fromEntries(DESIGN_FIELDS.map((key) => [
+      key,
+      typeof rawValues[key] === "string" ? rawValues[key].trim().replace(/\s+/g, " ").slice(0, 300) : ""
+    ]));
+    if (field !== "niche1" && !values.niche1) throw new Error("Bitte zuerst Niche 1 ausf\xFCllen.");
+    const avoid = Array.isArray(input?.avoid) ? input.avoid.filter((value2) => typeof value2 === "string").map((value2) => value2.trim().slice(0, 120)).filter(Boolean).slice(-5) : [];
+    return { field, values, avoid };
+  }
+  static async suggest(input) {
+    const { field, values, avoid } = this.normalizeSuggestionRequest(input);
+    const settings = loadSettings();
+    const requestedModel = typeof input.model === "string" ? input.model.trim().slice(0, 200) : "";
+    return LLMService.generateDesignerSuggestion({
+      field,
+      ...values,
+      avoid,
+      model: requestedModel || settings.designerSuggestionModel || settings.llmModel
+    });
+  }
+  static createTask(input, clientIp) {
+    const values = this.normalizeValues(input);
+    const requestId = typeof input.requestId === "string" && /^[A-Za-z0-9_-]{8,100}$/.test(input.requestId) ? input.requestId : import_crypto7.default.randomUUID();
+    const now = Date.now();
+    for (const [key, entry] of recentCreations) {
+      if (now - entry.createdAt > 10 * 60 * 1e3) recentCreations.delete(key);
+    }
+    const existing = recentCreations.get(requestId);
+    if (existing) return { task: existing.task, duplicate: true };
+    const task = TaskLogService2.createTaskLog({
+      source: "DESIGNER",
+      payload: {
+        ...values,
+        imageProvider: input.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM",
+        promptPoolEnabled: Boolean(input.promptPoolEnabled)
+      },
+      clientIp
+    });
+    recentCreations.set(requestId, { createdAt: now, task });
+    return { task, duplicate: false };
+  }
+};
+
+// src/server/index.ts
 var import_meta = {};
 import_dotenv.default.config();
 var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path85.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
@@ -236782,42 +236921,25 @@ app.post("/api/v1/update/backfill/reset", (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.post("/api/v1/designer/prompt", async (req, res) => {
+app.post("/api/v1/designer/suggest", async (req, res) => {
   try {
-    const { niche1, niche2, quote: quote5, stylePreset, imageProvider, background } = req.body;
-    const prompt = await LLMService.generateIdeogramPrompt(
-      niche1 || "",
-      niche2 || "",
-      quote5 || "",
-      stylePreset || "vintage-distressed",
-      imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM",
-      background || "opaque"
-    );
-    res.json({ success: true, prompt });
+    const result2 = await DesignerService.suggest(req.body || {});
+    res.json({ success: true, ...result2 });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    const message = err?.message || "Vorschlag konnte nicht erzeugt werden.";
+    const isInputError = /Unbekanntes Vorschlagsfeld|Bitte zuerst/.test(message);
+    res.status(isInputError ? 400 : 502).json({ success: false, error: message });
   }
 });
 app.post("/api/v1/designer/generate", async (req, res) => {
   try {
-    const { prompt, niche1, niche2, quote: quote5, imageProvider, promptPoolEnabled } = req.body;
     const clientIp = req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "local";
-    const taskLog = TaskLogService2.createTaskLog({
-      source: "DESIGNER",
-      payload: {
-        prompt,
-        imageProvider: imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM",
-        promptPoolEnabled: Boolean(promptPoolEnabled),
-        niche1,
-        niche2,
-        quote: quote5
-      },
-      clientIp
-    });
-    broadcast("TASK_LOG_CREATED", taskLog);
-    res.json({ success: true, taskId: taskLog.id, task: taskLog });
+    const result2 = DesignerService.createTask(req.body || {}, clientIp);
+    if (!result2.duplicate) broadcast("TASK_LOG_CREATED", result2.task);
+    res.json({ success: true, taskId: result2.task.id, task: result2.task, duplicate: result2.duplicate });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    const message = err?.message || "Task konnte nicht angelegt werden.";
+    res.status(message === "Niche 1 ist erforderlich." ? 400 : 500).json({ success: false, error: message });
   }
 });
 app.get("/api/v1/tasks", (req, res) => {

@@ -63,7 +63,7 @@ export const App: React.FC = () => {
               {activeTab === 'dashboard' && <DashboardView onNavigateTab={setActiveTab} />}
               {activeTab === 'promptlog' && <PromptLogView />}
               {activeTab === 'systemprompts' && <SystemPromptsView />}
-              {activeTab === 'designer' && <DesignerView />}
+              {activeTab === 'designer' && <DesignerView onNavigateTab={setActiveTab} />}
               {activeTab === 'tasks' && <TasksView />}
               {activeTab === 'trademark' && <TrademarkView />}
               {activeTab === 'queue' && <QueueView />}

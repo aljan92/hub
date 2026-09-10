@@ -33,6 +33,19 @@ export interface OpenRouterModelItem {
   description?: string;
 }
 
+export type DesignerSuggestionField = 'niche1' | 'niche2' | 'subniche' | 'quote' | 'style';
+
+export interface DesignerSuggestionInput {
+  field: DesignerSuggestionField;
+  niche1?: string;
+  niche2?: string;
+  subniche?: string;
+  quote?: string;
+  style?: string;
+  avoid?: string[];
+  model?: string;
+}
+
 let cachedModels: OpenRouterModelItem[] = [
   { id: 'openai/gpt-5.6-sol', name: 'OpenAI: GPT-5.6 Sol' },
   { id: 'deepseek/deepseek-v4-pro', name: 'DeepSeek: DeepSeek V4 Pro' },
@@ -100,6 +113,85 @@ export class LLMService {
       headers,
       model: this.normalizeModelId(rawModel)
     };
+  }
+
+  public static buildDesignerSuggestionMessages(input: DesignerSuggestionInput): { system: string; user: string } {
+    const instructions: Record<DesignerSuggestionField, string> = {
+      niche1: 'Return one broad, recognizable evergreen interest niche with strong visual T-shirt potential. Avoid micro-niches, brands, copyrighted properties, seasonal events, and claims about measured sales or competition.',
+      niche2: 'Return one independent cross-niche that combines naturally and visually with niche1. It must not be a synonym, subcategory, demographic, or simple restatement of niche1.',
+      subniche: 'Return one useful, more specific facet within niche1. It must be a genuine subniche and not an unrelated cross-niche.',
+      quote: 'Return one short, original, memorable English T-shirt quote fitting all supplied niche fields. Avoid brands, known slogans, attribution, trademark symbols, and generic filler. Return only the quote text in the JSON value.',
+      style: 'Return one concrete English T-shirt design style fitting the supplied niches and quote. Include a concise illustration and typography direction, not marketplace or promotional language.'
+    };
+    const clean = (value: unknown) => String(value || '').trim().slice(0, 300);
+    const avoid = Array.from(new Set((input.avoid || []).map(clean).filter(Boolean))).slice(-5);
+    return {
+      system: `You generate one fast ideation suggestion for a print-on-demand designer form. ${instructions[input.field]} Reply in English with valid JSON only, exactly {"suggestion":"..."}. No markdown, explanation, alternatives, or extra keys. Keep the suggestion under 120 characters.`,
+      user: JSON.stringify({
+        targetField: input.field,
+        currentValues: {
+          niche1: clean(input.niche1),
+          niche2: clean(input.niche2),
+          subniche: clean(input.subniche),
+          quote: clean(input.quote),
+          style: clean(input.style)
+        },
+        avoid
+      })
+    };
+  }
+
+  public static parseDesignerSuggestion(content: unknown, avoid: string[] = []): string {
+    if (typeof content !== 'string' || !content.trim()) throw new Error('Leere Antwort des Vorschlagsmodells.');
+    const parsed = this.extractJsonFromLlmResponse(content);
+    const suggestion = typeof parsed?.suggestion === 'string'
+      ? parsed.suggestion.trim().replace(/^['"]|['"]$/g, '').replace(/\s+/g, ' ')
+      : '';
+    if (!suggestion || suggestion.length > 120 || /[\r\n]/.test(suggestion)) {
+      throw new Error('Ungültiges Antwortformat des Vorschlagsmodells.');
+    }
+    const normalize = (value: string) => value.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g, ' ').trim();
+    if (avoid.some(value => normalize(value) === normalize(suggestion))) {
+      throw new Error('Das Vorschlagsmodell hat einen bereits verwendeten Wert wiederholt.');
+    }
+    return suggestion;
+  }
+
+  public static async generateDesignerSuggestion(input: DesignerSuggestionInput): Promise<{ suggestion: string; model: string }> {
+    const settings = loadSettings();
+    const configured = String(input.model || settings.designerSuggestionModel || '').trim();
+    const fallback = this.normalizeModelId(settings.llmModel);
+    const selected = configured && /^[A-Za-z0-9._:/-]+$/.test(configured) ? this.normalizeModelId(configured) : fallback;
+    const modelCandidates = Array.from(new Set([selected, fallback]));
+    const { url, headers } = this.getBaseUrlAndHeaders();
+    const messages = this.buildDesignerSuggestionMessages(input);
+    let lastError: Error | null = null;
+
+    for (const model of modelCandidates) {
+      try {
+        const response = await this.executeFetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: messages.system },
+              { role: 'user', content: messages.user }
+            ],
+            temperature: 0.9,
+            max_tokens: 80
+          }),
+          signal: AbortSignal.timeout(12000)
+        });
+        if (!response.ok) throw new Error(await this.parseHttpError(response, 'Designer-Vorschlag'));
+        const data = await response.json();
+        const suggestion = this.parseDesignerSuggestion(data?.choices?.[0]?.message?.content, input.avoid);
+        return { suggestion, model };
+      } catch (error: any) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+    throw lastError || new Error('Designer-Vorschlag konnte weder mit dem gewählten noch mit dem Grundmodell erzeugt werden.');
   }
 
   /**

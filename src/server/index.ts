@@ -39,6 +39,7 @@ import { UpdateMetadataService } from './services/updateMetadataService';
 import { VisionOptimizationService } from './services/visionOptimizationService';
 import { TaskRecoveryService } from './services/taskRecoveryService';
 import { AmazonRecoveryVerificationService } from './services/amazonRecoveryVerificationService';
+import { DesignerService } from './services/designerService';
 
 dotenv.config();
 
@@ -1020,47 +1021,28 @@ app.post('/api/v1/update/backfill/reset', (req, res) => {
   }
 });
 
-// 5. Designer: Optimize Prompt via LLM
-app.post('/api/v1/designer/prompt', async (req, res) => {
+// 5. Designer: fast, field-specific ideation through the selected suggestion model
+app.post('/api/v1/designer/suggest', async (req, res) => {
   try {
-    const { niche1, niche2, quote, stylePreset, imageProvider, background } = req.body;
-    const prompt = await LLMService.generateIdeogramPrompt(
-      niche1 || '',
-      niche2 || '',
-      quote || '',
-      stylePreset || 'vintage-distressed',
-      imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM',
-      background || 'opaque'
-    );
-    res.json({ success: true, prompt });
+    const result = await DesignerService.suggest(req.body || {});
+    res.json({ success: true, ...result });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    const message = err?.message || 'Vorschlag konnte nicht erzeugt werden.';
+    const isInputError = /Unbekanntes Vorschlagsfeld|Bitte zuerst/.test(message);
+    res.status(isInputError ? 400 : 502).json({ success: false, error: message });
   }
 });
 
 // 6. Designer: Generate Image & Send to Tasks
 app.post('/api/v1/designer/generate', async (req, res) => {
   try {
-    const { prompt, niche1, niche2, quote, imageProvider, promptPoolEnabled } = req.body;
     const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'local';
-
-    const taskLog = TaskLogService.createTaskLog({
-      source: 'DESIGNER',
-      payload: {
-        prompt,
-        imageProvider: imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM',
-        promptPoolEnabled: Boolean(promptPoolEnabled),
-        niche1,
-        niche2,
-        quote
-      },
-      clientIp
-    });
-
-    broadcast('TASK_LOG_CREATED', taskLog);
-    res.json({ success: true, taskId: taskLog.id, task: taskLog });
+    const result = DesignerService.createTask(req.body || {}, clientIp);
+    if (!result.duplicate) broadcast('TASK_LOG_CREATED', result.task);
+    res.json({ success: true, taskId: result.task.id, task: result.task, duplicate: result.duplicate });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    const message = err?.message || 'Task konnte nicht angelegt werden.';
+    res.status(message === 'Niche 1 ist erforderlich.' ? 400 : 500).json({ success: false, error: message });
   }
 });
 
