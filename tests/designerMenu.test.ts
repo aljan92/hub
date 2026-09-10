@@ -35,8 +35,13 @@ test('suggestion response accepts strict JSON and rejects duplicates or malforme
   assert.equal(LLMService.parseDesignerSuggestion('{"suggestion":"Garden Gremlins"}'), 'Garden Gremlins');
   assert.throws(() => LLMService.parseDesignerSuggestion('{"suggestion":"Garden Gremlins"}', ['garden-gremlins']), /wiederholt/);
   assert.throws(() => LLMService.parseDesignerSuggestion('plain text'), /Antwortformat/);
+  assert.equal(LLMService.parseDesignerSuggestion('{"suggestion":"Retro Space Exploration"}', [], 'niche1'), 'Retro Space Exploration');
+  assert.throws(() => LLMService.parseDesignerSuggestion('{"suggestion":"Retro space exploration and astronomy"}', [], 'niche1'), /höchstens drei/);
+  assert.throws(() => LLMService.parseDesignerSuggestion('{"suggestion":"Cats and Coffee"}', [], 'niche2'), /ohne Verknüpfung/);
+  assert.throws(() => LLMService.parseDesignerSuggestion('{"suggestion":"Vintage science fiction pulp magazine art"}', [], 'niche2'), /höchstens drei/);
   const messages = LLMService.buildDesignerSuggestionMessages({ field: 'niche2', niche1: 'Gardening', avoid: ['Cats'] });
-  assert.match(messages.system, /independent cross-niche/);
+  assert.match(messages.system, /deliberately unrelated/);
+  assert.match(messages.system, /one to three words/);
   assert.match(messages.user, /Gardening/);
   assert.match(messages.user, /Cats/);
 });
@@ -58,6 +63,25 @@ test('unavailable selected suggestion model falls back to the configured base mo
     assert.equal(requestedModels.length, 2);
     assert.equal(result.suggestion, 'Fallback idea');
     assert.equal(result.model, requestedModels[1]);
+  } finally {
+    (LLMService as any).executeFetch = original;
+  }
+});
+
+test('invalid long niche is retried and never reaches the form', async () => {
+  const original = (LLMService as any).executeFetch;
+  let requests = 0;
+  (LLMService as any).executeFetch = async () => {
+    requests++;
+    const content = requests === 1
+      ? '{"suggestion":"Retro space exploration and astronomy"}'
+      : '{"suggestion":"Astronomy"}';
+    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+  };
+  try {
+    const result = await LLMService.generateDesignerSuggestion({ field: 'niche1' });
+    assert.equal(result.suggestion, 'Astronomy');
+    assert.equal(requests, 2);
   } finally {
     (LLMService as any).executeFetch = original;
   }

@@ -110,9 +110,9 @@ export class LLMService {
 
   public static buildDesignerSuggestionMessages(input: DesignerSuggestionInput): { system: string; user: string } {
     const instructions: Record<DesignerSuggestionField, string> = {
-      niche1: 'Return one broad, recognizable evergreen interest niche with strong visual T-shirt potential. Avoid micro-niches, brands, copyrighted properties, seasonal events, and claims about measured sales or competition.',
-      niche2: 'Return one independent cross-niche that combines naturally and visually with niche1. It must not be a synonym, subcategory, demographic, or simple restatement of niche1.',
-      subniche: 'Return one useful, more specific facet within niche1. It must be a genuine subniche and not an unrelated cross-niche.',
+      niche1: 'Return exactly one clear evergreen interest niche in one to three words. Do not combine two niches. Never use connectors such as "and", "or", "with", "plus", "&", "/", or "x". Good granularity examples: Astronomy, Tennis, Retro Space Exploration. Avoid descriptive concepts such as "Retro space exploration and astronomy", micro-niches, brands, copyrighted properties, and seasonal events.',
+      niche2: 'Return exactly one random, clear cross-niche in one to three words. It must be deliberately unrelated to niche1: do not derive it from niche1, match its theme, era, aesthetic, audience, science/fiction category, or visual vocabulary. The later D2 step will invent the connection. For example, an astronomy niche may receive Sloths or Tennis. Never use connectors such as "and", "or", "with", "plus", "&", "/", or "x".',
+      subniche: 'Return exactly one clear and recognizable subniche of niche1 in one to three words. Use only the niche name, not a description, art direction, audience, or combined concept. Never use connectors such as "and", "or", "with", "plus", "&", "/", or "x".',
       quote: 'Return one short, original, memorable English T-shirt quote fitting all supplied niche fields. Avoid brands, known slogans, attribution, trademark symbols, and generic filler. Return only the quote text in the JSON value.',
       style: 'Return one concrete English T-shirt design style fitting the supplied niches and quote. Include a concise illustration and typography direction, not marketplace or promotional language.'
     };
@@ -134,7 +134,7 @@ export class LLMService {
     };
   }
 
-  public static parseDesignerSuggestion(content: unknown, avoid: string[] = []): string {
+  public static parseDesignerSuggestion(content: unknown, avoid: string[] = [], field?: DesignerSuggestionField): string {
     if (typeof content !== 'string' || !content.trim()) throw new Error('Leere Antwort des Vorschlagsmodells.');
     const parsed = this.extractJsonFromLlmResponse(content);
     const suggestion = typeof parsed?.suggestion === 'string'
@@ -142,6 +142,13 @@ export class LLMService {
       : '';
     if (!suggestion || suggestion.length > 120 || /[\r\n]/.test(suggestion)) {
       throw new Error('Ungültiges Antwortformat des Vorschlagsmodells.');
+    }
+    if (field === 'niche1' || field === 'niche2' || field === 'subniche') {
+      const words = suggestion.match(/[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*/g) || [];
+      const hasConnector = /(?:\band\b|\bor\b|\bwith\b|\bplus\b|\bx\b|[&/+])/i.test(suggestion);
+      if (words.length < 1 || words.length > 3 || hasConnector) {
+        throw new Error('Nischenvorschlag muss eine eindeutige Nische mit höchstens drei Wörtern ohne Verknüpfung sein.');
+      }
     }
     const normalize = (value: string) => value.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g, ' ').trim();
     if (avoid.some(value => normalize(value) === normalize(suggestion))) {
@@ -161,27 +168,32 @@ export class LLMService {
     let lastError: Error | null = null;
 
     for (const model of modelCandidates) {
-      try {
-        const response = await this.executeFetch(url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: 'system', content: messages.system },
-              { role: 'user', content: messages.user }
-            ],
-            temperature: 0.9,
-            max_tokens: 80
-          }),
-          signal: AbortSignal.timeout(12000)
-        });
-        if (!response.ok) throw new Error(await this.parseHttpError(response, 'Designer-Vorschlag'));
-        const data = await response.json();
-        const suggestion = this.parseDesignerSuggestion(data?.choices?.[0]?.message?.content, input.avoid);
-        return { suggestion, model };
-      } catch (error: any) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await this.executeFetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: 'system', content: messages.system },
+                { role: 'user', content: messages.user }
+              ],
+              temperature: 0.9,
+              max_tokens: 80
+            }),
+            signal: AbortSignal.timeout(12000)
+          });
+          if (!response.ok) {
+            lastError = new Error(await this.parseHttpError(response, 'Designer-Vorschlag'));
+            break;
+          }
+          const data = await response.json();
+          const suggestion = this.parseDesignerSuggestion(data?.choices?.[0]?.message?.content, input.avoid, input.field);
+          return { suggestion, model };
+        } catch (error: any) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+        }
       }
     }
     throw lastError || new Error('Designer-Vorschlag konnte weder mit dem gewählten noch mit dem Grundmodell erzeugt werden.');
