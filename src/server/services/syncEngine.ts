@@ -42,8 +42,24 @@ export interface SyncState {
   unresolvedAsinsCount: number;
   childAsinShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null };
   childAsinDiagnostics?: ChildAsinDiagnostics;
+  childAsinValidation?: { observed: number; resolved: number; confirmedTwice: number; statuses: Array<{ status: string; count: number }> };
+  lifecycleAudit?: LifecycleAuditSummary;
   egress?: { mode: 'observe' | 'optimized'; baselineReady: boolean; pending: number; metrics: any[] };
   lastRun?: ProductSyncRuntime['lastRun'];
+}
+
+export interface LifecycleAuditSummary {
+  lastRunAt: string;
+  amazonListings: number;
+  amazonDesigns: number;
+  databaseDesigns: number;
+  deletedAtAmazonDesigns: number;
+  missingFromAmazonDesigns: number;
+  stalePublishedProducts: number;
+  staleAdAsins: number;
+  missingDatabaseProducts: number;
+  reportPath: string;
+  complete: boolean;
 }
 
 export interface ChildAsinDiagnostics {
@@ -96,10 +112,13 @@ type ProductSyncRuntime = {
   resolverRetries?: Record<string, { attempts: number; nextAt: string; parentAsin: string; lastError: string }>;
   resolverShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null; cursor?: number; blockedUntil?: string | null };
   resolverDiagnostics?: ChildAsinDiagnostics;
+  lifecycleAudit?: LifecycleAuditSummary;
+  resolverObservations?: Record<string, { parentAsin: string; resolvedAsin: string | null; status: string; source: string | null; observedAt: string; consistentCount: number }>;
   lastRun?: { runId: string; type: string; status: 'running' | 'complete' | 'partial' | 'truncated' | 'cancelled' | 'unknown_write_outcome' | 'error'; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 };
 const SYNC_RUNTIME_PATH = path.resolve(process.cwd(), 'data', 'sync_runtime.json');
 const FULL_STAGE_PATH = path.resolve(process.cwd(), 'data', 'sync_full_stage.json');
+const LIFECYCLE_AUDIT_PATH = path.resolve(process.cwd(), 'data', 'sync_lifecycle_audit.json');
 
 export class SyncEngine {
   private static logs: SyncLogEntry[] = [];
@@ -280,7 +299,7 @@ export class SyncEngine {
   public static getState(): SyncState {
     try {
       const runtime = this.loadRuntime();
-      return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, lastRun: runtime.lastRun, egress: {
+      return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, childAsinValidation: this.buildResolverValidation(runtime.resolverObservations || {}), lifecycleAudit: runtime.lifecycleAudit || this.state.lifecycleAudit, lastRun: runtime.lastRun, egress: {
       mode: loadSettings().syncEgressMode || 'observe',
       baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
       pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
@@ -292,6 +311,23 @@ export class SyncEngine {
   public static updateCounts(live: number, unresolved: number) {
     this.state.liveDesignsCount = live;
     this.state.unresolvedAsinsCount = unresolved;
+  }
+
+  public static buildResolverValidation(observations: NonNullable<ProductSyncRuntime['resolverObservations']>) {
+    const statuses = new Map<string, number>();
+    let resolved = 0;
+    let confirmedTwice = 0;
+    for (const observation of Object.values(observations || {})) {
+      statuses.set(observation.status, (statuses.get(observation.status) || 0) + 1);
+      if (observation.status === 'resolved' && observation.resolvedAsin) resolved++;
+      if (observation.status === 'resolved' && observation.resolvedAsin && observation.consistentCount >= 2) confirmedTwice++;
+    }
+    return {
+      observed: Object.keys(observations || {}).length,
+      resolved,
+      confirmedTwice,
+      statuses: [...statuses.entries()].sort((a, b) => b[1] - a[1]).map(([status, count]) => ({ status, count }))
+    };
   }
 
   public static stopScan() {
@@ -1331,6 +1367,143 @@ export class SyncEngine {
   /**
    * 7. Resolve Child ASINs Batch
    */
+  public static buildLifecycleAudit(listings: any[], databaseRows: any[]): { summary: Omit<LifecycleAuditSummary, 'lastRunAt' | 'reportPath' | 'complete'>; candidates: any } {
+    const liveStatuses = new Set(['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING']);
+    const amazonByDesign = new Map<string, { all: any[]; liveKeys: Set<string> }>();
+    const productKey = (type: unknown, market: unknown) => `${normalizeChildAsinProductType(type)}|${String(market || '').toLowerCase()}`;
+    for (const listing of listings || []) {
+      const designId = String(listing?.designId || '');
+      const market = String(listing?.marketplace || MP_MAP[listing?.marketplaceId] || '').toLowerCase();
+      if (!designId || !market || !listing?.productType) continue;
+      const entry = amazonByDesign.get(designId) || { all: [], liveKeys: new Set<string>() };
+      entry.all.push(listing);
+      if (liveStatuses.has(String(listing?.status || '').toUpperCase())) entry.liveKeys.add(productKey(listing.productType, market));
+      amazonByDesign.set(designId, entry);
+    }
+
+    const deletedAtAmazon: string[] = [];
+    const missingFromAmazon: string[] = [];
+    const staleProducts: Array<{ designId: string; type: string; market: string }> = [];
+    const staleAds: Array<{ designId: string; type: string; market: string }> = [];
+    const missingDatabaseProducts: Array<{ designId: string; type: string; market: string }> = [];
+    const databaseDesignIds = new Set<string>();
+    for (const row of databaseRows || []) {
+      const designId = String(row?.design_id || '');
+      if (!designId) continue;
+      databaseDesignIds.add(designId);
+      const amazon = amazonByDesign.get(designId);
+      if (!amazon) missingFromAmazon.push(designId);
+      else if (amazon.liveKeys.size === 0) deletedAtAmazon.push(designId);
+
+      const dbProducts = Array.isArray(row?.published_products) ? row.published_products : [];
+      const dbKeys = new Set(dbProducts.map((product: any) => productKey(product?.type, product?.market)));
+      const liveKeys = amazon?.liveKeys || new Set<string>();
+      for (const product of dbProducts) {
+        const key = productKey(product?.type, product?.market);
+        if (!liveKeys.has(key)) staleProducts.push({ designId, type: normalizeChildAsinProductType(product?.type), market: String(product?.market || '').toLowerCase() });
+      }
+      for (const ad of Array.isArray(row?.ad_asins) ? row.ad_asins : []) {
+        if (!liveKeys.has(productKey(ad?.type, ad?.market))) staleAds.push({ designId, type: normalizeChildAsinProductType(ad?.type), market: String(ad?.market || '').toLowerCase() });
+      }
+      for (const key of liveKeys) {
+        if (!dbKeys.has(key)) {
+          const [type, market] = key.split('|');
+          missingDatabaseProducts.push({ designId, type, market });
+        }
+      }
+    }
+    for (const [designId, amazon] of amazonByDesign) {
+      if (databaseDesignIds.has(designId)) continue;
+      for (const key of amazon.liveKeys) {
+        const [type, market] = key.split('|');
+        missingDatabaseProducts.push({ designId, type, market });
+      }
+    }
+
+    return {
+      summary: {
+        amazonListings: listings.length,
+        amazonDesigns: amazonByDesign.size,
+        databaseDesigns: databaseRows.length,
+        deletedAtAmazonDesigns: deletedAtAmazon.length,
+        missingFromAmazonDesigns: missingFromAmazon.length,
+        stalePublishedProducts: staleProducts.length,
+        staleAdAsins: staleAds.length,
+        missingDatabaseProducts: missingDatabaseProducts.length
+      },
+      candidates: { deletedAtAmazon, missingFromAmazon, staleProducts, staleAds, missingDatabaseProducts }
+    };
+  }
+
+  public static async runLifecycleAudit(): Promise<LifecycleAuditSummary> {
+    const runId = this.beginWorker('lifecycle_audit');
+    this.shouldStop = false;
+    this.state.isScanning = true;
+    this.state.activeScanType = 'lifecycle_audit';
+    let pages = 0;
+    try {
+      const page = await this.getAmazonPage();
+      const accountId = await this.getAccountId(page);
+      const listings: any[] = [];
+      let pageToken: any[] = [];
+      const seenTokens = new Set<string>(['[]']);
+      while (!this.shouldStop) {
+        if (pages >= 1000) throw new Error('Lifecycle-Audit überschritt das Sicherheitslimit von 1.000 Seiten.');
+        const response = await this.fetchListingsPage(page, accountId, pageToken, ALL_STATUSES);
+        pages++;
+        if (!response.results?.length) {
+          if (response.pageToken?.length) throw new Error('Lifecycle-Audit erhielt eine leere Seite mit Fortsetzungstoken.');
+          break;
+        }
+        listings.push(...response.results);
+        if (!response.pageToken?.length) break;
+        const tokenKey = JSON.stringify(response.pageToken);
+        if (seenTokens.has(tokenKey)) throw new Error('Lifecycle-Audit erkannte einen wiederholten Seitentoken.');
+        seenTokens.add(tokenKey);
+        pageToken = response.pageToken;
+        await this.sleep(600);
+      }
+      if (this.shouldStop) throw new Error('Lifecycle-Audit manuell abgebrochen.');
+      if (!listings.length) throw new Error('Lifecycle-Audit lieferte keine Amazon-Produkte; kein Bericht erstellt.');
+
+      const supabase = this.getSupabase();
+      const databaseRows: any[] = [];
+      for (let from = 0; ; from += 500) {
+        const { data, error } = await supabase.from('mba_designs')
+          .select('design_id, status, published_products, ad_asins')
+          .order('design_id', { ascending: true })
+          .range(from, from + 499);
+        this.recordTraffic('lifecycle_audit_read', { data, error });
+        if (error) throw new Error(`Lifecycle-Audit konnte Supabase nicht lesen: ${error.message || String(error)}`);
+        databaseRows.push(...(data || []));
+        if (!data || data.length < 500) break;
+      }
+
+      const audit = this.buildLifecycleAudit(listings, databaseRows);
+      const summary: LifecycleAuditSummary = {
+        ...audit.summary,
+        lastRunAt: new Date().toISOString(),
+        reportPath: 'data/sync_lifecycle_audit.json',
+        complete: true
+      };
+      atomicWriteJson(LIFECYCLE_AUDIT_PATH, { version: 1, accountKey: crypto.createHash('sha256').update(accountId || 'unknown').digest('hex').slice(0, 16), summary, candidates: audit.candidates }, { backup: true });
+      const runtime = this.loadRuntime();
+      runtime.lifecycleAudit = summary;
+      this.saveRuntime(runtime);
+      this.state.lifecycleAudit = summary;
+      this.addLog(`[Lifecycle Audit] Read-only abgeschlossen: ${summary.deletedAtAmazonDesigns} vollständig gelöschte Designs, ${summary.stalePublishedProducts} veraltete Produkte, ${summary.staleAdAsins} betroffene ad_asins.`, 'success');
+      this.finishWorker(runId, 'complete', { pages, attempted: databaseRows.length, confirmed: 0, message: 'Nur gelesen; keine Datenbankänderung.' });
+      return summary;
+    } catch (error: any) {
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : 'error', { pages, message: error?.message || String(error) });
+      this.addLog(`[Lifecycle Audit] Fehler: ${error?.message || String(error)}. Keine Datenbankänderung.`, 'error');
+      throw error;
+    } finally {
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+    }
+  }
+
   public static buildChildAsinDiagnostics(
     rows: any[],
     retryState: ProductSyncRuntime['resolverRetries'] = {},
@@ -1596,10 +1769,7 @@ export class SyncEngine {
     return { processed, errors };
   }
 
-  /**
-   * Read-only V2 probe for the seven newly supported product types. It uses
-   * the authenticated browser context but deliberately performs no Supabase write.
-   */
+  /** Read-only SNAP-style probe for every product type requiring a child ASIN. */
   public static async runChildAsinShadowBatch(limit = 1): Promise<{ checked: number; resolved: number; unresolved: number }> {
     this.shouldStop = false;
     const runId = this.beginWorker('resolve_asins_shadow');
@@ -1616,6 +1786,7 @@ export class SyncEngine {
       const supabase = this.getSupabase();
       const runtime = this.loadRuntime();
       const retryState = runtime.resolverRetries || {};
+      const observations = runtime.resolverObservations || {};
       const previousShadow = runtime.resolverShadow;
       const blockedUntil = previousShadow?.blockedUntil ? Date.parse(previousShadow.blockedUntil) : 0;
       if (blockedUntil > Date.now()) {
@@ -1635,7 +1806,7 @@ export class SyncEngine {
       this.recordTraffic('resolver_shadow_read', { data: rows, error });
       if (error) throw new Error(`ASIN-Shadow-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
 
-      const candidates: Array<{ designId: string; type: string; market: string; parentAsin: string; retryKey: string }> = [];
+      const candidates: Array<{ designId: string; type: string; market: string; parentAsin: string; retryKey: string; observationKey: string }> = [];
       for (const row of rows || []) {
         const products = Array.isArray(row.published_products) ? row.published_products : [];
         const adAsins = Array.isArray(row.ad_asins) ? row.ad_asins : [];
@@ -1643,15 +1814,18 @@ export class SyncEngine {
           const type = normalizeChildAsinProductType(product?.type);
           const market = String(product?.market || '').toLowerCase();
           const parentAsin = this.sanitizeAsin(product?.asin);
-          if (!isNewChildAsinShadowType(type) || !parentAsin || !market) continue;
+          if (getChildAsinPolicy(type) !== 'resolve' || !parentAsin || !market) continue;
           const existing = adAsins.find((entry: any) =>
             normalizeChildAsinProductType(entry?.type) === type && String(entry?.market || '').toLowerCase() === market
           );
-          if (isConfirmedChildAsin(existing?.asin, existing?.parentAsin)) continue;
+          if (this.sanitizeAsin(existing?.parentAsin) === parentAsin && isConfirmedChildAsin(existing?.asin, parentAsin)) continue;
           const retryKey = `shadow:${row.design_id}:${market}:${type}`;
+          const observationKey = crypto.createHash('sha256').update(`${row.design_id}:${market}:${type}`).digest('hex').slice(0, 24);
+          const observation = observations[observationKey];
+          if (observation?.parentAsin === parentAsin && Date.parse(observation.observedAt) > Date.now() - 12 * 60 * 60 * 1000) continue;
           const retry = retryState[retryKey];
           if (retry?.parentAsin === parentAsin && Date.parse(retry.nextAt) > Date.now()) continue;
-          candidates.push({ designId: row.design_id, type, market, parentAsin, retryKey });
+          candidates.push({ designId: row.design_id, type, market, parentAsin, retryKey, observationKey });
           if (candidates.length >= Math.max(1, limit)) break;
         }
         if (candidates.length >= Math.max(1, limit)) break;
@@ -1661,11 +1835,22 @@ export class SyncEngine {
         if (this.shouldStop) break;
         checked++;
         const result = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
+        const previousObservation = observations[candidate.observationKey];
+        const resolvedAsin = result.status === 'resolved' ? result.evidence.resolvedAsin : null;
+        observations[candidate.observationKey] = {
+          parentAsin: candidate.parentAsin,
+          resolvedAsin,
+          status: result.status,
+          source: result.evidence.source || null,
+          observedAt: new Date().toISOString(),
+          consistentCount: previousObservation?.parentAsin === candidate.parentAsin && previousObservation?.resolvedAsin === resolvedAsin && previousObservation?.status === result.status
+            ? (previousObservation.consistentCount || 0) + 1 : 1
+        };
         if (result.status === 'resolved') {
           resolved++;
           delete retryState[candidate.retryKey];
           this.addLog(
-            `[ASIN Shadow V2] ✓ ${candidate.type} (${candidate.market}): ${candidate.parentAsin} ➔ ${result.evidence.resolvedAsin} via ${result.evidence.source}. Nur geprüft, nicht gespeichert.`,
+            `[ASIN SNAP Shadow] ✓ ${candidate.type} (${candidate.market}): ${candidate.parentAsin} ➔ ${result.evidence.resolvedAsin} via ${result.evidence.source}. Nur geprüft, nicht gespeichert.`,
             'success'
           );
         } else {
@@ -1681,7 +1866,7 @@ export class SyncEngine {
           };
           const blocked = result.status === 'amazon_blocked' || result.status === 'auth_required';
           this.addLog(
-            `[ASIN Shadow V2] ${candidate.type} (${candidate.market}) blieb offen: ${result.status}. Keine Datenbankänderung.`,
+            `[ASIN SNAP Shadow] ${candidate.type} (${candidate.market}) blieb offen: ${result.status}. Keine Datenbankänderung.`,
             blocked ? 'error' : 'warn'
           );
           if (blocked) {
@@ -1702,6 +1887,7 @@ export class SyncEngine {
         ? 'Keine fälligen neuen Produkt-/Marktplatzkombinationen in der begrenzten Stichprobe.'
         : `${resolved}/${checked} eindeutig aufgelöst; keine Datenbankänderung.`);
       runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5000));
+      runtime.resolverObservations = Object.fromEntries(Object.entries(observations).slice(-5000));
       const nextCursor = blockedResult ? cursor : ((rows || []).length < 250 ? 0 : cursor + 250);
       runtime.resolverShadow = {
         ...(runtime.resolverShadow || {}),
@@ -1717,7 +1903,7 @@ export class SyncEngine {
     } catch (error: any) {
       finalStatus = 'error';
       message = error?.message || String(error);
-      this.addLog(`[ASIN Shadow V2] Fehler: ${message}. Keine Datenbankänderung.`, 'error');
+      this.addLog(`[ASIN SNAP Shadow] Fehler: ${message}. Keine Datenbankänderung.`, 'error');
       throw error;
     } finally {
       this.finishWorker(runId, this.shouldStop ? 'cancelled' : finalStatus, { pages: 0, attempted: checked, confirmed: 0, message });

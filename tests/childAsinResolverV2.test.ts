@@ -200,3 +200,43 @@ test('legacy diagnostics explain entries, retries and stale design flags without
   assert.equal(JSON.stringify(diagnostics).includes('D-READY'), false);
   assert.equal(JSON.stringify(diagnostics).includes('B000000001'), false);
 });
+
+test('lifecycle audit compares complete Amazon state without mutating source rows', () => {
+  const listings = [
+    { designId: 'D1', asin: 'B000000001', productType: 'MUG', marketplace: 'us', status: 'PUBLISHED' },
+    { designId: 'D1', asin: 'B000000002', productType: 'TUMBLER', marketplace: 'de', status: 'DELETED' },
+    { designId: 'D2', asin: 'B000000003', productType: 'TOTE_BAG', marketplace: 'us', status: 'DELETED' },
+    { designId: 'D4', asin: 'B000000004', productType: 'MUG', marketplace: 'us', status: 'PUBLISHED' }
+  ];
+  const databaseRows = [
+    {
+      design_id: 'D1', status: 'PUBLISHED',
+      published_products: [{ asin: 'B000000001', type: 'MUG', market: 'us' }, { asin: 'B000000002', type: 'TUMBLER', market: 'de' }],
+      ad_asins: [{ asin: 'B000000002', parentAsin: 'B000000002', type: 'TUMBLER', market: 'de' }]
+    },
+    { design_id: 'D2', status: 'PUBLISHED', published_products: [{ asin: 'B000000003', type: 'TOTE_BAG', market: 'us' }], ad_asins: [] },
+    { design_id: 'D3', status: 'PUBLISHED', published_products: [{ asin: 'B000000005', type: 'MUG', market: 'us' }], ad_asins: [] }
+  ];
+  const before = structuredClone(databaseRows);
+  const audit = SyncEngine.buildLifecycleAudit(listings, databaseRows);
+
+  assert.equal(audit.summary.amazonDesigns, 3);
+  assert.equal(audit.summary.databaseDesigns, 3);
+  assert.equal(audit.summary.deletedAtAmazonDesigns, 1);
+  assert.equal(audit.summary.missingFromAmazonDesigns, 1);
+  assert.equal(audit.summary.stalePublishedProducts, 3);
+  assert.equal(audit.summary.staleAdAsins, 1);
+  assert.equal(audit.summary.missingDatabaseProducts, 1);
+  assert.deepEqual(databaseRows, before);
+});
+
+test('resolver validation counts unique observations and repeat confirmations', () => {
+  const summary = SyncEngine.buildResolverValidation({
+    a: { parentAsin: 'B000000001', resolvedAsin: 'B000000002', status: 'resolved', source: 'hidden-input', observedAt: new Date().toISOString(), consistentCount: 2 },
+    b: { parentAsin: 'B000000003', resolvedAsin: null, status: 'http_not_found', source: null, observedAt: new Date().toISOString(), consistentCount: 1 }
+  });
+  assert.equal(summary.observed, 2);
+  assert.equal(summary.resolved, 1);
+  assert.equal(summary.confirmedTwice, 1);
+  assert.deepEqual(summary.statuses, [{ status: 'resolved', count: 1 }, { status: 'http_not_found', count: 1 }]);
+});

@@ -51,6 +51,12 @@ interface SyncState {
     reasons: Array<{ reason: string; count: number }>;
     groups: Array<{ type: string; market: string; count: number }>;
   };
+  childAsinValidation?: { observed: number; resolved: number; confirmedTwice: number; statuses: Array<{ status: string; count: number }> };
+  lifecycleAudit?: {
+    lastRunAt: string; amazonListings: number; amazonDesigns: number; databaseDesigns: number;
+    deletedAtAmazonDesigns: number; missingFromAmazonDesigns: number; stalePublishedProducts: number;
+    staleAdAsins: number; missingDatabaseProducts: number; reportPath: string; complete: boolean;
+  };
   lastRun?: { status: string; type: string; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 }
 
@@ -487,15 +493,22 @@ export const DatabaseView: React.FC = () => {
                 onClick={() => handleRunScan('resolve_asins_shadow')}
                 disabled={syncState.isScanning}
                 className="w-full px-3.5 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
-                title="Prüft die sieben neuen Produkttypen mit dem neuen Resolver, ohne ad_asins zu verändern"
+                title="Prüft alte und neue Varianten-Produkte mit dem SNAP-Resolver, ohne ad_asins zu verändern"
               >
-                Neue Produkte sicher prüfen (nur lesen)
+                SNAP-Resolver prüfen (nur lesen)
               </button>
               {syncState.childAsinShadow?.lastRunAt && (
                 <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/20 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/75">
-                  <div className="font-semibold text-cyan-300">V2 Shadow · keine Datenbankänderung</div>
+                  <div className="font-semibold text-cyan-300">SNAP Shadow · keine Datenbankänderung</div>
                   <div>{syncState.childAsinShadow.lastResult || 'Noch kein Ergebnis'}</div>
                   <div className="text-cyan-200/50">{formatDate(Date.parse(syncState.childAsinShadow.lastRunAt))}</div>
+                </div>
+              )}
+              {!!syncState.childAsinValidation?.observed && (
+                <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/10 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/70">
+                  <div className="font-semibold text-cyan-300">Gesammelte SNAP-Prüfung</div>
+                  <div>{syncState.childAsinValidation.resolved}/{syncState.childAsinValidation.observed} eindeutig aufgelöst · {syncState.childAsinValidation.confirmedTwice} zweimal identisch bestätigt</div>
+                  <div className="text-cyan-200/50">{syncState.childAsinValidation.statuses.slice(0, 5).map(entry => `${entry.status}: ${entry.count}`).join(' · ')}</div>
                 </div>
               )}
               {syncState.childAsinDiagnostics?.lastRunAt && (
@@ -523,6 +536,24 @@ export const DatabaseView: React.FC = () => {
                   <div className="text-slate-500">
                     Stand: {formatDate(Date.parse(syncState.childAsinDiagnostics.lastRunAt))}{syncState.childAsinDiagnostics.truncated ? ' · Anzeige auf 1.000 Designs begrenzt' : ''}
                   </div>
+                </div>
+              )}
+              <button
+                onClick={() => handleRunScan('lifecycle_audit')}
+                disabled={syncState.isScanning}
+                className="w-full px-3.5 py-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
+                title="Vergleicht einen vollständigen Amazon-Bestand nur lesend mit Supabase"
+              >
+                Gelöschte Produkte prüfen (nur lesen)
+              </button>
+              {syncState.lifecycleAudit?.complete && (
+                <div className="rounded-lg border border-violet-500/15 bg-violet-950/20 px-2.5 py-2 text-[10px] leading-relaxed text-violet-100/75 space-y-1">
+                  <div className="font-semibold text-violet-300">Lifecycle Audit · keine Datenbankänderung</div>
+                  <div>{syncState.lifecycleAudit.deletedAtAmazonDesigns} Designs bei Amazon vollständig ohne Live-Produkt</div>
+                  <div>{syncState.lifecycleAudit.missingFromAmazonDesigns} DB-Designs fehlen im vollständigen Amazon-Ergebnis</div>
+                  <div>{syncState.lifecycleAudit.stalePublishedProducts} veraltete published_products · {syncState.lifecycleAudit.staleAdAsins} betroffene ad_asins</div>
+                  <div>{syncState.lifecycleAudit.missingDatabaseProducts} Amazon-Live-Produkte fehlen in Supabase</div>
+                  <div className="text-violet-200/50">Stand: {formatDate(Date.parse(syncState.lifecycleAudit.lastRunAt))}</div>
                 </div>
               )}
             </div>

@@ -358,6 +358,8 @@ app.post('/api/v1/sync/run', async (req, res) => {
       SyncEngine.resolveChildAsinsBatch(10).catch(() => {});
     } else if (type === 'resolve_asins_shadow') {
       SyncEngine.runChildAsinShadowBatch(3).catch(() => {});
+    } else if (type === 'lifecycle_audit') {
+      SyncEngine.runLifecycleAudit().catch(() => {});
     } else {
       return res.status(400).json({ success: false, error: 'Unbekannter Scan-Typ' });
     }

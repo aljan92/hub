@@ -223143,7 +223143,7 @@ var init_childAsinPolicyService = __esm2({
 });
 
 // src/server/services/syncEngine.ts
-var import_fs82, import_path77, import_crypto4, MARKETPLACE_IDS, MP_MAP, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, SyncEngine;
+var import_fs82, import_path77, import_crypto4, MARKETPLACE_IDS, MP_MAP, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, LIFECYCLE_AUDIT_PATH, SyncEngine;
 var init_syncEngine = __esm2({
   "src/server/services/syncEngine.ts"() {
     "use strict";
@@ -223203,6 +223203,7 @@ var init_syncEngine = __esm2({
     ]);
     SYNC_RUNTIME_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_runtime.json");
     FULL_STAGE_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_full_stage.json");
+    LIFECYCLE_AUDIT_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_lifecycle_audit.json");
     SyncEngine = class _SyncEngine {
       static logs = [];
       static state = {
@@ -223376,7 +223377,7 @@ var init_syncEngine = __esm2({
       static getState() {
         try {
           const runtime = this.loadRuntime();
-          return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, lastRun: runtime.lastRun, egress: {
+          return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, childAsinValidation: this.buildResolverValidation(runtime.resolverObservations || {}), lifecycleAudit: runtime.lifecycleAudit || this.state.lifecycleAudit, lastRun: runtime.lastRun, egress: {
             mode: loadSettings().syncEgressMode || "observe",
             baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
             pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
@@ -223389,6 +223390,22 @@ var init_syncEngine = __esm2({
       static updateCounts(live, unresolved) {
         this.state.liveDesignsCount = live;
         this.state.unresolvedAsinsCount = unresolved;
+      }
+      static buildResolverValidation(observations) {
+        const statuses = /* @__PURE__ */ new Map();
+        let resolved = 0;
+        let confirmedTwice = 0;
+        for (const observation of Object.values(observations || {})) {
+          statuses.set(observation.status, (statuses.get(observation.status) || 0) + 1);
+          if (observation.status === "resolved" && observation.resolvedAsin) resolved++;
+          if (observation.status === "resolved" && observation.resolvedAsin && observation.consistentCount >= 2) confirmedTwice++;
+        }
+        return {
+          observed: Object.keys(observations || {}).length,
+          resolved,
+          confirmedTwice,
+          statuses: [...statuses.entries()].sort((a, b) => b[1] - a[1]).map(([status, count]) => ({ status, count }))
+        };
       }
       static stopScan() {
         this.shouldStop = true;
@@ -224343,6 +224360,133 @@ var init_syncEngine = __esm2({
       /**
        * 7. Resolve Child ASINs Batch
        */
+      static buildLifecycleAudit(listings, databaseRows) {
+        const liveStatuses = /* @__PURE__ */ new Set(["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]);
+        const amazonByDesign = /* @__PURE__ */ new Map();
+        const productKey = (type3, market) => `${normalizeChildAsinProductType(type3)}|${String(market || "").toLowerCase()}`;
+        for (const listing of listings || []) {
+          const designId = String(listing?.designId || "");
+          const market = String(listing?.marketplace || MP_MAP[listing?.marketplaceId] || "").toLowerCase();
+          if (!designId || !market || !listing?.productType) continue;
+          const entry = amazonByDesign.get(designId) || { all: [], liveKeys: /* @__PURE__ */ new Set() };
+          entry.all.push(listing);
+          if (liveStatuses.has(String(listing?.status || "").toUpperCase())) entry.liveKeys.add(productKey(listing.productType, market));
+          amazonByDesign.set(designId, entry);
+        }
+        const deletedAtAmazon = [];
+        const missingFromAmazon = [];
+        const staleProducts = [];
+        const staleAds = [];
+        const missingDatabaseProducts = [];
+        const databaseDesignIds = /* @__PURE__ */ new Set();
+        for (const row of databaseRows || []) {
+          const designId = String(row?.design_id || "");
+          if (!designId) continue;
+          databaseDesignIds.add(designId);
+          const amazon = amazonByDesign.get(designId);
+          if (!amazon) missingFromAmazon.push(designId);
+          else if (amazon.liveKeys.size === 0) deletedAtAmazon.push(designId);
+          const dbProducts = Array.isArray(row?.published_products) ? row.published_products : [];
+          const dbKeys = new Set(dbProducts.map((product) => productKey(product?.type, product?.market)));
+          const liveKeys = amazon?.liveKeys || /* @__PURE__ */ new Set();
+          for (const product of dbProducts) {
+            const key = productKey(product?.type, product?.market);
+            if (!liveKeys.has(key)) staleProducts.push({ designId, type: normalizeChildAsinProductType(product?.type), market: String(product?.market || "").toLowerCase() });
+          }
+          for (const ad of Array.isArray(row?.ad_asins) ? row.ad_asins : []) {
+            if (!liveKeys.has(productKey(ad?.type, ad?.market))) staleAds.push({ designId, type: normalizeChildAsinProductType(ad?.type), market: String(ad?.market || "").toLowerCase() });
+          }
+          for (const key of liveKeys) {
+            if (!dbKeys.has(key)) {
+              const [type3, market] = key.split("|");
+              missingDatabaseProducts.push({ designId, type: type3, market });
+            }
+          }
+        }
+        for (const [designId, amazon] of amazonByDesign) {
+          if (databaseDesignIds.has(designId)) continue;
+          for (const key of amazon.liveKeys) {
+            const [type3, market] = key.split("|");
+            missingDatabaseProducts.push({ designId, type: type3, market });
+          }
+        }
+        return {
+          summary: {
+            amazonListings: listings.length,
+            amazonDesigns: amazonByDesign.size,
+            databaseDesigns: databaseRows.length,
+            deletedAtAmazonDesigns: deletedAtAmazon.length,
+            missingFromAmazonDesigns: missingFromAmazon.length,
+            stalePublishedProducts: staleProducts.length,
+            staleAdAsins: staleAds.length,
+            missingDatabaseProducts: missingDatabaseProducts.length
+          },
+          candidates: { deletedAtAmazon, missingFromAmazon, staleProducts, staleAds, missingDatabaseProducts }
+        };
+      }
+      static async runLifecycleAudit() {
+        const runId = this.beginWorker("lifecycle_audit");
+        this.shouldStop = false;
+        this.state.isScanning = true;
+        this.state.activeScanType = "lifecycle_audit";
+        let pages = 0;
+        try {
+          const page = await this.getAmazonPage();
+          const accountId = await this.getAccountId(page);
+          const listings = [];
+          let pageToken = [];
+          const seenTokens = /* @__PURE__ */ new Set(["[]"]);
+          while (!this.shouldStop) {
+            if (pages >= 1e3) throw new Error("Lifecycle-Audit \xFCberschritt das Sicherheitslimit von 1.000 Seiten.");
+            const response2 = await this.fetchListingsPage(page, accountId, pageToken, ALL_STATUSES);
+            pages++;
+            if (!response2.results?.length) {
+              if (response2.pageToken?.length) throw new Error("Lifecycle-Audit erhielt eine leere Seite mit Fortsetzungstoken.");
+              break;
+            }
+            listings.push(...response2.results);
+            if (!response2.pageToken?.length) break;
+            const tokenKey = JSON.stringify(response2.pageToken);
+            if (seenTokens.has(tokenKey)) throw new Error("Lifecycle-Audit erkannte einen wiederholten Seitentoken.");
+            seenTokens.add(tokenKey);
+            pageToken = response2.pageToken;
+            await this.sleep(600);
+          }
+          if (this.shouldStop) throw new Error("Lifecycle-Audit manuell abgebrochen.");
+          if (!listings.length) throw new Error("Lifecycle-Audit lieferte keine Amazon-Produkte; kein Bericht erstellt.");
+          const supabase = this.getSupabase();
+          const databaseRows = [];
+          for (let from = 0; ; from += 500) {
+            const { data, error } = await supabase.from("mba_designs").select("design_id, status, published_products, ad_asins").order("design_id", { ascending: true }).range(from, from + 499);
+            this.recordTraffic("lifecycle_audit_read", { data, error });
+            if (error) throw new Error(`Lifecycle-Audit konnte Supabase nicht lesen: ${error.message || String(error)}`);
+            databaseRows.push(...data || []);
+            if (!data || data.length < 500) break;
+          }
+          const audit = this.buildLifecycleAudit(listings, databaseRows);
+          const summary = {
+            ...audit.summary,
+            lastRunAt: (/* @__PURE__ */ new Date()).toISOString(),
+            reportPath: "data/sync_lifecycle_audit.json",
+            complete: true
+          };
+          atomicWriteJson(LIFECYCLE_AUDIT_PATH, { version: 1, accountKey: import_crypto4.default.createHash("sha256").update(accountId || "unknown").digest("hex").slice(0, 16), summary, candidates: audit.candidates }, { backup: true });
+          const runtime = this.loadRuntime();
+          runtime.lifecycleAudit = summary;
+          this.saveRuntime(runtime);
+          this.state.lifecycleAudit = summary;
+          this.addLog(`[Lifecycle Audit] Read-only abgeschlossen: ${summary.deletedAtAmazonDesigns} vollst\xE4ndig gel\xF6schte Designs, ${summary.stalePublishedProducts} veraltete Produkte, ${summary.staleAdAsins} betroffene ad_asins.`, "success");
+          this.finishWorker(runId, "complete", { pages, attempted: databaseRows.length, confirmed: 0, message: "Nur gelesen; keine Datenbank\xE4nderung." });
+          return summary;
+        } catch (error) {
+          this.finishWorker(runId, this.shouldStop ? "cancelled" : "error", { pages, message: error?.message || String(error) });
+          this.addLog(`[Lifecycle Audit] Fehler: ${error?.message || String(error)}. Keine Datenbank\xE4nderung.`, "error");
+          throw error;
+        } finally {
+          this.state.isScanning = false;
+          this.state.activeScanType = null;
+        }
+      }
       static buildChildAsinDiagnostics(rows, retryState = {}, truncated = false) {
         const reasons = /* @__PURE__ */ new Map();
         const groups = /* @__PURE__ */ new Map();
@@ -224575,10 +224719,7 @@ var init_syncEngine = __esm2({
         this.state.activeScanType = null;
         return { processed, errors: errors2 };
       }
-      /**
-       * Read-only V2 probe for the seven newly supported product types. It uses
-       * the authenticated browser context but deliberately performs no Supabase write.
-       */
+      /** Read-only SNAP-style probe for every product type requiring a child ASIN. */
       static async runChildAsinShadowBatch(limit = 1) {
         this.shouldStop = false;
         const runId = this.beginWorker("resolve_asins_shadow");
@@ -224594,6 +224735,7 @@ var init_syncEngine = __esm2({
           const supabase = this.getSupabase();
           const runtime = this.loadRuntime();
           const retryState = runtime.resolverRetries || {};
+          const observations = runtime.resolverObservations || {};
           const previousShadow = runtime.resolverShadow;
           const blockedUntil = previousShadow?.blockedUntil ? Date.parse(previousShadow.blockedUntil) : 0;
           if (blockedUntil > Date.now()) {
@@ -224616,15 +224758,18 @@ var init_syncEngine = __esm2({
               const type3 = normalizeChildAsinProductType(product?.type);
               const market = String(product?.market || "").toLowerCase();
               const parentAsin = this.sanitizeAsin(product?.asin);
-              if (!isNewChildAsinShadowType(type3) || !parentAsin || !market) continue;
+              if (getChildAsinPolicy(type3) !== "resolve" || !parentAsin || !market) continue;
               const existing = adAsins.find(
                 (entry) => normalizeChildAsinProductType(entry?.type) === type3 && String(entry?.market || "").toLowerCase() === market
               );
-              if (isConfirmedChildAsin(existing?.asin, existing?.parentAsin)) continue;
+              if (this.sanitizeAsin(existing?.parentAsin) === parentAsin && isConfirmedChildAsin(existing?.asin, parentAsin)) continue;
               const retryKey = `shadow:${row.design_id}:${market}:${type3}`;
+              const observationKey = import_crypto4.default.createHash("sha256").update(`${row.design_id}:${market}:${type3}`).digest("hex").slice(0, 24);
+              const observation = observations[observationKey];
+              if (observation?.parentAsin === parentAsin && Date.parse(observation.observedAt) > Date.now() - 12 * 60 * 60 * 1e3) continue;
               const retry2 = retryState[retryKey];
               if (retry2?.parentAsin === parentAsin && Date.parse(retry2.nextAt) > Date.now()) continue;
-              candidates.push({ designId: row.design_id, type: type3, market, parentAsin, retryKey });
+              candidates.push({ designId: row.design_id, type: type3, market, parentAsin, retryKey, observationKey });
               if (candidates.length >= Math.max(1, limit)) break;
             }
             if (candidates.length >= Math.max(1, limit)) break;
@@ -224633,11 +224778,21 @@ var init_syncEngine = __esm2({
             if (this.shouldStop) break;
             checked++;
             const result2 = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
+            const previousObservation = observations[candidate.observationKey];
+            const resolvedAsin = result2.status === "resolved" ? result2.evidence.resolvedAsin : null;
+            observations[candidate.observationKey] = {
+              parentAsin: candidate.parentAsin,
+              resolvedAsin,
+              status: result2.status,
+              source: result2.evidence.source || null,
+              observedAt: (/* @__PURE__ */ new Date()).toISOString(),
+              consistentCount: previousObservation?.parentAsin === candidate.parentAsin && previousObservation?.resolvedAsin === resolvedAsin && previousObservation?.status === result2.status ? (previousObservation.consistentCount || 0) + 1 : 1
+            };
             if (result2.status === "resolved") {
               resolved++;
               delete retryState[candidate.retryKey];
               this.addLog(
-                `[ASIN Shadow V2] \u2713 ${candidate.type} (${candidate.market}): ${candidate.parentAsin} \u2794 ${result2.evidence.resolvedAsin} via ${result2.evidence.source}. Nur gepr\xFCft, nicht gespeichert.`,
+                `[ASIN SNAP Shadow] \u2713 ${candidate.type} (${candidate.market}): ${candidate.parentAsin} \u2794 ${result2.evidence.resolvedAsin} via ${result2.evidence.source}. Nur gepr\xFCft, nicht gespeichert.`,
                 "success"
               );
             } else {
@@ -224653,7 +224808,7 @@ var init_syncEngine = __esm2({
               };
               const blocked = result2.status === "amazon_blocked" || result2.status === "auth_required";
               this.addLog(
-                `[ASIN Shadow V2] ${candidate.type} (${candidate.market}) blieb offen: ${result2.status}. Keine Datenbank\xE4nderung.`,
+                `[ASIN SNAP Shadow] ${candidate.type} (${candidate.market}) blieb offen: ${result2.status}. Keine Datenbank\xE4nderung.`,
                 blocked ? "error" : "warn"
               );
               if (blocked) {
@@ -224674,6 +224829,7 @@ var init_syncEngine = __esm2({
           }
           const lastResult = blockedResult || (candidates.length === 0 ? "Keine f\xE4lligen neuen Produkt-/Marktplatzkombinationen in der begrenzten Stichprobe." : `${resolved}/${checked} eindeutig aufgel\xF6st; keine Datenbank\xE4nderung.`);
           runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5e3));
+          runtime.resolverObservations = Object.fromEntries(Object.entries(observations).slice(-5e3));
           const nextCursor = blockedResult ? cursor : (rows || []).length < 250 ? 0 : cursor + 250;
           runtime.resolverShadow = {
             ...runtime.resolverShadow || {},
@@ -224693,7 +224849,7 @@ var init_syncEngine = __esm2({
         } catch (error) {
           finalStatus = "error";
           message = error?.message || String(error);
-          this.addLog(`[ASIN Shadow V2] Fehler: ${message}. Keine Datenbank\xE4nderung.`, "error");
+          this.addLog(`[ASIN SNAP Shadow] Fehler: ${message}. Keine Datenbank\xE4nderung.`, "error");
           throw error;
         } finally {
           this.finishWorker(runId, this.shouldStop ? "cancelled" : finalStatus, { pages: 0, attempted: checked, confirmed: 0, message });
@@ -236927,6 +237083,9 @@ app.post("/api/v1/sync/run", async (req, res) => {
       });
     } else if (type3 === "resolve_asins_shadow") {
       SyncEngine.runChildAsinShadowBatch(3).catch(() => {
+      });
+    } else if (type3 === "lifecycle_audit") {
+      SyncEngine.runLifecycleAudit().catch(() => {
       });
     } else {
       return res.status(400).json({ success: false, error: "Unbekannter Scan-Typ" });
