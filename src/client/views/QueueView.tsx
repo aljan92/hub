@@ -72,6 +72,7 @@ interface QueueItem {
   lastUploadAttempt?: string;
   errorMessage?: string;
   fitTypes?: string[];
+  effectiveFitTypes?: string[];
   avoidColor?: 'white' | 'black' | 'none';
   customBackgroundColor?: string;
   imagePath?: string;
@@ -1641,8 +1642,8 @@ export const QueueView: React.FC = () => {
                               <Users className="w-3.5 h-3.5 text-primary-400" />
                               <span className="font-semibold">Fit-Types:</span>
                               <span className="font-mono text-slate-200">
-                                {Array.isArray(item.fitTypes) && item.fitTypes.length > 0 
-                                  ? item.fitTypes.map(f => typeof f === 'object' && f ? String((f as any).id || (f as any).label || (f as any).name || '') : String(f)).filter(Boolean).join(', ').toUpperCase() 
+                                {Array.isArray(item.effectiveFitTypes || item.fitTypes) && (item.effectiveFitTypes || item.fitTypes)!.length > 0
+                                  ? (item.effectiveFitTypes || item.fitTypes)!.map(f => typeof f === 'object' && f ? String((f as any).id || (f as any).label || (f as any).name || '') : String(f)).filter(Boolean).join(', ').toUpperCase()
                                   : typeof item.fitTypes === 'string' && item.fitTypes
                                     ? String(item.fitTypes).toUpperCase() 
                                     : 'MEN, WOMEN, YOUTH'}
@@ -2375,9 +2376,9 @@ export const QueueView: React.FC = () => {
                                   </>
                                 );
                               })()}
-                              {item.fitTypes && item.fitTypes.length > 0 && (
+                              {(item.effectiveFitTypes || item.fitTypes) && (item.effectiveFitTypes || item.fitTypes)!.length > 0 && (
                                 <span className="px-2 py-0.5 rounded text-[10px] font-mono text-purple-300 bg-purple-500/10 border border-purple-500/20">
-                                  {item.fitTypes.join(', ')}
+                                  {(item.effectiveFitTypes || item.fitTypes)!.join(', ')}
                                 </span>
                               )}
                               {item.avoidColor && String(item.avoidColor).toLowerCase() !== 'none' && (
@@ -2432,8 +2433,8 @@ export const QueueView: React.FC = () => {
                               <Users className="w-3.5 h-3.5 text-primary-400" />
                               <span className="font-semibold">Fit-Types:</span>
                               <span className="font-mono text-slate-200">
-                                {Array.isArray(item.fitTypes) && item.fitTypes.length > 0 
-                                  ? item.fitTypes.map(f => typeof f === 'object' && f ? String((f as any).id || (f as any).label || (f as any).name || '') : String(f)).filter(Boolean).join(', ').toUpperCase() 
+                                {Array.isArray(item.effectiveFitTypes || item.fitTypes) && (item.effectiveFitTypes || item.fitTypes)!.length > 0
+                                  ? (item.effectiveFitTypes || item.fitTypes)!.map(f => typeof f === 'object' && f ? String((f as any).id || (f as any).label || (f as any).name || '') : String(f)).filter(Boolean).join(', ').toUpperCase()
                                   : typeof item.fitTypes === 'string' && item.fitTypes
                                     ? String(item.fitTypes).toUpperCase() 
                                     : 'MEN, WOMEN, YOUTH'}

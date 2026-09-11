@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
+import { getEnabledMarketplacesForProduct, isProductUploadEnabled, resolveEffectiveFitTypes } from './productAvailabilityPolicy';
 import { ListingSanitizationService } from './listingSanitizationService';
 import { loadSettings, saveSettings } from './settingsService';
 import { getSchedulerClock, UPLOAD_SCHEDULER_TIME_ZONE } from './schedulerClock';
@@ -107,6 +108,7 @@ export interface QueueItem {
   description: string;
   listings?: Record<string, ListingLanguageContent>; // e.g. { en: {...}, de: {...}, fr: {...}, es: {...}, it: {...}, jp: {...} }
   fitTypes?: string[];                               // e.g. ['men', 'women', 'youth']
+  effectiveFitTypes?: string[];                      // current global policy applied; source fitTypes stays unchanged
   avoidColor?: 'white' | 'black' | 'none';          // e.g. 'white' or 'black'
   customBackgroundColor?: string;                    // e.g. '#000000'
   imagePath: string;
@@ -676,6 +678,7 @@ export class QueueService {
     }
 
     const catalog = ProductCatalogService.getCatalog();
+    const uploadPolicy = ProductCatalogService.getUploadPolicy();
     const cleanBlockedList = normalizeTmBlocked(item.tmBlockedProductIds);
     const tmBlocked = new Set(cleanBlockedList.map(id => id.toUpperCase()));
     
@@ -688,10 +691,10 @@ export class QueueService {
 
     if (isUpdate && hasLiveDetail) {
       for (const prod of catalog.products) {
-        if (prod.available === false) continue;
+        if (!isProductUploadEnabled(prod)) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const prodId = prod.id;
-        const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
+        const catalogMps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
 
         // Find live summary for this product using canonical normalization
         const normProdId = normalizeCatalogProductId(prodId);
@@ -716,9 +719,9 @@ export class QueueService {
       }
     } else {
       for (const prod of catalog.products) {
-        if (prod.available === false) continue;
+        if (!isProductUploadEnabled(prod)) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
-        const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
+        const mps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
         activeProductsMap[prod.id] = mps;
         totalBaseSlots += mps.length;
       }
@@ -747,6 +750,7 @@ export class QueueService {
         }
       },
       fitTypes: normalizeFitTypes(item.fitTypes),
+      effectiveFitTypes: resolveEffectiveFitTypes(normalizeFitTypes(item.fitTypes), uploadPolicy),
       avoidColor: normalizeAvoidColor(item.avoidColor),
       customBackgroundColor: item.customBackgroundColor,
       imagePath: item.imagePath,
@@ -1146,6 +1150,11 @@ export class QueueService {
     const droppableProducts = ProductCatalogService.getDroppableProductsOrdered();
     const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
     const catalog = ProductCatalogService.getCatalog();
+    const uploadPolicy = ProductCatalogService.getUploadPolicy();
+
+    for (const item of this.items) {
+      item.effectiveFitTypes = resolveEffectiveFitTypes(item.fitTypes, uploadPolicy);
+    }
 
     if (this.items.length === 0) {
       return this.getState();
@@ -1188,17 +1197,20 @@ export class QueueService {
     const nonPausedWaiting = this.items.filter(i => i.status === 'WAITING' && !i.isPaused);
     const waitingNewItems = nonPausedWaiting.filter(i => !isUpdateItem(i));
     const waitingUpdateItems = nonPausedWaiting.filter(i => isUpdateItem(i));
+    const allWaitingItems = this.items.filter(i => i.status === 'WAITING');
+    const allWaitingNewItems = allWaitingItems.filter(i => !isUpdateItem(i));
+    const allWaitingUpdateItems = allWaitingItems.filter(i => isUpdateItem(i));
 
     // 4. Reset & populate each waiting NEW item from latest catalog
-    for (const item of waitingNewItems) {
+    for (const item of allWaitingNewItems) {
       const tmBlocked = new Set((item.tmBlockedProductIds || []).map(id => id.toUpperCase()));
       const activeMap: Record<string, string[]> = {};
       let baseSlots = 0;
 
       for (const prod of catalog.products) {
-        if (prod.available === false) continue;
+        if (!isProductUploadEnabled(prod)) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
-        const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
+        const mps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
         activeMap[prod.id] = mps;
         baseSlots += mps.length;
       }
@@ -1206,19 +1218,19 @@ export class QueueService {
       item.activeProductsMap = activeMap;
       item.droppedSlotsMap = {};
       item.totalBaseSlots = baseSlots;
-      item.allocatedSlots = baseSlots;
+      item.allocatedSlots = item.isPaused ? 0 : baseSlots;
     }
 
     // 5. Reset & populate each waiting UPDATE item from latest catalog & compute net slots
-    for (const uItem of waitingUpdateItems) {
+    for (const uItem of allWaitingUpdateItems) {
       const tmBlocked = new Set((uItem.tmBlockedProductIds || []).map(id => id.toUpperCase()));
       const activeMap: Record<string, string[]> = {};
       let baseCatalogSlots = 0;
 
       for (const prod of catalog.products) {
-        if (prod.available === false) continue;
+        if (!isProductUploadEnabled(prod)) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
-        const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
+        const mps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
         activeMap[prod.id] = mps;
         baseCatalogSlots += mps.length;
       }
@@ -1253,10 +1265,10 @@ export class QueueService {
 
       if (hasLiveDetail) {
         for (const prod of catalog.products) {
-          if (prod.available === false) continue;
+          if (!isProductUploadEnabled(prod)) continue;
           if (tmBlocked.has(prod.id.toUpperCase())) continue;
           const prodId = prod.id;
-          const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
+          const catalogMps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
 
           // 1. Find live summary for this product using canonical normalization
           const normProdId = normalizeCatalogProductId(prodId);
@@ -1283,15 +1295,15 @@ export class QueueService {
       } else {
         netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
         for (const prod of catalog.products) {
-          if (prod.available === false) continue;
+          if (!isProductUploadEnabled(prod)) continue;
           if (tmBlocked.has(prod.id.toUpperCase())) continue;
-          calculatedActiveMap[prod.id] = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ['US']).map(normalizeMarketplaceCode);
+          calculatedActiveMap[prod.id] = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
         }
       }
 
       uItem.activeProductsMap = calculatedActiveMap;
       uItem.totalBaseSlots = netSlots;
-      uItem.allocatedSlots = netSlots;
+      uItem.allocatedSlots = uItem.isPaused ? 0 : netSlots;
     }
 
     // 6. Branching based on Mode (Draft, Live, Draft-Hybrid)

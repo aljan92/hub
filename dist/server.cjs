@@ -51138,6 +51138,43 @@ var init_settingsService = __esm2({
   }
 });
 
+// src/server/services/productAvailabilityPolicy.ts
+function isProductUploadEnabled(product) {
+  return product.available !== false && product.userEnabled !== false;
+}
+function getEnabledMarketplacesForProduct(product, policy) {
+  if (!isProductUploadEnabled(product)) return [];
+  const enabled = new Set((policy.enabledMarketplaceIds || []).map(normalizeMarketplaceId));
+  return [...new Set((product.availableMarketplaces || []).map(normalizeMarketplaceId))].filter((marketplace) => enabled.has(marketplace));
+}
+function filterActiveProductsMap(activeProductsMap, products, policy) {
+  const productsById = new Map(products.map((product) => [product.id.toUpperCase(), product]));
+  const filtered = {};
+  for (const [productId, marketplaces] of Object.entries(activeProductsMap || {})) {
+    const product = productsById.get(productId.toUpperCase());
+    if (!product || !isProductUploadEnabled(product)) continue;
+    const allowed2 = new Set(getEnabledMarketplacesForProduct(product, policy));
+    const kept = [...new Set((marketplaces || []).map(normalizeMarketplaceId))].filter((marketplace) => allowed2.has(marketplace));
+    if (kept.length > 0) filtered[productId] = kept;
+  }
+  return filtered;
+}
+function resolveEffectiveFitTypes(requestedFitTypes, policy) {
+  const requested = (requestedFitTypes && requestedFitTypes.length > 0 ? requestedFitTypes : ["men", "women", "youth"]).map((value2) => String(value2).trim().toLowerCase()).filter(Boolean);
+  const effective = [...new Set(requested.filter((fit) => policy.youthEnabled || fit !== "youth"))];
+  return effective.length > 0 ? effective : ["men"];
+}
+var normalizeMarketplaceId;
+var init_productAvailabilityPolicy = __esm2({
+  "src/server/services/productAvailabilityPolicy.ts"() {
+    "use strict";
+    normalizeMarketplaceId = (value2) => {
+      const normalized = String(value2 || "").trim().toUpperCase();
+      return normalized === "UK" ? "GB" : normalized;
+    };
+  }
+});
+
 // src/server/services/productCatalogService.ts
 var productCatalogService_exports = {};
 __export2(productCatalogService_exports, {
@@ -51172,6 +51209,7 @@ var init_productCatalogService = __esm2({
     "use strict";
     import_fs74 = __toESM2(require("fs"), 1);
     import_path69 = __toESM2(require("path"), 1);
+    init_productAvailabilityPolicy();
     RESIZE_BACKGROUND_PROFILES = {
       DARK_PRODUCT: { type: "solid", color: "#4E4A46" }
     };
@@ -51345,6 +51383,34 @@ var init_productCatalogService = __esm2({
         this.loadOverrides();
         this.loadCatalog();
         this.isLoaded = true;
+        this.migrateAvailabilityPolicy();
+      }
+      static migrateAvailabilityPolicy() {
+        let changed = false;
+        if (!this.overridesData.uploadPolicy) {
+          this.overridesData.uploadPolicy = {
+            enabledMarketplaceIds: this.catalogData.marketplaces.map((mp) => mp.id.toUpperCase()),
+            youthEnabled: true
+          };
+          changed = true;
+        }
+        for (const product of this.catalogData.products) {
+          const found = this.getOverrideEntry(product.id, product.amazon?.key);
+          const targetKey = found?.key || product.id;
+          if (!this.overridesData.overrides[targetKey]) {
+            this.overridesData.overrides[targetKey] = { niceClass: product.niceClass ?? null };
+            changed = true;
+          }
+          if (this.overridesData.overrides[targetKey].userEnabled === void 0) {
+            this.overridesData.overrides[targetKey].userEnabled = true;
+            changed = true;
+          }
+        }
+        if (this.overridesData.schemaVersion < 2) {
+          this.overridesData.schemaVersion = 2;
+          changed = true;
+        }
+        if (changed) this.saveOverridesAtomic(this.overridesData);
       }
       /**
        * Save overrides atomically: .tmp file -> JSON validate -> renameSync
@@ -51509,6 +51575,7 @@ var init_productCatalogService = __esm2({
           return {
             ...prod,
             available: isAvailable,
+            userEnabled: override?.userEnabled !== false,
             niceClass: override?.niceClass !== void 0 ? override.niceClass : prod.niceClass ?? null,
             sortOrder: uiSort,
             amazonSortOrder: amazonSort,
@@ -51602,6 +51669,7 @@ var init_productCatalogService = __esm2({
               if (!overrides[newStableId]) {
                 overrides[newStableId] = {
                   niceClass: null,
+                  userEnabled: false,
                   uiSortOrder: updatedProducts.length + 1,
                   isDropAllowed: false,
                   artwork: {
@@ -51610,6 +51678,9 @@ var init_productCatalogService = __esm2({
                   },
                   colors: {}
                 };
+                this.saveOverridesAtomic(this.overridesData);
+              } else if (overrides[newStableId].userEnabled === void 0) {
+                overrides[newStableId].userEnabled = false;
                 this.saveOverridesAtomic(this.overridesData);
               }
               updatedProducts.push({
@@ -51726,6 +51797,47 @@ var init_productCatalogService = __esm2({
         this.saveCatalogAtomic(catalog);
         return catalog;
       }
+      static getUploadPolicy() {
+        this.ensureLoaded();
+        return {
+          enabledMarketplaceIds: [...this.overridesData.uploadPolicy?.enabledMarketplaceIds || []],
+          youthEnabled: this.overridesData.uploadPolicy?.youthEnabled !== false
+        };
+      }
+      static updateProductEnabled(id, userEnabled) {
+        this.ensureLoaded();
+        const product = this.findProductByAmazonKey(id);
+        if (!product) throw new Error(`Unbekanntes Produkt: ${id}`);
+        const found = this.getOverrideEntry(product.id, product.amazon?.key);
+        const targetKey = found?.key || product.id;
+        if (!this.overridesData.overrides[targetKey]) {
+          this.overridesData.overrides[targetKey] = { niceClass: product.niceClass ?? null };
+        }
+        this.overridesData.overrides[targetKey].userEnabled = userEnabled;
+        this.saveOverridesAtomic(this.overridesData);
+        return this.getCatalog();
+      }
+      static updateMarketplaceEnabled(id, enabled) {
+        this.ensureLoaded();
+        const marketplaceId = String(id || "").trim().toUpperCase() === "UK" ? "GB" : String(id || "").trim().toUpperCase();
+        if (!this.catalogData.marketplaces.some((mp) => mp.id.toUpperCase() === marketplaceId)) {
+          throw new Error(`Unbekannter Marktplatz: ${id}`);
+        }
+        const policy = this.getUploadPolicy();
+        const enabledIds = new Set(policy.enabledMarketplaceIds.map((value2) => value2.toUpperCase()));
+        if (enabled) enabledIds.add(marketplaceId);
+        else enabledIds.delete(marketplaceId);
+        this.overridesData.uploadPolicy = { ...policy, enabledMarketplaceIds: [...enabledIds] };
+        this.saveOverridesAtomic(this.overridesData);
+        return this.getCatalog();
+      }
+      static updateYouthEnabled(enabled) {
+        this.ensureLoaded();
+        const policy = this.getUploadPolicy();
+        this.overridesData.uploadPolicy = { ...policy, youthEnabled: enabled };
+        this.saveOverridesAtomic(this.overridesData);
+        return this.getCatalog();
+      }
       /**
        * Update avoid rule for a specific color of a product (saved to persistent overrides)
        */
@@ -51807,7 +51919,7 @@ var init_productCatalogService = __esm2({
        */
       static getDroppableProductsOrdered() {
         const catalog = this.getCatalog();
-        return catalog.products.filter((p) => p.available !== false && p.isDropAllowed === true).sort((a, b) => {
+        return catalog.products.filter((p) => isProductUploadEnabled(p) && p.isDropAllowed === true).sort((a, b) => {
           const orderA = a.dropPriorityOrder ?? 99;
           const orderB = b.dropPriorityOrder ?? 99;
           if (orderA !== orderB) return orderA - orderB;
@@ -51819,10 +51931,11 @@ var init_productCatalogService = __esm2({
        */
       static calculateMaxDroppableSlotsCount() {
         const droppables = this.getDroppableProductsOrdered();
+        const policy = this.getUploadPolicy();
         let count = 0;
         for (const prod of droppables) {
-          if (prod.available === false) continue;
-          const nonUsMarketplaces = (prod.availableMarketplaces || []).filter((mp) => mp.toUpperCase() !== "US");
+          if (!isProductUploadEnabled(prod)) continue;
+          const nonUsMarketplaces = getEnabledMarketplacesForProduct(prod, policy).filter((mp) => mp.toUpperCase() !== "US");
           count += nonUsMarketplaces.length;
         }
         return count;
@@ -51832,10 +51945,11 @@ var init_productCatalogService = __esm2({
       }
       static getTotalBaseSlotsCount() {
         const catalog = this.getCatalog();
+        const policy = this.getUploadPolicy();
         let count = 0;
         for (const prod of catalog.products) {
-          if (prod.available === false) continue;
-          count += (prod.availableMarketplaces || []).length;
+          if (!isProductUploadEnabled(prod)) continue;
+          count += getEnabledMarketplacesForProduct(prod, policy).length;
         }
         return count;
       }
@@ -51854,11 +51968,11 @@ var init_productCatalogService = __esm2({
       }
       static getStats() {
         const catalog = this.getCatalog();
-        const activeProducts = catalog.products.filter((p) => p.available !== false);
+        const activeProducts = catalog.products.filter((p) => isProductUploadEnabled(p));
         return {
           totalProducts: activeProducts.length,
           totalSlots: this.getTotalBaseSlotsCount(),
-          totalMarketplaces: catalog.marketplaces.length,
+          totalMarketplaces: this.getUploadPolicy().enabledMarketplaceIds.length,
           lastScanDate: catalog.lastScanDate
         };
       }
@@ -228888,6 +229002,7 @@ var init_queueService = __esm2({
     import_fs88 = __toESM2(require("fs"), 1);
     import_path82 = __toESM2(require("path"), 1);
     init_productCatalogService();
+    init_productAvailabilityPolicy();
     init_listingSanitizationService();
     init_settingsService();
     init_schedulerClock();
@@ -229275,6 +229390,7 @@ var init_queueService = __esm2({
           return existing;
         }
         const catalog = ProductCatalogService.getCatalog();
+        const uploadPolicy = ProductCatalogService.getUploadPolicy();
         const cleanBlockedList = normalizeTmBlocked(item.tmBlockedProductIds);
         const tmBlocked = new Set(cleanBlockedList.map((id) => id.toUpperCase()));
         const activeProductsMap = {};
@@ -229283,10 +229399,10 @@ var init_queueService = __esm2({
         const hasLiveDetail = Object.keys(liveSummary).length > 0;
         if (isUpdate && hasLiveDetail) {
           for (const prod of catalog.products) {
-            if (prod.available === false) continue;
+            if (!isProductUploadEnabled(prod)) continue;
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
             const prodId = prod.id;
-            const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
+            const catalogMps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
             const normProdId = normalizeCatalogProductId(prodId);
             const matchedSummaryKey = Object.keys(liveSummary).find(
               (k) => normalizeCatalogProductId(k) === normProdId
@@ -229306,9 +229422,9 @@ var init_queueService = __esm2({
           }
         } else {
           for (const prod of catalog.products) {
-            if (prod.available === false) continue;
+            if (!isProductUploadEnabled(prod)) continue;
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
-            const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
+            const mps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
             activeProductsMap[prod.id] = mps;
             totalBaseSlots += mps.length;
           }
@@ -229335,6 +229451,7 @@ var init_queueService = __esm2({
             }
           },
           fitTypes: normalizeFitTypes(item.fitTypes),
+          effectiveFitTypes: resolveEffectiveFitTypes(normalizeFitTypes(item.fitTypes), uploadPolicy),
           avoidColor: normalizeAvoidColor(item.avoidColor),
           customBackgroundColor: item.customBackgroundColor,
           imagePath: item.imagePath,
@@ -229644,6 +229761,10 @@ var init_queueService = __esm2({
         const droppableProducts = ProductCatalogService.getDroppableProductsOrdered();
         const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
         const catalog = ProductCatalogService.getCatalog();
+        const uploadPolicy = ProductCatalogService.getUploadPolicy();
+        for (const item of this.items) {
+          item.effectiveFitTypes = resolveEffectiveFitTypes(item.fitTypes, uploadPolicy);
+        }
         if (this.items.length === 0) {
           return this.getState();
         }
@@ -229675,30 +229796,33 @@ var init_queueService = __esm2({
         const nonPausedWaiting = this.items.filter((i) => i.status === "WAITING" && !i.isPaused);
         const waitingNewItems = nonPausedWaiting.filter((i) => !isUpdateItem(i));
         const waitingUpdateItems = nonPausedWaiting.filter((i) => isUpdateItem(i));
-        for (const item of waitingNewItems) {
+        const allWaitingItems = this.items.filter((i) => i.status === "WAITING");
+        const allWaitingNewItems = allWaitingItems.filter((i) => !isUpdateItem(i));
+        const allWaitingUpdateItems = allWaitingItems.filter((i) => isUpdateItem(i));
+        for (const item of allWaitingNewItems) {
           const tmBlocked = new Set((item.tmBlockedProductIds || []).map((id) => id.toUpperCase()));
           const activeMap = {};
           let baseSlots = 0;
           for (const prod of catalog.products) {
-            if (prod.available === false) continue;
+            if (!isProductUploadEnabled(prod)) continue;
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
-            const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
+            const mps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
             activeMap[prod.id] = mps;
             baseSlots += mps.length;
           }
           item.activeProductsMap = activeMap;
           item.droppedSlotsMap = {};
           item.totalBaseSlots = baseSlots;
-          item.allocatedSlots = baseSlots;
+          item.allocatedSlots = item.isPaused ? 0 : baseSlots;
         }
-        for (const uItem of waitingUpdateItems) {
+        for (const uItem of allWaitingUpdateItems) {
           const tmBlocked = new Set((uItem.tmBlockedProductIds || []).map((id) => id.toUpperCase()));
           const activeMap = {};
           let baseCatalogSlots = 0;
           for (const prod of catalog.products) {
-            if (prod.available === false) continue;
+            if (!isProductUploadEnabled(prod)) continue;
             if (tmBlocked.has(prod.id.toUpperCase())) continue;
-            const mps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
+            const mps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
             activeMap[prod.id] = mps;
             baseCatalogSlots += mps.length;
           }
@@ -229727,10 +229851,10 @@ var init_queueService = __esm2({
           const calculatedActiveMap = {};
           if (hasLiveDetail) {
             for (const prod of catalog.products) {
-              if (prod.available === false) continue;
+              if (!isProductUploadEnabled(prod)) continue;
               if (tmBlocked.has(prod.id.toUpperCase())) continue;
               const prodId = prod.id;
-              const catalogMps = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
+              const catalogMps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
               const normProdId = normalizeCatalogProductId(prodId);
               const matchedSummaryKey = Object.keys(liveSummary).find(
                 (k) => normalizeCatalogProductId(k) === normProdId
@@ -229751,14 +229875,14 @@ var init_queueService = __esm2({
           } else {
             netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
             for (const prod of catalog.products) {
-              if (prod.available === false) continue;
+              if (!isProductUploadEnabled(prod)) continue;
               if (tmBlocked.has(prod.id.toUpperCase())) continue;
-              calculatedActiveMap[prod.id] = (Array.isArray(prod.availableMarketplaces) ? prod.availableMarketplaces : ["US"]).map(normalizeMarketplaceCode);
+              calculatedActiveMap[prod.id] = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
             }
           }
           uItem.activeProductsMap = calculatedActiveMap;
           uItem.totalBaseSlots = netSlots;
-          uItem.allocatedSlots = netSlots;
+          uItem.allocatedSlots = uItem.isPaused ? 0 : netSlots;
         }
         if (isDraftMode) {
           for (const uItem of waitingUpdateItems) {
@@ -234442,6 +234566,7 @@ async function verifyListingReadback({ expectations, timeoutMs = 5e3 }) {
 
 // src/server/services/uploadWorkerService.ts
 init_updateMetadataService();
+init_productAvailabilityPolicy();
 var AmazonProcessingPauseError = class extends Error {
 };
 var UpdateSelectionRebalancedError = class extends Error {
@@ -234781,12 +234906,14 @@ var UploadWorkerService = class _UploadWorkerService {
       } else {
         await page.waitForTimeout(300);
         const catalog2 = ProductCatalogService.getCatalog();
+        const uploadPolicy2 = ProductCatalogService.getUploadPolicy();
+        const effectiveActiveProductsMap2 = filterActiveProductsMap(item.activeProductsMap, catalog2.products, uploadPolicy2);
         const productAmazonKeys = {};
         for (const p of catalog2.products) {
           productAmazonKeys[p.id] = p.amazon?.key || p.amazon?.checkboxClass || p.id;
         }
         let selectionMap = buildUploadProductSelection(
-          item.activeProductsMap,
+          effectiveActiveProductsMap2,
           false
         );
         if (isUpdate) {
@@ -234824,8 +234951,8 @@ var UploadWorkerService = class _UploadWorkerService {
           const fullCatalogSelection = {};
           const blocked = new Set((item.tmBlockedProductIds || []).map((id) => normalizeCatalogProductId(id)));
           for (const product of catalog2.products) {
-            if (product.available === false || blocked.has(normalizeCatalogProductId(product.id))) continue;
-            fullCatalogSelection[product.id] = Array.isArray(product.availableMarketplaces) ? product.availableMarketplaces : ["US"];
+            if (!isProductUploadEnabled(product) || blocked.has(normalizeCatalogProductId(product.id))) continue;
+            fullCatalogSelection[product.id] = getEnabledMarketplacesForProduct(product, uploadPolicy2);
           }
           const reconciled = reconcileUpdateSelectionFromDom(modalSnapshot, fullCatalogSelection);
           const previouslyReservedSlots = Math.max(0, item.allocatedSlots || 0);
@@ -234962,29 +235089,31 @@ var UploadWorkerService = class _UploadWorkerService {
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       const catalog = ProductCatalogService.getCatalog();
+      const uploadPolicy = ProductCatalogService.getUploadPolicy();
+      const effectiveActiveProductsMap = filterActiveProductsMap(item.activeProductsMap, catalog.products, uploadPolicy);
       const sortedCatalogProducts = [...catalog.products].sort(
         (a, b) => (a.amazonSortOrder ?? a.amazon?.sortOrder ?? a.sortOrder ?? 999) - (b.amazonSortOrder ?? b.amazon?.sortOrder ?? b.sortOrder ?? 999)
       );
       const activeProductsToProcess = sortedCatalogProducts.filter((p) => {
-        const mps = item.activeProductsMap[p.id];
+        const mps = effectiveActiveProductsMap[p.id];
         return Array.isArray(mps) && mps.length > 0;
       });
       const totalActiveProducts = activeProductsToProcess.length;
       this.log(`\u{1F455} Bearbeite ${totalActiveProducts} aktive Produkte sequenziell nach Amazon SortOrder...`, "Bearbeite Produktdetails...", 52, 100);
       const productUploadResults = [];
       for (const p of catalog.products) {
-        const mps = item.activeProductsMap[p.id];
+        const mps = effectiveActiveProductsMap[p.id];
         const amazonKey = p.amazon?.key || p.id;
         if (item.tmBlockedProductIds && item.tmBlockedProductIds.map((t) => t.toUpperCase()).includes(p.id.toUpperCase())) {
           productUploadResults.push({ productId: p.id, amazonKey, status: "SKIPPED_TM_BLOCKED", reason: "Blocked by Trademark V2" });
-        } else if (p.available === false) {
+        } else if (!isProductUploadEnabled(p)) {
           productUploadResults.push({ productId: p.id, amazonKey, status: "SKIPPED_UNAVAILABLE", reason: "Product unavailable on Amazon" });
         } else if (!Array.isArray(mps) || mps.length === 0) {
           productUploadResults.push({ productId: p.id, amazonKey, status: "SKIPPED_NOT_SELECTED", reason: "No active marketplaces selected" });
         }
       }
       const avoidColor = item.avoidColor || "none";
-      let fitTypes = item.fitTypes || ["men", "women", "youth"];
+      let fitTypes = resolveEffectiveFitTypes(item.fitTypes, uploadPolicy);
       const normalizedFits = fitTypes.map((f) => f.toLowerCase());
       if (normalizedFits.includes("youth") && !normalizedFits.includes("men") && !normalizedFits.includes("women")) {
         fitTypes = [...fitTypes, "men"];
@@ -235839,10 +235968,10 @@ var UploadWorkerService = class _UploadWorkerService {
       QueueService.updateItemUploadRecovery(item.id, { phase: "READY_TO_SUBMIT" });
       const canonicalIntended = AmazonRecoveryVerificationService.canonicalizeRemoteState({
         immutableListings: item.immutableListings || item.listings,
-        activeProductsMap: item.activeProductsMap,
+        activeProductsMap: effectiveActiveProductsMap,
         pricesMap: item.pricesMap,
         colorOptions: item.colorOptions,
-        fitTypes: item.fitTypes
+        fitTypes
       });
       const intendedRemoteFingerprint = AmazonRecoveryVerificationService.computeRemoteFingerprint(canonicalIntended);
       let remoteBaseline;
@@ -238155,6 +238284,58 @@ app.post("/api/v1/queue/refresh-slots", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+app.patch("/api/v1/products/:productId/enabled", (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { enabled } = req.body;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ success: false, error: "enabled muss boolean sein" });
+    }
+    const catalog = ProductCatalogService.updateProductEnabled(productId, enabled);
+    const queueState = QueueService.rebalanceQueue();
+    const payload = { catalog, policy: ProductCatalogService.getUploadPolicy(), stats: ProductCatalogService.getStats(), queueState };
+    broadcast("QUEUE_UPDATED", queueState);
+    broadcast("PRODUCT_POLICY_UPDATED", payload);
+    res.json({ success: true, ...payload });
+  } catch (err) {
+    const status = String(err.message || "").startsWith("Unbekanntes Produkt") ? 400 : 500;
+    res.status(status).json({ success: false, error: err.message });
+  }
+});
+app.patch("/api/v1/products/policy/marketplaces/:marketplaceId", (req, res) => {
+  try {
+    const { marketplaceId } = req.params;
+    const { enabled } = req.body;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ success: false, error: "enabled muss boolean sein" });
+    }
+    const catalog = ProductCatalogService.updateMarketplaceEnabled(marketplaceId, enabled);
+    const queueState = QueueService.rebalanceQueue();
+    const payload = { catalog, policy: ProductCatalogService.getUploadPolicy(), stats: ProductCatalogService.getStats(), queueState };
+    broadcast("QUEUE_UPDATED", queueState);
+    broadcast("PRODUCT_POLICY_UPDATED", payload);
+    res.json({ success: true, ...payload });
+  } catch (err) {
+    const status = String(err.message || "").startsWith("Unbekannter Marktplatz") ? 400 : 500;
+    res.status(status).json({ success: false, error: err.message });
+  }
+});
+app.patch("/api/v1/products/policy/youth", (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ success: false, error: "enabled muss boolean sein" });
+    }
+    const catalog = ProductCatalogService.updateYouthEnabled(enabled);
+    const queueState = QueueService.rebalanceQueue();
+    const payload = { catalog, policy: ProductCatalogService.getUploadPolicy(), stats: ProductCatalogService.getStats(), queueState };
+    broadcast("QUEUE_UPDATED", queueState);
+    broadcast("PRODUCT_POLICY_UPDATED", payload);
+    res.json({ success: true, ...payload });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 app.patch("/api/v1/products/drop-config", (req, res) => {
   try {
     const configs = req.body.configs || [];
@@ -238240,6 +238421,7 @@ app.get("/api/v1/products/catalog", (req, res) => {
       success: true,
       catalog,
       stats: stats2,
+      policy: ProductCatalogService.getUploadPolicy(),
       scannerState
     });
   } catch (err) {

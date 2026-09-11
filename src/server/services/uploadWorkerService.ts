@@ -22,6 +22,7 @@ import { isUploadColorBlocked } from './uploadColorPolicy';
 import { TaskExecutionLock } from './taskExecutionLock';
 import { buildListingExpectations, verifyListingReadback } from './listingReadback';
 import { UpdateMetadataService } from './updateMetadataService';
+import { filterActiveProductsMap, getEnabledMarketplacesForProduct, isProductUploadEnabled, resolveEffectiveFitTypes } from './productAvailabilityPolicy';
 
 export interface UploadProgressState {
   isUploading: boolean;
@@ -490,13 +491,15 @@ export class UploadWorkerService {
         await page.waitForTimeout(300);
 
         const catalog = ProductCatalogService.getCatalog();
+        const uploadPolicy = ProductCatalogService.getUploadPolicy();
+        const effectiveActiveProductsMap = filterActiveProductsMap(item.activeProductsMap, catalog.products, uploadPolicy);
         const productAmazonKeys: Record<string, string> = {};
         for (const p of catalog.products) {
           productAmazonKeys[p.id] = p.amazon?.key || p.amazon?.checkboxClass || p.id;
         }
 
         let selectionMap = buildUploadProductSelection(
-          item.activeProductsMap,
+          effectiveActiveProductsMap,
           false
         );
 
@@ -538,10 +541,8 @@ export class UploadWorkerService {
           const fullCatalogSelection: Record<string, string[]> = {};
           const blocked = new Set((item.tmBlockedProductIds || []).map(id => normalizeCatalogProductId(id)));
           for (const product of catalog.products) {
-            if (product.available === false || blocked.has(normalizeCatalogProductId(product.id))) continue;
-            fullCatalogSelection[product.id] = Array.isArray(product.availableMarketplaces)
-              ? product.availableMarketplaces
-              : ['US'];
+            if (!isProductUploadEnabled(product) || blocked.has(normalizeCatalogProductId(product.id))) continue;
+            fullCatalogSelection[product.id] = getEnabledMarketplacesForProduct(product, uploadPolicy);
           }
           const reconciled = reconcileUpdateSelectionFromDom(modalSnapshot, fullCatalogSelection);
           const previouslyReservedSlots = Math.max(0, item.allocatedSlots || 0);
@@ -708,6 +709,8 @@ export class UploadWorkerService {
 
       // 6. Sequential Product Details Configuration (Dynamic Catalog Driven with Smooth Scrolling & Delays)
       const catalog = ProductCatalogService.getCatalog();
+      const uploadPolicy = ProductCatalogService.getUploadPolicy();
+      const effectiveActiveProductsMap = filterActiveProductsMap(item.activeProductsMap, catalog.products, uploadPolicy);
       const sortedCatalogProducts = [...catalog.products].sort((a, b) => 
         (a.amazonSortOrder ?? a.amazon?.sortOrder ?? a.sortOrder ?? 999) - 
         (b.amazonSortOrder ?? b.amazon?.sortOrder ?? b.sortOrder ?? 999)
@@ -715,7 +718,7 @@ export class UploadWorkerService {
       
       // Filter products that have at least 1 active marketplace
       const activeProductsToProcess = sortedCatalogProducts.filter(p => {
-        const mps = item.activeProductsMap[p.id];
+        const mps = effectiveActiveProductsMap[p.id];
         return Array.isArray(mps) && mps.length > 0;
       });
 
@@ -726,11 +729,11 @@ export class UploadWorkerService {
 
       // Pre-populate skipped products (not selected, unavailable, tm-blocked)
       for (const p of catalog.products) {
-        const mps = item.activeProductsMap[p.id];
+        const mps = effectiveActiveProductsMap[p.id];
         const amazonKey = p.amazon?.key || p.id;
         if (item.tmBlockedProductIds && item.tmBlockedProductIds.map(t => t.toUpperCase()).includes(p.id.toUpperCase())) {
           productUploadResults.push({ productId: p.id, amazonKey, status: 'SKIPPED_TM_BLOCKED', reason: 'Blocked by Trademark V2' });
-        } else if (p.available === false) {
+        } else if (!isProductUploadEnabled(p)) {
           productUploadResults.push({ productId: p.id, amazonKey, status: 'SKIPPED_UNAVAILABLE', reason: 'Product unavailable on Amazon' });
         } else if (!Array.isArray(mps) || mps.length === 0) {
           productUploadResults.push({ productId: p.id, amazonKey, status: 'SKIPPED_NOT_SELECTED', reason: 'No active marketplaces selected' });
@@ -738,7 +741,7 @@ export class UploadWorkerService {
       }
 
       const avoidColor = item.avoidColor || 'none';
-      let fitTypes = item.fitTypes || ['men', 'women', 'youth'];
+      let fitTypes = resolveEffectiveFitTypes(item.fitTypes, uploadPolicy);
       
       // Rule: If in question phase only 'Youth' is selected, automatically include 'Men' as well
       const normalizedFits = fitTypes.map(f => f.toLowerCase());
@@ -1861,10 +1864,10 @@ export class UploadWorkerService {
       // Compute recovery evidence in shared scope before either branch uses it.
       const canonicalIntended = AmazonRecoveryVerificationService.canonicalizeRemoteState({
         immutableListings: (item as any).immutableListings || item.listings,
-        activeProductsMap: item.activeProductsMap,
+        activeProductsMap: effectiveActiveProductsMap,
         pricesMap: (item as any).pricesMap,
         colorOptions: (item as any).colorOptions,
-        fitTypes: item.fitTypes
+        fitTypes
       });
       const intendedRemoteFingerprint = AmazonRecoveryVerificationService.computeRemoteFingerprint(canonicalIntended);
       let remoteBaseline: RemoteBaselineInfo | undefined;

@@ -2076,6 +2076,62 @@ app.post('/api/v1/queue/refresh-slots', async (req, res) => {
   }
 });
 
+// Persistent product and global upload policy
+app.patch('/api/v1/products/:productId/enabled', (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'enabled muss boolean sein' });
+    }
+    const catalog = ProductCatalogService.updateProductEnabled(productId, enabled);
+    const queueState = QueueService.rebalanceQueue();
+    const payload = { catalog, policy: ProductCatalogService.getUploadPolicy(), stats: ProductCatalogService.getStats(), queueState };
+    broadcast('QUEUE_UPDATED', queueState);
+    broadcast('PRODUCT_POLICY_UPDATED', payload);
+    res.json({ success: true, ...payload });
+  } catch (err: any) {
+    const status = String(err.message || '').startsWith('Unbekanntes Produkt') ? 400 : 500;
+    res.status(status).json({ success: false, error: err.message });
+  }
+});
+
+app.patch('/api/v1/products/policy/marketplaces/:marketplaceId', (req, res) => {
+  try {
+    const { marketplaceId } = req.params;
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'enabled muss boolean sein' });
+    }
+    const catalog = ProductCatalogService.updateMarketplaceEnabled(marketplaceId, enabled);
+    const queueState = QueueService.rebalanceQueue();
+    const payload = { catalog, policy: ProductCatalogService.getUploadPolicy(), stats: ProductCatalogService.getStats(), queueState };
+    broadcast('QUEUE_UPDATED', queueState);
+    broadcast('PRODUCT_POLICY_UPDATED', payload);
+    res.json({ success: true, ...payload });
+  } catch (err: any) {
+    const status = String(err.message || '').startsWith('Unbekannter Marktplatz') ? 400 : 500;
+    res.status(status).json({ success: false, error: err.message });
+  }
+});
+
+app.patch('/api/v1/products/policy/youth', (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'enabled muss boolean sein' });
+    }
+    const catalog = ProductCatalogService.updateYouthEnabled(enabled);
+    const queueState = QueueService.rebalanceQueue();
+    const payload = { catalog, policy: ProductCatalogService.getUploadPolicy(), stats: ProductCatalogService.getStats(), queueState };
+    broadcast('QUEUE_UPDATED', queueState);
+    broadcast('PRODUCT_POLICY_UPDATED', payload);
+    res.json({ success: true, ...payload });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Update Droppable Products Configuration
 app.patch('/api/v1/products/drop-config', (req, res) => {
   try {
@@ -2184,6 +2240,7 @@ app.get('/api/v1/products/catalog', (req, res) => {
       success: true,
       catalog,
       stats,
+      policy: ProductCatalogService.getUploadPolicy(),
       scannerState
     });
   } catch (err: any) {

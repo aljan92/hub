@@ -53,6 +53,8 @@ interface MerchProduct {
   isDropAllowed?: boolean;
   dropPriorityOrder?: number;
   niceClass?: number | null;
+  available?: boolean;
+  userEnabled?: boolean;
   artwork?: {
     customResizeEnabled?: boolean;
     resizeByAvoidColor?: {
@@ -68,6 +70,11 @@ interface ProductCatalogStats {
   totalSlots: number;
   totalMarketplaces: number;
   lastScanDate: string | null;
+}
+
+interface UploadPolicy {
+  enabledMarketplaceIds: string[];
+  youthEnabled: boolean;
 }
 
 interface ProductScanLog {
@@ -106,7 +113,7 @@ export const ProductsView: React.FC = () => {
 
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterMode, setFilterMode] = useState<'all' | 'predefined' | 'customPicker' | 'droppable'>('all');
+  const [filterMode, setFilterMode] = useState<'all' | 'predefined' | 'customPicker' | 'droppable' | 'disabled'>('all');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isTriggering, setIsTriggering] = useState(false);
   const [copiedColor, setCopiedColor] = useState<string | null>(null);
@@ -115,6 +122,9 @@ export const ProductsView: React.FC = () => {
   const [isUpdatingDropConfig, setIsUpdatingDropConfig] = useState(false);
   const [updatingNiceClassProductId, setUpdatingNiceClassProductId] = useState<string | null>(null);
   const [niceClassError, setNiceClassError] = useState<string | null>(null);
+  const [policy, setPolicy] = useState<UploadPolicy>({ enabledMarketplaceIds: [], youthEnabled: true });
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [updatingPolicyKey, setUpdatingPolicyKey] = useState<string | null>(null);
   const [artworkVariants, setArtworkVariants] = useState<Array<{ id: string; label: string; artifactKey?: string; storageType?: string }>>([]);
 
   const handleUpdateArtworkConfig = async (productId: string, updatedArtwork: any) => {
@@ -176,6 +186,7 @@ export const ProductsView: React.FC = () => {
         setProducts(data.catalog.products || []);
         setMarketplaces(data.catalog.marketplaces || []);
         if (data.stats) setStats(data.stats);
+        if (data.policy) setPolicy(data.policy);
         if (data.scannerState) setScannerState(data.scannerState);
 
         // Auto-select first product only if no valid product is currently selected
@@ -345,6 +356,34 @@ export const ProductsView: React.FC = () => {
     }
   };
 
+  const savePolicyChange = async (key: string, url: string, enabled: boolean) => {
+    setUpdatingPolicyKey(key);
+    setPolicyError(null);
+    try {
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) throw new Error(data?.error || `Speichern fehlgeschlagen (HTTP ${response.status})`);
+      if (Array.isArray(data.catalog?.products)) setProducts(data.catalog.products);
+      if (data.policy) setPolicy(data.policy);
+      if (data.stats) setStats(data.stats);
+    } catch (err) {
+      setPolicyError(err instanceof Error ? err.message : 'Upload-Richtlinie konnte nicht gespeichert werden.');
+      await fetchCatalogData();
+    } finally {
+      setUpdatingPolicyKey(null);
+    }
+  };
+
+  const handleProductEnabled = (productId: string, enabled: boolean) =>
+    savePolicyChange(`product:${productId}`, `/api/v1/products/${encodeURIComponent(productId)}/enabled`, enabled);
+
+  const handleMarketplaceEnabled = (marketplaceId: string, enabled: boolean) =>
+    savePolicyChange(`marketplace:${marketplaceId}`, `/api/v1/products/policy/marketplaces/${encodeURIComponent(marketplaceId)}`, enabled);
+
   const handleCopyColor = (colorId: string) => {
     navigator.clipboard.writeText(colorId);
     setCopiedColor(colorId);
@@ -355,12 +394,17 @@ export const ProductsView: React.FC = () => {
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           product.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterMode === 'all' || 
-                          (filterMode === 'droppable' ? product.isDropAllowed : product.colorMode === filterMode);
+    const matchesFilter = filterMode === 'all' ||
+                          (filterMode === 'droppable' ? product.isDropAllowed :
+                           filterMode === 'disabled' ? product.userEnabled === false : product.colorMode === filterMode);
     return matchesSearch && matchesFilter;
   });
 
   const selectedProduct = products.find(p => p.id === selectedProductId) || (products.length > 0 ? products[0] : null);
+  const enabledMarketplaceSet = new Set(policy.enabledMarketplaceIds.map(id => id.toUpperCase()));
+  const effectiveSlotCount = (product: MerchProduct) => product.userEnabled === false || product.available === false
+    ? 0
+    : product.availableMarketplaces.filter(id => enabledMarketplaceSet.has(id.toUpperCase())).length;
 
   const formatTimeAgo = (isoDate: string | null) => {
     if (!isoDate) return 'Noch nie gescannt';
@@ -488,14 +532,16 @@ export const ProductsView: React.FC = () => {
         {/* US Protection & Scan Status */}
         <div className="bg-surface/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm backdrop-blur-md relative overflow-hidden">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
-            <span className="font-medium">US-Marktplatz Schutz</span>
+            <span className="font-medium">US-Kürzungsschutz</span>
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-sm font-bold text-emerald-400 font-mono">100% Geschützt</span>
+            <span className={`text-sm font-bold font-mono ${enabledMarketplaceSet.has('US') ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {enabledMarketplaceSet.has('US') ? 'Automatisch geschützt' : 'Manuell deaktiviert'}
+            </span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-            <span>.com bleibt immer aktiv</span>
+            <span>Keine automatische Slot-Kürzung</span>
             {scannerState.nextScheduledScan && (
               <span className="text-amber-400 font-mono font-medium">
                 Scan ~{formatScheduledTime(scannerState.nextScheduledScan)}
@@ -503,6 +549,49 @@ export const ProductsView: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Persistent global upload policy */}
+      <div className="bg-surface/80 border border-indigo-500/25 rounded-2xl p-4 shadow-sm backdrop-blur-md space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="text-sm font-bold text-slate-100 flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
+              Globale Upload-Richtlinien
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1">Gelten für neue und bereits wartende Queue-Einträge. Bereits live veröffentlichte Produkte bleiben unverändert.</div>
+          </div>
+          <label className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 cursor-pointer">
+            <span className="text-xs font-semibold text-slate-200">Youth aktiv</span>
+            <input
+              type="checkbox"
+              checked={policy.youthEnabled}
+              disabled={updatingPolicyKey !== null}
+              onChange={(event) => savePolicyChange('youth', '/api/v1/products/policy/youth', event.target.checked)}
+              className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-indigo-500/30"
+            />
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {marketplaces.map(mp => {
+            const enabled = enabledMarketplaceSet.has(mp.id.toUpperCase());
+            return (
+              <label key={mp.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer ${enabled ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200' : 'bg-slate-900/70 border-slate-700 text-slate-400'}`}>
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  disabled={updatingPolicyKey !== null}
+                  onChange={(event) => handleMarketplaceEnabled(mp.id, event.target.checked)}
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-500/30"
+                />
+                <span className="text-xs font-bold">{mp.displayName}</span>
+                <span className="text-[10px] font-mono opacity-70">{mp.id}</span>
+              </label>
+            );
+          })}
+        </div>
+        {!policy.youthEnabled && <div className="text-[11px] text-amber-300">Youth wird beim Upload immer abgewählt. Falls kein anderer Fit verbleibt, wird Men als Fallback aktiviert.</div>}
+        {policyError && <div className="text-[11px] text-red-300" role="alert">Richtlinie nicht gespeichert: {policyError}</div>}
       </div>
 
       {/* Active Scan Live Banner */}
@@ -585,6 +674,16 @@ export const ProductsView: React.FC = () => {
                   Abwählbar ({products.filter(p => p.isDropAllowed).length})
                 </button>
                 <button
+                  onClick={() => setFilterMode('disabled')}
+                  className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition-all ${
+                    filterMode === 'disabled'
+                      ? 'bg-rose-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  Deaktiviert ({products.filter(p => p.userEnabled === false).length})
+                </button>
+                <button
                   onClick={() => setFilterMode('predefined')}
                   className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition-all ${
                     filterMode === 'predefined'
@@ -611,8 +710,8 @@ export const ProductsView: React.FC = () => {
             <div className="space-y-2.5 max-h-[calc(100vh-320px)] overflow-y-auto pr-1 lg:max-h-none lg:flex-1 lg:min-h-0">
               {filteredProducts.map((product) => {
                 const isSelected = selectedProduct?.id === product.id;
-                const slotCount = product.availableMarketplaces.length;
-                const nonUsSlots = product.availableMarketplaces.filter(mp => mp.toUpperCase() !== 'US').length;
+                const slotCount = effectiveSlotCount(product);
+                const nonUsSlots = product.userEnabled === false ? 0 : product.availableMarketplaces.filter(mp => mp.toUpperCase() !== 'US' && enabledMarketplaceSet.has(mp.toUpperCase())).length;
 
                 return (
                   <div
@@ -636,6 +735,11 @@ export const ProductsView: React.FC = () => {
                           {product.isDropAllowed && (
                             <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
                               Prio #{product.dropPriorityOrder || 1}
+                            </span>
+                          )}
+                          {product.userEnabled === false && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                              Neu / deaktiviert
                             </span>
                           )}
                         </div>
@@ -712,8 +816,20 @@ export const ProductsView: React.FC = () => {
 
                   <div className="flex items-center space-x-2">
                     <span className="px-3 py-1 rounded-xl text-xs font-bold font-mono bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30">
-                      {selectedProduct.availableMarketplaces.length} Marktplatz-Slots
+                      {effectiveSlotCount(selectedProduct)} Marktplatz-Slots
                     </span>
+                    <label className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900/70 cursor-pointer">
+                      <span className={`text-xs font-bold ${selectedProduct.userEnabled === false ? 'text-rose-300' : 'text-emerald-300'}`}>
+                        {selectedProduct.userEnabled === false ? 'Deaktiviert' : 'Aktiv'}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={selectedProduct.userEnabled !== false}
+                        disabled={updatingPolicyKey !== null || selectedProduct.available === false}
+                        onChange={(event) => handleProductEnabled(selectedProduct.id, event.target.checked)}
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-500/30"
+                      />
+                    </label>
                   </div>
                 </div>
 
@@ -824,6 +940,7 @@ export const ProductsView: React.FC = () => {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     {marketplaces.map((mp) => {
                       const isAvailable = selectedProduct.availableMarketplaces.includes(mp.id);
+                      const isGloballyEnabled = enabledMarketplaceSet.has(mp.id.toUpperCase());
                       const isUs = mp.id.toUpperCase() === 'US';
 
                       return (
@@ -846,7 +963,7 @@ export const ProductsView: React.FC = () => {
                             </span>
                           </div>
                           <div className="mt-1 text-[11px] font-mono text-slate-400">
-                            {isAvailable ? `Standard: ${mp.defaultPrice}` : 'Nicht aktiv'}
+                            {!isAvailable ? 'Bei Amazon nicht aktiv' : !isGloballyEnabled ? 'Global deaktiviert' : `Standard: ${mp.defaultPrice}`}
                           </div>
                         </div>
                       );

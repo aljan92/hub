@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { getEnabledMarketplacesForProduct, isProductUploadEnabled } from './productAvailabilityPolicy';
 
 export type ColorMode = 'predefined' | 'customPicker' | 'none' | 'failed';
 
@@ -204,6 +205,7 @@ export interface ProductArtworkConfig {
 
 export interface ProductOverride {
   niceClass: number | null;
+  userEnabled?: boolean;
   uiSortOrder?: number;
   isDropAllowed?: boolean;
   dropPriorityOrder?: number;
@@ -214,6 +216,10 @@ export interface ProductOverride {
 export interface ProductOverridesData {
   schemaVersion: number;
   lastUpdated: string;
+  uploadPolicy?: {
+    enabledMarketplaceIds: string[];
+    youthEnabled: boolean;
+  };
   overrides: Record<string, ProductOverride>;
 }
 
@@ -232,6 +238,7 @@ export interface MerchProduct {
   amazon?: ProductAmazonIdentity;      // Dynamic Amazon DOM identity
   artwork?: ProductArtworkConfig;      // Special artwork capabilities & selection strategy
   available?: boolean;                 // Soft delete flag (true = active, false = temporarily unlisted by Amazon)
+  userEnabled?: boolean;               // Persistent MBA Hub upload approval
   lastSeenAt?: string;                 // ISO date when Amazon last confirmed this product
   presetHexColors?: string[];          // Preset hex values for custom picker
   lastUpdated: string;                 // ISO date string
@@ -347,6 +354,35 @@ export class ProductCatalogService {
     this.loadOverrides();
     this.loadCatalog();
     this.isLoaded = true;
+    this.migrateAvailabilityPolicy();
+  }
+
+  private static migrateAvailabilityPolicy(): void {
+    let changed = false;
+    if (!this.overridesData.uploadPolicy) {
+      this.overridesData.uploadPolicy = {
+        enabledMarketplaceIds: this.catalogData.marketplaces.map(mp => mp.id.toUpperCase()),
+        youthEnabled: true
+      };
+      changed = true;
+    }
+    for (const product of this.catalogData.products) {
+      const found = this.getOverrideEntry(product.id, product.amazon?.key);
+      const targetKey = found?.key || product.id;
+      if (!this.overridesData.overrides[targetKey]) {
+        this.overridesData.overrides[targetKey] = { niceClass: product.niceClass ?? null };
+        changed = true;
+      }
+      if (this.overridesData.overrides[targetKey].userEnabled === undefined) {
+        this.overridesData.overrides[targetKey].userEnabled = true;
+        changed = true;
+      }
+    }
+    if (this.overridesData.schemaVersion < 2) {
+      this.overridesData.schemaVersion = 2;
+      changed = true;
+    }
+    if (changed) this.saveOverridesAtomic(this.overridesData);
   }
 
   /**
@@ -533,6 +569,7 @@ export class ProductCatalogService {
       return {
         ...prod,
         available: isAvailable,
+        userEnabled: override?.userEnabled !== false,
         niceClass: override?.niceClass !== undefined ? override.niceClass : (prod.niceClass ?? null),
         sortOrder: uiSort,
         amazonSortOrder: amazonSort,
@@ -650,6 +687,7 @@ export class ProductCatalogService {
           if (!overrides[newStableId]) {
             overrides[newStableId] = {
               niceClass: null,
+              userEnabled: false,
               uiSortOrder: updatedProducts.length + 1,
               isDropAllowed: false,
               artwork: {
@@ -658,6 +696,9 @@ export class ProductCatalogService {
               },
               colors: {}
             };
+            this.saveOverridesAtomic(this.overridesData);
+          } else if (overrides[newStableId].userEnabled === undefined) {
+            overrides[newStableId].userEnabled = false;
             this.saveOverridesAtomic(this.overridesData);
           }
 
@@ -792,6 +833,50 @@ export class ProductCatalogService {
     return catalog;
   }
 
+  public static getUploadPolicy(): { enabledMarketplaceIds: string[]; youthEnabled: boolean } {
+    this.ensureLoaded();
+    return {
+      enabledMarketplaceIds: [...(this.overridesData.uploadPolicy?.enabledMarketplaceIds || [])],
+      youthEnabled: this.overridesData.uploadPolicy?.youthEnabled !== false
+    };
+  }
+
+  public static updateProductEnabled(id: string, userEnabled: boolean): ProductCatalogData {
+    this.ensureLoaded();
+    const product = this.findProductByAmazonKey(id);
+    if (!product) throw new Error(`Unbekanntes Produkt: ${id}`);
+    const found = this.getOverrideEntry(product.id, product.amazon?.key);
+    const targetKey = found?.key || product.id;
+    if (!this.overridesData.overrides[targetKey]) {
+      this.overridesData.overrides[targetKey] = { niceClass: product.niceClass ?? null };
+    }
+    this.overridesData.overrides[targetKey].userEnabled = userEnabled;
+    this.saveOverridesAtomic(this.overridesData);
+    return this.getCatalog();
+  }
+
+  public static updateMarketplaceEnabled(id: string, enabled: boolean): ProductCatalogData {
+    this.ensureLoaded();
+    const marketplaceId = String(id || '').trim().toUpperCase() === 'UK' ? 'GB' : String(id || '').trim().toUpperCase();
+    if (!this.catalogData.marketplaces.some(mp => mp.id.toUpperCase() === marketplaceId)) {
+      throw new Error(`Unbekannter Marktplatz: ${id}`);
+    }
+    const policy = this.getUploadPolicy();
+    const enabledIds = new Set(policy.enabledMarketplaceIds.map(value => value.toUpperCase()));
+    if (enabled) enabledIds.add(marketplaceId); else enabledIds.delete(marketplaceId);
+    this.overridesData.uploadPolicy = { ...policy, enabledMarketplaceIds: [...enabledIds] };
+    this.saveOverridesAtomic(this.overridesData);
+    return this.getCatalog();
+  }
+
+  public static updateYouthEnabled(enabled: boolean): ProductCatalogData {
+    this.ensureLoaded();
+    const policy = this.getUploadPolicy();
+    this.overridesData.uploadPolicy = { ...policy, youthEnabled: enabled };
+    this.saveOverridesAtomic(this.overridesData);
+    return this.getCatalog();
+  }
+
   /**
    * Update avoid rule for a specific color of a product (saved to persistent overrides)
    */
@@ -884,7 +969,7 @@ export class ProductCatalogService {
   public static getDroppableProductsOrdered(): MerchProduct[] {
     const catalog = this.getCatalog();
     return catalog.products
-      .filter(p => p.available !== false && p.isDropAllowed === true)
+      .filter(p => isProductUploadEnabled(p) && p.isDropAllowed === true)
       .sort((a, b) => {
         const orderA = a.dropPriorityOrder ?? 99;
         const orderB = b.dropPriorityOrder ?? 99;
@@ -898,10 +983,11 @@ export class ProductCatalogService {
    */
   public static calculateMaxDroppableSlotsCount(): number {
     const droppables = this.getDroppableProductsOrdered();
+    const policy = this.getUploadPolicy();
     let count = 0;
     for (const prod of droppables) {
-      if (prod.available === false) continue;
-      const nonUsMarketplaces = (prod.availableMarketplaces || []).filter(mp => mp.toUpperCase() !== 'US');
+      if (!isProductUploadEnabled(prod)) continue;
+      const nonUsMarketplaces = getEnabledMarketplacesForProduct(prod, policy).filter(mp => mp.toUpperCase() !== 'US');
       count += nonUsMarketplaces.length;
     }
     return count;
@@ -913,10 +999,11 @@ export class ProductCatalogService {
 
   public static getTotalBaseSlotsCount(): number {
     const catalog = this.getCatalog();
+    const policy = this.getUploadPolicy();
     let count = 0;
     for (const prod of catalog.products) {
-      if (prod.available === false) continue;
-      count += (prod.availableMarketplaces || []).length;
+      if (!isProductUploadEnabled(prod)) continue;
+      count += getEnabledMarketplacesForProduct(prod, policy).length;
     }
     return count;
   }
@@ -937,11 +1024,11 @@ export class ProductCatalogService {
 
   public static getStats(): ProductCatalogStats {
     const catalog = this.getCatalog();
-    const activeProducts = catalog.products.filter(p => p.available !== false);
+    const activeProducts = catalog.products.filter(p => isProductUploadEnabled(p));
     return {
       totalProducts: activeProducts.length,
       totalSlots: this.getTotalBaseSlotsCount(),
-      totalMarketplaces: catalog.marketplaces.length,
+      totalMarketplaces: this.getUploadPolicy().enabledMarketplaceIds.length,
       lastScanDate: catalog.lastScanDate
     };
   }
