@@ -41,8 +41,21 @@ export interface SyncState {
   liveDesignsCount: number;
   unresolvedAsinsCount: number;
   childAsinShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null };
+  childAsinDiagnostics?: ChildAsinDiagnostics;
   egress?: { mode: 'observe' | 'optimized'; baselineReady: boolean; pending: number; metrics: any[] };
   lastRun?: ProductSyncRuntime['lastRun'];
+}
+
+export interface ChildAsinDiagnostics {
+  lastRunAt: string;
+  unresolvedDesigns: number;
+  unresolvedEntries: number;
+  retryWaiting: number;
+  readyNow: number;
+  staleStatusDesigns: number;
+  truncated: boolean;
+  reasons: Array<{ reason: string; count: number }>;
+  groups: Array<{ type: string; market: string; count: number }>;
 }
 
 const MARKETPLACE_IDS = {
@@ -82,6 +95,7 @@ type ProductSyncRuntime = {
   textVersions?: Record<string, string>;
   resolverRetries?: Record<string, { attempts: number; nextAt: string; parentAsin: string; lastError: string }>;
   resolverShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null; cursor?: number; blockedUntil?: string | null };
+  resolverDiagnostics?: ChildAsinDiagnostics;
   lastRun?: { runId: string; type: string; status: 'running' | 'complete' | 'partial' | 'truncated' | 'cancelled' | 'unknown_write_outcome' | 'error'; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 };
 const SYNC_RUNTIME_PATH = path.resolve(process.cwd(), 'data', 'sync_runtime.json');
@@ -266,7 +280,7 @@ export class SyncEngine {
   public static getState(): SyncState {
     try {
       const runtime = this.loadRuntime();
-      return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, lastRun: runtime.lastRun, egress: {
+      return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, lastRun: runtime.lastRun, egress: {
       mode: loadSettings().syncEgressMode || 'observe',
       baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
       pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
@@ -1317,6 +1331,87 @@ export class SyncEngine {
   /**
    * 7. Resolve Child ASINs Batch
    */
+  public static buildChildAsinDiagnostics(
+    rows: any[],
+    retryState: ProductSyncRuntime['resolverRetries'] = {},
+    truncated = false
+  ): ChildAsinDiagnostics {
+    const reasons = new Map<string, number>();
+    const groups = new Map<string, number>();
+    let unresolvedEntries = 0;
+    let retryWaiting = 0;
+    let readyNow = 0;
+    let staleStatusDesigns = 0;
+    const now = Date.now();
+
+    const add = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) || 0) + 1);
+    for (const row of rows || []) {
+      const products = Array.isArray(row?.published_products) ? row.published_products : [];
+      const adAsins = Array.isArray(row?.ad_asins) ? row.ad_asins : [];
+      let rowHasOpenLegacyEntry = false;
+      for (const product of products) {
+        const type = normalizeChildAsinProductType(product?.type);
+        if (!isLegacyChildAsinWriteEnabled(type)) continue;
+        const market = String(product?.market || '').trim().toLowerCase();
+        const parentAsin = this.sanitizeAsin(product?.asin);
+        const ad = adAsins.find((entry: any) =>
+          normalizeChildAsinProductType(entry?.type) === type && String(entry?.market || '').trim().toLowerCase() === market
+        );
+        const recordedParentAsin = this.sanitizeAsin(ad?.parentAsin);
+        if (parentAsin && recordedParentAsin === parentAsin && isConfirmedChildAsin(ad?.asin, parentAsin)) continue;
+
+        rowHasOpenLegacyEntry = true;
+        unresolvedEntries++;
+        add(groups, `${type}|${market || 'unbekannt'}`);
+        const retryKey = `${row.design_id}:${market}:${type}`;
+        const retry = retryState?.[retryKey];
+        if (retry && retry.parentAsin === parentAsin && Date.parse(retry.nextAt) > now) {
+          retryWaiting++;
+          add(reasons, `Warte auf Retry (${retry.lastError || 'Fehler'})`);
+        } else if (!parentAsin) {
+          add(reasons, 'Parent-ASIN fehlt');
+        } else if (!ad?.asin) {
+          readyNow++;
+          add(reasons, 'Child-ASIN fehlt, jetzt prüfbar');
+        } else if (recordedParentAsin && recordedParentAsin !== parentAsin) {
+          readyNow++;
+          add(reasons, 'Parent geändert, Child-ASIN neu zu prüfen');
+        } else {
+          readyNow++;
+          add(reasons, 'Parent-Platzhalter, jetzt prüfbar');
+        }
+      }
+      if (!rowHasOpenLegacyEntry) {
+        staleStatusDesigns++;
+        add(reasons, 'Status veraltet oder nur nicht unterstützte Produkte');
+      }
+    }
+
+    const sorted = (map: Map<string, number>) => [...map.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    return {
+      lastRunAt: new Date().toISOString(),
+      unresolvedDesigns: rows.length,
+      unresolvedEntries,
+      retryWaiting,
+      readyNow,
+      staleStatusDesigns,
+      truncated,
+      reasons: sorted(reasons).map(([reason, count]) => ({ reason, count })),
+      groups: sorted(groups).map(([key, count]) => {
+        const [type, market] = key.split('|');
+        return { type, market, count };
+      })
+    };
+  }
+
+  private static persistChildAsinDiagnostics(rows: any[], runtime: ProductSyncRuntime, truncated = false) {
+    const diagnostics = this.buildChildAsinDiagnostics(rows, runtime.resolverRetries || {}, truncated);
+    runtime.resolverDiagnostics = diagnostics;
+    this.saveRuntime(runtime);
+    this.state.childAsinDiagnostics = diagnostics;
+  }
+
   public static async resolveChildAsinsBatch(limit = 10): Promise<{ processed: number; errors: number }> {
     const runId = this.beginWorker('resolve_asins');
     this.state.isScanning = true;
@@ -1344,11 +1439,16 @@ export class SyncEngine {
         .or('asin_resolved.eq.false,asin_resolved.is.null')
         .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
         .order('updated_date', { ascending: true, nullsFirst: true })
-        .limit(Math.max(50, limit * 10));
+        // A 50-row window could be occupied entirely by retry-delayed rows and
+        // permanently hide later candidates. The current live queue is small;
+        // inspect a broad bounded window so every due row gets a fair chance.
+        .limit(1000);
 
       this.recordTraffic('resolver_read', { data: unresolved, error });
       if (error) throw new Error(`ASIN-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
       if (!unresolved || unresolved.length === 0) {
+        const runtime = this.loadRuntime();
+        this.persistChildAsinDiagnostics([], runtime);
         this.state.lastAsinSync = new Date().toLocaleString('de-DE');
         this.finishWorker(runId, 'complete', { pages: 0, attempted: 0, confirmed: 0 });
         this.state.isScanning = false;
@@ -1378,7 +1478,11 @@ export class SyncEngine {
           const alreadyResolved = newAdAsins.every((ad: any) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad));
           if (alreadyResolved) {
             const { error: confirmError } = await supabase.from('mba_designs').update({ ad_asins: newAdAsins, asin_resolved: true }).eq('design_id', item.design_id);
-            if (confirmError) errors++; else processed++;
+            if (confirmError) errors++; else {
+              processed++;
+              item.ad_asins = newAdAsins;
+              item.asin_resolved = true;
+            }
           }
           continue;
         }
@@ -1472,10 +1576,14 @@ export class SyncEngine {
           this.addLog(`[ASIN Scanner] Supabase-Write für ${item.design_id} fehlgeschlagen: ${updateError.message || String(updateError)}`, 'error');
         } else if (fullyResolved) {
           processed++;
+          item.ad_asins = newAdAsins;
+          item.asin_resolved = true;
+        } else {
+          item.ad_asins = newAdAsins;
         }
       }
       runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5000));
-      this.saveRuntime(runtime);
+      this.persistChildAsinDiagnostics(unresolved.filter((row: any) => row.asin_resolved !== true), runtime, unresolved.length >= 1000);
     } catch (err: any) {
       console.warn('[SyncEngine] ASIN batch error:', err.message);
     }

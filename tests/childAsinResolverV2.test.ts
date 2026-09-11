@@ -160,3 +160,43 @@ test('shadow batch resolves a new parent placeholder without any Supabase write'
     AmazonRetailIdentityService.resolve = originals.resolve;
   }
 });
+
+test('legacy diagnostics explain entries, retries and stale design flags without exposing identities', () => {
+  const rows = [
+    {
+      design_id: 'D-READY',
+      published_products: [{ asin: 'B000000001', type: 'MUG', market: 'us' }],
+      ad_asins: [{ asin: 'B000000001', parentAsin: 'B000000001', type: 'MUG', market: 'us' }]
+    },
+    {
+      design_id: 'D-RETRY',
+      published_products: [{ asin: 'B000000002', type: 'TOTE_BAG', market: 'de' }],
+      ad_asins: [{ asin: null, parentAsin: 'B000000002', type: 'TOTE_BAG', market: 'de' }]
+    },
+    {
+      design_id: 'D-STALE',
+      published_products: [{ asin: 'B000000003', type: 'PHONE_CASE_SAMSUNG_GALAXY', market: 'us' }],
+      ad_asins: [{ asin: 'B000000003', parentAsin: 'B000000003', type: 'PHONE_CASE_SAMSUNG_GALAXY', market: 'us' }]
+    }
+  ];
+  const diagnostics = SyncEngine.buildChildAsinDiagnostics(rows, {
+    'D-RETRY:de:TOTE_BAG': {
+      attempts: 2,
+      nextAt: new Date(Date.now() + 60_000).toISOString(),
+      parentAsin: 'B000000002',
+      lastError: 'HTTP 404'
+    }
+  });
+
+  assert.equal(diagnostics.unresolvedDesigns, 3);
+  assert.equal(diagnostics.unresolvedEntries, 2);
+  assert.equal(diagnostics.readyNow, 1);
+  assert.equal(diagnostics.retryWaiting, 1);
+  assert.equal(diagnostics.staleStatusDesigns, 1);
+  assert.deepEqual(diagnostics.groups, [
+    { type: 'MUG', market: 'us', count: 1 },
+    { type: 'TOTE_BAG', market: 'de', count: 1 }
+  ]);
+  assert.equal(JSON.stringify(diagnostics).includes('D-READY'), false);
+  assert.equal(JSON.stringify(diagnostics).includes('B000000001'), false);
+});

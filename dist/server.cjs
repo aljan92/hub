@@ -223376,7 +223376,7 @@ var init_syncEngine = __esm2({
       static getState() {
         try {
           const runtime = this.loadRuntime();
-          return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, lastRun: runtime.lastRun, egress: {
+          return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, lastRun: runtime.lastRun, egress: {
             mode: loadSettings().syncEgressMode || "observe",
             baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
             pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
@@ -224343,6 +224343,77 @@ var init_syncEngine = __esm2({
       /**
        * 7. Resolve Child ASINs Batch
        */
+      static buildChildAsinDiagnostics(rows, retryState = {}, truncated = false) {
+        const reasons = /* @__PURE__ */ new Map();
+        const groups = /* @__PURE__ */ new Map();
+        let unresolvedEntries = 0;
+        let retryWaiting = 0;
+        let readyNow = 0;
+        let staleStatusDesigns = 0;
+        const now = Date.now();
+        const add = (map, key) => map.set(key, (map.get(key) || 0) + 1);
+        for (const row of rows || []) {
+          const products = Array.isArray(row?.published_products) ? row.published_products : [];
+          const adAsins = Array.isArray(row?.ad_asins) ? row.ad_asins : [];
+          let rowHasOpenLegacyEntry = false;
+          for (const product of products) {
+            const type3 = normalizeChildAsinProductType(product?.type);
+            if (!isLegacyChildAsinWriteEnabled(type3)) continue;
+            const market = String(product?.market || "").trim().toLowerCase();
+            const parentAsin = this.sanitizeAsin(product?.asin);
+            const ad = adAsins.find(
+              (entry) => normalizeChildAsinProductType(entry?.type) === type3 && String(entry?.market || "").trim().toLowerCase() === market
+            );
+            const recordedParentAsin = this.sanitizeAsin(ad?.parentAsin);
+            if (parentAsin && recordedParentAsin === parentAsin && isConfirmedChildAsin(ad?.asin, parentAsin)) continue;
+            rowHasOpenLegacyEntry = true;
+            unresolvedEntries++;
+            add(groups, `${type3}|${market || "unbekannt"}`);
+            const retryKey = `${row.design_id}:${market}:${type3}`;
+            const retry2 = retryState?.[retryKey];
+            if (retry2 && retry2.parentAsin === parentAsin && Date.parse(retry2.nextAt) > now) {
+              retryWaiting++;
+              add(reasons, `Warte auf Retry (${retry2.lastError || "Fehler"})`);
+            } else if (!parentAsin) {
+              add(reasons, "Parent-ASIN fehlt");
+            } else if (!ad?.asin) {
+              readyNow++;
+              add(reasons, "Child-ASIN fehlt, jetzt pr\xFCfbar");
+            } else if (recordedParentAsin && recordedParentAsin !== parentAsin) {
+              readyNow++;
+              add(reasons, "Parent ge\xE4ndert, Child-ASIN neu zu pr\xFCfen");
+            } else {
+              readyNow++;
+              add(reasons, "Parent-Platzhalter, jetzt pr\xFCfbar");
+            }
+          }
+          if (!rowHasOpenLegacyEntry) {
+            staleStatusDesigns++;
+            add(reasons, "Status veraltet oder nur nicht unterst\xFCtzte Produkte");
+          }
+        }
+        const sorted = (map) => [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        return {
+          lastRunAt: (/* @__PURE__ */ new Date()).toISOString(),
+          unresolvedDesigns: rows.length,
+          unresolvedEntries,
+          retryWaiting,
+          readyNow,
+          staleStatusDesigns,
+          truncated,
+          reasons: sorted(reasons).map(([reason, count]) => ({ reason, count })),
+          groups: sorted(groups).map(([key, count]) => {
+            const [type3, market] = key.split("|");
+            return { type: type3, market, count };
+          })
+        };
+      }
+      static persistChildAsinDiagnostics(rows, runtime, truncated = false) {
+        const diagnostics = this.buildChildAsinDiagnostics(rows, runtime.resolverRetries || {}, truncated);
+        runtime.resolverDiagnostics = diagnostics;
+        this.saveRuntime(runtime);
+        this.state.childAsinDiagnostics = diagnostics;
+      }
       static async resolveChildAsinsBatch(limit = 10) {
         const runId = this.beginWorker("resolve_asins");
         this.state.isScanning = true;
@@ -224363,10 +224434,12 @@ var init_syncEngine = __esm2({
           const page = await this.getAmazonPage();
           const runtime = this.loadRuntime();
           const retryState = runtime.resolverRetries || {};
-          const { data: unresolved, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).order("updated_date", { ascending: true, nullsFirst: true }).limit(Math.max(50, limit * 10));
+          const { data: unresolved, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).order("updated_date", { ascending: true, nullsFirst: true }).limit(1e3);
           this.recordTraffic("resolver_read", { data: unresolved, error });
           if (error) throw new Error(`ASIN-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
           if (!unresolved || unresolved.length === 0) {
+            const runtime2 = this.loadRuntime();
+            this.persistChildAsinDiagnostics([], runtime2);
             this.state.lastAsinSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
             this.finishWorker(runId, "complete", { pages: 0, attempted: 0, confirmed: 0 });
             this.state.isScanning = false;
@@ -224395,7 +224468,11 @@ var init_syncEngine = __esm2({
               if (alreadyResolved) {
                 const { error: confirmError } = await supabase.from("mba_designs").update({ ad_asins: newAdAsins, asin_resolved: true }).eq("design_id", item.design_id);
                 if (confirmError) errors2++;
-                else processed++;
+                else {
+                  processed++;
+                  item.ad_asins = newAdAsins;
+                  item.asin_resolved = true;
+                }
               }
               continue;
             }
@@ -224480,10 +224557,14 @@ var init_syncEngine = __esm2({
               this.addLog(`[ASIN Scanner] Supabase-Write f\xFCr ${item.design_id} fehlgeschlagen: ${updateError.message || String(updateError)}`, "error");
             } else if (fullyResolved) {
               processed++;
+              item.ad_asins = newAdAsins;
+              item.asin_resolved = true;
+            } else {
+              item.ad_asins = newAdAsins;
             }
           }
           runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5e3));
-          this.saveRuntime(runtime);
+          this.persistChildAsinDiagnostics(unresolved.filter((row) => row.asin_resolved !== true), runtime, unresolved.length >= 1e3);
         } catch (err) {
           console.warn("[SyncEngine] ASIN batch error:", err.message);
         }

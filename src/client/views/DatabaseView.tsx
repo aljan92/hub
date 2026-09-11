@@ -45,6 +45,12 @@ interface SyncState {
   liveDesignsCount: number;
   unresolvedAsinsCount: number;
   childAsinShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null };
+  childAsinDiagnostics?: {
+    lastRunAt: string; unresolvedDesigns: number; unresolvedEntries: number; retryWaiting: number;
+    readyNow: number; staleStatusDesigns: number; truncated: boolean;
+    reasons: Array<{ reason: string; count: number }>;
+    groups: Array<{ type: string; market: string; count: number }>;
+  };
   lastRun?: { status: string; type: string; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 }
 
@@ -490,6 +496,33 @@ export const DatabaseView: React.FC = () => {
                   <div className="font-semibold text-cyan-300">V2 Shadow · keine Datenbankänderung</div>
                   <div>{syncState.childAsinShadow.lastResult || 'Noch kein Ergebnis'}</div>
                   <div className="text-cyan-200/50">{formatDate(Date.parse(syncState.childAsinShadow.lastRunAt))}</div>
+                </div>
+              )}
+              {syncState.childAsinDiagnostics?.lastRunAt && (
+                <div className="rounded-lg border border-amber-500/15 bg-amber-950/15 px-2.5 py-2 text-[10px] leading-relaxed text-slate-300 space-y-1.5">
+                  <div className="font-semibold text-amber-300">Warum noch offen?</div>
+                  <div>
+                    {syncState.childAsinDiagnostics.unresolvedDesigns} Designs · {syncState.childAsinDiagnostics.unresolvedEntries} einzelne Child-ASINs ·{' '}
+                    {syncState.childAsinDiagnostics.readyNow} jetzt prüfbar · {syncState.childAsinDiagnostics.retryWaiting} im Retry
+                  </div>
+                  {syncState.childAsinDiagnostics.staleStatusDesigns > 0 && (
+                    <div className="text-amber-200/80">
+                      {syncState.childAsinDiagnostics.staleStatusDesigns} Designs haben nur einen veralteten Status oder nicht unterstützte Produkte.
+                    </div>
+                  )}
+                  {syncState.childAsinDiagnostics.reasons.slice(0, 4).map(entry => (
+                    <div key={entry.reason} className="flex justify-between gap-3">
+                      <span>{entry.reason}</span><span className="font-mono text-amber-200">{entry.count}</span>
+                    </div>
+                  ))}
+                  {syncState.childAsinDiagnostics.groups.length > 0 && (
+                    <div className="text-slate-400">
+                      Typen: {syncState.childAsinDiagnostics.groups.slice(0, 5).map(entry => `${entry.type} (${entry.market}): ${entry.count}`).join(' · ')}
+                    </div>
+                  )}
+                  <div className="text-slate-500">
+                    Stand: {formatDate(Date.parse(syncState.childAsinDiagnostics.lastRunAt))}{syncState.childAsinDiagnostics.truncated ? ' · Anzeige auf 1.000 Designs begrenzt' : ''}
+                  </div>
                 </div>
               )}
             </div>
