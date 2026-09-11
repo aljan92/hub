@@ -224853,7 +224853,7 @@ var init_syncEngine = __esm2({
             unresolved: unresolvedCount,
             lastResult,
             cursor: nextCursor,
-            blockedUntil: runtime.resolverShadow?.blockedUntil || null
+            blockedUntil: blockedResult ? runtime.resolverShadow?.blockedUntil || null : checked > 0 ? null : previousShadow?.blockedUntil || null
           };
           this.saveRuntime(runtime);
           this.state.childAsinShadow = runtime.resolverShadow;

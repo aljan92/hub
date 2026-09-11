@@ -172,6 +172,7 @@ test('shadow batch resolves a new parent placeholder without any Supabase write'
     assert.equal(forcedCalls, 0);
     assert.deepEqual(await SyncEngine.runChildAsinShadowBatch(1, true), { checked: 1, resolved: 0, unresolved: 1 });
     assert.equal(forcedCalls, 1);
+    assert.equal(savedRuntime.resolverShadow.blockedUntil, null);
   } finally {
     (SyncEngine as any).getSupabase = originals.getSupabase;
     (SyncEngine as any).loadRuntime = originals.loadRuntime;

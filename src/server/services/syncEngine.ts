@@ -1910,7 +1910,9 @@ export class SyncEngine {
         ...(runtime.resolverShadow || {}),
         lastRunAt: new Date().toISOString(), checked, resolved, unresolved: unresolvedCount, lastResult,
         cursor: nextCursor,
-        blockedUntil: runtime.resolverShadow?.blockedUntil || null
+        blockedUntil: blockedResult
+          ? (runtime.resolverShadow?.blockedUntil || null)
+          : (checked > 0 ? null : (previousShadow?.blockedUntil || null))
       };
       this.saveRuntime(runtime);
       this.state.childAsinShadow = runtime.resolverShadow;
