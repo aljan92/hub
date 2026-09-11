@@ -161,11 +161,14 @@ export const DatabaseView: React.FC = () => {
   const handleRunScan = async (type: string) => {
     setIsActionRunning(type);
     try {
-      await fetch('/api/v1/sync/run', {
+      const response = await fetch('/api/v1/sync/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type })
       });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Scan konnte nicht gestartet werden');
+      if (data.state) setSyncState(data.state);
       fetchState();
       fetchLogs();
     } catch (e) {
@@ -492,9 +495,9 @@ export const DatabaseView: React.FC = () => {
                 onClick={() => handleRunScan('resolve_asins_shadow')}
                 disabled={syncState.isScanning}
                 className="w-full px-3.5 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
-                title="Prüft alte und neue Varianten-Produkte mit dem SNAP-Resolver, ohne ad_asins zu verändern"
+                title="Startet genau einen read-only Amazon-Test und darf dafür die automatische Schutzpause einmalig umgehen"
               >
-                SNAP-Resolver prüfen (nur lesen)
+                SNAP-Resolver einmal prüfen (nur lesen)
               </button>
               {syncState.childAsinShadow?.lastRunAt && (
                 <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/20 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/75">

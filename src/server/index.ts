@@ -357,7 +357,10 @@ app.post('/api/v1/sync/run', async (req, res) => {
     } else if (type === 'resolve_asins') {
       SyncEngine.resolveChildAsinsBatch(10).catch(() => {});
     } else if (type === 'resolve_asins_shadow') {
-      SyncEngine.runChildAsinShadowBatch(3).catch(() => {});
+      // Explicit button action: one bounded request may bypass the automatic
+      // cooldown so an operator can verify whether Amazon still blocks it.
+      const result = await SyncEngine.runChildAsinShadowBatch(1, true);
+      return res.json({ success: true, message: `SNAP-Shadow abgeschlossen: ${result.resolved}/${result.checked} aufgelöst.`, state: SyncEngine.getState() });
     } else if (type === 'lifecycle_audit') {
       SyncEngine.runLifecycleAudit().catch(() => {});
     } else {

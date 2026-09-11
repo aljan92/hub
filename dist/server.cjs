@@ -224728,7 +224728,7 @@ var init_syncEngine = __esm2({
         return { processed, errors: errors2 };
       }
       /** Read-only SNAP-style probe for every product type requiring a child ASIN. */
-      static async runChildAsinShadowBatch(limit = 1) {
+      static async runChildAsinShadowBatch(limit = 1, ignoreCooldown = false) {
         this.shouldStop = false;
         const runId = this.beginWorker("resolve_asins_shadow");
         this.state.isScanning = true;
@@ -224746,13 +224746,18 @@ var init_syncEngine = __esm2({
           const observations = runtime.resolverObservations || {};
           const previousShadow = runtime.resolverShadow;
           const blockedUntil = previousShadow?.blockedUntil ? Date.parse(previousShadow.blockedUntil) : 0;
-          if (blockedUntil > Date.now()) {
-            const lastResult2 = `Amazon-Retail-Pr\xFCfung bis ${new Date(blockedUntil).toLocaleString("de-DE")} pausiert; keine Datenbank\xE4nderung.`;
+          if (blockedUntil > Date.now() && !ignoreCooldown) {
+            const pauseEnd = new Date(blockedUntil).toLocaleString("de-DE", { timeZone: "Europe/Berlin" });
+            const lastResult2 = `Amazon-Retail-Pr\xFCfung bis ${pauseEnd} (Berlin) pausiert; keine Datenbank\xE4nderung.`;
             runtime.resolverShadow = { ...previousShadow, lastRunAt: (/* @__PURE__ */ new Date()).toISOString(), checked: 0, resolved: 0, unresolved: 0, lastResult: lastResult2 };
             this.saveRuntime(runtime);
             this.state.childAsinShadow = runtime.resolverShadow;
+            this.addLog(`[ASIN SNAP Shadow] ${lastResult2}`, "info");
             message = lastResult2;
             return { checked: 0, resolved: 0, unresolved: 0 };
+          }
+          if (blockedUntil > Date.now() && ignoreCooldown) {
+            this.addLog("[ASIN SNAP Shadow] Manueller Einzeltest umgeht einmalig die Schutzpause.", "warn");
           }
           const cursor = Math.max(0, Number(previousShadow?.cursor || 0));
           const { data: rows, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).order("updated_date", { ascending: true, nullsFirst: true }).range(cursor, cursor + 249);
@@ -237091,8 +237096,8 @@ app.post("/api/v1/sync/run", async (req, res) => {
       SyncEngine.resolveChildAsinsBatch(10).catch(() => {
       });
     } else if (type3 === "resolve_asins_shadow") {
-      SyncEngine.runChildAsinShadowBatch(3).catch(() => {
-      });
+      const result2 = await SyncEngine.runChildAsinShadowBatch(1, true);
+      return res.json({ success: true, message: `SNAP-Shadow abgeschlossen: ${result2.resolved}/${result2.checked} aufgel\xF6st.`, state: SyncEngine.getState() });
     } else if (type3 === "lifecycle_audit") {
       SyncEngine.runLifecycleAudit().catch(() => {
       });

@@ -1781,7 +1781,7 @@ export class SyncEngine {
   }
 
   /** Read-only SNAP-style probe for every product type requiring a child ASIN. */
-  public static async runChildAsinShadowBatch(limit = 1): Promise<{ checked: number; resolved: number; unresolved: number }> {
+  public static async runChildAsinShadowBatch(limit = 1, ignoreCooldown = false): Promise<{ checked: number; resolved: number; unresolved: number }> {
     this.shouldStop = false;
     const runId = this.beginWorker('resolve_asins_shadow');
     this.state.isScanning = true;
@@ -1800,13 +1800,18 @@ export class SyncEngine {
       const observations = runtime.resolverObservations || {};
       const previousShadow = runtime.resolverShadow;
       const blockedUntil = previousShadow?.blockedUntil ? Date.parse(previousShadow.blockedUntil) : 0;
-      if (blockedUntil > Date.now()) {
-        const lastResult = `Amazon-Retail-Prüfung bis ${new Date(blockedUntil).toLocaleString('de-DE')} pausiert; keine Datenbankänderung.`;
+      if (blockedUntil > Date.now() && !ignoreCooldown) {
+        const pauseEnd = new Date(blockedUntil).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' });
+        const lastResult = `Amazon-Retail-Prüfung bis ${pauseEnd} (Berlin) pausiert; keine Datenbankänderung.`;
         runtime.resolverShadow = { ...previousShadow, lastRunAt: new Date().toISOString(), checked: 0, resolved: 0, unresolved: 0, lastResult };
         this.saveRuntime(runtime);
         this.state.childAsinShadow = runtime.resolverShadow;
+        this.addLog(`[ASIN SNAP Shadow] ${lastResult}`, 'info');
         message = lastResult;
         return { checked: 0, resolved: 0, unresolved: 0 };
+      }
+      if (blockedUntil > Date.now() && ignoreCooldown) {
+        this.addLog('[ASIN SNAP Shadow] Manueller Einzeltest umgeht einmalig die Schutzpause.', 'warn');
       }
       const cursor = Math.max(0, Number(previousShadow?.cursor || 0));
       const { data: rows, error } = await supabase.from('mba_designs')
