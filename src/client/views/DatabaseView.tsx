@@ -44,6 +44,7 @@ interface SyncState {
   lastAsinSync: string | null;
   liveDesignsCount: number;
   unresolvedAsinsCount: number;
+  childAsinShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null };
   lastRun?: { status: string; type: string; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 }
 
@@ -476,6 +477,21 @@ export const DatabaseView: React.FC = () => {
               >
                 <span>🔗 ASINs auflösen ({syncState.unresolvedAsinsCount})</span>
               </button>
+              <button
+                onClick={() => handleRunScan('resolve_asins_shadow')}
+                disabled={syncState.isScanning}
+                className="w-full px-3.5 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
+                title="Prüft die sieben neuen Produkttypen mit dem neuen Resolver, ohne ad_asins zu verändern"
+              >
+                Neue Produkte sicher prüfen (nur lesen)
+              </button>
+              {syncState.childAsinShadow?.lastRunAt && (
+                <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/20 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/75">
+                  <div className="font-semibold text-cyan-300">V2 Shadow · keine Datenbankänderung</div>
+                  <div>{syncState.childAsinShadow.lastResult || 'Noch kein Ergebnis'}</div>
+                  <div className="text-cyan-200/50">{formatDate(Date.parse(syncState.childAsinShadow.lastRunAt))}</div>
+                </div>
+              )}
             </div>
           </div>
 

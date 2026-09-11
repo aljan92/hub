@@ -6,6 +6,15 @@ import { SupabaseService } from './supabaseService';
 import { getSupabaseClient, loadSettings, saveSettings } from './settingsService';
 import { BrowserSessionService } from './browserSessionService';
 import { atomicWriteJson, loadJsonWithBackupRecovery } from '../utils/atomicFileStorage';
+import { AmazonRetailIdentityService } from './amazonRetailIdentityService';
+import {
+  getChildAsinPolicy,
+  isConfirmedChildAsin,
+  isChildAsinRequirementSatisfied,
+  isLegacyChildAsinWriteEnabled,
+  isNewChildAsinShadowType,
+  normalizeChildAsinProductType
+} from './childAsinPolicyService';
 
 export interface SyncLogEntry {
   id: string;
@@ -31,6 +40,7 @@ export interface SyncState {
   lastAsinSync: string | null;
   liveDesignsCount: number;
   unresolvedAsinsCount: number;
+  childAsinShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null };
   egress?: { mode: 'observe' | 'optimized'; baselineReady: boolean; pending: number; metrics: any[] };
   lastRun?: ProductSyncRuntime['lastRun'];
 }
@@ -55,21 +65,6 @@ const MP_MAP: Record<string, string> = {
   A1VC38T7YXB528: 'jp'
 };
 
-const VARIANT_PRODUCT_TYPES = new Set([
-  'HARDCOVER_JOURNAL',
-  'MUG',
-  'PHONE_CASE_APPLE_IPHONE',
-  'PHONE_CASE_SAMSUNG_GALAXY',
-  'POP_SOCKET',
-  'PRINTED_BASEBALL_HAT',
-  'PRINTED_TRUCKER_HAT',
-  'SPORT_SUN_VISOR',
-  'THROW_PILLOW',
-  'TOTE_BAG',
-  'TUMBLER',
-  'WATER_BOTTLE'
-]);
-
 const ALL_STATUSES = ['DRAFT', 'TRANSLATING', 'REVIEW', 'DECLINED', 'AMAZON_REJECTED', 'PUBLISHING', 'TIMED_OUT', 'PROPAGATED', 'PUBLISHED', 'DELETED', 'LOCKED'];
 const FIND_LISTINGS_URL = 'https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings';
 const PRODUCT_CONFIG_URL = 'https://merch.amazon.com/api/productconfiguration/get?id=';
@@ -86,6 +81,7 @@ type ProductSyncRuntime = {
   accountKey?: string;
   textVersions?: Record<string, string>;
   resolverRetries?: Record<string, { attempts: number; nextAt: string; parentAsin: string; lastError: string }>;
+  resolverShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null; cursor?: number; blockedUntil?: string | null };
   lastRun?: { runId: string; type: string; status: 'running' | 'complete' | 'partial' | 'truncated' | 'cancelled' | 'unknown_write_outcome' | 'error'; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 };
 const SYNC_RUNTIME_PATH = path.resolve(process.cwd(), 'data', 'sync_runtime.json');
@@ -110,6 +106,7 @@ export class SyncEngine {
     lastAsinSync: null,
     liveDesignsCount: 0,
     unresolvedAsinsCount: 0,
+    childAsinShadow: { lastRunAt: null, checked: 0, resolved: 0, unresolved: 0, lastResult: null },
   };
 
   private static shouldStop = false;
@@ -267,7 +264,9 @@ export class SyncEngine {
   }
 
   public static getState(): SyncState {
-    try { return { ...this.state, lastRun: this.loadRuntime().lastRun, egress: {
+    try {
+      const runtime = this.loadRuntime();
+      return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, lastRun: runtime.lastRun, egress: {
       mode: loadSettings().syncEgressMode || 'observe',
       baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
       pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
@@ -333,6 +332,7 @@ export class SyncEngine {
       if (this.state.autoUpdateEnabled && !this.state.isScanning) {
         try {
           await this.resolveChildAsinsBatch(5);
+          await this.runChildAsinShadowBatch(1);
         } catch (e) {}
       }
     }, 60 * 1000);
@@ -711,7 +711,7 @@ export class SyncEngine {
         return {
           ...m,
           ad_asins: adAsins,
-          asin_resolved: adAsins.every((ad: any) => !VARIANT_PRODUCT_TYPES.has(String(ad.type || '').toUpperCase()) || (!!ad.asin && ad.asin !== ad.parentAsin))
+          asin_resolved: adAsins.every((ad: any) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad))
         };
       }
 
@@ -728,7 +728,7 @@ export class SyncEngine {
       for (const market of Object.values(MP_MAP)) liveLists[`products_live_${market}`] = Array.from(new Set(pubProducts.filter((p: any) => p.market === market).map((p: any) => String(p.type).toLowerCase())));
       const standardUs = pubProducts.find((p: any) => p.market === 'us' && String(p.type).toUpperCase() === 'STANDARD_TSHIRT');
       const adAsins = this.buildAdAsins(pubProducts, ex.ad_asins || [], ex.published_products || []);
-      const fullyResolved = adAsins.every((ad: any) => !VARIANT_PRODUCT_TYPES.has(String(ad.type || '').toUpperCase()) || (!!ad.asin && ad.asin !== ad.parentAsin));
+      const fullyResolved = adAsins.every((ad: any) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad));
 
       return {
         ...m,
@@ -819,9 +819,24 @@ export class SyncEngine {
       const cleanParentAsin = SyncEngine.sanitizeAsin(p.asin);
       const oldParent = existing?.parentAsin || SyncEngine.sanitizeAsin(existingProducts.find(old => `${String(old.type || '').toUpperCase()}_${String(old.market || '').toLowerCase()}` === key)?.asin);
 
-      if (VARIANT_PRODUCT_TYPES.has((p.type || '').toUpperCase())) {
+      const policy = getChildAsinPolicy(p.type);
+      if (policy === 'unsupported') {
+        return existing
+          ? { asin: exAsin || cleanParentAsin, parentAsin: existing.parentAsin || cleanParentAsin, type: p.type, market: p.market }
+          : { asin: cleanParentAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
+      }
+
+      if (policy === 'resolve') {
         if (exAsin && exAsin !== cleanParentAsin && oldParent === cleanParentAsin) {
           return { asin: exAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
+        }
+        // New V2 types were historically stored as identity entries. Preserve
+        // that parent placeholder until a later guarded write can replace it.
+        if (isNewChildAsinShadowType(p.type) && exAsin === cleanParentAsin && oldParent === cleanParentAsin) {
+          return { asin: exAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
+        }
+        if (isNewChildAsinShadowType(p.type) && !existing) {
+          return { asin: cleanParentAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
         }
         return { asin: null, parentAsin: cleanParentAsin, type: p.type, market: p.market };
       }
@@ -1333,7 +1348,13 @@ export class SyncEngine {
 
       this.recordTraffic('resolver_read', { data: unresolved, error });
       if (error) throw new Error(`ASIN-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
-      if (!unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
+      if (!unresolved || unresolved.length === 0) {
+        this.state.lastAsinSync = new Date().toLocaleString('de-DE');
+        this.finishWorker(runId, 'complete', { pages: 0, attempted: 0, confirmed: 0 });
+        this.state.isScanning = false;
+        this.state.activeScanType = null;
+        return { processed: 0, errors: 0 };
+      }
 
       let selected = 0;
       for (const item of unresolved) {
@@ -1344,7 +1365,7 @@ export class SyncEngine {
 
         const toResolve: { ad: any; parent: any; retryKey: string }[] = [];
         for (const ad of newAdAsins) {
-          if (!VARIANT_PRODUCT_TYPES.has((ad.type || '').toUpperCase())) continue;
+          if (!isLegacyChildAsinWriteEnabled(ad.type)) continue;
           const parent = pubProducts.find(p => (p.type || '').toUpperCase() === (ad.type || '').toUpperCase() && (p.market || '').toLowerCase() === (ad.market || '').toLowerCase());
           if (!parent || !parent.asin) continue;
           if (!ad.asin || ad.asin === parent.asin) {
@@ -1354,7 +1375,7 @@ export class SyncEngine {
           }
         }
         if (toResolve.length === 0) {
-          const alreadyResolved = newAdAsins.every((ad: any) => !VARIANT_PRODUCT_TYPES.has(String(ad.type || '').toUpperCase()) || (!!ad.asin && ad.asin !== ad.parentAsin));
+          const alreadyResolved = newAdAsins.every((ad: any) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad));
           if (alreadyResolved) {
             const { error: confirmError } = await supabase.from('mba_designs').update({ ad_asins: newAdAsins, asin_resolved: true }).eq('design_id', item.design_id);
             if (confirmError) errors++; else processed++;
@@ -1438,7 +1459,7 @@ export class SyncEngine {
         }
 
         const fullyResolved = !itemFailed && newAdAsins.every((ad: any) => {
-          if (!VARIANT_PRODUCT_TYPES.has((ad.type || '').toUpperCase())) return true;
+          if (!isLegacyChildAsinWriteEnabled(ad.type)) return true;
           const parent = pubProducts.find(p => (p.type || '').toUpperCase() === (ad.type || '').toUpperCase() && (p.market || '').toLowerCase() === (ad.market || '').toLowerCase());
           return !!ad.asin && !!parent?.asin && ad.asin !== parent.asin;
         });
@@ -1465,6 +1486,136 @@ export class SyncEngine {
     this.state.isScanning = false;
     this.state.activeScanType = null;
     return { processed, errors };
+  }
+
+  /**
+   * Read-only V2 probe for the seven newly supported product types. It uses
+   * the authenticated browser context but deliberately performs no Supabase write.
+   */
+  public static async runChildAsinShadowBatch(limit = 1): Promise<{ checked: number; resolved: number; unresolved: number }> {
+    this.shouldStop = false;
+    const runId = this.beginWorker('resolve_asins_shadow');
+    this.state.isScanning = true;
+    this.state.activeScanType = 'resolve_asins_shadow';
+    let checked = 0;
+    let resolved = 0;
+    let unresolvedCount = 0;
+    let finalStatus: NonNullable<ProductSyncRuntime['lastRun']>['status'] = 'complete';
+    let message: string | undefined;
+    let blockedResult: string | null = null;
+
+    try {
+      const supabase = this.getSupabase();
+      const runtime = this.loadRuntime();
+      const retryState = runtime.resolverRetries || {};
+      const previousShadow = runtime.resolverShadow;
+      const blockedUntil = previousShadow?.blockedUntil ? Date.parse(previousShadow.blockedUntil) : 0;
+      if (blockedUntil > Date.now()) {
+        const lastResult = `Amazon-Retail-Prüfung bis ${new Date(blockedUntil).toLocaleString('de-DE')} pausiert; keine Datenbankänderung.`;
+        runtime.resolverShadow = { ...previousShadow, lastRunAt: new Date().toISOString(), checked: 0, resolved: 0, unresolved: 0, lastResult };
+        this.saveRuntime(runtime);
+        this.state.childAsinShadow = runtime.resolverShadow;
+        message = lastResult;
+        return { checked: 0, resolved: 0, unresolved: 0 };
+      }
+      const cursor = Math.max(0, Number(previousShadow?.cursor || 0));
+      const { data: rows, error } = await supabase.from('mba_designs')
+        .select('design_id, published_products, ad_asins')
+        .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
+        .order('updated_date', { ascending: true, nullsFirst: true })
+        .range(cursor, cursor + 249);
+      this.recordTraffic('resolver_shadow_read', { data: rows, error });
+      if (error) throw new Error(`ASIN-Shadow-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
+
+      const candidates: Array<{ designId: string; type: string; market: string; parentAsin: string; retryKey: string }> = [];
+      for (const row of rows || []) {
+        const products = Array.isArray(row.published_products) ? row.published_products : [];
+        const adAsins = Array.isArray(row.ad_asins) ? row.ad_asins : [];
+        for (const product of products) {
+          const type = normalizeChildAsinProductType(product?.type);
+          const market = String(product?.market || '').toLowerCase();
+          const parentAsin = this.sanitizeAsin(product?.asin);
+          if (!isNewChildAsinShadowType(type) || !parentAsin || !market) continue;
+          const existing = adAsins.find((entry: any) =>
+            normalizeChildAsinProductType(entry?.type) === type && String(entry?.market || '').toLowerCase() === market
+          );
+          if (isConfirmedChildAsin(existing?.asin, existing?.parentAsin)) continue;
+          const retryKey = `shadow:${row.design_id}:${market}:${type}`;
+          const retry = retryState[retryKey];
+          if (retry?.parentAsin === parentAsin && Date.parse(retry.nextAt) > Date.now()) continue;
+          candidates.push({ designId: row.design_id, type, market, parentAsin, retryKey });
+          if (candidates.length >= Math.max(1, limit)) break;
+        }
+        if (candidates.length >= Math.max(1, limit)) break;
+      }
+
+      for (const candidate of candidates) {
+        if (this.shouldStop) break;
+        checked++;
+        const result = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
+        if (result.status === 'resolved') {
+          resolved++;
+          delete retryState[candidate.retryKey];
+          this.addLog(
+            `[ASIN Shadow V2] ✓ ${candidate.type} (${candidate.market}): ${candidate.parentAsin} ➔ ${result.evidence.resolvedAsin} via ${result.evidence.source}. Nur geprüft, nicht gespeichert.`,
+            'success'
+          );
+        } else {
+          unresolvedCount++;
+          const previous = retryState[candidate.retryKey];
+          const attempts = previous?.parentAsin === candidate.parentAsin ? previous.attempts + 1 : 1;
+          const delayMs = Math.min(24 * 60 * 60 * 1000, 5 * 60 * 1000 * Math.pow(2, Math.min(attempts - 1, 8)));
+          retryState[candidate.retryKey] = {
+            attempts,
+            nextAt: new Date(Date.now() + delayMs).toISOString(),
+            parentAsin: candidate.parentAsin,
+            lastError: result.status
+          };
+          const blocked = result.status === 'amazon_blocked' || result.status === 'auth_required';
+          this.addLog(
+            `[ASIN Shadow V2] ${candidate.type} (${candidate.market}) blieb offen: ${result.status}. Keine Datenbankänderung.`,
+            blocked ? 'error' : 'warn'
+          );
+          if (blocked) {
+            blockedResult = `${result.status}; sechs Stunden pausiert. Keine Datenbankänderung.`;
+            runtime.resolverShadow = {
+              ...(runtime.resolverShadow || previousShadow),
+              lastRunAt: new Date().toISOString(), checked, resolved, unresolved: unresolvedCount,
+              lastResult: blockedResult,
+              cursor,
+              blockedUntil: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString()
+            };
+            break;
+          }
+        }
+      }
+
+      const lastResult = blockedResult || (candidates.length === 0
+        ? 'Keine fälligen neuen Produkt-/Marktplatzkombinationen in der begrenzten Stichprobe.'
+        : `${resolved}/${checked} eindeutig aufgelöst; keine Datenbankänderung.`);
+      runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5000));
+      const nextCursor = blockedResult ? cursor : ((rows || []).length < 250 ? 0 : cursor + 250);
+      runtime.resolverShadow = {
+        ...(runtime.resolverShadow || {}),
+        lastRunAt: new Date().toISOString(), checked, resolved, unresolved: unresolvedCount, lastResult,
+        cursor: nextCursor,
+        blockedUntil: runtime.resolverShadow?.blockedUntil || null
+      };
+      this.saveRuntime(runtime);
+      this.state.childAsinShadow = runtime.resolverShadow;
+      message = lastResult;
+      if (unresolvedCount) finalStatus = 'partial';
+      return { checked, resolved, unresolved: unresolvedCount };
+    } catch (error: any) {
+      finalStatus = 'error';
+      message = error?.message || String(error);
+      this.addLog(`[ASIN Shadow V2] Fehler: ${message}. Keine Datenbankänderung.`, 'error');
+      throw error;
+    } finally {
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : finalStatus, { pages: 0, attempted: checked, confirmed: 0, message });
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+    }
   }
 
   /**

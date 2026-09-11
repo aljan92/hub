@@ -356,6 +356,8 @@ app.post('/api/v1/sync/run', async (req, res) => {
       return res.status(409).json({ success: false, error: 'Full Sales ist bis zur verifizierten atomaren Snapshot-Übernahme sicher gesperrt.' });
     } else if (type === 'resolve_asins') {
       SyncEngine.resolveChildAsinsBatch(10).catch(() => {});
+    } else if (type === 'resolve_asins_shadow') {
+      SyncEngine.runChildAsinShadowBatch(3).catch(() => {});
     } else {
       return res.status(400).json({ success: false, error: 'Unbekannter Scan-Typ' });
     }

@@ -247,6 +247,22 @@ export class BrowserSessionService {
   }
 
   /**
+   * Run isolated browser work in the persistent authenticated context without
+   * navigating or attaching screencast listeners to the user's main session page.
+   */
+  static async withIsolatedPage<T>(type: BrowserSessionType, work: (page: Page) => Promise<T>): Promise<T> {
+    await this.getSession(type);
+    const context = await this.ensureContext();
+    const page = await context.newPage();
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      return await work(page);
+    } finally {
+      if (!page.isClosed()) await page.close().catch(() => {});
+    }
+  }
+
+  /**
    * Start CDP screencast on a session
    */
   static async startScreencast(type: BrowserSessionType) {

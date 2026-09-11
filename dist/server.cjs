@@ -220303,6 +220303,22 @@ var init_browserSessionService = __esm2({
         return session2;
       }
       /**
+       * Run isolated browser work in the persistent authenticated context without
+       * navigating or attaching screencast listeners to the user's main session page.
+       */
+      static async withIsolatedPage(type3, work) {
+        await this.getSession(type3);
+        const context2 = await this.ensureContext();
+        const page = await context2.newPage();
+        try {
+          await page.setViewportSize({ width: 1440, height: 900 });
+          return await work(page);
+        } finally {
+          if (!page.isClosed()) await page.close().catch(() => {
+          });
+        }
+      }
+      /**
        * Start CDP screencast on a session
        */
       static async startScreencast(type3) {
@@ -222799,8 +222815,221 @@ var init_supabaseService = __esm2({
   }
 });
 
+// src/server/services/amazonRetailIdentityService.ts
+function normalizeAsin(value2) {
+  const asin = String(value2 || "").trim().toUpperCase();
+  return /^[A-Z0-9]{10}$/.test(asin) ? asin : "";
+}
+function uniqueAsins(values) {
+  return Array.from(new Set(values.map(normalizeAsin).filter(Boolean)));
+}
+function extractSection(html, ids) {
+  for (const id of ids) {
+    const escaped2 = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = new RegExp(`<[^>]+id=["']${escaped2}["'][^>]*>`, "i").exec(html);
+    if (match) return html.slice(match.index, match.index + 12e3);
+  }
+  return "";
+}
+function asinFromLabeledText(value2) {
+  const text2 = value2.replace(/<[^>]*>/g, " ").replace(/&nbsp;|&#160;/gi, " ");
+  return uniqueAsins(Array.from(text2.matchAll(/\bASIN\b[^A-Z0-9]{0,40}(B[A-Z0-9]{9})/gi), (match) => match[1]));
+}
+function parseAmazonRetailIdentity(html) {
+  const hidden = uniqueAsins(Array.from(html.matchAll(/<input\b[^>]*>/gi), (match) => {
+    const tag = match[0];
+    if (!/\bid=["']ASIN["']/i.test(tag)) return "";
+    return tag.match(/\bvalue=["']([A-Z0-9]{10})["']/i)?.[1] || "";
+  }));
+  if (hidden.length === 1) return { asin: hidden[0], source: "hidden-input" };
+  if (hidden.length > 1) return { asin: "", ambiguous: true };
+  const bullets = asinFromLabeledText(extractSection(html, ["detailBulletsWrapper_feature_div", "detailBullets_feature_div"]));
+  if (bullets.length === 1) return { asin: bullets[0], source: "detail-bullets" };
+  if (bullets.length > 1) return { asin: "", ambiguous: true };
+  const details = asinFromLabeledText(extractSection(html, ["productDetails_detailBullets_sections1", "productDetails"]));
+  if (details.length === 1) return { asin: details[0], source: "product-details" };
+  if (details.length > 1) return { asin: "", ambiguous: true };
+  const selected = uniqueAsins(Array.from(html.matchAll(/"selectedVariationASIN"\s*:\s*"([A-Z0-9]{10})"/g), (match) => match[1]));
+  if (selected.length === 1) return { asin: selected[0], source: "selected-variation" };
+  if (selected.length > 1) return { asin: "", ambiguous: true };
+  const defaults = uniqueAsins(Array.from(html.matchAll(/data-defaultAsin=["']([A-Z0-9]{10})["']/g), (match) => match[1]));
+  if (defaults.length === 1) return { asin: defaults[0], source: "default-asin" };
+  if (defaults.length > 1) return { asin: "", ambiguous: true };
+  const mapped = [];
+  for (const match of html.matchAll(/"dimensionToAsinMap"\s*:\s*({[^}]+})/g)) {
+    try {
+      mapped.push(...Object.values(JSON.parse(match[1])));
+    } catch {
+    }
+  }
+  for (const match of html.matchAll(/"asinToDimension"\s*:\s*({[^}]+})/g)) {
+    try {
+      mapped.push(...Object.keys(JSON.parse(match[1])));
+    } catch {
+    }
+  }
+  const candidates = uniqueAsins(mapped);
+  if (candidates.length === 1) return { asin: candidates[0], source: "single-variation-map" };
+  return { asin: "", ambiguous: candidates.length > 1 };
+}
+function detectsAmazonBlock(html) {
+  return /errors\/validateCaptcha|Robot Check|robot-check|api-services-support@amazon/i.test(html);
+}
+function detectsAuthPage(url, html) {
+  return /\/ap\/signin|\/gp\/signin/i.test(url) || /id=["']ap_email["']|name=["']password["']/i.test(html);
+}
+var MARKETPLACE_DOMAINS, AmazonRetailIdentityService;
+var init_amazonRetailIdentityService = __esm2({
+  "src/server/services/amazonRetailIdentityService.ts"() {
+    "use strict";
+    init_browserSessionService();
+    MARKETPLACE_DOMAINS = {
+      us: "amazon.com",
+      de: "amazon.de",
+      gb: "amazon.co.uk",
+      uk: "amazon.co.uk",
+      fr: "amazon.fr",
+      it: "amazon.it",
+      es: "amazon.es",
+      jp: "amazon.co.jp"
+    };
+    AmazonRetailIdentityService = class {
+      static async resolve(parentAsin, marketplace) {
+        const parent = normalizeAsin(parentAsin);
+        const market = String(marketplace || "").toLowerCase() === "uk" ? "gb" : String(marketplace || "").toLowerCase();
+        const domain = MARKETPLACE_DOMAINS[market];
+        if (!parent || !domain) return { status: "identity_not_found", error: "Ung\xFCltige Parent-ASIN oder Marketplace." };
+        const url = `https://www.${domain}/dp/${parent}`;
+        try {
+          return await BrowserSessionService.withIsolatedPage("sync", async (page) => {
+            const response2 = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15e3 });
+            const httpStatus = response2?.status() || 0;
+            const finalUrl = page.url();
+            if (httpStatus === 404) return { status: "http_not_found", httpStatus, finalUrl };
+            const html = await page.content();
+            let finalHost = "";
+            try {
+              finalHost = new URL(finalUrl).hostname;
+            } catch {
+            }
+            if (finalHost !== `www.${domain}` && finalHost !== domain) {
+              if (detectsAuthPage(finalUrl, html)) return { status: "auth_required", httpStatus, finalUrl };
+              return { status: "network_error", error: "Unerwartetes Redirect-Ziel.", httpStatus, finalUrl };
+            }
+            if (html.length > 8 * 1024 * 1024) return { status: "identity_not_found", error: "Amazon-Dokument \xFCberschreitet 8 MiB.", httpStatus, finalUrl };
+            if (detectsAmazonBlock(html) || httpStatus === 403 || httpStatus === 503) return { status: "amazon_blocked", httpStatus, finalUrl };
+            if (detectsAuthPage(finalUrl, html)) return { status: "auth_required", httpStatus, finalUrl };
+            const parsed = parseAmazonRetailIdentity(html);
+            if (!("source" in parsed)) return { status: parsed.ambiguous ? "ambiguous" : "identity_not_found", httpStatus, finalUrl };
+            if (parsed.asin === parent) return { status: "parent_returned", httpStatus, finalUrl };
+            return { status: "resolved", evidence: { requestedParentAsin: parent, resolvedAsin: parsed.asin, marketplace: market, source: parsed.source, finalUrl, httpStatus } };
+          });
+        } catch (error) {
+          if (/Timeout/i.test(error?.name || "") || /timeout/i.test(error?.message || "")) return { status: "timeout", error: error.message };
+          return { status: "network_error", error: error?.message || String(error) };
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/childAsinPolicyService.ts
+function normalizeChildAsinProductType(value2) {
+  const normalized = String(value2 || "").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+  return PRODUCT_TYPE_ALIASES[normalized] || normalized;
+}
+function getChildAsinPolicy(value2) {
+  const type3 = normalizeChildAsinProductType(value2);
+  if (UNSUPPORTED_CHILD_ASIN_PRODUCT_TYPES.has(type3)) return "unsupported";
+  if (LEGACY_CHILD_ASIN_PRODUCT_TYPES.has(type3) || NEW_CHILD_ASIN_PRODUCT_TYPES.has(type3)) return "resolve";
+  if (IDENTITY_CHILD_ASIN_PRODUCT_TYPES.has(type3)) return "identity";
+  return "unsupported";
+}
+function isLegacyChildAsinWriteEnabled(value2) {
+  return LEGACY_CHILD_ASIN_PRODUCT_TYPES.has(normalizeChildAsinProductType(value2));
+}
+function isNewChildAsinShadowType(value2) {
+  return NEW_CHILD_ASIN_PRODUCT_TYPES.has(normalizeChildAsinProductType(value2));
+}
+function isConfirmedChildAsin(asin, parentAsin) {
+  const child = String(asin || "").trim().toUpperCase();
+  const parent = String(parentAsin || "").trim().toUpperCase();
+  return /^[A-Z0-9]{10}$/.test(child) && /^[A-Z0-9]{10}$/.test(parent) && child !== parent;
+}
+function isChildAsinRequirementSatisfied(entry) {
+  const policy = getChildAsinPolicy(entry?.type);
+  if (policy !== "resolve") return true;
+  return isConfirmedChildAsin(entry?.asin, entry?.parentAsin);
+}
+var LEGACY_CHILD_ASIN_PRODUCT_TYPES, NEW_CHILD_ASIN_PRODUCT_TYPES, UNSUPPORTED_CHILD_ASIN_PRODUCT_TYPES, IDENTITY_CHILD_ASIN_PRODUCT_TYPES, PRODUCT_TYPE_ALIASES;
+var init_childAsinPolicyService = __esm2({
+  "src/server/services/childAsinPolicyService.ts"() {
+    "use strict";
+    LEGACY_CHILD_ASIN_PRODUCT_TYPES = /* @__PURE__ */ new Set([
+      "HARDCOVER_JOURNAL",
+      "MUG",
+      "PHONE_CASE_APPLE_IPHONE",
+      "POP_SOCKET",
+      "PRINTED_BASEBALL_HAT",
+      "PRINTED_TRUCKER_HAT",
+      "SPORT_SUN_VISOR",
+      "THROW_PILLOW",
+      "TOTE_BAG",
+      "TUMBLER",
+      "WATER_BOTTLE"
+    ]);
+    NEW_CHILD_ASIN_PRODUCT_TYPES = /* @__PURE__ */ new Set([
+      "SPORT_BACKPACK",
+      "LAPTOP_SLEEVE",
+      "MOUSE_PAD",
+      "RETRACTABLE_PEN",
+      "THROW_BLANKET",
+      "MATTE_POSTER",
+      "TRAVEL_TUMBLER"
+    ]);
+    UNSUPPORTED_CHILD_ASIN_PRODUCT_TYPES = /* @__PURE__ */ new Set([
+      "PHONE_CASE_SAMSUNG_GALAXY",
+      "SAMSUNG_CASE"
+    ]);
+    IDENTITY_CHILD_ASIN_PRODUCT_TYPES = /* @__PURE__ */ new Set([
+      "STANDARD_TSHIRT",
+      "VALUE_TSHIRT",
+      "VALUE_GRAPHIC_TSHIRT",
+      "PREMIUM_TSHIRT",
+      "PERFORMANCE_TSHIRT",
+      "BASEBALL_JERSEY",
+      "SOCCER_JERSEY",
+      "BASKETBALL_JERSEY",
+      "OVERSIZED_TSHIRT",
+      "COMFORT_COLORS_HEAVYWEIGHT_TSHIRT",
+      "CROP_TOP",
+      "COMFORT_COLORS_SWEATSHIRT",
+      "COMFORT_COLORS_CROP_SWEATSHIRT",
+      "VNECK",
+      "VNECK_TSHIRT",
+      "TANK_TOP",
+      "STANDARD_LONG_SLEEVE",
+      "LONG_SLEEVE_TSHIRT",
+      "RAGLAN",
+      "STANDARD_SWEATSHIRT",
+      "SWEATSHIRT",
+      "STANDARD_PULLOVER_HOODIE",
+      "PULLOVER_HOODIE",
+      "ZIP_HOODIE",
+      "PERFORMANCE_HOODIE",
+      "POLO",
+      "PERFORMANCE_POLO",
+      "QUARTER_ZIP",
+      "PERFORMANCE_QUARTER_ZIP"
+    ]);
+    PRODUCT_TYPE_ALIASES = {
+      SAMSUNG_CASE: "PHONE_CASE_SAMSUNG_GALAXY"
+    };
+  }
+});
+
 // src/server/services/syncEngine.ts
-var import_fs82, import_path77, import_crypto4, MARKETPLACE_IDS, MP_MAP, VARIANT_PRODUCT_TYPES, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, SyncEngine;
+var import_fs82, import_path77, import_crypto4, MARKETPLACE_IDS, MP_MAP, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, SyncEngine;
 var init_syncEngine = __esm2({
   "src/server/services/syncEngine.ts"() {
     "use strict";
@@ -222812,6 +223041,8 @@ var init_syncEngine = __esm2({
     init_settingsService();
     init_browserSessionService();
     init_atomicFileStorage();
+    init_amazonRetailIdentityService();
+    init_childAsinPolicyService();
     MARKETPLACE_IDS = {
       us: "ATVPDKIKX0DER",
       de: "A1PA6795UKMFR9",
@@ -222830,20 +223061,6 @@ var init_syncEngine = __esm2({
       A1RKKUPIHCS9HS: "es",
       A1VC38T7YXB528: "jp"
     };
-    VARIANT_PRODUCT_TYPES = /* @__PURE__ */ new Set([
-      "HARDCOVER_JOURNAL",
-      "MUG",
-      "PHONE_CASE_APPLE_IPHONE",
-      "PHONE_CASE_SAMSUNG_GALAXY",
-      "POP_SOCKET",
-      "PRINTED_BASEBALL_HAT",
-      "PRINTED_TRUCKER_HAT",
-      "SPORT_SUN_VISOR",
-      "THROW_PILLOW",
-      "TOTE_BAG",
-      "TUMBLER",
-      "WATER_BOTTLE"
-    ]);
     ALL_STATUSES = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
     FIND_LISTINGS_URL = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
     PRODUCT_CONFIG_URL = "https://merch.amazon.com/api/productconfiguration/get?id=";
@@ -222890,7 +223107,8 @@ var init_syncEngine = __esm2({
         lastFullSalesAll: null,
         lastAsinSync: null,
         liveDesignsCount: 0,
-        unresolvedAsinsCount: 0
+        unresolvedAsinsCount: 0,
+        childAsinShadow: { lastRunAt: null, checked: 0, resolved: 0, unresolved: 0, lastResult: null }
       };
       static shouldStop = false;
       static autoUpdateTimer = null;
@@ -223043,7 +223261,8 @@ var init_syncEngine = __esm2({
       }
       static getState() {
         try {
-          return { ...this.state, lastRun: this.loadRuntime().lastRun, egress: {
+          const runtime = this.loadRuntime();
+          return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, lastRun: runtime.lastRun, egress: {
             mode: loadSettings().syncEgressMode || "observe",
             baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
             pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
@@ -223103,6 +223322,7 @@ var init_syncEngine = __esm2({
           if (this.state.autoUpdateEnabled && !this.state.isScanning) {
             try {
               await this.resolveChildAsinsBatch(5);
+              await this.runChildAsinShadowBatch(1);
             } catch (e) {
             }
           }
@@ -223465,7 +223685,7 @@ var init_syncEngine = __esm2({
             return {
               ...m,
               ad_asins: adAsins2,
-              asin_resolved: adAsins2.every((ad) => !VARIANT_PRODUCT_TYPES.has(String(ad.type || "").toUpperCase()) || !!ad.asin && ad.asin !== ad.parentAsin)
+              asin_resolved: adAsins2.every((ad) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad))
             };
           }
           const allAsins = Array.from(/* @__PURE__ */ new Set([...ex.asins || [], ...m.asins || []]));
@@ -223482,7 +223702,7 @@ var init_syncEngine = __esm2({
           for (const market of Object.values(MP_MAP)) liveLists[`products_live_${market}`] = Array.from(new Set(pubProducts.filter((p) => p.market === market).map((p) => String(p.type).toLowerCase())));
           const standardUs = pubProducts.find((p) => p.market === "us" && String(p.type).toUpperCase() === "STANDARD_TSHIRT");
           const adAsins = this.buildAdAsins(pubProducts, ex.ad_asins || [], ex.published_products || []);
-          const fullyResolved = adAsins.every((ad) => !VARIANT_PRODUCT_TYPES.has(String(ad.type || "").toUpperCase()) || !!ad.asin && ad.asin !== ad.parentAsin);
+          const fullyResolved = adAsins.every((ad) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad));
           return {
             ...m,
             ...liveLists,
@@ -223565,9 +223785,19 @@ var init_syncEngine = __esm2({
           const exAsin = existing?.asin;
           const cleanParentAsin = _SyncEngine.sanitizeAsin(p.asin);
           const oldParent = existing?.parentAsin || _SyncEngine.sanitizeAsin(existingProducts.find((old) => `${String(old.type || "").toUpperCase()}_${String(old.market || "").toLowerCase()}` === key)?.asin);
-          if (VARIANT_PRODUCT_TYPES.has((p.type || "").toUpperCase())) {
+          const policy = getChildAsinPolicy(p.type);
+          if (policy === "unsupported") {
+            return existing ? { asin: exAsin || cleanParentAsin, parentAsin: existing.parentAsin || cleanParentAsin, type: p.type, market: p.market } : { asin: cleanParentAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
+          }
+          if (policy === "resolve") {
             if (exAsin && exAsin !== cleanParentAsin && oldParent === cleanParentAsin) {
               return { asin: exAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
+            }
+            if (isNewChildAsinShadowType(p.type) && exAsin === cleanParentAsin && oldParent === cleanParentAsin) {
+              return { asin: exAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
+            }
+            if (isNewChildAsinShadowType(p.type) && !existing) {
+              return { asin: cleanParentAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
             }
             return { asin: null, parentAsin: cleanParentAsin, type: p.type, market: p.market };
           }
@@ -224022,7 +224252,13 @@ var init_syncEngine = __esm2({
           const { data: unresolved, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").or("asin_resolved.eq.false,asin_resolved.is.null").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).order("updated_date", { ascending: true, nullsFirst: true }).limit(Math.max(50, limit * 10));
           this.recordTraffic("resolver_read", { data: unresolved, error });
           if (error) throw new Error(`ASIN-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
-          if (!unresolved || unresolved.length === 0) return { processed: 0, errors: 0 };
+          if (!unresolved || unresolved.length === 0) {
+            this.state.lastAsinSync = (/* @__PURE__ */ new Date()).toLocaleString("de-DE");
+            this.finishWorker(runId, "complete", { pages: 0, attempted: 0, confirmed: 0 });
+            this.state.isScanning = false;
+            this.state.activeScanType = null;
+            return { processed: 0, errors: 0 };
+          }
           let selected = 0;
           for (const item of unresolved) {
             if (selected >= limit) break;
@@ -224031,7 +224267,7 @@ var init_syncEngine = __esm2({
             const newAdAsins = this.buildAdAsins(pubProducts, item.ad_asins || [], pubProducts);
             const toResolve = [];
             for (const ad of newAdAsins) {
-              if (!VARIANT_PRODUCT_TYPES.has((ad.type || "").toUpperCase())) continue;
+              if (!isLegacyChildAsinWriteEnabled(ad.type)) continue;
               const parent = pubProducts.find((p) => (p.type || "").toUpperCase() === (ad.type || "").toUpperCase() && (p.market || "").toLowerCase() === (ad.market || "").toLowerCase());
               if (!parent || !parent.asin) continue;
               if (!ad.asin || ad.asin === parent.asin) {
@@ -224041,7 +224277,7 @@ var init_syncEngine = __esm2({
               }
             }
             if (toResolve.length === 0) {
-              const alreadyResolved = newAdAsins.every((ad) => !VARIANT_PRODUCT_TYPES.has(String(ad.type || "").toUpperCase()) || !!ad.asin && ad.asin !== ad.parentAsin);
+              const alreadyResolved = newAdAsins.every((ad) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad));
               if (alreadyResolved) {
                 const { error: confirmError } = await supabase.from("mba_designs").update({ ad_asins: newAdAsins, asin_resolved: true }).eq("design_id", item.design_id);
                 if (confirmError) errors2++;
@@ -224117,7 +224353,7 @@ var init_syncEngine = __esm2({
               await this.sleep(1800 + Math.random() * 800);
             }
             const fullyResolved = !itemFailed && newAdAsins.every((ad) => {
-              if (!VARIANT_PRODUCT_TYPES.has((ad.type || "").toUpperCase())) return true;
+              if (!isLegacyChildAsinWriteEnabled(ad.type)) return true;
               const parent = pubProducts.find((p) => (p.type || "").toUpperCase() === (ad.type || "").toUpperCase() && (p.market || "").toLowerCase() === (ad.market || "").toLowerCase());
               return !!ad.asin && !!parent?.asin && ad.asin !== parent.asin;
             });
@@ -224143,6 +224379,132 @@ var init_syncEngine = __esm2({
         this.state.isScanning = false;
         this.state.activeScanType = null;
         return { processed, errors: errors2 };
+      }
+      /**
+       * Read-only V2 probe for the seven newly supported product types. It uses
+       * the authenticated browser context but deliberately performs no Supabase write.
+       */
+      static async runChildAsinShadowBatch(limit = 1) {
+        this.shouldStop = false;
+        const runId = this.beginWorker("resolve_asins_shadow");
+        this.state.isScanning = true;
+        this.state.activeScanType = "resolve_asins_shadow";
+        let checked = 0;
+        let resolved = 0;
+        let unresolvedCount = 0;
+        let finalStatus = "complete";
+        let message;
+        let blockedResult = null;
+        try {
+          const supabase = this.getSupabase();
+          const runtime = this.loadRuntime();
+          const retryState = runtime.resolverRetries || {};
+          const previousShadow = runtime.resolverShadow;
+          const blockedUntil = previousShadow?.blockedUntil ? Date.parse(previousShadow.blockedUntil) : 0;
+          if (blockedUntil > Date.now()) {
+            const lastResult2 = `Amazon-Retail-Pr\xFCfung bis ${new Date(blockedUntil).toLocaleString("de-DE")} pausiert; keine Datenbank\xE4nderung.`;
+            runtime.resolverShadow = { ...previousShadow, lastRunAt: (/* @__PURE__ */ new Date()).toISOString(), checked: 0, resolved: 0, unresolved: 0, lastResult: lastResult2 };
+            this.saveRuntime(runtime);
+            this.state.childAsinShadow = runtime.resolverShadow;
+            message = lastResult2;
+            return { checked: 0, resolved: 0, unresolved: 0 };
+          }
+          const cursor = Math.max(0, Number(previousShadow?.cursor || 0));
+          const { data: rows, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).order("updated_date", { ascending: true, nullsFirst: true }).range(cursor, cursor + 249);
+          this.recordTraffic("resolver_shadow_read", { data: rows, error });
+          if (error) throw new Error(`ASIN-Shadow-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
+          const candidates = [];
+          for (const row of rows || []) {
+            const products = Array.isArray(row.published_products) ? row.published_products : [];
+            const adAsins = Array.isArray(row.ad_asins) ? row.ad_asins : [];
+            for (const product of products) {
+              const type3 = normalizeChildAsinProductType(product?.type);
+              const market = String(product?.market || "").toLowerCase();
+              const parentAsin = this.sanitizeAsin(product?.asin);
+              if (!isNewChildAsinShadowType(type3) || !parentAsin || !market) continue;
+              const existing = adAsins.find(
+                (entry) => normalizeChildAsinProductType(entry?.type) === type3 && String(entry?.market || "").toLowerCase() === market
+              );
+              if (isConfirmedChildAsin(existing?.asin, existing?.parentAsin)) continue;
+              const retryKey = `shadow:${row.design_id}:${market}:${type3}`;
+              const retry2 = retryState[retryKey];
+              if (retry2?.parentAsin === parentAsin && Date.parse(retry2.nextAt) > Date.now()) continue;
+              candidates.push({ designId: row.design_id, type: type3, market, parentAsin, retryKey });
+              if (candidates.length >= Math.max(1, limit)) break;
+            }
+            if (candidates.length >= Math.max(1, limit)) break;
+          }
+          for (const candidate of candidates) {
+            if (this.shouldStop) break;
+            checked++;
+            const result2 = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
+            if (result2.status === "resolved") {
+              resolved++;
+              delete retryState[candidate.retryKey];
+              this.addLog(
+                `[ASIN Shadow V2] \u2713 ${candidate.type} (${candidate.market}): ${candidate.parentAsin} \u2794 ${result2.evidence.resolvedAsin} via ${result2.evidence.source}. Nur gepr\xFCft, nicht gespeichert.`,
+                "success"
+              );
+            } else {
+              unresolvedCount++;
+              const previous = retryState[candidate.retryKey];
+              const attempts = previous?.parentAsin === candidate.parentAsin ? previous.attempts + 1 : 1;
+              const delayMs = Math.min(24 * 60 * 60 * 1e3, 5 * 60 * 1e3 * Math.pow(2, Math.min(attempts - 1, 8)));
+              retryState[candidate.retryKey] = {
+                attempts,
+                nextAt: new Date(Date.now() + delayMs).toISOString(),
+                parentAsin: candidate.parentAsin,
+                lastError: result2.status
+              };
+              const blocked = result2.status === "amazon_blocked" || result2.status === "auth_required";
+              this.addLog(
+                `[ASIN Shadow V2] ${candidate.type} (${candidate.market}) blieb offen: ${result2.status}. Keine Datenbank\xE4nderung.`,
+                blocked ? "error" : "warn"
+              );
+              if (blocked) {
+                blockedResult = `${result2.status}; sechs Stunden pausiert. Keine Datenbank\xE4nderung.`;
+                runtime.resolverShadow = {
+                  ...runtime.resolverShadow || previousShadow,
+                  lastRunAt: (/* @__PURE__ */ new Date()).toISOString(),
+                  checked,
+                  resolved,
+                  unresolved: unresolvedCount,
+                  lastResult: blockedResult,
+                  cursor,
+                  blockedUntil: new Date(Date.now() + 6 * 60 * 60 * 1e3).toISOString()
+                };
+                break;
+              }
+            }
+          }
+          const lastResult = blockedResult || (candidates.length === 0 ? "Keine f\xE4lligen neuen Produkt-/Marktplatzkombinationen in der begrenzten Stichprobe." : `${resolved}/${checked} eindeutig aufgel\xF6st; keine Datenbank\xE4nderung.`);
+          runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5e3));
+          const nextCursor = blockedResult ? cursor : (rows || []).length < 250 ? 0 : cursor + 250;
+          runtime.resolverShadow = {
+            ...runtime.resolverShadow || {},
+            lastRunAt: (/* @__PURE__ */ new Date()).toISOString(),
+            checked,
+            resolved,
+            unresolved: unresolvedCount,
+            lastResult,
+            cursor: nextCursor,
+            blockedUntil: runtime.resolverShadow?.blockedUntil || null
+          };
+          this.saveRuntime(runtime);
+          this.state.childAsinShadow = runtime.resolverShadow;
+          message = lastResult;
+          if (unresolvedCount) finalStatus = "partial";
+          return { checked, resolved, unresolved: unresolvedCount };
+        } catch (error) {
+          finalStatus = "error";
+          message = error?.message || String(error);
+          this.addLog(`[ASIN Shadow V2] Fehler: ${message}. Keine Datenbank\xE4nderung.`, "error");
+          throw error;
+        } finally {
+          this.finishWorker(runId, this.shouldStop ? "cancelled" : finalStatus, { pages: 0, attempted: checked, confirmed: 0, message });
+          this.state.isScanning = false;
+          this.state.activeScanType = null;
+        }
       }
       /**
        * 8. Danger Zone: Reset Sales Data
@@ -236352,6 +236714,9 @@ app.post("/api/v1/sync/run", async (req, res) => {
       return res.status(409).json({ success: false, error: "Full Sales ist bis zur verifizierten atomaren Snapshot-\xDCbernahme sicher gesperrt." });
     } else if (type3 === "resolve_asins") {
       SyncEngine.resolveChildAsinsBatch(10).catch(() => {
+      });
+    } else if (type3 === "resolve_asins_shadow") {
+      SyncEngine.runChildAsinShadowBatch(3).catch(() => {
       });
     } else {
       return res.status(400).json({ success: false, error: "Unbekannter Scan-Typ" });
