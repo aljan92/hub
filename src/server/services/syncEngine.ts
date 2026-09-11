@@ -381,7 +381,6 @@ export class SyncEngine {
     this.asinResolveTimer = setInterval(async () => {
       if (this.state.autoUpdateEnabled && !this.state.isScanning) {
         try {
-          await this.resolveChildAsinsBatch(5);
           await this.runChildAsinShadowBatch(1);
         } catch (e) {}
       }
@@ -1849,11 +1848,12 @@ export class SyncEngine {
         const result = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
         const previousObservation = observations[candidate.observationKey];
         const resolvedAsin = result.status === 'resolved' ? result.evidence.resolvedAsin : null;
+        const source = result.status === 'resolved' ? result.evidence.source : null;
         observations[candidate.observationKey] = {
           parentAsin: candidate.parentAsin,
           resolvedAsin,
           status: result.status,
-          source: result.evidence.source || null,
+          source,
           observedAt: new Date().toISOString(),
           consistentCount: previousObservation?.parentAsin === candidate.parentAsin && previousObservation?.resolvedAsin === resolvedAsin && previousObservation?.status === result.status
             ? (previousObservation.consistentCount || 0) + 1 : 1

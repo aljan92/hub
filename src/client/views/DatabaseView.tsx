@@ -482,12 +482,11 @@ export const DatabaseView: React.FC = () => {
                 </span>
               </div>
               <button
-                onClick={() => handleRunScan('resolve_asins')}
-                disabled={syncState.isScanning}
+                disabled
                 className="w-full px-3.5 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all disabled:opacity-50 flex items-center justify-center space-x-2"
-                title="Löst Parent-ASINs zu bewerbbaren Child-ASINs für Varianten-Produkte auf"
+                title="Der alte HTML-Resolver ist während der SNAP-Validierung pausiert"
               >
-                <span>🔗 ASINs auflösen ({syncState.unresolvedAsinsCount})</span>
+                <span>Alter Resolver pausiert ({syncState.unresolvedAsinsCount} offen)</span>
               </button>
               <button
                 onClick={() => handleRunScan('resolve_asins_shadow')}

@@ -223452,7 +223452,6 @@ var init_syncEngine = __esm2({
         this.asinResolveTimer = setInterval(async () => {
           if (this.state.autoUpdateEnabled && !this.state.isScanning) {
             try {
-              await this.resolveChildAsinsBatch(5);
               await this.runChildAsinShadowBatch(1);
             } catch (e) {
             }
@@ -224789,11 +224788,12 @@ var init_syncEngine = __esm2({
             const result2 = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
             const previousObservation = observations[candidate.observationKey];
             const resolvedAsin = result2.status === "resolved" ? result2.evidence.resolvedAsin : null;
+            const source12 = result2.status === "resolved" ? result2.evidence.source : null;
             observations[candidate.observationKey] = {
               parentAsin: candidate.parentAsin,
               resolvedAsin,
               status: result2.status,
-              source: result2.evidence.source || null,
+              source: source12,
               observedAt: (/* @__PURE__ */ new Date()).toISOString(),
               consistentCount: previousObservation?.parentAsin === candidate.parentAsin && previousObservation?.resolvedAsin === resolvedAsin && previousObservation?.status === result2.status ? (previousObservation.consistentCount || 0) + 1 : 1
             };

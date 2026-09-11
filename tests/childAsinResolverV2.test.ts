@@ -150,6 +150,13 @@ test('shadow batch resolves a new parent placeholder without any Supabase write'
     assert.equal(writeCalls, 0);
     assert.equal(rows[0].ad_asins[0].asin, 'B000000001');
     assert.match(savedRuntime.resolverShadow.lastResult, /keine Datenbankänderung/i);
+
+    savedRuntime = { version: 1, productWatermark: null };
+    AmazonRetailIdentityService.resolve = async () => ({ status: 'identity_not_found', httpStatus: 200, finalUrl: 'https://www.amazon.com/dp/B000000001' });
+    const unresolved = await SyncEngine.runChildAsinShadowBatch(1);
+    assert.deepEqual(unresolved, { checked: 1, resolved: 0, unresolved: 1 });
+    assert.equal(Object.values(savedRuntime.resolverObservations)[0].source, null);
+    assert.equal(writeCalls, 0);
   } finally {
     (SyncEngine as any).getSupabase = originals.getSupabase;
     (SyncEngine as any).loadRuntime = originals.loadRuntime;
