@@ -223280,7 +223280,7 @@ var init_syncEngine = __esm2({
           store.confirm(scope, ids.flatMap((id) => jobs.get(id) || []), force);
           this.countsFetchedAt = 0;
           SupabaseService.invalidateStats();
-        });
+        }, force);
         const { processed, errors: errors2 } = await this.drainTextJobs(page, scope);
         if (count || processed) {
           this.countsFetchedAt = 0;
@@ -223791,9 +223791,11 @@ var init_syncEngine = __esm2({
         return Array.from(designMap.values());
       }
       /**
-       * Merge new design data with existing DB records before upserting (Never removes ASINs)
+       * Reconcile current products while retaining the historical design row and ASIN list.
+       * A full snapshot is authoritative; an incremental update only applies explicit
+       * Amazon tombstones and merges the live products present in that update.
        */
-      static async mergeAndUpsertDesigns(mapped, onConfirmed) {
+      static async mergeAndUpsertDesigns(mapped, onConfirmed, authoritative = false) {
         const supabase = this.getSupabase();
         if (mapped.length === 0) return 0;
         mapped = mapped.map((record) => {
@@ -223804,7 +223806,7 @@ var init_syncEngine = __esm2({
         const existing = /* @__PURE__ */ new Map();
         for (let i = 0; i < designIds.length; i += 200) {
           const batch = designIds.slice(i, i + 200);
-          const { data, error } = await supabase.from("mba_designs").select("design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins, asin_resolved").in("design_id", batch);
+          const { data, error } = await supabase.from("mba_designs").select("design_id, status, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins, asin_resolved").in("design_id", batch);
           this.recordTraffic("product_read", { data, error });
           if (error) throw new Error(`Supabase-Bestandsread fehlgeschlagen: ${error.message || String(error)}`);
           if (data) data.forEach((d) => existing.set(d.design_id, d));
@@ -223822,9 +223824,12 @@ var init_syncEngine = __esm2({
           const allAsins = Array.from(/* @__PURE__ */ new Set([...ex.asins || [], ...m.asins || []]));
           const productKey = (p) => `${String(p.market || "").toLowerCase()}_${String(p.type || "").toUpperCase()}`;
           const prodMap = /* @__PURE__ */ new Map();
-          (ex.published_products || []).forEach((p) => {
-            if (p?.market && p?.type) prodMap.set(productKey(p), p);
-          });
+          const tombstones = new Set((m._deleted_asins || []).map((asin) => this.sanitizeAsin(asin)).filter(Boolean));
+          if (!authoritative) {
+            (ex.published_products || []).forEach((p) => {
+              if (p?.market && p?.type && !tombstones.has(this.sanitizeAsin(p?.asin))) prodMap.set(productKey(p), p);
+            });
+          }
           (m.published_products || []).forEach((p) => {
             if (p?.market && p?.type) prodMap.set(productKey(p), p);
           });
@@ -223834,13 +223839,17 @@ var init_syncEngine = __esm2({
           const standardUs = pubProducts.find((p) => p.market === "us" && String(p.type).toUpperCase() === "STANDARD_TSHIRT");
           const adAsins = this.buildAdAsins(pubProducts, ex.ad_asins || [], ex.published_products || []);
           const fullyResolved = adAsins.every((ad) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad));
+          const incomingStatus = String(m.status || "").toUpperCase();
+          const hasIncomingLiveStatus = ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"].includes(incomingStatus);
+          const reconciledStatus = pubProducts.length === 0 ? "DELETED" : hasIncomingLiveStatus ? incomingStatus : ex.status || "PUBLISHED";
           return {
             ...m,
             ...liveLists,
+            status: reconciledStatus,
             asins: allAsins,
             published_products: pubProducts,
-            asin_standard_tshirt_us: standardUs?.asin || ex.asin_standard_tshirt_us,
-            price_standard_tshirt_us: m.price_standard_tshirt_us || ex.price_standard_tshirt_us,
+            asin_standard_tshirt_us: standardUs?.asin || null,
+            price_standard_tshirt_us: standardUs ? m.price_standard_tshirt_us || ex.price_standard_tshirt_us : null,
             ad_asins: adAsins,
             asin_resolved: fullyResolved
           };

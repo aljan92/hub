@@ -111,6 +111,76 @@ test('verified child survives only while its parent identity is unchanged', () =
   assert.equal(invalidated[0].asin, null);
 });
 
+test('explicit product deletion prunes published product and matching ad asin but keeps design history', async () => {
+  const { client, writes } = mockSupabase({ existing: [{
+    design_id: 'D1', status: 'PUBLISHED', asins: ['B000000001', 'B000000002'],
+    asin_standard_tshirt_us: null, price_standard_tshirt_us: null,
+    published_products: [
+      { asin: 'B000000001', type: 'MUG', market: 'us' },
+      { asin: 'B000000002', type: 'TUMBLER', market: 'de' }
+    ],
+    ad_asins: [
+      { asin: 'B000000009', parentAsin: 'B000000001', type: 'MUG', market: 'us' },
+      { asin: 'B000000008', parentAsin: 'B000000002', type: 'TUMBLER', market: 'de' }
+    ], asin_resolved: true
+  }] });
+  const originalGetSupabase = (SyncEngine as any).getSupabase;
+  (SyncEngine as any).getSupabase = () => client;
+  try {
+    await SyncEngine.mergeAndUpsertDesigns([{
+      design_id: 'D1', status: 'DELETED', asins: ['B000000002'], published_products: [], _deleted_asins: ['B000000002']
+    }]);
+    assert.deepEqual(writes[0][0].published_products, [{ asin: 'B000000001', type: 'MUG', market: 'us' }]);
+    assert.deepEqual(writes[0][0].ad_asins, [{ asin: 'B000000009', parentAsin: 'B000000001', type: 'MUG', market: 'us' }]);
+    assert.equal(writes[0][0].status, 'PUBLISHED');
+    assert.deepEqual(writes[0][0].asins, ['B000000001', 'B000000002']);
+  } finally {
+    (SyncEngine as any).getSupabase = originalGetSupabase;
+  }
+});
+
+test('last product deletion marks design deleted while retaining historical row and asins', async () => {
+  const { client, writes } = mockSupabase({ existing: [{
+    design_id: 'D1', status: 'PUBLISHED', asins: ['B000000001'],
+    asin_standard_tshirt_us: null, price_standard_tshirt_us: null,
+    published_products: [{ asin: 'B000000001', type: 'MUG', market: 'us' }],
+    ad_asins: [{ asin: 'B000000009', parentAsin: 'B000000001', type: 'MUG', market: 'us' }], asin_resolved: true
+  }] });
+  const originalGetSupabase = (SyncEngine as any).getSupabase;
+  (SyncEngine as any).getSupabase = () => client;
+  try {
+    await SyncEngine.mergeAndUpsertDesigns([{
+      design_id: 'D1', status: 'DELETED', asins: ['B000000001'], published_products: [], _deleted_asins: ['B000000001']
+    }]);
+    assert.equal(writes[0][0].status, 'DELETED');
+    assert.deepEqual(writes[0][0].published_products, []);
+    assert.deepEqual(writes[0][0].ad_asins, []);
+    assert.deepEqual(writes[0][0].asins, ['B000000001']);
+    assert.equal(writes[0][0].asin_resolved, true);
+  } finally {
+    (SyncEngine as any).getSupabase = originalGetSupabase;
+  }
+});
+
+test('authoritative snapshot drops products absent from the complete Amazon state', async () => {
+  const { client, writes } = mockSupabase({ existing: [{
+    design_id: 'D1', status: 'PUBLISHED', asins: ['B000000001', 'B000000002'],
+    published_products: [{ asin: 'B000000001', type: 'MUG', market: 'us' }, { asin: 'B000000002', type: 'TUMBLER', market: 'de' }],
+    ad_asins: [], asin_resolved: false
+  }] });
+  const originalGetSupabase = (SyncEngine as any).getSupabase;
+  (SyncEngine as any).getSupabase = () => client;
+  try {
+    await SyncEngine.mergeAndUpsertDesigns([{
+      design_id: 'D1', status: 'PUBLISHED', asins: ['B000000001'],
+      published_products: [{ asin: 'B000000001', type: 'MUG', market: 'us' }]
+    }], undefined, true);
+    assert.deepEqual(writes[0][0].published_products, [{ asin: 'B000000001', type: 'MUG', market: 'us' }]);
+  } finally {
+    (SyncEngine as any).getSupabase = originalGetSupabase;
+  }
+});
+
 test('failed existing-row read prevents merge and write', async () => {
   const { client, writes } = mockSupabase({ readError: 'read failed' });
   const originalGetSupabase = (SyncEngine as any).getSupabase;

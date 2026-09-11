@@ -197,7 +197,7 @@ export class SyncEngine {
     const count = await this.mergeAndUpsertDesigns(mapped, ids => {
       store.confirm(scope, ids.flatMap(id => jobs.get(id) || []), force);
       this.countsFetchedAt = 0; SupabaseService.invalidateStats();
-    });
+    }, force);
     const { processed, errors } = await this.drainTextJobs(page, scope);
     if (count || processed) { this.countsFetchedAt = 0; SupabaseService.invalidateStats(); }
     this.addLog(`[Änderungsvergleich] ${skip ? unchanged : 0} unverändert übersprungen (${unchanged} identisch), ${count} Produkte bestätigt, ${processed} Texte bestätigt, ${store.pending(scope)} Aufgaben offen (${skip ? 'optimiert' : 'vollständiger Abgleich'}).`);
@@ -728,14 +728,16 @@ export class SyncEngine {
   }
 
   /**
-   * Merge new design data with existing DB records before upserting (Never removes ASINs)
+   * Reconcile current products while retaining the historical design row and ASIN list.
+   * A full snapshot is authoritative; an incremental update only applies explicit
+   * Amazon tombstones and merges the live products present in that update.
    */
-  public static async mergeAndUpsertDesigns(mapped: any[], onConfirmed?: (ids: string[]) => void) {
+  public static async mergeAndUpsertDesigns(mapped: any[], onConfirmed?: (ids: string[]) => void, authoritative = false) {
     const supabase = this.getSupabase();
     if (mapped.length === 0) return 0;
 
-    // Hub-owned lifecycle fields are written only by the confirmed Update
-    // pipeline. Amazon sync payloads must never reset or infer them.
+    // Keep the write contract explicit. `_deleted_asins` is internal evidence
+    // used during reconciliation and must never reach Supabase as a column.
     mapped = mapped.map(record => {
       const sanitized = { ...record };
       return Object.fromEntries(Object.entries(sanitized).filter(([key]) => PRODUCT_SYNC_COLUMNS.has(key) || key === '_deleted_asins'));
@@ -747,7 +749,7 @@ export class SyncEngine {
     for (let i = 0; i < designIds.length; i += 200) {
       const batch = designIds.slice(i, i + 200);
       const { data, error } = await supabase.from('mba_designs')
-        .select('design_id, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins, asin_resolved')
+        .select('design_id, status, asins, asin_standard_tshirt_us, price_standard_tshirt_us, published_products, ad_asins, asin_resolved')
         .in('design_id', batch);
       this.recordTraffic('product_read', { data, error });
       if (error) throw new Error(`Supabase-Bestandsread fehlgeschlagen: ${error.message || String(error)}`);
@@ -768,10 +770,16 @@ export class SyncEngine {
       // Merge ASINs (Union)
       const allAsins = Array.from(new Set([...(ex.asins || []), ...(m.asins || [])]));
       
-      // Merge published_products
+      // A complete snapshot replaces current product state. Incremental updates
+      // remove only explicit deleted ASINs, then merge the live identities seen.
       const productKey = (p: any) => `${String(p.market || '').toLowerCase()}_${String(p.type || '').toUpperCase()}`;
       const prodMap = new Map<string, any>();
-      (ex.published_products || []).forEach((p: any) => { if (p?.market && p?.type) prodMap.set(productKey(p), p); });
+      const tombstones = new Set((m._deleted_asins || []).map((asin: any) => this.sanitizeAsin(asin)).filter(Boolean));
+      if (!authoritative) {
+        (ex.published_products || []).forEach((p: any) => {
+          if (p?.market && p?.type && !tombstones.has(this.sanitizeAsin(p?.asin))) prodMap.set(productKey(p), p);
+        });
+      }
       (m.published_products || []).forEach((p: any) => { if (p?.market && p?.type) prodMap.set(productKey(p), p); });
       const pubProducts = Array.from(prodMap.values());
       const liveLists: Record<string, string[]> = {};
@@ -779,14 +787,18 @@ export class SyncEngine {
       const standardUs = pubProducts.find((p: any) => p.market === 'us' && String(p.type).toUpperCase() === 'STANDARD_TSHIRT');
       const adAsins = this.buildAdAsins(pubProducts, ex.ad_asins || [], ex.published_products || []);
       const fullyResolved = adAsins.every((ad: any) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad));
+      const incomingStatus = String(m.status || '').toUpperCase();
+      const hasIncomingLiveStatus = ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'].includes(incomingStatus);
+      const reconciledStatus = pubProducts.length === 0 ? 'DELETED' : (hasIncomingLiveStatus ? incomingStatus : (ex.status || 'PUBLISHED'));
 
       return {
         ...m,
         ...liveLists,
+        status: reconciledStatus,
         asins: allAsins,
         published_products: pubProducts,
-        asin_standard_tshirt_us: standardUs?.asin || ex.asin_standard_tshirt_us,
-        price_standard_tshirt_us: m.price_standard_tshirt_us || ex.price_standard_tshirt_us,
+        asin_standard_tshirt_us: standardUs?.asin || null,
+        price_standard_tshirt_us: standardUs ? (m.price_standard_tshirt_us || ex.price_standard_tshirt_us) : null,
         ad_asins: adAsins,
         asin_resolved: fullyResolved
       };
