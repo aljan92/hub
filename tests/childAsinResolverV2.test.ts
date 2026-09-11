@@ -168,9 +168,7 @@ test('shadow batch resolves a new parent placeholder without any Supabase write'
       forcedCalls++;
       return { status: 'identity_not_found', httpStatus: 200, finalUrl: 'https://www.amazon.com/dp/B000000001' };
     };
-    assert.deepEqual(await SyncEngine.runChildAsinShadowBatch(1), { checked: 0, resolved: 0, unresolved: 0 });
-    assert.equal(forcedCalls, 0);
-    assert.deepEqual(await SyncEngine.runChildAsinShadowBatch(1, true), { checked: 1, resolved: 0, unresolved: 1 });
+    assert.deepEqual(await SyncEngine.runChildAsinShadowBatch(1), { checked: 1, resolved: 0, unresolved: 1 });
     assert.equal(forcedCalls, 1);
     assert.equal(savedRuntime.resolverShadow.blockedUntil, null);
   } finally {

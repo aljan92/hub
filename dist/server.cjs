@@ -223449,7 +223449,14 @@ var init_syncEngine = __esm2({
             }
           }
         }, 15 * 60 * 1e3);
-        this.asinResolveTimer = null;
+        this.asinResolveTimer = setInterval(async () => {
+          if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+            try {
+              await this.runChildAsinShadowBatch(1);
+            } catch {
+            }
+          }
+        }, 60 * 1e3);
         this.textCatchupTimer = setInterval(async () => {
           if (this.state.autoUpdateEnabled && !this.state.isScanning) {
             try {
@@ -224721,7 +224728,7 @@ var init_syncEngine = __esm2({
         return { processed, errors: errors2 };
       }
       /** Read-only SNAP-style probe for every product type requiring a child ASIN. */
-      static async runChildAsinShadowBatch(limit = 1, ignoreCooldown = false) {
+      static async runChildAsinShadowBatch(limit = 1) {
         this.shouldStop = false;
         const runId = this.beginWorker("resolve_asins_shadow");
         this.state.isScanning = true;
@@ -224738,20 +224745,6 @@ var init_syncEngine = __esm2({
           const retryState = runtime.resolverRetries || {};
           const observations = runtime.resolverObservations || {};
           const previousShadow = runtime.resolverShadow;
-          const blockedUntil = previousShadow?.blockedUntil ? Date.parse(previousShadow.blockedUntil) : 0;
-          if (blockedUntil > Date.now() && !ignoreCooldown) {
-            const pauseEnd = new Date(blockedUntil).toLocaleString("de-DE", { timeZone: "Europe/Berlin" });
-            const lastResult2 = `Amazon-Retail-Pr\xFCfung bis ${pauseEnd} (Berlin) pausiert; keine Datenbank\xE4nderung.`;
-            runtime.resolverShadow = { ...previousShadow, lastRunAt: (/* @__PURE__ */ new Date()).toISOString(), checked: 0, resolved: 0, unresolved: 0, lastResult: lastResult2 };
-            this.saveRuntime(runtime);
-            this.state.childAsinShadow = runtime.resolverShadow;
-            this.addLog(`[ASIN SNAP Shadow] ${lastResult2}`, "info");
-            message = lastResult2;
-            return { checked: 0, resolved: 0, unresolved: 0 };
-          }
-          if (blockedUntil > Date.now() && ignoreCooldown) {
-            this.addLog("[ASIN SNAP Shadow] Manueller Einzeltest umgeht einmalig die Schutzpause.", "warn");
-          }
           const cursor = Math.max(0, Number(previousShadow?.cursor || 0));
           const { data: rows, error } = await supabase.from("mba_designs").select("design_id, published_products, ad_asins").in("status", ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]).order("updated_date", { ascending: true, nullsFirst: true }).range(cursor, cursor + 249);
           this.recordTraffic("resolver_shadow_read", { data: rows, error });
@@ -224819,7 +224812,7 @@ var init_syncEngine = __esm2({
                 blocked ? "error" : "warn"
               );
               if (blocked) {
-                blockedResult = `${result2.status}; sechs Stunden pausiert. Keine Datenbank\xE4nderung.`;
+                blockedResult = `${result2.status}; keine globale Pause, weitere Kandidaten werden gepr\xFCft. Keine Datenbank\xE4nderung.`;
                 runtime.resolverShadow = {
                   ...runtime.resolverShadow || previousShadow,
                   lastRunAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -224828,16 +224821,15 @@ var init_syncEngine = __esm2({
                   unresolved: unresolvedCount,
                   lastResult: blockedResult,
                   cursor,
-                  blockedUntil: new Date(Date.now() + 6 * 60 * 60 * 1e3).toISOString()
+                  blockedUntil: null
                 };
-                break;
               }
             }
           }
           const lastResult = blockedResult || (candidates.length === 0 ? "Keine f\xE4lligen neuen Produkt-/Marktplatzkombinationen in der begrenzten Stichprobe." : `${resolved}/${checked} eindeutig aufgel\xF6st; keine Datenbank\xE4nderung.`);
           runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5e3));
           runtime.resolverObservations = Object.fromEntries(Object.entries(observations).slice(-5e3));
-          const nextCursor = blockedResult ? cursor : (rows || []).length < 250 ? 0 : cursor + 250;
+          const nextCursor = (rows || []).length < 250 ? 0 : cursor + 250;
           runtime.resolverShadow = {
             ...runtime.resolverShadow || {},
             lastRunAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -224846,7 +224838,7 @@ var init_syncEngine = __esm2({
             unresolved: unresolvedCount,
             lastResult,
             cursor: nextCursor,
-            blockedUntil: blockedResult ? runtime.resolverShadow?.blockedUntil || null : checked > 0 ? null : previousShadow?.blockedUntil || null
+            blockedUntil: null
           };
           this.saveRuntime(runtime);
           this.state.childAsinShadow = runtime.resolverShadow;
@@ -237089,7 +237081,7 @@ app.post("/api/v1/sync/run", async (req, res) => {
       SyncEngine.resolveChildAsinsBatch(10).catch(() => {
       });
     } else if (type3 === "resolve_asins_shadow") {
-      const result2 = await SyncEngine.runChildAsinShadowBatch(1, true);
+      const result2 = await SyncEngine.runChildAsinShadowBatch(1);
       return res.json({ success: true, message: `SNAP-Shadow abgeschlossen: ${result2.resolved}/${result2.checked} aufgel\xF6st.`, state: SyncEngine.getState() });
     } else if (type3 === "lifecycle_audit") {
       SyncEngine.runLifecycleAudit().catch(() => {

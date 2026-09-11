@@ -495,11 +495,10 @@ export const DatabaseView: React.FC = () => {
                 onClick={() => handleRunScan('resolve_asins_shadow')}
                 disabled={syncState.isScanning}
                 className="w-full px-3.5 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
-                title="Startet genau einen read-only Amazon-Test und darf dafür die automatische Schutzpause einmalig umgehen"
+                title="Startet genau einen read-only Amazon-Test; es gibt keine globale Cooldown-Pause"
               >
                 SNAP-Resolver einmal prüfen (nur lesen)
               </button>
-              <div className="text-[10px] text-slate-500">Automatische SNAP-Prüfung vorübergehend pausiert.</div>
               {syncState.childAsinShadow?.lastRunAt && (
                 <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/20 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/75">
                   <div className="font-semibold text-cyan-300">SNAP Shadow · keine Datenbankänderung</div>

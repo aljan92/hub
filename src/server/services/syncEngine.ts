@@ -377,9 +377,12 @@ export class SyncEngine {
       }
     }, 15 * 60 * 1000);
 
-    // Automatic SNAP probing is intentionally paused while the retail
-    // transport is being validated. Manual read-only single probes remain.
-    this.asinResolveTimer = null;
+    // Read-only SNAP validation (one bounded candidate per minute).
+    this.asinResolveTimer = setInterval(async () => {
+      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+        try { await this.runChildAsinShadowBatch(1); } catch {}
+      }
+    }, 60 * 1000);
 
     this.textCatchupTimer = setInterval(async () => {
       if (this.state.autoUpdateEnabled && !this.state.isScanning) {
@@ -1776,7 +1779,7 @@ export class SyncEngine {
   }
 
   /** Read-only SNAP-style probe for every product type requiring a child ASIN. */
-  public static async runChildAsinShadowBatch(limit = 1, ignoreCooldown = false): Promise<{ checked: number; resolved: number; unresolved: number }> {
+  public static async runChildAsinShadowBatch(limit = 1): Promise<{ checked: number; resolved: number; unresolved: number }> {
     this.shouldStop = false;
     const runId = this.beginWorker('resolve_asins_shadow');
     this.state.isScanning = true;
@@ -1794,20 +1797,6 @@ export class SyncEngine {
       const retryState = runtime.resolverRetries || {};
       const observations = runtime.resolverObservations || {};
       const previousShadow = runtime.resolverShadow;
-      const blockedUntil = previousShadow?.blockedUntil ? Date.parse(previousShadow.blockedUntil) : 0;
-      if (blockedUntil > Date.now() && !ignoreCooldown) {
-        const pauseEnd = new Date(blockedUntil).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' });
-        const lastResult = `Amazon-Retail-Prüfung bis ${pauseEnd} (Berlin) pausiert; keine Datenbankänderung.`;
-        runtime.resolverShadow = { ...previousShadow, lastRunAt: new Date().toISOString(), checked: 0, resolved: 0, unresolved: 0, lastResult };
-        this.saveRuntime(runtime);
-        this.state.childAsinShadow = runtime.resolverShadow;
-        this.addLog(`[ASIN SNAP Shadow] ${lastResult}`, 'info');
-        message = lastResult;
-        return { checked: 0, resolved: 0, unresolved: 0 };
-      }
-      if (blockedUntil > Date.now() && ignoreCooldown) {
-        this.addLog('[ASIN SNAP Shadow] Manueller Einzeltest umgeht einmalig die Schutzpause.', 'warn');
-      }
       const cursor = Math.max(0, Number(previousShadow?.cursor || 0));
       const { data: rows, error } = await supabase.from('mba_designs')
         .select('design_id, published_products, ad_asins')
@@ -1882,15 +1871,14 @@ export class SyncEngine {
             blocked ? 'error' : 'warn'
           );
           if (blocked) {
-            blockedResult = `${result.status}; sechs Stunden pausiert. Keine Datenbankänderung.`;
+            blockedResult = `${result.status}; keine globale Pause, weitere Kandidaten werden geprüft. Keine Datenbankänderung.`;
             runtime.resolverShadow = {
               ...(runtime.resolverShadow || previousShadow),
               lastRunAt: new Date().toISOString(), checked, resolved, unresolved: unresolvedCount,
               lastResult: blockedResult,
               cursor,
-              blockedUntil: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString()
+              blockedUntil: null
             };
-            break;
           }
         }
       }
@@ -1900,14 +1888,12 @@ export class SyncEngine {
         : `${resolved}/${checked} eindeutig aufgelöst; keine Datenbankänderung.`);
       runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5000));
       runtime.resolverObservations = Object.fromEntries(Object.entries(observations).slice(-5000));
-      const nextCursor = blockedResult ? cursor : ((rows || []).length < 250 ? 0 : cursor + 250);
+      const nextCursor = (rows || []).length < 250 ? 0 : cursor + 250;
       runtime.resolverShadow = {
         ...(runtime.resolverShadow || {}),
         lastRunAt: new Date().toISOString(), checked, resolved, unresolved: unresolvedCount, lastResult,
         cursor: nextCursor,
-        blockedUntil: blockedResult
-          ? (runtime.resolverShadow?.blockedUntil || null)
-          : (checked > 0 ? null : (previousShadow?.blockedUntil || null))
+        blockedUntil: null
       };
       this.saveRuntime(runtime);
       this.state.childAsinShadow = runtime.resolverShadow;
