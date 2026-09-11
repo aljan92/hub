@@ -223143,7 +223143,7 @@ var init_childAsinPolicyService = __esm2({
 });
 
 // src/server/services/syncEngine.ts
-var import_fs82, import_path77, import_crypto4, MARKETPLACE_IDS, MP_MAP, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, LIFECYCLE_AUDIT_PATH, SyncEngine;
+var import_fs82, import_path77, import_crypto4, MARKETPLACE_IDS, MP_MAP, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, LIFECYCLE_AUDIT_PATH, CHILD_ASIN_SHADOW_INTERVAL_MS, CHILD_ASIN_SHADOW_BATCH_SIZE, CHILD_ASIN_SHADOW_REQUEST_DELAY_MS, SyncEngine;
 var init_syncEngine = __esm2({
   "src/server/services/syncEngine.ts"() {
     "use strict";
@@ -223204,6 +223204,9 @@ var init_syncEngine = __esm2({
     SYNC_RUNTIME_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_runtime.json");
     FULL_STAGE_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_full_stage.json");
     LIFECYCLE_AUDIT_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_lifecycle_audit.json");
+    CHILD_ASIN_SHADOW_INTERVAL_MS = 15e3;
+    CHILD_ASIN_SHADOW_BATCH_SIZE = 3;
+    CHILD_ASIN_SHADOW_REQUEST_DELAY_MS = 750;
     SyncEngine = class _SyncEngine {
       static logs = [];
       static state = {
@@ -223452,11 +223455,11 @@ var init_syncEngine = __esm2({
         this.asinResolveTimer = setInterval(async () => {
           if (this.state.autoUpdateEnabled && !this.state.isScanning) {
             try {
-              await this.runChildAsinShadowBatch(1);
+              await this.runChildAsinShadowBatch(CHILD_ASIN_SHADOW_BATCH_SIZE);
             } catch {
             }
           }
-        }, 60 * 1e3);
+        }, CHILD_ASIN_SHADOW_INTERVAL_MS);
         this.textCatchupTimer = setInterval(async () => {
           if (this.state.autoUpdateEnabled && !this.state.isScanning) {
             try {
@@ -224773,8 +224776,12 @@ var init_syncEngine = __esm2({
             }
             if (candidates.length >= Math.max(1, limit)) break;
           }
-          for (const candidate of candidates) {
+          for (const [candidateIndex, candidate] of candidates.entries()) {
             if (this.shouldStop) break;
+            if (candidateIndex > 0) {
+              await new Promise((resolve) => setTimeout(resolve, CHILD_ASIN_SHADOW_REQUEST_DELAY_MS));
+              if (this.shouldStop) break;
+            }
             checked++;
             const result2 = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
             const previousObservation = observations[candidate.observationKey];

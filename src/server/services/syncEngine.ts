@@ -119,6 +119,9 @@ type ProductSyncRuntime = {
 const SYNC_RUNTIME_PATH = path.resolve(process.cwd(), 'data', 'sync_runtime.json');
 const FULL_STAGE_PATH = path.resolve(process.cwd(), 'data', 'sync_full_stage.json');
 const LIFECYCLE_AUDIT_PATH = path.resolve(process.cwd(), 'data', 'sync_lifecycle_audit.json');
+const CHILD_ASIN_SHADOW_INTERVAL_MS = 15_000;
+const CHILD_ASIN_SHADOW_BATCH_SIZE = 3;
+const CHILD_ASIN_SHADOW_REQUEST_DELAY_MS = 750;
 
 export class SyncEngine {
   private static logs: SyncLogEntry[] = [];
@@ -377,12 +380,13 @@ export class SyncEngine {
       }
     }, 15 * 60 * 1000);
 
-    // Read-only SNAP validation (one bounded candidate per minute).
+    // Read-only SNAP validation. SNAP itself performs sequential Amazon requests
+    // with a short delay; keep concurrency at one and use a small bounded batch.
     this.asinResolveTimer = setInterval(async () => {
       if (this.state.autoUpdateEnabled && !this.state.isScanning) {
-        try { await this.runChildAsinShadowBatch(1); } catch {}
+        try { await this.runChildAsinShadowBatch(CHILD_ASIN_SHADOW_BATCH_SIZE); } catch {}
       }
-    }, 60 * 1000);
+    }, CHILD_ASIN_SHADOW_INTERVAL_MS);
 
     this.textCatchupTimer = setInterval(async () => {
       if (this.state.autoUpdateEnabled && !this.state.isScanning) {
@@ -1831,8 +1835,12 @@ export class SyncEngine {
         if (candidates.length >= Math.max(1, limit)) break;
       }
 
-      for (const candidate of candidates) {
+      for (const [candidateIndex, candidate] of candidates.entries()) {
         if (this.shouldStop) break;
+        if (candidateIndex > 0) {
+          await new Promise(resolve => setTimeout(resolve, CHILD_ASIN_SHADOW_REQUEST_DELAY_MS));
+          if (this.shouldStop) break;
+        }
         checked++;
         const result = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
         const previousObservation = observations[candidate.observationKey];
