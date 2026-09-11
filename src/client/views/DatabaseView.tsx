@@ -499,6 +499,7 @@ export const DatabaseView: React.FC = () => {
               >
                 SNAP-Resolver einmal prüfen (nur lesen)
               </button>
+              <div className="text-[10px] text-slate-500">Automatische SNAP-Prüfung vorübergehend pausiert.</div>
               {syncState.childAsinShadow?.lastRunAt && (
                 <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/20 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/75">
                   <div className="font-semibold text-cyan-300">SNAP Shadow · keine Datenbankänderung</div>

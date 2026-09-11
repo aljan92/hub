@@ -377,14 +377,9 @@ export class SyncEngine {
       }
     }, 15 * 60 * 1000);
 
-    // ASIN Resolver background queue (every 1 min)
-    this.asinResolveTimer = setInterval(async () => {
-      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
-        try {
-          await this.runChildAsinShadowBatch(1);
-        } catch (e) {}
-      }
-    }, 60 * 1000);
+    // Automatic SNAP probing is intentionally paused while the retail
+    // transport is being validated. Manual read-only single probes remain.
+    this.asinResolveTimer = null;
 
     this.textCatchupTimer = setInterval(async () => {
       if (this.state.autoUpdateEnabled && !this.state.isScanning) {

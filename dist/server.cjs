@@ -223449,14 +223449,7 @@ var init_syncEngine = __esm2({
             }
           }
         }, 15 * 60 * 1e3);
-        this.asinResolveTimer = setInterval(async () => {
-          if (this.state.autoUpdateEnabled && !this.state.isScanning) {
-            try {
-              await this.runChildAsinShadowBatch(1);
-            } catch (e) {
-            }
-          }
-        }, 60 * 1e3);
+        this.asinResolveTimer = null;
         this.textCatchupTimer = setInterval(async () => {
           if (this.state.autoUpdateEnabled && !this.state.isScanning) {
             try {
