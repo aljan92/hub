@@ -70,4 +70,24 @@ export class DesignerService {
     recentCreations.set(requestId, { createdAt: now, task });
     return { task, duplicate: false };
   }
+
+  static batchCreateTasks(input: {
+    concepts: Record<string, unknown>[];
+    imageProvider?: string;
+    promptPoolEnabled?: boolean;
+    clientIp?: string;
+  }) {
+    const list = Array.isArray(input.concepts) ? input.concepts : [];
+    if (list.length === 0) throw new Error('Keine Konzepte zum Erstellen übergeben.');
+    const results: Array<{ task: any; duplicate: boolean }> = [];
+    for (const concept of list) {
+      const res = this.createTask({
+        ...concept,
+        imageProvider: input.imageProvider,
+        promptPoolEnabled: input.promptPoolEnabled
+      }, input.clientIp || 'local');
+      results.push(res);
+    }
+    return results;
+  }
 }

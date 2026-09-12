@@ -41,6 +41,7 @@ import { VisionOptimizationService } from './services/visionOptimizationService'
 import { TaskRecoveryService } from './services/taskRecoveryService';
 import { AmazonRecoveryVerificationService } from './services/amazonRecoveryVerificationService';
 import { DesignerService } from './services/designerService';
+import { DesignerConceptService } from './services/designerConceptService';
 
 dotenv.config();
 
@@ -1057,6 +1058,54 @@ app.post('/api/v1/designer/generate', async (req, res) => {
   } catch (err: any) {
     const message = err?.message || 'Task konnte nicht angelegt werden.';
     res.status(message === 'Niche 1 ist erforderlich.' ? 400 : 500).json({ success: false, error: message });
+  }
+});
+
+// 6.1 Designer: Generate Concepts (Natural Language or Random)
+app.post('/api/v1/designer/concepts/generate', async (req, res) => {
+  try {
+    const result = await DesignerConceptService.generateConcepts(req.body || {});
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    const message = err?.message || 'Design-Konzepte konnten nicht erzeugt werden.';
+    res.status(502).json({ success: false, error: message });
+  }
+});
+
+// 6.2 Designer: Batch Create Tasks
+app.post('/api/v1/designer/concepts/batch-create', async (req, res) => {
+  try {
+    const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'local';
+    const results = DesignerService.batchCreateTasks({
+      concepts: req.body?.concepts || [],
+      imageProvider: req.body?.imageProvider,
+      promptPoolEnabled: req.body?.promptPoolEnabled,
+      clientIp
+    });
+
+    for (const item of results) {
+      if (!item.duplicate) broadcast('TASK_LOG_CREATED', item.task);
+    }
+
+    res.json({
+      success: true,
+      taskIds: results.map(r => r.task.id),
+      createdCount: results.filter(r => !r.duplicate).length,
+      tasks: results.map(r => r.task)
+    });
+  } catch (err: any) {
+    const message = err?.message || 'Tasks konnten nicht angelegt werden.';
+    res.status(400).json({ success: false, error: message });
+  }
+});
+
+// 6.3 Designer: Clear Concept History
+app.post('/api/v1/designer/concepts/clear-history', (req, res) => {
+  try {
+    DesignerConceptService.clearHistory();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Historie konnte nicht gelöscht werden.' });
   }
 });
 

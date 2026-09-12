@@ -56,6 +56,7 @@ try {
   });
 
   await page.goto(`http://127.0.0.1:${(server.address() as any).port}`);
+  await page.getByRole('button', { name: /Manuelle Einzelfelder/ }).click();
   await page.getByText('LLM-Modell für schnelle Vorschläge').waitFor();
   assert.deepEqual(modelListRequests, [], 'model catalog is not populated from startup suggestions');
   await page.getByRole('button', { name: /Grundmodell \(base\/model\)/ }).click();

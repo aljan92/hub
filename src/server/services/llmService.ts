@@ -1458,4 +1458,113 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
       };
     }
   }
+
+  /**
+   * Generates creative commercial apparel design concepts from natural language or random evergreen themes.
+   */
+  public static async generateDesignerConcepts(params: {
+    userPrompt: string;
+    count: number;
+    model: string;
+    avoidanceList?: string[];
+  }): Promise<Array<{ niche1: string; niche2?: string; subniche?: string; quote: string; style?: string }>> {
+    const { url, headers } = this.getBaseUrlAndHeaders();
+    const model = this.normalizeModelId(params.model);
+
+    const avoidText = params.avoidanceList && params.avoidanceList.length > 0
+      ? `\n\nDO NOT repeat or closely imitate the following recently created concepts/quotes:\n${params.avoidanceList.map(a => `- ${a}`).join('\n')}`
+      : '';
+
+    const systemPrompt = `You are a world-class Print-on-Demand (POD) Merch by Amazon Art Director and Bestseller Niche Strategist.
+
+Your goal is to generate commercially viable, highly sellable, authentic T-shirt design concepts.
+When choosing broad niches or generating random ideas, focus on high-demand categories such as:
+- evergreen
+- Berufe
+- Haustiere mit beliebten Rassen
+- Hobbys & Sport
+- Familie/Lifestyle
+
+IMPORTANT FIELD RULES:
+1. "niche1" (REQUIRED): The primary broad niche in English (1-3 words).
+2. "quote" (REQUIRED): A catchy, original, witty, emotional, or relatable short English T-shirt quote/slogan suitable for apparel printing. Never use trademarked slogans, brand names, or copyrighted phrases.
+3. "subniche" (OPTIONAL): A specific subtype, breed, or specialty. Only provide if it adds genuine value (e.g. a specific dog/cat/horse breed, or a specific trade specialty); otherwise leave it empty string "".
+4. "niche2" (OPTIONAL): A distinct, compelling cross-niche. Only provide if it represents a genuine, synergistic cross-niche; otherwise leave it empty string "".
+5. "style" (OPTIONAL): An illustration/design style direction. Can be left empty string "" to allow the automated prompt generator to decide.
+
+OUTPUT FORMAT:
+Return strictly valid JSON only in this exact format:
+{
+  "concepts": [
+    {
+      "niche1": "...",
+      "niche2": "",
+      "subniche": "",
+      "quote": "...",
+      "style": ""
+    }
+  ]
+}
+No markdown backticks, no preamble, no explanation.${avoidText}`;
+
+    const userMessage = `${params.userPrompt}\n\nGenerate exactly ${params.count} unique concept(s).`;
+
+    const settings = loadSettings();
+    const timeoutMs = Math.max(30000, (settings.llmTimeoutSeconds || 90) * 1000);
+
+    const res = await this.executeFetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.85,
+        max_tokens: Math.min(4000, params.count * 400 + 600)
+      }),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+
+    if (!res.ok) {
+      throw new Error(await this.parseHttpError(res, 'LLM Konzept-Generator'));
+    }
+
+    const data = await res.json();
+    const rawContent = data.choices?.[0]?.message?.content?.trim() || '{}';
+    const parsed = this.extractJsonFromLlmResponse(rawContent);
+
+    const rawList = Array.isArray(parsed?.concepts) 
+      ? parsed.concepts 
+      : (Array.isArray(parsed) ? parsed : []);
+
+    const concepts: Array<{ niche1: string; niche2?: string; subniche?: string; quote: string; style?: string }> = [];
+
+    for (const item of rawList) {
+      if (!item || typeof item !== 'object') continue;
+      const n1 = String(item.niche1 || item.niche || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+      const q = String(item.quote || item.text || '').trim().replace(/\s+/g, ' ').replace(/^["']|["']$/g, '').slice(0, 200);
+      if (!n1 || !q) continue;
+
+      const sub = String(item.subniche || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+      const n2 = String(item.niche2 || item.crossNiche || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+      const st = String(item.style || '').trim().replace(/\s+/g, ' ').slice(0, 300);
+
+      concepts.push({
+        niche1: n1,
+        niche2: n2 && n2.toLowerCase() !== n1.toLowerCase() ? n2 : undefined,
+        subniche: sub && sub.toLowerCase() !== n1.toLowerCase() ? sub : undefined,
+        quote: q,
+        style: st || undefined
+      });
+    }
+
+    if (concepts.length === 0) {
+      throw new Error('Das LLM konnte keine gültigen Design-Konzepte erzeugen.');
+    }
+
+    return concepts;
+  }
 }
