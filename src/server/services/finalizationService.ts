@@ -40,6 +40,7 @@ export interface FinalizationResult {
   queueItemId?: string;
   resizedAssets?: ResizedArtworksResult;
   preparedListing?: { root: Record<string, string>; listings: Record<string, any> };
+  customBackgroundColor?: string;
 }
 
 function finalizationInput(params: FinalizationParams): string {
@@ -306,10 +307,10 @@ export class FinalizationService {
     });
 
     if (params.prepareOnly) {
-      return { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
+      return { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings }, customBackgroundColor: resolvedCustomBg };
     }
 
-    return this.handoffPrepared(params, { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
+    return this.handoffPrepared(params, { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings }, customBackgroundColor: resolvedCustomBg });
   }
 
   /** Synchronous queue handoff of an already validated result. No rendering or earlier workflow steps. */
@@ -321,6 +322,18 @@ export class FinalizationService {
     this.assertPreparedOwnership(params, result, task);
     const resizedAssets = result.resizedAssets;
     const { root: sanitizedRoot, listings: sanitizedListings } = result.preparedListing;
+
+    const rawBgHex = params.customBackgroundColor
+      || result.customBackgroundColor
+      || (task?.customAnswers as any)?.customBackgroundColor
+      || (task?.customAnswers as any)?.preferredBackgroundColor
+      || (task?.customAnswers as any)?.accessoryColorHex
+      || (task as any)?.customBackgroundColor
+      || (task as any)?.preferredBackgroundColor
+      || task?.analysisResult?.background_color_recommendation?.hex;
+    const resolvedCustomBg = (typeof rawBgHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawBgHex.trim()))
+      ? (rawBgHex.trim().startsWith('#') ? rawBgHex.trim().toUpperCase() : `#${rawBgHex.trim().toUpperCase()}`)
+      : undefined;
 
     // =========================================================================
     // PHASE 5: QUEUE HANDOFF & SIDE EFFECTS

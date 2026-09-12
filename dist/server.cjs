@@ -226737,17 +226737,17 @@ var init_finalizationService = __esm2({
         const { getGeneratableVariants: getGeneratableVariants2 } = await Promise.resolve().then(() => (init_productCatalogService(), productCatalogService_exports));
         const generatableVariants = getGeneratableVariants2();
         const rawBgHex = params2.customBackgroundColor || task?.customAnswers?.customBackgroundColor || task?.customAnswers?.preferredBackgroundColor || task?.customAnswers?.accessoryColorHex || task?.customBackgroundColor || task?.preferredBackgroundColor || task?.analysisResult?.background_color_recommendation?.hex;
-        const resolvedCustomBg2 = typeof rawBgHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBgHex.trim()) ? rawBgHex.trim().startsWith("#") ? rawBgHex.trim().toUpperCase() : `#${rawBgHex.trim().toUpperCase()}` : void 0;
+        const resolvedCustomBg = typeof rawBgHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBgHex.trim()) ? rawBgHex.trim().startsWith("#") ? rawBgHex.trim().toUpperCase() : `#${rawBgHex.trim().toUpperCase()}` : void 0;
         try {
           const source12 = ArtworkResizeService.source(task, masterPngPath);
-          const sourceFingerprint = ArtworkResizeService.fingerprint(source12, resolvedCustomBg2);
+          const sourceFingerprint = ArtworkResizeService.fingerprint(source12, resolvedCustomBg);
           TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "FINALIZATION_EVENT",
             title: source12.kind === "SVG" ? "\u{1F3A8} Varianten direkt aus freigegebenem SVG rendern..." : "\u{1F3A8} PNG-Varianten vorbereiten \u2013 Original-Pixelgr\xF6\xDFe, keine Vergr\xF6\xDFerung...",
-            content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", source: source12.kind, customBackgroundColor: resolvedCustomBg2 }
+            content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", source: source12.kind, customBackgroundColor: resolvedCustomBg }
           });
-          if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint, resolvedCustomBg2)) {
+          if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint, resolvedCustomBg)) {
             resizedAssets = task.resizedAssets;
           } else {
             const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto4.randomUUID)() : taskId);
@@ -226758,9 +226758,9 @@ var init_finalizationService = __esm2({
                 title,
                 content: { phase: "ARTWORK_PREPARATION", status: "RUNNING", source: source12.kind, stage, ...metrics ? { metrics } : {} }
               });
-            }, resolvedCustomBg2);
+            }, resolvedCustomBg);
             const currentSource = ArtworkResizeService.source(TaskLogService.getTask(taskId), masterPngPath);
-            if (ArtworkResizeService.fingerprint(currentSource, resolvedCustomBg2) !== sourceFingerprint) throw new Error("Artwork-Quelle wurde w\xE4hrend des Renderns ge\xE4ndert; keine \xDCbernahme.");
+            if (ArtworkResizeService.fingerprint(currentSource, resolvedCustomBg) !== sourceFingerprint) throw new Error("Artwork-Quelle wurde w\xE4hrend des Renderns ge\xE4ndert; keine \xDCbernahme.");
           }
         } catch (error) {
           const err = "Fehler bei Artwork-Vorbereitung: " + error.message;
@@ -226805,9 +226805,9 @@ var init_finalizationService = __esm2({
           content: { phase: "ARTWORK_PREPARATION", status: "SUCCESS", assets: resizedAssets }
         });
         if (params2.prepareOnly) {
-          return { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } };
+          return { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings }, customBackgroundColor: resolvedCustomBg };
         }
-        return this.handoffPrepared(params2, { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings } });
+        return this.handoffPrepared(params2, { success: true, ownership, resizedAssets, preparedListing: { root: sanitizedRoot, listings: sanitizedListings }, customBackgroundColor: resolvedCustomBg });
       }
       /** Synchronous queue handoff of an already validated result. No rendering or earlier workflow steps. */
       static handoffPrepared(params2, result2) {
@@ -226818,6 +226818,8 @@ var init_finalizationService = __esm2({
         this.assertPreparedOwnership(params2, result2, task);
         const resizedAssets = result2.resizedAssets;
         const { root: sanitizedRoot, listings: sanitizedListings } = result2.preparedListing;
+        const rawBgHex = params2.customBackgroundColor || result2.customBackgroundColor || task?.customAnswers?.customBackgroundColor || task?.customAnswers?.preferredBackgroundColor || task?.customAnswers?.accessoryColorHex || task?.customBackgroundColor || task?.preferredBackgroundColor || task?.analysisResult?.background_color_recommendation?.hex;
+        const resolvedCustomBg = typeof rawBgHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBgHex.trim()) ? rawBgHex.trim().startsWith("#") ? rawBgHex.trim().toUpperCase() : `#${rawBgHex.trim().toUpperCase()}` : void 0;
         TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
@@ -227607,7 +227609,7 @@ Bullets: ${oldBullets}`
           resolvedAvoidColor = "black";
         }
         const rawBg = task.customAnswers?.customBackgroundColor || task.customAnswers?.preferredBackgroundColor || task.customBackgroundColor || task.preferredBackgroundColor || task.analysisResult?.background_color_recommendation?.hex;
-        const resolvedCustomBg2 = typeof rawBg === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBg.trim()) ? rawBg.trim().startsWith("#") ? rawBg.trim().toUpperCase() : `#${rawBg.trim().toUpperCase()}` : void 0;
+        const resolvedCustomBg = typeof rawBg === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBg.trim()) ? rawBg.trim().startsWith("#") ? rawBg.trim().toUpperCase() : `#${rawBg.trim().toUpperCase()}` : void 0;
         return {
           taskId: task.id,
           pipeline: "UPDATE",
@@ -227620,7 +227622,7 @@ Bullets: ${oldBullets}`
           listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
           fitTypes: resolvedFitTypes,
           avoidColor: resolvedAvoidColor,
-          customBackgroundColor: resolvedCustomBg2,
+          customBackgroundColor: resolvedCustomBg,
           localImagePath: task.localImagePath || "",
           masterPngPath: task.localMbaPngPath || task.localImagePath || "",
           publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
