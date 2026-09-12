@@ -179,9 +179,6 @@ export const TrademarkView: React.FC = () => {
             <ShieldCheck className="w-6 h-6 mr-2.5 text-amber-400" />
             Trademark &amp; Whitelist Manager
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Verwalte markenrechtliche Ausnahmen pro Marktplatz (z. B. "girl", "mama") und teste Listings live.
-          </p>
         </div>
 
         <button

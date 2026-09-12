@@ -742,9 +742,6 @@ export const TasksView: React.FC = () => {
             <CheckSquare className="w-6 h-6 mr-2.5 text-primary-400" />
             Tasks &amp; Review
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Zentraler Prüf- und Freigabe-Workspace für Designs, Trademarks und Listings.
-          </p>
         </div>
 
         {/* AI Autonomy Switches for Design & Update Pipelines */}

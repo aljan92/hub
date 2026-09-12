@@ -233,15 +233,12 @@ export const DatabaseView: React.FC = () => {
             <Database className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
               MBA ⇄ Supabase Engine
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300 border border-primary-500/30">
                 v3.0 Native
               </span>
             </h1>
-            <p className="text-xs text-slate-400">
-              Direkte Synchronisierung zwischen Amazon Merch on Demand und PostgreSQL
-            </p>
             {syncState.lastRun && (
               <p className="text-[10px] text-slate-500 mt-1">
                 Letzter Lauf: {syncState.lastRun.type} · {syncState.lastRun.status} · {syncState.lastRun.confirmed}/{syncState.lastRun.attempted} bestätigt

@@ -400,9 +400,6 @@ export const SystemPromptsView: React.FC = () => {
             <Sliders className="w-6 h-6 text-cyan-400" />
             Systemprompts &amp; Pipeline Steuerung
           </h2>
-          <p className="text-sm text-slate-400">
-            Zentrale Konfiguration für die Design Creation Pipeline (D1–D8) und Listing Update Pipeline (U1–U7).
-          </p>
         </div>
 
         {/* Action Controls & Save Status */}

@@ -321,6 +321,8 @@ export const PromptLogView: React.FC = () => {
   const [testSuccessMessage, setTestSuccessMessage] = useState<string | null>(null);
   const [pushingToQueueTaskId, setPushingToQueueTaskId] = useState<string | null>(null);
   const [pushSuccessTaskId, setPushSuccessTaskId] = useState<string | null>(null);
+  const [showPlayground, setShowPlayground] = useState(false);
+  const [showInspector, setShowInspector] = useState(false);
 
   // Amazon Merch API Inspector State
   const [inspectDesignId, setInspectDesignId] = useState('495f452e-8245-42be-96e3-a1d3dcc752d9');
@@ -1029,11 +1031,36 @@ export const PromptLogView: React.FC = () => {
             <Terminal className="w-6 h-6 text-cyan-400" />
             Prompt Log
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Chronologisches Audit-Logbuch aller LLM- und Tool-Aufrufe.
-          </p>
         </div>
-        <div className="flex items-center space-x-2.5">
+        <div className="flex items-center flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPlayground(!showPlayground)}
+            title={showPlayground ? 'Playground ausblenden' : 'Playground einblenden'}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+              showPlayground
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm shadow-cyan-500/20'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200 hover:bg-slate-700'
+            }`}
+          >
+            <TestTube className="w-3.5 h-3.5" />
+            <span>Playground</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowInspector(!showInspector)}
+            title={showInspector ? 'Amazon Merch API Inspector ausblenden' : 'Amazon Merch API Inspector einblenden'}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+              showInspector
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm shadow-amber-500/20'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200 hover:bg-slate-700'
+            }`}
+          >
+            <SearchCode className="w-3.5 h-3.5" />
+            <span>Inspector</span>
+          </button>
+
           <button
             onClick={fetchTasks}
             disabled={loading}
@@ -1055,7 +1082,8 @@ export const PromptLogView: React.FC = () => {
       </div>
 
       {/* Mini Playground */}
-      <div className="glass-panel p-4 rounded-2xl border border-slate-800 space-y-3">
+      {showPlayground && (
+        <div className="glass-panel p-4 rounded-2xl border border-slate-800 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div className="p-1 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
@@ -1108,8 +1136,10 @@ export const PromptLogView: React.FC = () => {
           </div>
         </form>
       </div>
+      )}
 
       {/* Amazon Merch API Inspector Test Area */}
+      {showInspector && (
       <div className="glass-panel p-4 rounded-2xl border border-teal-500/20 bg-slate-950/40 space-y-4 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
           <div className="flex items-center space-x-2">
@@ -1388,6 +1418,7 @@ export const PromptLogView: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
       {/* Filter Toolbar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">

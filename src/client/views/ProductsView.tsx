@@ -439,9 +439,6 @@ export const ProductsView: React.FC = () => {
                   Live CDP
                 </span>
               </h1>
-              <p className="text-xs text-slate-400">
-                Automatisch gescannte Merch by Amazon Produkte, Farbvarianten, Kürzungs-Kaskade und Slot-Berechnungen
-              </p>
             </div>
           </div>
         </div>

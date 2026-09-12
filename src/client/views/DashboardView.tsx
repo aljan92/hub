@@ -100,7 +100,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-100 tracking-tight">Systemübersicht &amp; Dashboard</h2>
-          <p className="text-sm text-slate-400">Echtzeit-Metriken, Konnektor-Topologie und Upload-Kontrolle auf deinem NAS.</p>
         </div>
         <div className="flex items-center space-x-3">
           <button

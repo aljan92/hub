@@ -133,9 +133,6 @@ export const LogsView: React.FC = () => {
             </div>
             <div>
               <h2 className="text-2xl font-bold text-slate-100 tracking-tight">System- &amp; Aktivitäts-Logs</h2>
-              <p className="text-xs text-slate-400">
-                Echtzeit-Protokoll aller Hintergrund-Scans, API-Aufrufe, Amazon-Sessions und Fehleranalysen.
-              </p>
             </div>
           </div>
         </div>

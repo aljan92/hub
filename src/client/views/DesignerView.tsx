@@ -348,9 +348,6 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
           <Sparkles className="w-6 h-6 mr-2 text-primary-400" />
           Designer
         </h2>
-        <p className="text-sm text-slate-400 mt-1">
-          Kreative Designkonzepte per Freitext generieren, würfeln oder manuell als D2-Design-Tasks starten.
-        </p>
       </div>
 
       {/* Global Image Provider & Prompt-Pool Bar */}
