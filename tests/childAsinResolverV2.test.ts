@@ -291,3 +291,41 @@ test('resolver validation counts unique observations and repeat confirmations', 
   assert.equal(summary.confirmedTwice, 1);
   assert.deepEqual(summary.statuses, [{ status: 'resolved', count: 1 }, { status: 'http_not_found', count: 1 }]);
 });
+
+test('read-only ad ASIN audit classifies safe targets and structural violations', () => {
+  const rows = [
+    {
+      design_id: 'D-LIVE', status: 'PUBLISHED', asin_resolved: true,
+      published_products: [
+        { asin: 'B000000001', type: 'STANDARD_TSHIRT', market: 'us' },
+        { asin: 'B000000002', type: 'MUG', market: 'us' },
+        { asin: 'B000000003', type: 'TUMBLER', market: 'de' },
+        { asin: 'B000000004', type: 'PHONE_CASE_SAMSUNG_GALAXY', market: 'us' }
+      ],
+      ad_asins: [
+        { asin: 'B000000001', parentAsin: 'B000000001', type: 'STANDARD_TSHIRT', market: 'us' },
+        { asin: 'B000000009', parentAsin: 'B000000002', type: 'MUG', market: 'us' },
+        { asin: 'B000000003', parentAsin: 'B000000003', type: 'TUMBLER', market: 'de' },
+        { asin: 'B000000004', parentAsin: 'B000000004', type: 'PHONE_CASE_SAMSUNG_GALAXY', market: 'us' },
+        { asin: 'B000000008', parentAsin: 'B000000008', type: 'STANDARD_TSHIRT', market: 'fr' }
+      ]
+    },
+    {
+      design_id: 'D-DELETED', status: 'DELETED', asin_resolved: false,
+      published_products: [{ asin: 'B000000005', type: 'STANDARD_TSHIRT', market: 'us' }],
+      ad_asins: [{ asin: 'B000000005', parentAsin: 'B000000005', type: 'STANDARD_TSHIRT', market: 'us' }]
+    }
+  ];
+
+  const audit = SyncEngine.buildAdAsinAudit(rows);
+  assert.equal(audit.summary.databaseDesigns, 2);
+  assert.equal(audit.summary.liveDesigns, 1);
+  assert.equal(audit.summary.validAdEntries, 2);
+  assert.equal(audit.summary.unresolvedResolveProducts, 1);
+  assert.equal(audit.summary.parentPlaceholders, 1);
+  assert.equal(audit.summary.orphanAdEntries, 1);
+  assert.equal(audit.summary.unsupportedAdEntries, 1);
+  assert.equal(audit.summary.inactiveDesignsWithCurrentData, 1);
+  assert.equal(audit.summary.asinResolvedMismatches, 1);
+  assert.equal(rows[0].ad_asins[2].asin, 'B000000003');
+});

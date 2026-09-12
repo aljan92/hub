@@ -51,6 +51,13 @@ interface SyncState {
     groups: Array<{ type: string; market: string; count: number }>;
   };
   childAsinValidation?: { observed: number; resolved: number; confirmedTwice: number; statuses: Array<{ status: string; count: number }> };
+  adAsinAudit?: {
+    lastRunAt: string; databaseDesigns: number; liveDesigns: number; publishedProducts: number; adEntries: number;
+    validAdEntries: number; missingAdEntries: number; unresolvedResolveProducts: number; parentPlaceholders: number;
+    parentMismatches: number; orphanAdEntries: number; duplicateProductKeys: number; duplicateAdKeys: number;
+    unsupportedAdEntries: number; inactiveDesignsWithCurrentData: number; asinResolvedMismatches: number;
+    reportPath: string; complete: boolean;
+  };
   lifecycleAudit?: {
     lastRunAt: string; amazonListings: number; amazonDesigns: number; databaseDesigns: number;
     deletedAtAmazonDesigns: number; missingFromAmazonDesigns: number; stalePublishedProducts: number;
@@ -471,6 +478,30 @@ export const DatabaseView: React.FC = () => {
                   <div className="font-semibold text-cyan-300">Gesammelte SNAP-Ergebnisse</div>
                   <div>{syncState.childAsinValidation.resolved}/{syncState.childAsinValidation.observed} eindeutig aufgelöst · {syncState.childAsinValidation.confirmedTwice} zweimal identisch bestätigt</div>
                   <div className="text-cyan-200/50">{syncState.childAsinValidation.statuses.slice(0, 5).map(entry => `${entry.status}: ${entry.count}`).join(' · ')}</div>
+                </div>
+              )}
+              <button
+                onClick={() => handleRunScan('ad_asin_audit')}
+                disabled={syncState.isScanning}
+                className="w-full px-3.5 py-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
+                title="Prüft published_products, ad_asins und asin_resolved ausschließlich lesend"
+              >
+                Ad-ASIN Audit starten (nur lesen)
+              </button>
+              {syncState.adAsinAudit?.lastRunAt && (
+                <div className="rounded-lg border border-violet-500/20 bg-violet-950/15 px-2.5 py-2 text-[10px] leading-relaxed text-violet-100/75 space-y-1">
+                  <div className="font-semibold text-violet-300">Ad-ASIN Audit · keine Datenbankänderung</div>
+                  <div>{syncState.adAsinAudit.validAdEntries} gültige Ziele · {syncState.adAsinAudit.unresolvedResolveProducts} Resolve-Produkte offen</div>
+                  <div>
+                    {syncState.adAsinAudit.parentPlaceholders} Parent-Platzhalter · {syncState.adAsinAudit.missingAdEntries} fehlend ·{' '}
+                    {syncState.adAsinAudit.parentMismatches} Parent-Konflikte · {syncState.adAsinAudit.orphanAdEntries} verwaist
+                  </div>
+                  <div>
+                    {syncState.adAsinAudit.duplicateProductKeys + syncState.adAsinAudit.duplicateAdKeys} Duplikate ·{' '}
+                    {syncState.adAsinAudit.inactiveDesignsWithCurrentData} inaktive Designs mit aktuellen Daten ·{' '}
+                    {syncState.adAsinAudit.asinResolvedMismatches} falsche Statusflags
+                  </div>
+                  <div className="text-violet-200/50">Stand: {formatDate(Date.parse(syncState.adAsinAudit.lastRunAt))}</div>
                 </div>
               )}
               {syncState.childAsinDiagnostics?.lastRunAt && (

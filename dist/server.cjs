@@ -223163,7 +223163,7 @@ var init_childAsinPolicyService = __esm2({
 });
 
 // src/server/services/syncEngine.ts
-var import_fs82, import_path77, import_crypto4, MARKETPLACE_IDS, MP_MAP, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, LIFECYCLE_AUDIT_PATH, CHILD_ASIN_SHADOW_INTERVAL_MS, CHILD_ASIN_SHADOW_BATCH_SIZE, CHILD_ASIN_SHADOW_REQUEST_DELAY_MS, SyncEngine;
+var import_fs82, import_path77, import_crypto4, MARKETPLACE_IDS, MP_MAP, ALL_STATUSES, FIND_LISTINGS_URL, PRODUCT_CONFIG_URL, PRODUCT_SYNC_COLUMNS, SYNC_RUNTIME_PATH, FULL_STAGE_PATH, LIFECYCLE_AUDIT_PATH, AD_ASIN_AUDIT_PATH, CHILD_ASIN_SHADOW_INTERVAL_MS, CHILD_ASIN_SHADOW_BATCH_SIZE, CHILD_ASIN_SHADOW_REQUEST_DELAY_MS, SyncEngine;
 var init_syncEngine = __esm2({
   "src/server/services/syncEngine.ts"() {
     "use strict";
@@ -223224,6 +223224,7 @@ var init_syncEngine = __esm2({
     SYNC_RUNTIME_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_runtime.json");
     FULL_STAGE_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_full_stage.json");
     LIFECYCLE_AUDIT_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_lifecycle_audit.json");
+    AD_ASIN_AUDIT_PATH = import_path77.default.resolve(process.cwd(), "data", "sync_ad_asin_audit.json");
     CHILD_ASIN_SHADOW_INTERVAL_MS = 15e3;
     CHILD_ASIN_SHADOW_BATCH_SIZE = 3;
     CHILD_ASIN_SHADOW_REQUEST_DELAY_MS = 750;
@@ -223400,7 +223401,7 @@ var init_syncEngine = __esm2({
       static getState() {
         try {
           const runtime = this.loadRuntime();
-          return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, childAsinValidation: this.buildResolverValidation(runtime.resolverObservations || {}), lifecycleAudit: runtime.lifecycleAudit || this.state.lifecycleAudit, lastRun: runtime.lastRun, egress: {
+          return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, childAsinValidation: this.buildResolverValidation(runtime.resolverObservations || {}), adAsinAudit: runtime.adAsinAudit || this.state.adAsinAudit, lifecycleAudit: runtime.lifecycleAudit || this.state.lifecycleAudit, lastRun: runtime.lastRun, egress: {
             mode: loadSettings().syncEgressMode || "observe",
             baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
             pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
@@ -224385,6 +224386,166 @@ var init_syncEngine = __esm2({
       /**
        * 7. Resolve Child ASINs Batch
        */
+      static buildAdAsinAudit(databaseRows) {
+        const liveStatuses = /* @__PURE__ */ new Set(["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]);
+        const keyOf = (entry) => `${normalizeChildAsinProductType(entry?.type)}|${String(entry?.market || "").trim().toLowerCase()}`;
+        const candidates = {
+          missingAdEntries: [],
+          unresolvedResolveProducts: [],
+          parentPlaceholders: [],
+          parentMismatches: [],
+          orphanAdEntries: [],
+          duplicateProductKeys: [],
+          duplicateAdKeys: [],
+          unsupportedAdEntries: [],
+          inactiveDesignsWithCurrentData: [],
+          asinResolvedMismatches: []
+        };
+        let liveDesigns = 0;
+        let publishedProducts = 0;
+        let adEntries = 0;
+        let validAdEntries = 0;
+        const add = (bucket, row, entry = {}, extra = {}) => candidates[bucket].push({
+          designId: String(row?.design_id || ""),
+          type: normalizeChildAsinProductType(entry?.type),
+          market: String(entry?.market || "").trim().toLowerCase(),
+          ...extra
+        });
+        for (const row of databaseRows || []) {
+          const products = Array.isArray(row?.published_products) ? row.published_products : [];
+          const ads = Array.isArray(row?.ad_asins) ? row.ad_asins : [];
+          const isLive = liveStatuses.has(String(row?.status || "").toUpperCase());
+          publishedProducts += products.length;
+          adEntries += ads.length;
+          if (!isLive) {
+            if (products.length || ads.length) add("inactiveDesignsWithCurrentData", row, {}, { status: String(row?.status || ""), products: products.length, ads: ads.length });
+            continue;
+          }
+          liveDesigns++;
+          const productCounts = /* @__PURE__ */ new Map();
+          const adCounts = /* @__PURE__ */ new Map();
+          for (const product of products) productCounts.set(keyOf(product), (productCounts.get(keyOf(product)) || 0) + 1);
+          for (const ad of ads) adCounts.set(keyOf(ad), (adCounts.get(keyOf(ad)) || 0) + 1);
+          for (const [key, count] of productCounts) if (count > 1) {
+            const [type3, market] = key.split("|");
+            add("duplicateProductKeys", row, { type: type3, market }, { count });
+          }
+          for (const [key, count] of adCounts) if (count > 1) {
+            const [type3, market] = key.split("|");
+            add("duplicateAdKeys", row, { type: type3, market }, { count });
+          }
+          const productKeys = new Set(products.map(keyOf));
+          for (const ad of ads) {
+            if (!productKeys.has(keyOf(ad))) add("orphanAdEntries", row, ad, { asin: this.sanitizeAsin(ad?.asin), parentAsin: this.sanitizeAsin(ad?.parentAsin) });
+          }
+          let expectedResolved = true;
+          for (const product of products) {
+            const key = keyOf(product);
+            const parentAsin = this.sanitizeAsin(product?.asin);
+            const matchingAds = ads.filter((ad2) => keyOf(ad2) === key);
+            const ad = matchingAds.length === 1 ? matchingAds[0] : null;
+            const policy = getChildAsinPolicy(product?.type);
+            if (policy === "unsupported") {
+              if (matchingAds.length) add("unsupportedAdEntries", row, product, { count: matchingAds.length });
+              continue;
+            }
+            if (!ad) {
+              add("missingAdEntries", row, product, { policy, parentAsin });
+              if (policy === "resolve") {
+                expectedResolved = false;
+                add("unresolvedResolveProducts", row, product, { reason: "missing_ad_entry", parentAsin });
+              }
+              continue;
+            }
+            const adAsin = this.sanitizeAsin(ad?.asin);
+            const recordedParent = this.sanitizeAsin(ad?.parentAsin);
+            if (recordedParent !== parentAsin) {
+              add("parentMismatches", row, product, { parentAsin, recordedParentAsin: recordedParent, adAsin });
+              if (policy === "resolve") expectedResolved = false;
+              continue;
+            }
+            if (policy === "identity") {
+              if (adAsin === parentAsin && !!parentAsin) validAdEntries++;
+              else add("missingAdEntries", row, product, { policy, parentAsin, adAsin });
+              continue;
+            }
+            if (adAsin === parentAsin && !!parentAsin) {
+              expectedResolved = false;
+              add("parentPlaceholders", row, product, { parentAsin });
+              add("unresolvedResolveProducts", row, product, { reason: "parent_placeholder", parentAsin });
+            } else if (isConfirmedChildAsin(adAsin, parentAsin)) {
+              validAdEntries++;
+            } else {
+              expectedResolved = false;
+              add("unresolvedResolveProducts", row, product, { reason: "missing_child", parentAsin, adAsin });
+            }
+          }
+          if (Boolean(row?.asin_resolved) !== expectedResolved) {
+            add("asinResolvedMismatches", row, {}, { stored: Boolean(row?.asin_resolved), expected: expectedResolved });
+          }
+        }
+        return {
+          summary: {
+            databaseDesigns: (databaseRows || []).length,
+            liveDesigns,
+            publishedProducts,
+            adEntries,
+            validAdEntries,
+            missingAdEntries: candidates.missingAdEntries.length,
+            unresolvedResolveProducts: candidates.unresolvedResolveProducts.length,
+            parentPlaceholders: candidates.parentPlaceholders.length,
+            parentMismatches: candidates.parentMismatches.length,
+            orphanAdEntries: candidates.orphanAdEntries.length,
+            duplicateProductKeys: candidates.duplicateProductKeys.length,
+            duplicateAdKeys: candidates.duplicateAdKeys.length,
+            unsupportedAdEntries: candidates.unsupportedAdEntries.length,
+            inactiveDesignsWithCurrentData: candidates.inactiveDesignsWithCurrentData.length,
+            asinResolvedMismatches: candidates.asinResolvedMismatches.length
+          },
+          candidates
+        };
+      }
+      static async runAdAsinAudit() {
+        const runId = this.beginWorker("ad_asin_audit");
+        this.shouldStop = false;
+        this.state.isScanning = true;
+        this.state.activeScanType = "ad_asin_audit";
+        try {
+          const supabase = this.getSupabase();
+          const rows = [];
+          for (let from = 0; !this.shouldStop; from += 500) {
+            const result2 = await supabase.from("mba_designs").select("design_id, status, published_products, ad_asins, asin_resolved").order("design_id", { ascending: true }).range(from, from + 499);
+            this.recordTraffic("ad_asin_audit_read", result2);
+            if (result2.error) throw new Error(`Ad-ASIN-Audit konnte Supabase nicht lesen: ${result2.error.message || String(result2.error)}`);
+            rows.push(...result2.data || []);
+            if (!result2.data || result2.data.length < 500) break;
+          }
+          if (this.shouldStop) throw new Error("Ad-ASIN-Audit manuell abgebrochen.");
+          const audit = this.buildAdAsinAudit(rows);
+          const summary = {
+            ...audit.summary,
+            lastRunAt: (/* @__PURE__ */ new Date()).toISOString(),
+            reportPath: "data/sync_ad_asin_audit.json",
+            complete: true
+          };
+          atomicWriteJson(AD_ASIN_AUDIT_PATH, { version: 1, summary, candidates: audit.candidates }, { backup: true });
+          const runtime = this.loadRuntime();
+          runtime.adAsinAudit = summary;
+          this.saveRuntime(runtime);
+          this.state.adAsinAudit = summary;
+          const issues = summary.missingAdEntries + summary.parentMismatches + summary.orphanAdEntries + summary.duplicateProductKeys + summary.duplicateAdKeys + summary.inactiveDesignsWithCurrentData;
+          this.addLog(`[Ad-ASIN Audit] Read-only abgeschlossen: ${summary.validAdEntries} g\xFCltig, ${summary.unresolvedResolveProducts} Resolve-Produkte offen, ${issues} strukturelle Auff\xE4lligkeiten.`, issues ? "warn" : "success");
+          this.finishWorker(runId, "complete", { pages: Math.ceil(rows.length / 500), attempted: rows.length, confirmed: 0, message: "Nur gelesen; keine Datenbank\xE4nderung." });
+          return summary;
+        } catch (error) {
+          this.finishWorker(runId, this.shouldStop ? "cancelled" : "error", { pages: 0, message: error?.message || String(error) });
+          this.addLog(`[Ad-ASIN Audit] Fehler: ${error?.message || String(error)}. Keine Datenbank\xE4nderung.`, "error");
+          throw error;
+        } finally {
+          this.state.isScanning = false;
+          this.state.activeScanType = null;
+        }
+      }
       static buildLifecycleAudit(listings, databaseRows) {
         const liveStatuses = /* @__PURE__ */ new Set(["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"]);
         const amazonByDesign = /* @__PURE__ */ new Map();
@@ -225491,11 +225652,11 @@ var init_amazonInspectService = __esm2({
           rawProductConfig: configData,
           rawFindListings: findData
         };
-        const taskLog = TaskLogService2.createTaskLog({
+        const taskLog = TaskLogService.createTaskLog({
           source: "UPDATE",
           payload
         });
-        TaskLogService2.addEvent(taskLog.id, {
+        TaskLogService.addEvent(taskLog.id, {
           type: "TASK_HANDOFF",
           title: `Amazon Rohdaten erfasst (${publishedCount} Varianten konfiguriert)`,
           content: {
@@ -225520,7 +225681,7 @@ var init_amazonInspectService = __esm2({
         } catch (dErr) {
           console.warn(`[AmazonInspectService] \u26A0\uFE0F Initiale DOM-Inspektion f\xFCr ${taskLog.id} fehlgeschlagen:`, dErr.message);
         }
-        return TaskLogService2.getTask(taskLog.id) || taskLog;
+        return TaskLogService.getTask(taskLog.id) || taskLog;
       }
       /**
        * Download the master design artwork (4500x5400 px PNG) from merch.amazon.com/designs/{designId}/edit
@@ -225542,7 +225703,7 @@ var init_amazonInspectService = __esm2({
         const filePath = import_path78.default.join(designsDir, filename);
         const editUrl = `https://merch.amazon.com/designs/${cleanDesignId}/edit`;
         console.log(`[AmazonInspectService] \u{1F5BC}\uFE0F Starte Artwork-Download & DOM-Live-Inspektion f\xFCr Task ${cleanTaskId} (Design ${cleanDesignId}) via Session 1...`);
-        TaskLogService2.updateTaskStatus(cleanTaskId, {
+        TaskLogService.updateTaskStatus(cleanTaskId, {
           status: "PROCESSING",
           hasError: false
         });
@@ -225674,7 +225835,7 @@ var init_amazonInspectService = __esm2({
           }
           const hasRejection = pageRejectionInfo.hasAlert || rejectedOrDraftItems.length > 0;
           const rejectionReason = pageRejectionInfo.alertText || (rejectedOrDraftItems.length > 0 ? `Nicht publizierte/abgelehnte Produkte erkannt: ${rejectedOrDraftItems.join(", ")}` : null);
-          const currentTask = TaskLogService2.getTask(cleanTaskId);
+          const currentTask = TaskLogService.getTask(cleanTaskId);
           const trueLiveCount = Object.keys(domLiveSummary).length > 0 ? totalLiveSlots : currentTask?.payload?.publishedCount ?? totalLiveSlots;
           const updatedPayload = {
             ...currentTask?.payload || {},
@@ -225693,7 +225854,7 @@ var init_amazonInspectService = __esm2({
             liveProductSummary: Object.keys(domLiveSummary).length > 0 ? Object.fromEntries(Object.entries(domLiveSummary).map(([k, mps]) => [k, { marketplaces: mps }])) : currentTask?.payload?.liveProductSummary || {},
             liveProductTypes: Object.keys(domLiveSummary).length > 0 ? Object.keys(domLiveSummary) : currentTask?.payload?.liveProductTypes || []
           };
-          TaskLogService2.updateTaskStatus(cleanTaskId, {
+          TaskLogService.updateTaskStatus(cleanTaskId, {
             status: hasRejection ? "AWAITING_DESIGN_REVIEW" : "RECEIVED",
             imageUrl: localUrl,
             localImagePath: localUrl,
@@ -225703,7 +225864,7 @@ var init_amazonInspectService = __esm2({
             needsManualReview: hasRejection,
             hasError: false
           });
-          TaskLogService2.addEvent(cleanTaskId, {
+          TaskLogService.addEvent(cleanTaskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ANALYSIS_RESPONSE",
             title: hasRejection ? "\u26A0\uFE0F Original-Design heruntergeladen & Amazon-Rejection erkannt" : "Original-Design heruntergeladen & Live-Produkte verifiziert",
@@ -225722,12 +225883,12 @@ var init_amazonInspectService = __esm2({
           return { success: true, localUrl, hasRejection, rejectionReason };
         } catch (err) {
           console.error(`[AmazonInspectService] \u274C Fehler beim Artwork-Download f\xFCr Task ${cleanTaskId}:`, err);
-          TaskLogService2.updateTaskStatus(cleanTaskId, {
+          TaskLogService.updateTaskStatus(cleanTaskId, {
             status: "ERROR",
             hasError: true,
             errorDetails: err.message
           });
-          TaskLogService2.addEvent(cleanTaskId, {
+          TaskLogService.addEvent(cleanTaskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ERROR",
             title: "Fehler beim Design-Download",
@@ -226034,11 +226195,11 @@ var init_finalizationService = __esm2({
       static async finalizeForQueue(params2) {
         const { taskId, pipeline: pipeline3 } = params2;
         console.log(`[FinalizationService] \u{1F680} Starte Unified Finalization f\xFCr Task #${taskId} (Pipeline: ${pipeline3})...`);
-        const task = TaskLogService2.getTask(taskId);
+        const task = TaskLogService.getTask(taskId);
         if (!task) throw new Error("Task nicht mehr vorhanden");
         const ownership = createFinalizationOwnership(params2, task);
         const masterPngPath = params2.masterPngPath || task?.localMbaPngPath || task?.localImagePath || "";
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
           title: "\u{1F9F9} Listing wird bereinigt & normalisiert (Amazon-safe Charset)...",
@@ -226058,13 +226219,13 @@ var init_finalizationService = __esm2({
           ...sanitizedRoot,
           ...sanitizedListings.en || {}
         };
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
           title: "\u2713 Listing sanitisiert (Smart Quotes, typografische Dashes & Amazon Charset normalisiert)",
           content: { phase: "SANITIZING", status: "SUCCESS", listing: sanitizedRoot }
         });
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
           title: "\u{1F50D} Finale Validierung der Listing-Limits vor Queue-Handoff...",
@@ -226077,7 +226238,7 @@ var init_finalizationService = __esm2({
         const validationAttempts = (task?.validationAttempts || 0) + 1;
         if (task) {
           task.validationAttempts = validationAttempts;
-          TaskLogService2.updateTaskStatus(taskId, { validationAttempts });
+          TaskLogService.updateTaskStatus(taskId, { validationAttempts });
         }
         if (!validation.isValid) {
           const errorMsg = `Final Listing Validation fehlgeschlagen (Versuch ${validationAttempts}/3): ${validation.errors.join("; ")}`;
@@ -226085,7 +226246,7 @@ var init_finalizationService = __esm2({
           if (validationAttempts >= 3) {
             const limitErrorMsg = `LISTING_VALIDATION_RETRY_LIMIT_REACHED: Finale Listing-Validierung nach ${validationAttempts} Versuchen endg\xFCltig fehlgeschlagen: ${validation.errors.join("; ")}`;
             console.error(`[FinalizationService] \u{1F6D1} ${limitErrorMsg}`);
-            TaskLogService2.addEvent(taskId, {
+            TaskLogService.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "FINALIZATION_EVENT",
               title: "\u{1F6D1} Finale Listing-Validierung: Retry-Limit erreicht (3/3 Versuche fehlgeschlagen)",
@@ -226097,20 +226258,20 @@ var init_finalizationService = __esm2({
                 errors: validation.errors
               }
             });
-            TaskLogService2.updateTaskStatus(taskId, {
+            TaskLogService.updateTaskStatus(taskId, {
               status: "ERROR",
               hasError: true,
               errorDetails: limitErrorMsg
             });
             return { success: false, error: limitErrorMsg };
           }
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "FINALIZATION_EVENT",
             title: `\u274C Finale Listing-Validierung fehlgeschlagen (Versuch ${validationAttempts}/3)`,
             content: { phase: "FINAL_VALIDATION", status: "FAILED", attempt: validationAttempts, errors: validation.errors }
           });
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             hasError: true,
             errorDetails: errorMsg
           });
@@ -226118,15 +226279,15 @@ var init_finalizationService = __esm2({
         }
         if (task) {
           task.validationAttempts = 0;
-          TaskLogService2.updateTaskStatus(taskId, { validationAttempts: 0 });
+          TaskLogService.updateTaskStatus(taskId, { validationAttempts: 0 });
         }
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
           title: "\u2713 Finale Validierung bestanden (Title \u226460, Brand \u226450, Bullets \u2264256, alle Locales gepr\xFCft)",
           content: { phase: "FINAL_VALIDATION", status: "SUCCESS" }
         });
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
           title: "\u{1F4D0} Artwork-Vorbereitung (gemeinsame Quellen- und Formatpr\xFCfung)...",
@@ -226135,13 +226296,13 @@ var init_finalizationService = __esm2({
         if (!masterPngPath || !import_fs85.default.existsSync(masterPngPath)) {
           const err = `Master-Artwork nicht gefunden unter: ${masterPngPath}`;
           console.error(`[FinalizationService] \u274C ${err}`);
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "FINALIZATION_EVENT",
             title: "\u274C Master-Artwork fehlt auf Disk",
             content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
           });
-          TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+          TaskLogService.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
         let resizedAssets;
@@ -226150,7 +226311,7 @@ var init_finalizationService = __esm2({
         try {
           const source12 = ArtworkResizeService.source(task, masterPngPath);
           const sourceFingerprint = ArtworkResizeService.fingerprint(source12);
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "FINALIZATION_EVENT",
             title: source12.kind === "SVG" ? "\u{1F3A8} Varianten direkt aus freigegebenem SVG rendern..." : "\u{1F3A8} PNG-Varianten vorbereiten \u2013 Original-Pixelgr\xF6\xDFe, keine Vergr\xF6\xDFerung...",
@@ -226161,25 +226322,25 @@ var init_finalizationService = __esm2({
           } else {
             const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto4.randomUUID)() : taskId);
             resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title, metrics) => {
-              TaskLogService2.addEvent(taskId, {
+              TaskLogService.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "FINALIZATION_EVENT",
                 title,
                 content: { phase: "ARTWORK_PREPARATION", status: "RUNNING", source: source12.kind, stage, ...metrics ? { metrics } : {} }
               });
             });
-            const currentSource = ArtworkResizeService.source(TaskLogService2.getTask(taskId), masterPngPath);
+            const currentSource = ArtworkResizeService.source(TaskLogService.getTask(taskId), masterPngPath);
             if (ArtworkResizeService.fingerprint(currentSource) !== sourceFingerprint) throw new Error("Artwork-Quelle wurde w\xE4hrend des Renderns ge\xE4ndert; keine \xDCbernahme.");
           }
         } catch (error) {
           const err = "Fehler bei Artwork-Vorbereitung: " + error.message;
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "FINALIZATION_EVENT",
             title: "\u274C Artwork-Vorbereitung fehlgeschlagen",
             content: { phase: "ARTWORK_PREPARATION", status: "FAILED", error: err }
           });
-          TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+          TaskLogService.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
         const requiredFiles = [
@@ -226192,7 +226353,7 @@ var init_finalizationService = __esm2({
           if (!f.path || !import_fs85.default.existsSync(f.path)) {
             const err = `Generiertes Asset "${f.name}" nicht auf Disk gefunden: ${f.path}`;
             console.error(`[FinalizationService] \u274C ${err}`);
-            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+            TaskLogService.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
             return { success: false, error: err };
           }
         }
@@ -226202,12 +226363,12 @@ var init_finalizationService = __esm2({
           if (!variantPath || !import_fs85.default.existsSync(variantPath)) {
             const err = `Product-Variant "${variant.id}" (${variant.label}) nicht auf Disk gefunden: ${variantPath}`;
             console.error(`[FinalizationService] \u274C ${err}`);
-            TaskLogService2.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
+            TaskLogService.updateTaskStatus(taskId, { hasError: true, errorDetails: err });
             return { success: false, error: err };
           }
         }
         const totalAssets = requiredFiles.length + Object.keys(productVariants).length;
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
           title: `\u2713 Alle ${totalAssets} Assets (${requiredFiles.length} Legacy + ${Object.keys(productVariants).length} Product-Varianten) auf Disk verifiziert`,
@@ -226222,12 +226383,12 @@ var init_finalizationService = __esm2({
       static handoffPrepared(params2, result2) {
         if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error("Vollst\xE4ndige Finalisierung fehlt");
         const { taskId, pipeline: pipeline3 } = params2;
-        const task = TaskLogService2.getTask(taskId);
+        const task = TaskLogService.getTask(taskId);
         if (!task) throw new Error("Task nicht mehr vorhanden");
         this.assertPreparedOwnership(params2, result2, task);
         const resizedAssets = result2.resizedAssets;
         const { root: sanitizedRoot, listings: sanitizedListings } = result2.preparedListing;
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "FINALIZATION_EVENT",
           title: `\u{1F4E6} \xDCbergabe an die Upload-Queue (${pipeline3 === "UPDATE" ? "Tab Update" : "Tab New"})...`,
@@ -226260,7 +226421,7 @@ var init_finalizationService = __esm2({
             task.hasError = false;
             task.resizedAssets = resizedAssets;
           }
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "COMPLETED",
             inQueue: true,
             checkpoint: void 0,
@@ -226268,7 +226429,7 @@ var init_finalizationService = __esm2({
             errorDetails: void 0,
             resizedAssets
           });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
             title: "\u{1F4E6} Design erfolgreich in die Upload-Queue \xFCbergeben",
@@ -226308,13 +226469,13 @@ var init_finalizationService = __esm2({
             task.hasError = false;
             task.resizedAssets = resizedAssets;
           }
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "UPDATE_QUEUED",
             hasError: false,
             errorDetails: void 0,
             resizedAssets
           });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
             title: "\u{1F4E6} Update-Task an Queue \xFCbergeben (Tab Update)",
@@ -226367,7 +226528,7 @@ var init_updatePipelineService = __esm2({
        * Helper to retrieve a task safely
        */
       static getTask(taskId) {
-        return TaskLogService2.getTaskLogById(taskId);
+        return TaskLogService.getTaskLogById(taskId);
       }
       /**
        * Step U1: Extract Merch API Data and create #xxx-U Task
@@ -226379,7 +226540,7 @@ var init_updatePipelineService = __esm2({
           if (!task || !task.id) {
             return { success: false, error: "Task konnte nicht erstellt werden" };
           }
-          TaskLogService2.updateTaskStatus(task.id, {
+          TaskLogService.updateTaskStatus(task.id, {
             status: "UPDATE_EXTRACTED",
             hasError: false
           });
@@ -226403,17 +226564,17 @@ var init_updatePipelineService = __esm2({
         const existingValidPath = task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 5e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(mbaPath, 5e4) ? mbaPath : AssetValidationService.isValidPngImage(rawPath, 5e4) ? rawPath : null;
         if (existingValidPath) {
           console.log(`[UpdatePipeline] \u267B\uFE0F G\xFCltiges Master Artwork existiert bereits lokal (${existingValidPath}). \xDCberspringe Download.`);
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "UPDATE_ARTWORK_READY",
             localMbaPngPath: existingValidPath,
             hasError: false
           });
           return { success: true, localUrl: `/api/v1/designs/artwork/${encodeURIComponent(taskId)}` };
         }
-        TaskLogService2.updateTaskStatus(taskId, { status: "UPDATE_DOWNLOADING_ARTWORK", hasError: false });
+        TaskLogService.updateTaskStatus(taskId, { status: "UPDATE_DOWNLOADING_ARTWORK", hasError: false });
         const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
         if (!res.success) {
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "ERROR",
             hasError: true,
             errorDetails: res.error
@@ -226425,7 +226586,7 @@ var init_updatePipelineService = __esm2({
         if (targetPath && import_fs86.default.existsSync(targetPath)) {
           VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
             if (r.savedPath) {
-              TaskLogService2.updateTaskStatus(taskId, {
+              TaskLogService.updateTaskStatus(taskId, {
                 u4PreviewUrl: `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`,
                 localU4PreviewPath: u4PreviewPath
               });
@@ -226434,7 +226595,7 @@ var init_updatePipelineService = __esm2({
             console.warn(`[UpdatePipeline] Vorab-Erzeugung der U4-Preview in U2 fehlgeschlagen:`, err.message);
           });
         }
-        TaskLogService2.updateTaskStatus(taskId, {
+        TaskLogService.updateTaskStatus(taskId, {
           status: "UPDATE_ARTWORK_READY",
           hasError: false
         });
@@ -226455,10 +226616,10 @@ var init_updatePipelineService = __esm2({
         const apiKey = settings.openRouterApiKey;
         if (!apiKey) {
           const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
-        TaskLogService2.updateTaskStatus(taskId, { status: "ANALYZING_DESIGN", hasError: false });
+        TaskLogService.updateTaskStatus(taskId, { status: "ANALYZING_DESIGN", hasError: false });
         let imageBase64 = null;
         let gridPreviewUrl;
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -226480,7 +226641,7 @@ var init_updatePipelineService = __esm2({
           if (!import_fs86.default.existsSync(u4PreviewPath)) {
             VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
               if (r.savedPath) {
-                TaskLogService2.updateTaskStatus(taskId, {
+                TaskLogService.updateTaskStatus(taskId, {
                   u4PreviewUrl: `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`,
                   localU4PreviewPath: u4PreviewPath
                 });
@@ -226519,7 +226680,7 @@ Bullets: ${oldBullets}`
           });
         }
         const model = LLMService.normalizeModelId(settings.llmModel || "google/gemini-2.5-flash");
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "ANALYSIS_REQUEST",
           title: "Vision & Listing Analyse (OpenRouter)",
@@ -226562,7 +226723,7 @@ Bullets: ${oldBullets}`
           const detectedQuote = parsed.quote_check?.detected_quote || parsed.detected_quote || rawPayload.quote || "";
           const rewriteNeeded = parsed.listing_audit?.rewrite_recommended ?? parsed.rewriteNeeded ?? true;
           const reasoning = parsed.listing_audit?.current_weaknesses || parsed.reasoning || "";
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "UPDATE_ANALYZED",
             niche1,
             niche2,
@@ -226594,7 +226755,7 @@ Bullets: ${oldBullets}`
             },
             hasError: false
           });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ANALYSIS_RESPONSE",
             title: `Vision-Befund: Rewrite ${rewriteNeeded ? "empfohlen" : "nicht n\xF6tig"} (Nische: ${niche1})`,
@@ -226604,8 +226765,8 @@ Bullets: ${oldBullets}`
           return { success: true, analysisResult: parsed };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U3:`, err);
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ERROR",
             title: "Fehler bei Vision & Listing Analyse",
@@ -226625,10 +226786,10 @@ Bullets: ${oldBullets}`
         const apiKey = settings.openRouterApiKey;
         if (!apiKey) {
           const err = "Kein OpenRouter API-Key in den Einstellungen hinterlegt.";
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
-        TaskLogService2.updateTaskStatus(taskId, { status: "GENERATING_LISTING", hasError: false });
+        TaskLogService.updateTaskStatus(taskId, { status: "GENERATING_LISTING", hasError: false });
         if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
           console.log(`[UpdatePipeline] \u23ED\uFE0F Step U4 wird \xFCbersprungen (rewriteNeeded ist false). Verwende altes Listing.`);
           const raw2 = task.payload || {};
@@ -226639,11 +226800,11 @@ Bullets: ${oldBullets}`
             bullet2: raw2.bullet2 || "",
             description: raw2.description || ""
           };
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "UPDATE_REWRITTEN",
             listingResult: { en: enListing }
           });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "LISTING_RESPONSE",
             title: "Original-Listing beibehalten (kein Rewrite n\xF6tig)",
@@ -226658,7 +226819,7 @@ Bullets: ${oldBullets}`
         const keywords = task.customAnswers?.keywords !== void 0 ? Array.isArray(task.customAnswers.keywords) ? task.customAnswers.keywords : String(task.customAnswers.keywords).split(",").map((s) => s.trim()).filter(Boolean) : task.keywords || task.payload?.keywords || [];
         const audience = task.customAnswers?.audience || (Array.isArray(task.analysisResult?.fitTypes) ? task.analysisResult.fitTypes.join(", ") : "men, women");
         const avoidColor = task.customAnswers?.avoidColor || task.analysisResult?.avoidColor || "none";
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "LISTING_REQUEST",
           title: "Master English Listing Rewrite Request (OpenRouter)",
@@ -226694,7 +226855,7 @@ Bullets: ${oldBullets}`
                 u4ImageBase64 = previewRes.base64DataUrl;
                 u4ImageSourceType = "PREVIEW_1125x1350";
                 console.log(`[UpdatePipeline] \u2705 U4-Preview erfolgreich erstellt und geladen (${u4PreviewPath})`);
-                TaskLogService2.updateTaskStatus(taskId, {
+                TaskLogService.updateTaskStatus(taskId, {
                   u4PreviewUrl: `/api/v1/designs/u4-preview/${encodeURIComponent(taskId)}`,
                   localU4PreviewPath: u4PreviewPath
                 });
@@ -226732,12 +226893,12 @@ Bullets: ${oldBullets}`
               description: raw.description
             }
           });
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "UPDATE_REWRITTEN",
             listingResult: { en: enListing },
             hasError: false
           });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "LISTING_RESPONSE",
             title: "Optimiertes Master English Listing generiert",
@@ -226754,7 +226915,7 @@ Bullets: ${oldBullets}`
           return { success: true, listingResult: { en: enListing } };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U4:`, err);
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
           return { success: false, error: err.message };
         }
       }
@@ -226765,7 +226926,7 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u2696\uFE0F Starte Step U5 (Trademark Check Loop) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        TaskLogService2.updateTaskStatus(taskId, { status: "CHECKING_TRADEMARKS", hasError: false });
+        TaskLogService.updateTaskStatus(taskId, { status: "CHECKING_TRADEMARKS", hasError: false });
         const rawListing = task.listingResult?.en || task.payload?.listing || {};
         const listing = {
           brand: rawListing.brand || task.payload?.brand || "",
@@ -226778,7 +226939,7 @@ Bullets: ${oldBullets}`
         const niche1 = task.niche1 || task.customAnswers?.niche1 || "";
         const niche2 = task.niche2 || task.customAnswers?.niche2 || "";
         const subniche = task.subniche || task.customAnswers?.subniche || "";
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_CHECK_REQUEST",
           title: "Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)",
@@ -226794,7 +226955,7 @@ Bullets: ${oldBullets}`
           maxRewriteCycles: 3,
           taskId,
           onEvent: (ev) => {
-            TaskLogService2.addEvent(taskId, {
+            TaskLogService.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: ev.type,
               title: ev.title,
@@ -226804,7 +226965,7 @@ Bullets: ${oldBullets}`
         });
         if (auditV2.finalDecision === "ESCALATE" || !auditV2.isSafe) {
           const reason = auditV2.reasonCode || "Trademark-Konflikt erfordert manuelle Freigabe.";
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "AWAITING_TM_REVIEW",
             checkpoint: "TM_REVIEW",
             blockedNiceClasses: auditV2.blockedNiceClasses,
@@ -226826,7 +226987,7 @@ Bullets: ${oldBullets}`
             errorDetails: reason,
             ...{ tmAuditV2: auditV2 }
           });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
             title: `\xDCbergeben an Tasks (Update TM Eskalation: ${reason})`,
@@ -226840,7 +227001,7 @@ Bullets: ${oldBullets}`
           });
           return { success: false, error: reason };
         }
-        TaskLogService2.updateTaskStatus(taskId, {
+        TaskLogService.updateTaskStatus(taskId, {
           status: "UPDATE_TM_CHECKED",
           listingResult: { en: auditV2.finalListing },
           blockedNiceClasses: auditV2.blockedNiceClasses,
@@ -226862,7 +227023,7 @@ Bullets: ${oldBullets}`
           ...{ tmAuditV2: auditV2 }
         });
         const currentSettings = loadSettings();
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TM_CHECK_RESPONSE",
           title: `Trademark Workflow V2 freigegeben (${auditV2.finalTrademarkHits.length} Treffer, ${auditV2.blockedProducts.length} Produkte gesperrt)`,
@@ -226900,7 +227061,7 @@ Bullets: ${oldBullets}`
         const subniche = task.subniche || task.customAnswers?.subniche || "";
         if (task.listingResult?.de && task.listingResult?.fr && task.listingResult?.es && task.listingResult?.it && task.listingResult?.ja) {
           console.log(`[UpdatePipeline] \u267B\uFE0F G\xFCltige \xDCbersetzungen f\xFCr alle 5 Sprachen bereits im Task vorhanden. Wiederverwendung.`);
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "UPDATE_TRANSLATED",
             hasError: false
           });
@@ -226910,12 +227071,12 @@ Bullets: ${oldBullets}`
         if (settings.translationUpdateEnabled === false) {
           console.log(`[UpdatePipeline] \u23E9 \xDCbersetzung deaktiviert (Settings). Verwende englisches Master-Listing f\xFCr Amazon Auto-Translate.`);
           const sanitized = { en: enListing };
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "UPDATE_TRANSLATED",
             listingResult: sanitized,
             hasError: false
           });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TRANSLATION_SKIPPED",
             title: "SEO-\xDCbersetzung \xFCbersprungen (Amazon Auto-Translate aktiv)",
@@ -226923,8 +227084,8 @@ Bullets: ${oldBullets}`
           });
           return { success: true, fullListings: sanitized };
         }
-        TaskLogService2.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
+        TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TRANSLATION_REQUEST",
           title: "SEO-\xDCbersetzung anfordern (DE, FR, ES, IT, JA)",
@@ -226938,13 +227099,13 @@ Bullets: ${oldBullets}`
             niche1,
             subniche
           });
-          const sanitized = TaskLogService2.sanitizeAndValidateListingBeforeQueue(translated);
-          TaskLogService2.updateTaskStatus(taskId, {
+          const sanitized = TaskLogService.sanitizeAndValidateListingBeforeQueue(translated);
+          TaskLogService.updateTaskStatus(taskId, {
             status: "UPDATE_TRANSLATED",
             listingResult: sanitized,
             hasError: false
           });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TRANSLATION_RESPONSE",
             title: "SEO-\xDCbersetzungen erfolgreich generiert & bereinigt",
@@ -226954,7 +227115,7 @@ Bullets: ${oldBullets}`
           return { success: true, fullListings: sanitized };
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U6:`, err);
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
           return { success: false, error: err.message };
         }
       }
@@ -226970,7 +227131,7 @@ Bullets: ${oldBullets}`
           return await FinalizationService2.finalizeForQueue(this.finalizationParams(task));
         } catch (err) {
           console.error(`[UpdatePipeline] \u274C Fehler in Step U7:`, err);
-          TaskLogService2.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
+          TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err.message });
           return { success: false, error: err.message };
         }
       }
@@ -227031,7 +227192,7 @@ Bullets: ${oldBullets}`
         return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
           return this.runFromStepWithTaskLock(taskId, startStep, owner);
         }, () => {
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
             title: "\u23F3 Wartet auf freien Verarbeitungsslot",
@@ -227065,7 +227226,7 @@ Bullets: ${oldBullets}`
               } else if (hasRejection) {
                 pauseReason = "Amazon Rejection erkannt \u2013 Manuelle \xDCberpr\xFCfung empfohlen";
               }
-              TaskLogService2.updateTaskStatus(taskId, {
+              TaskLogService.updateTaskStatus(taskId, {
                 status: "AWAITING_DESIGN_REVIEW",
                 checkpoint: "DESIGN_REVIEW",
                 hasError: isDefective || hasRejection,
@@ -227127,7 +227288,7 @@ Bullets: ${oldBullets}`
         if (!autonomyUpdate || isDefective || hasRejection) {
           const pauseReason = hasRejection ? `\u26A0\uFE0F Amazon Rejection / Richtlinien-Hinweis auf Amazon festgestellt (${rejectionReason || "Mindestens ein Produkt/Marktplatz abgelehnt oder beanstandet"}). Autonomie gestoppt zur manuellen Freigabe in Tasks.` : isDefective ? `\u26A0\uFE0F Mangelhafte Design-Qualit\xE4t erkannt (${qualityReason || "Kantenfehler/Halos/Artefakte"}). Autonomie pausiert zur manuellen Sichtpr\xFCfung.` : "Vision-Analyse abgeschlossen. Wartet auf manuelle Pr\xFCfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.";
           console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} pausiert bei Checkpoint 2 (Design- & Rejection-Pr\xFCfung) in Tasks: ${pauseReason}`);
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
             title: hasRejection ? "\u26A0\uFE0F Amazon Rejection erkannt: \xDCbergeben an Tasks zur manuellen Freigabe" : isDefective ? "\u26A0\uFE0F Qualit\xE4tswarnung: \xDCbergeben an Tasks" : "\xDCbergeben an Tasks (Design- & Fragen-Pr\xFCfung)",
@@ -227142,7 +227303,7 @@ Bullets: ${oldBullets}`
               qualityIssues: qualityReason
             }
           });
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             status: "AWAITING_DESIGN_REVIEW",
             checkpoint: "DESIGN_REVIEW",
             analysisResult: u3.analysisResult,
@@ -227223,7 +227384,7 @@ var init_designPipelineService = __esm2({
        * Helper to retrieve task safely
        */
       static getTask(taskId) {
-        return TaskLogService2.getTaskLogById(taskId);
+        return TaskLogService.getTaskLogById(taskId);
       }
       /**
        * Step D1: Pre-Flight Trademark Check on Quote / Slogan
@@ -227240,7 +227401,7 @@ var init_designPipelineService = __esm2({
         try {
           const tmResult = await TrademarkService.checkText(quote5, ["25"]);
           const isInfringing = tmResult.totalHits > 0 && tmResult.hasInfringementClass25;
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TM_CHECK_RESPONSE",
             title: isInfringing ? `Pre-Flight USPTO Treffer (${tmResult.totalHits} Treffer)` : "Pre-Flight USPTO sauber (0 Treffer)",
@@ -227272,7 +227433,7 @@ var init_designPipelineService = __esm2({
           return { success: false, error: `Design-Pipeline pausiert: OpenRouter Guthaben ($${balance.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})` };
         }
         try {
-          await TaskLogService2.generatePromptWithOpenRouter(taskId);
+          await TaskLogService.generatePromptWithOpenRouter(taskId);
           const updated = this.getTask(taskId);
           return { success: true, prompt: updated?.resultPrompt };
         } catch (err) {
@@ -227286,7 +227447,7 @@ var init_designPipelineService = __esm2({
       static async stepD3_GenerateImage(taskId) {
         console.log(`[DesignPipeline] \u{1F3A8} Starte Step D3 (Bildgenerierung) f\xFCr Task ${taskId}...`);
         try {
-          await TaskLogService2.processTaskWithImageGenerator(taskId);
+          await TaskLogService.processTaskWithImageGenerator(taskId);
           const updated = this.getTask(taskId);
           return { success: true, imageUrl: updated?.imageUrl, localPath: updated?.localImagePath };
         } catch (err) {
@@ -227300,7 +227461,7 @@ var init_designPipelineService = __esm2({
       static async stepD4_AnalyzeDesign(taskId) {
         console.log(`[DesignPipeline] \u{1F441}\uFE0F Starte Step D4 (Design QA Analyse) f\xFCr Task ${taskId}...`);
         try {
-          await TaskLogService2.analyzeDesignWithOpenRouter(taskId);
+          await TaskLogService.analyzeDesignWithOpenRouter(taskId);
           const updated = this.getTask(taskId);
           return { success: true, analysisResult: updated?.analysisResult };
         } catch (err) {
@@ -227314,7 +227475,7 @@ var init_designPipelineService = __esm2({
       static async stepD5_GenerateListing(taskId) {
         console.log(`[DesignPipeline] \u{1F4DD} Starte Step D5 (Listing Erstellung) f\xFCr Task ${taskId}...`);
         try {
-          await TaskLogService2.generateListingWithOpenRouter(taskId);
+          await TaskLogService.generateListingWithOpenRouter(taskId);
           const updated = this.getTask(taskId);
           return { success: true, listingResult: updated?.listingResult };
         } catch (err) {
@@ -227328,7 +227489,7 @@ var init_designPipelineService = __esm2({
       static async stepD6_TrademarkCheck(taskId) {
         console.log(`[DesignPipeline] \u2696\uFE0F Starte Step D6 (Trademark Check & Refine Loop) f\xFCr Task ${taskId}...`);
         try {
-          await TaskLogService2.performTrademarkCheck(taskId);
+          await TaskLogService.performTrademarkCheck(taskId);
           const updated = this.getTask(taskId);
           return { success: true, tmResult: updated?.trademarkCheckResult };
         } catch (err) {
@@ -227342,7 +227503,7 @@ var init_designPipelineService = __esm2({
       static async stepD7_VectorizeAndAudit(taskId) {
         console.log(`[DesignPipeline] \u26A1 Starte Step D7 (Vektorisierung & Cutout-Audit) f\xFCr Task ${taskId}...`);
         try {
-          await TaskLogService2.vectorizeDesignTask(taskId);
+          await TaskLogService.vectorizeDesignTask(taskId);
           const updated = this.getTask(taskId);
           if (updated?.hasError || updated?.status === "ERROR") return { success: false, error: updated.errorDetails || "Vektorisierung/Finalisierung fehlgeschlagen" };
           return { success: true, svgUrl: updated?.svgUrl };
@@ -227357,7 +227518,7 @@ var init_designPipelineService = __esm2({
       static async stepD8_Enqueue(taskId) {
         console.log(`[DesignPipeline] \u{1F4E6} Starte Step D8 (Upload Queue Handoff) f\xFCr Task ${taskId}...`);
         try {
-          return await TaskLogService2.completeTaskAndEnqueue(taskId);
+          return await TaskLogService.completeTaskAndEnqueue(taskId);
         } catch (err) {
           console.error(`[DesignPipeline] \u274C Fehler in Step D8:`, err);
           return { success: false, error: err.message };
@@ -227421,7 +227582,7 @@ var init_designPipelineService = __esm2({
         return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
           return this.runFromStepWithTaskLock(taskId, startStep, owner);
         }, () => {
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "TASK_HANDOFF",
             title: "\u23F3 Wartet auf freien Verarbeitungsslot",
@@ -227455,7 +227616,7 @@ var init_designPipelineService = __esm2({
               const isDefective = task?.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || task?.analysisResult?.overall_verdict === "REJECTED";
               if (isDefective) {
                 const reason = task?.analysisResult?.design_quality?.quality_issues || "Defective design quality detected";
-                TaskLogService2.updateTaskStatus(taskId, {
+                TaskLogService.updateTaskStatus(taskId, {
                   status: "AWAITING_DESIGN_REVIEW",
                   checkpoint: "DESIGN_REVIEW",
                   hasError: true,
@@ -227748,7 +227909,7 @@ var init_amazonRecoveryVerificationService = __esm2({
           try {
             const existingTask = TaskRepository.getTaskById(taskId);
             if (existingTask && existingTask.status !== "COMPLETED") {
-              TaskLogService2.updateTaskStatus(taskId, {
+              TaskLogService.updateTaskStatus(taskId, {
                 status: "COMPLETED",
                 hasError: false,
                 errorDetails: void 0,
@@ -227765,7 +227926,7 @@ var init_amazonRecoveryVerificationService = __esm2({
                   recoveryReason: details || "Remote Verification Confirmed"
                 }
               });
-              TaskLogService2.addEvent(taskId, {
+              TaskLogService.addEvent(taskId, {
                 timestamp: now,
                 type: "RECOVERY_COMPLETED",
                 title: "Remote-Aktion erfolgreich auf Amazon verifiziert",
@@ -227855,7 +228016,7 @@ var init_amazonRecoveryVerificationService = __esm2({
             });
             QueueService.updateItemStatus(item.id, "ERROR", `Remote-Aktion unklar: ${verifyRes.details}`);
             if (item.taskId) {
-              TaskLogService2.updateTaskStatus(item.taskId, {
+              TaskLogService.updateTaskStatus(item.taskId, {
                 status: "AWAITING_RECOVERY_REVIEW",
                 checkpoint: "RECOVERY_REVIEW",
                 hasError: true,
@@ -227943,12 +228104,12 @@ var init_amazonRecoveryVerificationService = __esm2({
         });
         QueueService.updateItemStatus(item.id, "WAITING", void 0);
         QueueService.rebalanceQueue();
-        TaskLogService2.updateTaskStatus(taskId, {
+        TaskLogService.updateTaskStatus(taskId, {
           status: "PROCESSING",
           hasError: false,
           errorDetails: void 0
         });
-        TaskLogService2.addEvent(taskId, {
+        TaskLogService.addEvent(taskId, {
           timestamp: now,
           type: "RECOVERY_OVERRIDDEN",
           title: "Manueller Upload-Retry erteilt (Override)",
@@ -227992,7 +228153,7 @@ var init_amazonRecoveryVerificationService = __esm2({
         });
         QueueService.updateItemStatus(item.id, "ERROR", `Upload abgebrochen: ${reason}`);
         QueueService.rebalanceQueue();
-        TaskLogService2.updateTaskStatus(taskId, {
+        TaskLogService.updateTaskStatus(taskId, {
           status: "REJECTED",
           hasError: true,
           errorDetails: `Upload abgebrochen: ${reason}`
@@ -228191,7 +228352,7 @@ var init_taskRecoveryService = __esm2({
                 report.unsafeUploadsEscalated++;
                 report.details.push(`Escalated legacy draft item ${item.id} to ${hasKnownId ? "VERIFY_PENDING" : "Human Review"}`);
                 if (item.taskId) {
-                  TaskLogService2.updateTaskStatus(item.taskId, {
+                  TaskLogService.updateTaskStatus(item.taskId, {
                     status: "AWAITING_RECOVERY_REVIEW",
                     checkpoint: "RECOVERY_REVIEW",
                     hasError: true,
@@ -228219,7 +228380,7 @@ var init_taskRecoveryService = __esm2({
                 report.unsafeUploadsEscalated++;
                 report.details.push(`Escalated remote request item ${item.id} (${hasKnownId ? "ID known: VERIFY_PENDING" : "NEW without ID: Human Review"})`);
                 if (item.taskId) {
-                  TaskLogService2.updateTaskStatus(item.taskId, {
+                  TaskLogService.updateTaskStatus(item.taskId, {
                     status: "AWAITING_RECOVERY_REVIEW",
                     checkpoint: "RECOVERY_REVIEW",
                     hasError: true,
@@ -228239,7 +228400,7 @@ var init_taskRecoveryService = __esm2({
                 if (item.taskId) {
                   const task = TaskRepository.getTaskById(item.taskId);
                   if (task && task.status !== "COMPLETED" && task.status !== "UPDATE_QUEUED") {
-                    TaskLogService2.updateTaskStatus(task.id, {
+                    TaskLogService.updateTaskStatus(task.id, {
                       status: task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED",
                       inQueue: true,
                       hasError: false
@@ -228262,7 +228423,7 @@ var init_taskRecoveryService = __esm2({
               if (item.taskId) {
                 const task = TaskRepository.getTaskById(item.taskId);
                 if (task) {
-                  TaskLogService2.updateTaskStatus(task.id, {
+                  TaskLogService.updateTaskStatus(task.id, {
                     status: "AWAITING_RECOVERY_REVIEW",
                     checkpoint: "RECOVERY_REVIEW",
                     hasError: true,
@@ -228281,7 +228442,7 @@ var init_taskRecoveryService = __esm2({
             if (task) {
               if (!task.inQueue) {
                 const targetStatus = task.status === "COMPLETED" || task.status === "UPDATE_QUEUED" || task.status === "AWAITING_RECOVERY_REVIEW" ? task.status : task.source === "UPDATE" ? "UPDATE_QUEUED" : "COMPLETED";
-                TaskLogService2.updateTaskStatus(task.id, {
+                TaskLogService.updateTaskStatus(task.id, {
                   inQueue: true,
                   status: targetStatus
                 });
@@ -228346,13 +228507,13 @@ var init_taskRecoveryService = __esm2({
           const currentAttempts = task.recovery?.recoveryAttempts || 0;
           if (currentAttempts >= 2) {
             console.warn(`[TaskRecovery] \u{1F6A8} Task ${task.id} exceeded max recovery attempts (${currentAttempts}). Escalating to AWAITING_RECOVERY_REVIEW.`);
-            TaskLogService2.updateTaskStatus(task.id, {
+            TaskLogService.updateTaskStatus(task.id, {
               status: "AWAITING_RECOVERY_REVIEW",
               checkpoint: "RECOVERY_REVIEW",
               hasError: true,
               errorDetails: `Maximales Recovery-Limit von 2 Versuchen erreicht. Automatischer Neustart blockiert.`
             });
-            TaskLogService2.addEvent(task.id, {
+            TaskLogService.addEvent(task.id, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "RECOVERY_ESCALATED",
               title: "Recovery-Limit erreicht \u2794 Human Review",
@@ -228371,7 +228532,7 @@ var init_taskRecoveryService = __esm2({
           if (designId) {
             this.reservedDesignIds.add(designId.toLowerCase());
           }
-          TaskLogService2.addEvent(task.id, {
+          TaskLogService.addEvent(task.id, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "RECOVERY_DETECTED",
             title: "Unterbrochener Pipeline-Task f\xFCr Recovery vorgemerkt",
@@ -228454,7 +228615,7 @@ var init_taskRecoveryService = __esm2({
           return;
         }
         try {
-          const task = TaskLogService2.getTaskLogById(taskId);
+          const task = TaskLogService.getTaskLogById(taskId);
           if (!task) {
             console.warn(`[TaskRecovery] Task ${taskId} no longer exists. Skipping.`);
             return;
@@ -228466,7 +228627,7 @@ var init_taskRecoveryService = __esm2({
           const currentAttempts = task.recovery?.recoveryAttempts || 0;
           if (currentAttempts >= 2) {
             console.warn(`[TaskRecovery] Task ${taskId} reached attempt limit right before execution. Escalating.`);
-            TaskLogService2.updateTaskStatus(taskId, {
+            TaskLogService.updateTaskStatus(taskId, {
               status: "AWAITING_RECOVERY_REVIEW",
               checkpoint: "RECOVERY_REVIEW",
               hasError: true,
@@ -228476,7 +228637,7 @@ var init_taskRecoveryService = __esm2({
           }
           const nextAttempt = currentAttempts + 1;
           const now = (/* @__PURE__ */ new Date()).toISOString();
-          TaskLogService2.updateTaskStatus(taskId, {
+          TaskLogService.updateTaskStatus(taskId, {
             recovery: {
               recoveryAttempts: nextAttempt,
               lastAttemptAt: now,
@@ -228484,7 +228645,7 @@ var init_taskRecoveryService = __esm2({
               recoveryReason: `Automated recovery attempt ${nextAttempt} started`
             }
           });
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: now,
             type: "RECOVERY_STARTED",
             title: `Recovery-Versuch ${nextAttempt} von 2 gestartet`,
@@ -228493,7 +228654,7 @@ var init_taskRecoveryService = __esm2({
           const result2 = await this.executeRecoveryPolicy(task);
           if (result2.success) {
             const completedNow = (/* @__PURE__ */ new Date()).toISOString();
-            TaskLogService2.updateTaskStatus(taskId, {
+            TaskLogService.updateTaskStatus(taskId, {
               recovery: {
                 recoveryAttempts: nextAttempt,
                 lastAttemptAt: now,
@@ -228503,7 +228664,7 @@ var init_taskRecoveryService = __esm2({
                 recoveryReason: "Automated recovery completed successfully"
               }
             });
-            TaskLogService2.addEvent(taskId, {
+            TaskLogService.addEvent(taskId, {
               timestamp: completedNow,
               type: "RECOVERY_COMPLETED",
               title: `Recovery f\xFCr Task ${taskId} erfolgreich abgeschlossen`,
@@ -228511,7 +228672,7 @@ var init_taskRecoveryService = __esm2({
             });
           } else {
             const failedNow = (/* @__PURE__ */ new Date()).toISOString();
-            TaskLogService2.addEvent(taskId, {
+            TaskLogService.addEvent(taskId, {
               timestamp: failedNow,
               type: "RECOVERY_FAILED",
               title: `Recovery f\xFCr Task ${taskId} fehlgeschlagen`,
@@ -228520,7 +228681,7 @@ var init_taskRecoveryService = __esm2({
           }
         } catch (err) {
           console.error(`[TaskRecovery] \u274C Exception during recovery of task ${taskId}:`, err);
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "RECOVERY_FAILED",
             title: `Unerwarteter Fehler bei Task-Recovery`,
@@ -228551,7 +228712,7 @@ var init_taskRecoveryService = __esm2({
               const rawPath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
               const existingPath = task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 5e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(mbaPath, 5e4) ? mbaPath : AssetValidationService.isValidPngImage(rawPath, 5e4) ? rawPath : null;
               if (existingPath) {
-                TaskLogService2.addEvent(taskId, {
+                TaskLogService.addEvent(taskId, {
                   timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                   type: "RECOVERY_ASSET_REUSED",
                   title: "Master Artwork wiederverwendet",
@@ -228566,7 +228727,7 @@ var init_taskRecoveryService = __esm2({
             case "ANALYZING_DESIGN":
             case "UPDATE_ANALYZED": {
               if (task.analysisResult) {
-                TaskLogService2.addEvent(taskId, {
+                TaskLogService.addEvent(taskId, {
                   timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                   type: "RECOVERY_ASSET_REUSED",
                   title: "Analyse-Ergebnis wiederverwendet \u2794 Post-Analysis Gate ausf\xFChren",
@@ -228583,7 +228744,7 @@ var init_taskRecoveryService = __esm2({
                   } else if (hasRejection) {
                     pauseReason = "Amazon Rejection erkannt \u2013 Manuelle \xDCberpr\xFCfung empfohlen";
                   }
-                  TaskLogService2.updateTaskStatus(taskId, {
+                  TaskLogService.updateTaskStatus(taskId, {
                     status: "AWAITING_DESIGN_REVIEW",
                     checkpoint: "DESIGN_REVIEW",
                     hasError: isDefective || hasRejection,
@@ -228599,7 +228760,7 @@ var init_taskRecoveryService = __esm2({
             case "UPDATE_REWRITING":
             case "UPDATE_REWRITTEN": {
               if (task.listingResult?.en?.title && task.listingResult?.en?.brand) {
-                TaskLogService2.addEvent(taskId, {
+                TaskLogService.addEvent(taskId, {
                   timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                   type: "RECOVERY_ASSET_REUSED",
                   title: "Rewritten Listing wiederverwendet",
@@ -228621,7 +228782,7 @@ var init_taskRecoveryService = __esm2({
             case "TRANSLATING_LISTING":
             case "UPDATE_TRANSLATED": {
               if (task.listingResult?.de && task.listingResult?.fr && task.listingResult?.es && task.listingResult?.it && task.listingResult?.ja) {
-                TaskLogService2.addEvent(taskId, {
+                TaskLogService.addEvent(taskId, {
                   timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                   type: "RECOVERY_ASSET_REUSED",
                   title: "\xDCbersetzungen wiederverwendet",
@@ -228646,7 +228807,7 @@ var init_taskRecoveryService = __esm2({
             const rawPath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
             const targetPng = task.localImagePath && AssetValidationService.isValidPngImage(task.localImagePath, 1e4) ? task.localImagePath : task.localMbaPngPath && AssetValidationService.isValidPngImage(task.localMbaPngPath, 1e4) ? task.localMbaPngPath : AssetValidationService.isValidPngImage(rawPath, 1e4) ? rawPath : null;
             if (targetPng) {
-              TaskLogService2.addEvent(taskId, {
+              TaskLogService.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "RECOVERY_ASSET_REUSED",
                 title: "Vorhandenes Design-Bild wiederverwendet",
@@ -228658,7 +228819,7 @@ var init_taskRecoveryService = __esm2({
           }
           case "ANALYZING_DESIGN": {
             if (task.analysisResult) {
-              TaskLogService2.addEvent(taskId, {
+              TaskLogService.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "RECOVERY_ASSET_REUSED",
                 title: "Analyse-Ergebnis wiederverwendet \u2794 Post-Analysis Gate ausf\xFChren",
@@ -228667,7 +228828,7 @@ var init_taskRecoveryService = __esm2({
               const isDefective = task.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || task.analysisResult?.overall_verdict === "REJECTED";
               if (isDefective) {
                 const reason = task.analysisResult?.design_quality?.quality_issues || "Defective design quality detected";
-                TaskLogService2.updateTaskStatus(taskId, {
+                TaskLogService.updateTaskStatus(taskId, {
                   status: "AWAITING_DESIGN_REVIEW",
                   checkpoint: "DESIGN_REVIEW",
                   hasError: true,
@@ -228681,7 +228842,7 @@ var init_taskRecoveryService = __esm2({
           }
           case "GENERATING_LISTING": {
             if (task.listingResult?.en?.title && task.listingResult?.en?.brand) {
-              TaskLogService2.addEvent(taskId, {
+              TaskLogService.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "RECOVERY_ASSET_REUSED",
                 title: "Generiertes Listing wiederverwendet",
@@ -228695,13 +228856,13 @@ var init_taskRecoveryService = __esm2({
             return await DesignPipelineService.runFromStep(taskId, "D6", "RECOVERY");
           }
           case "FINALIZING": {
-            return await TaskLogService2.completeTaskAndEnqueue(taskId);
+            return await TaskLogService.completeTaskAndEnqueue(taskId);
           }
           case "VECTORIZING_DESIGN": {
             const svgPath = import_path81.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
             const targetSvg = task.localSvgPath && AssetValidationService.isValidSvgFile(task.localSvgPath, 20) ? task.localSvgPath : AssetValidationService.isValidSvgFile(svgPath, 20) ? svgPath : null;
             if (targetSvg) {
-              TaskLogService2.addEvent(taskId, {
+              TaskLogService.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
                 type: "RECOVERY_ASSET_REUSED",
                 title: "SVG-Vektordatei wiederverwendet \u2794 Post-Vectorization Audit ausf\xFChren",
@@ -228716,7 +228877,7 @@ var init_taskRecoveryService = __esm2({
                 const auditRes = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
                 if (auditRes.cutout_verdict === "REJECTED") {
                   console.log(`[TaskRecovery] \u23F8\uFE0F SVG Audit verlangt manuelle \xDCberpr\xFCfung f\xFCr Task ${taskId}. Pausiere bei AWAITING_SVG_REVIEW.`);
-                  TaskLogService2.updateTaskStatus(taskId, {
+                  TaskLogService.updateTaskStatus(taskId, {
                     status: "AWAITING_SVG_REVIEW",
                     checkpoint: "SVG_REVIEW",
                     hasError: true,
@@ -228729,7 +228890,7 @@ var init_taskRecoveryService = __esm2({
                 if (!AssetValidationService.isValidPngImage(mbaFilePath, 5e4)) {
                   const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(svgContent);
                   import_fs87.default.writeFileSync(mbaFilePath, mbaBuffer);
-                  TaskLogService2.updateTaskStatus(taskId, { localMbaPngPath: mbaFilePath });
+                  TaskLogService.updateTaskStatus(taskId, { localMbaPngPath: mbaFilePath });
                 }
                 return await DesignPipelineService.stepD8_Enqueue(taskId);
               } catch (err) {
@@ -228942,7 +229103,7 @@ var init_updateBackfillService = __esm2({
           updateAutoBackfillTokenLastFailedStep: step
         });
         if (paused && taskId) {
-          TaskLogService2.addEvent(taskId, {
+          TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ERROR",
             title: `\u{1F6E1}\uFE0F Tokenburn-Schutz aktiviert (${failureCount}/${threshold})`,
@@ -228980,7 +229141,7 @@ var init_updateBackfillService = __esm2({
             excluded.add(cleanTask);
           }
         }
-        const activeIds = TaskLogService2.getActiveUpdateDesignIds();
+        const activeIds = TaskLogService.getActiveUpdateDesignIds();
         for (const id of activeIds) {
           excluded.add(id);
         }
@@ -228995,7 +229156,7 @@ var init_updateBackfillService = __esm2({
       static resetInFlightLocks() {
         const count = this.inFlightDesigns.size;
         this.inFlightDesigns.clear();
-        const cancelledCount = TaskLogService2.cancelActiveUpdateTasks();
+        const cancelledCount = TaskLogService.cancelActiveUpdateTasks();
         const counts = this.getActiveUpdateCount();
         console.log(`[UpdateBackfillService] \u{1F504} In-Flight Locks (${count}) & ${cancelledCount} offene Update-Tasks zur\xFCckgesetzt. Neuer Ist-Bestand: ${counts.currentCount}`);
         return {
@@ -229089,7 +229250,7 @@ var init_updateBackfillService = __esm2({
         const queueItems = QueueService.loadQueue();
         const isUpdateItem = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_") || i.taskId && String(i.taskId).endsWith("-U");
         const activeQueueItems = queueItems.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR");
-        const activeTasksReview = TaskLogService2.getActiveReviewUpdateTasks();
+        const activeTasksReview = TaskLogService.getActiveReviewUpdateTasks();
         const uniqueDesignIds = /* @__PURE__ */ new Set();
         for (const q of activeQueueItems) {
           const id = (q.designId ? q.designId.trim() : "") || (q.taskId ? q.taskId.replace(/^#/, "").replace(/-U$/, "").trim() : "") || q.id;
@@ -229543,6 +229704,8 @@ var init_queueService = __esm2({
         let scheduledDraftProductsToday = 0;
         let scheduledItemsCount = 0;
         let overflowItemsCount = 0;
+        let overflowNewItemsCount = 0;
+        let overflowUpdateItemsCount = 0;
         for (const item of activeItems) {
           if (item.isPaused) continue;
           const isUpdate = isUpdateItem(item);
@@ -229572,6 +229735,11 @@ var init_queueService = __esm2({
                 scheduledItemsCount++;
               } else {
                 overflowItemsCount++;
+                if (isUpdate) {
+                  overflowUpdateItemsCount++;
+                } else {
+                  overflowNewItemsCount++;
+                }
               }
             } else if (isHybridMode) {
               if (isUpdate) {
@@ -229597,6 +229765,8 @@ var init_queueService = __esm2({
           scheduledDraftProductsToday,
           scheduledItemsCount,
           overflowItemsCount,
+          overflowNewItemsCount,
+          overflowUpdateItemsCount,
           uploadScheduleTime: settings.queueUploadScheduleTime || "04:00",
           uploadScheduleEnabled: settings.queueUploadScheduleEnabled ?? false,
           uploadSchedulerCurrentTime: getSchedulerClock().time,
@@ -230129,7 +230299,7 @@ var init_queueService = __esm2({
           let alreadyPublished = uItem.publishedProductsCount ?? uItem.liveStats?.publishedCount;
           if (alreadyPublished === void 0) {
             const cleanId = uItem.taskId ? uItem.taskId.replace(/^#/, "") : "";
-            const t = TaskLogService.getTask(uItem.taskId) || TaskLogService.getTask(cleanId) || TaskLogService.getTask(`#${cleanId}`);
+            const t = TaskRepository.getTaskById(uItem.taskId) || TaskRepository.getTaskById(cleanId) || TaskRepository.getTaskById(`#${cleanId}`);
             const pCount = t?.payload?.liveStats?.publishedCount ?? t?.payload?.liveVariantsCount ?? t?.payload?.publishedCount;
             if (pCount !== void 0) {
               alreadyPublished = pCount;
@@ -230212,7 +230382,7 @@ var init_queueService = __esm2({
           const overflowNewItems = [];
           for (const item of waitingNewItems) {
             const minRequired = item.isLocked ? item.totalBaseSlots : Math.max(1, item.totalBaseSlots - maxDrop);
-            if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting || scheduledNewItems.length === 0) {
+            if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting) {
               accumulatedMinSlots += minRequired;
               scheduledNewItems.push(item);
             } else {
@@ -230329,11 +230499,11 @@ var init_queueService = __esm2({
 var taskLogService_exports = {};
 __export2(taskLogService_exports, {
   TASK_STATUSES_AWAITING_USER_ACTION: () => TASK_STATUSES_AWAITING_USER_ACTION,
-  TaskLogService: () => TaskLogService2,
+  TaskLogService: () => TaskLogService,
   isTaskAwaitingUserAction: () => isTaskAwaitingUserAction,
   toTaskSummary: () => toTaskSummary
 });
-var import_fs89, import_path83, TaskLogService2;
+var import_fs89, import_path83, TaskLogService;
 var init_taskLogService = __esm2({
   "src/server/services/taskLogService.ts"() {
     "use strict";
@@ -230357,7 +230527,7 @@ var init_taskLogService = __esm2({
     init_promptPoolService();
     init_tasks();
     init_tasks();
-    TaskLogService2 = class {
+    TaskLogService = class {
       static dataDir = import_path83.default.resolve(process.cwd(), "data");
       static eventBroadcaster = null;
       static setBroadcaster(fn) {
@@ -233625,8 +233795,8 @@ var init_trademarkService = __esm2({
             params2.onPersistState(state);
           } else if (params2.taskId) {
             try {
-              const { TaskLogService: TaskLogService3 } = (init_taskLogService(), __toCommonJS2(taskLogService_exports));
-              TaskLogService3.updateTaskStatus(params2.taskId, { trademarkWorkflowState: state });
+              const { TaskLogService: TaskLogService2 } = (init_taskLogService(), __toCommonJS2(taskLogService_exports));
+              TaskLogService2.updateTaskStatus(params2.taskId, { trademarkWorkflowState: state });
             } catch {
             }
           }
@@ -235014,6 +235184,9 @@ var UploadWorkerService = class _UploadWorkerService {
     if (isUpdateItem && (targetItem.totalBaseSlots ?? 0) > 0 && (targetItem.allocatedSlots ?? 0) <= 0) {
       return { success: false, message: "Update wartet auf freie, zugeteilte Tages-Slots." };
     }
+    if (!isUpdateItem && (queueMode === "live" || mode === "publish") && (targetItem.allocatedSlots ?? 0) <= 0) {
+      return { success: false, message: "Design wartet auf freie Tages-Slots." };
+    }
     const effectiveMode = isUpdateItem ? "publish" : queueMode === "live" || mode === "publish" ? "publish" : "draft";
     this.isUploading = true;
     this.isPausedBeforePublish = false;
@@ -235155,13 +235328,8 @@ var UploadWorkerService = class _UploadWorkerService {
             const img = document.querySelector('[id$="-card"] .asset img, .product-card .asset img, .asset img, #global-uploader-container img.artwork');
             return img && (img.complete || img.naturalWidth && img.naturalWidth > 0 || img.src && img.src.length > 0);
           }, { timeout: 6e4 });
-          const rateLimit = await page.$(".daily-rate-limit-breached");
-          if (rateLimit) {
-            this.handleDailyUploadLimit(isUpdate, effectiveMode);
-          }
           this.log(`\u2705 Master-PNG erfolgreich gerendert!`, "PNG Upload fertig \u2713", 35, 100);
         } catch (err) {
-          if (err.message && err.message.includes("Limit")) throw err;
           this.log(`\u26A0\uFE0F Render-Check beendet, fahre fort...`);
         }
       }
@@ -235384,6 +235552,10 @@ var UploadWorkerService = class _UploadWorkerService {
         await page.waitForSelector(".modal-backdrop, .modal-dialog", { state: "hidden", timeout: 15e3 });
         await page.waitForTimeout(600);
         this.log(`\u2705 Marktplatz-Matrix synchronisiert (${modalResult.modifiedCount} Checkboxen angepasst)`, "Produkte gew\xE4hlt \u2713", 50, 100);
+        const rateLimitAfterSelection = await page.$(".daily-rate-limit-breached");
+        if (rateLimitAfterSelection) {
+          this.handleDailyUploadLimit(isUpdate, effectiveMode);
+        }
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       const catalog = ProductCatalogService.getCatalog();
@@ -236311,6 +236483,10 @@ var UploadWorkerService = class _UploadWorkerService {
         if (!publishCheck.isEnabled && publishCheck.errors.length > 0) {
           throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(" | ")}`);
         }
+        const rateLimitBeforePublish = await page.$(".daily-rate-limit-breached");
+        if (rateLimitBeforePublish) {
+          this.handleDailyUploadLimit(isUpdate, effectiveMode);
+        }
         await page.evaluate(() => {
           const submitBtn = document.getElementById("submit-button") || document.querySelector('button[id*="submit"], button.btn-submit');
           submitBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -236618,7 +236794,7 @@ var ManualFinalizationService = class {
   static async repeatExclusive(taskId) {
     if (this.running || TaskExecutionLock.isLocked(taskId)) throw new Error("Eine Finalisierung oder Task-Verarbeitung l\xE4uft bereits.");
     if (QueueService.isCorrupted()) throw new Error("Queue-Speicher ist im Sicherheitsmodus; keine Finalisierung m\xF6glich.");
-    const task = TaskLogService2.getTask(taskId);
+    const task = TaskLogService.getTask(taskId);
     if (!task || !canRepeatFinalization(task)) {
       throw new Error("Task noch in Verarbeitung oder Review; Finalisierung hier nicht wiederholbar.");
     }
@@ -236634,7 +236810,7 @@ var ManualFinalizationService = class {
     if (!TaskExecutionLock.acquire(taskId, "USER_ACTION")) throw new Error("Task ist gesperrt.");
     this.running = true;
     try {
-      const paramsForTask = (value2) => value2.source === "UPDATE" ? UpdatePipelineService.finalizationParams(value2) : TaskLogService2.finalizationParams(value2);
+      const paramsForTask = (value2) => value2.source === "UPDATE" ? UpdatePipelineService.finalizationParams(value2) : TaskLogService.finalizationParams(value2);
       const params2 = item ? {
         ...item,
         taskId,
@@ -236667,7 +236843,7 @@ var ManualFinalizationService = class {
           throw new Error(`Unerwartete Bildma\xDFe: ${variant.id}`);
         }
       }
-      const currentTask = TaskLogService2.getTask(taskId);
+      const currentTask = TaskLogService.getTask(taskId);
       if (!currentTask) throw new Error("Task wurde w\xE4hrend der Vorbereitung entfernt.");
       FinalizationService.assertPreparedOwnership(params2, result2, currentTask);
       if (!item) {
@@ -236690,8 +236866,8 @@ var ManualFinalizationService = class {
         listings: result2.preparedListing.listings,
         resizedAssets: assets
       });
-      TaskLogService2.updateTaskStatus(taskId, { resizedAssets: assets, hasError: false, errorDetails: void 0 });
-      TaskLogService2.addEvent(taskId, {
+      TaskLogService.updateTaskStatus(taskId, { resizedAssets: assets, hasError: false, errorDetails: void 0 });
+      TaskLogService.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "FINALIZATION_EVENT",
         title: "\u2713 Listing & Druckdateien erneuert \u2013 vorhandener Queue-Eintrag aktualisiert, kein Upload gestartet",
@@ -236699,7 +236875,7 @@ var ManualFinalizationService = class {
       });
       return { success: true, message: "Listing gepr\xFCft und Druckdateien neu erzeugt. Queue-Status unver\xE4ndert; kein Upload gestartet." };
     } catch (error) {
-      TaskLogService2.addEvent(taskId, {
+      TaskLogService.addEvent(taskId, {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         type: "FINALIZATION_EVENT",
         title: "\u274C Manuelle Finalisierung fehlgeschlagen",
@@ -236871,7 +237047,7 @@ var DesignerService = class {
     }
     const existing = recentCreations.get(requestId);
     if (existing) return { task: existing.task, duplicate: true };
-    const task = TaskLogService2.createTaskLog({
+    const task = TaskLogService.createTaskLog({
       source: "DESIGNER",
       payload: {
         ...values,
@@ -236909,7 +237085,7 @@ function broadcast(type3, payload) {
     }
   });
 }
-TaskLogService2.setBroadcaster(broadcast);
+TaskLogService.setBroadcaster(broadcast);
 UploadWorkerService.onStatusUpdate((status) => {
   broadcast("UPLOAD_STATUS_UPDATE", status);
 });
@@ -236970,7 +237146,7 @@ wss.on("connection", (ws4) => {
     payload: {
       status: "online",
       slots: dailySlotStats,
-      tasks: TaskLogService2.getAwaitingTasks().length,
+      tasks: TaskLogService.getAwaitingTasks().length,
       queue: uploadQueue.length,
       browserStatus: BrowserSessionService.getStatus()
     }
@@ -237043,7 +237219,7 @@ async function refreshStatsInBackground() {
     }
     const liveDesignsCount = ratelimiter?.liveDesignsCount !== void 0 && ratelimiter.liveDesignsCount !== null ? ratelimiter.liveDesignsCount : supabaseStats.liveDesigns > 0 ? supabaseStats.liveDesigns : cachedStats.liveDesignsCount;
     cachedStats = {
-      tasksCount: TaskLogService2.getAwaitingTasks().length,
+      tasksCount: TaskLogService.getAwaitingTasks().length,
       queueCount: QueueService.getActiveQueueCount(),
       slots: liveSlots,
       tier: lastKnownTier,
@@ -237062,7 +237238,7 @@ async function refreshStatsInBackground() {
 refreshStatsInBackground();
 setInterval(refreshStatsInBackground, 15e3);
 app.get("/api/v1/stats", async (req, res) => {
-  cachedStats.tasksCount = TaskLogService2.getAwaitingTasks().length;
+  cachedStats.tasksCount = TaskLogService.getAwaitingTasks().length;
   cachedStats.queueCount = QueueService.getActiveQueueCount();
   const costStats = await CostTrackingService.getCostStats().catch(() => null);
   res.json({
@@ -237147,6 +237323,9 @@ app.post("/api/v1/sync/run", async (req, res) => {
       return res.json({ success: true, message: `SNAP-Resolver abgeschlossen: ${result2.resolved}/${result2.checked} aufgel\xF6st und gespeichert.`, state: SyncEngine.getState() });
     } else if (type3 === "lifecycle_audit") {
       SyncEngine.runLifecycleAudit().catch(() => {
+      });
+    } else if (type3 === "ad_asin_audit") {
+      SyncEngine.runAdAsinAudit().catch(() => {
       });
     } else {
       return res.status(400).json({ success: false, error: "Unbekannter Scan-Typ" });
@@ -237732,7 +237911,7 @@ app.post("/api/v1/designer/generate", async (req, res) => {
   }
 });
 app.get("/api/v1/tasks", (req, res) => {
-  if (TaskLogService2.isStorageFailSafe()) {
+  if (TaskLogService.isStorageFailSafe()) {
     return res.status(500).json({
       success: false,
       corrupted: true,
@@ -237740,11 +237919,11 @@ app.get("/api/v1/tasks", (req, res) => {
       tasks: []
     });
   }
-  const awaiting = TaskLogService2.getAwaitingTaskSummaries();
+  const awaiting = TaskLogService.getAwaitingTaskSummaries();
   res.json({ success: true, tasks: awaiting });
 });
 app.get("/api/v1/tasks/log", (req, res) => {
-  if (TaskLogService2.isStorageFailSafe()) {
+  if (TaskLogService.isStorageFailSafe()) {
     return res.status(500).json({
       success: false,
       corrupted: true,
@@ -237758,7 +237937,7 @@ app.get("/api/v1/tasks/log", (req, res) => {
   const status = req.query.status;
   const checkpoint = req.query.checkpoint;
   const search = req.query.search ? String(req.query.search) : void 0;
-  const result2 = TaskLogService2.getTaskSummariesPage({
+  const result2 = TaskLogService.getTaskSummariesPage({
     limit,
     cursor,
     source: source12,
@@ -237769,7 +237948,7 @@ app.get("/api/v1/tasks/log", (req, res) => {
   res.json(result2);
 });
 app.delete("/api/v1/tasks/log", (req, res) => {
-  TaskLogService2.clearTaskLogs();
+  TaskLogService.clearTaskLogs();
   broadcast("TASK_LOGS_CLEARED", {});
   res.json({ success: true, message: "All task logs cleared" });
 });
@@ -237780,7 +237959,7 @@ app.use("/api/v1/tasks/:taskId", (req, res, next) => {
   next();
 });
 app.get("/api/v1/tasks/:taskId", (req, res) => {
-  const task = TaskLogService2.getTaskLogById(req.params.taskId);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (!task) {
     return res.status(404).json({ success: false, error: `Task ${req.params.taskId} nicht gefunden` });
   }
@@ -237789,14 +237968,14 @@ app.get("/api/v1/tasks/:taskId", (req, res) => {
 app.post("/api/v1/tasks/:taskId/cancel", (req, res) => {
   const { taskId } = req.params;
   try {
-    const task = TaskLogService2.getTaskLogById(taskId);
-    const result2 = TaskLogService2.cancelTask(taskId, req.body?.reason);
+    const task = TaskLogService.getTaskLogById(taskId);
+    const result2 = TaskLogService.cancelTask(taskId, req.body?.reason);
     let updateAutomationDisabled = false;
     if (task?.source === "UPDATE" || task?.suffix === "U") {
       saveSettings({ queueUpdateAutoBackfillEnabled: false });
       updateAutomationDisabled = true;
     }
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
     res.json({ ...result2, updateAutomationDisabled });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -237805,7 +237984,7 @@ app.post("/api/v1/tasks/:taskId/cancel", (req, res) => {
 app.post("/api/v1/tasks/:taskId/skip-update", async (req, res) => {
   const { taskId } = req.params;
   try {
-    const task = TaskLogService2.getTaskLogById(taskId);
+    const task = TaskLogService.getTaskLogById(taskId);
     if (!task) return res.status(404).json({ success: false, error: `Task ${taskId} nicht gefunden` });
     if (task.source !== "UPDATE" && task.suffix !== "U") {
       return res.status(400).json({ success: false, error: "Skip Update ist nur f\xFCr Update-Tasks verf\xFCgbar." });
@@ -237819,9 +237998,9 @@ app.post("/api/v1/tasks/:taskId/skip-update", async (req, res) => {
     if (!updateResult.success) {
       return res.status(502).json({ success: false, error: updateResult.error || "Skip Update konnte nicht gespeichert werden." });
     }
-    const result2 = TaskLogService2.cancelTask(taskId, "Design dauerhaft von automatischen Updates ausgeschlossen (skip_update=true).");
+    const result2 = TaskLogService.cancelTask(taskId, "Design dauerhaft von automatischen Updates ausgeschlossen (skip_update=true).");
     UpdateBackfillService.releaseInFlight(designId);
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
     res.json({ ...result2, message: "Skip Update wurde gesetzt. Das Design wird k\xFCnftig nicht mehr automatisch aktualisiert." });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -237841,8 +238020,8 @@ app.post("/api/v1/tasks/:taskId/submit-design-review", async (req, res) => {
   const { taskId } = req.params;
   const { action, answers, updatedPrompt } = req.body;
   try {
-    const result2 = await TaskLogService2.submitDesignReview(taskId, { action, answers, updatedPrompt });
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    const result2 = await TaskLogService.submitDesignReview(taskId, { action, answers, updatedPrompt });
+    broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -237854,8 +238033,8 @@ app.post("/api/v1/tasks/:taskId/submit-tm-review", async (req, res) => {
   const { taskId } = req.params;
   const { action, refinedListing } = req.body;
   try {
-    const result2 = await TaskLogService2.submitTmReview(taskId, { action, refinedListing });
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    const result2 = await TaskLogService.submitTmReview(taskId, { action, refinedListing });
+    broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -237867,8 +238046,8 @@ app.post("/api/v1/tasks/:taskId/override-preflight", async (req, res) => {
   const { taskId } = req.params;
   const { action, newQuote } = req.body;
   try {
-    const result2 = await TaskLogService2.overridePreFlight(taskId, { action, newQuote });
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    const result2 = await TaskLogService.overridePreFlight(taskId, { action, newQuote });
+    broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -237880,8 +238059,8 @@ app.post("/api/v1/tasks/:taskId/submit-svg-review", async (req, res) => {
   const { taskId } = req.params;
   const { action, editedSvgContent, maxColors } = req.body;
   try {
-    const result2 = await TaskLogService2.submitSvgReview(taskId, { action, editedSvgContent, maxColors });
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    const result2 = await TaskLogService.submitSvgReview(taskId, { action, editedSvgContent, maxColors });
+    broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -237892,8 +238071,8 @@ app.post("/api/v1/tasks/:taskId/submit-svg-review", async (req, res) => {
 app.post("/api/v1/tasks/:taskId/reset-svg", async (req, res) => {
   const { taskId } = req.params;
   try {
-    const result2 = await TaskLogService2.resetSvg(taskId);
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    const result2 = await TaskLogService.resetSvg(taskId);
+    broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
     res.json(result2);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -237918,7 +238097,7 @@ app.post("/api/v1/tasks/:taskId/submit-recovery-review", async (req, res) => {
     } else {
       throw new Error(`Unbekannte Recovery Action: ${action}`);
     }
-    broadcast("TASK_UPDATED", TaskLogService2.getTaskSummaryById(taskId));
+    broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
     broadcast("QUEUE_UPDATED", QueueService.loadQueue());
     res.json(result2);
   } catch (err) {
@@ -237970,7 +238149,7 @@ app.post(["/api/v1/design", "/design", "/api/v1/hermes/design", "/api/v1/mcp/des
     if (up === "TEST" || up === "T") source12 = "TEST";
     else if (up === "DESIGNER" || up === "D") source12 = "DESIGNER";
     const clientIp = req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "remote";
-    const taskLog = TaskLogService2.createTaskLog({
+    const taskLog = TaskLogService.createTaskLog({
       source: source12,
       payload,
       clientIp
@@ -237982,7 +238161,7 @@ app.post(["/api/v1/design", "/design", "/api/v1/hermes/design", "/api/v1/mcp/des
         quote: payload.quote
       });
     }
-    broadcast("TASK_LOG_CREATED", TaskLogService2.toTaskSummary(taskLog));
+    broadcast("TASK_LOG_CREATED", TaskLogService.toTaskSummary(taskLog));
     res.json({
       success: true,
       taskId: taskLog.id,
@@ -237997,7 +238176,7 @@ app.post(["/api/v1/design", "/design", "/api/v1/hermes/design", "/api/v1/mcp/des
 });
 app.post("/api/v1/system/purge-all-data", (req, res) => {
   try {
-    const result2 = TaskLogService2.purgeAllWorkspaceData();
+    const result2 = TaskLogService.purgeAllWorkspaceData();
     broadcast("TASK_LOGS_CLEARED", {});
     broadcast("TASKS_UPDATED", { tasks: [] });
     broadcast("QUEUE_UPDATED", { items: [] });
@@ -238012,7 +238191,7 @@ app.post("/api/v1/system/purge-all-data", (req, res) => {
 });
 app.delete("/api/v1/system/purge-all-data", (req, res) => {
   try {
-    const result2 = TaskLogService2.purgeAllWorkspaceData();
+    const result2 = TaskLogService.purgeAllWorkspaceData();
     broadcast("TASK_LOGS_CLEARED", {});
     broadcast("TASKS_UPDATED", { tasks: [] });
     broadcast("QUEUE_UPDATED", { items: [] });
@@ -238027,7 +238206,7 @@ app.delete("/api/v1/system/purge-all-data", (req, res) => {
 });
 app.delete("/api/v1/tasks/:taskId", (req, res) => {
   const { taskId } = req.params;
-  const deleted = TaskLogService2.deleteTaskLog(taskId);
+  const deleted = TaskLogService.deleteTaskLog(taskId);
   if (deleted) {
     return res.json({ success: true, message: `Task ${taskId} gel\xF6scht.` });
   }
@@ -238044,7 +238223,7 @@ app.post("/api/v1/tasks/:taskId/retry", async (req, res) => {
   const { taskId } = req.params;
   const { stepType, eventIndex } = req.body;
   try {
-    const result2 = await TaskLogService2.retryFromStep(taskId, stepType, eventIndex);
+    const result2 = await TaskLogService.retryFromStep(taskId, stepType, eventIndex);
     res.json({ success: true, ...result2 });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -238088,7 +238267,7 @@ app.get("/api/v1/designs/image/:taskId", (req, res) => {
     res.setHeader("Content-Type", "image/png");
     return import_fs91.default.createReadStream(rawFilePath).pipe(res);
   }
-  const task = TaskLogService2.getTaskLogById(req.params.taskId);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task?.localImagePath && import_fs91.default.existsSync(task.localImagePath)) {
     res.setHeader("Content-Type", "image/png");
     return import_fs91.default.createReadStream(task.localImagePath).pipe(res);
@@ -238126,7 +238305,7 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   }
   const mbaFilePath = import_path85.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   const rawFilePath = import_path85.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-  const task = TaskLogService2.getTaskLogById(req.params.taskId);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
   const targetPath = task?.localMbaPngPath && import_fs91.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs91.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs91.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs91.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
@@ -238160,7 +238339,7 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   }
   const mbaFilePath = import_path85.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   const rawFilePath = import_path85.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-  const task = TaskLogService2.getTaskLogById(req.params.taskId);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
   const targetPath = task?.localMbaPngPath && import_fs91.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs91.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs91.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs91.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
@@ -238186,7 +238365,7 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
     res.setHeader("Content-Type", "image/svg+xml");
     return import_fs91.default.createReadStream(filePath).pipe(res);
   }
-  const task = TaskLogService2.getTaskLogById(req.params.taskId);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader("Content-Type", "image/svg+xml");
     return res.send(task.svgContent);
@@ -238208,7 +238387,7 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
     res.setHeader("Content-Type", "image/svg+xml");
     return import_fs91.default.createReadStream(fallbackPath).pipe(res);
   }
-  const task = TaskLogService2.getTaskLogById(req.params.taskId);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader("Content-Type", "image/svg+xml");
     return res.send(task.svgContent);
@@ -238243,7 +238422,7 @@ app.post("/api/v1/hermes/task", async (req, res) => {
   const payload = req.body || {};
   const clientIp = req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "remote";
   recordHermesHeartbeat(req, { niche1: payload.niche1, niche2: payload.niche2, quote: payload.quote });
-  const taskLog = TaskLogService2.createTaskLog({
+  const taskLog = TaskLogService.createTaskLog({
     source: "HERMES",
     payload,
     clientIp
@@ -238282,7 +238461,7 @@ app.all(["/api/v1/mcp/ping", "/api/v1/mcp/heartbeat"], (req, res) => {
     authConfigured: Boolean(settings.mcpApiKey),
     serverTime: (/* @__PURE__ */ new Date()).toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
-    activeTasksCount: TaskLogService2.getAwaitingTasks().length,
+    activeTasksCount: TaskLogService.getAwaitingTasks().length,
     uploadQueueCount: QueueService.getActiveQueueCount(),
     heartbeat: {
       lastPingTime: hermesHeartbeat.lastPingTime,
@@ -238537,17 +238716,17 @@ app.post(["/api/v1/tasks/:id/enqueue", "/api/v1/tasks/enqueue"], async (req, res
       return res.status(400).json({ success: false, error: "Keine Task-ID \xFCbergeben" });
     }
     const taskId = decodeURIComponent(String(rawId));
-    const task = TaskLogService2.getTaskById(taskId);
+    const task = TaskLogService.getTaskById(taskId);
     if (!task) {
       return res.status(404).json({ success: false, error: `Task #${taskId} nicht gefunden` });
     }
     if (!task.localMbaPngPath && !task.mbaPngUrl) {
       return res.status(400).json({ success: false, error: `Task #${taskId} besitzt noch kein fertig generiertes Master-PNG.` });
     }
-    const result2 = await TaskLogService2.completeTaskAndEnqueue(task);
+    const result2 = await TaskLogService.completeTaskAndEnqueue(task);
     if (!result2.success) return res.status(400).json({ success: false, error: result2.error });
     const queueState = QueueService.getState();
-    res.json({ success: true, message: `Task #${taskId} erfolgreich in die Upload-Queue \xFCbertragen!`, task: TaskLogService2.getTaskById(taskId), queueState });
+    res.json({ success: true, message: `Task #${taskId} erfolgreich in die Upload-Queue \xFCbertragen!`, task: TaskLogService.getTaskById(taskId), queueState });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

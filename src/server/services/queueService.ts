@@ -161,6 +161,8 @@ export interface QueueState {
   scheduledDraftProductsToday?: number;        // Products planned for draft upload
   scheduledItemsCount: number;
   overflowItemsCount: number;
+  overflowNewItemsCount?: number;
+  overflowUpdateItemsCount?: number;
   uploadScheduleTime: string; // e.g. "04:00" or "off"
   uploadScheduleEnabled: boolean;
   uploadSchedulerCurrentTime: string;
@@ -477,6 +479,8 @@ export class QueueService {
     let scheduledDraftProductsToday = 0;
     let scheduledItemsCount = 0;
     let overflowItemsCount = 0;
+    let overflowNewItemsCount = 0;
+    let overflowUpdateItemsCount = 0;
 
     for (const item of activeItems) {
       if (item.isPaused) continue;
@@ -510,6 +514,11 @@ export class QueueService {
             scheduledItemsCount++;
           } else {
             overflowItemsCount++;
+            if (isUpdate) {
+              overflowUpdateItemsCount++;
+            } else {
+              overflowNewItemsCount++;
+            }
           }
         } else if (isHybridMode) {
           // Hybrid: Updates are Live, New items are Draft
@@ -537,6 +546,8 @@ export class QueueService {
       scheduledDraftProductsToday,
       scheduledItemsCount,
       overflowItemsCount,
+      overflowNewItemsCount,
+      overflowUpdateItemsCount,
       uploadScheduleTime: settings.queueUploadScheduleTime || '04:00',
       uploadScheduleEnabled: settings.queueUploadScheduleEnabled ?? false,
       uploadSchedulerCurrentTime: getSchedulerClock().time,
@@ -1241,7 +1252,7 @@ export class QueueService {
       let alreadyPublished = uItem.publishedProductsCount ?? uItem.liveStats?.publishedCount;
       if (alreadyPublished === undefined) {
         const cleanId = uItem.taskId ? uItem.taskId.replace(/^#/, '') : '';
-        const t = TaskLogService.getTask(uItem.taskId) || TaskLogService.getTask(cleanId) || TaskLogService.getTask(`#${cleanId}`);
+        const t = TaskRepository.getTaskById(uItem.taskId) || TaskRepository.getTaskById(cleanId) || TaskRepository.getTaskById(`#${cleanId}`);
         const pCount = t?.payload?.liveStats?.publishedCount ?? t?.payload?.liveVariantsCount ?? t?.payload?.publishedCount;
         if (pCount !== undefined) {
           alreadyPublished = pCount;
@@ -1348,7 +1359,7 @@ export class QueueService {
 
       for (const item of waitingNewItems) {
         const minRequired = item.isLocked ? item.totalBaseSlots : Math.max(1, item.totalBaseSlots - maxDrop);
-        if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting || scheduledNewItems.length === 0) {
+        if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting) {
           accumulatedMinSlots += minRequired;
           scheduledNewItems.push(item);
         } else {

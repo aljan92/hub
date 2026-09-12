@@ -783,6 +783,10 @@ export const QueueView: React.FC = () => {
   const errorDesigns = queueState.items.filter(i => i.status === 'ERROR');
 
   const waitingOrUploadingDesigns = activeQueueDesigns;
+  const scheduledCountInTab = waitingOrUploadingDesigns.filter(d => 
+    d.status === 'UPLOADING' || ((d.allocatedSlots ?? 0) > 0) || (isUpdateItem(d) && d.totalBaseSlots === 0)
+  ).length;
+  const waitingForSlotsCountInTab = Math.max(0, waitingOrUploadingDesigns.length - scheduledCountInTab);
 
   const slotUtilizationPct = queueState.freeDailySlots > 0 
     ? Math.min(100, Math.round(((queueState.scheduledLiveSlotsToday ?? queueState.scheduledSlotsToday) / queueState.freeDailySlots) * 100))
@@ -1175,8 +1179,8 @@ export const QueueView: React.FC = () => {
                   <span>Updates werden Live veröffentlicht, neue Designs als Draft</span>
                 ) : isLiveMode ? (
                   <span>
-                    {queueState.scheduledItemsCount || 0} von {waitingOrUploadingDesigns.length} Designs heute einplanbar
-                    {(queueState.overflowItemsCount || 0) > 0 ? ` (${queueState.overflowItemsCount} warten auf freie Slots)` : ''}
+                    {scheduledCountInTab} von {waitingOrUploadingDesigns.length} Designs heute einplanbar
+                    {waitingForSlotsCountInTab > 0 ? ` (${waitingForSlotsCountInTab} warten auf freie Slots)` : ''}
                   </span>
                 ) : (
                   <span>Alle {waitingOrUploadingDesigns.length} Designs bereit zum Upload</span>

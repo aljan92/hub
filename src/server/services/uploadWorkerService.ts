@@ -218,6 +218,9 @@ export class UploadWorkerService {
     if (isUpdateItem && (targetItem.totalBaseSlots ?? 0) > 0 && (targetItem.allocatedSlots ?? 0) <= 0) {
       return { success: false, message: 'Update wartet auf freie, zugeteilte Tages-Slots.' };
     }
+    if (!isUpdateItem && (queueMode === 'live' || mode === 'publish') && (targetItem.allocatedSlots ?? 0) <= 0) {
+      return { success: false, message: 'Design wartet auf freie Tages-Slots.' };
+    }
     // Update designs are ALWAYS Live (publish). New designs follow queueMode or passed mode.
     const effectiveMode: 'draft' | 'publish' = isUpdateItem ? 'publish' : (queueMode === 'live' || mode === 'publish' ? 'publish' : 'draft');
 
@@ -425,14 +428,8 @@ export class UploadWorkerService {
             return img && (img.complete || (img.naturalWidth && img.naturalWidth > 0) || (img.src && img.src.length > 0));
           }, { timeout: 60000 });
 
-          // Check rate limit warning if present
-          const rateLimit = await page.$('.daily-rate-limit-breached');
-          if (rateLimit) {
-            this.handleDailyUploadLimit(isUpdate, effectiveMode);
-          }
           this.log(`✅ Master-PNG erfolgreich gerendert!`, 'PNG Upload fertig ✓', 35, 100);
         } catch (err: any) {
-          if (err.message && err.message.includes('Limit')) throw err;
           this.log(`⚠️ Render-Check beendet, fahre fort...`);
         }
       }
@@ -703,6 +700,12 @@ export class UploadWorkerService {
         await page.waitForTimeout(600);
 
         this.log(`✅ Marktplatz-Matrix synchronisiert (${modalResult.modifiedCount} Checkboxen angepasst)`, 'Produkte gewählt ✓', 50, 100);
+
+        // Check rate limit warning if present AFTER product matrix selection has been applied
+        const rateLimitAfterSelection = await page.$('.daily-rate-limit-breached');
+        if (rateLimitAfterSelection) {
+          this.handleDailyUploadLimit(isUpdate, effectiveMode);
+        }
       }
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
@@ -1919,6 +1922,12 @@ export class UploadWorkerService {
         if (!publishCheck.found) throw new Error('Publish-Button im DOM nicht gefunden.');
         if (!publishCheck.isEnabled && publishCheck.errors.length > 0) {
           throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(' | ')}`);
+        }
+
+        // Check rate limit warning before submitting live publish
+        const rateLimitBeforePublish = await page.$('.daily-rate-limit-breached');
+        if (rateLimitBeforePublish) {
+          this.handleDailyUploadLimit(isUpdate, effectiveMode);
         }
 
         // STEP 1: Click #submit-button to open modal. NO REMOTE REQUEST IS TRIGGERED YET!

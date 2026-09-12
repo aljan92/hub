@@ -42,6 +42,7 @@ export interface SyncState {
   childAsinShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null };
   childAsinDiagnostics?: ChildAsinDiagnostics;
   childAsinValidation?: { observed: number; resolved: number; confirmedTwice: number; statuses: Array<{ status: string; count: number }> };
+  adAsinAudit?: AdAsinAuditSummary;
   lifecycleAudit?: LifecycleAuditSummary;
   egress?: { mode: 'observe' | 'optimized'; baselineReady: boolean; pending: number; metrics: any[] };
   lastRun?: ProductSyncRuntime['lastRun'];
@@ -57,6 +58,27 @@ export interface LifecycleAuditSummary {
   stalePublishedProducts: number;
   staleAdAsins: number;
   missingDatabaseProducts: number;
+  reportPath: string;
+  complete: boolean;
+}
+
+export interface AdAsinAuditSummary {
+  lastRunAt: string;
+  databaseDesigns: number;
+  liveDesigns: number;
+  publishedProducts: number;
+  adEntries: number;
+  validAdEntries: number;
+  missingAdEntries: number;
+  unresolvedResolveProducts: number;
+  parentPlaceholders: number;
+  parentMismatches: number;
+  orphanAdEntries: number;
+  duplicateProductKeys: number;
+  duplicateAdKeys: number;
+  unsupportedAdEntries: number;
+  inactiveDesignsWithCurrentData: number;
+  asinResolvedMismatches: number;
   reportPath: string;
   complete: boolean;
 }
@@ -112,12 +134,14 @@ type ProductSyncRuntime = {
   resolverShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null; cursor?: number; blockedUntil?: string | null };
   resolverDiagnostics?: ChildAsinDiagnostics;
   lifecycleAudit?: LifecycleAuditSummary;
+  adAsinAudit?: AdAsinAuditSummary;
   resolverObservations?: Record<string, { parentAsin: string; resolvedAsin: string | null; status: string; source: string | null; observedAt: string; consistentCount: number }>;
   lastRun?: { runId: string; type: string; status: 'running' | 'complete' | 'partial' | 'truncated' | 'cancelled' | 'unknown_write_outcome' | 'error'; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
 };
 const SYNC_RUNTIME_PATH = path.resolve(process.cwd(), 'data', 'sync_runtime.json');
 const FULL_STAGE_PATH = path.resolve(process.cwd(), 'data', 'sync_full_stage.json');
 const LIFECYCLE_AUDIT_PATH = path.resolve(process.cwd(), 'data', 'sync_lifecycle_audit.json');
+const AD_ASIN_AUDIT_PATH = path.resolve(process.cwd(), 'data', 'sync_ad_asin_audit.json');
 const CHILD_ASIN_SHADOW_INTERVAL_MS = 15_000;
 const CHILD_ASIN_SHADOW_BATCH_SIZE = 3;
 const CHILD_ASIN_SHADOW_REQUEST_DELAY_MS = 750;
@@ -301,7 +325,7 @@ export class SyncEngine {
   public static getState(): SyncState {
     try {
       const runtime = this.loadRuntime();
-      return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, childAsinValidation: this.buildResolverValidation(runtime.resolverObservations || {}), lifecycleAudit: runtime.lifecycleAudit || this.state.lifecycleAudit, lastRun: runtime.lastRun, egress: {
+      return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, childAsinValidation: this.buildResolverValidation(runtime.resolverObservations || {}), adAsinAudit: runtime.adAsinAudit || this.state.adAsinAudit, lifecycleAudit: runtime.lifecycleAudit || this.state.lifecycleAudit, lastRun: runtime.lastRun, egress: {
       mode: loadSettings().syncEgressMode || 'observe',
       baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
       pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
@@ -1373,6 +1397,171 @@ export class SyncEngine {
   /**
    * 7. Resolve Child ASINs Batch
    */
+  public static buildAdAsinAudit(databaseRows: any[]): { summary: Omit<AdAsinAuditSummary, 'lastRunAt' | 'reportPath' | 'complete'>; candidates: any } {
+    const liveStatuses = new Set(['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING']);
+    const keyOf = (entry: any) => `${normalizeChildAsinProductType(entry?.type)}|${String(entry?.market || '').trim().toLowerCase()}`;
+    const candidates: Record<string, any[]> = {
+      missingAdEntries: [], unresolvedResolveProducts: [], parentPlaceholders: [], parentMismatches: [],
+      orphanAdEntries: [], duplicateProductKeys: [], duplicateAdKeys: [], unsupportedAdEntries: [],
+      inactiveDesignsWithCurrentData: [], asinResolvedMismatches: []
+    };
+    let liveDesigns = 0;
+    let publishedProducts = 0;
+    let adEntries = 0;
+    let validAdEntries = 0;
+
+    const add = (bucket: string, row: any, entry: any = {}, extra: any = {}) => candidates[bucket].push({
+      designId: String(row?.design_id || ''),
+      type: normalizeChildAsinProductType(entry?.type),
+      market: String(entry?.market || '').trim().toLowerCase(),
+      ...extra
+    });
+
+    for (const row of databaseRows || []) {
+      const products = Array.isArray(row?.published_products) ? row.published_products : [];
+      const ads = Array.isArray(row?.ad_asins) ? row.ad_asins : [];
+      const isLive = liveStatuses.has(String(row?.status || '').toUpperCase());
+      publishedProducts += products.length;
+      adEntries += ads.length;
+      if (!isLive) {
+        if (products.length || ads.length) add('inactiveDesignsWithCurrentData', row, {}, { status: String(row?.status || ''), products: products.length, ads: ads.length });
+        continue;
+      }
+      liveDesigns++;
+
+      const productCounts = new Map<string, number>();
+      const adCounts = new Map<string, number>();
+      for (const product of products) productCounts.set(keyOf(product), (productCounts.get(keyOf(product)) || 0) + 1);
+      for (const ad of ads) adCounts.set(keyOf(ad), (adCounts.get(keyOf(ad)) || 0) + 1);
+      for (const [key, count] of productCounts) if (count > 1) {
+        const [type, market] = key.split('|');
+        add('duplicateProductKeys', row, { type, market }, { count });
+      }
+      for (const [key, count] of adCounts) if (count > 1) {
+        const [type, market] = key.split('|');
+        add('duplicateAdKeys', row, { type, market }, { count });
+      }
+
+      const productKeys = new Set(products.map(keyOf));
+      for (const ad of ads) {
+        if (!productKeys.has(keyOf(ad))) add('orphanAdEntries', row, ad, { asin: this.sanitizeAsin(ad?.asin), parentAsin: this.sanitizeAsin(ad?.parentAsin) });
+      }
+
+      let expectedResolved = true;
+      for (const product of products) {
+        const key = keyOf(product);
+        const parentAsin = this.sanitizeAsin(product?.asin);
+        const matchingAds = ads.filter((ad: any) => keyOf(ad) === key);
+        const ad = matchingAds.length === 1 ? matchingAds[0] : null;
+        const policy = getChildAsinPolicy(product?.type);
+        if (policy === 'unsupported') {
+          if (matchingAds.length) add('unsupportedAdEntries', row, product, { count: matchingAds.length });
+          continue;
+        }
+        if (!ad) {
+          add('missingAdEntries', row, product, { policy, parentAsin });
+          if (policy === 'resolve') {
+            expectedResolved = false;
+            add('unresolvedResolveProducts', row, product, { reason: 'missing_ad_entry', parentAsin });
+          }
+          continue;
+        }
+        const adAsin = this.sanitizeAsin(ad?.asin);
+        const recordedParent = this.sanitizeAsin(ad?.parentAsin);
+        if (recordedParent !== parentAsin) {
+          add('parentMismatches', row, product, { parentAsin, recordedParentAsin: recordedParent, adAsin });
+          if (policy === 'resolve') expectedResolved = false;
+          continue;
+        }
+        if (policy === 'identity') {
+          if (adAsin === parentAsin && !!parentAsin) validAdEntries++;
+          else add('missingAdEntries', row, product, { policy, parentAsin, adAsin });
+          continue;
+        }
+        if (adAsin === parentAsin && !!parentAsin) {
+          expectedResolved = false;
+          add('parentPlaceholders', row, product, { parentAsin });
+          add('unresolvedResolveProducts', row, product, { reason: 'parent_placeholder', parentAsin });
+        } else if (isConfirmedChildAsin(adAsin, parentAsin)) {
+          validAdEntries++;
+        } else {
+          expectedResolved = false;
+          add('unresolvedResolveProducts', row, product, { reason: 'missing_child', parentAsin, adAsin });
+        }
+      }
+      if (Boolean(row?.asin_resolved) !== expectedResolved) {
+        add('asinResolvedMismatches', row, {}, { stored: Boolean(row?.asin_resolved), expected: expectedResolved });
+      }
+    }
+
+    return {
+      summary: {
+        databaseDesigns: (databaseRows || []).length,
+        liveDesigns,
+        publishedProducts,
+        adEntries,
+        validAdEntries,
+        missingAdEntries: candidates.missingAdEntries.length,
+        unresolvedResolveProducts: candidates.unresolvedResolveProducts.length,
+        parentPlaceholders: candidates.parentPlaceholders.length,
+        parentMismatches: candidates.parentMismatches.length,
+        orphanAdEntries: candidates.orphanAdEntries.length,
+        duplicateProductKeys: candidates.duplicateProductKeys.length,
+        duplicateAdKeys: candidates.duplicateAdKeys.length,
+        unsupportedAdEntries: candidates.unsupportedAdEntries.length,
+        inactiveDesignsWithCurrentData: candidates.inactiveDesignsWithCurrentData.length,
+        asinResolvedMismatches: candidates.asinResolvedMismatches.length
+      },
+      candidates
+    };
+  }
+
+  public static async runAdAsinAudit(): Promise<AdAsinAuditSummary> {
+    const runId = this.beginWorker('ad_asin_audit');
+    this.shouldStop = false;
+    this.state.isScanning = true;
+    this.state.activeScanType = 'ad_asin_audit';
+    try {
+      const supabase = this.getSupabase();
+      const rows: any[] = [];
+      for (let from = 0; !this.shouldStop; from += 500) {
+        const result = await supabase.from('mba_designs')
+          .select('design_id, status, published_products, ad_asins, asin_resolved')
+          .order('design_id', { ascending: true })
+          .range(from, from + 499);
+        this.recordTraffic('ad_asin_audit_read', result);
+        if (result.error) throw new Error(`Ad-ASIN-Audit konnte Supabase nicht lesen: ${result.error.message || String(result.error)}`);
+        rows.push(...(result.data || []));
+        if (!result.data || result.data.length < 500) break;
+      }
+      if (this.shouldStop) throw new Error('Ad-ASIN-Audit manuell abgebrochen.');
+      const audit = this.buildAdAsinAudit(rows);
+      const summary: AdAsinAuditSummary = {
+        ...audit.summary,
+        lastRunAt: new Date().toISOString(),
+        reportPath: 'data/sync_ad_asin_audit.json',
+        complete: true
+      };
+      atomicWriteJson(AD_ASIN_AUDIT_PATH, { version: 1, summary, candidates: audit.candidates }, { backup: true });
+      const runtime = this.loadRuntime();
+      runtime.adAsinAudit = summary;
+      this.saveRuntime(runtime);
+      this.state.adAsinAudit = summary;
+      const issues = summary.missingAdEntries + summary.parentMismatches + summary.orphanAdEntries
+        + summary.duplicateProductKeys + summary.duplicateAdKeys + summary.inactiveDesignsWithCurrentData;
+      this.addLog(`[Ad-ASIN Audit] Read-only abgeschlossen: ${summary.validAdEntries} gültig, ${summary.unresolvedResolveProducts} Resolve-Produkte offen, ${issues} strukturelle Auffälligkeiten.`, issues ? 'warn' : 'success');
+      this.finishWorker(runId, 'complete', { pages: Math.ceil(rows.length / 500), attempted: rows.length, confirmed: 0, message: 'Nur gelesen; keine Datenbankänderung.' });
+      return summary;
+    } catch (error: any) {
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : 'error', { pages: 0, message: error?.message || String(error) });
+      this.addLog(`[Ad-ASIN Audit] Fehler: ${error?.message || String(error)}. Keine Datenbankänderung.`, 'error');
+      throw error;
+    } finally {
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+    }
+  }
+
   public static buildLifecycleAudit(listings: any[], databaseRows: any[]): { summary: Omit<LifecycleAuditSummary, 'lastRunAt' | 'reportPath' | 'complete'>; candidates: any } {
     const liveStatuses = new Set(['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING']);
     const amazonByDesign = new Map<string, { all: any[]; liveKeys: Set<string> }>();

@@ -361,6 +361,8 @@ app.post('/api/v1/sync/run', async (req, res) => {
       return res.json({ success: true, message: `SNAP-Resolver abgeschlossen: ${result.resolved}/${result.checked} aufgelöst und gespeichert.`, state: SyncEngine.getState() });
     } else if (type === 'lifecycle_audit') {
       SyncEngine.runLifecycleAudit().catch(() => {});
+    } else if (type === 'ad_asin_audit') {
+      SyncEngine.runAdAsinAudit().catch(() => {});
     } else {
       return res.status(400).json({ success: false, error: 'Unbekannter Scan-Typ' });
     }
