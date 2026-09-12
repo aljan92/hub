@@ -99,16 +99,6 @@ export class SupabaseService {
     try { atomicWriteJson(file, metrics, { backup: true, space: 2 }); } catch {}
   }
 
-  private static async fetchAllPositiveSales(supabase: any) {
-    const rows: any[] = [];
-    for (let from = 0; ; from += 1000) {
-      const result = await supabase.from('mba_designs').select('sales_30d, royalties_30d_eur, royalties_30d_usd').gt('sales_30d', 0).range(from, from + 999);
-      if (result.error) return { data: null, error: result.error };
-      rows.push(...(result.data || []));
-      if (!result.data || result.data.length < 1000) return { data: rows, error: null };
-    }
-  }
-
   /**
    * Get accurate Live Designs, Total Designs and Sales stats from Supabase (Cached & Persisted)
    */
@@ -156,7 +146,7 @@ export class SupabaseService {
     try {
       const supabase = createClient(settings.supabaseUrl.trim(), settings.supabaseServiceRoleKey.trim(), { auth: { persistSession: false } });
       
-      const [totalRes, liveRes, unresolvedRes, salesRes] = await Promise.all([
+      const [totalRes, liveRes, unresolvedRes] = await Promise.all([
         supabase.from('mba_designs').select('design_id', { count: 'exact', head: true }),
         supabase.from('mba_designs')
           .select('design_id', { count: 'exact', head: true })
@@ -164,23 +154,9 @@ export class SupabaseService {
         supabase.from('mba_designs')
           .select('design_id', { count: 'exact', head: true })
           .or('asin_resolved.eq.false,asin_resolved.is.null')
-          .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING']),
-        this.fetchAllPositiveSales(supabase)
+          .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
       ]);
-      this.recordStatsTraffic([totalRes, liveRes, unresolvedRes, salesRes]);
-
-      let sales30d = 0;
-      let royalties30dEur = 0;
-      let royalties30dUsd = 0;
-      const hasConfirmedSalesSnapshot = !salesRes.error && Array.isArray(salesRes.data);
-
-      if (salesRes.data && Array.isArray(salesRes.data)) {
-        for (const row of salesRes.data) {
-          sales30d += row.sales_30d || 0;
-          royalties30dEur += Number(row.royalties_30d_eur) || 0;
-          royalties30dUsd += Number(row.royalties_30d_usd) || 0;
-        }
-      }
+      this.recordStatsTraffic([totalRes, liveRes, unresolvedRes]);
 
       const totalCount = (totalRes.count !== undefined && totalRes.count !== null) ? totalRes.count : persisted.totalDesigns;
       const liveCount = (liveRes.count !== undefined && liveRes.count !== null) ? liveRes.count : persisted.liveDesigns;
@@ -190,9 +166,9 @@ export class SupabaseService {
         totalDesigns: totalCount,
         liveDesigns: liveCount,
         unresolvedAsins: unresolvedCount,
-        sales30d: hasConfirmedSalesSnapshot ? sales30d : (persisted.sales30d || 0),
-        royalties30dEur: hasConfirmedSalesSnapshot ? Math.round(royalties30dEur * 100) / 100 : (persisted.royalties30dEur || 0),
-        royalties30dUsd: hasConfirmedSalesSnapshot ? Math.round(royalties30dUsd * 100) / 100 : (persisted.royalties30dUsd || 0),
+        sales30d: 0,
+        royalties30dEur: 0,
+        royalties30dUsd: 0,
       };
 
       if (result.totalDesigns > 0 || result.liveDesigns > 0) {

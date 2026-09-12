@@ -12,7 +12,6 @@ import {
   ShieldAlert, 
   Layers, 
   FileText, 
-  DollarSign, 
   Link as LinkIcon,
   Sparkles,
   ArrowUpRight,
@@ -181,15 +180,6 @@ export const DatabaseView: React.FC = () => {
   const handleStopScan = async () => {
     try {
       await fetch('/api/v1/sync/stop', { method: 'POST' });
-      fetchState();
-      fetchLogs();
-    } catch (e) {}
-  };
-
-  const handleResetSales = async () => {
-    if (!confirm('ACHTUNG: Alle Sales-Daten in deiner Supabase-Datenbank werden auf 0 gesetzt. Fortfahren?')) return;
-    try {
-      await fetch('/api/v1/sync/reset-sales', { method: 'POST' });
       fetchState();
       fetchLogs();
     } catch (e) {}
@@ -443,36 +433,6 @@ export const DatabaseView: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 3: Sales */}
-            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-                  💰 Sales &amp; Royalties
-                </span>
-                <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  Zuletzt: {formatDate(syncState.lastQuickSales || syncState.lastFullSalesAll)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  disabled
-                  className="px-3 py-2 rounded-xl bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 text-xs font-semibold transition-all disabled:opacity-50"
-                  title="Vorübergehend gesperrt, bis Amazons aktueller Sales-Vertrag verifiziert ist"
-                >
-                  Quick Update (30 Tage)
-                </button>
-                <button
-                  disabled
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold transition-all disabled:opacity-50"
-                  title="Vorübergehend gesperrt, bis eine atomare Snapshot-Übernahme verifiziert ist"
-                >
-                  Full Refresh (All-Time)
-                </button>
-              </div>
-            </div>
-
             {/* Row 4: ASINs */}
             <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2.5">
               <div className="flex items-center justify-between">
@@ -567,19 +527,12 @@ export const DatabaseView: React.FC = () => {
               <ShieldAlert className="w-3.5 h-3.5" />
               Gefahrenzone
             </div>
-            <div className="grid grid-cols-2 gap-2.5">
+            <div>
               <button
                 onClick={handleResetAsins}
                 className="px-3 py-2 rounded-xl bg-rose-900/30 hover:bg-rose-900/50 text-rose-200 border border-rose-800/40 text-[11px] font-semibold transition-all"
               >
                 🔄 ASIN-Status resetten
-              </button>
-              <button
-                disabled
-                className="px-3 py-2 rounded-xl bg-rose-900/30 text-rose-200 border border-rose-800/40 text-[11px] font-semibold transition-all opacity-50 cursor-not-allowed"
-                title="Gesperrt: bestätigte Sales-Daten werden nicht global zurückgesetzt"
-              >
-                🗑️ Sales in DB resetten
               </button>
             </div>
           </div>
