@@ -7,6 +7,7 @@ import { TaskRepository } from '../src/server/storage/taskRepository';
 import { PipelineExecutionCoordinator } from '../src/server/services/pipelineExecutionCoordinator';
 import { DesignPipelineService } from '../src/server/services/designPipelineService';
 import { UpdatePipelineService } from '../src/server/services/updatePipelineService';
+import { UpdateBackfillService } from '../src/server/services/updateBackfillService';
 import { loadSettings, saveSettings } from '../src/server/services/settingsService';
 
 const makeTask = (id: string, source: 'DESIGNER' | 'UPDATE' = 'DESIGNER', status: any = 'PROCESSING'): DesignTaskLog => ({
@@ -42,25 +43,30 @@ async function runTests() {
     assert.strictEqual(taskD?.errorDetails, 'Vom Benutzer im Prompt Log abgebrochen.');
     console.log('✅ [PASS] Test 1: Designer task was cancelled with proper status and reason.');
 
-    // --- Test 2: Cancelling an Update task stops update auto backfill ---
-    console.log('Test 2: Cancelling an Update task disables auto backfill...');
+    // --- Test 2: Cancelling an Update task adds design to cooldown and keeps auto backfill enabled ---
+    console.log('Test 2: Cancelling an Update task adds design to cooldown and keeps auto backfill running...');
     saveSettings({ queueUpdateAutoBackfillEnabled: true });
     assert.strictEqual(loadSettings().queueUpdateAutoBackfillEnabled, true);
 
-    TaskRepository.createTask(makeTask('#802-U', 'UPDATE', 'UPDATE_ANALYZED'));
+    const task802 = makeTask('#802-U', 'UPDATE', 'UPDATE_ANALYZED');
+    task802.payload = { quote: 'Test update', designId: 'DESIGN-802' };
+    TaskRepository.createTask(task802);
     const taskLog = TaskLogService.getTaskLogById('#802-U');
     assert.ok(taskLog);
+
     const cancelU = TaskLogService.cancelTask('#802-U', 'Vom Benutzer im Prompt Log abgebrochen.');
     assert.strictEqual(cancelU.success, true);
 
-    // Simulate endpoint behavior which disables auto backfill for UPDATE tasks
-    if (taskLog.source === 'UPDATE' || taskLog.suffix === 'U') {
-      saveSettings({ queueUpdateAutoBackfillEnabled: false });
-    }
-    assert.strictEqual(loadSettings().queueUpdateAutoBackfillEnabled, false);
-    const taskU = TaskRepository.getTaskById('#802-U');
-    assert.strictEqual(taskU?.status, 'CANCELLED');
-    console.log('✅ [PASS] Test 2: Update task cancelled and auto backfill successfully disabled.');
+    // Simulate endpoint behavior for UPDATE tasks
+    UpdateBackfillService.addRecentlyCancelledDesign('DESIGN-802');
+    UpdateBackfillService.releaseInFlight('DESIGN-802');
+
+    // Auto backfill stays enabled
+    assert.strictEqual(loadSettings().queueUpdateAutoBackfillEnabled, true);
+    // Design is excluded from immediate next candidate fetch
+    assert.ok(UpdateBackfillService.getExcludedDesignIds().has('DESIGN-802'));
+    assert.strictEqual(TaskRepository.getTaskById('#802-U')?.status, 'CANCELLED');
+    console.log('✅ [PASS] Test 2: Update task cancelled, added to cooldown, auto backfill remains enabled.');
 
     // --- Test 3: Cannot cancel completed or update-queued tasks ---
     console.log('Test 3: Reject cancellation on completed tasks...');
@@ -121,6 +127,22 @@ async function runTests() {
     assert.strictEqual(updatePipelineResult.success, false);
     assert.match(updatePipelineResult.error || '', /cancelled/i);
     console.log('✅ [PASS] Test 6: UpdatePipelineService halts immediately for cancelled tasks.');
+
+    // --- Test 7: Skip update on a cancelled task updates state properly ---
+    console.log('Test 7: Skip update on cancelled task...');
+    const cancelledTask = makeTask('#808-U', 'UPDATE', 'CANCELLED');
+    cancelledTask.designId = 'DESIGN-808';
+    TaskRepository.createTask(cancelledTask);
+
+    TaskRepository.updateTask('#808-U', {
+      errorDetails: 'skip_update=true (Manuell übersprungen)',
+      updatedAt: new Date().toISOString()
+    });
+
+    const updatedTask = TaskRepository.getTaskById('#808-U');
+    assert.strictEqual(updatedTask?.status, 'CANCELLED');
+    assert.match(updatedTask?.errorDetails || '', /skip_update=true/);
+    console.log('✅ [PASS] Test 7: Skip update metadata preserved on CANCELLED task.');
 
     console.log('\n====================================================');
     console.log('🎉 ALL PROMPT LOG TASK CANCEL TESTS PASSED!');

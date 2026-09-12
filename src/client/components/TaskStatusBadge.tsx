@@ -17,7 +17,8 @@ import {
   Sparkles,
   XCircle,
   Sliders,
-  Ban
+  Ban,
+  FastForward
 } from 'lucide-react';
 import { DesignTaskLog, TaskSummary, EventCategory } from '../../types/tasks';
 
@@ -73,12 +74,13 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
 
   // 2.1 Cancelled state
   if (task.status === 'CANCELLED') {
+    const isSkipped = task.errorDetails?.includes('skip_update=true');
     return {
-      label: 'Abgebrochen',
-      badgeClass: 'bg-slate-700/40 text-slate-400 border-slate-600/40 font-medium',
-      dotBg: 'bg-slate-500',
+      label: isSkipped ? 'Skip Update (Dauerhaft)' : 'Abgebrochen',
+      badgeClass: isSkipped ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 font-semibold' : 'bg-slate-700/40 text-slate-400 border-slate-600/40 font-medium',
+      dotBg: isSkipped ? 'bg-amber-400' : 'bg-slate-500',
       category: 'SYSTEM',
-      icon: <Ban className="w-3 h-3 text-slate-400" />,
+      icon: isSkipped ? <FastForward className="w-3 h-3 text-amber-400" /> : <Ban className="w-3 h-3 text-slate-400" />,
       isAnimated: false
     };
   }

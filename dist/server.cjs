@@ -229065,6 +229065,7 @@ var init_updateBackfillService = __esm2({
     init_updateMetadataService();
     UpdateBackfillService = class {
       static inFlightDesigns = /* @__PURE__ */ new Set();
+      static recentlyCancelledDesignIds = /* @__PURE__ */ new Set();
       static isRunningLoop = false;
       static activeCycle = null;
       static intervalId = null;
@@ -229149,6 +229150,9 @@ var init_updateBackfillService = __esm2({
         for (const id of this.inFlightDesigns) {
           if (id) excluded.add(id.trim());
         }
+        for (const id of this.recentlyCancelledDesignIds) {
+          if (id) excluded.add(id.trim());
+        }
         if (extraExcludedIds) {
           for (const id of extraExcludedIds) {
             if (id) excluded.add(id.trim());
@@ -229170,6 +229174,28 @@ var init_updateBackfillService = __esm2({
           if (resId) excluded.add(resId.trim());
         }
         return excluded;
+      }
+      /**
+       * Adds a design ID to the recently cancelled cooldown set so the next
+       * backfill cycle pulls a different candidate instead of looping on the same one.
+       */
+      static addRecentlyCancelledDesign(designId) {
+        if (!designId) return;
+        const clean = String(designId).replace(/^#/, "").replace(/-U$/, "").trim();
+        if (clean) {
+          this.recentlyCancelledDesignIds.add(clean);
+          if (this.recentlyCancelledDesignIds.size > 50) {
+            const first = this.recentlyCancelledDesignIds.values().next().value;
+            if (first) this.recentlyCancelledDesignIds.delete(first);
+          }
+          console.log(`[UpdateBackfillService] \u23F8\uFE0F Design ${clean} f\xFCr n\xE4chsten Backfill tempor\xE4r pausiert (aktuell ${this.recentlyCancelledDesignIds.size} im Cooldown).`);
+        }
+      }
+      static clearRecentlyCancelledDesigns() {
+        this.recentlyCancelledDesignIds.clear();
+      }
+      static getRecentlyCancelledDesignIds() {
+        return new Set(this.recentlyCancelledDesignIds);
       }
       /**
        * Clears in-flight design memory locks and cancels any hanging/stale update tasks
@@ -238035,13 +238061,21 @@ app.post("/api/v1/tasks/:taskId/cancel", (req, res) => {
   try {
     const task = TaskLogService.getTaskLogById(taskId);
     const result2 = TaskLogService.cancelTask(taskId, req.body?.reason);
-    let updateAutomationDisabled = false;
     if (task?.source === "UPDATE" || task?.suffix === "U") {
-      saveSettings({ queueUpdateAutoBackfillEnabled: false });
-      updateAutomationDisabled = true;
+      const designId = String(task.payload?.designId || "").trim();
+      if (designId) {
+        UpdateBackfillService.addRecentlyCancelledDesign(designId);
+        UpdateBackfillService.releaseInFlight(designId);
+      }
+      const settings = loadSettings();
+      if (settings.queueUpdateAutoBackfillEnabled) {
+        UpdateBackfillService.runBackfillCycle().catch((err) => {
+          console.warn("[UpdateBackfill] Fehler beim Nachziehen des n\xE4chsten Kandidaten nach Abbruch:", err);
+        });
+      }
     }
     broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
-    res.json({ ...result2, updateAutomationDisabled });
+    res.json({ ...result2, updateAutomationDisabled: false });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
@@ -238054,8 +238088,8 @@ app.post("/api/v1/tasks/:taskId/skip-update", async (req, res) => {
     if (task.source !== "UPDATE" && task.suffix !== "U") {
       return res.status(400).json({ success: false, error: "Skip Update ist nur f\xFCr Update-Tasks verf\xFCgbar." });
     }
-    if (!["UPDATE_ANALYZED", "AWAITING_DESIGN_REVIEW", "AWAITING_TM_REVIEW"].includes(task.status)) {
-      return res.status(409).json({ success: false, error: "Skip Update ist nur w\xE4hrend einer manuellen Pr\xFCfung verf\xFCgbar." });
+    if (!["UPDATE_ANALYZED", "AWAITING_DESIGN_REVIEW", "AWAITING_TM_REVIEW", "CANCELLED"].includes(task.status)) {
+      return res.status(409).json({ success: false, error: "Skip Update ist nur w\xE4hrend einer manuellen Pr\xFCfung oder nach Abbruch verf\xFCgbar." });
     }
     const designId = String(task.payload?.designId || "").trim();
     if (!designId) return res.status(400).json({ success: false, error: "Dem Update-Task fehlt die Amazon Design-ID." });
@@ -238065,6 +238099,7 @@ app.post("/api/v1/tasks/:taskId/skip-update", async (req, res) => {
     }
     const result2 = TaskLogService.cancelTask(taskId, "Design dauerhaft von automatischen Updates ausgeschlossen (skip_update=true).");
     UpdateBackfillService.releaseInFlight(designId);
+    UpdateBackfillService.addRecentlyCancelledDesign(designId);
     broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
     res.json({ ...result2, message: "Skip Update wurde gesetzt. Das Design wird k\xFCnftig nicht mehr automatisch aktualisiert." });
   } catch (err) {

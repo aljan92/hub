@@ -25,6 +25,7 @@ export function hasVerifiedZeroSales(candidate: { sales_total?: unknown; sales_h
 
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
+  private static recentlyCancelledDesignIds = new Set<string>();
   private static isRunningLoop = false;
   private static activeCycle: Promise<{ success: boolean; message: string; designId?: string }> | null = null;
   private static intervalId: NodeJS.Timeout | null = null;
@@ -116,6 +117,11 @@ export class UpdateBackfillService {
       if (id) excluded.add(id.trim());
     }
 
+    // 1.5 Recently cancelled update designs (cooldown so automation pulls the next candidate)
+    for (const id of this.recentlyCancelledDesignIds) {
+      if (id) excluded.add(id.trim());
+    }
+
     // 2. Extra excluded IDs for the current cycle (in-memory only)
     if (extraExcludedIds) {
       for (const id of extraExcludedIds) {
@@ -145,6 +151,31 @@ export class UpdateBackfillService {
     }
 
     return excluded;
+  }
+
+  /**
+   * Adds a design ID to the recently cancelled cooldown set so the next
+   * backfill cycle pulls a different candidate instead of looping on the same one.
+   */
+  public static addRecentlyCancelledDesign(designId?: string): void {
+    if (!designId) return;
+    const clean = String(designId).replace(/^#/, '').replace(/-U$/, '').trim();
+    if (clean) {
+      this.recentlyCancelledDesignIds.add(clean);
+      if (this.recentlyCancelledDesignIds.size > 50) {
+        const first = this.recentlyCancelledDesignIds.values().next().value;
+        if (first) this.recentlyCancelledDesignIds.delete(first);
+      }
+      console.log(`[UpdateBackfillService] ⏸️ Design ${clean} für nächsten Backfill temporär pausiert (aktuell ${this.recentlyCancelledDesignIds.size} im Cooldown).`);
+    }
+  }
+
+  public static clearRecentlyCancelledDesigns(): void {
+    this.recentlyCancelledDesignIds.clear();
+  }
+
+  public static getRecentlyCancelledDesignIds(): Set<string> {
+    return new Set(this.recentlyCancelledDesignIds);
   }
 
   /**

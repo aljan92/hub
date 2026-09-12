@@ -36,7 +36,8 @@ import {
   Database,
   SearchCode,
   PlusCircle,
-  Ban
+  Ban,
+  FastForward
 } from 'lucide-react';
 
 import { 
@@ -430,6 +431,7 @@ export const PromptLogView: React.FC = () => {
   const [downloadingArtworkTaskId, setDownloadingArtworkTaskId] = useState<string | null>(null);
   const [runningUpdatePipelineTaskId, setRunningUpdatePipelineTaskId] = useState<string | null>(null);
   const [cancellingTaskId, setCancellingTaskId] = useState<string | null>(null);
+  const [skippingUpdateTaskId, setSkippingUpdateTaskId] = useState<string | null>(null);
 
   const handleRunFullUpdatePipeline = async (designId: string) => {
     if (!designId.trim()) return;
@@ -843,7 +845,7 @@ export const PromptLogView: React.FC = () => {
     const targetTask = tasks.find(t => t.id === taskId) || (selectedTask?.id === taskId ? selectedTask : null);
     const isUpdate = targetTask?.source === 'UPDATE' || taskId.endsWith('-U');
     const confirmMsg = isUpdate
-      ? `Möchtest du den Update-Task ${taskId} wirklich abbrechen? Die automatische Update-Nachführung wird dabei angehalten.`
+      ? `Möchtest du den Update-Task ${taskId} wirklich abbrechen? Die Vorhalte-Automatik zieht anschließend das nächste Design.`
       : `Möchtest du den Task ${taskId} wirklich abbrechen?`;
 
     if (!confirm(confirmMsg)) return;
@@ -883,6 +885,63 @@ export const PromptLogView: React.FC = () => {
       alert(`Netzwerkfehler: ${err.message}`);
     } finally {
       setCancellingTaskId(null);
+    }
+  };
+
+  const canSkipUpdate = (task?: TaskSummary | DesignTaskLog | null) => {
+    if (!task) return false;
+    const isUpdate = task.source === 'UPDATE' || task.id.endsWith('-U');
+    const alreadySkipped = task.errorDetails?.includes('skip_update=true');
+    return isUpdate && task.status === 'CANCELLED' && !alreadySkipped;
+  };
+
+  const handleSkipUpdate = async (taskId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (skippingUpdateTaskId) return;
+
+    const targetTask = tasks.find(t => t.id === taskId) || (selectedTask?.id === taskId ? selectedTask : null);
+    const designId = targetTask?.payload?.designId || targetTask?.designId;
+
+    const confirmMsg = designId
+      ? `Design ${designId} (Task ${taskId}) dauerhaft von automatischen Updates ausschließen? (skip_update=true in Supabase)`
+      : `Task ${taskId} dauerhaft von automatischen Updates ausschließen?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setSkippingUpdateTaskId(taskId);
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/skip-update`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTasks(prev => prev.map(t => {
+          if (t.id !== taskId) return t;
+          return {
+            ...t,
+            status: 'CANCELLED',
+            checkpoint: undefined,
+            hasError: false,
+            errorDetails: 'Design dauerhaft von automatischen Updates ausgeschlossen (skip_update=true).'
+          };
+        }));
+        if (selectedTask?.id === taskId) {
+          setSelectedTaskDetail(prev => prev ? {
+            ...prev,
+            status: 'CANCELLED',
+            checkpoint: undefined,
+            hasError: false,
+            errorDetails: 'Design dauerhaft von automatischen Updates ausgeschlossen (skip_update=true).'
+          } : null);
+        }
+        alert(data.message || 'Design wurde erfolgreich mit Skip Update markiert.');
+      } else {
+        alert(data.error || 'Fehler beim Setzen von Skip Update');
+      }
+    } catch (err: any) {
+      alert(`Netzwerkfehler: ${err.message}`);
+    } finally {
+      setSkippingUpdateTaskId(null);
     }
   };
 
@@ -1436,6 +1495,17 @@ export const PromptLogView: React.FC = () => {
                           <Ban className={`w-3 h-3 ${cancellingTaskId === task.id ? 'animate-spin' : ''}`} />
                         </button>
                       )}
+                      {canSkipUpdate(task) && (
+                        <button
+                          onClick={(e) => handleSkipUpdate(task.id, e)}
+                          disabled={skippingUpdateTaskId === task.id}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition-colors flex items-center gap-1 disabled:opacity-50"
+                          title={`Design dauerhaft von automatischen Updates ausschließen (skip_update=true)`}
+                        >
+                          <FastForward className={`w-2.5 h-2.5 ${skippingUpdateTaskId === task.id ? 'animate-spin' : ''}`} />
+                          <span>Skip</span>
+                        </button>
+                      )}
                       <button
                         onClick={(e) => handleDeleteTask(task.id, e)}
                         className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
@@ -1530,6 +1600,17 @@ export const PromptLogView: React.FC = () => {
                     >
                       <Ban className={`w-3.5 h-3.5 ${cancellingTaskId === selectedTask.id ? 'animate-spin' : ''}`} />
                       <span>Abbrechen</span>
+                    </button>
+                  )}
+                  {canSkipUpdate(selectedTask) && (
+                    <button
+                      onClick={(e) => handleSkipUpdate(selectedTask.id, e)}
+                      disabled={skippingUpdateTaskId === selectedTask.id}
+                      className="flex items-center space-x-1 px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/30 transition-colors disabled:opacity-50"
+                      title="Design dauerhaft von automatischen Updates ausschließen (skip_update=true)"
+                    >
+                      <FastForward className={`w-3.5 h-3.5 ${skippingUpdateTaskId === selectedTask.id ? 'animate-spin' : ''}`} />
+                      <span>Skip Update</span>
                     </button>
                   )}
                   <button
