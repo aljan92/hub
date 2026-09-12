@@ -355,6 +355,22 @@ export class QueueService {
             hasChanges = true;
           }
 
+          if (!item.customBackgroundColor) {
+            const rawBg = (task.customAnswers as any)?.customBackgroundColor
+              || (task.customAnswers as any)?.preferredBackgroundColor
+              || (task.customAnswers as any)?.accessoryColorHex
+              || (task as any)?.customBackgroundColor
+              || (task as any)?.preferredBackgroundColor
+              || task.analysisResult?.background_color_recommendation?.hex;
+            if (rawBg && typeof rawBg === 'string') {
+              const trimmed = rawBg.trim().replace(/^#/, '');
+              if (/^[0-9A-Fa-f]{6}$/.test(trimmed)) {
+                item.customBackgroundColor = `#${trimmed.toUpperCase()}`;
+                hasChanges = true;
+              }
+            }
+          }
+
           // Check if update item
           const isUpdate = (item.type === 'update' || item.type === 'UPDATE' || item.source === 'UPDATE' || (item.id && String(item.id).startsWith('update_')) || (item.taskId && String(item.taskId).endsWith('-U')));
           if (isUpdate) {
@@ -680,6 +696,13 @@ export class QueueService {
         .filter(Boolean);
     };
 
+    // Normalization helper for customBackgroundColor
+    const normalizeCustomBg = (val: any): string | undefined => {
+      if (!val || typeof val !== 'string') return undefined;
+      const trimmed = val.trim().replace(/^#/, '');
+      return /^[0-9A-Fa-f]{6}$/.test(trimmed) ? `#${trimmed.toUpperCase()}` : undefined;
+    };
+
     // Check if task is already in queue
     const existing = this.items.find(i => i.taskId === item.taskId);
     const isUpdate = (item as any).source === 'UPDATE' || (item as any).type === 'update' || (item.taskId && item.taskId.endsWith('-U'));
@@ -696,7 +719,8 @@ export class QueueService {
       if (item.fitTypes !== undefined) existing.fitTypes = normalizeFitTypes(item.fitTypes);
       if (item.avoidColor !== undefined) existing.avoidColor = normalizeAvoidColor(item.avoidColor);
       if (item.tmBlockedProductIds !== undefined) existing.tmBlockedProductIds = normalizeTmBlocked(item.tmBlockedProductIds);
-      if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
+      const normalizedBg = normalizeCustomBg(item.customBackgroundColor);
+      if (normalizedBg) existing.customBackgroundColor = normalizedBg;
       if (item.pngPath) existing.pngPath = item.pngPath;
       if (item.imagePath) existing.imagePath = item.imagePath;
       if (item.source) existing.source = item.source;
@@ -787,7 +811,7 @@ export class QueueService {
       fitTypes: normalizeFitTypes(item.fitTypes),
       effectiveFitTypes: resolveEffectiveFitTypes(normalizeFitTypes(item.fitTypes), uploadPolicy),
       avoidColor: normalizeAvoidColor(item.avoidColor),
-      customBackgroundColor: item.customBackgroundColor,
+      customBackgroundColor: normalizeCustomBg(item.customBackgroundColor),
       imagePath: item.imagePath,
       pngPath: item.pngPath,
       resizedAssets: item.resizedAssets,

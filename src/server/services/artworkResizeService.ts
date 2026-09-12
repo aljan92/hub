@@ -86,14 +86,14 @@ export class ArtworkResizeService {
     }
     return { kind: 'PNG', path: pngPath };
   }
-  static fingerprint(source: ArtworkSource): string {
+  static fingerprint(source: ArtworkSource, customBackgroundColor?: string): string {
     return createHash('sha256').update('artwork-v6-direct-svg-png-canvas-stream-validation')
       .update(source.kind).update(source.kind === 'SVG' ? source.svg : fs.readFileSync(source.path))
-      .update(JSON.stringify(artworkProfiles())).update(fs.readFileSync(this.getBrushTipPath())).digest('hex');
+      .update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(fs.readFileSync(this.getBrushTipPath())).digest('hex');
   }
-  static hasCurrentAssets(assets: Partial<ResizedArtworksResult> | undefined, fingerprint: string): boolean {
+  static hasCurrentAssets(assets: Partial<ResizedArtworksResult> | undefined, fingerprint: string, customBackgroundColor?: string): boolean {
     if (!assets || assets.renderFingerprint !== fingerprint) return false;
-    return artworkProfiles().every(p => {
+    return artworkProfiles(customBackgroundColor).every(p => {
       const file = (assets as any)[p.key] || assets.productVariants?.[p.key];
       if (!file) return false;
       try { const fd=fs.openSync(file,'r'); const header=Buffer.alloc(24);
@@ -103,20 +103,20 @@ export class ArtworkResizeService {
       } catch { return false; }
     });
   }
-  static async generateResizedArtworks(taskId: string, source: ArtworkSource | string, onProgress?: ArtworkRenderProgress): Promise<ResizedArtworksResult> {
+  static async generateResizedArtworks(taskId: string, source: ArtworkSource | string, onProgress?: ArtworkRenderProgress, customBackgroundColor?: string): Promise<ResizedArtworksResult> {
     const input: ArtworkSource = typeof source === 'string' ? {kind:'PNG',path:source} : source;
-    const fingerprint=this.fingerprint(input);
-    const files=await this.renderProfiles(taskId,input,artworkProfiles(),onProgress,fingerprint);
+    const fingerprint=this.fingerprint(input, customBackgroundColor);
+    const files=await this.renderProfiles(taskId,input,artworkProfiles(customBackgroundColor),onProgress,fingerprint);
     const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants }=files;
     const renderFileHashes=Object.fromEntries(Object.entries(files).map(([key,file])=>[key,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]));
     return {mugStandardPath,mugBrushPath,drinkwareStandardPath,drinkwareBrushPath,productVariants,renderFingerprint:fingerprint,renderFileHashes};
   }
-  static async generateProductVariant(taskId: string, source: ArtworkSource | string, id: string, config: ProductVariantGeneratorConfig) {
-    const files=await this.renderProfiles(taskId,typeof source==='string'?{kind:'PNG',path:source}:source,[productProfile(id,config)]);
+  static async generateProductVariant(taskId: string, source: ArtworkSource | string, id: string, config: ProductVariantGeneratorConfig, customBackgroundColor?: string) {
+    const files=await this.renderProfiles(taskId,typeof source==='string'?{kind:'PNG',path:source}:source,[productProfile(id,config,customBackgroundColor)]);
     return files[id];
   }
-  static async generateAllProductVariants(taskId: string, source: ArtworkSource | string) {
-    return this.renderProfiles(taskId,typeof source==='string'?{kind:'PNG',path:source}:source,artworkProfiles().filter(p=>!p.key.endsWith('Path')));
+  static async generateAllProductVariants(taskId: string, source: ArtworkSource | string, customBackgroundColor?: string) {
+    return this.renderProfiles(taskId,typeof source==='string'?{kind:'PNG',path:source}:source,artworkProfiles(customBackgroundColor).filter(p=>!p.key.endsWith('Path')));
   }
   private static async renderProfiles(taskId: string, source: ArtworkSource, profiles: ArtworkProfile[], onProgress?: ArtworkRenderProgress, fingerprint?: string) {
     profiles.forEach(validateProfile);

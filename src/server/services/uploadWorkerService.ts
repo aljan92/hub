@@ -779,13 +779,43 @@ export class UploadWorkerService {
         fitTypes = [...fitTypes, 'men'];
       }
 
-      // Strikte Validierung von customBackgroundColor (nur echte 6-stellige Hex-Werte wie '#000000', niemals "Automatisch" o.ä.)
-      let resolvedBgHex = avoidColor === 'black' ? '#FFFFFF' : '#000000';
+      // Strikte Validierung von customBackgroundColor mit mehrstufiger Fallback-Kette
+      let resolvedBgHex: string | undefined;
+
+      // 1. Queue-Item prüfen
       if (item.customBackgroundColor && typeof item.customBackgroundColor === 'string') {
         const trimmed = item.customBackgroundColor.trim().replace(/^#/, '');
         if (/^[0-9A-Fa-f]{6}$/.test(trimmed)) {
           resolvedBgHex = `#${trimmed.toUpperCase()}`;
         }
+      }
+
+      // 2. Task-Lookup (falls im Queue-Item nicht gesetzt)
+      if (!resolvedBgHex && item.taskId) {
+        try {
+          const associatedTask = TaskRepository.getTaskById(item.taskId);
+          if (associatedTask) {
+            const rawTaskBg = (associatedTask.customAnswers as any)?.customBackgroundColor
+              || (associatedTask.customAnswers as any)?.preferredBackgroundColor
+              || (associatedTask.customAnswers as any)?.accessoryColorHex
+              || (associatedTask as any).customBackgroundColor
+              || (associatedTask as any).preferredBackgroundColor
+              || associatedTask.analysisResult?.background_color_recommendation?.hex;
+            if (rawTaskBg && typeof rawTaskBg === 'string') {
+              const trimmed = rawTaskBg.trim().replace(/^#/, '');
+              if (/^[0-9A-Fa-f]{6}$/.test(trimmed)) {
+                resolvedBgHex = `#${trimmed.toUpperCase()}`;
+              }
+            }
+          }
+        } catch {
+          // Stiller Fallback bei Task-Lookup-Fehlern
+        }
+      }
+
+      // 3. Robuster Fallback nach bestehender Regel (avoidColor === 'black' ? '#FFFFFF' : '#000000')
+      if (!resolvedBgHex) {
+        resolvedBgHex = avoidColor === 'black' ? '#FFFFFF' : '#000000';
       }
       const customBgColor = resolvedBgHex;
 

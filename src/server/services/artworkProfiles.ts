@@ -6,14 +6,24 @@ export interface ArtworkProfile {
   boxes: Array<{ x: number; y: number; width: number; height: number }>;
 }
 
-export function productProfile(id: string, config: ProductVariantGeneratorConfig): ArtworkProfile {
+export function normalizeBackgroundHex(color?: string): string | undefined {
+  if (!color || typeof color !== 'string') return undefined;
+  const trimmed = color.trim().replace(/^#/, '');
+  if (/^[0-9A-Fa-f]{6}$/.test(trimmed)) {
+    return `#${trimmed.toUpperCase()}`;
+  }
+  return undefined;
+}
+
+export function productProfile(id: string, config: ProductVariantGeneratorConfig, overrideBackground?: string): ArtworkProfile {
   const { width, height } = config.canvas;
   const padding = Math.min(width, height) * config.paddingShortSidePct;
-  return { key: id, suffix: id.toLowerCase(), width, height, background: resolveBackgroundColor(config),
+  const normalizedOverride = normalizeBackgroundHex(overrideBackground);
+  return { key: id, suffix: id.toLowerCase(), width, height, background: normalizedOverride || resolveBackgroundColor(config),
     boxes: [{ x: padding, y: padding, width: width - 2 * padding, height: height - 2 * padding }] };
 }
 
-export function artworkProfiles(): ArtworkProfile[] {
+export function artworkProfiles(overrideBackground?: string): ArtworkProfile[] {
   // Technical composition geometry, not product routing. Preserve the legacy placements.
   const twoSided = (key: string, suffix: string, width: number, height: number, side: number, xs: number[], brush: boolean) => {
     const margin = side * 0.075;
@@ -27,7 +37,7 @@ export function artworkProfiles(): ArtworkProfile[] {
     twoSided('mugBrushPath', 'two_sided_mug_brush', 2700, 1050, mugSide, mugXs, true),
     twoSided('drinkwareStandardPath', 'two_sided_drinkware_standard', 3000, 1400, 1400, [31, 1566.6667], false),
     twoSided('drinkwareBrushPath', 'two_sided_drinkware_brush', 3000, 1400, 1400, [31, 1566.6667], true),
-    ...getGeneratableVariants().map(v => productProfile(v.id, v.generator!))
+    ...getGeneratableVariants().map(v => productProfile(v.id, v.generator!, overrideBackground))
   ];
 }
 

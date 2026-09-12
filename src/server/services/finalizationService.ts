@@ -224,15 +224,27 @@ export class FinalizationService {
     let resizedAssets: ResizedArtworksResult | undefined;
     const { getGeneratableVariants } = await import('./productCatalogService');
     const generatableVariants = getGeneratableVariants();
+
+    const rawBgHex = params.customBackgroundColor
+      || (task?.customAnswers as any)?.customBackgroundColor
+      || (task?.customAnswers as any)?.preferredBackgroundColor
+      || (task?.customAnswers as any)?.accessoryColorHex
+      || (task as any)?.customBackgroundColor
+      || (task as any)?.preferredBackgroundColor
+      || task?.analysisResult?.background_color_recommendation?.hex;
+    const resolvedCustomBg = (typeof rawBgHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawBgHex.trim()))
+      ? (rawBgHex.trim().startsWith('#') ? rawBgHex.trim().toUpperCase() : `#${rawBgHex.trim().toUpperCase()}`)
+      : undefined;
+
     try {
       const source = ArtworkResizeService.source(task, masterPngPath);
-      const sourceFingerprint = ArtworkResizeService.fingerprint(source);
+      const sourceFingerprint = ArtworkResizeService.fingerprint(source, resolvedCustomBg);
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(), type: 'FINALIZATION_EVENT' as any,
         title: source.kind === 'SVG' ? '🎨 Varianten direkt aus freigegebenem SVG rendern...' : '🎨 PNG-Varianten vorbereiten – Original-Pixelgröße, keine Vergrößerung...',
-        content: { phase: 'PRODUCT_VARIANT_GENERATION', status: 'RUNNING', source: source.kind }
+        content: { phase: 'PRODUCT_VARIANT_GENERATION', status: 'RUNNING', source: source.kind, customBackgroundColor: resolvedCustomBg }
       });
-      if (!params.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint)) {
+      if (!params.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint, resolvedCustomBg)) {
         resizedAssets = task!.resizedAssets as ResizedArtworksResult;
       } else {
         // Existing referenced files stay untouched until the complete replacement is ready.
@@ -242,9 +254,9 @@ export class FinalizationService {
             timestamp: new Date().toISOString(), type: 'FINALIZATION_EVENT' as any,
             title, content: { phase: 'ARTWORK_PREPARATION', status: 'RUNNING', source: source.kind, stage, ...(metrics ? { metrics } : {}) }
           });
-        });
+        }, resolvedCustomBg);
         const currentSource = ArtworkResizeService.source(TaskLogService.getTask(taskId), masterPngPath);
-        if (ArtworkResizeService.fingerprint(currentSource) !== sourceFingerprint) throw new Error('Artwork-Quelle wurde während des Renderns geändert; keine Übernahme.');
+        if (ArtworkResizeService.fingerprint(currentSource, resolvedCustomBg) !== sourceFingerprint) throw new Error('Artwork-Quelle wurde während des Renderns geändert; keine Übernahme.');
       }
     } catch (error: any) {
       const err = 'Fehler bei Artwork-Vorbereitung: ' + error.message;
@@ -335,7 +347,7 @@ export class FinalizationService {
         listings: sanitizedListings,
         fitTypes: params.fitTypes && params.fitTypes.length > 0 ? params.fitTypes : ['men', 'women', 'youth'],
         avoidColor: params.avoidColor || 'none',
-        customBackgroundColor: params.customBackgroundColor,
+        customBackgroundColor: resolvedCustomBg || params.customBackgroundColor,
         imagePath: params.localImagePath || '',
         pngPath: params.masterPngPath,
         resizedAssets,
@@ -386,7 +398,7 @@ export class FinalizationService {
         listings: sanitizedListings,
         fitTypes: params.fitTypes && params.fitTypes.length > 0 ? params.fitTypes : ['men', 'women', 'youth'],
         avoidColor: params.avoidColor || 'none',
-        customBackgroundColor: params.customBackgroundColor,
+        customBackgroundColor: resolvedCustomBg || params.customBackgroundColor,
         imagePath: params.localImagePath || '',
         pngPath: params.masterPngPath,
         resizedAssets,

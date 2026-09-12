@@ -221602,19 +221602,28 @@ var init_artworkBrushRuntime = __esm2({
 });
 
 // src/server/services/artworkProfiles.ts
-function productProfile(id, config) {
+function normalizeBackgroundHex(color) {
+  if (!color || typeof color !== "string") return void 0;
+  const trimmed = color.trim().replace(/^#/, "");
+  if (/^[0-9A-Fa-f]{6}$/.test(trimmed)) {
+    return `#${trimmed.toUpperCase()}`;
+  }
+  return void 0;
+}
+function productProfile(id, config, overrideBackground) {
   const { width, height } = config.canvas;
   const padding = Math.min(width, height) * config.paddingShortSidePct;
+  const normalizedOverride = normalizeBackgroundHex(overrideBackground);
   return {
     key: id,
     suffix: id.toLowerCase(),
     width,
     height,
-    background: resolveBackgroundColor(config),
+    background: normalizedOverride || resolveBackgroundColor(config),
     boxes: [{ x: padding, y: padding, width: width - 2 * padding, height: height - 2 * padding }]
   };
 }
-function artworkProfiles() {
+function artworkProfiles(overrideBackground) {
   const twoSided = (key, suffix, width, height, side, xs, brush) => {
     const margin = side * 0.075;
     return {
@@ -221633,7 +221642,7 @@ function artworkProfiles() {
     twoSided("mugBrushPath", "two_sided_mug_brush", 2700, 1050, mugSide, mugXs, true),
     twoSided("drinkwareStandardPath", "two_sided_drinkware_standard", 3e3, 1400, 1400, [31, 1566.6667], false),
     twoSided("drinkwareBrushPath", "two_sided_drinkware_brush", 3e3, 1400, 1400, [31, 1566.6667], true),
-    ...getGeneratableVariants().map((v) => productProfile(v.id, v.generator))
+    ...getGeneratableVariants().map((v) => productProfile(v.id, v.generator, overrideBackground))
   ];
 }
 function validateProfile(p) {
@@ -221793,12 +221802,12 @@ var init_artworkResizeService = __esm2({
         }
         return { kind: "PNG", path: pngPath };
       }
-      static fingerprint(source12) {
-        return (0, import_node_crypto3.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles())).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+      static fingerprint(source12, customBackgroundColor) {
+        return (0, import_node_crypto3.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
       }
-      static hasCurrentAssets(assets, fingerprint) {
+      static hasCurrentAssets(assets, fingerprint, customBackgroundColor) {
         if (!assets || assets.renderFingerprint !== fingerprint) return false;
-        return artworkProfiles().every((p) => {
+        return artworkProfiles(customBackgroundColor).every((p) => {
           const file = assets[p.key] || assets.productVariants?.[p.key];
           if (!file) return false;
           try {
@@ -221815,20 +221824,20 @@ var init_artworkResizeService = __esm2({
           }
         });
       }
-      static async generateResizedArtworks(taskId, source12, onProgress) {
+      static async generateResizedArtworks(taskId, source12, onProgress, customBackgroundColor) {
         const input = typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12;
-        const fingerprint = this.fingerprint(input);
-        const files = await this.renderProfiles(taskId, input, artworkProfiles(), onProgress, fingerprint);
+        const fingerprint = this.fingerprint(input, customBackgroundColor);
+        const files = await this.renderProfiles(taskId, input, artworkProfiles(customBackgroundColor), onProgress, fingerprint);
         const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants } = files;
         const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto3.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
         return { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants, renderFingerprint: fingerprint, renderFileHashes };
       }
-      static async generateProductVariant(taskId, source12, id, config) {
-        const files = await this.renderProfiles(taskId, typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12, [productProfile(id, config)]);
+      static async generateProductVariant(taskId, source12, id, config, customBackgroundColor) {
+        const files = await this.renderProfiles(taskId, typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12, [productProfile(id, config, customBackgroundColor)]);
         return files[id];
       }
-      static async generateAllProductVariants(taskId, source12) {
-        return this.renderProfiles(taskId, typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12, artworkProfiles().filter((p) => !p.key.endsWith("Path")));
+      static async generateAllProductVariants(taskId, source12, customBackgroundColor) {
+        return this.renderProfiles(taskId, typeof source12 === "string" ? { kind: "PNG", path: source12 } : source12, artworkProfiles(customBackgroundColor).filter((p) => !p.key.endsWith("Path")));
       }
       static async renderProfiles(taskId, source12, profiles, onProgress, fingerprint) {
         profiles.forEach(validateProfile);
@@ -226727,16 +226736,18 @@ var init_finalizationService = __esm2({
         let resizedAssets;
         const { getGeneratableVariants: getGeneratableVariants2 } = await Promise.resolve().then(() => (init_productCatalogService(), productCatalogService_exports));
         const generatableVariants = getGeneratableVariants2();
+        const rawBgHex = params2.customBackgroundColor || task?.customAnswers?.customBackgroundColor || task?.customAnswers?.preferredBackgroundColor || task?.customAnswers?.accessoryColorHex || task?.customBackgroundColor || task?.preferredBackgroundColor || task?.analysisResult?.background_color_recommendation?.hex;
+        const resolvedCustomBg2 = typeof rawBgHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBgHex.trim()) ? rawBgHex.trim().startsWith("#") ? rawBgHex.trim().toUpperCase() : `#${rawBgHex.trim().toUpperCase()}` : void 0;
         try {
           const source12 = ArtworkResizeService.source(task, masterPngPath);
-          const sourceFingerprint = ArtworkResizeService.fingerprint(source12);
+          const sourceFingerprint = ArtworkResizeService.fingerprint(source12, resolvedCustomBg2);
           TaskLogService.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "FINALIZATION_EVENT",
             title: source12.kind === "SVG" ? "\u{1F3A8} Varianten direkt aus freigegebenem SVG rendern..." : "\u{1F3A8} PNG-Varianten vorbereiten \u2013 Original-Pixelgr\xF6\xDFe, keine Vergr\xF6\xDFerung...",
-            content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", source: source12.kind }
+            content: { phase: "PRODUCT_VARIANT_GENERATION", status: "RUNNING", source: source12.kind, customBackgroundColor: resolvedCustomBg2 }
           });
-          if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint)) {
+          if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint, resolvedCustomBg2)) {
             resizedAssets = task.resizedAssets;
           } else {
             const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto4.randomUUID)() : taskId);
@@ -226747,9 +226758,9 @@ var init_finalizationService = __esm2({
                 title,
                 content: { phase: "ARTWORK_PREPARATION", status: "RUNNING", source: source12.kind, stage, ...metrics ? { metrics } : {} }
               });
-            });
+            }, resolvedCustomBg2);
             const currentSource = ArtworkResizeService.source(TaskLogService.getTask(taskId), masterPngPath);
-            if (ArtworkResizeService.fingerprint(currentSource) !== sourceFingerprint) throw new Error("Artwork-Quelle wurde w\xE4hrend des Renderns ge\xE4ndert; keine \xDCbernahme.");
+            if (ArtworkResizeService.fingerprint(currentSource, resolvedCustomBg2) !== sourceFingerprint) throw new Error("Artwork-Quelle wurde w\xE4hrend des Renderns ge\xE4ndert; keine \xDCbernahme.");
           }
         } catch (error) {
           const err = "Fehler bei Artwork-Vorbereitung: " + error.message;
@@ -226827,7 +226838,7 @@ var init_finalizationService = __esm2({
             listings: sanitizedListings,
             fitTypes: params2.fitTypes && params2.fitTypes.length > 0 ? params2.fitTypes : ["men", "women", "youth"],
             avoidColor: params2.avoidColor || "none",
-            customBackgroundColor: params2.customBackgroundColor,
+            customBackgroundColor: resolvedCustomBg || params2.customBackgroundColor,
             imagePath: params2.localImagePath || "",
             pngPath: params2.masterPngPath,
             resizedAssets,
@@ -226874,7 +226885,7 @@ var init_finalizationService = __esm2({
             listings: sanitizedListings,
             fitTypes: params2.fitTypes && params2.fitTypes.length > 0 ? params2.fitTypes : ["men", "women", "youth"],
             avoidColor: params2.avoidColor || "none",
-            customBackgroundColor: params2.customBackgroundColor,
+            customBackgroundColor: resolvedCustomBg || params2.customBackgroundColor,
             imagePath: params2.localImagePath || "",
             pngPath: params2.masterPngPath,
             resizedAssets,
@@ -227596,7 +227607,7 @@ Bullets: ${oldBullets}`
           resolvedAvoidColor = "black";
         }
         const rawBg = task.customAnswers?.customBackgroundColor || task.customAnswers?.preferredBackgroundColor || task.customBackgroundColor || task.preferredBackgroundColor || task.analysisResult?.background_color_recommendation?.hex;
-        const resolvedCustomBg = typeof rawBg === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBg.trim()) ? rawBg.trim().startsWith("#") ? rawBg.trim().toUpperCase() : `#${rawBg.trim().toUpperCase()}` : void 0;
+        const resolvedCustomBg2 = typeof rawBg === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBg.trim()) ? rawBg.trim().startsWith("#") ? rawBg.trim().toUpperCase() : `#${rawBg.trim().toUpperCase()}` : void 0;
         return {
           taskId: task.id,
           pipeline: "UPDATE",
@@ -227609,7 +227620,7 @@ Bullets: ${oldBullets}`
           listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
           fitTypes: resolvedFitTypes,
           avoidColor: resolvedAvoidColor,
-          customBackgroundColor: resolvedCustomBg,
+          customBackgroundColor: resolvedCustomBg2,
           localImagePath: task.localImagePath || "",
           masterPngPath: task.localMbaPngPath || task.localImagePath || "",
           publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
@@ -230144,6 +230155,16 @@ var init_queueService = __esm2({
                 else item.avoidColor = "none";
                 hasChanges = true;
               }
+              if (!item.customBackgroundColor) {
+                const rawBg = task.customAnswers?.customBackgroundColor || task.customAnswers?.preferredBackgroundColor || task.customAnswers?.accessoryColorHex || task?.customBackgroundColor || task?.preferredBackgroundColor || task.analysisResult?.background_color_recommendation?.hex;
+                if (rawBg && typeof rawBg === "string") {
+                  const trimmed = rawBg.trim().replace(/^#/, "");
+                  if (/^[0-9A-Fa-f]{6}$/.test(trimmed)) {
+                    item.customBackgroundColor = `#${trimmed.toUpperCase()}`;
+                    hasChanges = true;
+                  }
+                }
+              }
               const isUpdate = item.type === "update" || item.type === "UPDATE" || item.source === "UPDATE" || item.id && String(item.id).startsWith("update_") || item.taskId && String(item.taskId).endsWith("-U");
               if (isUpdate) {
                 if (item.publishedProductsCount === void 0) {
@@ -230400,6 +230421,11 @@ var init_queueService = __esm2({
           if (!Array.isArray(val)) return [];
           return val.map((p) => typeof p === "object" && p ? String(p.id || p.name || p.productId || "") : String(p)).map((s) => s.trim()).filter(Boolean);
         };
+        const normalizeCustomBg = (val) => {
+          if (!val || typeof val !== "string") return void 0;
+          const trimmed = val.trim().replace(/^#/, "");
+          return /^[0-9A-Fa-f]{6}$/.test(trimmed) ? `#${trimmed.toUpperCase()}` : void 0;
+        };
         const existing = this.items.find((i) => i.taskId === item.taskId);
         const isUpdate = item.source === "UPDATE" || item.type === "update" || item.taskId && item.taskId.endsWith("-U");
         if (existing) {
@@ -230414,7 +230440,8 @@ var init_queueService = __esm2({
           if (item.fitTypes !== void 0) existing.fitTypes = normalizeFitTypes(item.fitTypes);
           if (item.avoidColor !== void 0) existing.avoidColor = normalizeAvoidColor(item.avoidColor);
           if (item.tmBlockedProductIds !== void 0) existing.tmBlockedProductIds = normalizeTmBlocked(item.tmBlockedProductIds);
-          if (item.customBackgroundColor) existing.customBackgroundColor = item.customBackgroundColor;
+          const normalizedBg = normalizeCustomBg(item.customBackgroundColor);
+          if (normalizedBg) existing.customBackgroundColor = normalizedBg;
           if (item.pngPath) existing.pngPath = item.pngPath;
           if (item.imagePath) existing.imagePath = item.imagePath;
           if (item.source) existing.source = item.source;
@@ -230492,7 +230519,7 @@ var init_queueService = __esm2({
           fitTypes: normalizeFitTypes(item.fitTypes),
           effectiveFitTypes: resolveEffectiveFitTypes(normalizeFitTypes(item.fitTypes), uploadPolicy),
           avoidColor: normalizeAvoidColor(item.avoidColor),
-          customBackgroundColor: item.customBackgroundColor,
+          customBackgroundColor: normalizeCustomBg(item.customBackgroundColor),
           imagePath: item.imagePath,
           pngPath: item.pngPath,
           resizedAssets: item.resizedAssets,
@@ -236241,12 +236268,30 @@ var UploadWorkerService = class _UploadWorkerService {
       if (normalizedFits.includes("youth") && !normalizedFits.includes("men") && !normalizedFits.includes("women")) {
         fitTypes = [...fitTypes, "men"];
       }
-      let resolvedBgHex = avoidColor === "black" ? "#FFFFFF" : "#000000";
+      let resolvedBgHex;
       if (item.customBackgroundColor && typeof item.customBackgroundColor === "string") {
         const trimmed = item.customBackgroundColor.trim().replace(/^#/, "");
         if (/^[0-9A-Fa-f]{6}$/.test(trimmed)) {
           resolvedBgHex = `#${trimmed.toUpperCase()}`;
         }
+      }
+      if (!resolvedBgHex && item.taskId) {
+        try {
+          const associatedTask = TaskRepository.getTaskById(item.taskId);
+          if (associatedTask) {
+            const rawTaskBg = associatedTask.customAnswers?.customBackgroundColor || associatedTask.customAnswers?.preferredBackgroundColor || associatedTask.customAnswers?.accessoryColorHex || associatedTask.customBackgroundColor || associatedTask.preferredBackgroundColor || associatedTask.analysisResult?.background_color_recommendation?.hex;
+            if (rawTaskBg && typeof rawTaskBg === "string") {
+              const trimmed = rawTaskBg.trim().replace(/^#/, "");
+              if (/^[0-9A-Fa-f]{6}$/.test(trimmed)) {
+                resolvedBgHex = `#${trimmed.toUpperCase()}`;
+              }
+            }
+          }
+        } catch {
+        }
+      }
+      if (!resolvedBgHex) {
+        resolvedBgHex = avoidColor === "black" ? "#FFFFFF" : "#000000";
       }
       const customBgColor = resolvedBgHex;
       for (let i = 0; i < totalActiveProducts; i++) {
