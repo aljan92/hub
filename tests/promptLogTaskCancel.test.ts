@@ -144,6 +144,17 @@ async function runTests() {
     assert.match(updatedTask?.errorDetails || '', /skip_update=true/);
     console.log('✅ [PASS] Test 7: Skip update metadata preserved on CANCELLED task.');
 
+    // --- Test 8: updateTaskStatus rejects resurrection of CANCELLED tasks ---
+    console.log('Test 8: updateTaskStatus rejects resurrection of CANCELLED tasks...');
+    const cancelledTask809 = makeTask('#809-U', 'UPDATE', 'CANCELLED');
+    TaskRepository.createTask(cancelledTask809);
+    
+    // Attempt to resurrect by updating to AWAITING_DESIGN_REVIEW
+    TaskLogService.updateTaskStatus('#809-U', { status: 'AWAITING_DESIGN_REVIEW', checkpoint: 'DESIGN_REVIEW' });
+    const afterResurrectAttempt = TaskRepository.getTaskById('#809-U');
+    assert.strictEqual(afterResurrectAttempt?.status, 'CANCELLED');
+    console.log('✅ [PASS] Test 8: updateTaskStatus safely rejected resurrection of CANCELLED task.');
+
     console.log('\n====================================================');
     console.log('🎉 ALL PROMPT LOG TASK CANCEL TESTS PASSED!');
     console.log('====================================================\n');

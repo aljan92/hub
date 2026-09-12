@@ -1023,6 +1023,7 @@ app.post('/api/v1/trademark/batch-check', async (req, res) => {
 app.post('/api/v1/update/backfill/reset', (req, res) => {
   try {
     const result = UpdateBackfillService.resetInFlightLocks();
+    broadcast('QUEUE_UPDATED', QueueService.getState());
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -1130,15 +1131,11 @@ app.post('/api/v1/tasks/:taskId/cancel', (req, res) => {
         UpdateBackfillService.addRecentlyCancelledDesign(designId);
         UpdateBackfillService.releaseInFlight(designId);
       }
-      // Keep auto backfill running and pull the NEXT design if automation is enabled
-      const settings = loadSettings();
-      if (settings.queueUpdateAutoBackfillEnabled) {
-        UpdateBackfillService.runBackfillCycle().catch(err => {
-          console.warn('[UpdateBackfill] Fehler beim Nachziehen des nächsten Kandidaten nach Abbruch:', err);
-        });
-      }
+      // Re-trigger backfill cycle or seamlessly queue it if a cycle is currently running
+      UpdateBackfillService.scheduleNextCycleAfterCancel();
     }
     broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
+    broadcast('QUEUE_UPDATED', QueueService.getState());
     res.json({ ...result, updateAutomationDisabled: false });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });

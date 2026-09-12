@@ -227287,13 +227287,26 @@ Bullets: ${oldBullets}`
         });
       }
       static async runUpdatePipelineExclusive(designId) {
+        const isCancelled = (tId) => this.getTask(tId)?.status === "CANCELLED";
         const u1 = await this.stepU1_ExtractMerchData(designId);
         if (!u1.success || !u1.task) return { success: false, error: u1.error, failedStep: "U1" };
         const taskId = u1.task.id;
+        if (isCancelled(taskId)) {
+          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} wurde nach U1 abgebrochen. Breche Pipeline ab.`);
+          return { success: false, error: "Task wurde vom Benutzer abgebrochen", task: this.getTask(taskId), failedStep: "U1" };
+        }
         const u2 = await this.stepU2_DownloadArtwork(taskId);
         if (!u2.success) return { success: false, task: this.getTask(taskId), error: u2.error, failedStep: "U2" };
+        if (isCancelled(taskId)) {
+          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} wurde nach U2 abgebrochen. Breche Pipeline ab.`);
+          return { success: false, error: "Task wurde vom Benutzer abgebrochen", task: this.getTask(taskId), failedStep: "U2" };
+        }
         const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
         if (!u3.success) return { success: false, task: this.getTask(taskId), error: u3.error, failedStep: "U3", tokenRelevantFailure: true };
+        if (isCancelled(taskId)) {
+          console.log(`[UpdatePipeline] \u{1F6D1} Task ${taskId} wurde nach U3 abgebrochen. Breche Pipeline ab.`);
+          return { success: false, error: "Task wurde vom Benutzer abgebrochen", task: this.getTask(taskId), failedStep: "U3" };
+        }
         const settings = loadSettings();
         const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
         const isDefective = u3.analysisResult?.design_quality?.quality_verdict === "DEFECTIVE" || u3.analysisResult?.overall_verdict === "REJECTED";
@@ -229198,20 +229211,64 @@ var init_updateBackfillService = __esm2({
         return new Set(this.recentlyCancelledDesignIds);
       }
       /**
-       * Clears in-flight design memory locks and cancels any hanging/stale update tasks
+       * Clears in-flight design memory locks, cancelled cooldowns, and cancels any hanging/stale update tasks.
+       * Immediately re-checks and triggers a backfill cycle if below target.
        */
       static resetInFlightLocks() {
         const count = this.inFlightDesigns.size;
         this.inFlightDesigns.clear();
+        const cancelledCooldownCount = this.recentlyCancelledDesignIds.size;
+        this.recentlyCancelledDesignIds.clear();
         const cancelledCount = TaskLogService.cancelActiveUpdateTasks();
         const counts = this.getActiveUpdateCount();
-        console.log(`[UpdateBackfillService] \u{1F504} In-Flight Locks (${count}) & ${cancelledCount} offene Update-Tasks zur\xFCckgesetzt. Neuer Ist-Bestand: ${counts.currentCount}`);
+        console.log(`[UpdateBackfillService] \u{1F504} In-Flight Locks (${count}), Cooldowns (${cancelledCooldownCount}) & ${cancelledCount} offene Tasks zur\xFCckgesetzt. Neuer Ist-Bestand: ${counts.currentCount}`);
+        const settings = loadSettings();
+        const target = settings.queueUpdateTargetCount ?? 10;
+        if (settings.queueUpdateAutoBackfillEnabled && counts.currentCount < target) {
+          console.log(`[UpdateBackfillService] \u{1F680} Sto\xDFe nach Reset sofort neue Ziehung an (IST: ${counts.currentCount} < SOLL: ${target})...`);
+          void this.runBackfillCycle(false).catch((err) => {
+            console.warn("[UpdateBackfillService] Fehler bei Ziehung nach Reset:", err?.message || err);
+          });
+        }
         return {
           success: true,
           releasedCount: count + cancelledCount,
           activeCount: counts.currentCount,
-          message: `In-Flight Locks und ${cancelledCount} offene Update-Tasks zur\xFCckgesetzt (Aktueller Ist-Bestand: ${counts.currentCount}).`
+          message: `In-Flight Locks, Cooldowns und ${cancelledCount} offene Update-Tasks zur\xFCckgesetzt (Aktueller Ist-Bestand: ${counts.currentCount}).`
         };
+      }
+      /**
+       * Automatically schedule a follow-up backfill cycle after an update task was cancelled.
+       * If a cycle is currently running (e.g. unwinding previous step), schedules the next
+       * run immediately after it settles.
+       */
+      static scheduleNextCycleAfterCancel() {
+        const settings = loadSettings();
+        if (!settings.queueUpdateAutoBackfillEnabled) {
+          console.log("[UpdateBackfillService] Automatik nach Abbruch nicht erneut gestartet (deaktiviert).");
+          return;
+        }
+        if (!this.activeCycle) {
+          console.log("[UpdateBackfillService] \u{1F504} Starte sofort n\xE4chste Backfill-Runde nach Abbruch...");
+          void this.runBackfillCycle(false).catch((err) => {
+            console.warn("[UpdateBackfillService] Fehler im Folge-Zyklus nach Abbruch:", err?.message || err);
+          });
+          return;
+        }
+        console.log("[UpdateBackfillService] \u23F3 Vorheriger Zyklus l\xE4uft noch aus. Folge-Zyklus nach Abbruch eingereiht...");
+        const current = this.activeCycle;
+        current.finally(() => {
+          setTimeout(() => {
+            const counts = this.getActiveUpdateCount();
+            const target = loadSettings().queueUpdateTargetCount ?? 10;
+            if (counts.currentCount < target) {
+              console.log(`[UpdateBackfillService] \u{1F680} F\xFChre eingereihten Folge-Zyklus nach Abbruch aus (IST: ${counts.currentCount} < SOLL: ${target})...`);
+              void this.runBackfillCycle(false).catch((err) => {
+                console.warn("[UpdateBackfillService] Fehler im Folge-Zyklus nach Abbruch:", err?.message || err);
+              });
+            }
+          }, 500);
+        });
       }
       /**
        * Query Supabase `mba_designs` table for the oldest updated design
@@ -229232,8 +229289,8 @@ var init_updateBackfillService = __esm2({
         console.log(`[UpdateBackfillService] \u{1F50D} Frage Supabase mba_designs nach Kandidaten ab (Exkludiert: ${excludedIds.size} Designs, Max. Produkte: < ${maxActiveProducts})...`);
         const candidateColumns = "design_id, asin_standard_tshirt_us, created_date, updated_date, mba_hub_updated_at, skip_update, published_products, asins, status, sales_total, sales_history_synced";
         const [neverUpdatedResult, previouslyUpdatedResult] = await Promise.all([
-          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).eq("sales_history_synced", true).eq("sales_total", 0).not("published_products", "is", null).is("mba_hub_updated_at", null).order("created_date", { ascending: true, nullsFirst: false }).limit(300),
-          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).eq("sales_history_synced", true).eq("sales_total", 0).not("published_products", "is", null).not("mba_hub_updated_at", "is", null).order("mba_hub_updated_at", { ascending: true, nullsFirst: false }).limit(300)
+          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).eq("sales_history_synced", true).eq("sales_total", 0).not("published_products", "is", null).is("mba_hub_updated_at", null).order("created_date", { ascending: true, nullsFirst: false }).limit(1e3),
+          supabase.from("mba_designs").select(candidateColumns).eq("status", "PUBLISHED").eq("skip_update", false).eq("sales_history_synced", true).eq("sales_total", 0).not("published_products", "is", null).not("mba_hub_updated_at", "is", null).order("mba_hub_updated_at", { ascending: true, nullsFirst: false }).limit(1e3)
         ]);
         const queryError = neverUpdatedResult.error || previouslyUpdatedResult.error;
         if (queryError) {
@@ -229249,6 +229306,10 @@ var init_updateBackfillService = __esm2({
           console.log('[UpdateBackfillService] \u2139\uFE0F Keine Designs mit status="PUBLISHED", 0 Sales und gef\xFCllter published_products Spalte in mba_designs gefunden.');
           return null;
         }
+        let skippedExcluded = 0;
+        let skippedSales = 0;
+        let skippedEmptyProducts = 0;
+        let skippedMaxProducts = 0;
         for (const cand of candidates) {
           const dId = cand.design_id ? String(cand.design_id).replace(/^#/, "").replace(/-U$/, "").trim() : "";
           if (!dId) continue;
@@ -229256,10 +229317,11 @@ var init_updateBackfillService = __esm2({
             continue;
           }
           if (excludedIds.has(dId)) {
+            skippedExcluded++;
             continue;
           }
           if (!hasVerifiedZeroSales(cand)) {
-            console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: Sales nicht vollst\xE4ndig synchronisiert oder sales_total ist nicht exakt 0.`);
+            skippedSales++;
             continue;
           }
           let activeCount = 0;
@@ -229271,10 +229333,11 @@ var init_updateBackfillService = __esm2({
             activeCount = cand.asins.length;
           }
           if (activeCount === 0) {
+            skippedEmptyProducts++;
             continue;
           }
           if (activeCount >= maxActiveProducts) {
-            console.log(`[UpdateBackfillService] \u23ED\uFE0F Design ${dId} \xFCbersprungen: Bereits ${activeCount} aktive Produkte (Limit: < ${maxActiveProducts}).`);
+            skippedMaxProducts++;
             continue;
           }
           const priorityDate = cand.mba_hub_updated_at || cand.created_date;
@@ -229286,7 +229349,7 @@ var init_updateBackfillService = __esm2({
             priorityDate
           };
         }
-        console.log("[UpdateBackfillService] \u2139\uFE0F Alle abgefragten Designs \xFCberschritten das Produktlimit oder sind bereits in Bearbeitung.");
+        console.log(`[UpdateBackfillService] \u2139\uFE0F Keine passenden Kandidaten unter ${candidates.length} gepr\xFCften Designs (Exkludiert/Hub: ${skippedExcluded}, Sales != 0: ${skippedSales}, 0 Produkte: ${skippedEmptyProducts}, >= ${maxActiveProducts} Produkte: ${skippedMaxProducts}).`);
         return null;
       }
       /**
@@ -230846,8 +230909,12 @@ var init_taskLogService = __esm2({
         };
       }
       static updateTaskStatus(taskId, updates) {
+        const current = TaskRepository.getTaskById(taskId);
+        if (current && current.status === "CANCELLED" && updates.status && updates.status !== "CANCELLED") {
+          console.log(`[TaskLogService] \u{1F6D1} Ignoriere Status-\xC4nderung auf "${updates.status}" f\xFCr bereits abgebrochenen Task ${taskId}.`);
+          return current;
+        }
         if (updates.status === "COMPLETED" && updates.inQueue !== true) {
-          const current = TaskRepository.getTaskById(taskId);
           if (current && current.source !== "UPDATE" && !current.inQueue) {
             const updated2 = TaskRepository.updateTask(taskId, { ...updates, status: "FINALIZING", inQueue: false });
             if (updated2) {
@@ -237975,6 +238042,7 @@ app.post("/api/v1/trademark/batch-check", async (req, res) => {
 app.post("/api/v1/update/backfill/reset", (req, res) => {
   try {
     const result2 = UpdateBackfillService.resetInFlightLocks();
+    broadcast("QUEUE_UPDATED", QueueService.getState());
     res.json(result2);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -238067,14 +238135,10 @@ app.post("/api/v1/tasks/:taskId/cancel", (req, res) => {
         UpdateBackfillService.addRecentlyCancelledDesign(designId);
         UpdateBackfillService.releaseInFlight(designId);
       }
-      const settings = loadSettings();
-      if (settings.queueUpdateAutoBackfillEnabled) {
-        UpdateBackfillService.runBackfillCycle().catch((err) => {
-          console.warn("[UpdateBackfill] Fehler beim Nachziehen des n\xE4chsten Kandidaten nach Abbruch:", err);
-        });
-      }
+      UpdateBackfillService.scheduleNextCycleAfterCancel();
     }
     broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
+    broadcast("QUEUE_UPDATED", QueueService.getState());
     res.json({ ...result2, updateAutomationDisabled: false });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });

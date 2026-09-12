@@ -911,18 +911,35 @@ export class UpdatePipelineService {
   }
 
   private static async runUpdatePipelineExclusive(designId: string): Promise<UpdatePipelineRunResult> {
+    const isCancelled = (tId: string) => this.getTask(tId)?.status === 'CANCELLED';
+
     // U1: Extract raw data & create task log
     const u1 = await this.stepU1_ExtractMerchData(designId);
     if (!u1.success || !u1.task) return { success: false, error: u1.error, failedStep: 'U1' };
     const taskId = u1.task.id;
 
+    if (isCancelled(taskId)) {
+      console.log(`[UpdatePipeline] 🛑 Task ${taskId} wurde nach U1 abgebrochen. Breche Pipeline ab.`);
+      return { success: false, error: 'Task wurde vom Benutzer abgebrochen', task: this.getTask(taskId), failedStep: 'U1' };
+    }
+
     // U2: Download Master-Artwork PNG
     const u2 = await this.stepU2_DownloadArtwork(taskId);
     if (!u2.success) return { success: false, task: this.getTask(taskId), error: u2.error, failedStep: 'U2' };
 
+    if (isCancelled(taskId)) {
+      console.log(`[UpdatePipeline] 🛑 Task ${taskId} wurde nach U2 abgebrochen. Breche Pipeline ab.`);
+      return { success: false, error: 'Task wurde vom Benutzer abgebrochen', task: this.getTask(taskId), failedStep: 'U2' };
+    }
+
     // U3: Vision & Listing Analysis
     const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
     if (!u3.success) return { success: false, task: this.getTask(taskId), error: u3.error, failedStep: 'U3', tokenRelevantFailure: true };
+
+    if (isCancelled(taskId)) {
+      console.log(`[UpdatePipeline] 🛑 Task ${taskId} wurde nach U3 abgebrochen. Breche Pipeline ab.`);
+      return { success: false, error: 'Task wurde vom Benutzer abgebrochen', task: this.getTask(taskId), failedStep: 'U3' };
+    }
 
     // Check AI Autonomy Switch & Quality Assessment for Update Pipeline
     const settings = loadSettings();

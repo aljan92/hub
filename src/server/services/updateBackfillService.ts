@@ -179,22 +179,71 @@ export class UpdateBackfillService {
   }
 
   /**
-   * Clears in-flight design memory locks and cancels any hanging/stale update tasks
+   * Clears in-flight design memory locks, cancelled cooldowns, and cancels any hanging/stale update tasks.
+   * Immediately re-checks and triggers a backfill cycle if below target.
    */
   public static resetInFlightLocks(): { success: boolean; releasedCount: number; activeCount: number; message: string } {
     const count = this.inFlightDesigns.size;
     this.inFlightDesigns.clear();
+    const cancelledCooldownCount = this.recentlyCancelledDesignIds.size;
+    this.recentlyCancelledDesignIds.clear();
 
     const cancelledCount = TaskLogService.cancelActiveUpdateTasks();
 
     const counts = this.getActiveUpdateCount();
-    console.log(`[UpdateBackfillService] 🔄 In-Flight Locks (${count}) & ${cancelledCount} offene Update-Tasks zurückgesetzt. Neuer Ist-Bestand: ${counts.currentCount}`);
+    console.log(`[UpdateBackfillService] 🔄 In-Flight Locks (${count}), Cooldowns (${cancelledCooldownCount}) & ${cancelledCount} offene Tasks zurückgesetzt. Neuer Ist-Bestand: ${counts.currentCount}`);
+
+    const settings = loadSettings();
+    const target = settings.queueUpdateTargetCount ?? 10;
+    if (settings.queueUpdateAutoBackfillEnabled && counts.currentCount < target) {
+      console.log(`[UpdateBackfillService] 🚀 Stoße nach Reset sofort neue Ziehung an (IST: ${counts.currentCount} < SOLL: ${target})...`);
+      void this.runBackfillCycle(false).catch(err => {
+        console.warn('[UpdateBackfillService] Fehler bei Ziehung nach Reset:', err?.message || err);
+      });
+    }
+
     return {
       success: true,
       releasedCount: count + cancelledCount,
       activeCount: counts.currentCount,
-      message: `In-Flight Locks und ${cancelledCount} offene Update-Tasks zurückgesetzt (Aktueller Ist-Bestand: ${counts.currentCount}).`
+      message: `In-Flight Locks, Cooldowns und ${cancelledCount} offene Update-Tasks zurückgesetzt (Aktueller Ist-Bestand: ${counts.currentCount}).`
     };
+  }
+
+  /**
+   * Automatically schedule a follow-up backfill cycle after an update task was cancelled.
+   * If a cycle is currently running (e.g. unwinding previous step), schedules the next
+   * run immediately after it settles.
+   */
+  public static scheduleNextCycleAfterCancel(): void {
+    const settings = loadSettings();
+    if (!settings.queueUpdateAutoBackfillEnabled) {
+      console.log('[UpdateBackfillService] Automatik nach Abbruch nicht erneut gestartet (deaktiviert).');
+      return;
+    }
+
+    if (!this.activeCycle) {
+      console.log('[UpdateBackfillService] 🔄 Starte sofort nächste Backfill-Runde nach Abbruch...');
+      void this.runBackfillCycle(false).catch(err => {
+        console.warn('[UpdateBackfillService] Fehler im Folge-Zyklus nach Abbruch:', err?.message || err);
+      });
+      return;
+    }
+
+    console.log('[UpdateBackfillService] ⏳ Vorheriger Zyklus läuft noch aus. Folge-Zyklus nach Abbruch eingereiht...');
+    const current = this.activeCycle;
+    current.finally(() => {
+      setTimeout(() => {
+        const counts = this.getActiveUpdateCount();
+        const target = loadSettings().queueUpdateTargetCount ?? 10;
+        if (counts.currentCount < target) {
+          console.log(`[UpdateBackfillService] 🚀 Führe eingereihten Folge-Zyklus nach Abbruch aus (IST: ${counts.currentCount} < SOLL: ${target})...`);
+          void this.runBackfillCycle(false).catch(err => {
+            console.warn('[UpdateBackfillService] Fehler im Folge-Zyklus nach Abbruch:', err?.message || err);
+          });
+        }
+      }, 500);
+    });
   }
 
   /**
@@ -233,7 +282,7 @@ export class UpdateBackfillService {
         .not('published_products', 'is', null)
         .is('mba_hub_updated_at', null)
         .order('created_date', { ascending: true, nullsFirst: false })
-        .limit(300),
+        .limit(1000),
       supabase
         .from('mba_designs')
         .select(candidateColumns)
@@ -244,7 +293,7 @@ export class UpdateBackfillService {
         .not('published_products', 'is', null)
         .not('mba_hub_updated_at', 'is', null)
         .order('mba_hub_updated_at', { ascending: true, nullsFirst: false })
-        .limit(300)
+        .limit(1000)
     ]);
 
     const queryError = neverUpdatedResult.error || previouslyUpdatedResult.error;
@@ -264,6 +313,11 @@ export class UpdateBackfillService {
       return null;
     }
 
+    let skippedExcluded = 0;
+    let skippedSales = 0;
+    let skippedEmptyProducts = 0;
+    let skippedMaxProducts = 0;
+
     for (const cand of candidates) {
       const dId = cand.design_id ? String(cand.design_id).replace(/^#/, '').replace(/-U$/, '').trim() : '';
       if (!dId) continue;
@@ -273,14 +327,15 @@ export class UpdateBackfillService {
         continue;
       }
 
-      // Filter 1: Check duplicate / active in Hub / in-flight
+      // Filter 1: Check duplicate / active in Hub / in-flight / recently cancelled
       if (excludedIds.has(dId)) {
+        skippedExcluded++;
         continue;
       }
 
       // Filter 2: Strictly verify 0 sales (protect bestsellers and selling designs)
       if (!hasVerifiedZeroSales(cand)) {
-        console.log(`[UpdateBackfillService] ⏭️ Design ${dId} übersprungen: Sales nicht vollständig synchronisiert oder sales_total ist nicht exakt 0.`);
+        skippedSales++;
         continue;
       }
 
@@ -296,11 +351,12 @@ export class UpdateBackfillService {
 
       // If published_products cell is empty (0 products), skip immediately
       if (activeCount === 0) {
+        skippedEmptyProducts++;
         continue;
       }
 
       if (activeCount >= maxActiveProducts) {
-        console.log(`[UpdateBackfillService] ⏭️ Design ${dId} übersprungen: Bereits ${activeCount} aktive Produkte (Limit: < ${maxActiveProducts}).`);
+        skippedMaxProducts++;
         continue;
       }
 
@@ -314,7 +370,7 @@ export class UpdateBackfillService {
       };
     }
 
-    console.log('[UpdateBackfillService] ℹ️ Alle abgefragten Designs überschritten das Produktlimit oder sind bereits in Bearbeitung.');
+    console.log(`[UpdateBackfillService] ℹ️ Keine passenden Kandidaten unter ${candidates.length} geprüften Designs (Exkludiert/Hub: ${skippedExcluded}, Sales != 0: ${skippedSales}, 0 Produkte: ${skippedEmptyProducts}, >= ${maxActiveProducts} Produkte: ${skippedMaxProducts}).`);
     return null;
   }
 

@@ -337,9 +337,14 @@ export class TaskLogService {
   }
 
   static updateTaskStatus(taskId: string, updates: Partial<DesignTaskLog>): DesignTaskLog | undefined {
+    const current = TaskRepository.getTaskById(taskId);
+    if (current && current.status === 'CANCELLED' && updates.status && updates.status !== 'CANCELLED') {
+      console.log(`[TaskLogService] 🛑 Ignoriere Status-Änderung auf "${updates.status}" für bereits abgebrochenen Task ${taskId}.`);
+      return current;
+    }
+
     // Only auto-trigger enqueue when the status is explicitly transitioning to COMPLETED
     if (updates.status === 'COMPLETED' && updates.inQueue !== true) {
-      const current = TaskRepository.getTaskById(taskId);
       if (current && current.source !== 'UPDATE' && !current.inQueue) {
         const updated = TaskRepository.updateTask(taskId, { ...updates, status: 'FINALIZING', inQueue: false });
         if (updated) {
