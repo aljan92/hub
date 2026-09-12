@@ -86,6 +86,7 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
       { name: '{requested_quote}', desc: 'Ursprüngliches Zitat' },
       { name: '{fitTypes}', desc: 'Men, Women, Youth' },
       { name: '{avoid}', desc: 'None, Black, White' },
+      { name: '{background_color_recommendation}', desc: 'Empfohlene neutrale Hintergrundfarbe (Hex + Name + Begründung)' },
       { name: '{color_count}', desc: 'Ermittelte Farbanzahl (1-12)' }
     ]
   },
@@ -182,6 +183,7 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
       { name: '{niche2}', desc: 'Erkannte Cross-Nische' },
       { name: '{subniche}', desc: 'Erkannte Subnische' },
       { name: '{keywords}', desc: 'Erkannte SEO- & Motiv-Keywords' },
+      { name: '{background_color_recommendation}', desc: 'Empfohlene neutrale Hintergrundfarbe (Hex + Name + Begründung)' },
       { name: '{rewriteNeeded}', desc: 'Entscheidung: true oder false' }
     ]
   },

@@ -255,6 +255,11 @@ export class UpdatePipelineService {
         ? rawKw.map((k: any) => String(k).trim()).filter(Boolean)
         : (typeof rawKw === 'string' ? rawKw.split(',').map(s => s.trim()).filter(Boolean) : []);
       const avoidColor = parsed.avoid_product_colors?.avoid || parsed.avoidColor || 'none';
+      const rawBgHex = parsed.background_color_recommendation?.hex;
+      const preferredBackgroundColor = (typeof rawBgHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawBgHex.trim()))
+        ? (rawBgHex.trim().startsWith('#') ? rawBgHex.trim().toUpperCase() : `#${rawBgHex.trim().toUpperCase()}`)
+        : undefined;
+      const preferredBackgroundColorReason = parsed.background_color_recommendation?.reason;
       const fitTypes = parsed.target_group?.selected || (Array.isArray(parsed.fitTypes) ? parsed.fitTypes : ['Men', 'Women', 'Youth']);
       const detectedQuote = parsed.quote_check?.detected_quote || parsed.detected_quote || rawPayload.quote || '';
       const rewriteNeeded = parsed.listing_audit?.rewrite_recommended ?? parsed.rewriteNeeded ?? true;
@@ -268,6 +273,8 @@ export class UpdatePipelineService {
         keywords,
         previewUrl: gridPreviewUrl || task.previewUrl,
         grid2x2Url: gridPreviewUrl,
+        preferredBackgroundColor,
+        customBackgroundColor: preferredBackgroundColor,
         analysisResult: {
           ...parsed,
           niche1,
@@ -275,6 +282,8 @@ export class UpdatePipelineService {
           subniche,
           keywords,
           avoidColor,
+          preferredBackgroundColor,
+          preferredBackgroundColorReason,
           fitTypes,
           rewriteNeeded,
           reasoning,
@@ -288,6 +297,9 @@ export class UpdatePipelineService {
           keywords,
           audience: Array.isArray(fitTypes) ? fitTypes.join(', ') : 'Men, Women, Youth',
           avoidColor,
+          customBackgroundColor: preferredBackgroundColor,
+          preferredBackgroundColor,
+          preferredBackgroundColorReason,
           notes: reasoning
         },
         hasError: false
@@ -772,6 +784,12 @@ export class UpdatePipelineService {
       resolvedAvoidColor = 'black';
     }
 
+    // Robust customBackgroundColor resolution
+    const rawBg = task.customAnswers?.customBackgroundColor || task.customAnswers?.preferredBackgroundColor || task.customBackgroundColor || task.preferredBackgroundColor || task.analysisResult?.background_color_recommendation?.hex;
+    const resolvedCustomBg = (typeof rawBg === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawBg.trim()))
+      ? (rawBg.trim().startsWith('#') ? rawBg.trim().toUpperCase() : `#${rawBg.trim().toUpperCase()}`)
+      : undefined;
+
       return {
         taskId: task.id,
         pipeline: 'UPDATE',
@@ -784,6 +802,7 @@ export class UpdatePipelineService {
         listings: task.listingResult ? (task.listingResult.en ? task.listingResult : { en: task.listingResult }) : { en: listing },
         fitTypes: resolvedFitTypes,
         avoidColor: resolvedAvoidColor,
+        customBackgroundColor: resolvedCustomBg,
         localImagePath: task.localImagePath || '',
         masterPngPath: task.localMbaPngPath || task.localImagePath || '',
         publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,

@@ -52355,9 +52355,20 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
   * Must strictly be the core buyer category / main market (e.g. "Christmas", "Dog", "Nurse", "Fishing", "Horse", "Mechanic").
   * Even if secondary objects (e.g. a truck, coffee cup, or cake) are depicted, if the design is fundamentally about Christmas or Dogs, "niche1" MUST be "Christmas" or "Dog".
 
-- "niche2": SECONDARY CROSS-THEME / MOTIF ELEMENT (if present, else "none").
-  * Distinct cross-niche or secondary graphic object (e.g. "Truck" in Christmas Truck, "Coffee" in Nursing & Coffee, "Baking" in Christmas Baking).
-  * If no distinct second theme: "none".
+- "niche2": SECONDARY INDEPENDENT CROSS-THEME / MOTIF ELEMENT (if present, else "none").
+  * STRICT INDEPENDENCE RESTRICTION: A cross-niche MUST represent a completely independent, distinct interest group, profession, hobby, vehicle, or secondary buyer market crossing with niche1.
+  * VALID CROSS-NICHE EXAMPLES:
+    - niche1: "Christmas" + niche2: "Truck" (Christmas + Vintage Truck)
+    - niche1: "Nurse" + niche2: "Coffee" (Nursing + Coffee Addiction)
+    - niche1: "Dog" + niche2: "Gaming" (Dog + Video Games)
+    - niche1: "Fishing" + niche2: "Beer" (Angler + Craft Beer)
+    - niche1: "Teacher" + niche2: "Wine" (Teaching + Wine Lover)
+  * STRICT FORBIDDEN RULES (MUST SET niche2 TO "none"):
+    - FORBIDDEN CLOSE ATTRIBUTES, PROPS & SYNONYMS: Never use words or elements that are naturally part of niche1 or subordinate to it.
+      * If niche1 is "Christmas", niche2 MUST NOT be "Santa Claus", "Xmas", "Snowman", "Reindeer", "Christmas Tree", "Presents", "Holiday", or "Winter". These are intrinsic parts of Christmas and belong in keywords, NOT niche2!
+      * If niche1 is "Dog", niche2 MUST NOT be "Puppy", "Paws", "Bone", "Bark", or "Canine".
+      * If niche1 is "Fishing", niche2 MUST NOT be "Fish", "Hook", "Rod", "Angler", or "Lake".
+    - If there is no genuinely distinct second theme/world depicted, ALWAYS set "niche2": "none". Never invent a cross-niche!
 
 - "subniche": STRICT TAXONOMIC / BIOLOGICAL / PROFESSIONAL SPECIALIZATION OF NICHE 1.
   * MANDATORY RESTRICTION: "subniche" MUST strictly be a direct hierarchical sub-species, breed, or formal discipline of "niche1".
@@ -52392,6 +52403,17 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - Background: Is it 100% solid flat single color ("AUTOMATIC") or textured/vignetted ("MANUAL")?
 - Color Count: Integer from 1 to 12 counting all visible colors including background for vectorization.
 
+6. NEUTRAL PRODUCT BACKGROUND COLOR RECOMMENDATION (FOR FIXED-BACKGROUND MERCH):
+- Recommend a stylish, tasteful, and neutral background color for products requiring a solid background fill (such as Mousepads, Tote Bags, Throw Pillows, Blankets, and Laptop Sleeves).
+- Rules for background color selection:
+  * Must be understated, aesthetic, and neutral (e.g. Dark Slate, Deep Charcoal, Soft Off-White, Warm Cream, Subtle Navy, or Muted Earthy tones).
+  * AVOID aggressive neon colors, bright pure yellow, or harsh saturated clashes.
+  * MANDATORY CONTRAST RULE: Ensure high contrast and perfect legibility against the main design elements and typography (e.g. if the artwork has white text/linework, choose a dark background like #1E293B or #111827; if the artwork is dark, choose a light neutral like #F8FAFC or #F3F4F6).
+- Provide:
+  * "hex": 6-digit hex code with leading hash (e.g. "#1E293B").
+  * "name": Concise descriptive color name (e.g. "Dark Slate", "Off-White", "Charcoal").
+  * "reason": Concise 1-sentence reason explaining why this color enhances the design and ensures readability.
+
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
 {
@@ -52415,6 +52437,11 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "avoid_product_colors": {
     "avoid": "None",
     "reason": "<Brief contrast explanation>"
+  },
+  "background_color_recommendation": {
+    "hex": "#1E293B",
+    "name": "Dark Slate",
+    "reason": "Offers strong contrast against the white typography while providing a modern neutral accessory background."
   },
   "background_analysis": {
     "is_design_element": false,
@@ -52454,9 +52481,20 @@ The input artwork is rendered onto a 2x2 Grid with 4 standard Merch garment colo
   * Must strictly be the core buyer category / main market (e.g. "Christmas", "Dog", "Nurse", "Fishing", "Horse", "Mechanic").
   * Even if secondary objects (e.g. a truck, coffee cup, or cake) are depicted, if the design is fundamentally about Christmas or Dogs, "niche1" MUST be "Christmas" or "Dog".
 
-- "niche2": SECONDARY CROSS-THEME / MOTIF ELEMENT (if present, else "none").
-  * Distinct cross-niche or secondary graphic object (e.g. "Truck" in Christmas Truck, "Coffee" in Nursing & Coffee, "Baking" in Christmas Baking).
-  * If no distinct second theme: "none".
+- "niche2": SECONDARY INDEPENDENT CROSS-THEME / MOTIF ELEMENT (if present, else "none").
+  * STRICT INDEPENDENCE RESTRICTION: A cross-niche MUST represent a completely independent, distinct interest group, profession, hobby, vehicle, or secondary buyer market crossing with niche1.
+  * VALID CROSS-NICHE EXAMPLES:
+    - niche1: "Christmas" + niche2: "Truck" (Christmas + Vintage Truck)
+    - niche1: "Nurse" + niche2: "Coffee" (Nursing + Coffee Addiction)
+    - niche1: "Dog" + niche2: "Gaming" (Dog + Video Games)
+    - niche1: "Fishing" + niche2: "Beer" (Angler + Craft Beer)
+    - niche1: "Teacher" + niche2: "Wine" (Teaching + Wine Lover)
+  * STRICT FORBIDDEN RULES (MUST SET niche2 TO "none"):
+    - FORBIDDEN CLOSE ATTRIBUTES, PROPS & SYNONYMS: Never use words or elements that are naturally part of niche1 or subordinate to it.
+      * If niche1 is "Christmas", niche2 MUST NOT be "Santa Claus", "Xmas", "Snowman", "Reindeer", "Christmas Tree", "Presents", "Holiday", or "Winter". These are intrinsic parts of Christmas and belong in keywords, NOT niche2!
+      * If niche1 is "Dog", niche2 MUST NOT be "Puppy", "Paws", "Bone", "Bark", or "Canine".
+      * If niche1 is "Fishing", niche2 MUST NOT be "Fish", "Hook", "Rod", "Angler", or "Lake".
+    - If there is no genuinely distinct second theme/world depicted, ALWAYS set "niche2": "none". Never invent a cross-niche!
 
 - "subniche": STRICT TAXONOMIC / BIOLOGICAL / PROFESSIONAL SPECIALIZATION OF NICHE 1.
   * MANDATORY RESTRICTION: "subniche" MUST strictly be a direct hierarchical sub-species, breed, or formal discipline of "niche1".
@@ -52508,6 +52546,19 @@ Evaluate the provided existing listing against modern Amazon Merch SEO best prac
 - "reasoning": "<Summary of findings>".
 
 ==================================================
+8. NEUTRAL PRODUCT BACKGROUND COLOR RECOMMENDATION (FOR FIXED-BACKGROUND MERCH):
+==================================================
+- Recommend a stylish, tasteful, and neutral background color for products requiring a solid background fill (such as Mousepads, Tote Bags, Throw Pillows, Blankets, and Laptop Sleeves).
+- Rules for background color selection:
+  * Must be understated, aesthetic, and neutral (e.g. Dark Slate, Deep Charcoal, Soft Off-White, Warm Cream, Subtle Navy, or Muted Earthy tones).
+  * AVOID aggressive neon colors, bright pure yellow, or harsh saturated clashes.
+  * MANDATORY CONTRAST RULE: Ensure high contrast and perfect legibility against the main design elements and typography (e.g. if the artwork has white text/linework, choose a dark background like #1E293B or #111827; if the artwork is dark, choose a light neutral like #F8FAFC or #F3F4F6).
+- Provide:
+  * "hex": 6-digit hex code with leading hash (e.g. "#1E293B").
+  * "name": Concise descriptive color name (e.g. "Dark Slate", "Off-White", "Charcoal").
+  * "reason": Concise 1-sentence reason explaining why this color enhances the design and ensures readability.
+
+==================================================
 OUTPUT FORMAT:
 ==================================================
 Respond ONLY with a valid JSON object strictly matching this schema:
@@ -52532,6 +52583,11 @@ Respond ONLY with a valid JSON object strictly matching this schema:
   "avoid_product_colors": {
     "avoid": "None",
     "reason": "<Brief explanation>"
+  },
+  "background_color_recommendation": {
+    "hex": "#1E293B",
+    "name": "Dark Slate",
+    "reason": "Offers strong contrast against the artwork while providing a premium, neutral accessory background."
   },
   "design_quality": {
     "quality_verdict": "APPROVED",
@@ -53483,7 +53539,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
             this.cachedPrompts = JSON.parse(fileContent);
             if (this.cachedPrompts) {
               if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
-              if (!this.cachedPrompts.designAnalyzer || !this.cachedPrompts.designAnalyzer.includes("STRICT TAXONOMIC")) {
+              if (!this.cachedPrompts.designAnalyzer || !this.cachedPrompts.designAnalyzer.includes("background_color_recommendation")) {
                 this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
               }
               if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes("VISION PREVIEW NOTE:")) {
@@ -53498,7 +53554,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
               if (!this.cachedPrompts.trademarkVerifier) this.cachedPrompts.trademarkVerifier = DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
               if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = this.cachedPrompts.trademarkReferee;
               if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-              if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes("STRICT TAXONOMIC")) {
+              if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes("background_color_recommendation")) {
                 this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
               }
               this.cachedPrompts.updateListingRewriter = this.cachedPrompts.listingGenerator;
@@ -226818,6 +226874,7 @@ var init_finalizationService = __esm2({
             listings: sanitizedListings,
             fitTypes: params2.fitTypes && params2.fitTypes.length > 0 ? params2.fitTypes : ["men", "women", "youth"],
             avoidColor: params2.avoidColor || "none",
+            customBackgroundColor: params2.customBackgroundColor,
             imagePath: params2.localImagePath || "",
             pngPath: params2.masterPngPath,
             resizedAssets,
@@ -227082,6 +227139,9 @@ Bullets: ${oldBullets}`
           const rawKw = parsed.niche_analysis?.keywords || parsed.keywords || parsed.seo_keywords || [];
           const keywords = Array.isArray(rawKw) ? rawKw.map((k) => String(k).trim()).filter(Boolean) : typeof rawKw === "string" ? rawKw.split(",").map((s) => s.trim()).filter(Boolean) : [];
           const avoidColor = parsed.avoid_product_colors?.avoid || parsed.avoidColor || "none";
+          const rawBgHex = parsed.background_color_recommendation?.hex;
+          const preferredBackgroundColor = typeof rawBgHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBgHex.trim()) ? rawBgHex.trim().startsWith("#") ? rawBgHex.trim().toUpperCase() : `#${rawBgHex.trim().toUpperCase()}` : void 0;
+          const preferredBackgroundColorReason = parsed.background_color_recommendation?.reason;
           const fitTypes = parsed.target_group?.selected || (Array.isArray(parsed.fitTypes) ? parsed.fitTypes : ["Men", "Women", "Youth"]);
           const detectedQuote = parsed.quote_check?.detected_quote || parsed.detected_quote || rawPayload.quote || "";
           const rewriteNeeded = parsed.listing_audit?.rewrite_recommended ?? parsed.rewriteNeeded ?? true;
@@ -227094,6 +227154,8 @@ Bullets: ${oldBullets}`
             keywords,
             previewUrl: gridPreviewUrl || task.previewUrl,
             grid2x2Url: gridPreviewUrl,
+            preferredBackgroundColor,
+            customBackgroundColor: preferredBackgroundColor,
             analysisResult: {
               ...parsed,
               niche1,
@@ -227101,6 +227163,8 @@ Bullets: ${oldBullets}`
               subniche,
               keywords,
               avoidColor,
+              preferredBackgroundColor,
+              preferredBackgroundColorReason,
               fitTypes,
               rewriteNeeded,
               reasoning,
@@ -227114,6 +227178,9 @@ Bullets: ${oldBullets}`
               keywords,
               audience: Array.isArray(fitTypes) ? fitTypes.join(", ") : "Men, Women, Youth",
               avoidColor,
+              customBackgroundColor: preferredBackgroundColor,
+              preferredBackgroundColor,
+              preferredBackgroundColorReason,
               notes: reasoning
             },
             hasError: false
@@ -227528,6 +227595,8 @@ Bullets: ${oldBullets}`
         } else if (rawAvoid.includes("black") || rawAvoid.includes("schwarz")) {
           resolvedAvoidColor = "black";
         }
+        const rawBg = task.customAnswers?.customBackgroundColor || task.customAnswers?.preferredBackgroundColor || task.customBackgroundColor || task.preferredBackgroundColor || task.analysisResult?.background_color_recommendation?.hex;
+        const resolvedCustomBg = typeof rawBg === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawBg.trim()) ? rawBg.trim().startsWith("#") ? rawBg.trim().toUpperCase() : `#${rawBg.trim().toUpperCase()}` : void 0;
         return {
           taskId: task.id,
           pipeline: "UPDATE",
@@ -227540,6 +227609,7 @@ Bullets: ${oldBullets}`
           listings: task.listingResult ? task.listingResult.en ? task.listingResult : { en: task.listingResult } : { en: listing },
           fitTypes: resolvedFitTypes,
           avoidColor: resolvedAvoidColor,
+          customBackgroundColor: resolvedCustomBg,
           localImagePath: task.localImagePath || "",
           masterPngPath: task.localMbaPngPath || task.localImagePath || "",
           publishedProductsCount: task.payload?.publishedCount ?? task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? 0,
@@ -231269,8 +231339,8 @@ var init_taskLogService = __esm2({
         const avoid = (task.customAnswers?.avoidColor || task.payload?.avoidColor || "").toLowerCase();
         if (avoid.includes("white") || avoid.includes("wei\xDF")) avoidColor = "white";
         else if (avoid.includes("black") || avoid.includes("schwarz")) avoidColor = "black";
-        const rawHex = task.customAnswers?.customBackgroundColor || task.customAnswers?.accessoryColorHex;
-        const customBackgroundColor = typeof rawHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim()) ? rawHex.startsWith("#") ? rawHex : `#${rawHex}` : void 0;
+        const rawHex = task.customAnswers?.customBackgroundColor || task.customAnswers?.preferredBackgroundColor || task.customAnswers?.accessoryColorHex || task.customBackgroundColor || task.preferredBackgroundColor || task.analysisResult?.background_color_recommendation?.hex;
+        const customBackgroundColor = typeof rawHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim()) ? rawHex.startsWith("#") ? rawHex.toUpperCase() : `#${rawHex.toUpperCase()}` : void 0;
         return {
           taskId: task.id,
           pipeline: "DESIGN",
@@ -231845,6 +231915,8 @@ Beantworte die Analysefragen streng als JSON!`;
           const aiSub = ListingValidationService.normalizeOptionalText(parsedAnalysis?.niche_analysis?.subniche || parsedAnalysis?.subniche);
           const rawAiKw = parsedAnalysis?.niche_analysis?.keywords || parsedAnalysis?.keywords || parsedAnalysis?.seo_keywords;
           const aiKeywords = Array.isArray(rawAiKw) ? rawAiKw.map((k) => String(k).trim()).filter(Boolean) : typeof rawAiKw === "string" ? rawAiKw.split(",").map((s) => s.trim()).filter(Boolean) : void 0;
+          const aiBgHex = parsedAnalysis?.background_color_recommendation?.hex;
+          const normalizedBgHex = typeof aiBgHex === "string" && /^#?[0-9A-Fa-f]{6}$/.test(aiBgHex.trim()) ? aiBgHex.trim().startsWith("#") ? aiBgHex.trim().toUpperCase() : `#${aiBgHex.trim().toUpperCase()}` : void 0;
           const autonomyDesign = settings.aiAutonomyDesignEnabled ?? settings.aiAutonomyEnabled;
           if (autonomyDesign && isApproved) {
             console.log(`[TaskLogService] \u26A1 Autonomie aktiv: Task ${taskId} \xFCberspringt Human-in-the-Loop (Design freigegeben) -> Listing-Generierung gestartet.`);
@@ -231854,6 +231926,8 @@ Beantworte die Analysefragen streng als JSON!`;
               niche2: aiN2 || task.niche2,
               subniche: aiSub || task.subniche,
               keywords: aiKeywords || task.keywords,
+              preferredBackgroundColor: normalizedBgHex,
+              customBackgroundColor: normalizedBgHex,
               analysisResult: parsedAnalysis,
               hasError: false
             });
@@ -231878,6 +231952,8 @@ Beantworte die Analysefragen streng als JSON!`;
               niche2: aiN2 !== "none" ? aiN2 : task.niche2,
               subniche: aiSub !== "none" ? aiSub : task.subniche,
               keywords: aiKeywords || task.keywords,
+              preferredBackgroundColor: normalizedBgHex,
+              customBackgroundColor: normalizedBgHex,
               analysisResult: parsedAnalysis,
               hasError: false,
               errorDetails: isApproved ? void 0 : reason
@@ -232975,6 +233051,21 @@ Beantworte die Analysefragen streng als JSON!`;
                   color_count: params2.answers.maxColors,
                   reason: "Manuell in Tasks angepasst"
                 };
+              }
+              if (params2.answers.customBackgroundColor) {
+                const raw = String(params2.answers.customBackgroundColor).trim();
+                const norm = /^[0-9A-Fa-f]{6}$/.test(raw.replace(/^#/, "")) ? raw.startsWith("#") ? raw.toUpperCase() : `#${raw.toUpperCase()}` : void 0;
+                if (norm) {
+                  task.customAnswers.customBackgroundColor = norm;
+                  task.customAnswers.preferredBackgroundColor = norm;
+                  task.customBackgroundColor = norm;
+                  task.preferredBackgroundColor = norm;
+                  task.analysisResult.background_color_recommendation = {
+                    ...task.analysisResult.background_color_recommendation || {},
+                    hex: norm,
+                    reason: params2.answers.preferredBackgroundColorReason || task.analysisResult?.background_color_recommendation?.reason || "Manuell in Tasks angepasst"
+                  };
+                }
               }
             }
           }

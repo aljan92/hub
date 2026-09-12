@@ -324,8 +324,8 @@ export class TaskLogService {
       else if (avoid.includes('black') || avoid.includes('schwarz')) avoidColor = 'black';
 
       // Only set customBackgroundColor if explicitly provided and a valid hex format
-      const rawHex = (task.customAnswers as any)?.customBackgroundColor || (task.customAnswers as any)?.accessoryColorHex;
-      const customBackgroundColor = (typeof rawHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim())) ? (rawHex.startsWith('#') ? rawHex : `#${rawHex}`) : undefined;
+      const rawHex = (task.customAnswers as any)?.customBackgroundColor || (task.customAnswers as any)?.preferredBackgroundColor || (task.customAnswers as any)?.accessoryColorHex || task.customBackgroundColor || task.preferredBackgroundColor || task.analysisResult?.background_color_recommendation?.hex;
+      const customBackgroundColor = (typeof rawHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(rawHex.trim())) ? (rawHex.startsWith('#') ? rawHex.toUpperCase() : `#${rawHex.toUpperCase()}`) : undefined;
 
       return {
         taskId: task.id,
@@ -985,6 +985,11 @@ export class TaskLogService {
         ? rawAiKw.map((k: any) => String(k).trim()).filter(Boolean)
         : (typeof rawAiKw === 'string' ? rawAiKw.split(',').map(s => s.trim()).filter(Boolean) : undefined);
 
+      const aiBgHex = parsedAnalysis?.background_color_recommendation?.hex;
+      const normalizedBgHex = (typeof aiBgHex === 'string' && /^#?[0-9A-Fa-f]{6}$/.test(aiBgHex.trim()))
+        ? (aiBgHex.trim().startsWith('#') ? aiBgHex.trim().toUpperCase() : `#${aiBgHex.trim().toUpperCase()}`)
+        : undefined;
+
       // Check AI Autonomy Switch for Design Pipeline
       const autonomyDesign = settings.aiAutonomyDesignEnabled ?? settings.aiAutonomyEnabled;
       if (autonomyDesign && isApproved) {
@@ -995,6 +1000,8 @@ export class TaskLogService {
           niche2: aiN2 || task.niche2,
           subniche: aiSub || task.subniche,
           keywords: aiKeywords || task.keywords,
+          preferredBackgroundColor: normalizedBgHex,
+          customBackgroundColor: normalizedBgHex,
           analysisResult: parsedAnalysis,
           hasError: false
         });
@@ -1024,6 +1031,8 @@ export class TaskLogService {
           niche2: aiN2 !== 'none' ? aiN2 : task.niche2,
           subniche: aiSub !== 'none' ? aiSub : task.subniche,
           keywords: aiKeywords || task.keywords,
+          preferredBackgroundColor: normalizedBgHex,
+          customBackgroundColor: normalizedBgHex,
           analysisResult: parsedAnalysis,
           hasError: false,
           errorDetails: isApproved ? undefined : reason
@@ -2323,6 +2332,21 @@ export class TaskLogService {
               color_count: params.answers.maxColors,
               reason: 'Manuell in Tasks angepasst'
             };
+          }
+          if (params.answers.customBackgroundColor) {
+            const raw = String(params.answers.customBackgroundColor).trim();
+            const norm = /^[0-9A-Fa-f]{6}$/.test(raw.replace(/^#/, '')) ? (raw.startsWith('#') ? raw.toUpperCase() : `#${raw.toUpperCase()}`) : undefined;
+            if (norm) {
+              task.customAnswers.customBackgroundColor = norm;
+              task.customAnswers.preferredBackgroundColor = norm;
+              task.customBackgroundColor = norm;
+              task.preferredBackgroundColor = norm;
+              task.analysisResult.background_color_recommendation = {
+                ...(task.analysisResult.background_color_recommendation || {}),
+                hex: norm,
+                reason: params.answers.preferredBackgroundColorReason || task.analysisResult?.background_color_recommendation?.reason || 'Manuell in Tasks angepasst'
+              };
+            }
           }
         }
       }

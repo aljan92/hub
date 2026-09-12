@@ -181,7 +181,9 @@ export interface DesignTaskLog {
   localFourPanelImagePath?: string;
   u4PreviewUrl?: string;
   localU4PreviewPath?: string;
-  svgAuditResult?: any;
+  avoidColor?: 'white' | 'black' | 'none';
+  customBackgroundColor?: string;
+  preferredBackgroundColor?: string;
   analysisResult?: any;
   customAnswers?: {
     keywords?: string | string[];
@@ -193,6 +195,9 @@ export interface DesignTaskLog {
     reuseBackground?: string;
     maxColors?: number;
     notes?: string;
+    customBackgroundColor?: string;
+    preferredBackgroundColor?: string;
+    preferredBackgroundColorReason?: string;
   };
   listingResult?: any;
   trademarkCheckResult?: any;

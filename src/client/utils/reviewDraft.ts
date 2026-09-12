@@ -1,6 +1,7 @@
 import { DesignTaskLog } from '../../types/tasks';
 export interface ReviewDraft {
  editQuote: string; selectedAudiences: string[]; selectedAvoidColor: string;
+ editBackgroundColor: string; editBackgroundColorReason: string;
  selectedBgMode: string; selectedMaxColors: number; editablePrompt: string;
  editNiche1: string; editNiche2: string; editSubniche: string; editKeywords: string;
  editableListing: {brand: string; title: string; bullet1: string; bullet2: string; description: string};
@@ -102,6 +103,25 @@ export function createReviewDraft(activeTask: DesignTaskLog) {
         normAvoid = 'None';
       }
       draft.selectedAvoidColor = (normAvoid);
+
+      // Preferred / Custom Background Color
+      const rawCustomBg = (
+        activeTask.customAnswers?.customBackgroundColor ||
+        activeTask.customAnswers?.preferredBackgroundColor ||
+        activeTask.customBackgroundColor ||
+        activeTask.preferredBackgroundColor ||
+        pred?.background_color_recommendation?.hex ||
+        ''
+      ).trim();
+
+      let normBg = '';
+      if (/^#?[0-9A-Fa-f]{6}$/.test(rawCustomBg)) {
+        normBg = rawCustomBg.startsWith('#') ? rawCustomBg.toUpperCase() : `#${rawCustomBg.toUpperCase()}`;
+      } else {
+        normBg = normAvoid === 'White' ? '#000000' : (normAvoid === 'Black' ? '#FFFFFF' : '#1A1A1A');
+      }
+      draft.editBackgroundColor = normBg;
+      draft.editBackgroundColorReason = activeTask.customAnswers?.preferredBackgroundColorReason || pred?.background_color_recommendation?.reason || '';
 
       // 4. Background removal mode (Automatisch / Manuell)
       const isManual = activeTask.customAnswers?.reuseBackground === 'Manuell' || activeTask.customAnswers?.reuseBackground === 'MANUAL' || activeTask.customAnswers?.reuseBackground === 'Ja (Hintergrund behalten)' || pred?.background_analysis?.removal_mode === 'MANUAL' || pred?.background_analysis?.is_design_element === true;

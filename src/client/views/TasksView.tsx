@@ -146,6 +146,141 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
 };
 
 // ---------------------------------------------------------------------------
+// Helper: Background Color Picker & Preview Component
+// ---------------------------------------------------------------------------
+interface BackgroundColorSectionProps {
+  label: string;
+  stepNumber: string;
+  color: string;
+  onChange: (hex: string) => void;
+  aiRecommendation?: { hex?: string; name?: string; reason?: string };
+  reason?: string;
+  accentColor: 'teal' | 'cyan';
+}
+
+const PRESET_COLORS = [
+  { hex: '#000000', label: 'Schwarz' },
+  { hex: '#2B2B2B', label: 'Dark Heather' },
+  { hex: '#1A2332', label: 'Navy' },
+  { hex: '#FFFFFF', label: 'Weiß' },
+  { hex: '#F5F5F5', label: 'Off-White' }
+];
+
+const BackgroundColorSection: React.FC<BackgroundColorSectionProps> = ({
+  label,
+  stepNumber,
+  color,
+  onChange,
+  aiRecommendation,
+  reason,
+  accentColor
+}) => {
+  const colorInputRef = useRef<HTMLInputElement>(null);
+  const isTeal = accentColor === 'teal';
+  const validHex = /^#?[0-9A-Fa-f]{6}$/.test(color.trim());
+  const displayColor = validHex ? (color.startsWith('#') ? color : `#${color}`) : '#1A1A1A';
+
+  return (
+    <div className="bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 space-y-2.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-semibold text-slate-200">{stepNumber} {label}</span>
+        {aiRecommendation?.hex && (
+          <span className={`text-[10px] ${isTeal ? 'text-teal-400 bg-teal-500/10 border-teal-500/20' : 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20'} font-mono font-semibold px-2.5 py-0.5 rounded border flex items-center gap-1.5`}>
+            <span className="w-2 h-2 rounded-full border border-white/20 inline-block shrink-0" style={{ backgroundColor: aiRecommendation.hex }} />
+            KI: {aiRecommendation.hex}{aiRecommendation.name ? ` (${aiRecommendation.name})` : ''}
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Optische Farbvorschau & interaktiver Color Picker */}
+        <div className="relative group">
+          <button
+            type="button"
+            onClick={() => colorInputRef.current?.click()}
+            className="w-8 h-8 rounded-lg border border-slate-700 shadow-sm flex items-center justify-center relative overflow-hidden transition-all group-hover:border-slate-500 group-hover:scale-105"
+            style={{ backgroundColor: displayColor }}
+            title="Klicken, um Color-Picker zu öffnen"
+          >
+            <Palette className="w-3.5 h-3.5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] opacity-60 group-hover:opacity-100 transition-opacity" />
+          </button>
+          <input
+            ref={colorInputRef}
+            type="color"
+            value={displayColor}
+            onChange={(e) => onChange(e.target.value.toUpperCase())}
+            className="sr-only"
+            aria-label="Farbe auswählen"
+          />
+        </div>
+
+        {/* Hex Textfeld */}
+        <div className="w-24">
+          <input
+            type="text"
+            value={color}
+            onChange={(e) => {
+              const val = e.target.value.trim();
+              onChange(val.startsWith('#') ? val.toUpperCase() : (val ? `#${val.toUpperCase()}` : ''));
+            }}
+            placeholder="#1E293B"
+            maxLength={7}
+            className={`w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-100 uppercase transition-all focus:outline-none ${
+              isTeal ? 'focus:border-teal-500 focus:ring-1 focus:ring-teal-500' : 'focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500'
+            }`}
+          />
+        </div>
+
+        {/* Quick Presets & Reset auf KI */}
+        <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+          {aiRecommendation?.hex && (
+            <button
+              type="button"
+              onClick={() => onChange(aiRecommendation.hex!.toUpperCase())}
+              className={`px-2 py-1 text-[11px] rounded-lg border transition-all flex items-center space-x-1 ${
+                color.toUpperCase() === aiRecommendation.hex.toUpperCase()
+                  ? (isTeal ? 'bg-teal-600 text-white border-teal-500 font-semibold shadow-sm' : 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow-sm')
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+              }`}
+              title="Auf KI-Empfehlung zurücksetzen"
+            >
+              <span className="w-2 h-2 rounded-full border border-white/20 inline-block" style={{ backgroundColor: aiRecommendation.hex }} />
+              <span>KI-Reset</span>
+            </button>
+          )}
+
+          {PRESET_COLORS.map((p) => {
+            const isSelected = color.toUpperCase() === p.hex.toUpperCase();
+            return (
+              <button
+                key={p.hex}
+                type="button"
+                onClick={() => onChange(p.hex)}
+                className={`px-2 py-1 text-[11px] rounded-lg border transition-all flex items-center space-x-1 ${
+                  isSelected 
+                    ? (isTeal ? 'bg-teal-600 text-white border-teal-500 font-semibold shadow-sm' : 'bg-cyan-600 text-white border-cyan-500 font-semibold shadow-sm')
+                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                }`}
+                title={p.label}
+              >
+                <span className="w-2 h-2 rounded-full border border-white/20 inline-block" style={{ backgroundColor: p.hex }} />
+                <span>{p.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {reason && (
+        <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950 p-2 rounded-lg border border-slate-800/80">
+          💡 <strong className={isTeal ? 'text-teal-300' : 'text-cyan-300'}>Befund:</strong> {reason}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 export const TasksView: React.FC = () => {
@@ -441,6 +576,9 @@ export const TasksView: React.FC = () => {
   const setSelectedAudiences = review.setter('selectedAudiences');
   const selectedAvoidColor = review.draft?.selectedAvoidColor ?? '';
   const setSelectedAvoidColor = review.setter('selectedAvoidColor');
+  const editBackgroundColor = review.draft?.editBackgroundColor ?? '#1A1A1A';
+  const setEditBackgroundColor = review.setter('editBackgroundColor');
+  const editBackgroundColorReason = review.draft?.editBackgroundColorReason ?? '';
   const selectedBgMode = review.draft?.selectedBgMode ?? '';
   const setSelectedBgMode = review.setter('selectedBgMode');
   const selectedMaxColors = review.draft?.selectedMaxColors ?? 2;
@@ -580,6 +718,9 @@ export const TasksView: React.FC = () => {
         keywords: editKeywords,
         audience: selectedAudiences.join(', '),
         avoidColor: selectedAvoidColor,
+        customBackgroundColor: editBackgroundColor,
+        preferredBackgroundColor: editBackgroundColor,
+        preferredBackgroundColorReason: editBackgroundColorReason,
         reuseBackground: selectedBgMode,
         maxColors: selectedMaxColors
       };
@@ -1327,12 +1468,23 @@ export const TasksView: React.FC = () => {
                             )}
                           </div>
 
-                          {/* 5. Nischen-Hierarchie & SEO-Keywords */}
+                          {/* 5. Bevorzugte Hintergrundfarbe */}
+                          <BackgroundColorSection
+                            label="Bevorzugte Hintergrundfarbe"
+                            stepNumber="5."
+                            color={editBackgroundColor}
+                            onChange={setEditBackgroundColor}
+                            aiRecommendation={activeTask.analysisResult?.background_color_recommendation}
+                            reason={editBackgroundColorReason || activeTask.analysisResult?.background_color_recommendation?.reason}
+                            accentColor="teal"
+                          />
+
+                          {/* 6. Nischen-Hierarchie & SEO-Keywords */}
                           <div className="bg-slate-900/90 p-3.5 rounded-xl border border-teal-500/30 space-y-3 shadow-sm">
                             <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-800 text-xs">
                               <span className="font-semibold text-teal-300 flex items-center gap-1.5">
                                 <Bot className="w-3.5 h-3.5 text-teal-400" />
-                                5. Nischen-Hierarchie &amp; SEO-Keywords
+                                6. Nischen-Hierarchie &amp; SEO-Keywords
                               </span>
                               <div className="flex items-center space-x-2">
                                 <button
@@ -1700,12 +1852,23 @@ export const TasksView: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* 6. Nischen-Hierarchie & SEO-Keywords */}
+                          {/* 6. Bevorzugte Hintergrundfarbe */}
+                          <BackgroundColorSection
+                            label="Bevorzugte Hintergrundfarbe"
+                            stepNumber="6."
+                            color={editBackgroundColor}
+                            onChange={setEditBackgroundColor}
+                            aiRecommendation={activeTask.analysisResult?.background_color_recommendation}
+                            reason={editBackgroundColorReason || activeTask.analysisResult?.background_color_recommendation?.reason}
+                            accentColor="cyan"
+                          />
+
+                          {/* 7. Nischen-Hierarchie & SEO-Keywords */}
                           <div className="bg-slate-900/90 p-3.5 rounded-xl border border-cyan-500/30 space-y-3 shadow-sm">
                             <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-800 text-xs">
                               <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
                                 <Bot className="w-3.5 h-3.5 text-cyan-400" />
-                                6. Nischen-Hierarchie &amp; SEO-Keywords
+                                7. Nischen-Hierarchie &amp; SEO-Keywords
                               </span>
                               <div className="flex items-center space-x-2">
                                 <button

@@ -386,6 +386,7 @@ export class FinalizationService {
         listings: sanitizedListings,
         fitTypes: params.fitTypes && params.fitTypes.length > 0 ? params.fitTypes : ['men', 'women', 'youth'],
         avoidColor: params.avoidColor || 'none',
+        customBackgroundColor: params.customBackgroundColor,
         imagePath: params.localImagePath || '',
         pngPath: params.masterPngPath,
         resizedAssets,

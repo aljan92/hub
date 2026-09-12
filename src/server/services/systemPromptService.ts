@@ -232,9 +232,20 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
   * Must strictly be the core buyer category / main market (e.g. "Christmas", "Dog", "Nurse", "Fishing", "Horse", "Mechanic").
   * Even if secondary objects (e.g. a truck, coffee cup, or cake) are depicted, if the design is fundamentally about Christmas or Dogs, "niche1" MUST be "Christmas" or "Dog".
 
-- "niche2": SECONDARY CROSS-THEME / MOTIF ELEMENT (if present, else "none").
-  * Distinct cross-niche or secondary graphic object (e.g. "Truck" in Christmas Truck, "Coffee" in Nursing & Coffee, "Baking" in Christmas Baking).
-  * If no distinct second theme: "none".
+- "niche2": SECONDARY INDEPENDENT CROSS-THEME / MOTIF ELEMENT (if present, else "none").
+  * STRICT INDEPENDENCE RESTRICTION: A cross-niche MUST represent a completely independent, distinct interest group, profession, hobby, vehicle, or secondary buyer market crossing with niche1.
+  * VALID CROSS-NICHE EXAMPLES:
+    - niche1: "Christmas" + niche2: "Truck" (Christmas + Vintage Truck)
+    - niche1: "Nurse" + niche2: "Coffee" (Nursing + Coffee Addiction)
+    - niche1: "Dog" + niche2: "Gaming" (Dog + Video Games)
+    - niche1: "Fishing" + niche2: "Beer" (Angler + Craft Beer)
+    - niche1: "Teacher" + niche2: "Wine" (Teaching + Wine Lover)
+  * STRICT FORBIDDEN RULES (MUST SET niche2 TO "none"):
+    - FORBIDDEN CLOSE ATTRIBUTES, PROPS & SYNONYMS: Never use words or elements that are naturally part of niche1 or subordinate to it.
+      * If niche1 is "Christmas", niche2 MUST NOT be "Santa Claus", "Xmas", "Snowman", "Reindeer", "Christmas Tree", "Presents", "Holiday", or "Winter". These are intrinsic parts of Christmas and belong in keywords, NOT niche2!
+      * If niche1 is "Dog", niche2 MUST NOT be "Puppy", "Paws", "Bone", "Bark", or "Canine".
+      * If niche1 is "Fishing", niche2 MUST NOT be "Fish", "Hook", "Rod", "Angler", or "Lake".
+    - If there is no genuinely distinct second theme/world depicted, ALWAYS set "niche2": "none". Never invent a cross-niche!
 
 - "subniche": STRICT TAXONOMIC / BIOLOGICAL / PROFESSIONAL SPECIALIZATION OF NICHE 1.
   * MANDATORY RESTRICTION: "subniche" MUST strictly be a direct hierarchical sub-species, breed, or formal discipline of "niche1".
@@ -269,6 +280,17 @@ Your task is to analyze the generated t-shirt / merch graphic design based on th
 - Background: Is it 100% solid flat single color ("AUTOMATIC") or textured/vignetted ("MANUAL")?
 - Color Count: Integer from 1 to 12 counting all visible colors including background for vectorization.
 
+6. NEUTRAL PRODUCT BACKGROUND COLOR RECOMMENDATION (FOR FIXED-BACKGROUND MERCH):
+- Recommend a stylish, tasteful, and neutral background color for products requiring a solid background fill (such as Mousepads, Tote Bags, Throw Pillows, Blankets, and Laptop Sleeves).
+- Rules for background color selection:
+  * Must be understated, aesthetic, and neutral (e.g. Dark Slate, Deep Charcoal, Soft Off-White, Warm Cream, Subtle Navy, or Muted Earthy tones).
+  * AVOID aggressive neon colors, bright pure yellow, or harsh saturated clashes.
+  * MANDATORY CONTRAST RULE: Ensure high contrast and perfect legibility against the main design elements and typography (e.g. if the artwork has white text/linework, choose a dark background like #1E293B or #111827; if the artwork is dark, choose a light neutral like #F8FAFC or #F3F4F6).
+- Provide:
+  * "hex": 6-digit hex code with leading hash (e.g. "#1E293B").
+  * "name": Concise descriptive color name (e.g. "Dark Slate", "Off-White", "Charcoal").
+  * "reason": Concise 1-sentence reason explaining why this color enhances the design and ensures readability.
+
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object strictly matching this schema (no markdown fences, no conversational text):
 {
@@ -292,6 +314,11 @@ Respond ONLY with a valid JSON object strictly matching this schema (no markdown
   "avoid_product_colors": {
     "avoid": "None",
     "reason": "<Brief contrast explanation>"
+  },
+  "background_color_recommendation": {
+    "hex": "#1E293B",
+    "name": "Dark Slate",
+    "reason": "Offers strong contrast against the white typography while providing a modern neutral accessory background."
   },
   "background_analysis": {
     "is_design_element": false,
@@ -332,9 +359,20 @@ The input artwork is rendered onto a 2x2 Grid with 4 standard Merch garment colo
   * Must strictly be the core buyer category / main market (e.g. "Christmas", "Dog", "Nurse", "Fishing", "Horse", "Mechanic").
   * Even if secondary objects (e.g. a truck, coffee cup, or cake) are depicted, if the design is fundamentally about Christmas or Dogs, "niche1" MUST be "Christmas" or "Dog".
 
-- "niche2": SECONDARY CROSS-THEME / MOTIF ELEMENT (if present, else "none").
-  * Distinct cross-niche or secondary graphic object (e.g. "Truck" in Christmas Truck, "Coffee" in Nursing & Coffee, "Baking" in Christmas Baking).
-  * If no distinct second theme: "none".
+- "niche2": SECONDARY INDEPENDENT CROSS-THEME / MOTIF ELEMENT (if present, else "none").
+  * STRICT INDEPENDENCE RESTRICTION: A cross-niche MUST represent a completely independent, distinct interest group, profession, hobby, vehicle, or secondary buyer market crossing with niche1.
+  * VALID CROSS-NICHE EXAMPLES:
+    - niche1: "Christmas" + niche2: "Truck" (Christmas + Vintage Truck)
+    - niche1: "Nurse" + niche2: "Coffee" (Nursing + Coffee Addiction)
+    - niche1: "Dog" + niche2: "Gaming" (Dog + Video Games)
+    - niche1: "Fishing" + niche2: "Beer" (Angler + Craft Beer)
+    - niche1: "Teacher" + niche2: "Wine" (Teaching + Wine Lover)
+  * STRICT FORBIDDEN RULES (MUST SET niche2 TO "none"):
+    - FORBIDDEN CLOSE ATTRIBUTES, PROPS & SYNONYMS: Never use words or elements that are naturally part of niche1 or subordinate to it.
+      * If niche1 is "Christmas", niche2 MUST NOT be "Santa Claus", "Xmas", "Snowman", "Reindeer", "Christmas Tree", "Presents", "Holiday", or "Winter". These are intrinsic parts of Christmas and belong in keywords, NOT niche2!
+      * If niche1 is "Dog", niche2 MUST NOT be "Puppy", "Paws", "Bone", "Bark", or "Canine".
+      * If niche1 is "Fishing", niche2 MUST NOT be "Fish", "Hook", "Rod", "Angler", or "Lake".
+    - If there is no genuinely distinct second theme/world depicted, ALWAYS set "niche2": "none". Never invent a cross-niche!
 
 - "subniche": STRICT TAXONOMIC / BIOLOGICAL / PROFESSIONAL SPECIALIZATION OF NICHE 1.
   * MANDATORY RESTRICTION: "subniche" MUST strictly be a direct hierarchical sub-species, breed, or formal discipline of "niche1".
@@ -386,6 +424,19 @@ Evaluate the provided existing listing against modern Amazon Merch SEO best prac
 - "reasoning": "<Summary of findings>".
 
 ==================================================
+8. NEUTRAL PRODUCT BACKGROUND COLOR RECOMMENDATION (FOR FIXED-BACKGROUND MERCH):
+==================================================
+- Recommend a stylish, tasteful, and neutral background color for products requiring a solid background fill (such as Mousepads, Tote Bags, Throw Pillows, Blankets, and Laptop Sleeves).
+- Rules for background color selection:
+  * Must be understated, aesthetic, and neutral (e.g. Dark Slate, Deep Charcoal, Soft Off-White, Warm Cream, Subtle Navy, or Muted Earthy tones).
+  * AVOID aggressive neon colors, bright pure yellow, or harsh saturated clashes.
+  * MANDATORY CONTRAST RULE: Ensure high contrast and perfect legibility against the main design elements and typography (e.g. if the artwork has white text/linework, choose a dark background like #1E293B or #111827; if the artwork is dark, choose a light neutral like #F8FAFC or #F3F4F6).
+- Provide:
+  * "hex": 6-digit hex code with leading hash (e.g. "#1E293B").
+  * "name": Concise descriptive color name (e.g. "Dark Slate", "Off-White", "Charcoal").
+  * "reason": Concise 1-sentence reason explaining why this color enhances the design and ensures readability.
+
+==================================================
 OUTPUT FORMAT:
 ==================================================
 Respond ONLY with a valid JSON object strictly matching this schema:
@@ -410,6 +461,11 @@ Respond ONLY with a valid JSON object strictly matching this schema:
   "avoid_product_colors": {
     "avoid": "None",
     "reason": "<Brief explanation>"
+  },
+  "background_color_recommendation": {
+    "hex": "#1E293B",
+    "name": "Dark Slate",
+    "reason": "Offers strong contrast against the artwork while providing a premium, neutral accessory background."
   },
   "design_quality": {
     "quality_verdict": "APPROVED",
@@ -1386,7 +1442,7 @@ export class SystemPromptService {
         this.cachedPrompts = JSON.parse(fileContent);
         if (this.cachedPrompts) {
           if (!this.cachedPrompts.promptGenerator) this.cachedPrompts.promptGenerator = DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT;
-          if (!this.cachedPrompts.designAnalyzer || !this.cachedPrompts.designAnalyzer.includes('STRICT TAXONOMIC')) {
+          if (!this.cachedPrompts.designAnalyzer || !this.cachedPrompts.designAnalyzer.includes('background_color_recommendation')) {
             this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
           }
           if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes('VISION PREVIEW NOTE:')) {
@@ -1401,7 +1457,7 @@ export class SystemPromptService {
           if (!this.cachedPrompts.trademarkVerifier) this.cachedPrompts.trademarkVerifier = DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
           if (!this.cachedPrompts.trademarkAuditor) this.cachedPrompts.trademarkAuditor = this.cachedPrompts.trademarkReferee;
           if (!this.cachedPrompts.svgBgAuditor) this.cachedPrompts.svgBgAuditor = DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT;
-          if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes('STRICT TAXONOMIC')) {
+          if (!this.cachedPrompts.updateVisionAnalyzer || !this.cachedPrompts.updateVisionAnalyzer.includes('background_color_recommendation')) {
             this.cachedPrompts.updateVisionAnalyzer = DEFAULT_UPDATE_VISION_SYSTEM_PROMPT;
           }
           // Synchronize legacy key to the canonical master listing prompt
