@@ -15,7 +15,6 @@ import {
   ChevronDown, 
   ChevronUp, 
   Globe, 
-  Sparkles, 
   ShieldAlert, 
   Scissors, 
   Sliders, 
@@ -174,7 +173,6 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
   const updateTargetCountRef = useRef<number>(10);
   const updateTargetSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateTargetSaveRunningRef = useRef<boolean>(false);
-  const [isTriggeringBackfill, setIsTriggeringBackfill] = useState<boolean>(false);
   const [backfillToast, setBackfillToast] = useState<{ message: string; success: boolean } | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
@@ -408,29 +406,6 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
       fetchQueue();
     } catch (e) {
       console.warn('Failed to set max active products:', e);
-    }
-  };
-
-  const handleTriggerSingleBackfill = async () => {
-    setIsTriggeringBackfill(true);
-    setBackfillToast(null);
-    try {
-      const res = await fetch('/api/v1/queue/update-backfill/run-once', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await res.json();
-      if (data.success) {
-        setBackfillToast({ message: data.message || '1 Design erfolgreich gezogen!', success: true });
-      } else {
-        setBackfillToast({ message: data.message || data.error || 'Kein passendes Design gefunden', success: false });
-      }
-      fetchQueue();
-    } catch (e: any) {
-      setBackfillToast({ message: `Fehler: ${e.message}`, success: false });
-    } finally {
-      setIsTriggeringBackfill(false);
-      setTimeout(() => setBackfillToast(null), 6000);
     }
   };
 
@@ -2263,22 +2238,6 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
                     </button>
                   </div>
                 </div>
-
-                {/* 4. Trigger 1x Backfill Button */}
-                <button
-                  type="button"
-                  onClick={handleTriggerSingleBackfill}
-                  disabled={isTriggeringBackfill}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white flex items-center space-x-1.5 transition-all disabled:opacity-50 shadow-sm shadow-teal-950/40"
-                  title="Zieht das älteste passende Design aus Supabase"
-                >
-                  {isTriggeringBackfill ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-3.5 h-3.5" />
-                  )}
-                  <span>{isTriggeringBackfill ? 'Zieht Design...' : '1x Design ziehen'}</span>
-                </button>
               </div>
             </div>
 

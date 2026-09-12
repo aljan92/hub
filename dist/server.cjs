@@ -239664,16 +239664,6 @@ app.patch("/api/v1/queue/settings", (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.post("/api/v1/queue/update-backfill/run-once", async (req, res) => {
-  try {
-    const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));
-    const result2 = await UpdateBackfillService2.runBackfillCycle(true);
-    const state = QueueService.getState();
-    res.json({ ...result2, state });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
 app.post("/api/v1/queue/update-backfill/tokenburn/reset", (req, res) => {
   try {
     const { UpdateBackfillService: UpdateBackfillService2 } = (init_updateBackfillService(), __toCommonJS2(updateBackfillService_exports));

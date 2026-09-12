@@ -2012,18 +2012,6 @@ app.patch('/api/v1/queue/settings', (req, res) => {
   }
 });
 
-// Trigger 1x manual pull of candidate design from Supabase
-app.post('/api/v1/queue/update-backfill/run-once', async (req, res) => {
-  try {
-    const { UpdateBackfillService } = require('./services/updateBackfillService');
-    const result = await UpdateBackfillService.runBackfillCycle(true);
-    const state = QueueService.getState();
-    res.json({ ...result, state });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 // Reset the persistent tokenburn guard and explicitly resume update auto-backfill.
 app.post('/api/v1/queue/update-backfill/tokenburn/reset', (req, res) => {
   try {
