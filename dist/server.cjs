@@ -229078,7 +229078,7 @@ var init_updateBackfillService = __esm2({
     init_updateMetadataService();
     UpdateBackfillService = class {
       static inFlightDesigns = /* @__PURE__ */ new Set();
-      static recentlyCancelledDesignIds = /* @__PURE__ */ new Set();
+      static recentlyCancelledDesigns = /* @__PURE__ */ new Map();
       static isRunningLoop = false;
       static activeCycle = null;
       static intervalId = null;
@@ -229163,7 +229163,7 @@ var init_updateBackfillService = __esm2({
         for (const id of this.inFlightDesigns) {
           if (id) excluded.add(id.trim());
         }
-        for (const id of this.recentlyCancelledDesignIds) {
+        for (const id of this.recentlyCancelledDesigns.keys()) {
           if (id) excluded.add(id.trim());
         }
         if (extraExcludedIds) {
@@ -229189,26 +229189,39 @@ var init_updateBackfillService = __esm2({
         return excluded;
       }
       /**
-       * Adds a design ID to the recently cancelled cooldown set so the next
+       * Adds a design ID to the recently cancelled cooldown map so the next
        * backfill cycle pulls a different candidate instead of looping on the same one.
+       * Default: skips for exactly 1 pull, then unlocks on subsequent rounds.
        */
-      static addRecentlyCancelledDesign(designId) {
+      static addRecentlyCancelledDesign(designId, skips = 1) {
         if (!designId) return;
         const clean = String(designId).replace(/^#/, "").replace(/-U$/, "").trim();
         if (clean) {
-          this.recentlyCancelledDesignIds.add(clean);
-          if (this.recentlyCancelledDesignIds.size > 50) {
-            const first = this.recentlyCancelledDesignIds.values().next().value;
-            if (first) this.recentlyCancelledDesignIds.delete(first);
+          this.recentlyCancelledDesigns.set(clean, Math.max(1, skips));
+          console.log(`[UpdateBackfillService] \u23F8\uFE0F Design ${clean} f\xFCr n\xE4chste Ziehung pausiert (wird f\xFCr 1 Zyklus \xFCbersprungen, danach wieder regul\xE4r ber\xFCcksichtigt).`);
+        }
+      }
+      /**
+       * Consumes one round of cooldown for all recently cancelled designs.
+       * When skips reach 0, the design is unblocked so the automation can process it again.
+       */
+      static consumeRecentlyCancelledCooldowns() {
+        if (this.recentlyCancelledDesigns.size === 0) return;
+        for (const [id, skips] of Array.from(this.recentlyCancelledDesigns.entries())) {
+          const remaining = skips - 1;
+          if (remaining <= 0) {
+            this.recentlyCancelledDesigns.delete(id);
+            console.log(`[UpdateBackfillService] \u{1F504} Einmaliger Cooldown f\xFCr Design ${id} abgelaufen. Steht ab n\xE4chster Ziehung wieder regul\xE4r bereit.`);
+          } else {
+            this.recentlyCancelledDesigns.set(id, remaining);
           }
-          console.log(`[UpdateBackfillService] \u23F8\uFE0F Design ${clean} f\xFCr n\xE4chsten Backfill tempor\xE4r pausiert (aktuell ${this.recentlyCancelledDesignIds.size} im Cooldown).`);
         }
       }
       static clearRecentlyCancelledDesigns() {
-        this.recentlyCancelledDesignIds.clear();
+        this.recentlyCancelledDesigns.clear();
       }
       static getRecentlyCancelledDesignIds() {
-        return new Set(this.recentlyCancelledDesignIds);
+        return new Set(this.recentlyCancelledDesigns.keys());
       }
       /**
        * Clears in-flight design memory locks, cancelled cooldowns, and cancels any hanging/stale update tasks.
@@ -229217,8 +229230,8 @@ var init_updateBackfillService = __esm2({
       static resetInFlightLocks() {
         const count = this.inFlightDesigns.size;
         this.inFlightDesigns.clear();
-        const cancelledCooldownCount = this.recentlyCancelledDesignIds.size;
-        this.recentlyCancelledDesignIds.clear();
+        const cancelledCooldownCount = this.recentlyCancelledDesigns.size;
+        this.recentlyCancelledDesigns.clear();
         const cancelledCount = TaskLogService.cancelActiveUpdateTasks();
         const counts = this.getActiveUpdateCount();
         console.log(`[UpdateBackfillService] \u{1F504} In-Flight Locks (${count}), Cooldowns (${cancelledCooldownCount}) & ${cancelledCount} offene Tasks zur\xFCckgesetzt. Neuer Ist-Bestand: ${counts.currentCount}`);
@@ -229402,7 +229415,11 @@ var init_updateBackfillService = __esm2({
         const cycle = this.runBackfillCycleExclusive(forceSingle);
         this.activeCycle = cycle;
         try {
-          return await cycle;
+          const result2 = await cycle;
+          if (result2.success) {
+            this.consumeRecentlyCancelledCooldowns();
+          }
+          return result2;
         } finally {
           if (this.activeCycle === cycle) this.activeCycle = null;
           this.isRunningLoop = false;
@@ -229484,6 +229501,7 @@ var init_updateBackfillService = __esm2({
             this.inFlightDesigns.delete(designId);
           }
         }
+        this.consumeRecentlyCancelledCooldowns();
         return { success: false, message: `Nach ${maxAttempts} Versuchen kein valides Design auf Amazon gefunden (${lastError}).` };
       }
       /**

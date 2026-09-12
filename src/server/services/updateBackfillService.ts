@@ -25,7 +25,7 @@ export function hasVerifiedZeroSales(candidate: { sales_total?: unknown; sales_h
 
 export class UpdateBackfillService {
   private static inFlightDesigns = new Set<string>();
-  private static recentlyCancelledDesignIds = new Set<string>();
+  private static recentlyCancelledDesigns = new Map<string, number>();
   private static isRunningLoop = false;
   private static activeCycle: Promise<{ success: boolean; message: string; designId?: string }> | null = null;
   private static intervalId: NodeJS.Timeout | null = null;
@@ -118,7 +118,7 @@ export class UpdateBackfillService {
     }
 
     // 1.5 Recently cancelled update designs (cooldown so automation pulls the next candidate)
-    for (const id of this.recentlyCancelledDesignIds) {
+    for (const id of this.recentlyCancelledDesigns.keys()) {
       if (id) excluded.add(id.trim());
     }
 
@@ -154,28 +154,42 @@ export class UpdateBackfillService {
   }
 
   /**
-   * Adds a design ID to the recently cancelled cooldown set so the next
+   * Adds a design ID to the recently cancelled cooldown map so the next
    * backfill cycle pulls a different candidate instead of looping on the same one.
+   * Default: skips for exactly 1 pull, then unlocks on subsequent rounds.
    */
-  public static addRecentlyCancelledDesign(designId?: string): void {
+  public static addRecentlyCancelledDesign(designId?: string, skips = 1): void {
     if (!designId) return;
     const clean = String(designId).replace(/^#/, '').replace(/-U$/, '').trim();
     if (clean) {
-      this.recentlyCancelledDesignIds.add(clean);
-      if (this.recentlyCancelledDesignIds.size > 50) {
-        const first = this.recentlyCancelledDesignIds.values().next().value;
-        if (first) this.recentlyCancelledDesignIds.delete(first);
+      this.recentlyCancelledDesigns.set(clean, Math.max(1, skips));
+      console.log(`[UpdateBackfillService] ⏸️ Design ${clean} für nächste Ziehung pausiert (wird für 1 Zyklus übersprungen, danach wieder regulär berücksichtigt).`);
+    }
+  }
+
+  /**
+   * Consumes one round of cooldown for all recently cancelled designs.
+   * When skips reach 0, the design is unblocked so the automation can process it again.
+   */
+  public static consumeRecentlyCancelledCooldowns(): void {
+    if (this.recentlyCancelledDesigns.size === 0) return;
+    for (const [id, skips] of Array.from(this.recentlyCancelledDesigns.entries())) {
+      const remaining = skips - 1;
+      if (remaining <= 0) {
+        this.recentlyCancelledDesigns.delete(id);
+        console.log(`[UpdateBackfillService] 🔄 Einmaliger Cooldown für Design ${id} abgelaufen. Steht ab nächster Ziehung wieder regulär bereit.`);
+      } else {
+        this.recentlyCancelledDesigns.set(id, remaining);
       }
-      console.log(`[UpdateBackfillService] ⏸️ Design ${clean} für nächsten Backfill temporär pausiert (aktuell ${this.recentlyCancelledDesignIds.size} im Cooldown).`);
     }
   }
 
   public static clearRecentlyCancelledDesigns(): void {
-    this.recentlyCancelledDesignIds.clear();
+    this.recentlyCancelledDesigns.clear();
   }
 
   public static getRecentlyCancelledDesignIds(): Set<string> {
-    return new Set(this.recentlyCancelledDesignIds);
+    return new Set(this.recentlyCancelledDesigns.keys());
   }
 
   /**
@@ -185,8 +199,8 @@ export class UpdateBackfillService {
   public static resetInFlightLocks(): { success: boolean; releasedCount: number; activeCount: number; message: string } {
     const count = this.inFlightDesigns.size;
     this.inFlightDesigns.clear();
-    const cancelledCooldownCount = this.recentlyCancelledDesignIds.size;
-    this.recentlyCancelledDesignIds.clear();
+    const cancelledCooldownCount = this.recentlyCancelledDesigns.size;
+    this.recentlyCancelledDesigns.clear();
 
     const cancelledCount = TaskLogService.cancelActiveUpdateTasks();
 
@@ -434,7 +448,11 @@ export class UpdateBackfillService {
     const cycle = this.runBackfillCycleExclusive(forceSingle);
     this.activeCycle = cycle;
     try {
-      return await cycle;
+      const result = await cycle;
+      if (result.success) {
+        this.consumeRecentlyCancelledCooldowns();
+      }
+      return result;
     } finally {
       if (this.activeCycle === cycle) this.activeCycle = null;
       this.isRunningLoop = false;
@@ -537,6 +555,7 @@ export class UpdateBackfillService {
       }
     }
 
+    this.consumeRecentlyCancelledCooldowns();
     return { success: false, message: `Nach ${maxAttempts} Versuchen kein valides Design auf Amazon gefunden (${lastError}).` };
   }
 

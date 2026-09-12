@@ -68,6 +68,11 @@ async function runTests() {
     assert.strictEqual(TaskRepository.getTaskById('#802-U')?.status, 'CANCELLED');
     console.log('✅ [PASS] Test 2: Update task cancelled, added to cooldown, auto backfill remains enabled.');
 
+    // Test 2b: After the replacement cycle completes, cooldown is consumed and design is unblocked
+    UpdateBackfillService.consumeRecentlyCancelledCooldowns();
+    assert.strictEqual(UpdateBackfillService.getExcludedDesignIds().has('DESIGN-802'), false);
+    console.log('✅ [PASS] Test 2b: Cooldown expired after replacement round; design is eligible again.');
+
     // --- Test 3: Cannot cancel completed or update-queued tasks ---
     console.log('Test 3: Reject cancellation on completed tasks...');
     TaskRepository.createTask(makeTask('#803-D', 'DESIGNER', 'COMPLETED'));
