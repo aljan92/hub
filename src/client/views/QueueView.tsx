@@ -2214,7 +2214,10 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
                 })()}
 
                 {/* 3. Max Live Products Filter */}
-                <div className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl" title="Überspringt Designs aus Supabase mit dieser oder höherer Anzahl an Live-Produkten">
+                <div 
+                  className="flex items-center space-x-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl" 
+                  title="Filter: Zieht nur Designs aus Supabase nach, die aktuell weniger als diese Anzahl an Live-Produkten haben (schützt bereits voll publizierte Designs)."
+                >
                   <span className="text-xs font-semibold text-slate-300">Max. Live-Produkte:</span>
                   <div className="flex items-center space-x-1">
                     <button
@@ -2222,10 +2225,14 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
                       onClick={() => handleSetMaxActiveProducts(updateMaxActiveProducts - 10)}
                       disabled={updateMaxActiveProducts <= 10}
                       className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                      title="Obergrenze senken: Zieht nur Designs mit noch weniger Live-Produkten aus Supabase"
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </button>
-                    <span className="font-mono font-bold text-xs text-teal-400 w-11 text-center">
+                    <span 
+                      className="font-mono font-bold text-xs text-teal-400 w-11 text-center cursor-help"
+                      title={`Aktuell: Nur Designs mit < ${updateMaxActiveProducts} Live-Produkten werden nachgezogen`}
+                    >
                       &lt; {updateMaxActiveProducts}
                     </span>
                     <button
@@ -2233,6 +2240,7 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
                       onClick={() => handleSetMaxActiveProducts(updateMaxActiveProducts + 10)}
                       disabled={updateMaxActiveProducts >= 500}
                       className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 transition-colors"
+                      title="Obergrenze erhöhen: Erlaubt auch Designs mit mehr bereits aktiven Live-Produkten"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
