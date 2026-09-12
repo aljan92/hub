@@ -57,7 +57,7 @@ export function getChildAsinPolicy(value: unknown): ChildAsinPolicy {
   return 'unsupported';
 }
 
-/** V2 stays read-only for new product types until the guarded canary is implemented. */
+/** Legacy HTML resolver scope; the SNAP resolver handles every resolve policy. */
 export function isLegacyChildAsinWriteEnabled(value: unknown): boolean {
   return LEGACY_CHILD_ASIN_PRODUCT_TYPES.has(normalizeChildAsinProductType(value));
 }

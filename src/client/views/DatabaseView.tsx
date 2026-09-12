@@ -495,20 +495,20 @@ export const DatabaseView: React.FC = () => {
                 onClick={() => handleRunScan('resolve_asins_shadow')}
                 disabled={syncState.isScanning}
                 className="w-full px-3.5 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
-                title="Startet genau einen read-only Amazon-Test; es gibt keine globale Cooldown-Pause"
+                title="Prüft genau ein fälliges Produkt und speichert eine eindeutig belegte Child-ASIN sofort"
               >
-                SNAP-Resolver einmal prüfen (nur lesen)
+                SNAP-Resolver einmal ausführen
               </button>
               {syncState.childAsinShadow?.lastRunAt && (
                 <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/20 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/75">
-                  <div className="font-semibold text-cyan-300">SNAP Shadow · keine Datenbankänderung</div>
+                  <div className="font-semibold text-cyan-300">SNAP Resolver · sichere Einzelaktualisierung</div>
                   <div>{syncState.childAsinShadow.lastResult || 'Noch kein Ergebnis'}</div>
                   <div className="text-cyan-200/50">{formatDate(Date.parse(syncState.childAsinShadow.lastRunAt))}</div>
                 </div>
               )}
               {!!syncState.childAsinValidation?.observed && (
                 <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/10 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/70">
-                  <div className="font-semibold text-cyan-300">Gesammelte SNAP-Prüfung</div>
+                  <div className="font-semibold text-cyan-300">Gesammelte SNAP-Ergebnisse</div>
                   <div>{syncState.childAsinValidation.resolved}/{syncState.childAsinValidation.observed} eindeutig aufgelöst · {syncState.childAsinValidation.confirmedTwice} zweimal identisch bestätigt</div>
                   <div className="text-cyan-200/50">{syncState.childAsinValidation.statuses.slice(0, 5).map(entry => `${entry.status}: ${entry.count}`).join(' · ')}</div>
                 </div>

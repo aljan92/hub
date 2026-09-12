@@ -222949,26 +222949,69 @@ function asinFromLabeledText(value2) {
   const text2 = value2.replace(/<[^>]*>/g, " ").replace(/&nbsp;|&#160;/gi, " ");
   return uniqueAsins(Array.from(text2.matchAll(/\bASIN\b[^A-Z0-9]{0,40}(B[A-Z0-9]{9})/gi), (match) => match[1]));
 }
-function parseAmazonRetailIdentity(html) {
+function extractObjectBody(html, key) {
+  const match = new RegExp(`(?:["']${key}["']|\\b${key}\\b)\\s*:\\s*\\{`, "i").exec(html);
+  if (!match) return "";
+  let index = match.index + match[0].length;
+  const start3 = index;
+  let depth = 1;
+  while (index < html.length && depth > 0) {
+    if (html[index] === "{") depth++;
+    if (html[index] === "}") depth--;
+    index++;
+  }
+  return depth === 0 ? html.slice(start3, index - 1) : "";
+}
+function parseSimpleStringMap(body) {
+  return Object.fromEntries(Array.from(body.matchAll(/["']([^"']+)["']\s*:\s*["']([^"']+)["']/g), (match) => [match[1], match[2]]));
+}
+function selectedVariationMapAsin(html) {
+  const selected = parseSimpleStringMap(extractObjectBody(html, "selectedVariationValues"));
+  const dimensionMap = parseSimpleStringMap(extractObjectBody(html, "dimensionToAsinMap"));
+  const variationBody = extractObjectBody(html, "variationValues");
+  const order = Array.from(variationBody.matchAll(/["']([^"']+)["']\s*:\s*\[/g), (match) => match[1]);
+  if (!order.length || !Object.keys(selected).length || !Object.keys(dimensionMap).length) return "";
+  const parts = order.map((dimension) => selected[dimension]);
+  if (parts.some((value2) => value2 === void 0)) return "";
+  for (const key of [parts.join("_"), parts.join(","), parts.join(""), `[${parts.join(",")}]`]) {
+    const asin = normalizeAsin(dimensionMap[key]);
+    if (asin) return asin;
+  }
+  return "";
+}
+function parseAmazonRetailIdentity(html, requestedAsin) {
+  const requested = normalizeAsin(requestedAsin);
+  let parentSource = null;
+  const choose = (values, source12) => {
+    const all = uniqueAsins(values);
+    if (requested && all.includes(requested)) parentSource ||= source12;
+    const children = requested ? all.filter((asin) => asin !== requested) : all;
+    if (children.length === 1) return { asin: children[0], source: source12 };
+    if (children.length > 1) return { asin: "", ambiguous: true };
+    return null;
+  };
   const hidden = uniqueAsins(Array.from(html.matchAll(/<input\b[^>]*>/gi), (match) => {
     const tag = match[0];
     if (!/\bid=["']ASIN["']/i.test(tag)) return "";
     return tag.match(/\bvalue=["']([A-Z0-9]{10})["']/i)?.[1] || "";
   }));
-  if (hidden.length === 1) return { asin: hidden[0], source: "hidden-input" };
-  if (hidden.length > 1) return { asin: "", ambiguous: true };
+  const hiddenResult = choose(hidden, "hidden-input");
+  if (hiddenResult) return hiddenResult;
   const bullets = asinFromLabeledText(extractSection(html, ["detailBulletsWrapper_feature_div", "detailBullets_feature_div"]));
-  if (bullets.length === 1) return { asin: bullets[0], source: "detail-bullets" };
-  if (bullets.length > 1) return { asin: "", ambiguous: true };
+  const bulletResult = choose(bullets, "detail-bullets");
+  if (bulletResult) return bulletResult;
   const details = asinFromLabeledText(extractSection(html, ["productDetails_detailBullets_sections1", "productDetails"]));
-  if (details.length === 1) return { asin: details[0], source: "product-details" };
-  if (details.length > 1) return { asin: "", ambiguous: true };
+  const detailResult = choose(details, "product-details");
+  if (detailResult) return detailResult;
   const selected = uniqueAsins(Array.from(html.matchAll(/"selectedVariationASIN"\s*:\s*"([A-Z0-9]{10})"/g), (match) => match[1]));
-  if (selected.length === 1) return { asin: selected[0], source: "selected-variation" };
-  if (selected.length > 1) return { asin: "", ambiguous: true };
-  const defaults = uniqueAsins(Array.from(html.matchAll(/data-defaultAsin=["']([A-Z0-9]{10})["']/g), (match) => match[1]));
-  if (defaults.length === 1) return { asin: defaults[0], source: "default-asin" };
-  if (defaults.length > 1) return { asin: "", ambiguous: true };
+  const selectedResult = choose(selected, "selected-variation");
+  if (selectedResult) return selectedResult;
+  const selectedMap = selectedVariationMapAsin(html);
+  const selectedMapResult = choose([selectedMap], "selected-variation-map");
+  if (selectedMapResult) return selectedMapResult;
+  const defaults = uniqueAsins(Array.from(html.matchAll(/data-defaultasin=["']([A-Z0-9]{10})["']/gi), (match) => match[1]));
+  const defaultResult = choose(defaults, "default-asin");
+  if (defaultResult) return defaultResult;
   const mapped = [];
   for (const match of html.matchAll(/"dimensionToAsinMap"\s*:\s*({[^}]+})/g)) {
     try {
@@ -222982,9 +223025,10 @@ function parseAmazonRetailIdentity(html) {
     } catch {
     }
   }
-  const candidates = uniqueAsins(mapped);
-  if (candidates.length === 1) return { asin: candidates[0], source: "single-variation-map" };
-  return { asin: "", ambiguous: candidates.length > 1 };
+  const mapResult = choose(mapped, "single-variation-map");
+  if (mapResult) return mapResult;
+  if (requested && parentSource) return { asin: requested, source: parentSource };
+  return { asin: "", ambiguous: false };
 }
 function detectsAmazonBlock(html) {
   return /errors\/validateCaptcha|Robot Check|robot-check|api-services-support@amazon/i.test(html);
@@ -223033,7 +223077,7 @@ var init_amazonRetailIdentityService = __esm2({
             if (html.length > 8 * 1024 * 1024) return { status: "identity_not_found", error: "Amazon-Dokument \xFCberschreitet 8 MiB.", httpStatus, finalUrl };
             if (detectsAmazonBlock(html) || httpStatus === 403 || httpStatus === 503) return { status: "amazon_blocked", httpStatus, finalUrl };
             if (detectsAuthPage(finalUrl, html)) return { status: "auth_required", httpStatus, finalUrl };
-            const parsed = parseAmazonRetailIdentity(html);
+            const parsed = parseAmazonRetailIdentity(html, parent);
             if (!("source" in parsed)) return { status: parsed.ambiguous ? "ambiguous" : "identity_not_found", httpStatus, finalUrl };
             if (parsed.asin === parent) return { status: "parent_returned", httpStatus, finalUrl };
             return { status: "resolved", evidence: { requestedParentAsin: parent, resolvedAsin: parsed.asin, marketplace: market, source: parsed.source, finalUrl, httpStatus } };
@@ -223061,9 +223105,6 @@ function getChildAsinPolicy(value2) {
 }
 function isLegacyChildAsinWriteEnabled(value2) {
   return LEGACY_CHILD_ASIN_PRODUCT_TYPES.has(normalizeChildAsinProductType(value2));
-}
-function isNewChildAsinShadowType(value2) {
-  return NEW_CHILD_ASIN_PRODUCT_TYPES.has(normalizeChildAsinProductType(value2));
 }
 function isConfirmedChildAsin(asin, parentAsin) {
   const child = String(asin || "").trim().toUpperCase();
@@ -223820,7 +223861,7 @@ var init_syncEngine = __esm2({
             return {
               ...m,
               ad_asins: adAsins2,
-              asin_resolved: adAsins2.every((ad) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad))
+              asin_resolved: adAsins2.every((ad) => getChildAsinPolicy(ad.type) !== "resolve" || isChildAsinRequirementSatisfied(ad))
             };
           }
           const allAsins = Array.from(/* @__PURE__ */ new Set([...ex.asins || [], ...m.asins || []]));
@@ -223840,7 +223881,7 @@ var init_syncEngine = __esm2({
           for (const market of Object.values(MP_MAP)) liveLists[`products_live_${market}`] = Array.from(new Set(pubProducts.filter((p) => p.market === market).map((p) => String(p.type).toLowerCase())));
           const standardUs = pubProducts.find((p) => p.market === "us" && String(p.type).toUpperCase() === "STANDARD_TSHIRT");
           const adAsins = this.buildAdAsins(pubProducts, ex.ad_asins || [], ex.published_products || []);
-          const fullyResolved = adAsins.every((ad) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad));
+          const fullyResolved = adAsins.every((ad) => getChildAsinPolicy(ad.type) !== "resolve" || isChildAsinRequirementSatisfied(ad));
           const incomingStatus = String(m.status || "").toUpperCase();
           const hasIncomingLiveStatus = ["PUBLISHED", "PROPAGATED", "LOCKED", "TIMED_OUT", "PUBLISHING", "TRANSLATING"].includes(incomingStatus);
           const reconciledStatus = pubProducts.length === 0 ? "DELETED" : hasIncomingLiveStatus ? incomingStatus : ex.status || "PUBLISHED";
@@ -223934,12 +223975,6 @@ var init_syncEngine = __esm2({
           if (policy === "resolve") {
             if (exAsin && exAsin !== cleanParentAsin && oldParent === cleanParentAsin) {
               return { asin: exAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
-            }
-            if (isNewChildAsinShadowType(p.type) && exAsin === cleanParentAsin && oldParent === cleanParentAsin) {
-              return { asin: exAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
-            }
-            if (isNewChildAsinShadowType(p.type) && !existing) {
-              return { asin: cleanParentAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
             }
             return { asin: null, parentAsin: cleanParentAsin, type: p.type, market: p.market };
           }
@@ -224730,7 +224765,7 @@ var init_syncEngine = __esm2({
         this.state.activeScanType = null;
         return { processed, errors: errors2 };
       }
-      /** Read-only SNAP-style probe for every product type requiring a child ASIN. */
+      /** SNAP-style resolver for every product type requiring a child ASIN. */
       static async runChildAsinShadowBatch(limit = 1) {
         this.shouldStop = false;
         const runId = this.beginWorker("resolve_asins_shadow");
@@ -224768,10 +224803,10 @@ var init_syncEngine = __esm2({
               const retryKey = `shadow:${row.design_id}:${market}:${type3}`;
               const observationKey = import_crypto4.default.createHash("sha256").update(`${row.design_id}:${market}:${type3}`).digest("hex").slice(0, 24);
               const observation = observations[observationKey];
-              if (observation?.parentAsin === parentAsin && Date.parse(observation.observedAt) > Date.now() - 12 * 60 * 60 * 1e3) continue;
               const retry2 = retryState[retryKey];
               if (retry2?.parentAsin === parentAsin && Date.parse(retry2.nextAt) > Date.now()) continue;
-              candidates.push({ designId: row.design_id, type: type3, market, parentAsin, retryKey, observationKey });
+              const cachedResolvedAsin = observation?.parentAsin === parentAsin && observation?.status === "resolved" && isConfirmedChildAsin(observation?.resolvedAsin, parentAsin) ? observation.resolvedAsin : void 0;
+              candidates.push({ designId: row.design_id, type: type3, market, parentAsin, retryKey, observationKey, row, cachedResolvedAsin, cachedSource: observation?.source });
               if (candidates.length >= Math.max(1, limit)) break;
             }
             if (candidates.length >= Math.max(1, limit)) break;
@@ -224783,7 +224818,18 @@ var init_syncEngine = __esm2({
               if (this.shouldStop) break;
             }
             checked++;
-            const result2 = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
+            const usedCachedObservation = Boolean(candidate.cachedResolvedAsin);
+            const result2 = candidate.cachedResolvedAsin ? {
+              status: "resolved",
+              evidence: {
+                requestedParentAsin: candidate.parentAsin,
+                resolvedAsin: candidate.cachedResolvedAsin,
+                marketplace: candidate.market,
+                source: candidate.cachedSource || "hidden-input",
+                finalUrl: "",
+                httpStatus: 200
+              }
+            } : await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
             const previousObservation = observations[candidate.observationKey];
             const resolvedAsin = result2.status === "resolved" ? result2.evidence.resolvedAsin : null;
             const source12 = result2.status === "resolved" ? result2.evidence.source : null;
@@ -224793,15 +224839,45 @@ var init_syncEngine = __esm2({
               status: result2.status,
               source: source12,
               observedAt: (/* @__PURE__ */ new Date()).toISOString(),
-              consistentCount: previousObservation?.parentAsin === candidate.parentAsin && previousObservation?.resolvedAsin === resolvedAsin && previousObservation?.status === result2.status ? (previousObservation.consistentCount || 0) + 1 : 1
+              consistentCount: usedCachedObservation ? previousObservation?.consistentCount || 1 : previousObservation?.parentAsin === candidate.parentAsin && previousObservation?.resolvedAsin === resolvedAsin && previousObservation?.status === result2.status ? (previousObservation.consistentCount || 0) + 1 : 1
             };
             if (result2.status === "resolved") {
-              resolved++;
-              delete retryState[candidate.retryKey];
-              this.addLog(
-                `[ASIN SNAP Shadow] \u2713 ${candidate.type} (${candidate.market}): ${candidate.parentAsin} \u2794 ${result2.evidence.resolvedAsin} via ${result2.evidence.source}. Nur gepr\xFCft, nicht gespeichert.`,
-                "success"
+              const currentProducts = Array.isArray(candidate.row.published_products) ? candidate.row.published_products : [];
+              const liveProduct = currentProducts.find(
+                (product) => normalizeChildAsinProductType(product?.type) === candidate.type && String(product?.market || "").toLowerCase() === candidate.market && this.sanitizeAsin(product?.asin) === candidate.parentAsin
               );
+              if (!liveProduct) {
+                unresolvedCount++;
+                this.addLog(`[ASIN SNAP] ${candidate.type} (${candidate.market}) wurde w\xE4hrend der Pr\xFCfung ge\xE4ndert; Ergebnis nicht gespeichert.`, "warn");
+                continue;
+              }
+              const nextAdAsins = this.buildAdAsins(currentProducts, candidate.row.ad_asins || [], currentProducts);
+              const target = nextAdAsins.find(
+                (entry) => normalizeChildAsinProductType(entry?.type) === candidate.type && String(entry?.market || "").toLowerCase() === candidate.market
+              );
+              if (!target || this.sanitizeAsin(target.parentAsin) !== candidate.parentAsin) {
+                unresolvedCount++;
+                this.addLog(`[ASIN SNAP] ${candidate.type} (${candidate.market}) konnte nicht sicher zugeordnet werden; Ergebnis nicht gespeichert.`, "warn");
+                continue;
+              }
+              target.asin = result2.evidence.resolvedAsin;
+              target.parentAsin = candidate.parentAsin;
+              const fullyResolved = nextAdAsins.every((entry) => getChildAsinPolicy(entry?.type) !== "resolve" || isChildAsinRequirementSatisfied(entry));
+              const writeResult = await supabase.from("mba_designs").update({ ad_asins: nextAdAsins, asin_resolved: fullyResolved }).eq("design_id", candidate.designId);
+              this.recordTraffic("resolver_snap_write", writeResult);
+              if (writeResult?.error) {
+                unresolvedCount++;
+                retryState[candidate.retryKey] = { attempts: 1, nextAt: new Date(Date.now() + 6e4).toISOString(), parentAsin: candidate.parentAsin, lastError: "write_failed" };
+                this.addLog(`[ASIN SNAP] Child-ASIN erkannt, aber Supabase-Write fehlgeschlagen: ${writeResult.error.message || String(writeResult.error)}`, "error");
+              } else {
+                candidate.row.ad_asins = nextAdAsins;
+                resolved++;
+                delete retryState[candidate.retryKey];
+                this.addLog(
+                  `[ASIN SNAP] \u2713 ${candidate.type} (${candidate.market}): ${candidate.parentAsin} \u2794 ${result2.evidence.resolvedAsin} via ${result2.evidence.source}. In ad_asins gespeichert.`,
+                  "success"
+                );
+              }
             } else {
               unresolvedCount++;
               const previous = retryState[candidate.retryKey];
@@ -224819,7 +224895,7 @@ var init_syncEngine = __esm2({
                 blocked ? "error" : "warn"
               );
               if (blocked) {
-                blockedResult = `${result2.status}; keine globale Pause, weitere Kandidaten werden gepr\xFCft. Keine Datenbank\xE4nderung.`;
+                blockedResult = `${result2.status}; keine globale Pause, weitere Kandidaten werden gepr\xFCft.`;
                 runtime.resolverShadow = {
                   ...runtime.resolverShadow || previousShadow,
                   lastRunAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -224833,7 +224909,7 @@ var init_syncEngine = __esm2({
               }
             }
           }
-          const lastResult = blockedResult || (candidates.length === 0 ? "Keine f\xE4lligen neuen Produkt-/Marktplatzkombinationen in der begrenzten Stichprobe." : `${resolved}/${checked} eindeutig aufgel\xF6st; keine Datenbank\xE4nderung.`);
+          const lastResult = blockedResult || (candidates.length === 0 ? "Keine f\xE4lligen neuen Produkt-/Marktplatzkombinationen in der begrenzten Stichprobe." : `${resolved}/${checked} eindeutig aufgel\xF6st und in ad_asins gespeichert.`);
           runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5e3));
           runtime.resolverObservations = Object.fromEntries(Object.entries(observations).slice(-5e3));
           const nextCursor = (rows || []).length < 250 ? 0 : cursor + 250;
@@ -224855,7 +224931,7 @@ var init_syncEngine = __esm2({
         } catch (error) {
           finalStatus = "error";
           message = error?.message || String(error);
-          this.addLog(`[ASIN SNAP Shadow] Fehler: ${message}. Keine Datenbank\xE4nderung.`, "error");
+          this.addLog(`[ASIN SNAP] Fehler: ${message}`, "error");
           throw error;
         } finally {
           this.finishWorker(runId, this.shouldStop ? "cancelled" : finalStatus, { pages: 0, attempted: checked, confirmed: 0, message });
@@ -237089,7 +237165,7 @@ app.post("/api/v1/sync/run", async (req, res) => {
       });
     } else if (type3 === "resolve_asins_shadow") {
       const result2 = await SyncEngine.runChildAsinShadowBatch(1);
-      return res.json({ success: true, message: `SNAP-Shadow abgeschlossen: ${result2.resolved}/${result2.checked} aufgel\xF6st.`, state: SyncEngine.getState() });
+      return res.json({ success: true, message: `SNAP-Resolver abgeschlossen: ${result2.resolved}/${result2.checked} aufgel\xF6st und gespeichert.`, state: SyncEngine.getState() });
     } else if (type3 === "lifecycle_audit") {
       SyncEngine.runLifecycleAudit().catch(() => {
       });

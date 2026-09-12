@@ -6,6 +6,7 @@ export type RetailIdentitySource =
   | 'detail-bullets'
   | 'product-details'
   | 'selected-variation'
+  | 'selected-variation-map'
   | 'default-asin'
   | 'single-variation-map';
 
@@ -50,30 +51,78 @@ function asinFromLabeledText(value: string): string[] {
   return uniqueAsins(Array.from(text.matchAll(/\bASIN\b[^A-Z0-9]{0,40}(B[A-Z0-9]{9})/gi), match => match[1]));
 }
 
-export function parseAmazonRetailIdentity(html: string): { asin: string; source: RetailIdentitySource } | { asin: ''; ambiguous: boolean } {
+function extractObjectBody(html: string, key: string): string {
+  const match = new RegExp(`(?:["']${key}["']|\\b${key}\\b)\\s*:\\s*\\{`, 'i').exec(html);
+  if (!match) return '';
+  let index = match.index + match[0].length;
+  const start = index;
+  let depth = 1;
+  while (index < html.length && depth > 0) {
+    if (html[index] === '{') depth++;
+    if (html[index] === '}') depth--;
+    index++;
+  }
+  return depth === 0 ? html.slice(start, index - 1) : '';
+}
+
+function parseSimpleStringMap(body: string): Record<string, string> {
+  return Object.fromEntries(Array.from(body.matchAll(/["']([^"']+)["']\s*:\s*["']([^"']+)["']/g), match => [match[1], match[2]]));
+}
+
+function selectedVariationMapAsin(html: string): string {
+  const selected = parseSimpleStringMap(extractObjectBody(html, 'selectedVariationValues'));
+  const dimensionMap = parseSimpleStringMap(extractObjectBody(html, 'dimensionToAsinMap'));
+  const variationBody = extractObjectBody(html, 'variationValues');
+  const order = Array.from(variationBody.matchAll(/["']([^"']+)["']\s*:\s*\[/g), match => match[1]);
+  if (!order.length || !Object.keys(selected).length || !Object.keys(dimensionMap).length) return '';
+  const parts = order.map(dimension => selected[dimension]);
+  if (parts.some(value => value === undefined)) return '';
+  for (const key of [parts.join('_'), parts.join(','), parts.join(''), `[${parts.join(',')}]`]) {
+    const asin = normalizeAsin(dimensionMap[key]);
+    if (asin) return asin;
+  }
+  return '';
+}
+
+export function parseAmazonRetailIdentity(html: string, requestedAsin?: string): { asin: string; source: RetailIdentitySource } | { asin: ''; ambiguous: boolean } {
+  const requested = normalizeAsin(requestedAsin);
+  let parentSource: RetailIdentitySource | null = null;
+  const choose = (values: unknown[], source: RetailIdentitySource) => {
+    const all = uniqueAsins(values);
+    if (requested && all.includes(requested)) parentSource ||= source;
+    const children = requested ? all.filter(asin => asin !== requested) : all;
+    if (children.length === 1) return { asin: children[0], source } as const;
+    if (children.length > 1) return { asin: '', ambiguous: true } as const;
+    return null;
+  };
+
   const hidden = uniqueAsins(Array.from(html.matchAll(/<input\b[^>]*>/gi), match => {
     const tag = match[0];
     if (!/\bid=["']ASIN["']/i.test(tag)) return '';
     return tag.match(/\bvalue=["']([A-Z0-9]{10})["']/i)?.[1] || '';
   }));
-  if (hidden.length === 1) return { asin: hidden[0], source: 'hidden-input' };
-  if (hidden.length > 1) return { asin: '', ambiguous: true };
+  const hiddenResult = choose(hidden, 'hidden-input');
+  if (hiddenResult) return hiddenResult;
 
   const bullets = asinFromLabeledText(extractSection(html, ['detailBulletsWrapper_feature_div', 'detailBullets_feature_div']));
-  if (bullets.length === 1) return { asin: bullets[0], source: 'detail-bullets' };
-  if (bullets.length > 1) return { asin: '', ambiguous: true };
+  const bulletResult = choose(bullets, 'detail-bullets');
+  if (bulletResult) return bulletResult;
 
   const details = asinFromLabeledText(extractSection(html, ['productDetails_detailBullets_sections1', 'productDetails']));
-  if (details.length === 1) return { asin: details[0], source: 'product-details' };
-  if (details.length > 1) return { asin: '', ambiguous: true };
+  const detailResult = choose(details, 'product-details');
+  if (detailResult) return detailResult;
 
   const selected = uniqueAsins(Array.from(html.matchAll(/"selectedVariationASIN"\s*:\s*"([A-Z0-9]{10})"/g), match => match[1]));
-  if (selected.length === 1) return { asin: selected[0], source: 'selected-variation' };
-  if (selected.length > 1) return { asin: '', ambiguous: true };
+  const selectedResult = choose(selected, 'selected-variation');
+  if (selectedResult) return selectedResult;
 
-  const defaults = uniqueAsins(Array.from(html.matchAll(/data-defaultAsin=["']([A-Z0-9]{10})["']/g), match => match[1]));
-  if (defaults.length === 1) return { asin: defaults[0], source: 'default-asin' };
-  if (defaults.length > 1) return { asin: '', ambiguous: true };
+  const selectedMap = selectedVariationMapAsin(html);
+  const selectedMapResult = choose([selectedMap], 'selected-variation-map');
+  if (selectedMapResult) return selectedMapResult;
+
+  const defaults = uniqueAsins(Array.from(html.matchAll(/data-defaultasin=["']([A-Z0-9]{10})["']/gi), match => match[1]));
+  const defaultResult = choose(defaults, 'default-asin');
+  if (defaultResult) return defaultResult;
 
   const mapped: unknown[] = [];
   for (const match of html.matchAll(/"dimensionToAsinMap"\s*:\s*({[^}]+})/g)) {
@@ -82,9 +131,10 @@ export function parseAmazonRetailIdentity(html: string): { asin: string; source:
   for (const match of html.matchAll(/"asinToDimension"\s*:\s*({[^}]+})/g)) {
     try { mapped.push(...Object.keys(JSON.parse(match[1]))); } catch {}
   }
-  const candidates = uniqueAsins(mapped);
-  if (candidates.length === 1) return { asin: candidates[0], source: 'single-variation-map' };
-  return { asin: '', ambiguous: candidates.length > 1 };
+  const mapResult = choose(mapped, 'single-variation-map');
+  if (mapResult) return mapResult;
+  if (requested && parentSource) return { asin: requested, source: parentSource };
+  return { asin: '', ambiguous: false };
 }
 
 function detectsAmazonBlock(html: string): boolean {
@@ -119,7 +169,7 @@ export class AmazonRetailIdentityService {
         if (html.length > 8 * 1024 * 1024) return { status: 'identity_not_found', error: 'Amazon-Dokument überschreitet 8 MiB.', httpStatus, finalUrl };
         if (detectsAmazonBlock(html) || httpStatus === 403 || httpStatus === 503) return { status: 'amazon_blocked', httpStatus, finalUrl };
         if (detectsAuthPage(finalUrl, html)) return { status: 'auth_required', httpStatus, finalUrl };
-        const parsed = parseAmazonRetailIdentity(html);
+        const parsed = parseAmazonRetailIdentity(html, parent);
         if (!('source' in parsed)) return { status: parsed.ambiguous ? 'ambiguous' : 'identity_not_found', httpStatus, finalUrl };
         if (parsed.asin === parent) return { status: 'parent_returned', httpStatus, finalUrl };
         return { status: 'resolved', evidence: { requestedParentAsin: parent, resolvedAsin: parsed.asin, marketplace: market, source: parsed.source, finalUrl, httpStatus } };

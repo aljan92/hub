@@ -358,7 +358,7 @@ app.post('/api/v1/sync/run', async (req, res) => {
       SyncEngine.resolveChildAsinsBatch(10).catch(() => {});
     } else if (type === 'resolve_asins_shadow') {
       const result = await SyncEngine.runChildAsinShadowBatch(1);
-      return res.json({ success: true, message: `SNAP-Shadow abgeschlossen: ${result.resolved}/${result.checked} aufgelöst.`, state: SyncEngine.getState() });
+      return res.json({ success: true, message: `SNAP-Resolver abgeschlossen: ${result.resolved}/${result.checked} aufgelöst und gespeichert.`, state: SyncEngine.getState() });
     } else if (type === 'lifecycle_audit') {
       SyncEngine.runLifecycleAudit().catch(() => {});
     } else {

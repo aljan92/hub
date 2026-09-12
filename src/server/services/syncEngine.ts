@@ -12,7 +12,6 @@ import {
   isConfirmedChildAsin,
   isChildAsinRequirementSatisfied,
   isLegacyChildAsinWriteEnabled,
-  isNewChildAsinShadowType,
   normalizeChildAsinProductType
 } from './childAsinPolicyService';
 
@@ -764,7 +763,7 @@ export class SyncEngine {
         return {
           ...m,
           ad_asins: adAsins,
-          asin_resolved: adAsins.every((ad: any) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad))
+          asin_resolved: adAsins.every((ad: any) => getChildAsinPolicy(ad.type) !== 'resolve' || isChildAsinRequirementSatisfied(ad))
         };
       }
 
@@ -787,7 +786,7 @@ export class SyncEngine {
       for (const market of Object.values(MP_MAP)) liveLists[`products_live_${market}`] = Array.from(new Set(pubProducts.filter((p: any) => p.market === market).map((p: any) => String(p.type).toLowerCase())));
       const standardUs = pubProducts.find((p: any) => p.market === 'us' && String(p.type).toUpperCase() === 'STANDARD_TSHIRT');
       const adAsins = this.buildAdAsins(pubProducts, ex.ad_asins || [], ex.published_products || []);
-      const fullyResolved = adAsins.every((ad: any) => !isLegacyChildAsinWriteEnabled(ad.type) || isChildAsinRequirementSatisfied(ad));
+      const fullyResolved = adAsins.every((ad: any) => getChildAsinPolicy(ad.type) !== 'resolve' || isChildAsinRequirementSatisfied(ad));
       const incomingStatus = String(m.status || '').toUpperCase();
       const hasIncomingLiveStatus = ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'].includes(incomingStatus);
       const reconciledStatus = pubProducts.length === 0 ? 'DELETED' : (hasIncomingLiveStatus ? incomingStatus : (ex.status || 'PUBLISHED'));
@@ -893,14 +892,8 @@ export class SyncEngine {
         if (exAsin && exAsin !== cleanParentAsin && oldParent === cleanParentAsin) {
           return { asin: exAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
         }
-        // New V2 types were historically stored as identity entries. Preserve
-        // that parent placeholder until a later guarded write can replace it.
-        if (isNewChildAsinShadowType(p.type) && exAsin === cleanParentAsin && oldParent === cleanParentAsin) {
-          return { asin: exAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
-        }
-        if (isNewChildAsinShadowType(p.type) && !existing) {
-          return { asin: cleanParentAsin, parentAsin: cleanParentAsin, type: p.type, market: p.market };
-        }
+        // Resolve-types must never advertise with their parent placeholder.
+        // Keep the parent only as resolver identity until a child is proven.
         return { asin: null, parentAsin: cleanParentAsin, type: p.type, market: p.market };
       }
 
@@ -1782,7 +1775,7 @@ export class SyncEngine {
     return { processed, errors };
   }
 
-  /** Read-only SNAP-style probe for every product type requiring a child ASIN. */
+  /** SNAP-style resolver for every product type requiring a child ASIN. */
   public static async runChildAsinShadowBatch(limit = 1): Promise<{ checked: number; resolved: number; unresolved: number }> {
     this.shouldStop = false;
     const runId = this.beginWorker('resolve_asins_shadow');
@@ -1810,7 +1803,7 @@ export class SyncEngine {
       this.recordTraffic('resolver_shadow_read', { data: rows, error });
       if (error) throw new Error(`ASIN-Shadow-Queue konnte nicht gelesen werden: ${error.message || String(error)}`);
 
-      const candidates: Array<{ designId: string; type: string; market: string; parentAsin: string; retryKey: string; observationKey: string }> = [];
+      const candidates: Array<{ designId: string; type: string; market: string; parentAsin: string; retryKey: string; observationKey: string; row: any; cachedResolvedAsin?: string; cachedSource?: any }> = [];
       for (const row of rows || []) {
         const products = Array.isArray(row.published_products) ? row.published_products : [];
         const adAsins = Array.isArray(row.ad_asins) ? row.ad_asins : [];
@@ -1826,10 +1819,11 @@ export class SyncEngine {
           const retryKey = `shadow:${row.design_id}:${market}:${type}`;
           const observationKey = crypto.createHash('sha256').update(`${row.design_id}:${market}:${type}`).digest('hex').slice(0, 24);
           const observation = observations[observationKey];
-          if (observation?.parentAsin === parentAsin && Date.parse(observation.observedAt) > Date.now() - 12 * 60 * 60 * 1000) continue;
           const retry = retryState[retryKey];
           if (retry?.parentAsin === parentAsin && Date.parse(retry.nextAt) > Date.now()) continue;
-          candidates.push({ designId: row.design_id, type, market, parentAsin, retryKey, observationKey });
+          const cachedResolvedAsin = observation?.parentAsin === parentAsin && observation?.status === 'resolved'
+            && isConfirmedChildAsin(observation?.resolvedAsin, parentAsin) ? observation.resolvedAsin : undefined;
+          candidates.push({ designId: row.design_id, type, market, parentAsin, retryKey, observationKey, row, cachedResolvedAsin, cachedSource: observation?.source });
           if (candidates.length >= Math.max(1, limit)) break;
         }
         if (candidates.length >= Math.max(1, limit)) break;
@@ -1842,7 +1836,18 @@ export class SyncEngine {
           if (this.shouldStop) break;
         }
         checked++;
-        const result = await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
+        const usedCachedObservation = Boolean(candidate.cachedResolvedAsin);
+        const result = candidate.cachedResolvedAsin ? {
+          status: 'resolved' as const,
+          evidence: {
+            requestedParentAsin: candidate.parentAsin,
+            resolvedAsin: candidate.cachedResolvedAsin,
+            marketplace: candidate.market,
+            source: candidate.cachedSource || 'hidden-input',
+            finalUrl: '',
+            httpStatus: 200
+          }
+        } : await AmazonRetailIdentityService.resolve(candidate.parentAsin, candidate.market);
         const previousObservation = observations[candidate.observationKey];
         const resolvedAsin = result.status === 'resolved' ? result.evidence.resolvedAsin : null;
         const source = result.status === 'resolved' ? result.evidence.source : null;
@@ -1852,16 +1857,51 @@ export class SyncEngine {
           status: result.status,
           source,
           observedAt: new Date().toISOString(),
-          consistentCount: previousObservation?.parentAsin === candidate.parentAsin && previousObservation?.resolvedAsin === resolvedAsin && previousObservation?.status === result.status
+          consistentCount: usedCachedObservation ? (previousObservation?.consistentCount || 1)
+            : previousObservation?.parentAsin === candidate.parentAsin && previousObservation?.resolvedAsin === resolvedAsin && previousObservation?.status === result.status
             ? (previousObservation.consistentCount || 0) + 1 : 1
         };
         if (result.status === 'resolved') {
-          resolved++;
-          delete retryState[candidate.retryKey];
-          this.addLog(
-            `[ASIN SNAP Shadow] ✓ ${candidate.type} (${candidate.market}): ${candidate.parentAsin} ➔ ${result.evidence.resolvedAsin} via ${result.evidence.source}. Nur geprüft, nicht gespeichert.`,
-            'success'
+          const currentProducts = Array.isArray(candidate.row.published_products) ? candidate.row.published_products : [];
+          const liveProduct = currentProducts.find((product: any) =>
+            normalizeChildAsinProductType(product?.type) === candidate.type
+            && String(product?.market || '').toLowerCase() === candidate.market
+            && this.sanitizeAsin(product?.asin) === candidate.parentAsin
           );
+          if (!liveProduct) {
+            unresolvedCount++;
+            this.addLog(`[ASIN SNAP] ${candidate.type} (${candidate.market}) wurde während der Prüfung geändert; Ergebnis nicht gespeichert.`, 'warn');
+            continue;
+          }
+          const nextAdAsins = this.buildAdAsins(currentProducts, candidate.row.ad_asins || [], currentProducts);
+          const target = nextAdAsins.find((entry: any) =>
+            normalizeChildAsinProductType(entry?.type) === candidate.type && String(entry?.market || '').toLowerCase() === candidate.market
+          );
+          if (!target || this.sanitizeAsin(target.parentAsin) !== candidate.parentAsin) {
+            unresolvedCount++;
+            this.addLog(`[ASIN SNAP] ${candidate.type} (${candidate.market}) konnte nicht sicher zugeordnet werden; Ergebnis nicht gespeichert.`, 'warn');
+            continue;
+          }
+          target.asin = result.evidence.resolvedAsin;
+          target.parentAsin = candidate.parentAsin;
+          const fullyResolved = nextAdAsins.every((entry: any) => getChildAsinPolicy(entry?.type) !== 'resolve' || isChildAsinRequirementSatisfied(entry));
+          const writeResult = await supabase.from('mba_designs')
+            .update({ ad_asins: nextAdAsins, asin_resolved: fullyResolved })
+            .eq('design_id', candidate.designId);
+          this.recordTraffic('resolver_snap_write', writeResult);
+          if (writeResult?.error) {
+            unresolvedCount++;
+            retryState[candidate.retryKey] = { attempts: 1, nextAt: new Date(Date.now() + 60_000).toISOString(), parentAsin: candidate.parentAsin, lastError: 'write_failed' };
+            this.addLog(`[ASIN SNAP] Child-ASIN erkannt, aber Supabase-Write fehlgeschlagen: ${writeResult.error.message || String(writeResult.error)}`, 'error');
+          } else {
+            candidate.row.ad_asins = nextAdAsins;
+            resolved++;
+            delete retryState[candidate.retryKey];
+            this.addLog(
+              `[ASIN SNAP] ✓ ${candidate.type} (${candidate.market}): ${candidate.parentAsin} ➔ ${result.evidence.resolvedAsin} via ${result.evidence.source}. In ad_asins gespeichert.`,
+              'success'
+            );
+          }
         } else {
           unresolvedCount++;
           const previous = retryState[candidate.retryKey];
@@ -1879,7 +1919,7 @@ export class SyncEngine {
             blocked ? 'error' : 'warn'
           );
           if (blocked) {
-            blockedResult = `${result.status}; keine globale Pause, weitere Kandidaten werden geprüft. Keine Datenbankänderung.`;
+            blockedResult = `${result.status}; keine globale Pause, weitere Kandidaten werden geprüft.`;
             runtime.resolverShadow = {
               ...(runtime.resolverShadow || previousShadow),
               lastRunAt: new Date().toISOString(), checked, resolved, unresolved: unresolvedCount,
@@ -1893,7 +1933,7 @@ export class SyncEngine {
 
       const lastResult = blockedResult || (candidates.length === 0
         ? 'Keine fälligen neuen Produkt-/Marktplatzkombinationen in der begrenzten Stichprobe.'
-        : `${resolved}/${checked} eindeutig aufgelöst; keine Datenbankänderung.`);
+        : `${resolved}/${checked} eindeutig aufgelöst und in ad_asins gespeichert.`);
       runtime.resolverRetries = Object.fromEntries(Object.entries(retryState).slice(-5000));
       runtime.resolverObservations = Object.fromEntries(Object.entries(observations).slice(-5000));
       const nextCursor = (rows || []).length < 250 ? 0 : cursor + 250;
@@ -1911,7 +1951,7 @@ export class SyncEngine {
     } catch (error: any) {
       finalStatus = 'error';
       message = error?.message || String(error);
-      this.addLog(`[ASIN SNAP Shadow] Fehler: ${message}. Keine Datenbankänderung.`, 'error');
+      this.addLog(`[ASIN SNAP] Fehler: ${message}`, 'error');
       throw error;
     } finally {
       this.finishWorker(runId, this.shouldStop ? 'cancelled' : finalStatus, { pages: 0, attempted: checked, confirmed: 0, message });

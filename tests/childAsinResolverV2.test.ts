@@ -25,14 +25,14 @@ test('product policy adds seven shadow types and removes Samsung from resolution
   assert.equal(getChildAsinPolicy('FUTURE_UNKNOWN_PRODUCT'), 'unsupported');
 });
 
-test('new product parent placeholder remains intact until a guarded V2 write exists', () => {
+test('resolve products never expose their parent placeholder as an advertising ASIN', () => {
   const existing = [{ asin: 'B000000001', parentAsin: 'B000000001', type: 'TRAVEL_TUMBLER', market: 'us' }];
   const built = SyncEngine.buildAdAsins(
     [{ asin: 'B000000001', type: 'TRAVEL_TUMBLER', market: 'us' }],
     existing,
     [{ asin: 'B000000001', type: 'TRAVEL_TUMBLER', market: 'us' }]
   );
-  assert.deepEqual(built, existing);
+  assert.deepEqual(built, [{ asin: null, parentAsin: 'B000000001', type: 'TRAVEL_TUMBLER', market: 'us' }]);
   assert.equal(isChildAsinRequirementSatisfied(built[0]), false);
 });
 
@@ -68,6 +68,15 @@ test('retail parser follows SNAP source priority', () => {
     parseAmazonRetailIdentity('{"selectedVariationASIN":"B000000005"}'),
     { asin: 'B000000005', source: 'selected-variation' }
   );
+  assert.deepEqual(
+    parseAmazonRetailIdentity(`
+      <input id="ASIN" value="B000000001">
+      {"selectedVariationValues":{"color_name":"Black","size_name":"16 oz"},
+       "variationValues":{"color_name":["Black","Blue"],"size_name":["16 oz"]},
+       "dimensionToAsinMap":{"Black_16 oz":"B000000006","Blue_16 oz":"B000000007"}}
+    `, 'B000000001'),
+    { asin: 'B000000006', source: 'selected-variation-map' }
+  );
 });
 
 test('retail parser rejects ambiguous maps and generic asin fields', () => {
@@ -102,7 +111,7 @@ test('retail resolver classifies child, parent, block, auth and 404 without writ
   }
 });
 
-test('shadow batch resolves a new parent placeholder without any Supabase write', async () => {
+test('SNAP batch immediately stores an unambiguous child without touching other fields', async () => {
   let writeCalls = 0;
   const rows = [{
     design_id: 'D-SHADOW',
@@ -119,7 +128,15 @@ test('shadow batch resolves a new parent placeholder without any Supabase write'
             }
           };
         },
-        update() { writeCalls++; throw new Error('shadow must not update'); },
+        update(update: any) {
+          writeCalls++;
+          assert.deepEqual(Object.keys(update).sort(), ['ad_asins', 'asin_resolved']);
+          return { eq: async (field: string, value: string) => {
+            assert.equal(field, 'design_id');
+            assert.equal(value, 'D-SHADOW');
+            return { error: null };
+          } };
+        },
         upsert() { writeCalls++; throw new Error('shadow must not upsert'); }
       };
     }
@@ -147,16 +164,28 @@ test('shadow batch resolves a new parent placeholder without any Supabase write'
     });
     const result = await SyncEngine.runChildAsinShadowBatch(1);
     assert.deepEqual(result, { checked: 1, resolved: 1, unresolved: 0 });
-    assert.equal(writeCalls, 0);
-    assert.equal(rows[0].ad_asins[0].asin, 'B000000001');
-    assert.match(savedRuntime.resolverShadow.lastResult, /keine Datenbankänderung/i);
+    assert.equal(writeCalls, 1);
+    assert.equal(rows[0].ad_asins[0].asin, 'B000000002');
+    assert.match(savedRuntime.resolverShadow.lastResult, /gespeichert/i);
+
+    rows[0].ad_asins = [{ asin: null, parentAsin: 'B000000001', type: 'TRAVEL_TUMBLER', market: 'us' }];
+    let cachedNetworkCalls = 0;
+    AmazonRetailIdentityService.resolve = async () => {
+      cachedNetworkCalls++;
+      throw new Error('a previously proven result must be promoted without another Amazon request');
+    };
+    assert.deepEqual(await SyncEngine.runChildAsinShadowBatch(1), { checked: 1, resolved: 1, unresolved: 0 });
+    assert.equal(cachedNetworkCalls, 0);
+    assert.equal(writeCalls, 2);
+    assert.equal(rows[0].ad_asins[0].asin, 'B000000002');
 
     savedRuntime = { version: 1, productWatermark: null };
+    rows[0].ad_asins = [{ asin: null, parentAsin: 'B000000001', type: 'TRAVEL_TUMBLER', market: 'us' }];
     AmazonRetailIdentityService.resolve = async () => ({ status: 'identity_not_found', httpStatus: 200, finalUrl: 'https://www.amazon.com/dp/B000000001' });
     const unresolved = await SyncEngine.runChildAsinShadowBatch(1);
     assert.deepEqual(unresolved, { checked: 1, resolved: 0, unresolved: 1 });
     assert.equal(Object.values(savedRuntime.resolverObservations)[0].source, null);
-    assert.equal(writeCalls, 0);
+    assert.equal(writeCalls, 2);
 
     savedRuntime = {
       version: 1,
@@ -164,6 +193,7 @@ test('shadow batch resolves a new parent placeholder without any Supabase write'
       resolverShadow: { lastRunAt: new Date().toISOString(), checked: 0, resolved: 0, unresolved: 0, lastResult: 'blocked', cursor: 0, blockedUntil: new Date(Date.now() + 60_000).toISOString() }
     };
     let forcedCalls = 0;
+    rows[0].ad_asins = [{ asin: null, parentAsin: 'B000000001', type: 'TRAVEL_TUMBLER', market: 'us' }];
     AmazonRetailIdentityService.resolve = async () => {
       forcedCalls++;
       return { status: 'identity_not_found', httpStatus: 200, finalUrl: 'https://www.amazon.com/dp/B000000001' };
