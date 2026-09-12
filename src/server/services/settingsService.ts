@@ -23,7 +23,7 @@ export interface AppSettings {
   ideogramV4Transparent: boolean;
   ideogramV4RenderingSpeed: 'DEFAULT' | 'TURBO';
   ideogramV4AspectRatio: string;
-  ideogramV4OutputResolution: 'DEFAULT' | '4K';
+  ideogramV4OutputResolution?: 'DEFAULT' | '4K';
   gptImageQuality: 'auto' | 'low' | 'medium' | 'high';
   gptImageAspectRatio: '1:1' | '3:2' | '2:3' | '4:3' | '3:4' | '16:9' | '9:16' | '21:9' | 'auto';
   gptImageBackground: 'auto' | 'opaque' | 'transparent';
@@ -111,7 +111,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   ideogramV4Transparent: true,
   ideogramV4RenderingSpeed: 'DEFAULT',
   ideogramV4AspectRatio: '10x16',
-  ideogramV4OutputResolution: 'DEFAULT',
   gptImageQuality: 'high',
   gptImageAspectRatio: '3:4',
   gptImageBackground: 'transparent',

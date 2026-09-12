@@ -160,18 +160,10 @@ test('IdeogramV4Service.mapAspectRatioToResolution produces valid Ideogram enum 
   assert.equal(res4x5, '896x1120');
   assert.ok(IdeogramV4Service.ALLOWED_V4_RESOLUTIONS.has(res4x5));
 
-  const res4x5_4k = IdeogramV4Service.mapAspectRatioToResolution('4x5', '4K');
-  assert.equal(res4x5_4k, '1792x2240');
-  assert.ok(IdeogramV4Service.ALLOWED_V4_RESOLUTIONS.has(res4x5_4k));
-
   // Test 10x16 ratio
   const res10x16 = IdeogramV4Service.mapAspectRatioToResolution('10x16');
   assert.equal(res10x16, '800x1280');
   assert.ok(IdeogramV4Service.ALLOWED_V4_RESOLUTIONS.has(res10x16));
-
-  const res10x16_4k = IdeogramV4Service.mapAspectRatioToResolution('10x16', '4K');
-  assert.equal(res10x16_4k, '1600x2560');
-  assert.ok(IdeogramV4Service.ALLOWED_V4_RESOLUTIONS.has(res10x16_4k));
 
   // Test 1x1 ratio
   const res1x1 = IdeogramV4Service.mapAspectRatioToResolution('1x1');

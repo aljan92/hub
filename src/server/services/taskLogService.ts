@@ -168,8 +168,7 @@ export class TaskLogService {
           renderingSpeed: settings.ideogramV4RenderingSpeed || 'DEFAULT',
           aspectRatio: settings.ideogramV4AspectRatio || '10x16',
           magicPrompt: settings.ideogramV4MagicPrompt ?? true,
-          transparent: settings.ideogramV4Transparent ?? true,
-          outputResolution: settings.ideogramV4OutputResolution || 'DEFAULT'
+          transparent: settings.ideogramV4Transparent ?? true
         }
       : {
           provider: 'IDEOGRAM',
@@ -682,7 +681,6 @@ export class TaskLogService {
           renderingSpeed: settings.ideogramV4RenderingSpeed || 'DEFAULT',
           aspectRatio: settings.ideogramV4AspectRatio || '10x16',
           transparent: settings.ideogramV4Transparent ?? true,
-          outputResolution: settings.ideogramV4OutputResolution || 'DEFAULT',
           magicPrompt: settings.ideogramV4MagicPrompt ?? true
         }
       : {
@@ -780,7 +778,6 @@ export class TaskLogService {
           renderingSpeed: snapshot.renderingSpeed as any,
           aspectRatio: snapshot.aspectRatio,
           transparent: snapshot.transparent ?? true,
-          outputResolution: snapshot.outputResolution as any,
           magicPrompt: Boolean(snapshot.magicPrompt)
         });
         sourceUrl = result.imageUrl;

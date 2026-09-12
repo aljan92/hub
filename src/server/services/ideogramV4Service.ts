@@ -47,49 +47,48 @@ export class IdeogramV4Service {
    * Map aspect ratio strings (e.g. '4x5', '10x16', '1x1') to valid Ideogram 4.0 resolution strings
    * required by the standard /generate endpoint.
    */
-  static mapAspectRatioToResolution(ratio: string, outputResolution?: string): string {
+  static mapAspectRatioToResolution(ratio: string): string {
     const clean = (ratio || '10x16').replace(':', 'x').trim();
     if (this.ALLOWED_V4_RESOLUTIONS.has(clean)) {
       return clean;
     }
-    const is4K = outputResolution === '4K';
     switch (clean) {
       case '1x1':
-        return is4K ? '2048x2048' : '1024x1024';
+        return '1024x1024';
       case '4x5':
-        return is4K ? '1792x2240' : '896x1120';
+        return '896x1120';
       case '5x4':
-        return is4K ? '2240x1792' : '1120x896';
+        return '1120x896';
       case '10x16':
-        return is4K ? '1600x2560' : '800x1280';
+        return '800x1280';
       case '16x10':
-        return is4K ? '2560x1600' : '1280x800';
+        return '1280x800';
       case '9x16':
-        return is4K ? '1440x2560' : '720x1280';
+        return '720x1280';
       case '16x9':
-        return is4K ? '2560x1440' : '1280x720';
+        return '1280x720';
       case '3x4':
-        return is4K ? '1728x2304' : '864x1152';
+        return '864x1152';
       case '4x3':
-        return is4K ? '2304x1728' : '1152x864';
+        return '1152x864';
       case '2x3':
-        return is4K ? '1664x2496' : '832x1248';
+        return '832x1248';
       case '3x2':
-        return is4K ? '2496x1664' : '1248x832';
+        return '1248x832';
       case '1x2':
-        return is4K ? '1440x2880' : '720x1440';
+        return '720x1440';
       case '2x1':
-        return is4K ? '2880x1440' : '1440x720';
+        return '1440x720';
       case '1x3':
-        return is4K ? '1024x3072' : '512x1536';
+        return '512x1536';
       case '3x1':
-        return is4K ? '3072x1024' : '1536x512';
+        return '1536x512';
       case '1x4':
         return '512x1536';
       case '4x1':
         return '1536x512';
       default:
-        return is4K ? '1600x2560' : '800x1280';
+        return '800x1280';
     }
   }
   /**
@@ -217,7 +216,6 @@ export class IdeogramV4Service {
 
     const cleanRatio = (options.aspectRatio || settings.ideogramV4AspectRatio || '10x16').replace(':', 'x');
     const renderingSpeed = options.renderingSpeed || settings.ideogramV4RenderingSpeed || 'DEFAULT';
-    const outputResolution = options.outputResolution || settings.ideogramV4OutputResolution || 'DEFAULT';
 
     let magicResult: IdeogramV4MagicPromptResult | undefined;
     let effectiveRatio = cleanRatio;
@@ -256,12 +254,9 @@ export class IdeogramV4Service {
 
     if (transparent) {
       formData.append('aspect_ratio', effectiveRatio);
-      if (outputResolution && outputResolution !== 'DEFAULT') {
-        formData.append('output_resolution', outputResolution);
-      }
     } else {
       // In standard generate endpoint, resolution must be from the allowed resolution enum
-      const validResolution = this.mapAspectRatioToResolution(effectiveRatio, outputResolution);
+      const validResolution = this.mapAspectRatioToResolution(effectiveRatio);
       formData.append('resolution', validResolution);
     }
 

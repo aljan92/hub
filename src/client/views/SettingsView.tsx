@@ -76,7 +76,6 @@ export const SettingsView: React.FC = () => {
   const [ideogramV4Transparent, setIdeogramV4Transparent] = useState<boolean>(initialSettings.ideogramV4Transparent ?? true);
   const [ideogramV4RenderingSpeed, setIdeogramV4RenderingSpeed] = useState<string>(initialSettings.ideogramV4RenderingSpeed || 'DEFAULT');
   const [ideogramV4AspectRatio, setIdeogramV4AspectRatio] = useState<string>(initialSettings.ideogramV4AspectRatio || '10x16');
-  const [ideogramV4OutputResolution, setIdeogramV4OutputResolution] = useState<string>(initialSettings.ideogramV4OutputResolution || 'DEFAULT');
   const [gptImageQuality, setGptImageQuality] = useState<'auto' | 'low' | 'medium' | 'high'>(initialSettings.gptImageQuality || 'high');
   const [gptImageAspectRatio, setGptImageAspectRatio] = useState<string>(initialSettings.gptImageAspectRatio || '3:4');
   const [gptImageBackground, setGptImageBackground] = useState<'auto' | 'opaque' | 'transparent'>(initialSettings.gptImageBackground || 'transparent');
@@ -178,7 +177,6 @@ export const SettingsView: React.FC = () => {
           setIdeogramV4Transparent(s.ideogramV4Transparent ?? true);
           setIdeogramV4RenderingSpeed(s.ideogramV4RenderingSpeed || 'DEFAULT');
           setIdeogramV4AspectRatio(s.ideogramV4AspectRatio || '10x16');
-          setIdeogramV4OutputResolution(s.ideogramV4OutputResolution || 'DEFAULT');
           setGptImageQuality(s.gptImageQuality || 'high');
           setGptImageAspectRatio(s.gptImageAspectRatio || '3:4');
           setGptImageBackground(s.gptImageBackground || 'transparent');
@@ -343,7 +341,6 @@ export const SettingsView: React.FC = () => {
         ideogramV4Transparent: Boolean(ideogramV4Transparent),
         ideogramV4RenderingSpeed: ideogramV4RenderingSpeed as any,
         ideogramV4AspectRatio,
-        ideogramV4OutputResolution: ideogramV4OutputResolution as any,
         gptImageQuality,
         gptImageAspectRatio,
         gptImageBackground,
@@ -935,7 +932,7 @@ export const SettingsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-slate-800/80">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-800/80">
             {/* Speed (Rendering) */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-400 mb-1">Rendering Speed</label>
@@ -968,19 +965,6 @@ export const SettingsView: React.FC = () => {
                 <option value="3x2">3x2 (Poster Querformat)</option>
                 <option value="16x10">16x10 (Querformat / 16:10)</option>
                 <option value="16x9">16x9 (Widescreen / 16:9)</option>
-              </select>
-            </div>
-
-            {/* Output Resolution */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Output Resolution</label>
-              <select
-                value={ideogramV4OutputResolution}
-                onChange={(e) => setIdeogramV4OutputResolution(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none font-mono"
-              >
-                <option value="DEFAULT">DEFAULT (Standard)</option>
-                <option value="4K">4K (UHD)</option>
               </select>
             </div>
           </div>
