@@ -167,9 +167,9 @@ export class TaskLogService {
           model: 'V_4',
           renderingSpeed: settings.ideogramV4RenderingSpeed || 'DEFAULT',
           aspectRatio: settings.ideogramV4AspectRatio || '10x16',
-          magicPrompt: settings.ideogramV4MagicPrompt,
-          transparent: settings.ideogramV4Transparent,
-          outputResolution: settings.ideogramV4OutputResolution
+          magicPrompt: settings.ideogramV4MagicPrompt ?? true,
+          transparent: settings.ideogramV4Transparent ?? true,
+          outputResolution: settings.ideogramV4OutputResolution || 'DEFAULT'
         }
       : {
           provider: 'IDEOGRAM',

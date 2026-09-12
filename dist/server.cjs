@@ -55592,6 +55592,96 @@ var init_ideogramV4Service = __esm2({
     "use strict";
     init_settingsService();
     IdeogramV4Service = class {
+      static MODEL = "V_4";
+      static ALLOWED_V4_RESOLUTIONS = /* @__PURE__ */ new Set([
+        "2048x2048",
+        "1440x2880",
+        "2880x1440",
+        "1664x2496",
+        "2496x1664",
+        "1792x2240",
+        "2240x1792",
+        "1440x2560",
+        "2560x1440",
+        "1600x2560",
+        "2560x1600",
+        "1728x2304",
+        "2304x1728",
+        "1296x3168",
+        "3168x1296",
+        "1152x2944",
+        "2944x1152",
+        "1248x3328",
+        "3328x1248",
+        "1280x3072",
+        "3072x1280",
+        "1024x3072",
+        "3072x1024",
+        "1024x1024",
+        "896x1120",
+        "1120x896",
+        "864x1152",
+        "1152x864",
+        "832x1248",
+        "1248x832",
+        "800x1280",
+        "1280x800",
+        "720x1280",
+        "1280x720",
+        "720x1440",
+        "1440x720",
+        "512x1536",
+        "1536x512"
+      ]);
+      /**
+       * Map aspect ratio strings (e.g. '4x5', '10x16', '1x1') to valid Ideogram 4.0 resolution strings
+       * required by the standard /generate endpoint.
+       */
+      static mapAspectRatioToResolution(ratio, outputResolution) {
+        const clean = (ratio || "10x16").replace(":", "x").trim();
+        if (this.ALLOWED_V4_RESOLUTIONS.has(clean)) {
+          return clean;
+        }
+        const is4K = outputResolution === "4K";
+        switch (clean) {
+          case "1x1":
+            return is4K ? "2048x2048" : "1024x1024";
+          case "4x5":
+            return is4K ? "1792x2240" : "896x1120";
+          case "5x4":
+            return is4K ? "2240x1792" : "1120x896";
+          case "10x16":
+            return is4K ? "1600x2560" : "800x1280";
+          case "16x10":
+            return is4K ? "2560x1600" : "1280x800";
+          case "9x16":
+            return is4K ? "1440x2560" : "720x1280";
+          case "16x9":
+            return is4K ? "2560x1440" : "1280x720";
+          case "3x4":
+            return is4K ? "1728x2304" : "864x1152";
+          case "4x3":
+            return is4K ? "2304x1728" : "1152x864";
+          case "2x3":
+            return is4K ? "1664x2496" : "832x1248";
+          case "3x2":
+            return is4K ? "2496x1664" : "1248x832";
+          case "1x2":
+            return is4K ? "1440x2880" : "720x1440";
+          case "2x1":
+            return is4K ? "2880x1440" : "1440x720";
+          case "1x3":
+            return is4K ? "1024x3072" : "512x1536";
+          case "3x1":
+            return is4K ? "3072x1024" : "1536x512";
+          case "1x4":
+            return "512x1536";
+          case "4x1":
+            return "1536x512";
+          default:
+            return is4K ? "1600x2560" : "800x1280";
+        }
+      }
       /**
        * Resolve effective API key: specific V4 key if set, otherwise fallback to global Ideogram key.
        */
@@ -55684,8 +55774,8 @@ var init_ideogramV4Service = __esm2({
       static async generateImage(options2) {
         const settings = loadSettings();
         const key = this.getApiKey(options2.customApiKey || options2.apiKey);
-        const magicPromptEnabled = options2.magicPromptEnabled !== void 0 ? options2.magicPromptEnabled : options2.magicPrompt !== void 0 ? options2.magicPrompt : settings.ideogramV4MagicPrompt;
-        const transparent = options2.transparent !== void 0 ? options2.transparent : settings.ideogramV4Transparent;
+        const magicPromptEnabled = typeof options2.magicPromptEnabled === "boolean" ? options2.magicPromptEnabled : typeof options2.magicPrompt === "boolean" ? options2.magicPrompt : settings.ideogramV4MagicPrompt ?? true;
+        const transparent = typeof options2.transparent === "boolean" ? options2.transparent : settings.ideogramV4Transparent ?? true;
         const cleanRatio = (options2.aspectRatio || settings.ideogramV4AspectRatio || "10x16").replace(":", "x");
         const renderingSpeed = options2.renderingSpeed || settings.ideogramV4RenderingSpeed || "DEFAULT";
         const outputResolution = options2.outputResolution || settings.ideogramV4OutputResolution || "DEFAULT";
@@ -55718,9 +55808,8 @@ var init_ideogramV4Service = __esm2({
             formData.append("output_resolution", outputResolution);
           }
         } else {
-          if (effectiveRatio && effectiveRatio !== "AUTO") {
-            formData.append("resolution", effectiveRatio);
-          }
+          const validResolution = this.mapAspectRatioToResolution(effectiveRatio, outputResolution);
+          formData.append("resolution", validResolution);
         }
         const res = await fetch(endpoint, {
           method: "POST",
@@ -230968,9 +231057,9 @@ var init_taskLogService = __esm2({
           model: "V_4",
           renderingSpeed: settings.ideogramV4RenderingSpeed || "DEFAULT",
           aspectRatio: settings.ideogramV4AspectRatio || "10x16",
-          magicPrompt: settings.ideogramV4MagicPrompt,
-          transparent: settings.ideogramV4Transparent,
-          outputResolution: settings.ideogramV4OutputResolution
+          magicPrompt: settings.ideogramV4MagicPrompt ?? true,
+          transparent: settings.ideogramV4Transparent ?? true,
+          outputResolution: settings.ideogramV4OutputResolution || "DEFAULT"
         } : {
           provider: "IDEOGRAM",
           model: settings.ideogramModel || "V_3",

@@ -150,5 +150,34 @@ test('TaskLogService snapshot includes Ideogram 4.0 parameters', () => {
   assert.equal(task.imageGeneration?.provider, 'IDEOGRAM_V4');
   assert.equal(task.imageGeneration?.model, 'V_4');
   assert.ok(task.imageGeneration?.aspectRatio);
+  assert.equal(task.imageGeneration?.transparent, true);
   assert.equal(typeof task.imageGeneration?.transparent, 'boolean');
+});
+
+test('IdeogramV4Service.mapAspectRatioToResolution produces valid Ideogram enum values', () => {
+  // Test 4x5 ratio
+  const res4x5 = IdeogramV4Service.mapAspectRatioToResolution('4x5');
+  assert.equal(res4x5, '896x1120');
+  assert.ok(IdeogramV4Service.ALLOWED_V4_RESOLUTIONS.has(res4x5));
+
+  const res4x5_4k = IdeogramV4Service.mapAspectRatioToResolution('4x5', '4K');
+  assert.equal(res4x5_4k, '1792x2240');
+  assert.ok(IdeogramV4Service.ALLOWED_V4_RESOLUTIONS.has(res4x5_4k));
+
+  // Test 10x16 ratio
+  const res10x16 = IdeogramV4Service.mapAspectRatioToResolution('10x16');
+  assert.equal(res10x16, '800x1280');
+  assert.ok(IdeogramV4Service.ALLOWED_V4_RESOLUTIONS.has(res10x16));
+
+  const res10x16_4k = IdeogramV4Service.mapAspectRatioToResolution('10x16', '4K');
+  assert.equal(res10x16_4k, '1600x2560');
+  assert.ok(IdeogramV4Service.ALLOWED_V4_RESOLUTIONS.has(res10x16_4k));
+
+  // Test 1x1 ratio
+  const res1x1 = IdeogramV4Service.mapAspectRatioToResolution('1x1');
+  assert.equal(res1x1, '1024x1024');
+  assert.ok(IdeogramV4Service.ALLOWED_V4_RESOLUTIONS.has(res1x1));
+
+  // Already valid resolution string passes through
+  assert.equal(IdeogramV4Service.mapAspectRatioToResolution('2048x2048'), '2048x2048');
 });
