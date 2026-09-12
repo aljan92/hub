@@ -190,6 +190,83 @@ try {
 
   console.log('✅ [PASS] Test 4: QueueView tab-consistent counter projection verified');
 
+  // -------------------------------------------------------------------------
+  // TEST 5: Tier Limit 0 - Account Tier full (0 free design slots) in Live Mode
+  // Even with 200 daily slots, 0 new live designs may be scheduled!
+  // -------------------------------------------------------------------------
+  console.log('Test 5: Tier Limit 0 (Tier full, 0 free design slots) in Live Mode...');
+  saveSettings({
+    ...originalSettings,
+    queueUploadMode: 'live',
+    queueMaxDropPerDesign: 20
+  });
+
+  // freeDesignsCount = 0
+  QueueService.setAccountTierInfo(2000, 2000, 0);
+  const stateTier0 = QueueService.rebalanceQueue(200, 0);
+
+  assert.equal(stateTier0.freeDesignsCount, 0, 'freeDesignsCount must be 0');
+  assert.equal(stateTier0.scheduledItemsCount, 0, 'No new designs may be scheduled when tier is full');
+  assert.equal(stateTier0.scheduledLiveSlotsToday, 0, 'Scheduled live slots must be 0');
+  const tierItem1 = stateTier0.items.find(i => i.id === item1.id)!;
+  const tierItem2 = stateTier0.items.find(i => i.id === item2.id)!;
+  assert.equal(tierItem1.allocatedSlots, 0, 'Item 1 allocatedSlots must be 0');
+  assert.equal(tierItem2.allocatedSlots, 0, 'Item 2 allocatedSlots must be 0');
+
+  console.log('✅ [PASS] Test 5: Tier Limit 0 correctly blocks all new live designs from scheduling');
+
+  // -------------------------------------------------------------------------
+  // TEST 6: Tier Limit 1 - Exactly 1 free design slot in Live Mode
+  // Out of 2 waiting designs, only 1 may be scheduled!
+  // -------------------------------------------------------------------------
+  console.log('Test 6: Tier Limit 1 (only 1 free design slot) in Live Mode...');
+  QueueService.setAccountTierInfo(2000, 1999, 1);
+  const stateTier1 = QueueService.rebalanceQueue(200, 1);
+
+  assert.equal(stateTier1.scheduledItemsCount, 1, 'Exactly 1 new design may be scheduled today');
+  const tier1Scheduled = stateTier1.items.find(i => i.id === item1.id)!;
+  const tier1Waiting = stateTier1.items.find(i => i.id === item2.id)!;
+  assert.ok(tier1Scheduled.allocatedSlots! > 0, 'First item receives allocated slots');
+  assert.equal(tier1Waiting.allocatedSlots, 0, 'Second item remains waiting with 0 slots');
+
+  console.log('✅ [PASS] Test 6: Tier Limit 1 correctly schedules only 1 new design');
+
+  // -------------------------------------------------------------------------
+  // TEST 7: Draft Mode Exemption from Tier Limit
+  // In Draft Mode, designs are drafts and do not consume Tier design slots!
+  // -------------------------------------------------------------------------
+  console.log('Test 7: Draft Mode Exemption from Tier Limit...');
+  saveSettings({
+    ...originalSettings,
+    queueUploadMode: 'draft',
+    queueDraftProductsPerDesign: 50
+  });
+  // Tier is full (0 free slots), but in draft mode designs are still schedulable
+  const stateDraft = QueueService.rebalanceQueue(200, 0);
+  assert.ok(stateDraft.scheduledItemsCount > 0, 'Draft mode must schedule items even if account tier is full');
+  assert.equal(stateDraft.scheduledLiveSlotsToday, 0, 'Draft mode consumes 0 live slots');
+  assert.ok((stateDraft.scheduledDraftProductsToday || 0) > 0, 'Draft mode schedules draft products');
+
+  console.log('✅ [PASS] Test 7: Draft mode is correctly exempt from Tier design slot limits');
+
+  // -------------------------------------------------------------------------
+  // TEST 8: UploadWorkerService Start Guard for Tier Limit
+  // -------------------------------------------------------------------------
+  console.log('Test 8: UploadWorkerService startUpload rejection on Tier full...');
+  const { UploadWorkerService } = await import('../src/server/services/uploadWorkerService');
+  saveSettings({
+    ...originalSettings,
+    queueUploadMode: 'live'
+  });
+  QueueService.setAccountTierInfo(2000, 2000, 0);
+  QueueService.rebalanceQueue(200, 0);
+
+  const startLiveResult = await UploadWorkerService.startUpload(item1.id, 'live', false);
+  assert.equal(startLiveResult.success, false, 'startUpload must reject live upload when tier is full');
+  assert.match(startLiveResult.message, /Tier-Limit erreicht/, 'Error message must mention Tier-Limit');
+
+  console.log('✅ [PASS] Test 8: startUpload properly blocks live upload when tier is full');
+
 } finally {
   // Cleanup test items
   for (const id of testItemIds) {

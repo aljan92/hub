@@ -245,6 +245,7 @@ async function refreshStatsInBackground() {
     if (liveSlots) {
       dailySlotStats = liveSlots;
       QueueService.setDailySlots(liveSlots.free, liveSlots.used, liveSlots.total);
+      QueueService.setAccountTierInfo(lastKnownTier, ratelimiter?.liveDesignsCount, ratelimiter?.freeDesignsCount);
     }
 
     const liveDesignsCount = (ratelimiter?.liveDesignsCount !== undefined && ratelimiter.liveDesignsCount !== null)
@@ -2072,6 +2073,7 @@ app.post('/api/v1/queue/refresh-slots', async (req, res) => {
     if (ratelimiter?.slots) {
       dailySlotStats = ratelimiter.slots;
       QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
+      QueueService.setAccountTierInfo(ratelimiter.tier, ratelimiter.liveDesignsCount, ratelimiter.freeDesignsCount);
     }
     const queueState = QueueService.getState();
     const stats = { ...cachedStats, slots: ratelimiter?.slots || dailySlotStats };

@@ -25,17 +25,18 @@ try {
   const renderStep = source.slice(source.indexOf('// Wait for artwork to render'), source.indexOf("// 5. Select Products Modal"));
   assert(!renderStep.includes('.daily-rate-limit-breached'), 'Must not check daily limit during PNG rendering before Select Products modal');
 
-  // Check 2: Rate limit check exists after Select Products modal matrix selection
+  // Check 2: Rate limit and tier check exists after Select Products modal matrix selection
   const postModal = source.slice(source.indexOf('Marktplatz-Matrix synchronisiert'), source.indexOf('// 6. Sequential Product Details'));
-  assert(postModal.includes('.daily-rate-limit-breached'), 'Must check daily limit after Select Products modal matrix selection');
+  assert(postModal.includes('checkAmazonLimitNotices'), 'Must check daily limit and tier notices after Select Products modal matrix selection');
 
   // Check 3: Rate limit check exists before publish click
   const prePublish = source.slice(source.indexOf("this.log(`🚀 Klicke 'Publish'"), source.indexOf('// STEP 1: Click #submit-button'));
-  assert(prePublish.includes('.daily-rate-limit-breached'), 'Must check daily limit before live publish submission');
+  assert(prePublish.includes('checkAmazonLimitNotices'), 'Must check daily limit and tier notices before live publish submission');
 
-  // Check 4: startUpload rejects unscheduled new designs in live mode
+  // Check 4: startUpload rejects unscheduled new designs and full tier in live mode
   const startUploadSection = source.slice(source.indexOf('public static async startUpload'), source.indexOf('this.isUploading = true'));
-  assert(startUploadSection.includes("!isUpdateItem && (queueMode === 'live' || mode === 'publish') && (targetItem.allocatedSlots ?? 0) <= 0"), 'Must reject startUpload for unscheduled live designs');
+  assert(startUploadSection.includes("tierInfo.freeDesignsCount !== undefined && tierInfo.freeDesignsCount <= 0"), 'Must reject startUpload when tier is full');
+  assert(startUploadSection.includes("(targetItem.allocatedSlots ?? 0) <= 0"), 'Must reject startUpload for unscheduled live designs');
 
   console.log('PASS daily-limit notice: timing verified, new drafts continue, publish and updates remain blocked');
 } finally { worker.log = originalLog; }

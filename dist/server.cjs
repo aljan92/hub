@@ -229672,6 +229672,21 @@ var init_queueService = __esm2({
         this.saveQueue();
         return item;
       }
+      static accountTierInfo = {};
+      /**
+       * Set account tier info from live MBA Dashboard / Ratelimiter
+       */
+      static setAccountTierInfo(tier, liveDesignsCount, freeDesignsCount) {
+        this.accountTierInfo = {
+          tier,
+          liveDesignsCount,
+          freeDesignsCount: freeDesignsCount !== void 0 ? Math.max(0, freeDesignsCount) : void 0
+        };
+        this.rebalanceQueue();
+      }
+      static getAccountTierInfo() {
+        return { ...this.accountTierInfo };
+      }
       /**
        * Set daily available slots from live MBA Dashboard / Ratelimiter
        */
@@ -229767,6 +229782,9 @@ var init_queueService = __esm2({
           overflowItemsCount,
           overflowNewItemsCount,
           overflowUpdateItemsCount,
+          tier: this.accountTierInfo.tier,
+          liveDesignsCount: this.accountTierInfo.liveDesignsCount,
+          freeDesignsCount: this.accountTierInfo.freeDesignsCount,
           uploadScheduleTime: settings.queueUploadScheduleTime || "04:00",
           uploadScheduleEnabled: settings.queueUploadScheduleEnabled ?? false,
           uploadSchedulerCurrentTime: getSchedulerClock().time,
@@ -230217,7 +230235,7 @@ var init_queueService = __esm2({
        * Core Smart Balancing Algorithm
        * Dynamically adjusts active product count & marketplace slots against daily limit.
        */
-      static rebalanceQueue(freeSlotsOverride) {
+      static rebalanceQueue(freeSlotsOverride, freeDesignsOverride) {
         this.ensureLoaded();
         const settings = loadSettings();
         const mode = settings.queueUploadMode || "draft";
@@ -230230,6 +230248,7 @@ var init_queueService = __esm2({
         const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
         const catalog = ProductCatalogService.getCatalog();
         const uploadPolicy = ProductCatalogService.getUploadPolicy();
+        const maxNewDesignsAllowed = freeDesignsOverride !== void 0 ? Math.max(0, freeDesignsOverride) : this.accountTierInfo.freeDesignsCount !== void 0 ? Math.max(0, this.accountTierInfo.freeDesignsCount) : Infinity;
         for (const item of this.items) {
           item.effectiveFitTypes = resolveEffectiveFitTypes(item.fitTypes, uploadPolicy);
         }
@@ -230382,7 +230401,7 @@ var init_queueService = __esm2({
           const overflowNewItems = [];
           for (const item of waitingNewItems) {
             const minRequired = item.isLocked ? item.totalBaseSlots : Math.max(1, item.totalBaseSlots - maxDrop);
-            if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting) {
+            if (scheduledNewItems.length < maxNewDesignsAllowed && accumulatedMinSlots + minRequired <= availableSlotsForWaiting) {
               accumulatedMinSlots += minRequired;
               scheduledNewItems.push(item);
             } else {
@@ -235184,8 +235203,17 @@ var UploadWorkerService = class _UploadWorkerService {
     if (isUpdateItem && (targetItem.totalBaseSlots ?? 0) > 0 && (targetItem.allocatedSlots ?? 0) <= 0) {
       return { success: false, message: "Update wartet auf freie, zugeteilte Tages-Slots." };
     }
-    if (!isUpdateItem && (queueMode === "live" || mode === "publish") && (targetItem.allocatedSlots ?? 0) <= 0) {
-      return { success: false, message: "Design wartet auf freie Tages-Slots." };
+    if (!isUpdateItem && (queueMode === "live" || mode === "publish")) {
+      const tierInfo = QueueService.getAccountTierInfo();
+      if (tierInfo.freeDesignsCount !== void 0 && tierInfo.freeDesignsCount <= 0) {
+        return {
+          success: false,
+          message: `Tier-Limit erreicht (${tierInfo.tier || 2e3} Designs). Keine freien Account-Design-Slots vorhanden.`
+        };
+      }
+      if ((targetItem.allocatedSlots ?? 0) <= 0) {
+        return { success: false, message: "Design wartet auf freie Tages-Slots." };
+      }
     }
     const effectiveMode = isUpdateItem ? "publish" : queueMode === "live" || mode === "publish" ? "publish" : "draft";
     this.isUploading = true;
@@ -235247,12 +235275,32 @@ var UploadWorkerService = class _UploadWorkerService {
   /**
    * Main Upload Execution Pipeline
    */
-  static handleDailyUploadLimit(isUpdate, effectiveMode) {
+  static handleDailyUploadLimit(isUpdate, effectiveMode, contextNotice = "T\xE4gliches Amazon Upload-Limit erreicht (.daily-rate-limit-breached).") {
     if (!isUpdate && effectiveMode === "draft") {
-      this.log("\u2139\uFE0F Tageslimit-Hinweis erkannt \u2013 neues Design wird nur als Entwurf gespeichert; Upload wird fortgesetzt.");
+      this.log(`\u2139\uFE0F ${contextNotice.includes("Tier") ? "Tier" : "Tages"}-Limit-Hinweis erkannt \u2013 neues Design wird nur als Entwurf gespeichert; Upload wird fortgesetzt.`);
       return;
     }
-    throw new Error("T\xE4gliches Amazon Upload-Limit erreicht (.daily-rate-limit-breached).");
+    throw new Error(contextNotice.startsWith("T\xE4gliches") || contextNotice.startsWith("Amazon") ? contextNotice : `Amazon Upload-Limit erreicht (${contextNotice}).`);
+  }
+  static async checkAmazonLimitNotices(page, isUpdate, effectiveMode) {
+    const rateLimit = await page.$(".daily-rate-limit-breached, .tier-limit-breached, .tier-limit-reached");
+    if (rateLimit) {
+      this.handleDailyUploadLimit(isUpdate, effectiveMode);
+      return;
+    }
+    const alertNotice = await page.evaluate(() => {
+      const alerts = Array.from(document.querySelectorAll(".alert, .banner, .notification, .toast, .modal-body, .text-danger, .has-error"));
+      for (const el of alerts) {
+        const text2 = (el.textContent || "").toLowerCase();
+        if (text2.includes("tier limit") || text2.includes("maximum number of published designs") || text2.includes("no design slots available")) {
+          return el.textContent?.trim();
+        }
+      }
+      return null;
+    });
+    if (alertNotice) {
+      this.handleDailyUploadLimit(isUpdate, effectiveMode, `Tier-Limit erreicht: ${alertNotice}`);
+    }
   }
   static async executeUploadPipeline(item, mode) {
     const isUpdate = item.type === "UPDATE" || item.type === "update" || item.source === "UPDATE" || Boolean(item.designId) || item.taskId.endsWith("-U");
@@ -235552,10 +235600,7 @@ var UploadWorkerService = class _UploadWorkerService {
         await page.waitForSelector(".modal-backdrop, .modal-dialog", { state: "hidden", timeout: 15e3 });
         await page.waitForTimeout(600);
         this.log(`\u2705 Marktplatz-Matrix synchronisiert (${modalResult.modifiedCount} Checkboxen angepasst)`, "Produkte gew\xE4hlt \u2713", 50, 100);
-        const rateLimitAfterSelection = await page.$(".daily-rate-limit-breached");
-        if (rateLimitAfterSelection) {
-          this.handleDailyUploadLimit(isUpdate, effectiveMode);
-        }
+        await this.checkAmazonLimitNotices(page, isUpdate, effectiveMode);
       }
       if (this.abortRequested) throw new Error("Upload vom Benutzer abgebrochen.");
       const catalog = ProductCatalogService.getCatalog();
@@ -236483,10 +236528,7 @@ var UploadWorkerService = class _UploadWorkerService {
         if (!publishCheck.isEnabled && publishCheck.errors.length > 0) {
           throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(" | ")}`);
         }
-        const rateLimitBeforePublish = await page.$(".daily-rate-limit-breached");
-        if (rateLimitBeforePublish) {
-          this.handleDailyUploadLimit(isUpdate, effectiveMode);
-        }
+        await this.checkAmazonLimitNotices(page, isUpdate, effectiveMode);
         await page.evaluate(() => {
           const submitBtn = document.getElementById("submit-button") || document.querySelector('button[id*="submit"], button.btn-submit');
           submitBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -236663,6 +236705,7 @@ var UploadWorkerService = class _UploadWorkerService {
         if (ratelimiter?.slots) {
           this.log(`\u{1F4C8} Aktuelle Slots (Session 1): ${ratelimiter.slots.free} frei (${ratelimiter.slots.used}/${ratelimiter.slots.total} verbraucht)`);
           QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
+          QueueService.setAccountTierInfo(ratelimiter.tier, ratelimiter.liveDesignsCount, ratelimiter.freeDesignsCount);
         }
       } catch (err) {
         console.warn("[UploadWorker] Could not refresh ratelimiter metadata in Session 1:", err?.message);
@@ -237216,6 +237259,7 @@ async function refreshStatsInBackground() {
     if (liveSlots) {
       dailySlotStats = liveSlots;
       QueueService.setDailySlots(liveSlots.free, liveSlots.used, liveSlots.total);
+      QueueService.setAccountTierInfo(lastKnownTier, ratelimiter?.liveDesignsCount, ratelimiter?.freeDesignsCount);
     }
     const liveDesignsCount = ratelimiter?.liveDesignsCount !== void 0 && ratelimiter.liveDesignsCount !== null ? ratelimiter.liveDesignsCount : supabaseStats.liveDesigns > 0 ? supabaseStats.liveDesigns : cachedStats.liveDesignsCount;
     cachedStats = {
@@ -238756,6 +238800,7 @@ app.post("/api/v1/queue/refresh-slots", async (req, res) => {
     if (ratelimiter?.slots) {
       dailySlotStats = ratelimiter.slots;
       QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
+      QueueService.setAccountTierInfo(ratelimiter.tier, ratelimiter.liveDesignsCount, ratelimiter.freeDesignsCount);
     }
     const queueState = QueueService.getState();
     const stats2 = { ...cachedStats, slots: ratelimiter?.slots || dailySlotStats };

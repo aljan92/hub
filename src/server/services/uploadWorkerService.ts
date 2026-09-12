@@ -218,8 +218,17 @@ export class UploadWorkerService {
     if (isUpdateItem && (targetItem.totalBaseSlots ?? 0) > 0 && (targetItem.allocatedSlots ?? 0) <= 0) {
       return { success: false, message: 'Update wartet auf freie, zugeteilte Tages-Slots.' };
     }
-    if (!isUpdateItem && (queueMode === 'live' || mode === 'publish') && (targetItem.allocatedSlots ?? 0) <= 0) {
-      return { success: false, message: 'Design wartet auf freie Tages-Slots.' };
+    if (!isUpdateItem && (queueMode === 'live' || mode === 'publish')) {
+      const tierInfo = QueueService.getAccountTierInfo();
+      if (tierInfo.freeDesignsCount !== undefined && tierInfo.freeDesignsCount <= 0) {
+        return { 
+          success: false, 
+          message: `Tier-Limit erreicht (${tierInfo.tier || 2000} Designs). Keine freien Account-Design-Slots vorhanden.` 
+        };
+      }
+      if ((targetItem.allocatedSlots ?? 0) <= 0) {
+        return { success: false, message: 'Design wartet auf freie Tages-Slots.' };
+      }
     }
     // Update designs are ALWAYS Live (publish). New designs follow queueMode or passed mode.
     const effectiveMode: 'draft' | 'publish' = isUpdateItem ? 'publish' : (queueMode === 'live' || mode === 'publish' ? 'publish' : 'draft');
@@ -321,14 +330,35 @@ export class UploadWorkerService {
   /**
    * Main Upload Execution Pipeline
    */
-  private static handleDailyUploadLimit(isUpdate: boolean, effectiveMode: 'draft' | 'publish'): void {
+  private static handleDailyUploadLimit(isUpdate: boolean, effectiveMode: 'draft' | 'publish', contextNotice = 'Tägliches Amazon Upload-Limit erreicht (.daily-rate-limit-breached).'): void {
     // Hybrid already resolves new designs to draft and updates to publish.
-    // Only this daily-slot notice is exempted; form and remote-response guards stay active.
+    // Only daily-slot and tier notices are exempted in draft mode; form and remote-response guards stay active.
     if (!isUpdate && effectiveMode === 'draft') {
-      this.log('ℹ️ Tageslimit-Hinweis erkannt – neues Design wird nur als Entwurf gespeichert; Upload wird fortgesetzt.');
+      this.log(`ℹ️ ${contextNotice.includes('Tier') ? 'Tier' : 'Tages'}-Limit-Hinweis erkannt – neues Design wird nur als Entwurf gespeichert; Upload wird fortgesetzt.`);
       return;
     }
-    throw new Error('Tägliches Amazon Upload-Limit erreicht (.daily-rate-limit-breached).');
+    throw new Error(contextNotice.startsWith('Tägliches') || contextNotice.startsWith('Amazon') ? contextNotice : `Amazon Upload-Limit erreicht (${contextNotice}).`);
+  }
+
+  private static async checkAmazonLimitNotices(page: any, isUpdate: boolean, effectiveMode: 'draft' | 'publish'): Promise<void> {
+    const rateLimit = await page.$('.daily-rate-limit-breached, .tier-limit-breached, .tier-limit-reached');
+    if (rateLimit) {
+      this.handleDailyUploadLimit(isUpdate, effectiveMode);
+      return;
+    }
+    const alertNotice = await page.evaluate(() => {
+      const alerts = Array.from(document.querySelectorAll('.alert, .banner, .notification, .toast, .modal-body, .text-danger, .has-error'));
+      for (const el of alerts) {
+        const text = (el.textContent || '').toLowerCase();
+        if (text.includes('tier limit') || text.includes('maximum number of published designs') || text.includes('no design slots available')) {
+          return el.textContent?.trim();
+        }
+      }
+      return null;
+    });
+    if (alertNotice) {
+      this.handleDailyUploadLimit(isUpdate, effectiveMode, `Tier-Limit erreicht: ${alertNotice}`);
+    }
   }
 
   private static async executeUploadPipeline(item: QueueItem, mode: 'draft' | 'publish') {
@@ -701,11 +731,8 @@ export class UploadWorkerService {
 
         this.log(`✅ Marktplatz-Matrix synchronisiert (${modalResult.modifiedCount} Checkboxen angepasst)`, 'Produkte gewählt ✓', 50, 100);
 
-        // Check rate limit warning if present AFTER product matrix selection has been applied
-        const rateLimitAfterSelection = await page.$('.daily-rate-limit-breached');
-        if (rateLimitAfterSelection) {
-          this.handleDailyUploadLimit(isUpdate, effectiveMode);
-        }
+        // Check rate limit and tier limit warning if present AFTER product matrix selection has been applied
+        await this.checkAmazonLimitNotices(page, isUpdate, effectiveMode);
       }
 
       if (this.abortRequested) throw new Error('Upload vom Benutzer abgebrochen.');
@@ -1924,11 +1951,8 @@ export class UploadWorkerService {
           throw new Error(`Publish-Button ist deaktiviert. Formularfehler: ${publishCheck.errors.join(' | ')}`);
         }
 
-        // Check rate limit warning before submitting live publish
-        const rateLimitBeforePublish = await page.$('.daily-rate-limit-breached');
-        if (rateLimitBeforePublish) {
-          this.handleDailyUploadLimit(isUpdate, effectiveMode);
-        }
+        // Check rate limit and tier limit warning before submitting live publish
+        await this.checkAmazonLimitNotices(page, isUpdate, effectiveMode);
 
         // STEP 1: Click #submit-button to open modal. NO REMOTE REQUEST IS TRIGGERED YET!
         await page.evaluate(() => {
@@ -2158,6 +2182,7 @@ export class UploadWorkerService {
         if (ratelimiter?.slots) {
           this.log(`📈 Aktuelle Slots (Session 1): ${ratelimiter.slots.free} frei (${ratelimiter.slots.used}/${ratelimiter.slots.total} verbraucht)`);
           QueueService.setDailySlots(ratelimiter.slots.free, ratelimiter.slots.used, ratelimiter.slots.total);
+          QueueService.setAccountTierInfo(ratelimiter.tier, ratelimiter.liveDesignsCount, ratelimiter.freeDesignsCount);
         }
       } catch (err: any) {
         console.warn('[UploadWorker] Could not refresh ratelimiter metadata in Session 1:', err?.message);

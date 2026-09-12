@@ -163,6 +163,9 @@ export interface QueueState {
   overflowItemsCount: number;
   overflowNewItemsCount?: number;
   overflowUpdateItemsCount?: number;
+  tier?: number;
+  liveDesignsCount?: number;
+  freeDesignsCount?: number;
   uploadScheduleTime: string; // e.g. "04:00" or "off"
   uploadScheduleEnabled: boolean;
   uploadSchedulerCurrentTime: string;
@@ -443,6 +446,24 @@ export class QueueService {
     return item;
   }
 
+  private static accountTierInfo: { tier?: number; liveDesignsCount?: number; freeDesignsCount?: number } = {};
+
+  /**
+   * Set account tier info from live MBA Dashboard / Ratelimiter
+   */
+  public static setAccountTierInfo(tier?: number, liveDesignsCount?: number, freeDesignsCount?: number) {
+    this.accountTierInfo = {
+      tier,
+      liveDesignsCount,
+      freeDesignsCount: freeDesignsCount !== undefined ? Math.max(0, freeDesignsCount) : undefined
+    };
+    this.rebalanceQueue();
+  }
+
+  public static getAccountTierInfo() {
+    return { ...this.accountTierInfo };
+  }
+
   /**
    * Set daily available slots from live MBA Dashboard / Ratelimiter
    */
@@ -548,6 +569,9 @@ export class QueueService {
       overflowItemsCount,
       overflowNewItemsCount,
       overflowUpdateItemsCount,
+      tier: this.accountTierInfo.tier,
+      liveDesignsCount: this.accountTierInfo.liveDesignsCount,
+      freeDesignsCount: this.accountTierInfo.freeDesignsCount,
       uploadScheduleTime: settings.queueUploadScheduleTime || '04:00',
       uploadScheduleEnabled: settings.queueUploadScheduleEnabled ?? false,
       uploadSchedulerCurrentTime: getSchedulerClock().time,
@@ -1149,7 +1173,7 @@ export class QueueService {
    * Core Smart Balancing Algorithm
    * Dynamically adjusts active product count & marketplace slots against daily limit.
    */
-  public static rebalanceQueue(freeSlotsOverride?: number): QueueState {
+  public static rebalanceQueue(freeSlotsOverride?: number, freeDesignsOverride?: number): QueueState {
     this.ensureLoaded();
     const settings = loadSettings();
     const mode = settings.queueUploadMode || 'draft';
@@ -1162,6 +1186,9 @@ export class QueueService {
     const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
     const catalog = ProductCatalogService.getCatalog();
     const uploadPolicy = ProductCatalogService.getUploadPolicy();
+    const maxNewDesignsAllowed = freeDesignsOverride !== undefined
+      ? Math.max(0, freeDesignsOverride)
+      : (this.accountTierInfo.freeDesignsCount !== undefined ? Math.max(0, this.accountTierInfo.freeDesignsCount) : Infinity);
 
     for (const item of this.items) {
       item.effectiveFitTypes = resolveEffectiveFitTypes(item.fitTypes, uploadPolicy);
@@ -1359,7 +1386,7 @@ export class QueueService {
 
       for (const item of waitingNewItems) {
         const minRequired = item.isLocked ? item.totalBaseSlots : Math.max(1, item.totalBaseSlots - maxDrop);
-        if (accumulatedMinSlots + minRequired <= availableSlotsForWaiting) {
+        if (scheduledNewItems.length < maxNewDesignsAllowed && (accumulatedMinSlots + minRequired <= availableSlotsForWaiting)) {
           accumulatedMinSlots += minRequired;
           scheduledNewItems.push(item);
         } else {

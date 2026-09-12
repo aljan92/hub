@@ -927,6 +927,19 @@ export const QueueView: React.FC = () => {
         </div>
       </div>
 
+      {/* Tier Limit Warning in Live Mode */}
+      {isLiveMode && queueState.freeDesignsCount !== undefined && queueState.freeDesignsCount <= 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center gap-3 text-amber-300 text-xs font-medium animate-fadeIn">
+          <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
+            <AlertTriangle className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="font-bold text-amber-200">Account Tier-Limit erreicht (Tier {queueState.tier || 2000}): </span>
+            Keine freien Account-Design-Slots für neue Live-Designs verfügbar. Neue Designs warten automatisch auf freie Kapazitäten. Uploads im Draft- oder Hybrid-Modus sowie Updates bestehender Designs sind weiterhin möglich.
+          </div>
+        </div>
+      )}
+
       {/* Upload progress remains visible in idle, active, paused, completed and failed states. */}
       <div className={`border rounded-2xl p-4.5 shadow-lg backdrop-blur-md transition-all ${
           isUploadIdle
@@ -1584,7 +1597,9 @@ export const QueueView: React.FC = () => {
                                       : `🟡 ${(item.totalBaseSlots !== undefined && item.totalBaseSlots > 0 ? item.totalBaseSlots : (item.allocatedSlots ?? 0))} Slots • Im Pool`
                                     : canUploadToday
                                       ? `🟢 ${item.allocatedSlots} Slots`
-                                      : '🟡 Wartet auf freie Slots'}
+                                      : isLiveMode && queueState.freeDesignsCount !== undefined && queueState.freeDesignsCount <= 0
+                                        ? '🟡 Wartet auf freie Design-Slots (Tier-Limit)'
+                                        : '🟡 Wartet auf freie Slots'}
                             </span>
                             {droppedCount > 0 && !isUploading && canUploadToday && !isUpdate && (
                               <span className="text-[10px] text-amber-400/90 font-mono mt-0.5">
