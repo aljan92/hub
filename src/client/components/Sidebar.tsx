@@ -183,11 +183,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           type="button"
           onClick={toggleCollapse}
           title={isCollapsed ? 'Sidebar ausklappen' : 'Sidebar minimieren'}
-          className={`w-full flex items-center rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors py-2 text-xs font-medium ${
-            isCollapsed ? 'justify-center px-0' : 'justify-between px-3'
-          }`}
+          className="w-full flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors py-2 text-xs font-medium"
         >
-          {!isCollapsed && <span>Sidebar einklappen</span>}
           {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
       </div>

@@ -12,8 +12,10 @@ import {
   DollarSign,
   Tag,
   Coins,
-  X
+  X,
+  Monitor
 } from 'lucide-react';
+import { BrowserScreencast } from './BrowserScreencast';
 
 interface CostStatsSummary {
   totalCosts: number;
@@ -85,6 +87,7 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [isScreencastOpen, setIsScreencastOpen] = useState(false);
 
   useEffect(() => {
     const interval = window.setInterval(() => setCurrentTime(new Date()), 1000);
@@ -292,8 +295,18 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
           )}
         </div>
 
-        {/* Right Controls: 1-Click Update */}
+        {/* Right Controls: Live Screencast & 1-Click Update */}
         <div className="flex items-center space-x-2 shrink-0">
+          {/* Live Browser Screencast Button (Icon only) */}
+          <button
+            type="button"
+            onClick={() => setIsScreencastOpen(true)}
+            className="p-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-400 hover:text-accent-cyan border border-slate-700/80 transition-all shadow-sm active:scale-95"
+            title="Live Browser-Screencast (Chrome) ansehen"
+          >
+            <Monitor className="w-4 h-4 text-accent-cyan" />
+          </button>
+
           {/* 1-Click Self-Update Button */}
           <button
             onClick={() => setShowUpdateModal(true)}
@@ -385,6 +398,36 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Browser Screencast Modal */}
+      {isScreencastOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-surface border border-slate-800 rounded-3xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden shadow-2xl relative">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+              <div className="flex items-center space-x-2">
+                <Monitor className="w-5 h-5 text-accent-cyan" />
+                <h3 className="text-sm font-bold text-slate-100">
+                  Live Browser-Screencast (Chrome)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsScreencastOpen(false)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
+                title="Schließen"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Screencast Container */}
+            <div className="flex-1 p-2 bg-slate-950 overflow-hidden">
+              <BrowserScreencast onClose={() => setIsScreencastOpen(false)} />
             </div>
           </div>
         </div>

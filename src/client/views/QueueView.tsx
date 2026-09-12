@@ -20,7 +20,6 @@ import {
   Scissors, 
   Sliders, 
   GripVertical, 
-  Monitor, 
   Square, 
   X, 
   Users, 
@@ -36,7 +35,6 @@ import {
   Palette,
   Copy
 } from 'lucide-react';
-import { BrowserScreencast } from '../components/BrowserScreencast';
 
 interface QueueItem {
   id: string;
@@ -189,7 +187,6 @@ export const QueueView: React.FC = () => {
   const confirmedModeRef = useRef<QueueMode>('draft');
   const requestedModeRef = useRef<QueueMode | null>(null);
   const modeSaveRunningRef = useRef(false);
-  const [isScreencastOpen, setIsScreencastOpen] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState>({
     isUploading: false,
     currentQueueId: null,
@@ -820,15 +817,6 @@ export const QueueView: React.FC = () => {
 
         {/* Global Action & Upload Trigger */}
         <div className="flex items-center flex-wrap gap-3">
-          {/* Live Screencast Button */}
-          <button
-            onClick={() => setIsScreencastOpen(true)}
-            className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700/80 flex items-center justify-center transition-all shadow-sm"
-            title="Session 2 Live-Screencast ansehen"
-          >
-            <Monitor className="w-4 h-4 text-accent-cyan" />
-          </button>
-
           {/* Mode Selector */}
           <div className="flex items-center space-x-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1">
             <span className="text-[11px] font-semibold text-slate-400 px-2">Modus:</span>
@@ -941,9 +929,9 @@ export const QueueView: React.FC = () => {
       )}
 
       {/* Upload progress remains visible in idle, active, paused, completed and failed states. */}
-      <div className={`border rounded-2xl p-4.5 shadow-lg backdrop-blur-md transition-all ${
+      <div className={`border rounded-2xl p-4 shadow-lg backdrop-blur-md transition-all ${
           isUploadIdle
-            ? 'bg-slate-950/40 border-slate-800 shadow-slate-950/10'
+            ? 'bg-slate-950/40 border-slate-800/80 shadow-slate-950/10'
             : uploadProgress.isPausedBeforePublish
               ? 'bg-amber-950/40 border-amber-500/50 shadow-amber-500/20'
               : uploadProgress.isUploading
@@ -952,11 +940,11 @@ export const QueueView: React.FC = () => {
                   ? 'bg-rose-950/40 border-rose-500/40 shadow-rose-500/10'
                   : 'bg-emerald-950/40 border-emerald-500/40 shadow-emerald-500/10'
         }`}>
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
-            <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-xl border ${
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+            <div className="flex items-center space-x-3.5 min-w-0">
+              <div className={`p-2.5 rounded-xl border shrink-0 ${
                 isUploadIdle
-                  ? 'bg-slate-900 text-slate-400 border-slate-700'
+                  ? 'bg-slate-900 text-slate-400 border-slate-700/80'
                   : uploadProgress.isPausedBeforePublish
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
                   : uploadProgress.isUploading 
@@ -970,45 +958,49 @@ export const QueueView: React.FC = () => {
                 ) : uploadProgress.isPausedBeforePublish ? (
                   <Pause className="w-5 h-5 text-amber-400" />
                 ) : uploadProgress.isUploading ? (
-                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  <RefreshCw className="w-5 h-5 animate-spin text-accent-cyan" />
                 ) : uploadProgress.error ? (
-                  <AlertTriangle className="w-5 h-5" />
+                  <AlertTriangle className="w-5 h-5 text-rose-400" />
                 ) : (
-                  <CheckCircle2 className="w-5 h-5" />
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                 )}
               </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center flex-wrap gap-2">
+                  <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-700/80 text-primary-300 shadow-sm">
                     {isUploadIdle ? 'UPLOAD-STATUS' : `Task #${uploadProgress.taskId || '—'}`}
                   </span>
-                  <h3 className="text-sm font-bold text-slate-100">
+
+                  <h3 className="text-sm md:text-base font-bold text-slate-100 truncate">
                     {uploadProgress.designTitle || (isUploadIdle ? 'Kein Upload aktiv' : 'Aktiver Upload-Vorgang')}
                   </h3>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                    isUploadIdle
-                      ? 'bg-slate-900 text-slate-400 border-slate-700'
-                      : uploadProgress.mode === 'publish'
-                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                      : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                  }`}>
-                    {isUploadIdle ? 'BEREIT' : uploadProgress.mode === 'publish' ? '🔴 LIVE PUBLISH' : '🟡 DRAFT'}
-                  </span>
+
                   {uploadProgress.isPausedBeforePublish && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
                       ⏸️ PRÜFMODUS PAUSIERT
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-slate-300 mt-1 font-medium flex items-center space-x-2">
-                  <span>{uploadProgress.currentStep}</span>
+
+                <div className="text-xs text-slate-400 font-medium flex items-center space-x-2">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isUploadIdle 
+                      ? 'bg-slate-600' 
+                      : uploadProgress.isUploading 
+                        ? 'bg-accent-cyan animate-pulse' 
+                        : uploadProgress.error 
+                          ? 'bg-rose-500' 
+                          : 'bg-emerald-400'
+                  }`} />
+                  <span className="truncate">{uploadProgress.currentStep}</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center flex-wrap gap-2.5">
-              {uploadProgress.isPausedBeforePublish ? (
-                <>
+            <div className="flex items-center space-x-3 shrink-0 self-end md:self-center">
+              {uploadProgress.isPausedBeforePublish && (
+                <div className="flex items-center space-x-2">
                   <button
                     onClick={handleResumePublish}
                     className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 flex items-center space-x-1.5 transition-all shadow-md shadow-amber-500/20 active:scale-95"
@@ -1024,67 +1016,67 @@ export const QueueView: React.FC = () => {
                     <X className="w-3.5 h-3.5" />
                     <span>Abbrechen</span>
                   </button>
-                </>
-              ) : null}
+                </div>
+              )}
 
-              <span className="text-xl font-bold font-mono text-slate-100 px-2">
-                {uploadProgress.percent}%
-              </span>
-              <button
-                onClick={() => setIsScreencastOpen(true)}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-slate-100 border border-slate-700 flex items-center space-x-1.5 transition-all shadow-sm"
-              >
-                <Monitor className="w-3.5 h-3.5 text-accent-cyan" />
-                <span>Live ansehen</span>
-              </button>
+              <div className="text-right">
+                <span className="text-2xl font-black font-mono text-slate-100 tracking-tight">
+                  {uploadProgress.percent}
+                  <span className="text-sm font-bold text-accent-cyan ml-0.5">%</span>
+                </span>
+              </div>
             </div>
           </div>
 
           {/* Progress Bar */}
-          <div className="w-full bg-slate-900/80 rounded-full h-2 overflow-hidden border border-slate-800 mb-2">
+          <div className="w-full bg-slate-900/90 rounded-full h-2.5 overflow-hidden border border-slate-800/80 mb-3 p-0.5 shadow-inner">
             <div 
-              className={`h-full transition-all duration-500 ${
+              className={`h-full rounded-full transition-all duration-500 ${
                 uploadProgress.error 
-                  ? 'bg-rose-500' 
+                  ? 'bg-rose-500 shadow-sm shadow-rose-500/50' 
                   : uploadProgress.isUploading 
-                    ? 'bg-gradient-to-r from-accent-cyan to-primary-500' 
-                    : 'bg-emerald-500'
+                    ? 'bg-gradient-to-r from-accent-cyan via-primary-500 to-emerald-400 shadow-sm shadow-primary-500/40' 
+                    : 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
               }`}
               style={{ width: `${uploadProgress.percent}%` }}
             />
           </div>
 
-          {/* Current-run terminal log feed (in-memory only, intentionally not persistent). */}
+          {/* Current-run terminal log feed (completely collapsible) */}
           {uploadProgress.logs.length > 0 && (
             <div className="bg-slate-950/80 rounded-xl border border-slate-800/80 overflow-hidden">
-              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-slate-800/80">
+              <div className="flex items-center justify-between gap-2 px-3 py-2">
                 <button
                   type="button"
                   onClick={() => setIsUploadLogExpanded(prev => !prev)}
-                  className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-300 hover:text-white transition-colors"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
                   aria-expanded={isUploadLogExpanded}
                 >
-                  {isUploadLogExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  {isUploadLogExpanded ? <ChevronUp className="w-3.5 h-3.5 text-accent-cyan" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
                   <span>Upload-Log ({uploadProgress.logs.length})</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={handleCopyUploadLog}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-all"
-                  title="Vollständiges Log dieses Upload-Durchlaufs kopieren"
-                >
-                  {isUploadLogCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{isUploadLogCopied ? 'Kopiert' : 'Alles kopieren'}</span>
-                </button>
+                {isUploadLogExpanded && (
+                  <button
+                    type="button"
+                    onClick={handleCopyUploadLog}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-all"
+                    title="Vollständiges Log dieses Upload-Durchlaufs kopieren"
+                  >
+                    {isUploadLogCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{isUploadLogCopied ? 'Kopiert' : 'Alles kopieren'}</span>
+                  </button>
+                )}
               </div>
-              <div className={`p-2.5 font-mono text-[11px] text-slate-300 overflow-y-auto space-y-1 ${isUploadLogExpanded ? 'max-h-80' : 'max-h-24'}`}>
-                {(isUploadLogExpanded ? uploadProgress.logs : uploadProgress.logs.slice(-4)).map((log, idx) => (
-                  <div key={`${idx}-${log}`} className={isUploadLogExpanded ? 'whitespace-pre-wrap break-words' : 'truncate'}>
-                    <span className="text-slate-600 mr-1.5">&gt;</span>
-                    {log}
-                  </div>
-                ))}
-              </div>
+              {isUploadLogExpanded && (
+                <div className="p-3 border-t border-slate-800/80 font-mono text-[11px] text-slate-300 overflow-y-auto space-y-1 max-h-80">
+                  {uploadProgress.logs.map((log, idx) => (
+                    <div key={`${idx}-${log}`} className="whitespace-pre-wrap break-words">
+                      <span className="text-slate-600 mr-1.5">&gt;</span>
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
       </div>
@@ -3038,35 +3030,6 @@ export const QueueView: React.FC = () => {
               >
                 Endgültig löschen
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Live Screencast Modal */}
-      {isScreencastOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-surface border border-slate-800 rounded-3xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden shadow-2xl relative">
-            {/* Modal Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
-              <div className="flex items-center space-x-2">
-                <Monitor className="w-5 h-5 text-accent-cyan" />
-                <h3 className="text-sm font-bold text-slate-100">
-                  Live Browser-Screencast (Session 2: Upload Worker)
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsScreencastOpen(false)}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
-                title="Schließen"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Screencast Container */}
-            <div className="flex-1 p-2 bg-slate-950 overflow-hidden">
-              <BrowserScreencast onClose={() => setIsScreencastOpen(false)} />
             </div>
           </div>
         </div>
