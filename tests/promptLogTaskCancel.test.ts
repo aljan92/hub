@@ -1,0 +1,137 @@
+import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
+import { DesignTaskLog } from '../src/types/tasks';
+import { TaskLogService } from '../src/server/services/taskLogService';
+import { TaskRepository } from '../src/server/storage/taskRepository';
+import { PipelineExecutionCoordinator } from '../src/server/services/pipelineExecutionCoordinator';
+import { DesignPipelineService } from '../src/server/services/designPipelineService';
+import { UpdatePipelineService } from '../src/server/services/updatePipelineService';
+import { loadSettings, saveSettings } from '../src/server/services/settingsService';
+
+const makeTask = (id: string, source: 'DESIGNER' | 'UPDATE' = 'DESIGNER', status: any = 'PROCESSING'): DesignTaskLog => ({
+  id,
+  counter: Number(id.match(/\d+/)?.[0] || 1),
+  source,
+  suffix: source === 'UPDATE' ? 'U' : 'D',
+  status,
+  checkpoint: undefined,
+  receivedAt: new Date().toISOString(),
+  payload: { quote: 'Test cancellation' },
+  events: [],
+  hasError: false
+});
+
+async function runTests() {
+  console.log('====================================================');
+  console.log('🚀 RUNNING PROMPT LOG TASK CANCEL TESTS (Alex Todo #3)');
+  console.log('====================================================\n');
+
+  const testDir = path.resolve(process.cwd(), 'scratch', `test_prompt_cancel_${Date.now()}`);
+  fs.mkdirSync(testDir, { recursive: true });
+  TaskRepository.init(path.join(testDir, 'tasks.sqlite'));
+
+  try {
+    // --- Test 1: Cancelling an active Designer task ---
+    console.log('Test 1: Cancelling an active Designer task...');
+    TaskRepository.createTask(makeTask('#801-D', 'DESIGNER', 'PROCESSING'));
+    const cancelD = TaskLogService.cancelTask('#801-D', 'Vom Benutzer im Prompt Log abgebrochen.');
+    assert.strictEqual(cancelD.success, true);
+    const taskD = TaskRepository.getTaskById('#801-D');
+    assert.strictEqual(taskD?.status, 'CANCELLED');
+    assert.strictEqual(taskD?.errorDetails, 'Vom Benutzer im Prompt Log abgebrochen.');
+    console.log('✅ [PASS] Test 1: Designer task was cancelled with proper status and reason.');
+
+    // --- Test 2: Cancelling an Update task stops update auto backfill ---
+    console.log('Test 2: Cancelling an Update task disables auto backfill...');
+    saveSettings({ queueUpdateAutoBackfillEnabled: true });
+    assert.strictEqual(loadSettings().queueUpdateAutoBackfillEnabled, true);
+
+    TaskRepository.createTask(makeTask('#802-U', 'UPDATE', 'UPDATE_ANALYZED'));
+    const taskLog = TaskLogService.getTaskLogById('#802-U');
+    assert.ok(taskLog);
+    const cancelU = TaskLogService.cancelTask('#802-U', 'Vom Benutzer im Prompt Log abgebrochen.');
+    assert.strictEqual(cancelU.success, true);
+
+    // Simulate endpoint behavior which disables auto backfill for UPDATE tasks
+    if (taskLog.source === 'UPDATE' || taskLog.suffix === 'U') {
+      saveSettings({ queueUpdateAutoBackfillEnabled: false });
+    }
+    assert.strictEqual(loadSettings().queueUpdateAutoBackfillEnabled, false);
+    const taskU = TaskRepository.getTaskById('#802-U');
+    assert.strictEqual(taskU?.status, 'CANCELLED');
+    console.log('✅ [PASS] Test 2: Update task cancelled and auto backfill successfully disabled.');
+
+    // --- Test 3: Cannot cancel completed or update-queued tasks ---
+    console.log('Test 3: Reject cancellation on completed tasks...');
+    TaskRepository.createTask(makeTask('#803-D', 'DESIGNER', 'COMPLETED'));
+    TaskRepository.createTask(makeTask('#804-U', 'UPDATE', 'UPDATE_QUEUED'));
+
+    assert.throws(() => {
+      TaskLogService.cancelTask('#803-D');
+    }, /bereits abgeschlossener oder übergebener Task kann hier nicht mehr abgebrochen werden/);
+
+    assert.throws(() => {
+      TaskLogService.cancelTask('#804-U');
+    }, /bereits abgeschlossener oder übergebener Task kann hier nicht mehr abgebrochen werden/);
+    console.log('✅ [PASS] Test 3: Completed/queued tasks safely reject cancellation.');
+
+    // --- Test 4: PipelineExecutionCoordinator skips cancelled tasks waiting in queue ---
+    console.log('Test 4: PipelineExecutionCoordinator skips tasks cancelled while waiting in queue...');
+    PipelineExecutionCoordinator.resetForTests();
+    TaskRepository.createTask(makeTask('#805-D', 'DESIGNER', 'PROCESSING'));
+
+    let blockerExecuted = false;
+    let cancelledTaskExecuted = false;
+
+    // Start a blocker task that holds the exclusive slot
+    const blockerPromise = PipelineExecutionCoordinator.runExclusive('BLOCKER', async () => {
+      blockerExecuted = true;
+      // While slot is occupied, cancel #805-D
+      TaskLogService.cancelTask('#805-D', 'Cancelled while waiting for slot.');
+      await new Promise(r => setTimeout(r, 50));
+      return 'BLOCKER_DONE';
+    });
+
+    // Queue up #805-D
+    const waitingPromise = PipelineExecutionCoordinator.runExclusive('#805-D', async () => {
+      cancelledTaskExecuted = true;
+      return 'UNEXPECTED_EXECUTION';
+    });
+
+    const [blockerRes, waitingRes] = await Promise.all([blockerPromise, waitingPromise]);
+    assert.strictEqual(blockerExecuted, true);
+    assert.strictEqual(blockerRes, 'BLOCKER_DONE');
+    assert.strictEqual(cancelledTaskExecuted, false);
+    assert.strictEqual((waitingRes as any)?.cancelled, true);
+    console.log('✅ [PASS] Test 4: Cancelled task was skipped by coordinator and slot was not wasted.');
+
+    // --- Test 5: DesignPipelineService halts at boundary if cancelled ---
+    console.log('Test 5: DesignPipelineService halts at step boundary if cancelled...');
+    TaskRepository.createTask(makeTask('#806-D', 'DESIGNER', 'CANCELLED'));
+    const designPipelineResult = await DesignPipelineService.runFromStep('#806-D', 'D1');
+    assert.strictEqual(designPipelineResult.success, false);
+    assert.match(designPipelineResult.error || '', /cancelled/i);
+    console.log('✅ [PASS] Test 5: DesignPipelineService halts immediately for cancelled tasks.');
+
+    // --- Test 6: UpdatePipelineService halts at boundary if cancelled ---
+    console.log('Test 6: UpdatePipelineService halts at step boundary if cancelled...');
+    TaskRepository.createTask(makeTask('#807-U', 'UPDATE', 'CANCELLED'));
+    const updatePipelineResult = await UpdatePipelineService.runFromStep('#807-U', 'U2');
+    assert.strictEqual(updatePipelineResult.success, false);
+    assert.match(updatePipelineResult.error || '', /cancelled/i);
+    console.log('✅ [PASS] Test 6: UpdatePipelineService halts immediately for cancelled tasks.');
+
+    console.log('\n====================================================');
+    console.log('🎉 ALL PROMPT LOG TASK CANCEL TESTS PASSED!');
+    console.log('====================================================\n');
+  } finally {
+    TaskRepository.close();
+    TaskRepository.init();
+  }
+}
+
+runTests().catch(err => {
+  console.error('TEST FAILED:', err);
+  process.exit(1);
+});

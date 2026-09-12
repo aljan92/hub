@@ -826,12 +826,16 @@ export class UpdatePipelineService {
     }
 
     try {
+      const isCancelled = () => this.getTask(taskId)?.status === 'CANCELLED';
+
       if (startStep === 'U2') {
+        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
         const u2 = await this.stepU2_DownloadArtwork(taskId);
         if (!u2.success) return { success: false, error: u2.error, failedStep: 'U2' };
       }
 
       if (startStep === 'U2' || startStep === 'U3') {
+        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
         const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
         if (!u3.success) return { success: false, error: u3.error, failedStep: 'U3', tokenRelevantFailure: true };
 
@@ -861,11 +865,13 @@ export class UpdatePipelineService {
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4') {
+        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
         const u4 = await this.stepU4_RewriteListing(taskId);
         if (!u4.success) return { success: false, error: u4.error, failedStep: 'U4', tokenRelevantFailure: true };
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5') {
+        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
         const u5 = await this.stepU5_TrademarkCheck(taskId);
         if (!u5.success) return { success: false, error: u5.error, failedStep: 'U5', tokenRelevantFailure: true };
 
@@ -876,11 +882,13 @@ export class UpdatePipelineService {
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5' || startStep === 'U6') {
+        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
         const u6 = await this.stepU6_TranslateListing(taskId);
         if (!u6.success) return { success: false, error: u6.error, failedStep: 'U6', tokenRelevantFailure: true };
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5' || startStep === 'U6' || startStep === 'U7') {
+        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
         const u7 = await this.stepU7_Enqueue(taskId);
         if (!u7.success) return { success: false, error: u7.error, failedStep: 'U7' };
       }

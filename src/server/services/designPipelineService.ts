@@ -266,6 +266,12 @@ export class DesignPipelineService {
 
       for (let i = startIndex; i < stepOrder.length; i++) {
         const step = stepOrder[i];
+        const currentTask = this.getTask(taskId);
+        if (currentTask?.status === 'CANCELLED') {
+          console.log(`[DesignPipeline] 🛑 Task ${taskId} wurde abgebrochen. Breche Pipeline vor Step ${step} ab.`);
+          return { success: false, currentStep: step, error: 'Task was cancelled by user.' };
+        }
+
         if (step === 'D1') {
           await this.stepD1_PreflightTrademark(taskId);
         } else if (step === 'D2') {

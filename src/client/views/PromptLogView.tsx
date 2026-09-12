@@ -35,7 +35,8 @@ import {
   FileJson,
   Database,
   SearchCode,
-  PlusCircle
+  PlusCircle,
+  Ban
 } from 'lucide-react';
 
 import { 
@@ -428,6 +429,7 @@ export const PromptLogView: React.FC = () => {
 
   const [downloadingArtworkTaskId, setDownloadingArtworkTaskId] = useState<string | null>(null);
   const [runningUpdatePipelineTaskId, setRunningUpdatePipelineTaskId] = useState<string | null>(null);
+  const [cancellingTaskId, setCancellingTaskId] = useState<string | null>(null);
 
   const handleRunFullUpdatePipeline = async (designId: string) => {
     if (!designId.trim()) return;
@@ -826,6 +828,61 @@ export const PromptLogView: React.FC = () => {
       alert(`Fehler beim Übertragen: ${err.message}`);
     } finally {
       setPushingToQueueTaskId(null);
+    }
+  };
+
+  const isTaskCancellable = (task?: TaskSummary | DesignTaskLog | null) => {
+    if (!task) return false;
+    return !['COMPLETED', 'UPDATE_QUEUED', 'CANCELLED', 'REJECTED'].includes(task.status);
+  };
+
+  const handleCancelTask = async (taskId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (cancellingTaskId) return;
+
+    const targetTask = tasks.find(t => t.id === taskId) || (selectedTask?.id === taskId ? selectedTask : null);
+    const isUpdate = targetTask?.source === 'UPDATE' || taskId.endsWith('-U');
+    const confirmMsg = isUpdate
+      ? `Möchtest du den Update-Task ${taskId} wirklich abbrechen? Die automatische Update-Nachführung wird dabei angehalten.`
+      : `Möchtest du den Task ${taskId} wirklich abbrechen?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setCancellingTaskId(taskId);
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'Vom Benutzer im Prompt Log abgebrochen.' })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTasks(prev => prev.map(t => {
+          if (t.id !== taskId) return t;
+          return {
+            ...t,
+            status: 'CANCELLED',
+            checkpoint: undefined,
+            hasError: false,
+            errorDetails: 'Vom Benutzer im Prompt Log abgebrochen.'
+          };
+        }));
+        if (selectedTask?.id === taskId) {
+          setSelectedTaskDetail(prev => prev ? {
+            ...prev,
+            status: 'CANCELLED',
+            checkpoint: undefined,
+            hasError: false,
+            errorDetails: 'Vom Benutzer im Prompt Log abgebrochen.'
+          } : null);
+        }
+      } else {
+        alert(data.error || 'Fehler beim Abbrechen des Tasks');
+      }
+    } catch (err: any) {
+      alert(`Netzwerkfehler: ${err.message}`);
+    } finally {
+      setCancellingTaskId(null);
     }
   };
 
@@ -1369,6 +1426,16 @@ export const PromptLogView: React.FC = () => {
                         <Clock className="w-3 h-3" />
                         {formatRelativeTime(task.receivedAt)}
                       </span>
+                      {isTaskCancellable(task) && (
+                        <button
+                          onClick={(e) => handleCancelTask(task.id, e)}
+                          disabled={cancellingTaskId === task.id}
+                          className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors disabled:opacity-50"
+                          title={`Task ${task.id} abbrechen`}
+                        >
+                          <Ban className={`w-3 h-3 ${cancellingTaskId === task.id ? 'animate-spin' : ''}`} />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => handleDeleteTask(task.id, e)}
                         className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
@@ -1454,6 +1521,17 @@ export const PromptLogView: React.FC = () => {
                     <Clock className="w-3 h-3" />
                     <span>{new Date(selectedTask.receivedAt).toLocaleTimeString()}</span>
                   </div>
+                  {isTaskCancellable(selectedTask) && (
+                    <button
+                      onClick={(e) => handleCancelTask(selectedTask.id, e)}
+                      disabled={cancellingTaskId === selectedTask.id}
+                      className="flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/30 transition-colors disabled:opacity-50"
+                      title="Diesen Task abbrechen"
+                    >
+                      <Ban className={`w-3.5 h-3.5 ${cancellingTaskId === selectedTask.id ? 'animate-spin' : ''}`} />
+                      <span>Abbrechen</span>
+                    </button>
+                  )}
                   <button
                     onClick={(e) => handleDeleteTask(selectedTask.id, e)}
                     className="flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 border border-rose-500/30 transition-colors"

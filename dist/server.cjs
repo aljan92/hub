@@ -222102,6 +222102,7 @@ var init_pipelineExecutionCoordinator = __esm2({
   "src/server/services/pipelineExecutionCoordinator.ts"() {
     "use strict";
     import_node_async_hooks = require("node:async_hooks");
+    init_taskRepository();
     PipelineExecutionCoordinator = class {
       static activeTaskId = null;
       static waiters = [];
@@ -222122,6 +222123,14 @@ var init_pipelineExecutionCoordinator = __esm2({
           this.activeTaskId = cleanTaskId;
         }
         try {
+          try {
+            const existingTask = TaskRepository.getTaskById(cleanTaskId);
+            if (existingTask && existingTask.status === "CANCELLED") {
+              console.log(`[PipelineExecutionCoordinator] \u{1F6D1} Task ${cleanTaskId} wurde vor Slot-Zuteilung abgebrochen. \xDCberspringe Ausf\xFChrung.`);
+              return { success: false, cancelled: true, error: "Task was cancelled while waiting for execution slot." };
+            }
+          } catch {
+          }
           return await this.context.run({ taskId: cleanTaskId }, work);
         } finally {
           const next = this.waiters.shift();
@@ -227207,11 +227216,14 @@ Bullets: ${oldBullets}`
           return { success: false, error: `Task ${taskId} is currently executing.` };
         }
         try {
+          const isCancelled = () => this.getTask(taskId)?.status === "CANCELLED";
           if (startStep === "U2") {
+            if (isCancelled()) return { success: false, error: "Task was cancelled by user." };
             const u2 = await this.stepU2_DownloadArtwork(taskId);
             if (!u2.success) return { success: false, error: u2.error, failedStep: "U2" };
           }
           if (startStep === "U2" || startStep === "U3") {
+            if (isCancelled()) return { success: false, error: "Task was cancelled by user." };
             const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
             if (!u3.success) return { success: false, error: u3.error, failedStep: "U3", tokenRelevantFailure: true };
             const task = this.getTask(taskId);
@@ -227236,10 +227248,12 @@ Bullets: ${oldBullets}`
             }
           }
           if (startStep === "U2" || startStep === "U3" || startStep === "U4") {
+            if (isCancelled()) return { success: false, error: "Task was cancelled by user." };
             const u4 = await this.stepU4_RewriteListing(taskId);
             if (!u4.success) return { success: false, error: u4.error, failedStep: "U4", tokenRelevantFailure: true };
           }
           if (startStep === "U2" || startStep === "U3" || startStep === "U4" || startStep === "U5") {
+            if (isCancelled()) return { success: false, error: "Task was cancelled by user." };
             const u5 = await this.stepU5_TrademarkCheck(taskId);
             if (!u5.success) return { success: false, error: u5.error, failedStep: "U5", tokenRelevantFailure: true };
             const task = this.getTask(taskId);
@@ -227248,10 +227262,12 @@ Bullets: ${oldBullets}`
             }
           }
           if (startStep === "U2" || startStep === "U3" || startStep === "U4" || startStep === "U5" || startStep === "U6") {
+            if (isCancelled()) return { success: false, error: "Task was cancelled by user." };
             const u6 = await this.stepU6_TranslateListing(taskId);
             if (!u6.success) return { success: false, error: u6.error, failedStep: "U6", tokenRelevantFailure: true };
           }
           if (startStep === "U2" || startStep === "U3" || startStep === "U4" || startStep === "U5" || startStep === "U6" || startStep === "U7") {
+            if (isCancelled()) return { success: false, error: "Task was cancelled by user." };
             const u7 = await this.stepU7_Enqueue(taskId);
             if (!u7.success) return { success: false, error: u7.error, failedStep: "U7" };
           }
@@ -227601,6 +227617,11 @@ var init_designPipelineService = __esm2({
           const startIndex = stepOrder.indexOf(startStep);
           for (let i = startIndex; i < stepOrder.length; i++) {
             const step = stepOrder[i];
+            const currentTask = this.getTask(taskId);
+            if (currentTask?.status === "CANCELLED") {
+              console.log(`[DesignPipeline] \u{1F6D1} Task ${taskId} wurde abgebrochen. Breche Pipeline vor Step ${step} ab.`);
+              return { success: false, currentStep: step, error: "Task was cancelled by user." };
+            }
             if (step === "D1") {
               await this.stepD1_PreflightTrademark(taskId);
             } else if (step === "D2") {

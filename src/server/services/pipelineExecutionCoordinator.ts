@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { TaskRepository } from '../storage/taskRepository';
 
 export interface PipelineExecutionSnapshot {
   activeTaskId: string | null;
@@ -35,6 +36,16 @@ export class PipelineExecutionCoordinator {
     }
 
     try {
+      try {
+        const existingTask = TaskRepository.getTaskById(cleanTaskId);
+        if (existingTask && existingTask.status === 'CANCELLED') {
+          console.log(`[PipelineExecutionCoordinator] 🛑 Task ${cleanTaskId} wurde vor Slot-Zuteilung abgebrochen. Überspringe Ausführung.`);
+          return { success: false, cancelled: true, error: 'Task was cancelled while waiting for execution slot.' } as unknown as T;
+        }
+      } catch {
+        // In tests or if TaskRepository is not yet initialized, proceed normally
+      }
+
       return await this.context.run({ taskId: cleanTaskId }, work);
     } finally {
       const next = this.waiters.shift();

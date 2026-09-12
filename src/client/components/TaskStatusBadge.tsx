@@ -16,7 +16,8 @@ import {
   ShieldCheck,
   Sparkles,
   XCircle,
-  Sliders
+  Sliders,
+  Ban
 } from 'lucide-react';
 import { DesignTaskLog, TaskSummary, EventCategory } from '../../types/tasks';
 
@@ -66,6 +67,18 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
       dotBg: 'bg-rose-500',
       category: 'ERROR',
       icon: <XCircle className="w-3 h-3 text-rose-400" />,
+      isAnimated: false
+    };
+  }
+
+  // 2.1 Cancelled state
+  if (task.status === 'CANCELLED') {
+    return {
+      label: 'Abgebrochen',
+      badgeClass: 'bg-slate-700/40 text-slate-400 border-slate-600/40 font-medium',
+      dotBg: 'bg-slate-500',
+      category: 'SYSTEM',
+      icon: <Ban className="w-3 h-3 text-slate-400" />,
       isAnimated: false
     };
   }
