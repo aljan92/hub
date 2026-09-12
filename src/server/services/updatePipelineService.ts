@@ -103,6 +103,7 @@ export class UpdatePipelineService {
       : fs.existsSync(mbaPath) ? mbaPath : fs.existsSync(rawPath) ? rawPath : null;
 
     const u4PreviewPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.u4-preview.png`);
+    const thumbPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_thumb.png`);
     if (targetPath && fs.existsSync(targetPath)) {
       VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then(r => {
         if (r.savedPath) {
@@ -113,6 +114,10 @@ export class UpdatePipelineService {
         }
       }).catch(err => {
         console.warn(`[UpdatePipeline] Vorab-Erzeugung der U4-Preview in U2 fehlgeschlagen:`, err.message);
+      });
+
+      VisionOptimizationService.prepareThumbnailImage(targetPath, thumbPath, 320).catch(err => {
+        console.warn(`[UpdatePipeline] Vorab-Erzeugung des Thumbnails in U2 fehlgeschlagen:`, err.message);
       });
     }
 

@@ -1025,10 +1025,15 @@ export const TasksView: React.FC = () => {
                       {/* Image Thumbnail */}
                       {t.imageUrl ? (
                         <img
-                          src={t.imageUrl}
+                          src={t.id ? `/api/v1/designs/thumbnail/${encodeURIComponent(t.id)}` : t.imageUrl}
                           alt={displayQuote}
                           loading="lazy"
-                          className="w-12 h-12 rounded-lg object-cover border border-slate-800 shrink-0 bg-slate-950"
+                          className="w-12 h-12 rounded-lg object-contain border border-slate-800 shrink-0 bg-slate-950 p-0.5"
+                          onError={(e) => {
+                            if (t.imageUrl && e.currentTarget.src !== t.imageUrl) {
+                              e.currentTarget.src = t.imageUrl;
+                            }
+                          }}
                         />
                       ) : (
                         <div className={`w-12 h-12 rounded-lg border shrink-0 flex items-center justify-center ${

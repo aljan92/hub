@@ -222456,6 +222456,108 @@ var init_visionOptimizationService = __esm2({
           return { base64DataUrl: "" };
         }
       }
+      /**
+       * Generates a lightweight, transparent, aspect-ratio-preserving thumbnail (max ~320px)
+       * for fast UI lists (Queue, Tasks, History) using Playwright element screenshot.
+       * Preserves exact original proportions without cropping or distortion.
+       */
+      static async prepareThumbnailImage(input, outputPath, maxDim = 320) {
+        try {
+          let dataUri;
+          if (typeof input === "string") {
+            const trimmed = input.trim();
+            if (trimmed.startsWith("data:image")) {
+              dataUri = trimmed;
+            } else if (trimmed.startsWith("<svg") || trimmed.startsWith("<?xml")) {
+              dataUri = `data:image/svg+xml;base64,${Buffer.from(trimmed).toString("base64")}`;
+            } else if (import_fs78.default.existsSync(input)) {
+              const fileBuf = import_fs78.default.readFileSync(input);
+              const isSvg = input.toLowerCase().endsWith(".svg");
+              dataUri = isSvg ? `data:image/svg+xml;base64,${fileBuf.toString("base64")}` : `data:image/png;base64,${fileBuf.toString("base64")}`;
+            } else {
+              throw new Error(`File not found: ${input.length > 50 ? input.slice(0, 50) + "..." : input}`);
+            }
+          } else if (Buffer.isBuffer(input)) {
+            const isSvg = input.slice(0, 50).toString("utf8").includes("<svg");
+            dataUri = isSvg ? `data:image/svg+xml;base64,${input.toString("base64")}` : `data:image/png;base64,${input.toString("base64")}`;
+          } else {
+            return { base64DataUrl: "" };
+          }
+          const browser = await getBrowser2();
+          const context2 = await browser.newContext({
+            viewport: { width: Math.max(maxDim * 2, 640), height: Math.max(maxDim * 2, 640) },
+            deviceScaleFactor: 1
+          });
+          const page = await context2.newPage();
+          try {
+            const html = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              html, body {
+                background: transparent;
+                overflow: hidden;
+              }
+              #container {
+                display: inline-block;
+                background: transparent;
+              }
+              #thumb {
+                max-width: ${maxDim}px;
+                max-height: ${Math.round(maxDim * 1.35)}px;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                display: block;
+              }
+            </style>
+          </head>
+          <body>
+            <div id="container">
+              <img id="thumb" src="${dataUri}" />
+            </div>
+          </body>
+          </html>
+        `;
+            await page.setContent(html);
+            await page.waitForFunction(() => {
+              const img = document.querySelector("#thumb");
+              return img && img.complete && img.naturalWidth > 0;
+            }, { timeout: 6e3 }).catch(() => {
+            });
+            const thumbElement = await page.$("#thumb");
+            let screenshotBuf;
+            if (thumbElement) {
+              screenshotBuf = await thumbElement.screenshot({ omitBackground: true, type: "png" });
+            } else {
+              screenshotBuf = await page.screenshot({ omitBackground: true, type: "png" });
+            }
+            if (outputPath) {
+              try {
+                const dir = import_path73.default.dirname(outputPath);
+                if (!import_fs78.default.existsSync(dir)) import_fs78.default.mkdirSync(dir, { recursive: true });
+                import_fs78.default.writeFileSync(outputPath, screenshotBuf);
+              } catch (e) {
+                console.warn("[VisionOptimizationService] Failed to save thumbnail file:", e.message);
+              }
+            }
+            return {
+              base64DataUrl: `data:image/png;base64,${screenshotBuf.toString("base64")}`,
+              savedPath: outputPath && import_fs78.default.existsSync(outputPath) ? outputPath : void 0,
+              buffer: screenshotBuf
+            };
+          } finally {
+            await context2.close().catch(() => {
+            });
+          }
+        } catch (err) {
+          console.warn("[VisionOptimizationService] Thumbnail generation failed:", err.message);
+          return { base64DataUrl: "" };
+        }
+      }
     };
   }
 });
@@ -227016,6 +227118,7 @@ var init_updatePipelineService = __esm2({
         }
         const targetPath = task.localMbaPngPath && import_fs86.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : import_fs86.default.existsSync(mbaPath) ? mbaPath : import_fs86.default.existsSync(rawPath) ? rawPath : null;
         const u4PreviewPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+        const thumbPath = import_path80.default.resolve(process.cwd(), "data", "designs", `${cleanId}_thumb.png`);
         if (targetPath && import_fs86.default.existsSync(targetPath)) {
           VisionOptimizationService.prepareU4PreviewImage(targetPath, u4PreviewPath).then((r) => {
             if (r.savedPath) {
@@ -227026,6 +227129,9 @@ var init_updatePipelineService = __esm2({
             }
           }).catch((err) => {
             console.warn(`[UpdatePipeline] Vorab-Erzeugung der U4-Preview in U2 fehlgeschlagen:`, err.message);
+          });
+          VisionOptimizationService.prepareThumbnailImage(targetPath, thumbPath, 320).catch((err) => {
+            console.warn(`[UpdatePipeline] Vorab-Erzeugung des Thumbnails in U2 fehlgeschlagen:`, err.message);
           });
         }
         TaskLogService.updateTaskStatus(taskId, {
@@ -231785,6 +231891,10 @@ ${referenceSection}` : ""}`;
           VisionOptimizationService.prepareU4PreviewImage(localFilePath, previewFilePath).catch((err) => {
             console.warn(`[TaskLogService] Background preview pre-generation failed for ${taskId}:`, err.message);
           });
+          const thumbFilePath = import_path83.default.join(designsDir, `${cleanId}_thumb.png`);
+          VisionOptimizationService.prepareThumbnailImage(localFilePath, thumbFilePath, 320).catch((err) => {
+            console.warn(`[TaskLogService] Background thumbnail pre-generation failed for ${taskId}:`, err.message);
+          });
           const latencyMs = Date.now() - start3;
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -233382,6 +233492,10 @@ Beantworte die Analysefragen streng als JSON!`;
             import_fs89.default.writeFileSync(mbaFilePath, mbaBuffer);
             task.localMbaPngPath = mbaFilePath;
             task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
+            const thumbFilePath = import_path83.default.join(designsDir, `${cleanId}_thumb.png`);
+            VisionOptimizationService.prepareThumbnailImage(mbaFilePath, thumbFilePath, 320).catch((err) => {
+              console.warn(`[TaskLogService] Background thumbnail pre-generation failed for ${taskId}:`, err.message);
+            });
             this.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "SVG_EDIT_RESPONSE",
@@ -239164,25 +239278,40 @@ app.post("/api/v1/systemprompts/reset", (req, res) => {
     ...resetPrompts
   });
 });
+function sendCachedImage(req, res, filePath, isThumbnail = false, contentType = "image/png") {
+  try {
+    const stats2 = import_fs92.default.statSync(filePath);
+    const etag = `"${stats2.size}-${Math.floor(stats2.mtimeMs)}"`;
+    const clientEtag = req.headers["if-none-match"];
+    if (clientEtag && clientEtag === etag) {
+      return res.status(304).end();
+    }
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("ETag", etag);
+    res.setHeader("Last-Modified", stats2.mtime.toUTCString());
+    if (isThumbnail) {
+      res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+    } else {
+      res.setHeader("Cache-Control", "private, max-age=3600, must-revalidate");
+    }
+    return import_fs92.default.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    res.status(404).send("File not found");
+  }
+}
 app.get("/api/v1/designs/image/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const mbaFilePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
   const rawFilePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
   if (import_fs92.default.existsSync(mbaFilePath)) {
-    res.setHeader("Content-Type", "image/png");
-    return import_fs92.default.createReadStream(mbaFilePath).pipe(res);
+    return sendCachedImage(req, res, mbaFilePath, false, "image/png");
   }
   if (import_fs92.default.existsSync(rawFilePath)) {
-    res.setHeader("Content-Type", "image/png");
-    return import_fs92.default.createReadStream(rawFilePath).pipe(res);
+    return sendCachedImage(req, res, rawFilePath, false, "image/png");
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task?.localImagePath && import_fs92.default.existsSync(task.localImagePath)) {
-    res.setHeader("Content-Type", "image/png");
-    return import_fs92.default.createReadStream(task.localImagePath).pipe(res);
+    return sendCachedImage(req, res, task.localImagePath, false, "image/png");
   }
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
@@ -239190,27 +239319,51 @@ app.get("/api/v1/designs/image/:taskId", (req, res) => {
   const queueItems = QueueService.loadQueue();
   const qItem = queueItems.find((q) => q.id === req.params.taskId || q.taskId === req.params.taskId || q.designId === req.params.taskId);
   if (qItem?.pngPath && import_fs92.default.existsSync(qItem.pngPath)) {
-    res.setHeader("Content-Type", "image/png");
-    return import_fs92.default.createReadStream(qItem.pngPath).pipe(res);
+    return sendCachedImage(req, res, qItem.pngPath, false, "image/png");
   }
   if (qItem?.imagePath && import_fs92.default.existsSync(qItem.imagePath)) {
-    res.setHeader("Content-Type", "image/png");
-    return import_fs92.default.createReadStream(qItem.imagePath).pipe(res);
+    return sendCachedImage(req, res, qItem.imagePath, false, "image/png");
   }
   res.status(404).send("Design image not found");
+});
+app.get("/api/v1/designs/thumbnail/:taskId", async (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const thumbFilePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}_thumb.png`);
+  if (import_fs92.default.existsSync(thumbFilePath)) {
+    try {
+      const stats2 = import_fs92.default.statSync(thumbFilePath);
+      if (stats2.size > 500) {
+        return sendCachedImage(req, res, thumbFilePath, true, "image/png");
+      }
+    } catch (e) {
+    }
+  }
+  const mbaFilePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const svgFilePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  const targetPath = task?.localMbaPngPath && import_fs92.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localSvgPath && import_fs92.default.existsSync(task.localSvgPath) ? task.localSvgPath : task?.localImagePath && import_fs92.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs92.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs92.default.existsSync(svgFilePath) ? svgFilePath : import_fs92.default.existsSync(rawFilePath) ? rawFilePath : null;
+  if (targetPath) {
+    try {
+      console.log(`[API] Erzeuge Thumbnail f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
+      const { savedPath } = await VisionOptimizationService.prepareThumbnailImage(targetPath, thumbFilePath, 320);
+      if (savedPath && import_fs92.default.existsSync(savedPath)) {
+        return sendCachedImage(req, res, savedPath, true, "image/png");
+      }
+    } catch (e) {
+      console.warn(`[API] Thumbnail-Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
+    }
+  }
+  res.redirect(`/api/v1/designs/image/${encodeURIComponent(req.params.taskId)}`);
 });
 app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const gridFilePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
   if (import_fs92.default.existsSync(gridFilePath)) {
     try {
       const stats2 = import_fs92.default.statSync(gridFilePath);
       if (stats2.size > 1e3) {
-        res.setHeader("Content-Type", "image/jpeg");
-        return import_fs92.default.createReadStream(gridFilePath).pipe(res);
+        return sendCachedImage(req, res, gridFilePath, true, "image/jpeg");
       }
     } catch (e) {
     }
@@ -239224,8 +239377,7 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
       console.log(`[API] Erzeuge 2x2 Grid f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
       if (savedPath && import_fs92.default.existsSync(savedPath)) {
-        res.setHeader("Content-Type", "image/jpeg");
-        return import_fs92.default.createReadStream(savedPath).pipe(res);
+        return sendCachedImage(req, res, savedPath, true, "image/jpeg");
       }
     } catch (e) {
       console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -239236,15 +239388,11 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
 app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const previewFilePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
   if (import_fs92.default.existsSync(previewFilePath)) {
     try {
       const stats2 = import_fs92.default.statSync(previewFilePath);
       if (stats2.size > 1e3) {
-        res.setHeader("Content-Type", "image/png");
-        return import_fs92.default.createReadStream(previewFilePath).pipe(res);
+        return sendCachedImage(req, res, previewFilePath, true, "image/png");
       }
     } catch (e) {
     }
@@ -239258,8 +239406,7 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
       console.log(`[API] Erzeuge U4 Preview f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
       if (savedPath && import_fs92.default.existsSync(savedPath)) {
-        res.setHeader("Content-Type", "image/png");
-        return import_fs92.default.createReadStream(savedPath).pipe(res);
+        return sendCachedImage(req, res, savedPath, true, "image/png");
       }
     } catch (e) {
       console.warn(`[API] U4-Preview Generierung on-demand fehlgeschlagen f\xFCr ${cleanId}:`, e.message);
@@ -239270,16 +239417,13 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
 app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const filePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
   if (import_fs92.default.existsSync(filePath)) {
-    res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs92.default.createReadStream(filePath).pipe(res);
+    return sendCachedImage(req, res, filePath, false, "image/svg+xml");
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "private, max-age=3600, must-revalidate");
     return res.send(task.svgContent);
   }
   res.status(404).send("Design SVG not found");
@@ -239287,21 +239431,17 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
 app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const filePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
   if (import_fs92.default.existsSync(filePath)) {
-    res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs92.default.createReadStream(filePath).pipe(res);
+    return sendCachedImage(req, res, filePath, false, "image/svg+xml");
   }
   const fallbackPath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
   if (import_fs92.default.existsSync(fallbackPath)) {
-    res.setHeader("Content-Type", "image/svg+xml");
-    return import_fs92.default.createReadStream(fallbackPath).pipe(res);
+    return sendCachedImage(req, res, fallbackPath, false, "image/svg+xml");
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "private, max-age=3600, must-revalidate");
     return res.send(task.svgContent);
   }
   res.status(404).send("Original SVG not found");
@@ -239309,24 +239449,16 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
 app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const filePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
   if (import_fs92.default.existsSync(filePath)) {
-    res.setHeader("Content-Type", "image/png");
-    return import_fs92.default.createReadStream(filePath).pipe(res);
+    return sendCachedImage(req, res, filePath, false, "image/png");
   }
   res.status(404).send("MBA PNG not found");
 });
 app.get("/api/v1/designs/4panel/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const filePath = import_path86.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
   if (import_fs92.default.existsSync(filePath)) {
-    res.setHeader("Content-Type", "image/png");
-    return import_fs92.default.createReadStream(filePath).pipe(res);
+    return sendCachedImage(req, res, filePath, false, "image/png");
   }
   res.status(404).send("4-Panel image not found");
 });

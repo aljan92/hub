@@ -260,4 +260,119 @@ export class VisionOptimizationService {
       return { base64DataUrl: '' };
     }
   }
+
+  /**
+   * Generates a lightweight, transparent, aspect-ratio-preserving thumbnail (max ~320px)
+   * for fast UI lists (Queue, Tasks, History) using Playwright element screenshot.
+   * Preserves exact original proportions without cropping or distortion.
+   */
+  public static async prepareThumbnailImage(
+    input: string | Buffer,
+    outputPath?: string,
+    maxDim: number = 320
+  ): Promise<{ base64DataUrl: string; savedPath?: string; buffer?: Buffer }> {
+    try {
+      let dataUri: string;
+      if (typeof input === 'string') {
+        const trimmed = input.trim();
+        if (trimmed.startsWith('data:image')) {
+          dataUri = trimmed;
+        } else if (trimmed.startsWith('<svg') || trimmed.startsWith('<?xml')) {
+          dataUri = `data:image/svg+xml;base64,${Buffer.from(trimmed).toString('base64')}`;
+        } else if (fs.existsSync(input)) {
+          const fileBuf = fs.readFileSync(input);
+          const isSvg = input.toLowerCase().endsWith('.svg');
+          dataUri = isSvg
+            ? `data:image/svg+xml;base64,${fileBuf.toString('base64')}`
+            : `data:image/png;base64,${fileBuf.toString('base64')}`;
+        } else {
+          throw new Error(`File not found: ${input.length > 50 ? input.slice(0, 50) + '...' : input}`);
+        }
+      } else if (Buffer.isBuffer(input)) {
+        const isSvg = input.slice(0, 50).toString('utf8').includes('<svg');
+        dataUri = isSvg
+          ? `data:image/svg+xml;base64,${input.toString('base64')}`
+          : `data:image/png;base64,${input.toString('base64')}`;
+      } else {
+        return { base64DataUrl: '' };
+      }
+
+      const browser = await getBrowser();
+      const context = await browser.newContext({
+        viewport: { width: Math.max(maxDim * 2, 640), height: Math.max(maxDim * 2, 640) },
+        deviceScaleFactor: 1
+      });
+      const page = await context.newPage();
+
+      try {
+        const html = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              html, body {
+                background: transparent;
+                overflow: hidden;
+              }
+              #container {
+                display: inline-block;
+                background: transparent;
+              }
+              #thumb {
+                max-width: ${maxDim}px;
+                max-height: ${Math.round(maxDim * 1.35)}px;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                display: block;
+              }
+            </style>
+          </head>
+          <body>
+            <div id="container">
+              <img id="thumb" src="${dataUri}" />
+            </div>
+          </body>
+          </html>
+        `;
+
+        await page.setContent(html);
+        await page.waitForFunction(() => {
+          const img = document.querySelector('#thumb') as HTMLImageElement | null;
+          return img && img.complete && img.naturalWidth > 0;
+        }, { timeout: 6000 }).catch(() => {});
+
+        const thumbElement = await page.$('#thumb');
+        let screenshotBuf: Buffer;
+        if (thumbElement) {
+          screenshotBuf = await thumbElement.screenshot({ omitBackground: true, type: 'png' });
+        } else {
+          screenshotBuf = await page.screenshot({ omitBackground: true, type: 'png' });
+        }
+
+        if (outputPath) {
+          try {
+            const dir = path.dirname(outputPath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(outputPath, screenshotBuf);
+          } catch (e: any) {
+            console.warn('[VisionOptimizationService] Failed to save thumbnail file:', e.message);
+          }
+        }
+
+        return {
+          base64DataUrl: `data:image/png;base64,${screenshotBuf.toString('base64')}`,
+          savedPath: outputPath && fs.existsSync(outputPath) ? outputPath : undefined,
+          buffer: screenshotBuf
+        };
+      } finally {
+        await context.close().catch(() => {});
+      }
+    } catch (err: any) {
+      console.warn('[VisionOptimizationService] Thumbnail generation failed:', err.message);
+      return { base64DataUrl: '' };
+    }
+  }
 }

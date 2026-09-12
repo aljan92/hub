@@ -17,9 +17,19 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(new Set(['dashboard']));
   const [tier, setTier] = useState<number | undefined>(undefined);
   const [taskCount, setTaskCount] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
+
+  useEffect(() => {
+    setVisitedTabs(prev => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
 
   const fetchStats = () => {
     fetch('/api/v1/stats')
@@ -60,17 +70,61 @@ export const App: React.FC = () => {
         <main className="flex-1 p-6 md:p-8 overflow-y-auto bg-gradient-to-b from-background via-surface/40 to-background">
           <div className="max-w-7xl mx-auto">
             <ErrorBoundary fallbackTitle="Fehler beim Laden dieser Ansicht">
-              {activeTab === 'dashboard' && <DashboardView onNavigateTab={setActiveTab} />}
-              {activeTab === 'promptlog' && <PromptLogView />}
-              {activeTab === 'systemprompts' && <SystemPromptsView />}
-              {activeTab === 'designer' && <DesignerView onNavigateTab={setActiveTab} />}
-              {activeTab === 'tasks' && <TasksView />}
-              {activeTab === 'trademark' && <TrademarkView />}
-              {activeTab === 'queue' && <QueueView />}
-              {activeTab === 'products' && <ProductsView />}
-              {activeTab === 'database' && <DatabaseView />}
-              {activeTab === 'logs' && <LogsView />}
-              {activeTab === 'settings' && <SettingsView />}
+              {visitedTabs.has('dashboard') && (
+                <div className={activeTab === 'dashboard' ? 'block' : 'hidden'}>
+                  <DashboardView onNavigateTab={setActiveTab} />
+                </div>
+              )}
+              {visitedTabs.has('promptlog') && (
+                <div className={activeTab === 'promptlog' ? 'block' : 'hidden'}>
+                  <PromptLogView />
+                </div>
+              )}
+              {visitedTabs.has('systemprompts') && (
+                <div className={activeTab === 'systemprompts' ? 'block' : 'hidden'}>
+                  <SystemPromptsView />
+                </div>
+              )}
+              {visitedTabs.has('designer') && (
+                <div className={activeTab === 'designer' ? 'block' : 'hidden'}>
+                  <DesignerView onNavigateTab={setActiveTab} />
+                </div>
+              )}
+              {visitedTabs.has('tasks') && (
+                <div className={activeTab === 'tasks' ? 'block' : 'hidden'}>
+                  <TasksView />
+                </div>
+              )}
+              {visitedTabs.has('trademark') && (
+                <div className={activeTab === 'trademark' ? 'block' : 'hidden'}>
+                  <TrademarkView />
+                </div>
+              )}
+              {visitedTabs.has('queue') && (
+                <div className={activeTab === 'queue' ? 'block' : 'hidden'}>
+                  <QueueView isActive={activeTab === 'queue'} />
+                </div>
+              )}
+              {visitedTabs.has('products') && (
+                <div className={activeTab === 'products' ? 'block' : 'hidden'}>
+                  <ProductsView />
+                </div>
+              )}
+              {visitedTabs.has('database') && (
+                <div className={activeTab === 'database' ? 'block' : 'hidden'}>
+                  <DatabaseView />
+                </div>
+              )}
+              {visitedTabs.has('logs') && (
+                <div className={activeTab === 'logs' ? 'block' : 'hidden'}>
+                  <LogsView />
+                </div>
+              )}
+              {visitedTabs.has('settings') && (
+                <div className={activeTab === 'settings' ? 'block' : 'hidden'}>
+                  <SettingsView />
+                </div>
+              )}
             </ErrorBoundary>
           </div>
         </main>

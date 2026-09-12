@@ -151,7 +151,7 @@ const renderSafeText = (val: any): string => {
   return String(val);
 };
 
-export const QueueView: React.FC = () => {
+export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
   const [queueState, setQueueState] = useState<QueueState>({
     items: [],
     freeDailySlots: 200,
@@ -316,8 +316,6 @@ export const QueueView: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchQueue();
-    fetchUploadStatus();
     fetch('/api/v1/products/catalog')
       .then(r => r.json())
       .then(d => {
@@ -326,12 +324,18 @@ export const QueueView: React.FC = () => {
         }
       })
       .catch(err => console.warn('[QueueView] Failed to fetch catalog:', err));
+  }, []);
+
+  useEffect(() => {
+    if (!isActive) return;
+    fetchQueue();
+    fetchUploadStatus();
     const interval = setInterval(() => {
       fetchQueue();
       fetchUploadStatus();
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
     if (queueState.updateTargetCount !== undefined && !updateTargetSaveRunningRef.current) {
@@ -477,6 +481,15 @@ export const QueueView: React.FC = () => {
       return `/api/v1/designs/image/${encodeURIComponent(targetId)}`;
     }
     return '';
+  };
+
+  const getQueueItemThumbnailUrl = (item: any) => {
+    if (!item) return '';
+    const targetId = item.taskId || item.designId || item.id;
+    if (targetId) {
+      return `/api/v1/designs/thumbnail/${encodeURIComponent(targetId)}`;
+    }
+    return getQueueItemImageUrl(item);
   };
 
   const handleToggleLock = async (itemId: string) => {
@@ -1536,9 +1549,10 @@ export const QueueView: React.FC = () => {
                             }}
                           >
                             <img 
-                              src={getQueueItemImageUrl(item)} 
+                              src={getQueueItemThumbnailUrl(item)} 
                               alt={item.designTitle}
                               className="w-full h-full object-contain p-0.5"
+                              loading="lazy"
                             />
                           </div>
 
@@ -2047,9 +2061,10 @@ export const QueueView: React.FC = () => {
                         }}
                       >
                         <img 
-                          src={getQueueItemImageUrl(item)} 
+                          src={getQueueItemThumbnailUrl(item)} 
                           alt={item.designTitle}
                           className="w-full h-full object-contain p-0.5"
+                          loading="lazy"
                         />
                       </div>
 
@@ -2335,7 +2350,7 @@ export const QueueView: React.FC = () => {
               <div className="space-y-3">
                 {updateDesigns.map((item) => {
                   const isExpanded = expandedItemId === item.id;
-                  const thumbUrl = item.imagePath || `/api/v1/designs/image/${encodeURIComponent(item.taskId)}`;
+                  const thumbUrl = getQueueItemThumbnailUrl(item);
 
                   return (
                     <div 
@@ -2829,9 +2844,10 @@ export const QueueView: React.FC = () => {
                     >
                       {item.imagePath || item.pngPath || item.taskId ? (
                         <img 
-                          src={getQueueItemImageUrl(item)} 
+                          src={getQueueItemThumbnailUrl(item)} 
                           alt={item.designTitle}
                           className="w-full h-full object-contain p-0.5"
+                          loading="lazy"
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-600">
@@ -2934,9 +2950,10 @@ export const QueueView: React.FC = () => {
                       >
                         {item.imagePath || item.pngPath || item.taskId ? (
                           <img 
-                            src={getQueueItemImageUrl(item)} 
+                            src={getQueueItemThumbnailUrl(item)} 
                             alt={item.designTitle}
                             className="w-full h-full object-contain p-0.5"
+                            loading="lazy"
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-slate-600">

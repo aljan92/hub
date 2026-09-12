@@ -1513,29 +1513,50 @@ app.post('/api/v1/systemprompts/reset', (req, res) => {
   });
 });
 
+// Helper function to serve image files with ETag, 304 conditional validation, and browser caching
+function sendCachedImage(req: express.Request, res: express.Response, filePath: string, isThumbnail = false, contentType = 'image/png') {
+  try {
+    const stats = fs.statSync(filePath);
+    const etag = `"${stats.size}-${Math.floor(stats.mtimeMs)}"`;
+    const clientEtag = req.headers['if-none-match'];
+
+    if (clientEtag && clientEtag === etag) {
+      return res.status(304).end();
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('ETag', etag);
+    res.setHeader('Last-Modified', stats.mtime.toUTCString());
+
+    if (isThumbnail) {
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    } else {
+      res.setHeader('Cache-Control', 'private, max-age=3600, must-revalidate');
+    }
+
+    return fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    res.status(404).send('File not found');
+  }
+}
+
 // 8.3 Design Image Serving Endpoint (Prioritizes transparent cutout master PNG _mba.png)
 app.get('/api/v1/designs/image/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const mbaFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
   const rawFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
 
   if (fs.existsSync(mbaFilePath)) {
-    res.setHeader('Content-Type', 'image/png');
-    return fs.createReadStream(mbaFilePath).pipe(res);
+    return sendCachedImage(req, res, mbaFilePath, false, 'image/png');
   }
 
   if (fs.existsSync(rawFilePath)) {
-    res.setHeader('Content-Type', 'image/png');
-    return fs.createReadStream(rawFilePath).pipe(res);
+    return sendCachedImage(req, res, rawFilePath, false, 'image/png');
   }
 
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task?.localImagePath && fs.existsSync(task.localImagePath)) {
-    res.setHeader('Content-Type', 'image/png');
-    return fs.createReadStream(task.localImagePath).pipe(res);
+    return sendCachedImage(req, res, task.localImagePath, false, 'image/png');
   }
   if (task && task.imageUrl) {
     return res.redirect(task.imageUrl);
@@ -1544,31 +1565,74 @@ app.get('/api/v1/designs/image/:taskId', (req, res) => {
   const queueItems = QueueService.loadQueue();
   const qItem = queueItems.find(q => q.id === req.params.taskId || q.taskId === req.params.taskId || q.designId === req.params.taskId);
   if (qItem?.pngPath && fs.existsSync(qItem.pngPath)) {
-    res.setHeader('Content-Type', 'image/png');
-    return fs.createReadStream(qItem.pngPath).pipe(res);
+    return sendCachedImage(req, res, qItem.pngPath, false, 'image/png');
   }
   if (qItem?.imagePath && fs.existsSync(qItem.imagePath)) {
-    res.setHeader('Content-Type', 'image/png');
-    return fs.createReadStream(qItem.imagePath).pipe(res);
+    return sendCachedImage(req, res, qItem.imagePath, false, 'image/png');
   }
 
   res.status(404).send('Design image not found');
 });
 
-// 8.3b Design 2x2 Grid Image Serving Endpoint (with automatic on-demand generation)
+// 8.3b Design Thumbnail Serving Endpoint (Aspect-ratio preserving max ~320px preview)
+app.get('/api/v1/designs/thumbnail/:taskId', async (req, res) => {
+  const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const thumbFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_thumb.png`);
+
+  if (fs.existsSync(thumbFilePath)) {
+    try {
+      const stats = fs.statSync(thumbFilePath);
+      if (stats.size > 500) {
+        return sendCachedImage(req, res, thumbFilePath, true, 'image/png');
+      }
+    } catch (e) {}
+  }
+
+  // Look for source master PNG, SVG or raw image to generate thumbnail on-demand
+  const mbaFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
+  const rawFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.png`);
+  const svgFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.svg`);
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  const targetPath = (task?.localMbaPngPath && fs.existsSync(task.localMbaPngPath))
+    ? task.localMbaPngPath
+    : (task?.localSvgPath && fs.existsSync(task.localSvgPath))
+    ? task.localSvgPath
+    : (task?.localImagePath && fs.existsSync(task.localImagePath))
+    ? task.localImagePath
+    : fs.existsSync(mbaFilePath)
+    ? mbaFilePath
+    : fs.existsSync(svgFilePath)
+    ? svgFilePath
+    : fs.existsSync(rawFilePath)
+    ? rawFilePath
+    : null;
+
+  if (targetPath) {
+    try {
+      console.log(`[API] Erzeuge Thumbnail für Task ${cleanId} on-demand aus ${targetPath}...`);
+      const { savedPath } = await VisionOptimizationService.prepareThumbnailImage(targetPath, thumbFilePath, 320);
+      if (savedPath && fs.existsSync(savedPath)) {
+        return sendCachedImage(req, res, savedPath, true, 'image/png');
+      }
+    } catch (e: any) {
+      console.warn(`[API] Thumbnail-Generierung on-demand fehlgeschlagen für ${cleanId}:`, e.message);
+    }
+  }
+
+  // Fallback to regular design image if thumbnail cannot be generated
+  res.redirect(`/api/v1/designs/image/${encodeURIComponent(req.params.taskId)}`);
+});
+
+// 8.3c Design 2x2 Grid Image Serving Endpoint (with automatic on-demand generation)
 app.get('/api/v1/designs/grid2x2/:taskId', async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const gridFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_grid2x2.jpg`);
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
 
   if (fs.existsSync(gridFilePath)) {
     try {
       const stats = fs.statSync(gridFilePath);
       if (stats.size > 1000) {
-        res.setHeader('Content-Type', 'image/jpeg');
-        return fs.createReadStream(gridFilePath).pipe(res);
+        return sendCachedImage(req, res, gridFilePath, true, 'image/jpeg');
       }
     } catch (e) {}
   }
@@ -1588,8 +1652,7 @@ app.get('/api/v1/designs/grid2x2/:taskId', async (req, res) => {
       console.log(`[API] Erzeuge 2x2 Grid für Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
       if (savedPath && fs.existsSync(savedPath)) {
-        res.setHeader('Content-Type', 'image/jpeg');
-        return fs.createReadStream(savedPath).pipe(res);
+        return sendCachedImage(req, res, savedPath, true, 'image/jpeg');
       }
     } catch (e: any) {
       console.warn(`[API] Grid-Generierung on-demand fehlgeschlagen für ${cleanId}:`, e.message);
@@ -1600,20 +1663,16 @@ app.get('/api/v1/designs/grid2x2/:taskId', async (req, res) => {
   res.redirect(`/api/v1/designs/image/${encodeURIComponent(req.params.taskId)}`);
 });
 
-// 8.3c Design U4 Preview Image Serving Endpoint (1125x1350 on #B8B8B8 with automatic on-demand generation)
+// 8.3d Design U4 Preview Image Serving Endpoint (1125x1350 on #B8B8B8 with automatic on-demand generation)
 app.get('/api/v1/designs/u4-preview/:taskId', async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const previewFilePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.u4-preview.png`);
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
 
   if (fs.existsSync(previewFilePath)) {
     try {
       const stats = fs.statSync(previewFilePath);
       if (stats.size > 1000) {
-        res.setHeader('Content-Type', 'image/png');
-        return fs.createReadStream(previewFilePath).pipe(res);
+        return sendCachedImage(req, res, previewFilePath, true, 'image/png');
       }
     } catch (e) {}
   }
@@ -1633,8 +1692,7 @@ app.get('/api/v1/designs/u4-preview/:taskId', async (req, res) => {
       console.log(`[API] Erzeuge U4 Preview für Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
       if (savedPath && fs.existsSync(savedPath)) {
-        res.setHeader('Content-Type', 'image/png');
-        return fs.createReadStream(savedPath).pipe(res);
+        return sendCachedImage(req, res, savedPath, true, 'image/png');
       }
     } catch (e: any) {
       console.warn(`[API] U4-Preview Generierung on-demand fehlgeschlagen für ${cleanId}:`, e.message);
@@ -1649,16 +1707,13 @@ app.get('/api/v1/designs/u4-preview/:taskId', async (req, res) => {
 app.get('/api/v1/designs/svg/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.svg`);
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
   if (fs.existsSync(filePath)) {
-    res.setHeader('Content-Type', 'image/svg+xml');
-    return fs.createReadStream(filePath).pipe(res);
+    return sendCachedImage(req, res, filePath, false, 'image/svg+xml');
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'private, max-age=3600, must-revalidate');
     return res.send(task.svgContent);
   }
   res.status(404).send('Design SVG not found');
@@ -1667,22 +1722,18 @@ app.get('/api/v1/designs/svg/:taskId', (req, res) => {
 app.get('/api/v1/designs/svg-original/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_original.svg`);
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
   if (fs.existsSync(filePath)) {
-    res.setHeader('Content-Type', 'image/svg+xml');
-    return fs.createReadStream(filePath).pipe(res);
+    return sendCachedImage(req, res, filePath, false, 'image/svg+xml');
   }
   // Fallback to active svg if original not separate yet
   const fallbackPath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}.svg`);
   if (fs.existsSync(fallbackPath)) {
-    res.setHeader('Content-Type', 'image/svg+xml');
-    return fs.createReadStream(fallbackPath).pipe(res);
+    return sendCachedImage(req, res, fallbackPath, false, 'image/svg+xml');
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
   if (task && task.svgContent) {
     res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'private, max-age=3600, must-revalidate');
     return res.send(task.svgContent);
   }
   res.status(404).send('Original SVG not found');
@@ -1692,12 +1743,8 @@ app.get('/api/v1/designs/svg-original/:taskId', (req, res) => {
 app.get('/api/v1/designs/mba-png/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_mba.png`);
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
   if (fs.existsSync(filePath)) {
-    res.setHeader('Content-Type', 'image/png');
-    return fs.createReadStream(filePath).pipe(res);
+    return sendCachedImage(req, res, filePath, false, 'image/png');
   }
   res.status(404).send('MBA PNG not found');
 });
@@ -1706,12 +1753,8 @@ app.get('/api/v1/designs/mba-png/:taskId', (req, res) => {
 app.get('/api/v1/designs/4panel/:taskId', (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filePath = path.resolve(process.cwd(), 'data', 'designs', `${cleanId}_4panel.png`);
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
   if (fs.existsSync(filePath)) {
-    res.setHeader('Content-Type', 'image/png');
-    return fs.createReadStream(filePath).pipe(res);
+    return sendCachedImage(req, res, filePath, false, 'image/png');
   }
   res.status(404).send('4-Panel image not found');
 });

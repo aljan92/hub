@@ -803,6 +803,11 @@ export class TaskLogService {
         console.warn(`[TaskLogService] Background preview pre-generation failed for ${taskId}:`, err.message);
       });
 
+      const thumbFilePath = path.join(designsDir, `${cleanId}_thumb.png`);
+      VisionOptimizationService.prepareThumbnailImage(localFilePath, thumbFilePath, 320).catch(err => {
+        console.warn(`[TaskLogService] Background thumbnail pre-generation failed for ${taskId}:`, err.message);
+      });
+
       const latencyMs = Date.now() - start;
 
       this.addEvent(taskId, {
@@ -2702,6 +2707,11 @@ export class TaskLogService {
         fs.writeFileSync(mbaFilePath, mbaBuffer);
         task.localMbaPngPath = mbaFilePath;
         task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
+
+        const thumbFilePath = path.join(designsDir, `${cleanId}_thumb.png`);
+        VisionOptimizationService.prepareThumbnailImage(mbaFilePath, thumbFilePath, 320).catch(err => {
+          console.warn(`[TaskLogService] Background thumbnail pre-generation failed for ${taskId}:`, err.message);
+        });
 
         this.addEvent(taskId, {
           timestamp: new Date().toISOString(),
