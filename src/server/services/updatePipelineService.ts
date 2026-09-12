@@ -86,7 +86,7 @@ export class UpdatePipelineService {
       return { success: true, localUrl: `/api/v1/designs/artwork/${encodeURIComponent(taskId)}` };
     }
 
-    TaskLogService.updateTaskStatus(taskId, { status: 'UPDATE_DOWNLOADING_ARTWORK', hasError: false });
+    TaskLogService.updateTaskStatus(taskId, { status: 'UPDATE_DOWNLOADING_ARTWORK', checkpoint: undefined, hasError: false });
 
     const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
     if (!res.success) {
@@ -144,7 +144,7 @@ export class UpdatePipelineService {
       return { success: false, error: err };
     }
 
-    TaskLogService.updateTaskStatus(taskId, { status: 'ANALYZING_DESIGN', hasError: false });
+    TaskLogService.updateTaskStatus(taskId, { status: 'ANALYZING_DESIGN', checkpoint: undefined, hasError: false });
 
     // Prepare high-contrast 2x2 grid image for vision analysis & UI preview
     let imageBase64: string | null = null;
@@ -331,7 +331,7 @@ export class UpdatePipelineService {
       return { success: false, error: err };
     }
 
-    TaskLogService.updateTaskStatus(taskId, { status: 'GENERATING_LISTING', hasError: false });
+    TaskLogService.updateTaskStatus(taskId, { status: 'GENERATING_LISTING', checkpoint: undefined, hasError: false });
 
     // Check if rewrite is skipped
     if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
@@ -493,7 +493,7 @@ export class UpdatePipelineService {
     const task = this.getTask(taskId);
     if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
 
-    TaskLogService.updateTaskStatus(taskId, { status: 'CHECKING_TRADEMARKS', hasError: false });
+    TaskLogService.updateTaskStatus(taskId, { status: 'CHECKING_TRADEMARKS', checkpoint: undefined, hasError: false });
 
     const rawListing = task.listingResult?.en || task.payload?.listing || {};
     const listing: EnglishListing = {
@@ -671,7 +671,7 @@ export class UpdatePipelineService {
       return { success: true, fullListings: sanitized };
     }
 
-    TaskLogService.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', hasError: false });
+    TaskLogService.updateTaskStatus(taskId, { status: 'TRANSLATING_LISTING', checkpoint: undefined, hasError: false });
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
@@ -723,6 +723,7 @@ export class UpdatePipelineService {
     if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
 
     try {
+      TaskLogService.updateTaskStatus(taskId, { status: 'FINALIZING', checkpoint: undefined, hasError: false, inQueue: false });
       const { FinalizationService } = await import('./finalizationService');
       return await FinalizationService.finalizeForQueue(this.finalizationParams(task));
     } catch (err: any) {

@@ -33,6 +33,7 @@ export interface TaskStatusInfo {
 
 export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatusInfo => {
   const isUpdate = task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U');
+  const hasRejection = Boolean((task as any).payload?.hasRejection);
 
   // 1. Error state
   if (task.hasError || task.status === 'ERROR') {
@@ -45,18 +46,6 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
       category: 'ERROR',
       icon: <AlertCircle className="w-3 h-3 text-rose-400" />,
       isAnimated: false
-    };
-  }
-
-  // 1.5 Amazon Rejection Detected (Special priority for update tasks)
-  if (task.payload?.hasRejection && task.status !== 'COMPLETED' && task.status !== 'UPDATE_QUEUED') {
-    return {
-      label: '⚠️ Amazon Rejection',
-      badgeClass: 'bg-rose-500/20 text-rose-200 border-rose-500/50 font-bold shadow-sm animate-pulse',
-      dotBg: 'bg-rose-500',
-      category: 'ERROR',
-      icon: <AlertTriangle className="w-3 h-3 text-rose-400" />,
-      isAnimated: true
     };
   }
 
@@ -85,15 +74,25 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
     };
   }
 
+  // 3. Finalizing State
   if (task.status === 'FINALIZING') {
-    return { label: 'Listing & Druckdateien finalisieren…', badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
-      dotBg: 'bg-cyan-400', category: 'SYSTEM', icon: <RefreshCw className="w-3 h-3 animate-spin" />, isAnimated: true };
+    return {
+      label: isUpdate ? '[U7/7] Finalisieren…' : 'Listing & Druckdateien finalisieren…',
+      badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+      dotBg: 'bg-cyan-400',
+      category: 'SYSTEM',
+      icon: <RefreshCw className="w-3 h-3 animate-spin" />,
+      isAnimated: true
+    };
   }
 
-  // 3. Completion alone is not evidence of queue handoff.
+  // 4. Completion / Enqueued
   if (task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED') {
+    const inQueue = task.inQueue || task.status === 'UPDATE_QUEUED';
     return {
-      label: task.inQueue || task.status === 'UPDATE_QUEUED' ? (isUpdate ? 'In Queue (Update) ✓' : 'In Queue übergeben ✓') : 'Abgeschlossen – Queue-Übergabe offen',
+      label: inQueue
+        ? (isUpdate ? '[U7/7] In Queue übergeben ✓' : 'In Queue übergeben ✓')
+        : (isUpdate ? '[U7/7] Abgeschlossen – Queue-Übergabe offen' : 'Abgeschlossen – Queue-Übergabe offen'),
       badgeClass: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 font-semibold',
       dotBg: 'bg-emerald-400',
       category: 'SYSTEM',
@@ -102,7 +101,165 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
     };
   }
 
-  // 4. Human-in-the-Loop Checkpoints (Awaiting User Action)
+  // 5. Active Pipeline Processing Steps (PRIORITIZED over checkpoints!)
+  // Guarantees active steps (e.g. CHECKING_TRADEMARKS) never get shadowed as waiting.
+  const rejPrefix = hasRejection ? '⚠️ ' : '';
+
+  if (task.status === 'UPDATE_DOWNLOADING_ARTWORK') {
+    return {
+      label: `${rejPrefix}[U2/7] Artwork Download...`,
+      badgeClass: 'bg-teal-500/15 text-teal-300 border-teal-500/30 animate-pulse',
+      dotBg: 'bg-teal-400',
+      category: 'SYSTEM',
+      icon: <RefreshCw className="w-3 h-3 text-teal-400 animate-spin" />,
+      isAnimated: true
+    };
+  }
+
+  if (task.status === 'UPDATE_ARTWORK_READY') {
+    return {
+      label: `${rejPrefix}[U2/7] Artwork geladen`,
+      badgeClass: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
+      dotBg: 'bg-teal-400',
+      category: 'SYSTEM',
+      icon: <CheckCircle2 className="w-3 h-3 text-teal-400" />,
+      isAnimated: false
+    };
+  }
+
+  if (task.status === 'GENERATING_IMAGE') {
+    return {
+      label: 'Bildgenerierung...',
+      badgeClass: 'bg-purple-500/15 text-purple-300 border-purple-500/30 animate-pulse',
+      dotBg: 'bg-purple-400',
+      category: 'IDEOGRAM',
+      icon: <Sparkles className="w-3 h-3 text-purple-400 animate-pulse" />,
+      isAnimated: true
+    };
+  }
+
+  if (task.status === 'ANALYZING_DESIGN') {
+    return {
+      label: isUpdate ? `${rejPrefix}[U3/7] Vision & Audit...` : 'Vision-Analyse...',
+      badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30 animate-pulse',
+      dotBg: 'bg-cyan-400',
+      category: 'OPENROUTER',
+      icon: <Eye className="w-3 h-3 text-cyan-400 animate-pulse" />,
+      isAnimated: true
+    };
+  }
+
+  if (task.status === 'GENERATING_LISTING' || task.status === 'UPDATE_REWRITING') {
+    return {
+      label: isUpdate ? `${rejPrefix}[U4/7] Listing Rewrite...` : 'Listing-Erstellung...',
+      badgeClass: 'bg-sky-500/15 text-sky-300 border-sky-500/30 animate-pulse',
+      dotBg: 'bg-sky-400',
+      category: 'OPENROUTER',
+      icon: <FileText className="w-3 h-3 text-sky-400 animate-pulse" />,
+      isAnimated: true
+    };
+  }
+
+  if (task.status === 'UPDATE_REWRITTEN') {
+    return {
+      label: `${rejPrefix}[U4/7] Listing optimiert`,
+      badgeClass: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
+      dotBg: 'bg-sky-400',
+      category: 'OPENROUTER',
+      icon: <CheckCircle2 className="w-3 h-3 text-sky-400" />,
+      isAnimated: false
+    };
+  }
+
+  if (task.status === 'CHECKING_TRADEMARKS') {
+    return {
+      label: isUpdate ? `${rejPrefix}[U5/7] TM-Prüfung...` : 'Trademark-Prüfung...',
+      badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30 animate-pulse',
+      dotBg: 'bg-amber-400',
+      category: 'TRADEMARK',
+      icon: <ShieldCheck className="w-3 h-3 text-amber-400 animate-pulse" />,
+      isAnimated: true
+    };
+  }
+
+  if (task.status === 'UPDATE_TM_CHECKED') {
+    return {
+      label: `${rejPrefix}[U5/7] TM geprüft`,
+      badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+      dotBg: 'bg-amber-400',
+      category: 'TRADEMARK',
+      icon: <CheckCircle2 className="w-3 h-3 text-amber-400" />,
+      isAnimated: false
+    };
+  }
+
+  if (task.status === 'TRANSLATING_LISTING') {
+    return {
+      label: isUpdate ? `${rejPrefix}[U6/7] Übersetzung (DE/FR/ES)...` : 'Übersetzung (DE/FR/ES)...',
+      badgeClass: 'bg-sky-500/15 text-sky-300 border-sky-500/30 animate-pulse',
+      dotBg: 'bg-sky-400',
+      category: 'OPENROUTER',
+      icon: <Globe className="w-3 h-3 text-sky-400 animate-pulse" />,
+      isAnimated: true
+    };
+  }
+
+  if (task.status === 'UPDATE_TRANSLATED') {
+    return {
+      label: `${rejPrefix}[U6/7] Übersetzungen bereit`,
+      badgeClass: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
+      dotBg: 'bg-sky-400',
+      category: 'OPENROUTER',
+      icon: <CheckCircle2 className="w-3 h-3 text-sky-400" />,
+      isAnimated: false
+    };
+  }
+
+  if (task.status === 'VECTORIZING_DESIGN') {
+    return {
+      label: 'Vektorisierung...',
+      badgeClass: 'bg-pink-500/15 text-pink-300 border-pink-500/30 animate-pulse',
+      dotBg: 'bg-pink-400',
+      category: 'VECTORIZE',
+      icon: <Palette className="w-3 h-3 text-pink-400 animate-pulse" />,
+      isAnimated: true
+    };
+  }
+
+  if (task.status === 'PROCESSING') {
+    return {
+      label: isUpdate ? `${rejPrefix}[U2/7] Artwork Download...` : 'OpenRouter Prompt...',
+      badgeClass: 'bg-sky-500/15 text-sky-300 border-sky-500/30 animate-pulse',
+      dotBg: 'bg-sky-400',
+      category: 'OPENROUTER',
+      icon: isUpdate ? <RefreshCw className="w-3 h-3 text-teal-400 animate-spin" /> : <Bot className="w-3 h-3 text-sky-400" />,
+      isAnimated: true
+    };
+  }
+
+  if (task.status === 'UPDATE_EXTRACTED') {
+    return {
+      label: `${rejPrefix}[U1/7] Rohdaten erfasst`,
+      badgeClass: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
+      dotBg: 'bg-teal-400',
+      category: 'SYSTEM',
+      icon: <Database className="w-3 h-3 text-teal-400" />,
+      isAnimated: false
+    };
+  }
+
+  if (task.status === 'PROMPT_READY') {
+    return {
+      label: 'Prompt bereit',
+      badgeClass: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
+      dotBg: 'bg-sky-400',
+      category: 'OPENROUTER',
+      icon: <CheckCircle2 className="w-3 h-3 text-sky-400" />,
+      isAnimated: false
+    };
+  }
+
+  // 6. Human-in-the-Loop Checkpoints (Awaiting User Action)
   if (task.status === 'AWAITING_PRE_FLIGHT_REVIEW' || task.checkpoint === 'PRE_FLIGHT') {
     return {
       label: 'Wartet: Quote TM',
@@ -114,20 +271,23 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
     };
   }
 
-  if (task.status === 'AWAITING_DESIGN_REVIEW' || task.checkpoint === 'DESIGN_REVIEW' || task.status === 'UPDATE_ANALYZED') {
+  if (task.status === 'AWAITING_DESIGN_REVIEW' || task.status === 'UPDATE_ANALYZED' || task.checkpoint === 'DESIGN_REVIEW') {
+    const isRejection = isUpdate && hasRejection;
     return {
-      label: isUpdate ? 'Wartet: Update-Review' : 'Wartet: Design-Review',
-      badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-semibold shadow-sm',
-      dotBg: 'bg-cyan-400',
-      category: 'OPENROUTER',
-      icon: <Sliders className="w-3 h-3 text-cyan-400" />,
-      isAnimated: false
+      label: isUpdate ? (isRejection ? '⚠️ [U3/7] Rejection-Review' : '[U3/7] Wartet: Update-Review') : 'Wartet: Design-Review',
+      badgeClass: isRejection
+        ? 'bg-rose-500/20 text-rose-200 border-rose-500/50 font-bold shadow-sm animate-pulse'
+        : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-semibold shadow-sm',
+      dotBg: isRejection ? 'bg-rose-500' : 'bg-cyan-400',
+      category: isRejection ? 'ERROR' : 'OPENROUTER',
+      icon: isRejection ? <AlertTriangle className="w-3 h-3 text-rose-400" /> : <Sliders className="w-3 h-3 text-cyan-400" />,
+      isAnimated: isRejection
     };
   }
 
   if (task.status === 'AWAITING_TM_REVIEW' || task.checkpoint === 'TM_REVIEW') {
     return {
-      label: 'Wartet: TM-Review',
+      label: isUpdate ? '[U5/7] Wartet: TM-Review' : 'Wartet: TM-Review',
       badgeClass: 'bg-purple-500/20 text-purple-300 border-purple-500/40 font-semibold shadow-sm',
       dotBg: 'bg-purple-400',
       category: 'TRADEMARK',
@@ -158,164 +318,20 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
     };
   }
 
-  // 5. Active Pipeline Processing Steps
-  if (task.status === 'UPDATE_DOWNLOADING_ARTWORK') {
+  // 7. Initial / Fallback State
+  if (hasRejection) {
     return {
-      label: 'Artwork Download...',
-      badgeClass: 'bg-teal-500/15 text-teal-300 border-teal-500/30 animate-pulse',
-      dotBg: 'bg-teal-400',
-      category: 'SYSTEM',
-      icon: <RefreshCw className="w-3 h-3 text-teal-400 animate-spin" />,
+      label: '⚠️ Amazon Rejection',
+      badgeClass: 'bg-rose-500/20 text-rose-200 border-rose-500/50 font-bold shadow-sm animate-pulse',
+      dotBg: 'bg-rose-500',
+      category: 'ERROR',
+      icon: <AlertTriangle className="w-3 h-3 text-rose-400" />,
       isAnimated: true
     };
   }
 
-  if (task.status === 'UPDATE_ARTWORK_READY') {
-    return {
-      label: 'Artwork geladen',
-      badgeClass: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
-      dotBg: 'bg-teal-400',
-      category: 'SYSTEM',
-      icon: <CheckCircle2 className="w-3 h-3 text-teal-400" />,
-      isAnimated: false
-    };
-  }
-
-  if (task.status === 'GENERATING_IMAGE') {
-    return {
-      label: 'Bildgenerierung...',
-      badgeClass: 'bg-purple-500/15 text-purple-300 border-purple-500/30 animate-pulse',
-      dotBg: 'bg-purple-400',
-      category: 'IDEOGRAM',
-      icon: <Sparkles className="w-3 h-3 text-purple-400 animate-pulse" />,
-      isAnimated: true
-    };
-  }
-
-  if (task.status === 'ANALYZING_DESIGN') {
-    return {
-      label: isUpdate ? 'Vision & Audit...' : 'Vision-Analyse...',
-      badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30 animate-pulse',
-      dotBg: 'bg-cyan-400',
-      category: 'OPENROUTER',
-      icon: <Eye className="w-3 h-3 text-cyan-400 animate-pulse" />,
-      isAnimated: true
-    };
-  }
-
-  if (task.status === 'GENERATING_LISTING' || task.status === 'UPDATE_REWRITING') {
-    return {
-      label: isUpdate ? 'Listing Rewrite...' : 'Listing-Erstellung...',
-      badgeClass: 'bg-sky-500/15 text-sky-300 border-sky-500/30 animate-pulse',
-      dotBg: 'bg-sky-400',
-      category: 'OPENROUTER',
-      icon: <FileText className="w-3 h-3 text-sky-400 animate-pulse" />,
-      isAnimated: true
-    };
-  }
-
-  if (task.status === 'UPDATE_REWRITTEN') {
-    return {
-      label: 'Listing optimiert',
-      badgeClass: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
-      dotBg: 'bg-sky-400',
-      category: 'OPENROUTER',
-      icon: <CheckCircle2 className="w-3 h-3 text-sky-400" />,
-      isAnimated: false
-    };
-  }
-
-  if (task.status === 'CHECKING_TRADEMARKS') {
-    return {
-      label: 'Trademark-Prüfung...',
-      badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30 animate-pulse',
-      dotBg: 'bg-amber-400',
-      category: 'TRADEMARK',
-      icon: <ShieldCheck className="w-3 h-3 text-amber-400 animate-pulse" />,
-      isAnimated: true
-    };
-  }
-
-  if (task.status === 'UPDATE_TM_CHECKED') {
-    return {
-      label: 'TM geprüft',
-      badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
-      dotBg: 'bg-amber-400',
-      category: 'TRADEMARK',
-      icon: <CheckCircle2 className="w-3 h-3 text-amber-400" />,
-      isAnimated: false
-    };
-  }
-
-  if (task.status === 'TRANSLATING_LISTING') {
-    return {
-      label: 'Übersetzung (DE/FR/ES)...',
-      badgeClass: 'bg-sky-500/15 text-sky-300 border-sky-500/30 animate-pulse',
-      dotBg: 'bg-sky-400',
-      category: 'OPENROUTER',
-      icon: <Globe className="w-3 h-3 text-sky-400 animate-pulse" />,
-      isAnimated: true
-    };
-  }
-
-  if (task.status === 'UPDATE_TRANSLATED') {
-    return {
-      label: 'Übersetzungen bereit',
-      badgeClass: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
-      dotBg: 'bg-sky-400',
-      category: 'OPENROUTER',
-      icon: <CheckCircle2 className="w-3 h-3 text-sky-400" />,
-      isAnimated: false
-    };
-  }
-
-  if (task.status === 'VECTORIZING_DESIGN') {
-    return {
-      label: 'Vektorisierung...',
-      badgeClass: 'bg-pink-500/15 text-pink-300 border-pink-500/30 animate-pulse',
-      dotBg: 'bg-pink-400',
-      category: 'VECTORIZE',
-      icon: <Palette className="w-3 h-3 text-pink-400 animate-pulse" />,
-      isAnimated: true
-    };
-  }
-
-  if (task.status === 'PROCESSING') {
-    return {
-      label: isUpdate ? 'Artwork Download...' : 'OpenRouter Prompt...',
-      badgeClass: 'bg-sky-500/15 text-sky-300 border-sky-500/30 animate-pulse',
-      dotBg: 'bg-sky-400',
-      category: 'OPENROUTER',
-      icon: isUpdate ? <RefreshCw className="w-3 h-3 text-teal-400 animate-spin" /> : <Bot className="w-3 h-3 text-sky-400" />,
-      isAnimated: true
-    };
-  }
-
-  if (task.status === 'UPDATE_EXTRACTED') {
-    return {
-      label: 'Rohdaten erfasst',
-      badgeClass: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
-      dotBg: 'bg-teal-400',
-      category: 'SYSTEM',
-      icon: <Database className="w-3 h-3 text-teal-400" />,
-      isAnimated: false
-    };
-  }
-
-  if (task.status === 'PROMPT_READY') {
-    return {
-      label: 'Prompt bereit',
-      badgeClass: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
-      dotBg: 'bg-sky-400',
-      category: 'OPENROUTER',
-      icon: <CheckCircle2 className="w-3 h-3 text-sky-400" />,
-      isAnimated: false
-    };
-  }
-
-  // Fallback / Initial State
   return {
-    label: isUpdate ? 'Update initiiert' : 'Task empfangen',
+    label: isUpdate ? '[U1/7] Update initiiert' : 'Task empfangen',
     badgeClass: 'bg-slate-800 text-slate-300 border-slate-700',
     dotBg: 'bg-slate-400',
     category: 'SYSTEM',
