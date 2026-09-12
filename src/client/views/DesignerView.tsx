@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ChevronRight, Eraser, RefreshCw, Send, Sparkles, Tag, Type, Wand2 } from 'lucide-react';
 import type { ActiveTab } from '../components/Sidebar';
 
-type ImageProvider = 'IDEOGRAM' | 'GPT_IMAGE_2';
+type ImageProvider = 'IDEOGRAM' | 'IDEOGRAM_V4' | 'GPT_IMAGE_2';
 type SuggestionField = 'niche1' | 'niche2' | 'subniche' | 'quote' | 'style';
 type FormValues = Record<SuggestionField, string>;
 type SuggestionHistory = Record<SuggestionField, string[]>;
@@ -55,7 +55,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
         const settings = settingsData.settings || {};
         setProviderSettings(settings);
         setPromptPoolEnabled(Boolean(settings.designerPromptPoolEnabled));
-        setImageProvider(settings.designerImageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM');
+        setImageProvider(settings.designerImageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : settings.designerImageProvider === 'IDEOGRAM_V4' ? 'IDEOGRAM_V4' : 'IDEOGRAM');
         setSuggestionModel(settings.designerSuggestionModel || '');
         providerSettingsLoaded.current = true;
       }
@@ -176,7 +176,16 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
 
   const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
     ? `${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${providerSettings.gptImageBackground === 'transparent' ? 'FREISTELLUNG (DEEP BLUE)' : String(providerSettings.gptImageBackground || 'opaque').toUpperCase()}`
+    : imageProvider === 'IDEOGRAM_V4'
+    ? `V_4 · ${providerSettings.ideogramV4AspectRatio || '10x16'} · ${providerSettings.ideogramV4Transparent !== false ? 'TRANSPARENT' : 'OPAQUE'} · Magic Prompt ${providerSettings.ideogramV4MagicPrompt !== false ? 'ON' : 'OFF'}`
     : `${providerSettings.ideogramModel || 'V_3'} · ${providerSettings.ideogramAspectRatio || '10x16'} · Magic Prompt ${providerSettings.ideogramMagicPromptOption || 'AUTO'}`;
+
+  const providerLabels: Record<ImageProvider, string> = {
+    IDEOGRAM: 'Ideogram 3.0',
+    IDEOGRAM_V4: 'Ideogram 4.0',
+    GPT_IMAGE_2: 'GPT Image 2'
+  };
+
   const fields: Array<{ key: SuggestionField; label: string; placeholder: string; icon: React.ReactNode }> = [
     { key: 'niche1', label: 'Niche 1', placeholder: 'z. B. Gardening', icon: <Tag className="w-3.5 h-3.5 text-primary-400" /> },
     { key: 'niche2', label: 'Cross-Nische', placeholder: 'z. B. Cats', icon: <Tag className="w-3.5 h-3.5 text-accent-cyan" /> },
@@ -192,11 +201,11 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
     </div>
 
     <div className="glass-card p-5 rounded-2xl border border-primary-500/30 bg-gradient-to-r from-primary-950/30 via-slate-950/80 to-emerald-950/20">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {(['IDEOGRAM', 'GPT_IMAGE_2'] as ImageProvider[]).map(provider => <button key={provider} type="button" onClick={() => setImageProvider(provider)} aria-pressed={imageProvider === provider}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {(['IDEOGRAM', 'IDEOGRAM_V4', 'GPT_IMAGE_2'] as ImageProvider[]).map(provider => <button key={provider} type="button" onClick={() => setImageProvider(provider)} aria-pressed={imageProvider === provider}
           className={`rounded-xl border px-4 py-3 text-left transition-all ${imageProvider === provider ? 'border-primary-400/70 bg-primary-500/20' : 'border-slate-700 bg-slate-900/70 hover:border-slate-600'}`}>
-          <div className="text-sm font-bold text-slate-100">{provider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0'}</div>
-          <div className="text-[10px] text-slate-400 mt-1">{provider === imageProvider ? effectiveSettings : provider === 'GPT_IMAGE_2' ? 'via OpenRouter' : 'Ideogram API'}</div>
+          <div className="text-sm font-bold text-slate-100">{providerLabels[provider]}</div>
+          <div className="text-[10px] text-slate-400 mt-1">{provider === imageProvider ? effectiveSettings : provider === 'GPT_IMAGE_2' ? 'via OpenRouter' : provider === 'IDEOGRAM_V4' ? 'Ideogram V4 API' : 'Ideogram API'}</div>
         </button>)}
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -255,7 +264,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
           className="sm:w-36 py-3 rounded-xl border border-slate-700 text-sm font-bold text-slate-300 hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2"><Eraser className="w-4 h-4" />Leeren</button>
         <button type="button" onClick={handleGenerate} disabled={isGenerating || Boolean(loadingField) || !values.niche1.trim()}
           className="flex-1 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-primary-600 to-accent-cyan text-white shadow-lg shadow-primary-500/25 disabled:opacity-50 flex items-center justify-center gap-2">
-          {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{isGenerating ? 'Task wird angelegt …' : `Design mit ${imageProvider === 'GPT_IMAGE_2' ? 'GPT Image 2' : 'Ideogram 3.0'}`}
+          {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{isGenerating ? 'Task wird angelegt …' : `Design mit ${providerLabels[imageProvider]}`}
         </button>
       </div>
     </div>

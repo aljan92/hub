@@ -50974,8 +50974,8 @@ function generateApiKey() {
   return `mba_${import_crypto2.default.randomBytes(20).toString("hex")}`;
 }
 function resolveImageProvider(requestedProvider, configuredProvider) {
-  if (requestedProvider === "GPT_IMAGE_2" || requestedProvider === "IDEOGRAM") return requestedProvider;
-  return configuredProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM";
+  if (requestedProvider === "GPT_IMAGE_2" || requestedProvider === "IDEOGRAM_V4" || requestedProvider === "IDEOGRAM") return requestedProvider;
+  return configuredProvider === "GPT_IMAGE_2" || configuredProvider === "IDEOGRAM_V4" ? configuredProvider : "IDEOGRAM";
 }
 function getSettingsFilePath() {
   const dataDir = import_path68.default.resolve(process.cwd(), "data");
@@ -51086,6 +51086,12 @@ var init_settingsService = __esm2({
       ideogramAspectRatio: "10x16",
       ideogramStyle: "GENERAL",
       ideogramMagicPromptOption: "AUTO",
+      ideogramV4ApiKey: "",
+      ideogramV4MagicPrompt: true,
+      ideogramV4Transparent: true,
+      ideogramV4RenderingSpeed: "DEFAULT",
+      ideogramV4AspectRatio: "10x16",
+      ideogramV4OutputResolution: "DEFAULT",
       gptImageQuality: "high",
       gptImageAspectRatio: "3:4",
       gptImageBackground: "transparent",
@@ -54643,7 +54649,7 @@ var init_llmService = __esm2({
        */
       static async generateIdeogramPrompt(niche1, niche2, quote5, stylePreset, imageProvider = "IDEOGRAM", background = "opaque") {
         const { url, headers, model } = this.getBaseUrlAndHeaders();
-        const providerName = imageProvider === "GPT_IMAGE_2" ? "OpenAI GPT Image 2" : "Ideogram 3.0";
+        const providerName = imageProvider === "GPT_IMAGE_2" ? "OpenAI GPT Image 2" : imageProvider === "IDEOGRAM_V4" ? "Ideogram 4.0" : "Ideogram 3.0";
         const backgroundInstruction = background === "transparent" && imageProvider === "GPT_IMAGE_2" ? "Request a perfectly uniform, flat, solid deep blue chroma-key background behind the isolated artwork. Reserve deep blue exclusively for that removable background: never use it in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decoration. Do not request transparency and do not draw a checkerboard or transparency-grid pattern." : background === "transparent" ? "Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, or background texture." : background === "auto" ? "Keep the design isolated with no mockup, shirt, person, or realistic scene; allow the image provider to choose the background treatment." : "Request an isolated design on a clean, flat, solid contrasting background with no mockup, shirt, person, or realistic scene.";
         const systemPrompt = `You are an expert prompt engineer specializing in ${providerName} T-shirt graphics for Merch by Amazon.
 Your goal is to craft a highly descriptive, visually stunning, clean vector prompt that produces high-converting apparel designs.
@@ -55573,6 +55579,181 @@ var init_ideogramService = __esm2({
         return {
           imageUrl,
           prompt: data?.data?.[0]?.prompt || options2.prompt
+        };
+      }
+    };
+  }
+});
+
+// src/server/services/ideogramV4Service.ts
+var IdeogramV4Service;
+var init_ideogramV4Service = __esm2({
+  "src/server/services/ideogramV4Service.ts"() {
+    "use strict";
+    init_settingsService();
+    IdeogramV4Service = class {
+      /**
+       * Resolve effective API key: specific V4 key if set, otherwise fallback to global Ideogram key.
+       */
+      static getApiKey(customKey) {
+        const settings = loadSettings();
+        const key = (customKey || settings.ideogramV4ApiKey || settings.ideogramApiKey || "").trim();
+        if (!key) {
+          throw new Error("Ideogram API Token fehlt in den Einstellungen (weder bei Ideogram 4.0 noch bei Ideogram 3.0 hinterlegt).");
+        }
+        return key;
+      }
+      /**
+       * Test Ideogram API connection (0 credits consumed)
+       */
+      static async testConnection(customKey) {
+        const start3 = Date.now();
+        try {
+          const key = this.getApiKey(customKey);
+          const res = await fetch("https://api.ideogram.ai/models", {
+            method: "GET",
+            headers: {
+              "Api-Key": key
+            },
+            signal: AbortSignal.timeout(15e3)
+          });
+          const latencyMs = Date.now() - start3;
+          if (res.ok) {
+            return {
+              success: true,
+              latencyMs,
+              details: "Ideogram 4.0 API-Token verifiziert (0 Credits verbraucht) \u2713"
+            };
+          }
+          if (res.status === 401 || res.status === 403) {
+            const data = await res.json().catch(() => ({}));
+            return {
+              success: false,
+              latencyMs,
+              error: data?.message || "Ung\xFCltiger Ideogram API Key (401 Unauthorized)."
+            };
+          }
+          return { success: false, latencyMs, error: `Ideogram API Status: HTTP ${res.status}` };
+        } catch (err) {
+          return {
+            success: false,
+            latencyMs: Date.now() - start3,
+            error: err.message || "Timeout bei der Verbindung zu Ideogram"
+          };
+        }
+      }
+      /**
+       * Generate structured Magic Prompt with Ideogram 4.0
+       * POST https://api.ideogram.ai/v1/ideogram-v4/magic-prompt
+       */
+      static async generateMagicPrompt(options2) {
+        const key = options2.apiKey || this.getApiKey();
+        const cleanRatio = (options2.aspectRatio || "10x16").replace(":", "x");
+        const res = await fetch("https://api.ideogram.ai/v1/ideogram-v4/magic-prompt", {
+          method: "POST",
+          headers: {
+            "Api-Key": key,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            text_prompt: options2.textPrompt,
+            aspect_ratio: cleanRatio === "AUTO" ? "AUTO" : cleanRatio
+          }),
+          signal: AbortSignal.timeout(6e4)
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          throw new Error(`Ideogram V4 Magic Prompt Fehler (${res.status}): ${errText || res.statusText}`);
+        }
+        const data = await res.json();
+        const jsonPrompt = data?.json_prompt || data?.magic_prompts?.[0]?.json_prompt || data?.data?.[0]?.json_prompt;
+        if (!jsonPrompt) {
+          throw new Error("Ideogram V4 Magic Prompt lieferte kein g\xFCltiges json_prompt zur\xFCck.");
+        }
+        return {
+          json_prompt: jsonPrompt,
+          aspect_ratio: data.aspect_ratio || data?.magic_prompts?.[0]?.aspect_ratio || data?.data?.[0]?.aspect_ratio || cleanRatio
+        };
+      }
+      /**
+       * Synchronous Image Generation with Ideogram 4.0
+       * Supports:
+       * 1. Magic Prompt pre-pass (if enabled)
+       * 2. Transparent Background endpoint (POST /generate-transparent) vs Standard (POST /generate)
+       */
+      static async generateImage(options2) {
+        const settings = loadSettings();
+        const key = this.getApiKey(options2.customApiKey || options2.apiKey);
+        const magicPromptEnabled = options2.magicPromptEnabled !== void 0 ? options2.magicPromptEnabled : options2.magicPrompt !== void 0 ? options2.magicPrompt : settings.ideogramV4MagicPrompt;
+        const transparent = options2.transparent !== void 0 ? options2.transparent : settings.ideogramV4Transparent;
+        const cleanRatio = (options2.aspectRatio || settings.ideogramV4AspectRatio || "10x16").replace(":", "x");
+        const renderingSpeed = options2.renderingSpeed || settings.ideogramV4RenderingSpeed || "DEFAULT";
+        const outputResolution = options2.outputResolution || settings.ideogramV4OutputResolution || "DEFAULT";
+        let magicResult;
+        let effectiveRatio = cleanRatio;
+        if (magicPromptEnabled) {
+          magicResult = await this.generateMagicPrompt({
+            textPrompt: options2.prompt,
+            aspectRatio: cleanRatio,
+            apiKey: key
+          });
+          if (magicResult.aspect_ratio && magicResult.aspect_ratio !== "AUTO") {
+            effectiveRatio = magicResult.aspect_ratio;
+          }
+        }
+        const formData = new FormData();
+        if (magicResult?.json_prompt) {
+          formData.append("json_prompt", JSON.stringify(magicResult.json_prompt));
+        } else {
+          formData.append("text_prompt", options2.prompt);
+        }
+        formData.append("rendering_speed", renderingSpeed);
+        if (options2.enableCopyrightDetection) {
+          formData.append("enable_copyright_detection", "true");
+        }
+        const endpoint = transparent ? "https://api.ideogram.ai/v1/ideogram-v4/generate-transparent" : "https://api.ideogram.ai/v1/ideogram-v4/generate";
+        if (transparent) {
+          formData.append("aspect_ratio", effectiveRatio);
+          if (outputResolution && outputResolution !== "DEFAULT") {
+            formData.append("output_resolution", outputResolution);
+          }
+        } else {
+          if (effectiveRatio && effectiveRatio !== "AUTO") {
+            formData.append("resolution", effectiveRatio);
+          }
+        }
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Api-Key": key
+          },
+          body: formData,
+          signal: AbortSignal.timeout(18e4)
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          throw new Error(`Ideogram V4 Generate Fehler (${res.status}): ${errText || res.statusText}`);
+        }
+        const data = await res.json();
+        const imgObj = data?.data?.[0];
+        const imageUrl = imgObj?.url;
+        if (!imageUrl) {
+          throw new Error("Ideogram V4 lieferte keine Bild-URL zur\xFCck.");
+        }
+        const imgFetch = await fetch(imageUrl, { signal: AbortSignal.timeout(6e4) });
+        if (!imgFetch.ok) {
+          throw new Error(`Konnte generiertes Ideogram V4 Bild nicht herunterladen (HTTP ${imgFetch.status}).`);
+        }
+        const bytes = Buffer.from(await imgFetch.arrayBuffer());
+        return {
+          imageUrl,
+          bytes,
+          promptUsed: imgObj?.prompt || options2.prompt,
+          resolution: imgObj?.resolution,
+          seed: imgObj?.seed,
+          magicPromptUsed: Boolean(magicResult),
+          magicPromptResult: magicResult,
+          isTransparent: Boolean(transparent)
         };
       }
     };
@@ -226580,7 +226761,7 @@ var init_updatePipelineService = __esm2({
           });
           return { success: true, localUrl: `/api/v1/designs/artwork/${encodeURIComponent(taskId)}` };
         }
-        TaskLogService.updateTaskStatus(taskId, { status: "UPDATE_DOWNLOADING_ARTWORK", hasError: false });
+        TaskLogService.updateTaskStatus(taskId, { status: "UPDATE_DOWNLOADING_ARTWORK", checkpoint: void 0, hasError: false });
         const res = await AmazonInspectService.downloadDesignArtwork(taskId, designId);
         if (!res.success) {
           TaskLogService.updateTaskStatus(taskId, {
@@ -226628,7 +226809,7 @@ var init_updatePipelineService = __esm2({
           TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
-        TaskLogService.updateTaskStatus(taskId, { status: "ANALYZING_DESIGN", hasError: false });
+        TaskLogService.updateTaskStatus(taskId, { status: "ANALYZING_DESIGN", checkpoint: void 0, hasError: false });
         let imageBase64 = null;
         let gridPreviewUrl;
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -226798,7 +226979,7 @@ Bullets: ${oldBullets}`
           TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: err });
           return { success: false, error: err };
         }
-        TaskLogService.updateTaskStatus(taskId, { status: "GENERATING_LISTING", hasError: false });
+        TaskLogService.updateTaskStatus(taskId, { status: "GENERATING_LISTING", checkpoint: void 0, hasError: false });
         if (task.analysisResult && task.analysisResult.rewriteNeeded === false) {
           console.log(`[UpdatePipeline] \u23ED\uFE0F Step U4 wird \xFCbersprungen (rewriteNeeded ist false). Verwende altes Listing.`);
           const raw2 = task.payload || {};
@@ -226935,7 +227116,7 @@ Bullets: ${oldBullets}`
         console.log(`[UpdatePipeline] \u2696\uFE0F Starte Step U5 (Trademark Check Loop) f\xFCr Task ${taskId}...`);
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
-        TaskLogService.updateTaskStatus(taskId, { status: "CHECKING_TRADEMARKS", hasError: false });
+        TaskLogService.updateTaskStatus(taskId, { status: "CHECKING_TRADEMARKS", checkpoint: void 0, hasError: false });
         const rawListing = task.listingResult?.en || task.payload?.listing || {};
         const listing = {
           brand: rawListing.brand || task.payload?.brand || "",
@@ -227093,7 +227274,7 @@ Bullets: ${oldBullets}`
           });
           return { success: true, fullListings: sanitized };
         }
-        TaskLogService.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", hasError: false });
+        TaskLogService.updateTaskStatus(taskId, { status: "TRANSLATING_LISTING", checkpoint: void 0, hasError: false });
         TaskLogService.addEvent(taskId, {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           type: "TRANSLATION_REQUEST",
@@ -227136,6 +227317,7 @@ Bullets: ${oldBullets}`
         const task = this.getTask(taskId);
         if (!task) return { success: false, error: `Task ${taskId} nicht gefunden` };
         try {
+          TaskLogService.updateTaskStatus(taskId, { status: "FINALIZING", checkpoint: void 0, hasError: false, inQueue: false });
           const { FinalizationService: FinalizationService2 } = await Promise.resolve().then(() => (init_finalizationService(), finalizationService_exports));
           return await FinalizationService2.finalizeForQueue(this.finalizationParams(task));
         } catch (err) {
@@ -230659,6 +230841,7 @@ var init_taskLogService = __esm2({
     init_settingsService();
     init_systemPromptService();
     init_ideogramService();
+    init_ideogramV4Service();
     init_openRouterImageService();
     init_trademarkService();
     init_bannedWordsService();
@@ -230780,6 +230963,14 @@ var init_taskLogService = __esm2({
           quality: settings.gptImageQuality,
           aspectRatio: settings.gptImageAspectRatio,
           background: settings.gptImageBackground
+        } : requestedProvider === "IDEOGRAM_V4" ? {
+          provider: "IDEOGRAM_V4",
+          model: "V_4",
+          renderingSpeed: settings.ideogramV4RenderingSpeed || "DEFAULT",
+          aspectRatio: settings.ideogramV4AspectRatio || "10x16",
+          magicPrompt: settings.ideogramV4MagicPrompt,
+          transparent: settings.ideogramV4Transparent,
+          outputResolution: settings.ideogramV4OutputResolution
         } : {
           provider: "IDEOGRAM",
           model: settings.ideogramModel || "V_3",
@@ -231063,7 +231254,7 @@ var init_taskLogService = __esm2({
         const imageGeneration = task.imageGeneration;
         const providerDirective = imageGeneration?.provider === "GPT_IMAGE_2" ? `
 
-CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || "transparent"}. ${imageGeneration.background === "transparent" ? "Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement." : "Keep the artwork isolated and free of product mockups or scenes."}` : "\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.";
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || "transparent"}. ${imageGeneration.background === "transparent" ? "Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement." : "Keep the artwork isolated and free of product mockups or scenes."}` : imageGeneration?.provider === "IDEOGRAM_V4" ? "\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics." : "\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.";
         const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
         const referenceSection = task.promptPool?.enabled ? PromptPoolService.buildReferenceSection(task.promptPool.selectedReferences) : "";
         const userMessage = `Input:
@@ -231195,13 +231386,21 @@ ${referenceSection}` : ""}`;
       /** Keep the task's chosen provider, but refresh that provider's mutable settings for a manual rerun. */
       static refreshImageGenerationSettings(task) {
         const settings = loadSettings();
-        const provider = task.imageGeneration?.provider || task.payload?.imageGeneration?.provider || (task.payload?.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM");
+        const provider = task.imageGeneration?.provider || task.payload?.imageGeneration?.provider || (task.payload?.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : task.payload?.imageProvider === "IDEOGRAM_V4" ? "IDEOGRAM_V4" : "IDEOGRAM");
         const snapshot3 = provider === "GPT_IMAGE_2" ? {
           provider: "GPT_IMAGE_2",
           model: OpenRouterImageService.MODEL,
           quality: settings.gptImageQuality,
           aspectRatio: settings.gptImageAspectRatio,
           background: settings.gptImageBackground
+        } : provider === "IDEOGRAM_V4" ? {
+          provider: "IDEOGRAM_V4",
+          model: IdeogramV4Service.MODEL,
+          renderingSpeed: settings.ideogramV4RenderingSpeed || "DEFAULT",
+          aspectRatio: settings.ideogramV4AspectRatio || "10x16",
+          transparent: settings.ideogramV4Transparent ?? true,
+          outputResolution: settings.ideogramV4OutputResolution || "DEFAULT",
+          magicPrompt: settings.ideogramV4MagicPrompt ?? true
         } : {
           provider: "IDEOGRAM",
           model: settings.ideogramModel || "V_3",
@@ -231231,10 +231430,12 @@ ${referenceSection}` : ""}`;
         };
         const prompt = promptText || task.resultPrompt || task.payload?.prompt || task.payload?.quote || "";
         const isGptImage = snapshot3.provider === "GPT_IMAGE_2";
-        const providerLabel = isGptImage ? "GPT Image 2" : "Ideogram";
-        const model = snapshot3.model;
+        const isIdeogramV4 = snapshot3.provider === "IDEOGRAM_V4";
+        const providerLabel = isGptImage ? "GPT Image 2" : isIdeogramV4 ? "Ideogram 4.0" : "Ideogram";
+        const model = snapshot3.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? OpenRouterImageService.MODEL : "V_3");
         this.updateTaskStatus(taskId, { status: "GENERATING_IMAGE" });
-        if (isGptImage && !settings.openRouterApiKey || !isGptImage && !settings.ideogramApiKey) {
+        const ideogramKey = isIdeogramV4 ? IdeogramV4Service.getApiKey() : settings.ideogramApiKey;
+        if (isGptImage && !settings.openRouterApiKey || !isGptImage && !ideogramKey) {
           const missingKey = isGptImage ? "OpenRouter API Key" : "Ideogram API Key";
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -231258,7 +231459,9 @@ ${referenceSection}` : ""}`;
             style: snapshot3.style,
             magicPrompt: snapshot3.magicPrompt,
             quality: snapshot3.quality,
-            background: snapshot3.background
+            background: snapshot3.background,
+            transparent: snapshot3.transparent,
+            outputResolution: snapshot3.outputResolution
           },
           metadata: { model, provider: providerLabel }
         });
@@ -231282,6 +231485,17 @@ ${referenceSection}` : ""}`;
               aspectRatio: snapshot3.aspectRatio || "3:4",
               background: snapshot3.background || "transparent"
             });
+            import_fs89.default.writeFileSync(localFilePath, result2.bytes);
+          } else if (isIdeogramV4) {
+            const result2 = await IdeogramV4Service.generateImage({
+              prompt,
+              renderingSpeed: snapshot3.renderingSpeed,
+              aspectRatio: snapshot3.aspectRatio,
+              transparent: snapshot3.transparent ?? true,
+              outputResolution: snapshot3.outputResolution,
+              magicPrompt: Boolean(snapshot3.magicPrompt)
+            });
+            sourceUrl = result2.imageUrl;
             import_fs89.default.writeFileSync(localFilePath, result2.bytes);
           } else {
             const result2 = await IdeogramService.generateImage({
@@ -234355,6 +234569,7 @@ init_settingsService();
 init_trademarkService();
 init_llmService();
 init_ideogramService();
+init_ideogramV4Service();
 init_vectorizerService();
 init_supabaseService();
 init_syncEngine();
@@ -237226,7 +237441,7 @@ var DesignerService = class {
       source: "DESIGNER",
       payload: {
         ...values,
-        imageProvider: input.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : "IDEOGRAM",
+        imageProvider: input.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : input.imageProvider === "IDEOGRAM_V4" ? "IDEOGRAM_V4" : "IDEOGRAM",
         promptPoolEnabled: Boolean(input.promptPoolEnabled)
       },
       clientIp
@@ -237724,6 +237939,10 @@ app.post("/api/v1/connectors/test", async (req, res) => {
     }
     if (connector === "ideogram") {
       const result2 = await IdeogramService.testConnection(credentials?.apiKey);
+      return res.json(result2);
+    }
+    if (connector === "ideogram_v4") {
+      const result2 = await IdeogramV4Service.testConnection(credentials?.apiKey);
       return res.json(result2);
     }
     if (connector === "vectorizer") {

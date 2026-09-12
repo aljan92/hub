@@ -490,12 +490,12 @@ export class LLMService {
     niche2: string,
     quote: string,
     stylePreset: string,
-    imageProvider: 'IDEOGRAM' | 'GPT_IMAGE_2' = 'IDEOGRAM',
+    imageProvider: 'IDEOGRAM' | 'IDEOGRAM_V4' | 'GPT_IMAGE_2' = 'IDEOGRAM',
     background: 'auto' | 'opaque' | 'transparent' = 'opaque'
   ): Promise<string> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
-    const providerName = imageProvider === 'GPT_IMAGE_2' ? 'OpenAI GPT Image 2' : 'Ideogram 3.0';
+    const providerName = imageProvider === 'GPT_IMAGE_2' ? 'OpenAI GPT Image 2' : (imageProvider === 'IDEOGRAM_V4' ? 'Ideogram 4.0' : 'Ideogram 3.0');
     const backgroundInstruction = background === 'transparent' && imageProvider === 'GPT_IMAGE_2'
       ? 'Request a perfectly uniform, flat, solid deep blue chroma-key background behind the isolated artwork. Reserve deep blue exclusively for that removable background: never use it in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decoration. Do not request transparency and do not draw a checkerboard or transparency-grid pattern.'
       : background === 'transparent'

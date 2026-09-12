@@ -18,10 +18,16 @@ export interface AppSettings {
   ideogramAspectRatio: string;
   ideogramStyle: string;
   ideogramMagicPromptOption: string;
+  ideogramV4ApiKey?: string;
+  ideogramV4MagicPrompt: boolean;
+  ideogramV4Transparent: boolean;
+  ideogramV4RenderingSpeed: 'DEFAULT' | 'TURBO';
+  ideogramV4AspectRatio: string;
+  ideogramV4OutputResolution: 'DEFAULT' | '4K';
   gptImageQuality: 'auto' | 'low' | 'medium' | 'high';
   gptImageAspectRatio: '1:1' | '3:2' | '2:3' | '4:3' | '3:4' | '16:9' | '9:16' | '21:9' | 'auto';
   gptImageBackground: 'auto' | 'opaque' | 'transparent';
-  designerImageProvider: 'IDEOGRAM' | 'GPT_IMAGE_2';
+  designerImageProvider: 'IDEOGRAM' | 'IDEOGRAM_V4' | 'GPT_IMAGE_2';
   designerPromptPoolEnabled: boolean;
   vectorizerApiKey: string;
   vectorizerApiSecret: string;
@@ -82,8 +88,8 @@ export function resolveImageProvider(
   requestedProvider: unknown,
   configuredProvider: AppSettings['designerImageProvider']
 ): AppSettings['designerImageProvider'] {
-  if (requestedProvider === 'GPT_IMAGE_2' || requestedProvider === 'IDEOGRAM') return requestedProvider;
-  return configuredProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM';
+  if (requestedProvider === 'GPT_IMAGE_2' || requestedProvider === 'IDEOGRAM_V4' || requestedProvider === 'IDEOGRAM') return requestedProvider;
+  return (configuredProvider === 'GPT_IMAGE_2' || configuredProvider === 'IDEOGRAM_V4') ? configuredProvider : 'IDEOGRAM';
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -100,6 +106,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   ideogramAspectRatio: '10x16',
   ideogramStyle: 'GENERAL',
   ideogramMagicPromptOption: 'AUTO',
+  ideogramV4ApiKey: '',
+  ideogramV4MagicPrompt: true,
+  ideogramV4Transparent: true,
+  ideogramV4RenderingSpeed: 'DEFAULT',
+  ideogramV4AspectRatio: '10x16',
+  ideogramV4OutputResolution: 'DEFAULT',
   gptImageQuality: 'high',
   gptImageAspectRatio: '3:4',
   gptImageBackground: 'transparent',

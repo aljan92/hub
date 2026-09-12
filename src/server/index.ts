@@ -14,6 +14,7 @@ import { loadSettings, saveSettings, AppSettings } from './services/settingsServ
 import { TrademarkService } from './services/trademarkService';
 import { LLMService } from './services/llmService';
 import { IdeogramService } from './services/ideogramService';
+import { IdeogramV4Service } from './services/ideogramV4Service';
 import { VectorizerService } from './services/vectorizerService';
 import { SupabaseService } from './services/supabaseService';
 import { SyncEngine } from './services/syncEngine';
@@ -630,6 +631,10 @@ app.post('/api/v1/connectors/test', async (req, res) => {
     }
     if (connector === 'ideogram') {
       const result = await IdeogramService.testConnection(credentials?.apiKey);
+      return res.json(result);
+    }
+    if (connector === 'ideogram_v4') {
+      const result = await IdeogramV4Service.testConnection(credentials?.apiKey);
       return res.json(result);
     }
     if (connector === 'vectorizer') {

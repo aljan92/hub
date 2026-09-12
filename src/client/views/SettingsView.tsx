@@ -70,6 +70,13 @@ export const SettingsView: React.FC = () => {
   const [ideogramAspectRatio, setIdeogramAspectRatio] = useState<string>(initialSettings.ideogramAspectRatio || '10x16');
   const [ideogramStyle, setIdeogramStyle] = useState<string>(initialSettings.ideogramStyle || 'GENERAL');
   const [ideogramMagicPromptOption, setIdeogramMagicPromptOption] = useState<string>(initialSettings.ideogramMagicPromptOption || 'AUTO');
+
+  const [ideogramV4ApiKey, setIdeogramV4ApiKey] = useState<string>(initialSettings.ideogramV4ApiKey || '');
+  const [ideogramV4MagicPrompt, setIdeogramV4MagicPrompt] = useState<boolean>(initialSettings.ideogramV4MagicPrompt ?? true);
+  const [ideogramV4Transparent, setIdeogramV4Transparent] = useState<boolean>(initialSettings.ideogramV4Transparent ?? true);
+  const [ideogramV4RenderingSpeed, setIdeogramV4RenderingSpeed] = useState<string>(initialSettings.ideogramV4RenderingSpeed || 'DEFAULT');
+  const [ideogramV4AspectRatio, setIdeogramV4AspectRatio] = useState<string>(initialSettings.ideogramV4AspectRatio || '10x16');
+  const [ideogramV4OutputResolution, setIdeogramV4OutputResolution] = useState<string>(initialSettings.ideogramV4OutputResolution || 'DEFAULT');
   const [gptImageQuality, setGptImageQuality] = useState<'auto' | 'low' | 'medium' | 'high'>(initialSettings.gptImageQuality || 'high');
   const [gptImageAspectRatio, setGptImageAspectRatio] = useState<string>(initialSettings.gptImageAspectRatio || '3:4');
   const [gptImageBackground, setGptImageBackground] = useState<'auto' | 'opaque' | 'transparent'>(initialSettings.gptImageBackground || 'transparent');
@@ -166,6 +173,12 @@ export const SettingsView: React.FC = () => {
           setIdeogramAspectRatio(s.ideogramAspectRatio || '10x16');
           setIdeogramStyle(s.ideogramStyle || 'GENERAL');
           setIdeogramMagicPromptOption(s.ideogramMagicPromptOption || 'AUTO');
+          setIdeogramV4ApiKey(s.ideogramV4ApiKey || '');
+          setIdeogramV4MagicPrompt(s.ideogramV4MagicPrompt ?? true);
+          setIdeogramV4Transparent(s.ideogramV4Transparent ?? true);
+          setIdeogramV4RenderingSpeed(s.ideogramV4RenderingSpeed || 'DEFAULT');
+          setIdeogramV4AspectRatio(s.ideogramV4AspectRatio || '10x16');
+          setIdeogramV4OutputResolution(s.ideogramV4OutputResolution || 'DEFAULT');
           setGptImageQuality(s.gptImageQuality || 'high');
           setGptImageAspectRatio(s.gptImageAspectRatio || '3:4');
           setGptImageBackground(s.gptImageBackground || 'transparent');
@@ -325,6 +338,12 @@ export const SettingsView: React.FC = () => {
         ideogramAspectRatio,
         ideogramStyle,
         ideogramMagicPromptOption,
+        ideogramV4ApiKey,
+        ideogramV4MagicPrompt: Boolean(ideogramV4MagicPrompt),
+        ideogramV4Transparent: Boolean(ideogramV4Transparent),
+        ideogramV4RenderingSpeed: ideogramV4RenderingSpeed as any,
+        ideogramV4AspectRatio,
+        ideogramV4OutputResolution: ideogramV4OutputResolution as any,
         gptImageQuality,
         gptImageAspectRatio,
         gptImageBackground,
@@ -819,6 +838,149 @@ export const SettingsView: React.FC = () => {
                 <option value="AUTO">AUTO (Automatisch)</option>
                 <option value="ON">ON (Immer aktiv)</option>
                 <option value="OFF">OFF (Aus - Reiner Prompt)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* 3b. Ideogram 4.0 Card */}
+        <div className="glass-card p-5 rounded-2xl space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center">
+              <ImageIcon className="w-4 h-4 mr-2 text-indigo-400" />
+              Ideogram 4.0 API
+            </h3>
+            <button
+              onClick={() => runTest('ideogram_v4', { apiKey: ideogramV4ApiKey || ideogramApiKey })}
+              disabled={testResults['ideogram_v4']?.testing || (!ideogramV4ApiKey && !ideogramApiKey)}
+              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${testResults['ideogram_v4']?.testing ? 'animate-spin text-indigo-400' : ''}`} />
+              <span>Verbindung testen</span>
+            </button>
+          </div>
+
+          {testResults['ideogram_v4'] && !testResults['ideogram_v4'].testing && (
+            <div className={`p-2.5 rounded-xl text-xs flex items-center justify-between border ${
+              testResults['ideogram_v4'].success 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}>
+              <span className="flex items-center">
+                {testResults['ideogram_v4'].success ? <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" /> : <ShieldAlert className="w-4 h-4 mr-1.5 shrink-0" />}
+                {testResults['ideogram_v4'].success ? 'Ideogram 4.0 API Token verifiziert ✓' : testResults['ideogram_v4'].error}
+              </span>
+              {testResults['ideogram_v4'].latencyMs !== undefined && (
+                <span className="font-mono text-[10px]">{testResults['ideogram_v4'].latencyMs}ms</span>
+              )}
+            </div>
+          )}
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-slate-300">Ideogram 4.0 API Token (Optional)</label>
+              {!ideogramV4ApiKey && ideogramApiKey && (
+                <span className="text-[10px] text-emerald-400 font-medium">Nutzt automatisch V3 API-Key</span>
+              )}
+            </div>
+            <input
+              type="password"
+              value={ideogramV4ApiKey}
+              onChange={(e) => setIdeogramV4ApiKey(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none font-mono"
+              placeholder={ideogramApiKey ? "Leer lassen um V3 API-Key zu nutzen..." : "Ideogram 4.0 API Token..."}
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Ideogram 4.0 nutzt dieselbe Authentifizierung wie 3.0. Wenn hier leer gelassen wird, greift das System auf den oberen Ideogram API Token zurück.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+            {/* Magic Prompt Toggle */}
+            <div className="flex items-center justify-between bg-slate-950/70 border border-slate-800/90 rounded-xl px-3.5 py-2.5">
+              <div>
+                <span className="block text-xs font-semibold text-slate-200">Magic Prompt 4.0</span>
+                <span className="block text-[10px] text-slate-400">
+                  Pre-Pass über eigene V4 Magic-Prompt Schnittstelle
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ideogramV4MagicPrompt}
+                  onChange={(e) => setIdeogramV4MagicPrompt(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            {/* Transparent Background Toggle */}
+            <div className="flex items-center justify-between bg-slate-950/70 border border-slate-800/90 rounded-xl px-3.5 py-2.5">
+              <div>
+                <span className="block text-xs font-semibold text-slate-200">Transparenter Hintergrund</span>
+                <span className="block text-[10px] text-slate-400">
+                  Direkt via /generate-transparent freigestellt
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ideogramV4Transparent}
+                  onChange={(e) => setIdeogramV4Transparent(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-slate-800/80">
+            {/* Speed (Rendering) */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Rendering Speed</label>
+              <select
+                value={ideogramV4RenderingSpeed}
+                onChange={(e) => setIdeogramV4RenderingSpeed(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none font-mono"
+              >
+                <option value="DEFAULT">DEFAULT (Standard)</option>
+                <option value="TURBO">TURBO (Schnell)</option>
+              </select>
+            </div>
+
+            {/* Aspect Ratio */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Aspect Ratio</label>
+              <select
+                value={ideogramV4AspectRatio}
+                onChange={(e) => setIdeogramV4AspectRatio(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none font-mono"
+              >
+                <option value="10x16">10x16 (T-Shirt Portrait / 10:16)</option>
+                <option value="4x5">4x5 (Merch Portrait / 4:5)</option>
+                <option value="9x16">9x16 (Story / Hochformat)</option>
+                <option value="3x4">3x4 (Klassisch Hochformat)</option>
+                <option value="2x3">2x3 (Poster Hochformat)</option>
+                <option value="1x1">1x1 (Quadrat)</option>
+                <option value="5x4">5x4 (Merch Querformat / 5:4)</option>
+                <option value="4x3">4x3 (Klassisch Querformat)</option>
+                <option value="3x2">3x2 (Poster Querformat)</option>
+                <option value="16x10">16x10 (Querformat / 16:10)</option>
+                <option value="16x9">16x9 (Widescreen / 16:9)</option>
+              </select>
+            </div>
+
+            {/* Output Resolution */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Output Resolution</label>
+              <select
+                value={ideogramV4OutputResolution}
+                onChange={(e) => setIdeogramV4OutputResolution(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none font-mono"
+              >
+                <option value="DEFAULT">DEFAULT (Standard)</option>
+                <option value="4K">4K (UHD)</option>
               </select>
             </div>
           </div>

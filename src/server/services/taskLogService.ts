@@ -3,6 +3,7 @@ import path from 'path';
 import { loadSettings, resolveImageProvider } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
 import { IdeogramService } from './ideogramService';
+import { IdeogramV4Service } from './ideogramV4Service';
 import { OpenRouterImageService } from './openRouterImageService';
 import { TrademarkService } from './trademarkService';
 import { BannedWordsService } from './bannedWordsService';
@@ -159,6 +160,16 @@ export class TaskLogService {
           quality: settings.gptImageQuality,
           aspectRatio: settings.gptImageAspectRatio,
           background: settings.gptImageBackground
+        }
+      : requestedProvider === 'IDEOGRAM_V4'
+      ? {
+          provider: 'IDEOGRAM_V4',
+          model: 'V_4',
+          renderingSpeed: settings.ideogramV4RenderingSpeed || 'DEFAULT',
+          aspectRatio: settings.ideogramV4AspectRatio || '10x16',
+          magicPrompt: settings.ideogramV4MagicPrompt,
+          transparent: settings.ideogramV4Transparent,
+          outputResolution: settings.ideogramV4OutputResolution
         }
       : {
           provider: 'IDEOGRAM',
@@ -494,6 +505,8 @@ export class TaskLogService {
     const imageGeneration = task.imageGeneration;
     const providerDirective = imageGeneration?.provider === 'GPT_IMAGE_2'
       ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || 'transparent'}. ${imageGeneration.background === 'transparent' ? 'Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
+      : imageGeneration?.provider === 'IDEOGRAM_V4'
+      ? '\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics.'
       : '\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.';
     const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
     const referenceSection = task.promptPool?.enabled
@@ -653,7 +666,7 @@ export class TaskLogService {
     const settings = loadSettings();
     const provider = task.imageGeneration?.provider
       || task.payload?.imageGeneration?.provider
-      || (task.payload?.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM');
+      || (task.payload?.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : task.payload?.imageProvider === 'IDEOGRAM_V4' ? 'IDEOGRAM_V4' : 'IDEOGRAM');
     const snapshot: ImageGenerationSnapshot = provider === 'GPT_IMAGE_2'
       ? {
           provider: 'GPT_IMAGE_2',
@@ -661,6 +674,16 @@ export class TaskLogService {
           quality: settings.gptImageQuality,
           aspectRatio: settings.gptImageAspectRatio,
           background: settings.gptImageBackground
+        }
+      : provider === 'IDEOGRAM_V4'
+      ? {
+          provider: 'IDEOGRAM_V4',
+          model: IdeogramV4Service.MODEL,
+          renderingSpeed: settings.ideogramV4RenderingSpeed || 'DEFAULT',
+          aspectRatio: settings.ideogramV4AspectRatio || '10x16',
+          transparent: settings.ideogramV4Transparent ?? true,
+          outputResolution: settings.ideogramV4OutputResolution || 'DEFAULT',
+          magicPrompt: settings.ideogramV4MagicPrompt ?? true
         }
       : {
           provider: 'IDEOGRAM',
@@ -693,12 +716,14 @@ export class TaskLogService {
     };
     const prompt = promptText || task.resultPrompt || task.payload?.prompt || task.payload?.quote || '';
     const isGptImage = snapshot.provider === 'GPT_IMAGE_2';
-    const providerLabel = isGptImage ? 'GPT Image 2' : 'Ideogram';
-    const model = snapshot.model;
+    const isIdeogramV4 = snapshot.provider === 'IDEOGRAM_V4';
+    const providerLabel = isGptImage ? 'GPT Image 2' : isIdeogramV4 ? 'Ideogram 4.0' : 'Ideogram';
+    const model = snapshot.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? OpenRouterImageService.MODEL : 'V_3');
 
     this.updateTaskStatus(taskId, { status: 'GENERATING_IMAGE' });
 
-    if ((isGptImage && !settings.openRouterApiKey) || (!isGptImage && !settings.ideogramApiKey)) {
+    const ideogramKey = isIdeogramV4 ? IdeogramV4Service.getApiKey() : settings.ideogramApiKey;
+    if ((isGptImage && !settings.openRouterApiKey) || (!isGptImage && !ideogramKey)) {
       const missingKey = isGptImage ? 'OpenRouter API Key' : 'Ideogram API Key';
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -723,7 +748,9 @@ export class TaskLogService {
         style: snapshot.style,
         magicPrompt: snapshot.magicPrompt,
         quality: snapshot.quality,
-        background: snapshot.background
+        background: snapshot.background,
+        transparent: snapshot.transparent,
+        outputResolution: snapshot.outputResolution
       },
       metadata: { model, provider: providerLabel }
     });
@@ -746,6 +773,17 @@ export class TaskLogService {
           aspectRatio: snapshot.aspectRatio || '3:4',
           background: snapshot.background || 'transparent'
         });
+        fs.writeFileSync(localFilePath, result.bytes);
+      } else if (isIdeogramV4) {
+        const result = await IdeogramV4Service.generateImage({
+          prompt,
+          renderingSpeed: snapshot.renderingSpeed as any,
+          aspectRatio: snapshot.aspectRatio,
+          transparent: snapshot.transparent ?? true,
+          outputResolution: snapshot.outputResolution as any,
+          magicPrompt: Boolean(snapshot.magicPrompt)
+        });
+        sourceUrl = result.imageUrl;
         fs.writeFileSync(localFilePath, result.bytes);
       } else {
         const result = await IdeogramService.generateImage({

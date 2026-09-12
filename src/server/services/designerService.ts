@@ -62,7 +62,7 @@ export class DesignerService {
       source: 'DESIGNER',
       payload: {
         ...values,
-        imageProvider: input.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : 'IDEOGRAM',
+        imageProvider: input.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : (input.imageProvider === 'IDEOGRAM_V4' ? 'IDEOGRAM_V4' : 'IDEOGRAM'),
         promptPoolEnabled: Boolean(input.promptPoolEnabled)
       },
       clientIp

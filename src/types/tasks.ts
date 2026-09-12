@@ -1,7 +1,7 @@
 export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER' | 'UPDATE';
 export type TaskSuffix = 'H' | 'T' | 'D' | 'U';
 
-export type ImageProvider = 'IDEOGRAM' | 'GPT_IMAGE_2';
+export type ImageProvider = 'IDEOGRAM' | 'IDEOGRAM_V4' | 'GPT_IMAGE_2';
 
 export interface ImageGenerationSnapshot {
   provider: ImageProvider;
@@ -9,9 +9,11 @@ export interface ImageGenerationSnapshot {
   aspectRatio: string;
   renderingSpeed?: string;
   style?: string;
-  magicPrompt?: string;
+  magicPrompt?: string | boolean;
   quality?: 'auto' | 'low' | 'medium' | 'high';
   background?: 'auto' | 'opaque' | 'transparent';
+  transparent?: boolean;
+  outputResolution?: string;
 }
 
 export interface PromptPoolSnapshot {
