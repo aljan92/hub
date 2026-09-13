@@ -296,6 +296,10 @@ export const TasksView: React.FC = () => {
   const [submittingTaskIds, setSubmittingTaskIds] = useState<Set<string>>(() => new Set());
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeletingDesign, setIsDeletingDesign] = useState(false);
+  const [salesConfirmed, setSalesConfirmed] = useState(false);
+
   const [showImageZoom, setShowImageZoom] = useState(false);
   const [viewModeGrid, setViewModeGrid] = useState(true);
   // Helper to extract old Amazon listing safely for UPDATE tasks
@@ -704,6 +708,31 @@ export const TasksView: React.FC = () => {
     }
   };
 
+  const handleDeleteDesign = async () => {
+    if (!activeTask || isDeletingDesign) return;
+    const taskId = activeTask.id;
+    setIsDeletingDesign(true);
+    beginTaskAction(taskId);
+    let success = false;
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/amazon-delete`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        success = true;
+        showNotification('success', data.message || 'Design wurde bei Merch by Amazon gelöscht.');
+        setIsDeleteModalOpen(false);
+        setSalesConfirmed(false);
+      } else {
+        showNotification('error', data.error || 'Löschen bei Amazon fehlgeschlagen');
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Verbindungsfehler');
+    } finally {
+      setIsDeletingDesign(false);
+      finishTaskAction(taskId, success);
+    }
+  };
+
   // Actions for Checkpoint 2: Design Review
   const handleDesignReview = async (action: 'APPROVE' | 'REGENERATE_IMAGE' | 'DISCARD' | 'REJECT') => {
     if (!activeTask || !review.ready || isCheckingTm || detailError?.taskId === activeTask.id) return;
@@ -1104,16 +1133,31 @@ export const TasksView: React.FC = () => {
                   {/* Top Status Badge */}
                   <div className="flex items-center gap-2">
                     {activeTask.source === 'UPDATE' && ['UPDATE_ANALYZED', 'AWAITING_DESIGN_REVIEW', 'AWAITING_TM_REVIEW'].includes(activeTask.status) && (
-                      <button
-                        type="button"
-                        onClick={handleSkipUpdate}
-                        disabled={isSubmitting}
-                        title="Setzt skip_update=true in Supabase und schließt nur diesen Update-Task."
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-rose-950/60 text-rose-300 border border-rose-500/30 flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        <span>Skip Update</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleSkipUpdate}
+                          disabled={isSubmitting}
+                          title="Setzt skip_update=true in Supabase und schließt nur diesen Update-Task."
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-rose-950/60 text-rose-300 border border-rose-500/30 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>Skip Update</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSalesConfirmed(false);
+                            setIsDeleteModalOpen(true);
+                          }}
+                          disabled={isSubmitting}
+                          title="Löscht das gesamte Design unwiderruflich direkt bei Merch by Amazon."
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-500/40 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete Design</span>
+                        </button>
+                      </>
                     )}
                     <TaskStatusBadge task={activeTask} size="md" />
                   </div>
@@ -2439,6 +2483,93 @@ export const TasksView: React.FC = () => {
               className="max-w-full max-h-[85vh] object-contain rounded-2xl border border-slate-700 shadow-2xl"
             />
             <p className="text-xs text-slate-400 mt-2 font-mono">{activeTask.id} • Klick zum Schließen</p>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Design Confirmation Modal */}
+      {isDeleteModalOpen && activeTask && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-surface border border-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl space-y-4 animate-scaleUp">
+            <div className="flex items-center space-x-3 text-rose-400">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-100">Design bei Merch by Amazon löschen</h3>
+                <p className="text-xs text-slate-400 font-mono">Task #{activeTask.id} • Design-ID: {activeTask.payload?.designId || '-'}</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1.5">
+              <div className="text-xs font-semibold text-slate-200 truncate">
+                "{activeTask.payload?.title || activeTask.payload?.quote || activeTask.payload?.quote_or_phrase || 'Design'}"
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Dieses Design wird über die Amazon API unwiderruflich von Merch by Amazon entfernt. Alle verknüpften Produkte und Marktplatz-Listings werden bei Amazon gelöscht.
+              </p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                In Supabase wird <code className="text-primary-300 font-mono text-[10px] bg-slate-800 px-1 py-0.5 rounded">skip_update = true</code> gesetzt. Die Bereinigung der ASINs und der Statuswechsel auf DELETED erfolgen beim nächsten regulären Sync-Lauf.
+              </p>
+            </div>
+
+            {/* Sales Warning Check */}
+            {Number(activeTask.payload?.sales_total || 0) > 0 && (
+              <div className="bg-amber-950/25 border border-amber-500/40 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-start space-x-2 text-amber-300 text-xs font-semibold">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    Achtung: Dieses Design verzeichnet bereits {activeTask.payload.sales_total} {Number(activeTask.payload.sales_total) === 1 ? 'Verkauf' : 'Verkäufe'}.
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Ein gelöschtes Design mit bestehenden Sales kann auf Amazon nicht wiederhergestellt werden. Bitte bestätige die Löschung ausdrücklich.
+                </p>
+                <label className="flex items-start space-x-2 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={salesConfirmed}
+                    onChange={(e) => setSalesConfirmed(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-700 text-rose-500 focus:ring-rose-400 bg-slate-900"
+                  />
+                  <span className="text-xs text-slate-200 font-medium select-none">
+                    Ich bestätige, dass dieses Design trotz bisheriger Verkäufe unwiderruflich gelöscht werden soll.
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end space-x-3 pt-2 border-t border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setSalesConfirmed(false);
+                }}
+                disabled={isDeletingDesign}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors disabled:opacity-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteDesign}
+                disabled={isDeletingDesign || (Number(activeTask.payload?.sales_total || 0) > 0 && !salesConfirmed)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors shadow-md shadow-rose-600/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isDeletingDesign ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Lösche bei Amazon...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Design</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

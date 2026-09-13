@@ -42,6 +42,7 @@ import { TaskRecoveryService } from './services/taskRecoveryService';
 import { AmazonRecoveryVerificationService } from './services/amazonRecoveryVerificationService';
 import { DesignerService } from './services/designerService';
 import { DesignerConceptService } from './services/designerConceptService';
+import { AmazonDeleteDesignService } from './services/amazonDeleteDesignService';
 
 dotenv.config();
 
@@ -1223,6 +1224,54 @@ app.post('/api/v1/tasks/:taskId/skip-update', async (req, res) => {
     res.json({ ...result, message: 'Skip Update wurde gesetzt. Das Design wird künftig nicht mehr automatisch aktualisiert.' });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/tasks/:taskId/amazon-delete', async (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const task = TaskLogService.getTaskLogById(taskId);
+    if (!task) return res.status(404).json({ success: false, error: `Task ${taskId} nicht gefunden` });
+    if (task.source !== 'UPDATE' && task.suffix !== 'U') {
+      return res.status(400).json({ success: false, error: 'Löschen bei Amazon ist nur für Update-Tasks verfügbar.' });
+    }
+    if (!['UPDATE_ANALYZED', 'AWAITING_DESIGN_REVIEW', 'AWAITING_TM_REVIEW', 'CANCELLED'].includes(task.status)) {
+      return res.status(409).json({ success: false, error: 'Löschen bei Amazon ist nur während einer manuellen Prüfung oder nach Abbruch verfügbar.' });
+    }
+
+    const designId = String(task.payload?.designId || '').trim();
+    if (!designId) return res.status(400).json({ success: false, error: 'Dem Update-Task fehlt die Amazon Design-ID.' });
+
+    // 1. Delete on Amazon via ProductConfiguration API
+    const deleteResult = await AmazonDeleteDesignService.deleteDesignFromAmazon(designId);
+    if (!deleteResult.success) {
+      return res.status(502).json({ success: false, error: deleteResult.error || 'Löschung bei Amazon fehlgeschlagen.' });
+    }
+
+    // 2. Set skip_update = true in Supabase (status and ASIN cleanup will be handled by regular sync)
+    const updateResult = await UpdateMetadataService.markSkipUpdate(designId);
+    if (!updateResult.success) {
+      console.warn(`[TaskAction] ⚠️ Skip Update konnte in Supabase nach Amazon-Löschung nicht gesetzt werden: ${updateResult.error}`);
+    }
+
+    // 3. Cancel task in Hub and clean up backfill / queue
+    const result = TaskLogService.cancelTask(taskId, `Design bei Merch by Amazon gelöscht (${deleteResult.deletedProductsCount || 0} Produkte) und von künftigen Updates ausgeschlossen.`);
+    QueueService.removeByTaskId(taskId);
+    UpdateBackfillService.releaseInFlight(designId);
+    UpdateBackfillService.addRecentlyCancelledDesign(designId);
+    UpdateBackfillService.scheduleNextCycleAfterCancel();
+
+    broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
+    broadcast('QUEUE_UPDATED', { items: QueueService.loadQueue() });
+
+    res.json({
+      ...result,
+      success: true,
+      message: `Design ${designId} wurde erfolgreich bei Merch by Amazon gelöscht und von künftigen Updates ausgeschlossen.`
+    });
+  } catch (err: any) {
+    console.error(`[TaskAction] Fehler bei amazon-delete für Task ${taskId}:`, err);
+    res.status(500).json({ success: false, error: err.message || 'Interner Serverfehler beim Löschen auf Amazon.' });
   }
 });
 

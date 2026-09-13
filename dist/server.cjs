@@ -225850,6 +225850,7 @@ var init_amazonInspectService = __esm2({
     init_syncEngine();
     init_taskLogService();
     init_productCatalogService();
+    init_settingsService();
     FIND_LISTINGS_URL2 = "https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings";
     PRODUCT_CONFIG_URL2 = "https://merch.amazon.com/api/productconfiguration/get?id=";
     ALL_STATUSES2 = ["DRAFT", "TRANSLATING", "REVIEW", "DECLINED", "AMAZON_REJECTED", "PUBLISHING", "TIMED_OUT", "PROPAGATED", "PUBLISHED", "DELETED", "LOCKED"];
@@ -226160,6 +226161,20 @@ var init_amazonInspectService = __esm2({
           }
           console.warn(`[AmazonInspectService] \u2139\uFE0F FindListings Vorab-Check f\xFCr Design ${cleanId}: ${fErr.message}`);
         }
+        let salesTotal = 0;
+        let salesHistorySynced = false;
+        try {
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            const { data: dbDesign } = await supabase.from("mba_designs").select("sales_total, sales_history_synced").eq("design_id", cleanId).maybeSingle();
+            if (dbDesign) {
+              salesTotal = Number(dbDesign.sales_total) || 0;
+              salesHistorySynced = Boolean(dbDesign.sales_history_synced);
+            }
+          }
+        } catch (sErr) {
+          console.warn(`[AmazonInspectService] \u2139\uFE0F Supabase sales lookup f\xFCr ${cleanId}:`, sErr.message);
+        }
         const payload = {
           designId: cleanId,
           editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
@@ -226172,6 +226187,8 @@ var init_amazonInspectService = __esm2({
           textData,
           productTypes,
           productSummary,
+          sales_total: salesTotal,
+          sales_history_synced: salesHistorySynced,
           liveStats: {
             totalVariantsFound: matchedItems.length > 0 ? matchedItems.length : totalConfiguredSlots,
             statusSummary: Object.keys(statusSummary).length > 0 ? statusSummary : { PUBLISHED: totalConfiguredSlots },
@@ -238036,6 +238053,117 @@ Generate exactly ${count} distinctive commercial apparel design concept(s) fulfi
   }
 };
 
+// src/server/services/amazonDeleteDesignService.ts
+init_browserSessionService();
+init_amazonInspectService();
+var AmazonDeleteDesignService = class {
+  /**
+   * Delete a design and all its product variants directly on Merch by Amazon
+   * via POST https://merch.amazon.com/api/productconfiguration/delete
+   */
+  static async deleteDesignFromAmazon(rawDesignId) {
+    const cleanId = (rawDesignId || "").replace(/^#/, "").replace(/-U$/, "").trim();
+    if (!cleanId) {
+      return { success: false, designId: "", error: "Keine g\xFCltige Amazon Design-ID angegeben." };
+    }
+    console.log(`[AmazonDeleteDesignService] \u{1F5D1}\uFE0F Initiating Amazon deletion for Design ${cleanId}...`);
+    const configRes = await AmazonInspectService.inspectProductConfig(cleanId);
+    if (!configRes.success || !configRes.data) {
+      throw new Error(configRes.error || `Produktkonfiguration f\xFCr Design ${cleanId} konnte nicht von Amazon abgerufen werden.`);
+    }
+    const configData = configRes.data;
+    const products = configData.products || {};
+    const productsToOperateOn = {};
+    let totalProductsCount = 0;
+    for (const [pType, pVal] of Object.entries(products)) {
+      if (pVal?.marketplaceData && typeof pVal.marketplaceData === "object") {
+        for (const [mkt, mData] of Object.entries(pVal.marketplaceData)) {
+          if (mData && mData.id) {
+            if (!productsToOperateOn[pType]) {
+              productsToOperateOn[pType] = {};
+            }
+            productsToOperateOn[pType][mkt] = String(mData.id);
+            totalProductsCount++;
+          }
+        }
+      }
+    }
+    const session2 = await BrowserSessionService.getSession("sync");
+    const currentUrl = session2.page.url();
+    if (!currentUrl.includes("merch.amazon.com")) {
+      await session2.page.goto("https://merch.amazon.com/dashboard", { waitUntil: "domcontentloaded", timeout: 3e4 });
+    }
+    const deletePayload = {
+      id: cleanId,
+      productsToOperateOn
+    };
+    const deleteUrl = "https://merch.amazon.com/api/productconfiguration/delete";
+    const result2 = await session2.page.evaluate(async ({ url, payload }) => {
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          credentials: "include",
+          body: JSON.stringify(payload)
+        });
+        const status = resp.status;
+        const ok = resp.ok;
+        const redirectedToLogin = resp.url?.includes("signin") || resp.url?.includes("ap/signin");
+        if (redirectedToLogin) {
+          return {
+            ok: false,
+            status: 401,
+            error: "Session 1 ist ausgeloggt (Weiterleitung auf Amazon Login).",
+            data: null
+          };
+        }
+        let json = null;
+        let text2 = "";
+        try {
+          json = await resp.json();
+        } catch {
+          text2 = await resp.text().catch(() => "");
+        }
+        return {
+          ok,
+          status,
+          data: json || text2,
+          error: ok ? null : `HTTP ${status}: ${resp.statusText || text2 || "L\xF6schung bei Amazon fehlgeschlagen"}`
+        };
+      } catch (fetchErr) {
+        return {
+          ok: false,
+          status: 0,
+          error: fetchErr.message || "Netzwerkfehler im Browserkontext beim L\xF6schen",
+          data: null
+        };
+      }
+    }, { url: deleteUrl, payload: deletePayload });
+    if (!result2.ok) {
+      console.error(`[AmazonDeleteDesignService] \u274C Amazon Delete fehlgeschlagen f\xFCr ${cleanId}:`, result2.error);
+      return {
+        success: false,
+        designId: cleanId,
+        error: result2.error || `HTTP ${result2.status} beim L\xF6schen auf Amazon`,
+        amazonStatus: result2.status,
+        amazonResponse: result2.data
+      };
+    }
+    console.log(`[AmazonDeleteDesignService] \u2705 Design ${cleanId} erfolgreich bei Amazon gel\xF6scht (${totalProductsCount} Produkt-Slots).`);
+    return {
+      success: true,
+      designId: cleanId,
+      deletedProductsCount: totalProductsCount,
+      productsToOperateOn,
+      amazonStatus: result2.status,
+      amazonResponse: result2.data
+    };
+  }
+};
+
 // src/server/index.ts
 var import_meta = {};
 import_dotenv.default.config();
@@ -239030,6 +239158,44 @@ app.post("/api/v1/tasks/:taskId/skip-update", async (req, res) => {
     res.json({ ...result2, message: "Skip Update wurde gesetzt. Das Design wird k\xFCnftig nicht mehr automatisch aktualisiert." });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/tasks/:taskId/amazon-delete", async (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const task = TaskLogService.getTaskLogById(taskId);
+    if (!task) return res.status(404).json({ success: false, error: `Task ${taskId} nicht gefunden` });
+    if (task.source !== "UPDATE" && task.suffix !== "U") {
+      return res.status(400).json({ success: false, error: "L\xF6schen bei Amazon ist nur f\xFCr Update-Tasks verf\xFCgbar." });
+    }
+    if (!["UPDATE_ANALYZED", "AWAITING_DESIGN_REVIEW", "AWAITING_TM_REVIEW", "CANCELLED"].includes(task.status)) {
+      return res.status(409).json({ success: false, error: "L\xF6schen bei Amazon ist nur w\xE4hrend einer manuellen Pr\xFCfung oder nach Abbruch verf\xFCgbar." });
+    }
+    const designId = String(task.payload?.designId || "").trim();
+    if (!designId) return res.status(400).json({ success: false, error: "Dem Update-Task fehlt die Amazon Design-ID." });
+    const deleteResult = await AmazonDeleteDesignService.deleteDesignFromAmazon(designId);
+    if (!deleteResult.success) {
+      return res.status(502).json({ success: false, error: deleteResult.error || "L\xF6schung bei Amazon fehlgeschlagen." });
+    }
+    const updateResult = await UpdateMetadataService.markSkipUpdate(designId);
+    if (!updateResult.success) {
+      console.warn(`[TaskAction] \u26A0\uFE0F Skip Update konnte in Supabase nach Amazon-L\xF6schung nicht gesetzt werden: ${updateResult.error}`);
+    }
+    const result2 = TaskLogService.cancelTask(taskId, `Design bei Merch by Amazon gel\xF6scht (${deleteResult.deletedProductsCount || 0} Produkte) und von k\xFCnftigen Updates ausgeschlossen.`);
+    QueueService.removeByTaskId(taskId);
+    UpdateBackfillService.releaseInFlight(designId);
+    UpdateBackfillService.addRecentlyCancelledDesign(designId);
+    UpdateBackfillService.scheduleNextCycleAfterCancel();
+    broadcast("TASK_UPDATED", TaskLogService.getTaskSummaryById(taskId));
+    broadcast("QUEUE_UPDATED", { items: QueueService.loadQueue() });
+    res.json({
+      ...result2,
+      success: true,
+      message: `Design ${designId} wurde erfolgreich bei Merch by Amazon gel\xF6scht und von k\xFCnftigen Updates ausgeschlossen.`
+    });
+  } catch (err) {
+    console.error(`[TaskAction] Fehler bei amazon-delete f\xFCr Task ${taskId}:`, err);
+    res.status(500).json({ success: false, error: err.message || "Interner Serverfehler beim L\xF6schen auf Amazon." });
   }
 });
 app.post("/api/v1/tasks/:taskId/:reviewAction", (req, res, next) => {

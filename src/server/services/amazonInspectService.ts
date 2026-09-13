@@ -13,6 +13,7 @@ export function isAmazonPolicyOrRejectionNotice(text: unknown): boolean {
 import { SyncEngine } from './syncEngine';
 import { TaskLogService } from './taskLogService';
 import { ProductCatalogService } from './productCatalogService';
+import { getSupabaseClient } from './settingsService';
 
 const FIND_LISTINGS_URL = 'https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings';
 const PRODUCT_CONFIG_URL = 'https://merch.amazon.com/api/productconfiguration/get?id=';
@@ -381,6 +382,25 @@ export class AmazonInspectService {
       console.warn(`[AmazonInspectService] ℹ️ FindListings Vorab-Check für Design ${cleanId}: ${fErr.message}`);
     }
 
+    let salesTotal = 0;
+    let salesHistorySynced = false;
+    try {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const { data: dbDesign } = await supabase
+          .from('mba_designs')
+          .select('sales_total, sales_history_synced')
+          .eq('design_id', cleanId)
+          .maybeSingle();
+        if (dbDesign) {
+          salesTotal = Number(dbDesign.sales_total) || 0;
+          salesHistorySynced = Boolean(dbDesign.sales_history_synced);
+        }
+      }
+    } catch (sErr: any) {
+      console.warn(`[AmazonInspectService] ℹ️ Supabase sales lookup für ${cleanId}:`, sErr.message);
+    }
+
     const payload = {
       designId: cleanId,
       editUrl: `https://merch.amazon.com/designs/${cleanId}/edit`,
@@ -393,6 +413,8 @@ export class AmazonInspectService {
       textData,
       productTypes,
       productSummary,
+      sales_total: salesTotal,
+      sales_history_synced: salesHistorySynced,
       liveStats: {
         totalVariantsFound: matchedItems.length > 0 ? matchedItems.length : totalConfiguredSlots,
         statusSummary: Object.keys(statusSummary).length > 0 ? statusSummary : { PUBLISHED: totalConfiguredSlots },
