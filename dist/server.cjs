@@ -236609,7 +236609,7 @@ var UploadWorkerService = class _UploadWorkerService {
           if (desiredFits.includes("youth") && !desiredFits.includes("girls")) {
             desiredFits.push("girls");
           }
-          desiredFits.push("adult_unisex", "unisex", "adult");
+          desiredFits.push("adult_unisex", "unisex", "adult", "standard");
           const visibleFitCandidates = params2.expectsFitControls ? Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, flowcheckbox[class*="-checkbox"], label[class*="-label"]'
           )).filter((el) => {
@@ -236631,7 +236631,7 @@ var UploadWorkerService = class _UploadWorkerService {
               matchedFit = "girls";
             } else if (cls.includes("youth") || text2.includes("youth") || combo.includes("youth") || combo.includes("kinder") || combo.includes("kids")) {
               matchedFit = "youth";
-            } else if (cls.includes("unisex") || text2.includes("unisex") || combo.includes("unisex") || combo.includes("adult")) {
+            } else if (cls.includes("unisex") || text2.includes("unisex") || combo.includes("unisex") || combo.includes("adult") || cls.includes("standard") || text2.includes("standard") || combo.includes("standard")) {
               matchedFit = "adult_unisex";
             } else if (cls.includes("women") || text2.includes("women") || combo.includes("women") || combo.includes("frauen") || combo.includes("damen")) {
               matchedFit = "women";

@@ -1078,7 +1078,7 @@ export class UploadWorkerService {
             desiredFits.push('girls');
           }
           // Rule: Adult Unisex is always active for any product offering it
-          desiredFits.push('adult_unisex', 'unisex', 'adult');
+          desiredFits.push('adult_unisex', 'unisex', 'adult', 'standard');
 
           const visibleFitCandidates = params.expectsFitControls ? Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, ' +
@@ -1109,7 +1109,7 @@ export class UploadWorkerService {
               matchedFit = 'girls';
             } else if (cls.includes('youth') || text.includes('youth') || combo.includes('youth') || combo.includes('kinder') || combo.includes('kids')) {
               matchedFit = 'youth';
-            } else if (cls.includes('unisex') || text.includes('unisex') || combo.includes('unisex') || combo.includes('adult')) {
+            } else if (cls.includes('unisex') || text.includes('unisex') || combo.includes('unisex') || combo.includes('adult') || cls.includes('standard') || text.includes('standard') || combo.includes('standard')) {
               matchedFit = 'adult_unisex';
             } else if (cls.includes('women') || text.includes('women') || combo.includes('women') || combo.includes('frauen') || combo.includes('damen')) {
               matchedFit = 'women';
