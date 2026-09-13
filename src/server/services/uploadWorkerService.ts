@@ -1080,7 +1080,14 @@ export class UploadWorkerService {
           // Rule: Adult Unisex is always active for any product offering it
           desiredFits.push('adult_unisex', 'unisex', 'adult', 'standard');
 
-          const visibleFitCandidates = params.expectsFitControls ? Array.from(inputContainer.querySelectorAll(
+          const defaultFitLabelEl = inputContainer.querySelector('.default-fit-type-label, [class*="default-fit"]');
+          const hasDefaultFitLabel = Boolean(
+            defaultFitLabelEl ||
+            inputContainer.innerText?.toLowerCase().includes('adult unisex') ||
+            (inputContainer.querySelector('fit-type, .fit-type-container')?.textContent || '').toLowerCase().includes('adult unisex')
+          );
+
+          const visibleFitCandidates = (params.expectsFitControls && !hasDefaultFitLabel) ? Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, ' +
             'flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, ' +
             'label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, ' +
@@ -1127,6 +1134,11 @@ export class UploadWorkerService {
           const activeFitsApplied: string[] = [];
           const fitDebugSummary: Record<string, { target: boolean; final: boolean }> = {};
 
+          if (hasDefaultFitLabel) {
+            fitDebugSummary['adult_unisex'] = { target: true, final: true };
+            activeFitsApplied.push('adult_unisex');
+          }
+
           for (const item of fitElements) {
             const shouldBeChecked = desiredFits.includes(item.matchedFit) || item.matchedFit === 'adult_unisex' || item.matchedFit === 'unisex';
             let isChecked = isElementChecked(item.element);
@@ -1155,7 +1167,8 @@ export class UploadWorkerService {
           const failedFitStates = Object.entries(fitDebugSummary)
             .filter(([, state]) => state.target !== state.final)
             .map(([fit, state]) => `${fit} erwartet=${state.target ? 'aktiv' : 'inaktiv'} tatsächlich=${state.final ? 'aktiv' : 'inaktiv'}`);
-          if ((params.expectsFitControls && fitElements.length === 0) || failedFitStates.length > 0) {
+          const expectsCheckboxes = params.expectsFitControls && !hasDefaultFitLabel;
+          if ((expectsCheckboxes && fitElements.length === 0) || failedFitStates.length > 0) {
             return {
               success: false,
               error: `FAILED_FIT_TYPE: ${fitElements.length === 0 ? 'Keine Fit-Controls im verifizierten Produkteditor gefunden' : failedFitStates.join(', ')}`,

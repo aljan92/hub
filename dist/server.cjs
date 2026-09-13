@@ -235502,6 +235502,7 @@ var ProductScannerService = class {
             });
             if (matches.length === 1) {
               activeEditor = matches[0];
+              await sleep2(150);
               break;
             }
           }
@@ -235513,22 +235514,31 @@ var ProductScannerService = class {
           if (headerTitle && headerTitle.length > 2) {
             catalog[amazonKey].name = headerTitle;
           }
-          const fitElements = Array.from(activeEditor.querySelectorAll(
-            'fit-type flowcheckbox, fit-type input[type="checkbox"], .fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"]'
-          )).filter((el) => !el.closest(".default-fit-type-label"));
-          const detectedFits = [];
-          let unknownFitControl = false;
-          for (const fe of fitElements) {
-            const labelText = [fe.textContent, fe.closest("label")?.textContent, fe.getAttribute("aria-label"), fe.getAttribute("class"), fe.closest("flowcheckbox")?.getAttribute("class")].filter(Boolean).join(" ").toLowerCase().trim();
-            if (labelText.includes("men") && !labelText.includes("women")) detectedFits.push("men");
-            else if (labelText.includes("women")) detectedFits.push("women");
-            else if (labelText.includes("youth") || labelText.includes("kids")) detectedFits.push("youth");
-            else if (labelText.includes("girls")) detectedFits.push("girls");
-            else if (labelText.includes("unisex") || labelText.includes("adult") || labelText.includes("standard")) detectedFits.push("standard");
-            else unknownFitControl = true;
+          const defaultFitLabel = activeEditor.querySelector('.default-fit-type-label, [class*="default-fit"]');
+          const hasDefaultFitText = Boolean(
+            defaultFitLabel || (activeEditor.querySelector("fit-type, .fit-type-container")?.textContent || "").toLowerCase().includes("adult unisex")
+          );
+          if (hasDefaultFitText) {
+            catalog[amazonKey].fits = [];
+            catalog[amazonKey].fitDiscoveryStatus = "SUCCESS";
+          } else {
+            const fitElements = Array.from(activeEditor.querySelectorAll(
+              'fit-type flowcheckbox, fit-type input[type="checkbox"], .fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"]'
+            )).filter((el) => !el.closest(".default-fit-type-label"));
+            const detectedFits = [];
+            let unknownFitControl = false;
+            for (const fe of fitElements) {
+              const labelText = [fe.textContent, fe.closest("label")?.textContent, fe.getAttribute("aria-label"), fe.getAttribute("class"), fe.closest("flowcheckbox")?.getAttribute("class")].filter(Boolean).join(" ").toLowerCase().trim();
+              if (labelText.includes("men") && !labelText.includes("women")) detectedFits.push("men");
+              else if (labelText.includes("women")) detectedFits.push("women");
+              else if (labelText.includes("youth") || labelText.includes("kids")) detectedFits.push("youth");
+              else if (labelText.includes("girls")) detectedFits.push("girls");
+              else if (labelText.includes("unisex") || labelText.includes("adult") || labelText.includes("standard")) detectedFits.push("standard");
+              else unknownFitControl = true;
+            }
+            catalog[amazonKey].fits = Array.from(new Set(detectedFits));
+            catalog[amazonKey].fitDiscoveryStatus = unknownFitControl ? "FAILED" : "SUCCESS";
           }
-          catalog[amazonKey].fits = Array.from(new Set(detectedFits));
-          catalog[amazonKey].fitDiscoveryStatus = unknownFitControl ? "FAILED" : "SUCCESS";
           const colorCheckboxes = Array.from(activeEditor.querySelectorAll("colorcheckbox"));
           const detectedColors = [];
           let unknownColorControl = false;
@@ -236633,7 +236643,11 @@ var UploadWorkerService = class _UploadWorkerService {
             desiredFits.push("girls");
           }
           desiredFits.push("adult_unisex", "unisex", "adult", "standard");
-          const visibleFitCandidates = params2.expectsFitControls ? Array.from(inputContainer.querySelectorAll(
+          const defaultFitLabelEl = inputContainer.querySelector('.default-fit-type-label, [class*="default-fit"]');
+          const hasDefaultFitLabel = Boolean(
+            defaultFitLabelEl || inputContainer.innerText?.toLowerCase().includes("adult unisex") || (inputContainer.querySelector("fit-type, .fit-type-container")?.textContent || "").toLowerCase().includes("adult unisex")
+          );
+          const visibleFitCandidates = params2.expectsFitControls && !hasDefaultFitLabel ? Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, flowcheckbox[class*="-checkbox"], label[class*="-label"]'
           )).filter((el) => {
             const rect = el.getBoundingClientRect();
@@ -236668,6 +236682,10 @@ var UploadWorkerService = class _UploadWorkerService {
           }
           const activeFitsApplied = [];
           const fitDebugSummary = {};
+          if (hasDefaultFitLabel) {
+            fitDebugSummary["adult_unisex"] = { target: true, final: true };
+            activeFitsApplied.push("adult_unisex");
+          }
           for (const item2 of fitElements) {
             const shouldBeChecked = desiredFits.includes(item2.matchedFit) || item2.matchedFit === "adult_unisex" || item2.matchedFit === "unisex";
             let isChecked = isElementChecked(item2.element);
@@ -236690,7 +236708,8 @@ var UploadWorkerService = class _UploadWorkerService {
             }
           }
           const failedFitStates = Object.entries(fitDebugSummary).filter(([, state]) => state.target !== state.final).map(([fit, state]) => `${fit} erwartet=${state.target ? "aktiv" : "inaktiv"} tats\xE4chlich=${state.final ? "aktiv" : "inaktiv"}`);
-          if (params2.expectsFitControls && fitElements.length === 0 || failedFitStates.length > 0) {
+          const expectsCheckboxes = params2.expectsFitControls && !hasDefaultFitLabel;
+          if (expectsCheckboxes && fitElements.length === 0 || failedFitStates.length > 0) {
             return {
               success: false,
               error: `FAILED_FIT_TYPE: ${fitElements.length === 0 ? "Keine Fit-Controls im verifizierten Produkteditor gefunden" : failedFitStates.join(", ")}`,

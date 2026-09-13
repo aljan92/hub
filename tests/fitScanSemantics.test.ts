@@ -27,11 +27,14 @@ try {
   };
   const label = await scan('<fit-type><div>Fit type:</div><span class="default-fit-type-label">Adult Unisex</span></fit-type>');
   assert.deepEqual(label, { fits: [], fitDiscoveryStatus: 'SUCCESS' });
+  // Race-condition simulation: stray checkboxes from neighbor product in DOM alongside default-fit-type-label
+  const labelWithStrayCheckboxes = await scan('<fit-type><div>Fit type:</div><span class="default-fit-type-label">Adult Unisex</span><flowcheckbox class="men-checkbox"><input type="checkbox">Men</flowcheckbox></fit-type>');
+  assert.deepEqual(labelWithStrayCheckboxes, { fits: [], fitDiscoveryStatus: 'SUCCESS' }, 'Default fit label must ignore stray neighbor checkboxes');
   assert.deepEqual(mergeScannedFits(previous, label.fits, label.fitDiscoveryStatus), []);
   assert.deepEqual((await scan('<fit-type><flowcheckbox class="women-checkbox"><input type="checkbox">Women</flowcheckbox></fit-type>')).fits, ['women']);
   assert.deepEqual((await scan('<label><input type="checkbox">Men outside fit section</label>')).fits, []);
   assert.equal((await scan('<fit-type><flowcheckbox>Mystery</flowcheckbox></fit-type>')).fitDiscoveryStatus, 'FAILED');
-  console.log('PASS: fixed label, actual checkboxes, unrelated controls, unknown controls, successful-empty merge and failed-scan preservation');
+  console.log('PASS: fixed label, stray-checkbox immunity, actual checkboxes, unrelated controls, unknown controls, successful-empty merge and failed-scan preservation');
 } finally {
   await browser.close();
 }

@@ -381,6 +381,7 @@ export class ProductScannerService {
             });
             if (matches.length === 1) {
               activeEditor = matches[0];
+              await sleep(150);
               break;
             }
           }
@@ -398,23 +399,35 @@ export class ProductScannerService {
 
           // B. Fit Types
           // A default-fit-type-label describes a fixed variant, not a choice.
-          // Only real checkbox controls inside the fit component are catalog fits.
-          const fitElements = Array.from(activeEditor.querySelectorAll(
-            'fit-type flowcheckbox, fit-type input[type="checkbox"], .fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"]'
-          )).filter(el => !el.closest('.default-fit-type-label'));
-          const detectedFits: string[] = [];
-          let unknownFitControl = false;
-          for (const fe of fitElements) {
-            const labelText = [fe.textContent, fe.closest('label')?.textContent, fe.getAttribute('aria-label'), fe.getAttribute('class'), fe.closest('flowcheckbox')?.getAttribute('class')].filter(Boolean).join(' ').toLowerCase().trim();
-            if (labelText.includes('men') && !labelText.includes('women')) detectedFits.push('men');
-            else if (labelText.includes('women')) detectedFits.push('women');
-            else if (labelText.includes('youth') || labelText.includes('kids')) detectedFits.push('youth');
-            else if (labelText.includes('girls')) detectedFits.push('girls');
-            else if (labelText.includes('unisex') || labelText.includes('adult') || labelText.includes('standard')) detectedFits.push('standard');
-            else unknownFitControl = true;
+          // If the editor shows a default-fit-type-label (or text like "Adult Unisex"),
+          // this product is definitively a fixed-fit product with NO selectable checkbox choices.
+          const defaultFitLabel = activeEditor.querySelector('.default-fit-type-label, [class*="default-fit"]');
+          const hasDefaultFitText = Boolean(
+            defaultFitLabel ||
+            (activeEditor.querySelector('fit-type, .fit-type-container')?.textContent || '').toLowerCase().includes('adult unisex')
+          );
+
+          if (hasDefaultFitText) {
+            catalog[amazonKey].fits = [];
+            catalog[amazonKey].fitDiscoveryStatus = 'SUCCESS';
+          } else {
+            const fitElements = Array.from(activeEditor.querySelectorAll(
+              'fit-type flowcheckbox, fit-type input[type="checkbox"], .fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"]'
+            )).filter(el => !el.closest('.default-fit-type-label'));
+            const detectedFits: string[] = [];
+            let unknownFitControl = false;
+            for (const fe of fitElements) {
+              const labelText = [fe.textContent, fe.closest('label')?.textContent, fe.getAttribute('aria-label'), fe.getAttribute('class'), fe.closest('flowcheckbox')?.getAttribute('class')].filter(Boolean).join(' ').toLowerCase().trim();
+              if (labelText.includes('men') && !labelText.includes('women')) detectedFits.push('men');
+              else if (labelText.includes('women')) detectedFits.push('women');
+              else if (labelText.includes('youth') || labelText.includes('kids')) detectedFits.push('youth');
+              else if (labelText.includes('girls')) detectedFits.push('girls');
+              else if (labelText.includes('unisex') || labelText.includes('adult') || labelText.includes('standard')) detectedFits.push('standard');
+              else unknownFitControl = true;
+            }
+            catalog[amazonKey].fits = Array.from(new Set(detectedFits));
+            catalog[amazonKey].fitDiscoveryStatus = unknownFitControl ? 'FAILED' : 'SUCCESS';
           }
-          catalog[amazonKey].fits = Array.from(new Set(detectedFits));
-          catalog[amazonKey].fitDiscoveryStatus = unknownFitControl ? 'FAILED' : 'SUCCESS';
 
           // C. Swatches (<colorcheckbox>)
           const colorCheckboxes = Array.from(activeEditor.querySelectorAll('colorcheckbox'));
