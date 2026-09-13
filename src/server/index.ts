@@ -18,7 +18,7 @@ import { IdeogramV4Service } from './services/ideogramV4Service';
 import { VectorizerService } from './services/vectorizerService';
 import { SupabaseService } from './services/supabaseService';
 import { SyncEngine } from './services/syncEngine';
-import { BrowserSessionService } from './services/browserSessionService';
+import { BrowserSessionService, BrowserSessionType } from './services/browserSessionService';
 import { subscribeBrowserStream } from './services/browserStreamSubscription';
 import { getMcpSchema } from './services/mcpSchemaService';
 import { TaskLogService } from './services/taskLogService';
@@ -65,6 +65,16 @@ const HOST = process.env.HOST || '0.0.0.0';
 const browserWatchSessions = new WeakMap<WebSocket, 'sync' | 'upload'>();
 const browserFrameSequences: Record<'sync' | 'upload', number> = { sync: 0, upload: 0 };
 const MAX_BROWSER_FRAME_BUFFER_BYTES = 512 * 1024;
+
+function getWatchingClientCount(session: BrowserSessionType, excludingClient?: WebSocket): number {
+  let count = 0;
+  for (const client of wss.clients) {
+    if (client !== excludingClient && client.readyState === WebSocket.OPEN && browserWatchSessions.get(client) === session) {
+      count++;
+    }
+  }
+  return count;
+}
 
 // Broadcast helper for WebSockets
 function broadcast(type: string, payload: any) {
@@ -178,7 +188,23 @@ wss.on('connection', (ws) => {
       } else if (type === 'BROWSER_WATCH') {
         // Register BEFORE replaying the cached frame. Static pages may never emit
         // another CDP frame, so subscribing alone can leave the viewer blank forever.
-        await subscribeBrowserStream(browserWatchSessions, ws, session, type => BrowserSessionService.getSession(type));
+        const prevSession = browserWatchSessions.get(ws);
+        const targetSession: BrowserSessionType = session === 'upload' ? 'upload' : 'sync';
+        await subscribeBrowserStream(browserWatchSessions, ws, targetSession, async (t) => {
+          await BrowserSessionService.getSession(t);
+          await BrowserSessionService.startScreencast(t);
+        });
+        if (prevSession && prevSession !== targetSession && getWatchingClientCount(prevSession) === 0) {
+          await BrowserSessionService.stopScreencast(prevSession);
+        }
+      } else if (type === 'BROWSER_UNWATCH') {
+        const currentSession = browserWatchSessions.get(ws);
+        if (currentSession) {
+          browserWatchSessions.delete(ws);
+          if (getWatchingClientCount(currentSession) === 0) {
+            await BrowserSessionService.stopScreencast(currentSession);
+          }
+        }
       } else if (type === 'BROWSER_MOUSE') {
         await BrowserSessionService.dispatchMouseEvent(session || 'sync', payload);
       } else if (type === 'BROWSER_KEY') {
@@ -196,6 +222,16 @@ wss.on('connection', (ws) => {
       }
     } catch (err) {
       console.error('[MBA Hub WS] Invalid message error:', err);
+    }
+  });
+
+  ws.on('close', async () => {
+    const watchedSession = browserWatchSessions.get(ws);
+    if (watchedSession) {
+      browserWatchSessions.delete(ws);
+      if (getWatchingClientCount(watchedSession, ws) === 0) {
+        await BrowserSessionService.stopScreencast(watchedSession);
+      }
     }
   });
 });

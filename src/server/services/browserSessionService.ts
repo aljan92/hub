@@ -235,9 +235,6 @@ export class BrowserSessionService {
       this.sessions.delete(type);
     });
 
-    // Start screencast stream on this page
-    await this.startScreencast(type);
-
     // Navigate to default URL and wait for DOM content
     await page.goto(defaultUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(err => {
       console.warn(`[BrowserSession] Initial navigation warning for ${type}:`, err.message);
@@ -263,22 +260,15 @@ export class BrowserSessionService {
   }
 
   /**
-   * Start CDP screencast on a session
+   * Start CDP screencast on a session (on-demand when a viewer is watching)
    */
   static async startScreencast(type: BrowserSessionType) {
     const session = this.sessions.get(type);
-    if (!session || session.page.isClosed()) return;
+    if (!session || session.page.isClosed() || session.isStreaming) return;
 
     try {
-      await session.cdp.send('Page.startScreencast', {
-        format: 'jpeg',
-        quality: 72,
-        maxWidth: 1440,
-        maxHeight: 900,
-        everyNthFrame: 1
-      });
-
       session.isStreaming = true;
+      session.cdp.removeAllListeners('Page.screencastFrame');
 
       session.cdp.on('Page.screencastFrame', async ({ data, sessionId, metadata }) => {
         try {
@@ -292,9 +282,35 @@ export class BrowserSessionService {
         }
       });
 
+      await session.cdp.send('Page.startScreencast', {
+        format: 'jpeg',
+        quality: 72,
+        maxWidth: 1440,
+        maxHeight: 900,
+        everyNthFrame: 1
+      });
+
       console.log(`[BrowserSession] Screencast active for session: ${type}`);
     } catch (err: any) {
+      session.isStreaming = false;
       console.error(`[BrowserSession] Failed to start screencast for ${type}:`, err.message);
+    }
+  }
+
+  /**
+   * Stop CDP screencast on a session when no viewers are watching
+   */
+  static async stopScreencast(type: BrowserSessionType) {
+    const session = this.sessions.get(type);
+    if (!session || !session.isStreaming) return;
+
+    try {
+      session.isStreaming = false;
+      session.cdp.removeAllListeners('Page.screencastFrame');
+      await session.cdp.send('Page.stopScreencast').catch(() => {});
+      console.log(`[BrowserSession] Screencast stopped for session: ${type}`);
+    } catch (err: any) {
+      console.warn(`[BrowserSession] Failed to stop screencast for ${type}:`, err.message);
     }
   }
 
@@ -304,11 +320,16 @@ export class BrowserSessionService {
    */
   static async closeSessionPage(type: BrowserSessionType): Promise<void> {
     const session = this.sessions.get(type);
+    if (session) {
+      if (session.isStreaming) {
+        await this.stopScreencast(type).catch(() => {});
+      }
+      if (!session.page.isClosed()) {
+        await session.page.close().catch(() => {});
+      }
+    }
     this.sessions.delete(type);
     this.latestFrames.delete(type);
-    if (session && !session.page.isClosed()) {
-      await session.page.close().catch(() => {});
-    }
   }
 
   /**

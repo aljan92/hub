@@ -167,6 +167,11 @@ export const BrowserScreencast: React.FC<BrowserScreencastProps> = () => {
       streamGenerationRef.current += 1;
       pendingFrameRef.current = null;
       wsRef.current = null;
+      if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
+        try {
+          activeSocket.send(JSON.stringify({ type: 'BROWSER_UNWATCH', session: activeSessionRef.current, payload: {} }));
+        } catch {}
+      }
       activeSocket?.close();
     };
   }, [renderLatestFrame]);

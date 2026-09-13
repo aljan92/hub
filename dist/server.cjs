@@ -220820,7 +220820,6 @@ var init_browserSessionService = __esm2({
         page.on("close", () => {
           this.sessions.delete(type3);
         });
-        await this.startScreencast(type3);
         await page.goto(defaultUrl, { waitUntil: "domcontentloaded", timeout: 3e4 }).catch((err) => {
           console.warn(`[BrowserSession] Initial navigation warning for ${type3}:`, err.message);
         });
@@ -220843,20 +220842,14 @@ var init_browserSessionService = __esm2({
         }
       }
       /**
-       * Start CDP screencast on a session
+       * Start CDP screencast on a session (on-demand when a viewer is watching)
        */
       static async startScreencast(type3) {
         const session2 = this.sessions.get(type3);
-        if (!session2 || session2.page.isClosed()) return;
+        if (!session2 || session2.page.isClosed() || session2.isStreaming) return;
         try {
-          await session2.cdp.send("Page.startScreencast", {
-            format: "jpeg",
-            quality: 72,
-            maxWidth: 1440,
-            maxHeight: 900,
-            everyNthFrame: 1
-          });
           session2.isStreaming = true;
+          session2.cdp.removeAllListeners("Page.screencastFrame");
           session2.cdp.on("Page.screencastFrame", async ({ data, sessionId, metadata }) => {
             try {
               await session2.cdp.send("Page.screencastFrameAck", { sessionId });
@@ -220867,9 +220860,33 @@ var init_browserSessionService = __esm2({
               broadcaster(type3, data, metadata);
             }
           });
+          await session2.cdp.send("Page.startScreencast", {
+            format: "jpeg",
+            quality: 72,
+            maxWidth: 1440,
+            maxHeight: 900,
+            everyNthFrame: 1
+          });
           console.log(`[BrowserSession] Screencast active for session: ${type3}`);
         } catch (err) {
+          session2.isStreaming = false;
           console.error(`[BrowserSession] Failed to start screencast for ${type3}:`, err.message);
+        }
+      }
+      /**
+       * Stop CDP screencast on a session when no viewers are watching
+       */
+      static async stopScreencast(type3) {
+        const session2 = this.sessions.get(type3);
+        if (!session2 || !session2.isStreaming) return;
+        try {
+          session2.isStreaming = false;
+          session2.cdp.removeAllListeners("Page.screencastFrame");
+          await session2.cdp.send("Page.stopScreencast").catch(() => {
+          });
+          console.log(`[BrowserSession] Screencast stopped for session: ${type3}`);
+        } catch (err) {
+          console.warn(`[BrowserSession] Failed to stop screencast for ${type3}:`, err.message);
         }
       }
       /**
@@ -220878,12 +220895,18 @@ var init_browserSessionService = __esm2({
        */
       static async closeSessionPage(type3) {
         const session2 = this.sessions.get(type3);
+        if (session2) {
+          if (session2.isStreaming) {
+            await this.stopScreencast(type3).catch(() => {
+            });
+          }
+          if (!session2.page.isClosed()) {
+            await session2.page.close().catch(() => {
+            });
+          }
+        }
         this.sessions.delete(type3);
         this.latestFrames.delete(type3);
-        if (session2 && !session2.page.isClosed()) {
-          await session2.page.close().catch(() => {
-          });
-        }
       }
       /**
        * Forward mouse events (clicks, movement, wheel scroll) using native Playwright mouse
@@ -238180,6 +238203,15 @@ var HOST = process.env.HOST || "0.0.0.0";
 var browserWatchSessions = /* @__PURE__ */ new WeakMap();
 var browserFrameSequences = { sync: 0, upload: 0 };
 var MAX_BROWSER_FRAME_BUFFER_BYTES = 512 * 1024;
+function getWatchingClientCount(session2, excludingClient) {
+  let count = 0;
+  for (const client of wss.clients) {
+    if (client !== excludingClient && client.readyState === import_websocket.default.OPEN && browserWatchSessions.get(client) === session2) {
+      count++;
+    }
+  }
+  return count;
+}
 function broadcast(type3, payload) {
   const message = JSON.stringify({ type: type3, payload, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   wss.clients.forEach((client) => {
@@ -238261,7 +238293,23 @@ wss.on("connection", (ws4) => {
       if (type3 === "BROWSER_INIT") {
         await BrowserSessionService.getSession(session2 || "sync");
       } else if (type3 === "BROWSER_WATCH") {
-        await subscribeBrowserStream(browserWatchSessions, ws4, session2, (type4) => BrowserSessionService.getSession(type4));
+        const prevSession = browserWatchSessions.get(ws4);
+        const targetSession = session2 === "upload" ? "upload" : "sync";
+        await subscribeBrowserStream(browserWatchSessions, ws4, targetSession, async (t) => {
+          await BrowserSessionService.getSession(t);
+          await BrowserSessionService.startScreencast(t);
+        });
+        if (prevSession && prevSession !== targetSession && getWatchingClientCount(prevSession) === 0) {
+          await BrowserSessionService.stopScreencast(prevSession);
+        }
+      } else if (type3 === "BROWSER_UNWATCH") {
+        const currentSession = browserWatchSessions.get(ws4);
+        if (currentSession) {
+          browserWatchSessions.delete(ws4);
+          if (getWatchingClientCount(currentSession) === 0) {
+            await BrowserSessionService.stopScreencast(currentSession);
+          }
+        }
       } else if (type3 === "BROWSER_MOUSE") {
         await BrowserSessionService.dispatchMouseEvent(session2 || "sync", payload);
       } else if (type3 === "BROWSER_KEY") {
@@ -238279,6 +238327,15 @@ wss.on("connection", (ws4) => {
       }
     } catch (err) {
       console.error("[MBA Hub WS] Invalid message error:", err);
+    }
+  });
+  ws4.on("close", async () => {
+    const watchedSession = browserWatchSessions.get(ws4);
+    if (watchedSession) {
+      browserWatchSessions.delete(ws4);
+      if (getWatchingClientCount(watchedSession, ws4) === 0) {
+        await BrowserSessionService.stopScreencast(watchedSession);
+      }
     }
   });
 });
