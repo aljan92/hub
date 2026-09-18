@@ -299,18 +299,20 @@ test('lifecycle audit only reports final live products with a valid ASIN as miss
   assert.deepEqual(audit.candidates.missingDatabaseProducts, [{ designId: 'D1', type: 'STANDARD_TSHIRT', market: 'us' }]);
 });
 
-test('lifecycle audit does not mark existing products stale while Amazon is still processing them', () => {
-  const listings = [{ designId: 'D1', productType: 'MUG', marketplace: 'us', status: 'REVIEW' }];
-  const databaseRows = [{
-    design_id: 'D1',
-    published_products: [{ asin: 'B000000001', type: 'MUG', market: 'us' }],
-    ad_asins: [{ asin: 'B000000001', parentAsin: 'B000000001', type: 'MUG', market: 'us' }]
-  }];
-  const audit = SyncEngine.buildLifecycleAudit(listings, databaseRows);
+test('lifecycle audit does not mark existing products stale from indeterminate Amazon states', () => {
+  for (const status of ['REVIEW', 'PUBLISHING', 'TIMED_OUT']) {
+    const listings = [{ designId: 'D1', productType: 'MUG', marketplace: 'us', status }];
+    const databaseRows = [{
+      design_id: 'D1',
+      published_products: [{ asin: 'B000000001', type: 'MUG', market: 'us' }],
+      ad_asins: [{ asin: 'B000000001', parentAsin: 'B000000001', type: 'MUG', market: 'us' }]
+    }];
+    const audit = SyncEngine.buildLifecycleAudit(listings, databaseRows);
 
-  assert.equal(audit.summary.deletedAtAmazonDesigns, 0);
-  assert.equal(audit.summary.stalePublishedProducts, 0);
-  assert.equal(audit.summary.staleAdAsins, 0);
+    assert.equal(audit.summary.deletedAtAmazonDesigns, 0, status);
+    assert.equal(audit.summary.stalePublishedProducts, 0, status);
+    assert.equal(audit.summary.staleAdAsins, 0, status);
+  }
 });
 
 test('resolver validation counts unique observations and repeat confirmations', () => {

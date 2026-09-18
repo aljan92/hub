@@ -225885,7 +225885,7 @@ var init_syncEngine = __esm2({
           const designId = String(listing?.designId || "");
           const market = String(listing?.marketplace || MP_MAP[listing?.marketplaceId] || "").toLowerCase();
           if (!designId || !market || !listing?.productType) continue;
-          const entry = amazonByDesign.get(designId) || { all: [], liveKeys: /* @__PURE__ */ new Set(), pendingKeys: /* @__PURE__ */ new Set() };
+          const entry = amazonByDesign.get(designId) || { all: [], liveKeys: /* @__PURE__ */ new Set(), indeterminateKeys: /* @__PURE__ */ new Set() };
           entry.all.push(listing);
           const status = String(listing?.status || "").toUpperCase();
           const candidate = { designId, type: normalizeChildAsinProductType(listing.productType), market, status };
@@ -225894,12 +225894,13 @@ var init_syncEngine = __esm2({
             if (isValidAsin(listing?.asin)) entry.liveKeys.add(key);
             else finalProductsWithoutAsin.push(candidate);
           } else if (reviewStatuses.has(status)) {
-            entry.pendingKeys.add(key);
+            entry.indeterminateKeys.add(key);
             reviewProducts.push(candidate);
           } else if (processingStatuses.has(status)) {
-            entry.pendingKeys.add(key);
+            entry.indeterminateKeys.add(key);
             processingProducts.push(candidate);
           } else if (status === "TIMED_OUT") {
+            entry.indeterminateKeys.add(key);
             timedOutProducts.push(candidate);
           }
           amazonByDesign.set(designId, entry);
@@ -225916,18 +225917,18 @@ var init_syncEngine = __esm2({
           databaseDesignIds.add(designId);
           const amazon = amazonByDesign.get(designId);
           if (!amazon) missingFromAmazon.push(designId);
-          else if (amazon.liveKeys.size === 0 && amazon.pendingKeys.size === 0) deletedAtAmazon.push(designId);
+          else if (amazon.liveKeys.size === 0 && amazon.indeterminateKeys.size === 0) deletedAtAmazon.push(designId);
           const dbProducts = Array.isArray(row?.published_products) ? row.published_products : [];
           const dbKeys = new Set(dbProducts.map((product) => productKey(product?.type, product?.market)));
           const liveKeys = amazon?.liveKeys || /* @__PURE__ */ new Set();
-          const pendingKeys = amazon?.pendingKeys || /* @__PURE__ */ new Set();
+          const indeterminateKeys = amazon?.indeterminateKeys || /* @__PURE__ */ new Set();
           for (const product of dbProducts) {
             const key = productKey(product?.type, product?.market);
-            if (!liveKeys.has(key) && !pendingKeys.has(key)) staleProducts.push({ designId, type: normalizeChildAsinProductType(product?.type), market: String(product?.market || "").toLowerCase() });
+            if (!liveKeys.has(key) && !indeterminateKeys.has(key)) staleProducts.push({ designId, type: normalizeChildAsinProductType(product?.type), market: String(product?.market || "").toLowerCase() });
           }
           for (const ad of Array.isArray(row?.ad_asins) ? row.ad_asins : []) {
             const key = productKey(ad?.type, ad?.market);
-            if (!liveKeys.has(key) && !pendingKeys.has(key)) staleAds.push({ designId, type: normalizeChildAsinProductType(ad?.type), market: String(ad?.market || "").toLowerCase() });
+            if (!liveKeys.has(key) && !indeterminateKeys.has(key)) staleAds.push({ designId, type: normalizeChildAsinProductType(ad?.type), market: String(ad?.market || "").toLowerCase() });
           }
           for (const key of liveKeys) {
             if (!dbKeys.has(key)) {
