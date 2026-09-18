@@ -168,7 +168,7 @@ async function runAuditHarness(options: { readError?: string; autoEnabled?: bool
   engine.productScope = () => 'scope';
   engine.getHealth = () => health;
   engine.loadRuntime = () => ({ version: 1, productWatermark: now, resolverRetries: {}, resolverObservations: {} });
-  engine.fetchListingsPage = async () => ({ results: [{ designId: 'D1', marketplace: 'us', productType: 'STANDARD_TSHIRT', status: 'PUBLISHED' }], pageToken: [] });
+  engine.fetchListingsPage = async () => ({ results: [{ designId: 'D1', asin: 'B000000001', marketplace: 'us', productType: 'STANDARD_TSHIRT', status: 'PUBLISHED' }], pageToken: [] });
   engine.recordTraffic = () => {};
   engine.refreshHealthQueues = () => {};
   engine.queueCatchUp = () => { catchUps++; };

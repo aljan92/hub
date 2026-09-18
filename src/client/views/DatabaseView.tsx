@@ -2,19 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { 
   Database, 
   RefreshCw, 
-  Play, 
   Square, 
-  CheckCircle2, 
-  AlertTriangle, 
-  XCircle, 
-  Trash2, 
-  Copy, 
-  ShieldAlert, 
   Layers, 
   FileText, 
-  Link as LinkIcon,
-  Sparkles,
-  ArrowUpRight,
   Clock,
   Activity,
   Download
@@ -28,7 +18,6 @@ interface SyncLogEntry {
 }
 
 interface SyncState {
-  egress?: { mode: 'observe' | 'optimized'; baselineReady: boolean; pending: number; metrics: { family: string; calls: number; bytes: number }[] };
   isScanning: boolean;
   activeScanType: string | null;
   scanStatus: 'ready' | 'scanning' | 'error';
@@ -45,26 +34,6 @@ interface SyncState {
   lastAsinSync: string | null;
   liveDesignsCount: number;
   unresolvedAsinsCount: number;
-  childAsinShadow?: { lastRunAt: string | null; checked: number; resolved: number; unresolved: number; lastResult: string | null };
-  childAsinDiagnostics?: {
-    lastRunAt: string; unresolvedDesigns: number; unresolvedEntries: number; retryWaiting: number;
-    readyNow: number; staleStatusDesigns: number; truncated: boolean;
-    reasons: Array<{ reason: string; count: number }>;
-    groups: Array<{ type: string; market: string; count: number }>;
-  };
-  childAsinValidation?: { observed: number; resolved: number; confirmedTwice: number; statuses: Array<{ status: string; count: number }> };
-  adAsinAudit?: {
-    lastRunAt: string; databaseDesigns: number; liveDesigns: number; publishedProducts: number; adEntries: number;
-    validAdEntries: number; missingAdEntries: number; unresolvedResolveProducts: number; parentPlaceholders: number;
-    parentMismatches: number; orphanAdEntries: number; duplicateProductKeys: number; duplicateAdKeys: number;
-    unsupportedAdEntries: number; inactiveDesignsWithCurrentData: number; asinResolvedMismatches: number;
-    reportPath: string; complete: boolean;
-  };
-  lifecycleAudit?: {
-    lastRunAt: string; amazonListings: number; amazonDesigns: number; databaseDesigns: number;
-    deletedAtAmazonDesigns: number; missingFromAmazonDesigns: number; stalePublishedProducts: number;
-    staleAdAsins: number; missingDatabaseProducts: number; reportPath: string; complete: boolean;
-  };
   lastRun?: { status: string; type: string; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
   health?: {
     overall: 'healthy' | 'warning' | 'critical' | 'paused' | 'unknown';
@@ -76,6 +45,13 @@ interface SyncState {
     progress: { completedPhases: number; totalPhases: number; pages: number; records: number; message: string };
     autoSync: { previouslyEnabled: boolean; pauseActive: boolean; restored: boolean };
     findings: Array<{ severity: string; code: string; message: string; count?: number }>;
+    adAsinAudit?: { validAdEntries?: number; unresolvedResolveProducts?: number };
+    resolverAudit?: { resolved?: number; observed?: number };
+    lifecycleAudit?: {
+      stalePublishedProducts?: number; staleAdAsins?: number; missingDatabaseProducts?: number;
+      reviewAmazonProducts?: number; processingAmazonProducts?: number; timedOutAmazonProducts?: number;
+      finalAmazonProductsWithoutAsin?: number;
+    };
     reportPath: string; error: string | null;
   } | null;
   actionAvailability?: {
@@ -156,18 +132,6 @@ export const DatabaseView: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const [egressError, setEgressError] = useState('');
-  const setEgress = async (body: { mode?: string; reset?: boolean }) => {
-    setEgressError('');
-    try {
-      const res = await fetch('/api/v1/sync/egress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Einstellung konnte nicht gespeichert werden.');
-      setSyncState(data.state);
-      fetchLogs();
-    } catch (error: any) { setEgressError(error.message); }
-  };
-
   const handleToggleAuto = async () => {
     const next = !syncState.autoUpdateEnabled;
     setSyncState(prev => ({ ...prev, autoUpdateEnabled: next }));
@@ -245,15 +209,6 @@ export const DatabaseView: React.FC = () => {
       await navigator.clipboard.writeText(await response.text());
       alert('System-Audit wurde in die Zwischenablage kopiert.');
     } catch (error: any) { alert(error.message); }
-  };
-
-  const handleResetAsins = async () => {
-    if (!confirm('ACHTUNG: Der ASIN-Auflösungsstatus aller Designs wird zurückgesetzt. Fortfahren?')) return;
-    try {
-      await fetch('/api/v1/sync/reset-asins', { method: 'POST' });
-      fetchState();
-      fetchLogs();
-    } catch (e) {}
   };
 
   const handleClearLogs = async () => {
@@ -408,7 +363,34 @@ export const DatabaseView: React.FC = () => {
                 <div className="text-[10px] text-slate-300">{syncState.systemAudit.progress.message}</div>
                 {(syncState.systemAudit.progress.pages > 0 || syncState.systemAudit.progress.records > 0) && <div className="text-[10px] text-slate-500">{syncState.systemAudit.progress.pages} Amazon-Seiten · {syncState.systemAudit.progress.records.toLocaleString('de-DE')} Datensätze</div>}
                 {syncState.systemAudit.autoSync.pauseActive && <div className="text-[10px] text-cyan-300">Auto-Sync kontrolliert pausiert; der vorherige Zustand wird danach automatisch wiederhergestellt.</div>}
+                {syncState.systemAudit.finishedAt && syncState.systemAudit.autoSync.restored && (
+                  <div className="text-[10px] text-emerald-300">Auto-Sync-Zustand wiederhergestellt{syncState.systemAudit.autoSync.previouslyEnabled ? '; Catch-up wurde eingereiht.' : '.'}</div>
+                )}
                 {syncState.systemAudit.error && <div className="text-[10px] text-rose-300">{syncState.systemAudit.error}</div>}
+                {syncState.systemAudit.finishedAt && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-2 text-[10px] text-slate-300">
+                      <div className="font-semibold text-slate-200">Ad-ASINs &amp; Resolver</div>
+                      <div>{(syncState.systemAudit.adAsinAudit?.validAdEntries || 0).toLocaleString('de-DE')} gültige Ziele · {syncState.systemAudit.adAsinAudit?.unresolvedResolveProducts || 0} offen</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-2 text-[10px] text-slate-300">
+                      <div className="font-semibold text-slate-200">Produktbestand</div>
+                      <div>{syncState.systemAudit.lifecycleAudit?.missingDatabaseProducts || 0} final live mit ASIN fehlen · {syncState.systemAudit.lifecycleAudit?.stalePublishedProducts || 0} veraltet</div>
+                    </div>
+                    <div className="sm:col-span-2 rounded-lg border border-slate-800 bg-slate-950/40 p-2 text-[10px] text-slate-400">
+                      Amazon ausstehend: {syncState.systemAudit.lifecycleAudit?.reviewAmazonProducts || 0} Review · {syncState.systemAudit.lifecycleAudit?.processingAmazonProducts || 0} Verarbeitung · {syncState.systemAudit.lifecycleAudit?.timedOutAmazonProducts || 0} Timeout
+                    </div>
+                  </div>
+                )}
+                {!!syncState.systemAudit.findings?.length && (
+                  <div className="space-y-1 pt-1">
+                    {syncState.systemAudit.findings.map((finding, index) => (
+                      <div key={`${finding.code}-${index}`} className={`rounded-lg border px-2 py-1.5 text-[10px] ${finding.severity === 'critical' ? 'border-rose-500/30 bg-rose-950/20 text-rose-300' : finding.severity === 'warning' ? 'border-amber-500/30 bg-amber-950/20 text-amber-300' : 'border-slate-700 bg-slate-900/40 text-slate-400'}`}>
+                        {finding.message}{finding.count !== undefined ? ` (${finding.count})` : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex gap-2 pt-1">
                   {['queued', 'waiting_for_worker', 'running'].includes(syncState.systemAudit.status) ? (
                     <button onClick={handleCancelSystemAudit} className="text-[10px] px-2.5 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300">Audit abbrechen</button>
@@ -425,31 +407,7 @@ export const DatabaseView: React.FC = () => {
             )}
           </div>
           
-          <div className="p-5 rounded-2xl bg-surface/70 border border-slate-800/80 space-y-3">
-            <div className="text-sm font-bold text-white">Datenübertragung reduzieren</div>
-            <label className="flex items-center gap-3 text-sm text-slate-300">
-              <input type="checkbox" disabled={syncState.isScanning}
-                checked={syncState.egress?.mode === 'optimized'}
-                onChange={e => setEgress({ mode: e.target.checked ? 'optimized' : 'observe' })} />
-              Unveränderte Produkte überspringen
-            </label>
-            <p className="text-xs text-slate-400">
-              {syncState.egress?.baselineReady ? 'Vollständiger Produktabgleich bestätigt.' : 'Vor dem Überspringen einmal „Full Refresh“ unter Produkte erfolgreich ausführen.'}
-              {' '}Amazon wird weiterhin alle 15 Minuten geprüft, wenn Auto-Update aktiv ist.
-              Ohne Häkchen werden Änderungen nur zum Vergleich mitgeführt.
-            </p>
-            <p className="text-xs text-slate-400">{syncState.egress?.pending || 0} offene Folgeaufgaben. Wöchentlicher Vollabgleich bei aktivem Auto-Update.</p>
-            <button disabled={syncState.isScanning} onClick={() => setEgress({ reset: true })}
-              className="text-xs text-primary-400 disabled:opacity-40">Vergleichsstand nach Datenbank-Wiederherstellung zurücksetzen</button>
-            {egressError && <p role="alert" className="text-xs text-rose-400">{egressError}</p>}
-            {!!syncState.egress?.metrics?.length && <details className="text-xs text-slate-400">
-              <summary>Gemessene Sync-Abfragen</summary>
-              <p>Seit Beginn der Messung; Antwortgrößen geschätzt, keine Abrechnungswerte.</p>
-              {syncState.egress.metrics.map(m => <div key={m.family}>{m.family}: {m.calls} Anfragen · {(m.bytes / 1024).toFixed(1)} KiB</div>)}
-            </details>}
-          </div>
-
-          {/* 1. Auto-Update Switch Card */}
+          {/* Auto-Update Switch Card */}
           <div className="p-5 rounded-2xl bg-surface/70 border border-slate-800/80 backdrop-blur-md space-y-3">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
@@ -490,204 +448,31 @@ export const DatabaseView: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. Manual Scans Group Card */}
-          <div className="p-5 rounded-2xl bg-surface/70 border border-slate-800/80 backdrop-blur-md space-y-4">
-            <div className="text-xs font-bold uppercase tracking-wider text-primary-400 flex items-center gap-2">
-              <Layers className="w-3.5 h-3.5" />
-              Manuelle Synchronisierung
-            </div>
-
-            {/* Row 1: Produkte */}
-            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                  📦 Produkte (FindListings)
-                </span>
-                <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  Zuletzt: {formatDate(syncState.lastQuickDesigns || syncState.lastFullDesigns)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  onClick={() => handleRunScan('quick_products')}
-                  disabled={syncState.isScanning}
-                  className="px-3 py-2 rounded-xl bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 text-xs font-semibold transition-all disabled:opacity-50"
-                  title="Synchronisiert nur Produkte, die in den letzten Tagen geändert wurden"
-                >
-                  Quick Update
+          <details className="p-5 rounded-2xl bg-surface/70 border border-slate-800/80 backdrop-blur-md">
+            <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <Layers className="w-3.5 h-3.5 text-slate-400" />
+              Erweiterte Wartung
+            </summary>
+            <p className="text-[11px] text-slate-500 mt-3">Vollständige Läufe sind normalerweise nicht nötig. Der Hintergrund-Sync übernimmt neue und geänderte Produkte automatisch.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              <div className="rounded-xl bg-slate-900/60 border border-slate-800/80 p-3 space-y-2">
+                <div className="text-xs font-semibold text-slate-200">Produkte</div>
+                <div className="text-[10px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> Zuletzt: {formatDate(syncState.lastFullDesigns)}</div>
+                <button onClick={() => handleRunScan('full_products')} disabled={syncState.isScanning}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold disabled:opacity-50">
+                  Produkt-Full-Refresh
                 </button>
-                <button
-                  onClick={() => handleRunScan('full_products')}
-                  disabled={syncState.isScanning}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold transition-all disabled:opacity-50"
-                  title="Führt eine vollständige Synchronisierung aller Produkte im Account durch"
-                >
-                  Full Refresh
+              </div>
+              <div className="rounded-xl bg-slate-900/60 border border-slate-800/80 p-3 space-y-2">
+                <div className="text-xs font-semibold text-slate-200">Listingtexte</div>
+                <div className="text-[10px] text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" /> Zuletzt: {formatDate(syncState.lastFullListings)}</div>
+                <button onClick={() => handleRunScan('full_listings')} disabled={syncState.isScanning}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold disabled:opacity-50">
+                  Listing-Full-Refresh
                 </button>
               </div>
             </div>
-
-            {/* Row 2: Listings */}
-            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                  <FileText className="w-3.5 h-3.5 text-cyan-400" />
-                  📝 Listings (Texte &amp; Bullets)
-                </span>
-                <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  Zuletzt: {formatDate(syncState.lastQuickListings || syncState.lastFullListings)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  onClick={() => handleRunScan('quick_listings')}
-                  disabled={syncState.isScanning}
-                  className="px-3 py-2 rounded-xl bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 text-xs font-semibold transition-all disabled:opacity-50"
-                  title="Lädt nur Texte für neu hinzugefügte Listings herunter"
-                >
-                  Quick Update
-                </button>
-                <button
-                  onClick={() => handleRunScan('full_listings')}
-                  disabled={syncState.isScanning}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold transition-all disabled:opacity-50"
-                  title="Aktualisiert die Texte aller Listings in der Datenbank"
-                >
-                  Full Refresh
-                </button>
-              </div>
-            </div>
-
-            {/* Row 4: ASINs */}
-            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                  <LinkIcon className="w-3.5 h-3.5 text-amber-400" />
-                  🔗 ASIN Resolver
-                </span>
-                <span className="text-[11px] text-amber-400/90 font-mono">
-                  {syncState.unresolvedAsinsCount} offen
-                </span>
-              </div>
-              <button
-                disabled
-                className="w-full px-3.5 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all disabled:opacity-50 flex items-center justify-center space-x-2"
-                title="Der alte HTML-Resolver ist während der SNAP-Validierung pausiert"
-              >
-                <span>Alter Resolver pausiert ({syncState.unresolvedAsinsCount} offen)</span>
-              </button>
-              <button
-                onClick={() => handleRunScan('resolve_asins_shadow')}
-                disabled={syncState.isScanning}
-                className="w-full px-3.5 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
-                title="Prüft genau ein fälliges Produkt und speichert eine eindeutig belegte Child-ASIN sofort"
-              >
-                SNAP-Resolver einmal ausführen
-              </button>
-              {syncState.childAsinShadow?.lastRunAt && (
-                <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/20 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/75">
-                  <div className="font-semibold text-cyan-300">SNAP Resolver · sichere Einzelaktualisierung</div>
-                  <div>{syncState.childAsinShadow.lastResult || 'Noch kein Ergebnis'}</div>
-                  <div className="text-cyan-200/50">{formatDate(Date.parse(syncState.childAsinShadow.lastRunAt))}</div>
-                </div>
-              )}
-              {!!syncState.childAsinValidation?.observed && (
-                <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/10 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/70">
-                  <div className="font-semibold text-cyan-300">Gesammelte SNAP-Ergebnisse</div>
-                  <div>{syncState.childAsinValidation.resolved}/{syncState.childAsinValidation.observed} eindeutig aufgelöst</div>
-                  <div className="text-cyan-200/50">{syncState.childAsinValidation.statuses.slice(0, 5).map(entry => `${entry.status}: ${entry.count}`).join(' · ')}</div>
-                </div>
-              )}
-              <button
-                onClick={() => handleRunScan('ad_asin_audit')}
-                disabled={syncState.isScanning}
-                className="w-full px-3.5 py-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
-                title="Prüft published_products, ad_asins und asin_resolved ausschließlich lesend"
-              >
-                Ad-ASIN Audit starten (nur lesen)
-              </button>
-              {syncState.adAsinAudit?.lastRunAt && (
-                <div className="rounded-lg border border-violet-500/20 bg-violet-950/15 px-2.5 py-2 text-[10px] leading-relaxed text-violet-100/75 space-y-1">
-                  <div className="font-semibold text-violet-300">Ad-ASIN Audit · keine Datenbankänderung</div>
-                  <div>{syncState.adAsinAudit.validAdEntries} gültige Ziele · {syncState.adAsinAudit.unresolvedResolveProducts} Resolve-Produkte offen</div>
-                  <div>
-                    {syncState.adAsinAudit.parentPlaceholders} Parent-Platzhalter · {syncState.adAsinAudit.missingAdEntries} fehlend ·{' '}
-                    {syncState.adAsinAudit.parentMismatches} Parent-Konflikte · {syncState.adAsinAudit.orphanAdEntries} verwaist
-                  </div>
-                  <div>
-                    {syncState.adAsinAudit.duplicateProductKeys + syncState.adAsinAudit.duplicateAdKeys} Duplikate ·{' '}
-                    {syncState.adAsinAudit.inactiveDesignsWithCurrentData} inaktive Designs mit aktuellen Daten ·{' '}
-                    {syncState.adAsinAudit.asinResolvedMismatches} falsche Statusflags
-                  </div>
-                  <div className="text-violet-200/50">Stand: {formatDate(Date.parse(syncState.adAsinAudit.lastRunAt))}</div>
-                </div>
-              )}
-              {syncState.childAsinDiagnostics?.lastRunAt && (
-                <div className="rounded-lg border border-amber-500/15 bg-amber-950/15 px-2.5 py-2 text-[10px] leading-relaxed text-slate-300 space-y-1.5">
-                  <div className="font-semibold text-amber-300">Warum noch offen?</div>
-                  <div>
-                    {syncState.childAsinDiagnostics.unresolvedDesigns} Designs · {syncState.childAsinDiagnostics.unresolvedEntries} einzelne Child-ASINs ·{' '}
-                    {syncState.childAsinDiagnostics.readyNow} jetzt prüfbar · {syncState.childAsinDiagnostics.retryWaiting} im Retry
-                  </div>
-                  {syncState.childAsinDiagnostics.staleStatusDesigns > 0 && (
-                    <div className="text-amber-200/80">
-                      {syncState.childAsinDiagnostics.staleStatusDesigns} Designs haben nur einen veralteten Status oder nicht unterstützte Produkte.
-                    </div>
-                  )}
-                  {syncState.childAsinDiagnostics.reasons.slice(0, 4).map(entry => (
-                    <div key={entry.reason} className="flex justify-between gap-3">
-                      <span>{entry.reason}</span><span className="font-mono text-amber-200">{entry.count}</span>
-                    </div>
-                  ))}
-                  {syncState.childAsinDiagnostics.groups.length > 0 && (
-                    <div className="text-slate-400">
-                      Typen: {syncState.childAsinDiagnostics.groups.slice(0, 5).map(entry => `${entry.type} (${entry.market}): ${entry.count}`).join(' · ')}
-                    </div>
-                  )}
-                  <div className="text-slate-500">
-                    Stand: {formatDate(Date.parse(syncState.childAsinDiagnostics.lastRunAt))}{syncState.childAsinDiagnostics.truncated ? ' · Anzeige auf 1.000 Designs begrenzt' : ''}
-                  </div>
-                </div>
-              )}
-              <button
-                onClick={() => handleRunScan('lifecycle_audit')}
-                disabled={syncState.isScanning}
-                className="w-full px-3.5 py-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/25 text-[11px] font-semibold transition-all disabled:opacity-50"
-                title="Vergleicht einen vollständigen Amazon-Bestand nur lesend mit Supabase"
-              >
-                Gelöschte Produkte prüfen (nur lesen)
-              </button>
-              {syncState.lifecycleAudit?.complete && (
-                <div className="rounded-lg border border-violet-500/15 bg-violet-950/20 px-2.5 py-2 text-[10px] leading-relaxed text-violet-100/75 space-y-1">
-                  <div className="font-semibold text-violet-300">Lifecycle Audit · keine Datenbankänderung</div>
-                  <div>{syncState.lifecycleAudit.deletedAtAmazonDesigns} Designs bei Amazon vollständig ohne Live-Produkt</div>
-                  <div>{syncState.lifecycleAudit.missingFromAmazonDesigns} DB-Designs fehlen im vollständigen Amazon-Ergebnis</div>
-                  <div>{syncState.lifecycleAudit.stalePublishedProducts} veraltete published_products · {syncState.lifecycleAudit.staleAdAsins} betroffene ad_asins</div>
-                  <div>{syncState.lifecycleAudit.missingDatabaseProducts} Amazon-Live-Produkte fehlen in Supabase</div>
-                  <div className="text-violet-200/50">Stand: {formatDate(Date.parse(syncState.lifecycleAudit.lastRunAt))}</div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 3. Danger Zone */}
-          <div className="p-4 rounded-2xl bg-rose-950/20 border border-rose-900/40 backdrop-blur-md space-y-3">
-            <div className="text-xs font-bold uppercase tracking-wider text-rose-400 flex items-center gap-2">
-              <ShieldAlert className="w-3.5 h-3.5" />
-              Gefahrenzone
-            </div>
-            <div>
-              <button
-                onClick={handleResetAsins}
-                className="px-3 py-2 rounded-xl bg-rose-900/30 hover:bg-rose-900/50 text-rose-200 border border-rose-800/40 text-[11px] font-semibold transition-all"
-              >
-                🔄 ASIN-Status resetten
-              </button>
-            </div>
-          </div>
+          </details>
         </div>
 
         {/* Right Column: Live Terminal Logs (5 Cols) */}

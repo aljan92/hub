@@ -89,6 +89,10 @@ export interface LifecycleAuditSummary {
   stalePublishedProducts: number;
   staleAdAsins: number;
   missingDatabaseProducts: number;
+  reviewAmazonProducts: number;
+  processingAmazonProducts: number;
+  timedOutAmazonProducts: number;
+  finalAmazonProductsWithoutAsin: number;
   reportPath: string;
   complete: boolean;
 }
@@ -807,6 +811,14 @@ export class SyncEngine {
       this.systemAudit.lifecycleAudit = { ...lifecycle.summary, candidates: lifecycle.candidates, complete: true };
       const lifecycleIssues = lifecycle.summary.stalePublishedProducts + lifecycle.summary.staleAdAsins + lifecycle.summary.missingDatabaseProducts;
       if (lifecycleIssues) this.systemAudit.findings.push({ severity: 'warning', code: 'LIFECYCLE_DRIFT', message: 'Lifecycle-Abgleich hat Abweichungen gefunden.', count: lifecycleIssues });
+      if (lifecycle.summary.finalAmazonProductsWithoutAsin) {
+        this.systemAudit.findings.push({
+          severity: 'warning',
+          code: 'AMAZON_FINAL_WITHOUT_ASIN',
+          message: 'Amazon meldet final veröffentlichte Produkte ohne gültige ASIN; sie wurden nicht als Datenbanklücke gewertet.',
+          count: lifecycle.summary.finalAmazonProductsWithoutAsin
+        });
+      }
       this.auditCheckpoint('evaluation', 6, 'Bewerte Ergebnisse und erstelle Abschlussbericht.');
 
       const hasCritical = this.systemAudit.findings.some(finding => finding.severity === 'critical');
@@ -877,7 +889,8 @@ export class SyncEngine {
       '',
       `Ad-ASINs: ${this.systemAudit.adAsinAudit?.validAdEntries || 0} gültig, ${this.systemAudit.adAsinAudit?.unresolvedResolveProducts || 0} offen`,
       `Resolver: ${this.systemAudit.resolverAudit?.resolved || 0}/${this.systemAudit.resolverAudit?.observed || 0} aufgelöst`,
-      `Lifecycle: ${this.systemAudit.lifecycleAudit?.stalePublishedProducts || 0} veraltete Produkte, ${this.systemAudit.lifecycleAudit?.staleAdAsins || 0} veraltete Ad-ASINs`,
+      `Lifecycle: ${this.systemAudit.lifecycleAudit?.stalePublishedProducts || 0} veraltete Produkte, ${this.systemAudit.lifecycleAudit?.staleAdAsins || 0} veraltete Ad-ASINs, ${this.systemAudit.lifecycleAudit?.missingDatabaseProducts || 0} final live mit ASIN fehlen in Supabase`,
+      `Amazon ausstehend: ${this.systemAudit.lifecycleAudit?.reviewAmazonProducts || 0} Review, ${this.systemAudit.lifecycleAudit?.processingAmazonProducts || 0} Verarbeitung, ${this.systemAudit.lifecycleAudit?.timedOutAmazonProducts || 0} Timeout`,
       '',
       'Befunde:',
       ...(this.systemAudit.findings.length ? this.systemAudit.findings.map(item => `- [${item.severity.toUpperCase()}] ${item.code}: ${item.message}${item.count !== undefined ? ` (${item.count})` : ''}`) : ['- Keine Auffälligkeiten'])
@@ -2063,16 +2076,39 @@ export class SyncEngine {
   }
 
   public static buildLifecycleAudit(listings: any[], databaseRows: any[]): { summary: Omit<LifecycleAuditSummary, 'lastRunAt' | 'reportPath' | 'complete'>; candidates: any } {
-    const liveStatuses = new Set(['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING']);
-    const amazonByDesign = new Map<string, { all: any[]; liveKeys: Set<string> }>();
+    // Only final Amazon states with a usable ASIN are eligible for published_products/ad_asins.
+    // Transitional rows are tracked separately so they cannot create false database-drift warnings.
+    const liveStatuses = new Set(['PUBLISHED', 'PROPAGATED', 'LOCKED']);
+    const reviewStatuses = new Set(['REVIEW', 'UNDER_REVIEW']);
+    const processingStatuses = new Set(['PUBLISHING', 'PROCESSING', 'TRANSLATING', 'PENDING']);
+    const isValidAsin = (value: unknown) => /^[A-Z0-9]{10}$/.test(String(value || '').trim().toUpperCase());
+    const amazonByDesign = new Map<string, { all: any[]; liveKeys: Set<string>; pendingKeys: Set<string> }>();
+    const reviewProducts: Array<{ designId: string; type: string; market: string; status: string }> = [];
+    const processingProducts: Array<{ designId: string; type: string; market: string; status: string }> = [];
+    const timedOutProducts: Array<{ designId: string; type: string; market: string; status: string }> = [];
+    const finalProductsWithoutAsin: Array<{ designId: string; type: string; market: string; status: string }> = [];
     const productKey = (type: unknown, market: unknown) => `${normalizeChildAsinProductType(type)}|${String(market || '').toLowerCase()}`;
     for (const listing of listings || []) {
       const designId = String(listing?.designId || '');
       const market = String(listing?.marketplace || MP_MAP[listing?.marketplaceId] || '').toLowerCase();
       if (!designId || !market || !listing?.productType) continue;
-      const entry = amazonByDesign.get(designId) || { all: [], liveKeys: new Set<string>() };
+      const entry = amazonByDesign.get(designId) || { all: [], liveKeys: new Set<string>(), pendingKeys: new Set<string>() };
       entry.all.push(listing);
-      if (liveStatuses.has(String(listing?.status || '').toUpperCase())) entry.liveKeys.add(productKey(listing.productType, market));
+      const status = String(listing?.status || '').toUpperCase();
+      const candidate = { designId, type: normalizeChildAsinProductType(listing.productType), market, status };
+      const key = productKey(listing.productType, market);
+      if (liveStatuses.has(status)) {
+        if (isValidAsin(listing?.asin)) entry.liveKeys.add(key);
+        else finalProductsWithoutAsin.push(candidate);
+      } else if (reviewStatuses.has(status)) {
+        entry.pendingKeys.add(key);
+        reviewProducts.push(candidate);
+      } else if (processingStatuses.has(status)) {
+        entry.pendingKeys.add(key);
+        processingProducts.push(candidate);
+      } else if (status === 'TIMED_OUT') {
+        timedOutProducts.push(candidate);
+      }
       amazonByDesign.set(designId, entry);
     }
 
@@ -2088,17 +2124,19 @@ export class SyncEngine {
       databaseDesignIds.add(designId);
       const amazon = amazonByDesign.get(designId);
       if (!amazon) missingFromAmazon.push(designId);
-      else if (amazon.liveKeys.size === 0) deletedAtAmazon.push(designId);
+      else if (amazon.liveKeys.size === 0 && amazon.pendingKeys.size === 0) deletedAtAmazon.push(designId);
 
       const dbProducts = Array.isArray(row?.published_products) ? row.published_products : [];
       const dbKeys = new Set(dbProducts.map((product: any) => productKey(product?.type, product?.market)));
       const liveKeys = amazon?.liveKeys || new Set<string>();
+      const pendingKeys = amazon?.pendingKeys || new Set<string>();
       for (const product of dbProducts) {
         const key = productKey(product?.type, product?.market);
-        if (!liveKeys.has(key)) staleProducts.push({ designId, type: normalizeChildAsinProductType(product?.type), market: String(product?.market || '').toLowerCase() });
+        if (!liveKeys.has(key) && !pendingKeys.has(key)) staleProducts.push({ designId, type: normalizeChildAsinProductType(product?.type), market: String(product?.market || '').toLowerCase() });
       }
       for (const ad of Array.isArray(row?.ad_asins) ? row.ad_asins : []) {
-        if (!liveKeys.has(productKey(ad?.type, ad?.market))) staleAds.push({ designId, type: normalizeChildAsinProductType(ad?.type), market: String(ad?.market || '').toLowerCase() });
+        const key = productKey(ad?.type, ad?.market);
+        if (!liveKeys.has(key) && !pendingKeys.has(key)) staleAds.push({ designId, type: normalizeChildAsinProductType(ad?.type), market: String(ad?.market || '').toLowerCase() });
       }
       for (const key of liveKeys) {
         if (!dbKeys.has(key)) {
@@ -2124,9 +2162,23 @@ export class SyncEngine {
         missingFromAmazonDesigns: missingFromAmazon.length,
         stalePublishedProducts: staleProducts.length,
         staleAdAsins: staleAds.length,
-        missingDatabaseProducts: missingDatabaseProducts.length
+        missingDatabaseProducts: missingDatabaseProducts.length,
+        reviewAmazonProducts: reviewProducts.length,
+        processingAmazonProducts: processingProducts.length,
+        timedOutAmazonProducts: timedOutProducts.length,
+        finalAmazonProductsWithoutAsin: finalProductsWithoutAsin.length
       },
-      candidates: { deletedAtAmazon, missingFromAmazon, staleProducts, staleAds, missingDatabaseProducts }
+      candidates: {
+        deletedAtAmazon,
+        missingFromAmazon,
+        staleProducts,
+        staleAds,
+        missingDatabaseProducts,
+        reviewProducts,
+        processingProducts,
+        timedOutProducts,
+        finalProductsWithoutAsin
+      }
     };
   }
 

@@ -281,6 +281,38 @@ test('lifecycle audit compares complete Amazon state without mutating source row
   assert.deepEqual(databaseRows, before);
 });
 
+test('lifecycle audit only reports final live products with a valid ASIN as missing', () => {
+  const listings = [
+    { designId: 'D1', asin: 'B000000002', productType: 'MUG', marketplace: 'us', status: 'REVIEW' },
+    { designId: 'D1', asin: 'B000000003', productType: 'TUMBLER', marketplace: 'us', status: 'PUBLISHING' },
+    { designId: 'D1', asin: 'B000000004', productType: 'THROW_PILLOW', marketplace: 'us', status: 'TIMED_OUT' },
+    { designId: 'D1', productType: 'TOTE_BAG', marketplace: 'us', status: 'PUBLISHED' },
+    { designId: 'D1', asin: 'B000000001', productType: 'STANDARD_TSHIRT', marketplace: 'us', status: 'PUBLISHED' }
+  ];
+  const audit = SyncEngine.buildLifecycleAudit(listings, [{ design_id: 'D1', published_products: [], ad_asins: [] }]);
+
+  assert.equal(audit.summary.missingDatabaseProducts, 1);
+  assert.equal(audit.summary.reviewAmazonProducts, 1);
+  assert.equal(audit.summary.processingAmazonProducts, 1);
+  assert.equal(audit.summary.timedOutAmazonProducts, 1);
+  assert.equal(audit.summary.finalAmazonProductsWithoutAsin, 1);
+  assert.deepEqual(audit.candidates.missingDatabaseProducts, [{ designId: 'D1', type: 'STANDARD_TSHIRT', market: 'us' }]);
+});
+
+test('lifecycle audit does not mark existing products stale while Amazon is still processing them', () => {
+  const listings = [{ designId: 'D1', productType: 'MUG', marketplace: 'us', status: 'REVIEW' }];
+  const databaseRows = [{
+    design_id: 'D1',
+    published_products: [{ asin: 'B000000001', type: 'MUG', market: 'us' }],
+    ad_asins: [{ asin: 'B000000001', parentAsin: 'B000000001', type: 'MUG', market: 'us' }]
+  }];
+  const audit = SyncEngine.buildLifecycleAudit(listings, databaseRows);
+
+  assert.equal(audit.summary.deletedAtAmazonDesigns, 0);
+  assert.equal(audit.summary.stalePublishedProducts, 0);
+  assert.equal(audit.summary.staleAdAsins, 0);
+});
+
 test('resolver validation counts unique observations and repeat confirmations', () => {
   const summary = SyncEngine.buildResolverValidation({
     a: { parentAsin: 'B000000001', resolvedAsin: 'B000000002', status: 'resolved', source: 'hidden-input', observedAt: new Date().toISOString(), consistentCount: 2 },
