@@ -379,6 +379,36 @@ app.post('/api/v1/sync/toggle-auto', (req, res) => {
   res.json({ success: true, state: SyncEngine.getState() });
 });
 
+app.get('/api/v1/sync/health', (req, res) => {
+  try { res.json({ success: true, health: SyncEngine.getHealth() }); }
+  catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/v1/sync/system-audit/start', (req, res) => {
+  try { res.status(202).json({ success: true, audit: SyncEngine.startSystemAudit() }); }
+  catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/v1/sync/system-audit/cancel', (req, res) => {
+  try { res.json({ success: true, audit: SyncEngine.cancelSystemAudit() }); }
+  catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get('/api/v1/sync/system-audit/status', (req, res) => {
+  try { res.json({ success: true, audit: SyncEngine.getSystemAuditStatus() }); }
+  catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get('/api/v1/sync/system-audit/latest/download', (req, res) => {
+  try { res.download(SyncEngine.getLatestSystemAuditPath(), 'mba-hub-system-audit.json'); }
+  catch (err: any) { res.status(404).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/v1/sync/run-now', (req, res) => {
+  try { res.status(202).json({ success: true, ...SyncEngine.runNow(), state: SyncEngine.getState() }); }
+  catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
 app.post('/api/v1/sync/run', async (req, res) => {
   const { type } = req.body;
   try {

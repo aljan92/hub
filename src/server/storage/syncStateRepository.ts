@@ -51,9 +51,14 @@ export class SyncStateRepository {
       CREATE TABLE IF NOT EXISTS sync_scopes (scope TEXT PRIMARY KEY, watermark TEXT, full_at INTEGER);
       CREATE TABLE IF NOT EXISTS sync_listings (scope TEXT, identity TEXT, fingerprint TEXT NOT NULL, PRIMARY KEY(scope, identity));
       CREATE TABLE IF NOT EXISTS sync_jobs (scope TEXT, design TEXT, products TEXT, texts INTEGER NOT NULL DEFAULT 0,
-        attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(scope, design));
+        attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(scope, design));
       CREATE TABLE IF NOT EXISTS sync_metrics (family TEXT PRIMARY KEY, calls INTEGER NOT NULL, bytes INTEGER NOT NULL, rows INTEGER NOT NULL, errors INTEGER NOT NULL);
     `);
+    const jobColumns = this.db.prepare('PRAGMA table_info(sync_jobs)').all() as any[];
+    if (!jobColumns.some(column => column.name === 'created_at')) {
+      this.db.exec('ALTER TABLE sync_jobs ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;');
+    }
+    this.db.prepare('UPDATE sync_jobs SET created_at=? WHERE created_at=0').run(Date.now());
   }
   close() { this.db.close(); }
   private transaction<T>(fn: () => T): T {
@@ -86,7 +91,7 @@ export class SyncStateRepository {
         if (skip && identical && !pending?.products) continue;
         const union = new Map<string, any>((pending?.products ? JSON.parse(pending.products) : []).map((r: any) => [listingKey(r), r]));
         incoming.forEach(row => union.set(listingKey(row), row));
-        this.db.prepare(`INSERT INTO sync_jobs(scope,design,products) VALUES(?,?,?) ON CONFLICT(scope,design) DO UPDATE SET products=excluded.products`).run(scope, design, JSON.stringify([...union.values()]));
+        this.db.prepare(`INSERT INTO sync_jobs(scope,design,products,created_at) VALUES(?,?,?,?) ON CONFLICT(scope,design) DO UPDATE SET products=excluded.products`).run(scope, design, JSON.stringify([...union.values()]), Date.now());
       }
     });
     const pending = this.db.prepare('SELECT design, products FROM sync_jobs WHERE scope=? AND products IS NOT NULL ORDER BY rowid').all(scope) as any[];
@@ -116,6 +121,18 @@ export class SyncStateRepository {
   }
   pending(scope: string): number {
     return Number((this.db.prepare('SELECT COUNT(*) AS n FROM sync_jobs WHERE scope=?').get(scope) as any).n);
+  }
+  queueHealth(scope: string): { productJobs: number; textJobs: number; oldestTextJobAt: string | null } {
+    const row = this.db.prepare(`SELECT
+      SUM(CASE WHEN products IS NOT NULL THEN 1 ELSE 0 END) AS product_jobs,
+      SUM(CASE WHEN texts=1 THEN 1 ELSE 0 END) AS text_jobs,
+      MIN(CASE WHEN texts=1 THEN created_at ELSE NULL END) AS oldest_text_at
+      FROM sync_jobs WHERE scope=?`).get(scope) as any;
+    return {
+      productJobs: Number(row?.product_jobs || 0),
+      textJobs: Number(row?.text_jobs || 0),
+      oldestTextJobAt: row?.oldest_text_at ? new Date(Number(row.oldest_text_at)).toISOString() : null
+    };
   }
   metric(family: string, data: any, error?: unknown) {
     const bytes = Buffer.byteLength(JSON.stringify(data ?? null));

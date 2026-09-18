@@ -5,8 +5,9 @@ import { SyncStateRepository, syncScope, WEEK_MS } from '../storage/syncStateRep
 import { SupabaseService } from './supabaseService';
 import { getSupabaseClient, loadSettings, saveSettings } from './settingsService';
 import { BrowserSessionService } from './browserSessionService';
-import { atomicWriteJson, loadJsonWithBackupRecovery } from '../utils/atomicFileStorage';
+import { atomicWriteFile, atomicWriteJson, loadJsonWithBackupRecovery, setFileFailSafe } from '../utils/atomicFileStorage';
 import { AmazonRetailIdentityService } from './amazonRetailIdentityService';
+import { redactSecrets, SyncHealthService, SyncWorkerName } from './syncHealthService';
 import {
   getChildAsinPolicy,
   isConfirmedChildAsin,
@@ -46,6 +47,36 @@ export interface SyncState {
   lifecycleAudit?: LifecycleAuditSummary;
   egress?: { mode: 'observe' | 'optimized'; baselineReady: boolean; pending: number; metrics: any[] };
   lastRun?: ProductSyncRuntime['lastRun'];
+  health?: ReturnType<typeof SyncHealthService.evaluate>;
+  systemAudit?: SystemAuditReport | null;
+  actionAvailability?: {
+    systemAudit: { enabled: boolean; reason: string | null };
+    runNow: { enabled: boolean; reason: string | null; queued: boolean };
+  };
+}
+
+export type SystemAuditStatus = 'queued' | 'waiting_for_worker' | 'running' | 'complete' | 'complete_with_warnings' | 'failed' | 'cancelled' | 'interrupted';
+export interface SystemAuditReport {
+  schemaVersion: 1;
+  auditId: string;
+  status: SystemAuditStatus;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  currentPhase: string;
+  progress: { completedPhases: number; totalPhases: number; pages: number; records: number; message: string };
+  autoSync: { previouslyEnabled: boolean; pauseActive: boolean; restored: boolean };
+  health: any;
+  preflight: any;
+  schedulerAudit: any;
+  adAsinAudit: any;
+  resolverAudit: any;
+  syncAudit: any;
+  lifecycleAudit: any;
+  findings: Array<{ severity: 'info' | 'warning' | 'critical'; code: string; message: string; count?: number }>;
+  reportPath: string;
+  textReportPath: string | null;
+  error: string | null;
 }
 
 export interface LifecycleAuditSummary {
@@ -142,6 +173,8 @@ const SYNC_RUNTIME_PATH = path.resolve(process.cwd(), 'data', 'sync_runtime.json
 const FULL_STAGE_PATH = path.resolve(process.cwd(), 'data', 'sync_full_stage.json');
 const LIFECYCLE_AUDIT_PATH = path.resolve(process.cwd(), 'data', 'sync_lifecycle_audit.json');
 const AD_ASIN_AUDIT_PATH = path.resolve(process.cwd(), 'data', 'sync_ad_asin_audit.json');
+const AUDIT_DIR = path.resolve(process.cwd(), 'data', 'audits');
+const LATEST_SYSTEM_AUDIT_PATH = path.join(AUDIT_DIR, 'system_audit_latest.json');
 const CHILD_ASIN_SHADOW_INTERVAL_MS = 15_000;
 const CHILD_ASIN_SHADOW_BATCH_SIZE = 3;
 const CHILD_ASIN_SHADOW_REQUEST_DELAY_MS = 750;
@@ -179,6 +212,10 @@ export class SyncEngine {
   private static countsFetchedAt = 0;
   private static countsInFlight: Promise<void> | null = null;
   private static weeklyAttemptAt = 0;
+  private static systemAudit: SystemAuditReport | null = null;
+  private static systemAuditCancelRequested = false;
+  private static auditRequested = false;
+  private static catchUpQueued = false;
 
   private static productScope(accountId: string) { return syncScope(loadSettings().supabaseUrl, accountId); }
   private static optimized() { return loadSettings().syncEgressMode === 'optimized'; }
@@ -263,6 +300,7 @@ export class SyncEngine {
     try {
       const page = await this.getAmazonPage();
       const scope = this.productScope(await this.getAccountId(page));
+      this.currentScope = scope;
       const result = await this.drainTextJobs(page, scope);
       this.finishWorker(runId, this.shouldStop ? 'cancelled' : result.errors ? 'partial' : 'complete', { confirmed: result.processed });
     } catch (error: any) {
@@ -291,6 +329,8 @@ export class SyncEngine {
     runtime.lastRun = { runId, type, status: 'running', startedAt: new Date().toISOString(), pages: 0, attempted: 0, confirmed: 0 };
     this.saveRuntime(runtime);
     this.activeWorker = type;
+    try { SyncHealthService.begin(this.healthWorkerName(type), runId, runtime.lastRun.startedAt); }
+    catch (error: any) { this.addLog(`[Sync Health] Start konnte nicht gespeichert werden: ${error.message}`, 'warn'); }
     return runId;
   }
 
@@ -298,7 +338,23 @@ export class SyncEngine {
     const runtime = this.loadRuntime();
     if (runtime.lastRun?.runId === runId) runtime.lastRun = { ...runtime.lastRun, ...details, status, finishedAt: new Date().toISOString() };
     this.saveRuntime(runtime);
+    if (runtime.lastRun?.runId === runId) {
+      try { SyncHealthService.finish(this.healthWorkerName(runtime.lastRun.type), runId, status, details); }
+      catch (error: any) { this.addLog(`[Sync Health] Abschluss konnte nicht gespeichert werden: ${error.message}`, 'warn'); }
+    }
     this.activeWorker = null;
+  }
+
+  private static healthWorkerName(type: string): SyncWorkerName {
+    if (type === 'resolve_asins_shadow' || type === 'resolve_asins') return 'snap_resolver';
+    if (type === 'queued_texts') return 'queued_texts';
+    if (type === 'quick_listings') return 'quick_listings';
+    if (type === 'full_listings') return 'full_listings';
+    if (type === 'ad_asin_audit') return 'ad_asin_audit';
+    if (type === 'lifecycle_audit') return 'lifecycle_audit';
+    if (type === 'system_audit') return 'system_audit';
+    if (type === 'full_products') return 'full_products';
+    return 'quick_products';
   }
 
   public static getLogs(): SyncLogEntry[] {
@@ -325,13 +381,57 @@ export class SyncEngine {
   public static getState(): SyncState {
     try {
       const runtime = this.loadRuntime();
+      this.refreshHealthQueues(runtime);
+      const health = this.evaluateHealth(runtime);
       return { ...this.state, childAsinShadow: runtime.resolverShadow || this.state.childAsinShadow, childAsinDiagnostics: runtime.resolverDiagnostics || this.state.childAsinDiagnostics, childAsinValidation: this.buildResolverValidation(runtime.resolverObservations || {}), adAsinAudit: runtime.adAsinAudit || this.state.adAsinAudit, lifecycleAudit: runtime.lifecycleAudit || this.state.lifecycleAudit, lastRun: runtime.lastRun, egress: {
       mode: loadSettings().syncEgressMode || 'observe',
       baselineReady: !!this.currentScope && !!this.store().state(this.currentScope).full_at,
       pending: this.currentScope ? this.store().pending(this.currentScope) : 0,
       metrics: this.store().metrics()
+    }, health, systemAudit: this.getSystemAuditStatus(), actionAvailability: {
+      systemAudit: { enabled: !this.systemAudit || !['queued', 'waiting_for_worker', 'running'].includes(this.systemAudit.status), reason: this.systemAudit && ['queued', 'waiting_for_worker', 'running'].includes(this.systemAudit.status) ? 'Ein System-Audit läuft bereits.' : null },
+      runNow: { enabled: !this.auditRequested, reason: this.auditRequested ? 'Wird direkt nach dem System-Audit ausgeführt.' : null, queued: this.catchUpQueued }
     } }; }
     catch { return { ...this.state }; }
+  }
+
+  private static refreshHealthQueues(runtime = this.loadRuntime()) {
+    const retries = Object.values(runtime.resolverRetries || {});
+    const queue = this.currentScope ? this.store().queueHealth(this.currentScope) : { productJobs: 0, textJobs: 0, oldestTextJobAt: null };
+    const oldestResolverRetryAt = retries.length
+      ? retries.map(entry => entry.nextAt).filter(Boolean).sort()[0] || null
+      : null;
+    try { SyncHealthService.setQueues({ ...queue, resolverRetries: retries.length, oldestResolverRetryAt }); } catch {}
+  }
+
+  public static getHealth() {
+    const runtime = this.loadRuntime();
+    this.refreshHealthQueues(runtime);
+    return this.evaluateHealth(runtime);
+  }
+
+  private static evaluateHealth(runtime: ProductSyncRuntime) {
+    const result = SyncHealthService.evaluate({
+      unresolvedResolveProducts: runtime.resolverDiagnostics?.unresolvedEntries || this.state.unresolvedAsinsCount,
+      fullRefreshAt: this.currentScope ? this.store().state(this.currentScope).full_at : null
+    });
+    const settings = loadSettings();
+    const browser = BrowserSessionService.getStatus();
+    result.components.push({
+      key: 'supabase', label: 'Supabase',
+      status: settings.supabaseUrl && settings.supabaseServiceRoleKey ? 'healthy' : 'critical',
+      message: settings.supabaseUrl && settings.supabaseServiceRoleKey ? 'Konfiguration vorhanden.' : 'URL oder Service-Key fehlt.',
+      lastSuccessAt: null
+    });
+    result.components.push({
+      key: 'amazon', label: 'Amazon',
+      status: browser.sync.active ? 'healthy' : 'warning',
+      message: browser.sync.active ? 'Session 1 ist aktiv.' : 'Session 1 ist noch nicht aktiv.',
+      lastSuccessAt: null
+    });
+    const rank = { healthy: 0, unknown: 1, paused: 2, warning: 3, critical: 4 } as const;
+    result.overall = result.components.reduce<typeof result.overall>((worst, item) => rank[item.status] > rank[worst] ? item.status : worst, result.overall);
+    return result;
   }
 
   public static updateCounts(live: number, unresolved: number) {
@@ -366,15 +466,35 @@ export class SyncEngine {
     const settings = loadSettings();
     const enabled = settings.autoSyncEnabled !== undefined ? settings.autoSyncEnabled : true;
     this.state.autoUpdateEnabled = enabled;
+    let recovery = { recoveredAudit: false, previousAutoSyncEnabled: null as boolean | null };
+    try { recovery = SyncHealthService.initialize(enabled); }
+    catch (error: any) { this.addLog(`[Sync Health] Initialisierung fehlgeschlagen; produktiver Scheduler läuft weiter: ${error.message}`, 'warn'); }
+    this.loadLatestSystemAudit();
+    if (this.systemAudit && ['queued', 'waiting_for_worker', 'running'].includes(this.systemAudit.status)) {
+      this.systemAudit.status = 'interrupted';
+      this.systemAudit.finishedAt = new Date().toISOString();
+      this.systemAudit.updatedAt = this.systemAudit.finishedAt;
+      this.systemAudit.autoSync.pauseActive = false;
+      this.systemAudit.autoSync.restored = true;
+      this.systemAudit.error = 'Audit wurde durch einen Prozess- oder Containerneustart unterbrochen.';
+      this.systemAudit.findings.push({ severity: 'warning', code: 'AUDIT_INTERRUPTED', message: this.systemAudit.error });
+      try { this.persistSystemAudit(); }
+      catch (error: any) { this.addLog(`[System-Audit] Unterbrochener Bericht konnte nicht aktualisiert werden: ${error.message}`, 'warn'); }
+    }
     if (enabled) {
       this.addLog('[Auto-Update] Hintergrund-Scheduler aktiv (alle 15 Min).', 'info');
       this.startSchedulers();
+      if (recovery.recoveredAudit) {
+        this.addLog('[System-Audit] Verwaiste Audit-Pause nach Neustart aufgehoben; Auto-Sync wird nachgeholt.', 'warn');
+        this.queueCatchUp();
+      }
     }
   }
 
   public static toggleAutoUpdate(enabled: boolean) {
     this.state.autoUpdateEnabled = enabled;
     saveSettings({ autoSyncEnabled: enabled });
+    try { SyncHealthService.setScheduler(enabled); } catch {}
     if (enabled) {
       this.addLog('[Auto-Update] Hintergrund-Scheduler aktiviert (alle 15 Min).', 'success');
       this.startSchedulers();
@@ -388,7 +508,8 @@ export class SyncEngine {
     this.stopSchedulers();
     // Periodic Smart Sync (every 15 min)
     this.autoUpdateTimer = setInterval(async () => {
-      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+      try { SyncHealthService.setScheduler(this.state.autoUpdateEnabled, { lastTickAt: new Date().toISOString() }); } catch {}
+      if (this.state.autoUpdateEnabled && !this.state.isScanning && !this.auditRequested) {
         try {
           await this.runSmartSync();
           const fullAt = this.currentScope ? this.store().state(this.currentScope).full_at : null;
@@ -406,13 +527,13 @@ export class SyncEngine {
     // Read-only SNAP validation. SNAP itself performs sequential Amazon requests
     // with a short delay; keep concurrency at one and use a small bounded batch.
     this.asinResolveTimer = setInterval(async () => {
-      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+      if (this.state.autoUpdateEnabled && !this.state.isScanning && !this.auditRequested) {
         try { await this.runChildAsinShadowBatch(CHILD_ASIN_SHADOW_BATCH_SIZE); } catch {}
       }
     }, CHILD_ASIN_SHADOW_INTERVAL_MS);
 
     this.textCatchupTimer = setInterval(async () => {
-      if (this.state.autoUpdateEnabled && !this.state.isScanning) {
+      if (this.state.autoUpdateEnabled && !this.state.isScanning && !this.auditRequested) {
         try { await this.runQueuedTexts(); } catch (e: any) { this.addLog(`[Text-Catch-up] Fehler: ${e.message}`, 'error'); }
       }
     }, 5 * 60 * 1000);
@@ -425,6 +546,375 @@ export class SyncEngine {
     this.autoUpdateTimer = null;
     this.asinResolveTimer = null;
     this.textCatchupTimer = null;
+  }
+
+  private static loadLatestSystemAudit() {
+    const loaded = loadJsonWithBackupRecovery<SystemAuditReport | null>(LATEST_SYSTEM_AUDIT_PATH, {
+      defaultValue: null,
+      validate: value => value === null || (value?.schemaVersion === 1 && typeof value?.auditId === 'string')
+    });
+    if (loaded.success) {
+      this.systemAudit = loaded.data;
+      return;
+    }
+    this.systemAudit = null;
+    try {
+      if (fs.existsSync(LATEST_SYSTEM_AUDIT_PATH)) fs.renameSync(LATEST_SYSTEM_AUDIT_PATH, `${LATEST_SYSTEM_AUDIT_PATH}.corrupt.${Date.now()}`);
+      if (fs.existsSync(`${LATEST_SYSTEM_AUDIT_PATH}.bak`)) fs.renameSync(`${LATEST_SYSTEM_AUDIT_PATH}.bak`, `${LATEST_SYSTEM_AUDIT_PATH}.bak.corrupt.${Date.now()}`);
+      setFileFailSafe(LATEST_SYSTEM_AUDIT_PATH, false);
+      this.addLog(`[System-Audit] Beschädigter letzter Bericht wurde isoliert: ${loaded.error}`, 'warn');
+    } catch (error: any) {
+      this.addLog(`[System-Audit] Beschädigter Bericht konnte nicht isoliert werden: ${error.message}`, 'warn');
+    }
+  }
+
+  private static persistSystemAudit() {
+    if (!this.systemAudit) return;
+    this.systemAudit.updatedAt = new Date().toISOString();
+    const sanitized = redactSecrets(this.systemAudit);
+    const absoluteReportPath = path.resolve(process.cwd(), sanitized.reportPath);
+    if (!absoluteReportPath.startsWith(`${AUDIT_DIR}${path.sep}`)) throw new Error('Ungültiger Audit-Berichtspfad.');
+    atomicWriteJson(absoluteReportPath, sanitized, { backup: true, space: 2 });
+    atomicWriteJson(LATEST_SYSTEM_AUDIT_PATH, sanitized, { backup: true, space: 2 });
+  }
+
+  private static auditCheckpoint(phase: string, completedPhases: number, message: string, patch: Partial<SystemAuditReport> = {}) {
+    if (!this.systemAudit) return;
+    this.systemAudit = {
+      ...this.systemAudit,
+      ...patch,
+      currentPhase: phase,
+      progress: { ...this.systemAudit.progress, completedPhases, message }
+    };
+    if (this.systemAudit.autoSync.pauseActive) SyncHealthService.renewAuditLease(this.systemAudit.auditId);
+    this.persistSystemAudit();
+  }
+
+  public static getSystemAuditStatus(): SystemAuditReport | null {
+    if (!this.systemAudit) this.loadLatestSystemAudit();
+    return this.systemAudit ? JSON.parse(JSON.stringify(this.systemAudit)) : null;
+  }
+
+  public static getLatestSystemAuditPath(): string {
+    if (!fs.existsSync(LATEST_SYSTEM_AUDIT_PATH)) throw new Error('Noch kein System-Audit-Bericht vorhanden.');
+    return LATEST_SYSTEM_AUDIT_PATH;
+  }
+
+  public static startSystemAudit(): SystemAuditReport {
+    if (this.systemAudit && ['queued', 'waiting_for_worker', 'running'].includes(this.systemAudit.status)) return this.getSystemAuditStatus()!;
+    const auditId = crypto.randomUUID();
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `system_audit_${stamp}_${auditId}.json`;
+    const now = new Date().toISOString();
+    this.systemAuditCancelRequested = false;
+    this.auditRequested = true;
+    this.systemAudit = {
+      schemaVersion: 1,
+      auditId,
+      status: 'queued',
+      startedAt: now,
+      updatedAt: now,
+      finishedAt: null,
+      currentPhase: 'queued',
+      progress: { completedPhases: 0, totalPhases: 7, pages: 0, records: 0, message: 'Audit wurde eingereiht.' },
+      autoSync: { previouslyEnabled: this.state.autoUpdateEnabled, pauseActive: false, restored: false },
+      health: {}, preflight: {}, schedulerAudit: {}, adAsinAudit: {}, resolverAudit: {}, syncAudit: {}, lifecycleAudit: {},
+      findings: [],
+      reportPath: path.join('data', 'audits', filename),
+      textReportPath: null,
+      error: null
+    };
+    try { this.persistSystemAudit(); }
+    catch (error) {
+      this.auditRequested = false;
+      this.systemAudit = null;
+      throw error;
+    }
+    this.addLog('[System-Audit] Read-only Audit eingereiht.', 'info');
+    void this.executeSystemAudit(auditId);
+    return this.getSystemAuditStatus()!;
+  }
+
+  public static cancelSystemAudit(): SystemAuditReport | null {
+    if (!this.systemAudit || !['queued', 'waiting_for_worker', 'running'].includes(this.systemAudit.status)) return this.getSystemAuditStatus();
+    this.systemAuditCancelRequested = true;
+    this.systemAudit.progress.message = 'Abbruch angefordert; laufender Request wird sicher beendet.';
+    this.persistSystemAudit();
+    return this.getSystemAuditStatus();
+  }
+
+  private static assertAuditContinues(auditId: string) {
+    if (!this.systemAudit || this.systemAudit.auditId !== auditId || this.systemAuditCancelRequested) {
+      const error: any = new Error('System-Audit wurde abgebrochen.');
+      error.code = 'AUDIT_CANCELLED';
+      throw error;
+    }
+  }
+
+  private static async waitForAuditWorker(auditId: string): Promise<string> {
+    while (true) {
+      this.assertAuditContinues(auditId);
+      if (!this.activeWorker && !this.state.isScanning) {
+        try { return this.beginWorker('system_audit'); } catch { /* A worker won the race; wait again. */ }
+      }
+      if (this.systemAudit) {
+        this.systemAudit.status = 'waiting_for_worker';
+        this.systemAudit.currentPhase = 'waiting_for_worker';
+        this.systemAudit.progress.message = `Warte auf laufenden Worker: ${this.activeWorker || this.state.activeScanType || 'Sync'}`;
+        this.persistSystemAudit();
+      }
+      await this.sleep(500);
+    }
+  }
+
+  private static async executeSystemAudit(auditId: string) {
+    let runId: string | null = null;
+    let paused = false;
+    const previouslyEnabled = this.state.autoUpdateEnabled;
+    try {
+      runId = await this.waitForAuditWorker(auditId);
+      this.assertAuditContinues(auditId);
+      this.state.isScanning = true;
+      this.state.activeScanType = 'system_audit';
+      if (!this.systemAudit) throw new Error('Auditstatus fehlt.');
+      this.systemAudit.status = 'running';
+      this.systemAudit.autoSync = { previouslyEnabled, pauseActive: false, restored: false };
+      this.auditCheckpoint('preflight', 0, 'Prüfe Laufzeit, Speicher, Supabase und Amazon-Session.');
+
+      const settings = loadSettings();
+      const page = await this.getAmazonPage();
+      const accountId = await this.getAccountId(page);
+      this.currentScope = this.productScope(accountId);
+      this.assertAuditContinues(auditId);
+      const runtime = this.loadRuntime();
+      const health = this.getHealth();
+      const accountKey = crypto.createHash('sha256').update(accountId).digest('hex').slice(0, 16);
+      const accountCompatible = !runtime.accountKey || runtime.accountKey === accountKey;
+      this.systemAudit.preflight = {
+        appVersion: '1.0.0',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        autoSyncUserEnabled: previouslyEnabled,
+        syncRuntimeReadable: true,
+        syncStateReadable: true,
+        supabaseConfigured: Boolean(settings.supabaseUrl && settings.supabaseServiceRoleKey),
+        amazonSessionReachable: true,
+        amazonAccountKey: accountKey,
+        amazonAccountCompatible: accountCompatible
+      };
+      if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) this.systemAudit.findings.push({ severity: 'critical', code: 'SUPABASE_NOT_CONFIGURED', message: 'Supabase URL oder Service-Key fehlt.' });
+      if (!accountCompatible) this.systemAudit.findings.push({ severity: 'critical', code: 'AMAZON_ACCOUNT_MISMATCH', message: 'Die erkannte Amazon Account-ID stimmt nicht mit dem bestätigten Sync-Stand überein.' });
+      this.systemAudit.health = health;
+      for (const component of health.components) {
+        if (component.status === 'critical' || component.status === 'warning') {
+          this.systemAudit.findings.push({
+            severity: component.status,
+            code: `HEALTH_${String(component.key).toUpperCase()}`,
+            message: `${component.label}: ${component.message}`
+          });
+        }
+      }
+      SyncHealthService.acquireAuditLease(auditId, previouslyEnabled);
+      paused = true;
+      this.stopSchedulers();
+      this.systemAudit.autoSync.pauseActive = true;
+      this.auditCheckpoint('scheduler', 1, 'Preflight abgeschlossen; prüfe Scheduler und Worker.');
+
+      this.systemAudit.schedulerAudit = {
+        activeWorker: this.activeWorker,
+        autoSyncUserEnabled: previouslyEnabled,
+        auditPauseActive: true,
+        workers: health.data.workers,
+        queues: health.data.queues,
+        productWatermark: runtime.productWatermark,
+        egressMetrics: this.store().metrics()
+      };
+      this.auditCheckpoint('ad_asins', 2, 'Lese Supabase-Daten für Ad-ASIN- und Produktprüfung.');
+
+      const supabase = this.getSupabase();
+      const databaseRows: any[] = [];
+      for (let from = 0; ; from += 500) {
+        this.assertAuditContinues(auditId);
+        const result = await supabase.from('mba_designs')
+          .select('design_id, status, published_products, ad_asins, asin_resolved')
+          .order('design_id', { ascending: true })
+          .range(from, from + 499);
+        this.recordTraffic('system_audit_read', result);
+        if (result.error) throw new Error(`System-Audit konnte Supabase nicht lesen: ${result.error.message || String(result.error)}`);
+        databaseRows.push(...(result.data || []));
+        this.systemAudit.progress.records = databaseRows.length;
+        if (!result.data || result.data.length < 500) break;
+        if ((from / 500) % 10 === 9) this.auditCheckpoint('ad_asins', 2, `${databaseRows.length} Datenbankdesigns gelesen.`);
+      }
+      const adAudit = this.buildAdAsinAudit(databaseRows);
+      this.systemAudit.adAsinAudit = { ...adAudit.summary, candidates: adAudit.candidates };
+      const structuralIssues = adAudit.summary.missingAdEntries + adAudit.summary.parentPlaceholders + adAudit.summary.parentMismatches
+        + adAudit.summary.orphanAdEntries + adAudit.summary.duplicateProductKeys + adAudit.summary.duplicateAdKeys
+        + adAudit.summary.unsupportedAdEntries + adAudit.summary.inactiveDesignsWithCurrentData + adAudit.summary.asinResolvedMismatches;
+      if (structuralIssues) this.systemAudit.findings.push({ severity: 'warning', code: 'AD_ASIN_STRUCTURE', message: 'Ad-ASIN-Audit hat strukturelle Auffälligkeiten gefunden.', count: structuralIssues });
+      this.auditCheckpoint('resolver', 3, 'Ad-ASIN-Prüfung abgeschlossen; analysiere Resolverstatus.');
+
+      const observations = runtime.resolverObservations || {};
+      const validation = this.buildResolverValidation(observations);
+      this.systemAudit.resolverAudit = {
+        ...validation,
+        unresolvedResolveProducts: adAudit.summary.unresolvedResolveProducts,
+        diagnostics: runtime.resolverDiagnostics || null,
+        retryCount: Object.keys(runtime.resolverRetries || {}).length,
+        lastRun: runtime.resolverShadow || null,
+        writeHealth: health.data.workers.snap_resolver || null
+      };
+      if (health.data.workers.snap_resolver?.lastStatus === 'error') this.systemAudit.findings.push({ severity: 'critical', code: 'RESOLVER_WORKER_ERROR', message: 'Der SNAP-Resolver ist zuletzt mit einem Workerfehler fehlgeschlagen.' });
+      this.auditCheckpoint('sync_state', 4, 'Resolveranalyse abgeschlossen; prüfe Produkt- und Textzustand.');
+
+      this.refreshHealthQueues(runtime);
+      const queueHealth = SyncHealthService.snapshot().queues;
+      this.systemAudit.syncAudit = {
+        queues: queueHealth,
+        productWatermark: runtime.productWatermark,
+        egressMetrics: this.store().metrics(),
+        lastProductRun: runtime.lastRun,
+        unknownWriteOutcome: Object.values(health.data.workers).some((worker: any) => worker?.lastStatus === 'unknown_write_outcome')
+      };
+      if (this.systemAudit.syncAudit.unknownWriteOutcome) this.systemAudit.findings.push({ severity: 'critical', code: 'UNKNOWN_WRITE_OUTCOME', message: 'Mindestens ein Write-Ausgang ist unbekannt und muss geprüft werden.' });
+      this.auditCheckpoint('lifecycle', 5, 'Starte vollständigen read-only Amazon-Lifecycle-Abgleich.');
+
+      const listings: any[] = [];
+      let pageToken: any[] = [];
+      const seenTokens = new Set<string>(['[]']);
+      let pages = 0;
+      while (true) {
+        this.assertAuditContinues(auditId);
+        if (pages >= 1000) throw new Error('System-Audit überschritt das Sicherheitslimit von 1.000 Amazon-Seiten.');
+        const response = await this.fetchListingsPage(page, accountId, pageToken, ALL_STATUSES);
+        pages++;
+        this.systemAudit.progress.pages = pages;
+        if (!response.results?.length) {
+          if (response.pageToken?.length) throw new Error('System-Audit erhielt eine leere Amazon-Seite mit Fortsetzungstoken.');
+          break;
+        }
+        listings.push(...response.results);
+        this.systemAudit.progress.records = databaseRows.length + listings.length;
+        if (pages % 10 === 0) this.auditCheckpoint('lifecycle', 5, `Amazon-Seite ${pages} · ${listings.length} Listings gelesen.`);
+        if (!response.pageToken?.length) break;
+        const tokenKey = JSON.stringify(response.pageToken);
+        if (seenTokens.has(tokenKey)) throw new Error('System-Audit erkannte einen wiederholten Amazon-Seitentoken.');
+        seenTokens.add(tokenKey);
+        pageToken = response.pageToken;
+        await this.sleep(600);
+      }
+      if (!listings.length) throw new Error('System-Audit lieferte keine Amazon-Produkte; Lifecycle-Ergebnis ist nicht vertrauenswürdig.');
+      const lifecycle = this.buildLifecycleAudit(listings, databaseRows);
+      this.systemAudit.lifecycleAudit = { ...lifecycle.summary, candidates: lifecycle.candidates, complete: true };
+      const lifecycleIssues = lifecycle.summary.stalePublishedProducts + lifecycle.summary.staleAdAsins + lifecycle.summary.missingDatabaseProducts;
+      if (lifecycleIssues) this.systemAudit.findings.push({ severity: 'warning', code: 'LIFECYCLE_DRIFT', message: 'Lifecycle-Abgleich hat Abweichungen gefunden.', count: lifecycleIssues });
+      this.auditCheckpoint('evaluation', 6, 'Bewerte Ergebnisse und erstelle Abschlussbericht.');
+
+      const hasCritical = this.systemAudit.findings.some(finding => finding.severity === 'critical');
+      const hasWarning = this.systemAudit.findings.some(finding => finding.severity === 'warning');
+      this.systemAudit.status = hasCritical || hasWarning ? 'complete_with_warnings' : 'complete';
+      this.systemAudit.currentPhase = 'complete';
+      this.systemAudit.progress = { ...this.systemAudit.progress, completedPhases: 7, message: hasWarning ? 'Audit mit Hinweisen abgeschlossen.' : 'Audit erfolgreich abgeschlossen.' };
+      this.systemAudit.finishedAt = new Date().toISOString();
+      this.createSystemAuditTextReport();
+      this.persistSystemAudit();
+      this.addLog(`[System-Audit] ${hasWarning ? 'Mit Hinweisen' : 'Erfolgreich'} abgeschlossen. Keine Datenbankänderung.`, hasWarning ? 'warn' : 'success');
+      this.finishWorker(runId, 'complete', { pages, attempted: databaseRows.length + listings.length, confirmed: 0, message: hasCritical ? 'Audit vollständig; kritische Befunde im Bericht.' : 'Nur gelesen; keine Datenbankänderung.' });
+      runId = null;
+    } catch (error: any) {
+      const cancelled = error?.code === 'AUDIT_CANCELLED' || this.systemAuditCancelRequested;
+      if (this.systemAudit) {
+        this.systemAudit.status = cancelled ? 'cancelled' : 'failed';
+        this.systemAudit.finishedAt = new Date().toISOString();
+        this.systemAudit.error = error?.message || String(error);
+        this.systemAudit.findings.push({ severity: cancelled ? 'info' : 'critical', code: cancelled ? 'AUDIT_CANCELLED' : 'AUDIT_FAILED', message: this.systemAudit.error || 'Unbekannter Auditfehler.' });
+        this.createSystemAuditTextReport();
+        this.persistSystemAudit();
+      }
+      this.addLog(`[System-Audit] ${cancelled ? 'Abgebrochen' : 'Fehler'}: ${error?.message || String(error)}. Keine Datenbankänderung.`, cancelled ? 'warn' : 'error');
+      if (runId) {
+        try { this.finishWorker(runId, cancelled ? 'cancelled' : 'error', { message: error?.message || String(error) }); }
+        catch (finishError: any) { this.addLog(`[System-Audit] Workerabschluss konnte nicht gespeichert werden: ${finishError.message}`, 'warn'); }
+        runId = null;
+      }
+    } finally {
+      if (runId) {
+        try { this.finishWorker(runId, 'error', { message: 'Audit wurde ohne regulären Abschluss beendet.' }); } catch {}
+      }
+      if (paused) {
+        try { SyncHealthService.releaseAuditLease(auditId); }
+        catch (error: any) { this.addLog(`[System-Audit] Lease-Freigabe konnte nicht gespeichert werden: ${error.message}`, 'warn'); }
+      }
+      this.auditRequested = false;
+      this.systemAuditCancelRequested = false;
+      this.state.isScanning = false;
+      this.state.activeScanType = null;
+      if (this.systemAudit?.auditId === auditId) {
+        this.systemAudit.autoSync.pauseActive = false;
+        this.systemAudit.autoSync.restored = true;
+        try { this.persistSystemAudit(); }
+        catch (error: any) { this.addLog(`[System-Audit] Abschlussbericht konnte nicht aktualisiert werden: ${error.message}`, 'warn'); }
+      }
+      if (previouslyEnabled && this.state.autoUpdateEnabled) {
+        try {
+          this.startSchedulers();
+          this.queueCatchUp();
+        } catch (error: any) {
+          this.addLog(`[System-Audit] Scheduler-Wiederaufnahme fehlgeschlagen: ${error.message}`, 'error');
+        }
+      }
+    }
+  }
+
+  private static createSystemAuditTextReport() {
+    if (!this.systemAudit) return;
+    const textPath = this.systemAudit.reportPath.replace(/\.json$/, '.txt');
+    const lines = [
+      `MBA HUB System-Audit ${this.systemAudit.auditId}`,
+      `Status: ${this.systemAudit.status}`,
+      `Start: ${this.systemAudit.startedAt}`,
+      `Ende: ${this.systemAudit.finishedAt || '-'}`,
+      `Auto-Sync vorher aktiv: ${this.systemAudit.autoSync.previouslyEnabled ? 'ja' : 'nein'}`,
+      '',
+      `Ad-ASINs: ${this.systemAudit.adAsinAudit?.validAdEntries || 0} gültig, ${this.systemAudit.adAsinAudit?.unresolvedResolveProducts || 0} offen`,
+      `Resolver: ${this.systemAudit.resolverAudit?.resolved || 0}/${this.systemAudit.resolverAudit?.observed || 0} aufgelöst`,
+      `Lifecycle: ${this.systemAudit.lifecycleAudit?.stalePublishedProducts || 0} veraltete Produkte, ${this.systemAudit.lifecycleAudit?.staleAdAsins || 0} veraltete Ad-ASINs`,
+      '',
+      'Befunde:',
+      ...(this.systemAudit.findings.length ? this.systemAudit.findings.map(item => `- [${item.severity.toUpperCase()}] ${item.code}: ${item.message}${item.count !== undefined ? ` (${item.count})` : ''}`) : ['- Keine Auffälligkeiten'])
+    ];
+    atomicWriteFile(path.resolve(process.cwd(), textPath), lines.join('\n'), { backup: true });
+    this.systemAudit.textReportPath = textPath;
+  }
+
+  public static runNow(): { queued: boolean; message: string } {
+    if (this.auditRequested) {
+      this.catchUpQueued = true;
+      return { queued: true, message: 'Synchronisierung wird direkt nach dem System-Audit ausgeführt.' };
+    }
+    this.queueCatchUp();
+    return { queued: true, message: 'Synchronisierung wurde eingereiht.' };
+  }
+
+  private static queueCatchUp() {
+    if (this.catchUpQueued) return;
+    this.catchUpQueued = true;
+    setTimeout(() => { void this.executeCatchUp(); }, 0);
+  }
+
+  private static async executeCatchUp() {
+    if (!this.catchUpQueued || this.auditRequested || !this.state.autoUpdateEnabled) return;
+    if (this.activeWorker || this.state.isScanning) {
+      setTimeout(() => { void this.executeCatchUp(); }, 1000);
+      return;
+    }
+    this.catchUpQueued = false;
+    SyncHealthService.setScheduler(this.state.autoUpdateEnabled, { lastCatchUpAt: new Date().toISOString() });
+    this.addLog('[Auto-Update] Catch-up für Produkte, Texte und SNAP-Resolver gestartet.', 'info');
+    try { await this.runSmartSync(); } catch {}
+    if (this.auditRequested || !this.state.autoUpdateEnabled) return;
+    try { await this.runQueuedTexts(); } catch {}
+    if (this.auditRequested || !this.state.autoUpdateEnabled) return;
+    try { await this.runChildAsinShadowBatch(CHILD_ASIN_SHADOW_BATCH_SIZE); } catch {}
   }
 
   private static sleep(ms: number) {
@@ -1132,7 +1622,7 @@ export class SyncEngine {
    * 3. Run Deep Scan New (Quick Update Listings)
    */
   public static async runDeepScanNew(): Promise<{ processed: number }> {
-    if (this.state.isScanning || this.activeWorker) throw new Error('Ein anderer Sync-Worker läuft bereits.');
+    const runId = this.beginWorker('quick_listings');
     this.shouldStop = false;
     this.state.isScanning = true;
     this.state.activeScanType = 'quick_listings';
@@ -1141,12 +1631,13 @@ export class SyncEngine {
     this.addLog('[Quick Update Listings] Suche Designs ohne US-Titel...', 'info');
 
     let processed = 0;
+    let found = 0;
+    let pages = 0;
     try {
       const supabase = this.getSupabase();
       const page = await this.getAmazonPage();
 
       let cursor = '';
-      let found = 0;
       while (!this.shouldStop) {
         let query = supabase.from('mba_designs').select('design_id').is('title_us', null)
           .in('status', ['PUBLISHED', 'PROPAGATED', 'LOCKED', 'TIMED_OUT', 'PUBLISHING', 'TRANSLATING'])
@@ -1155,6 +1646,7 @@ export class SyncEngine {
         const { data: missingDesigns, error } = await query;
         if (error) throw error;
         if (!missingDesigns || missingDesigns.length === 0) break;
+        pages++;
         found += missingDesigns.length;
         cursor = missingDesigns[missingDesigns.length - 1].design_id;
         this.addLog(`[Quick Update Listings] ${found} Designs geprüft. Lade Texte...`, 'info');
@@ -1184,11 +1676,13 @@ export class SyncEngine {
       await this.refreshDBStats();
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = 'Bereit';
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : 'complete', { pages, attempted: found, confirmed: processed });
       return { processed };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
       this.addLog(`[Quick Update Listings] Fehler: ${err.message}`, 'error');
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : 'error', { pages, attempted: found, confirmed: processed, message: err.message });
       throw err;
     } finally {
       this.state.isScanning = false;
@@ -1200,7 +1694,7 @@ export class SyncEngine {
    * 4. Run Deep Scan All (Full Refresh Listings)
    */
   public static async runDeepScanAll(): Promise<{ processed: number }> {
-    if (this.state.isScanning || this.activeWorker) throw new Error('Ein anderer Sync-Worker läuft bereits.');
+    const runId = this.beginWorker('full_listings');
     this.shouldStop = false;
     this.state.isScanning = true;
     this.state.activeScanType = 'full_listings';
@@ -1209,6 +1703,8 @@ export class SyncEngine {
     this.addLog('[Full Refresh Listings] Lade Texte für alle Designs...', 'info');
 
     let processed = 0;
+    let attempted = 0;
+    let pages = 0;
     try {
       const supabase = this.getSupabase();
       const page = await this.getAmazonPage();
@@ -1221,6 +1717,8 @@ export class SyncEngine {
           .range(from, from + 49);
 
         if (error || !batch || batch.length === 0) break;
+        pages++;
+        attempted += batch.length;
 
         for (const item of batch) {
           if (this.shouldStop) break;
@@ -1245,11 +1743,13 @@ export class SyncEngine {
       this.addLog(`[Full Refresh Listings] Beendet. ${processed} Texte aktualisiert ✓`, 'success');
       this.state.scanStatus = 'ready';
       this.state.lastStatusMessage = 'Bereit';
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : 'complete', { pages, attempted, confirmed: processed });
       return { processed };
     } catch (err: any) {
       this.state.scanStatus = 'error';
       this.state.lastStatusMessage = `Fehler: ${err.message}`;
       this.addLog(`[Full Refresh Listings] Fehler: ${err.message}`, 'error');
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : 'error', { pages, attempted, confirmed: processed, message: err.message });
       throw err;
     } finally {
       this.state.isScanning = false;
@@ -2012,7 +2512,7 @@ export class SyncEngine {
           if (retry?.parentAsin === parentAsin && Date.parse(retry.nextAt) > Date.now()) continue;
           const cachedResolvedAsin = observation?.parentAsin === parentAsin && observation?.status === 'resolved'
             && isConfirmedChildAsin(observation?.resolvedAsin, parentAsin) ? observation.resolvedAsin : undefined;
-          candidates.push({ designId: row.design_id, type, market, parentAsin, retryKey, observationKey, row, cachedResolvedAsin, cachedSource: observation?.source });
+          candidates.push({ designId: row.design_id, type, market, parentAsin, retryKey, observationKey, row, cachedResolvedAsin, cachedSource: observation?.source || undefined });
           if (candidates.length >= Math.max(1, limit)) break;
         }
         if (candidates.length >= Math.max(1, limit)) break;
@@ -2143,7 +2643,7 @@ export class SyncEngine {
       this.addLog(`[ASIN SNAP] Fehler: ${message}`, 'error');
       throw error;
     } finally {
-      this.finishWorker(runId, this.shouldStop ? 'cancelled' : finalStatus, { pages: 0, attempted: checked, confirmed: 0, message });
+      this.finishWorker(runId, this.shouldStop ? 'cancelled' : finalStatus, { pages: 0, attempted: checked, confirmed: resolved, message });
       this.state.isScanning = false;
       this.state.activeScanType = null;
     }

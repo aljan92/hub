@@ -15,7 +15,9 @@ import {
   Link as LinkIcon,
   Sparkles,
   ArrowUpRight,
-  Clock
+  Clock,
+  Activity,
+  Download
 } from 'lucide-react';
 
 interface SyncLogEntry {
@@ -64,6 +66,22 @@ interface SyncState {
     staleAdAsins: number; missingDatabaseProducts: number; reportPath: string; complete: boolean;
   };
   lastRun?: { status: string; type: string; startedAt: string; finishedAt?: string; pages: number; attempted: number; confirmed: number; message?: string };
+  health?: {
+    overall: 'healthy' | 'warning' | 'critical' | 'paused' | 'unknown';
+    components: Array<{ key: string; label: string; status: string; message: string; lastSuccessAt: string | null }>;
+    data: { scheduler: { auditPauseActive: boolean; auditPauseLeaseUntil: string | null }; queues: { productJobs: number; textJobs: number; resolverRetries: number } };
+  };
+  systemAudit?: {
+    auditId: string; status: string; currentPhase: string; startedAt: string; finishedAt: string | null;
+    progress: { completedPhases: number; totalPhases: number; pages: number; records: number; message: string };
+    autoSync: { previouslyEnabled: boolean; pauseActive: boolean; restored: boolean };
+    findings: Array<{ severity: string; code: string; message: string; count?: number }>;
+    reportPath: string; error: string | null;
+  } | null;
+  actionAvailability?: {
+    systemAudit: { enabled: boolean; reason: string | null };
+    runNow: { enabled: boolean; reason: string | null; queued: boolean };
+  };
 }
 
 export const DatabaseView: React.FC = () => {
@@ -186,10 +204,47 @@ export const DatabaseView: React.FC = () => {
 
   const handleStopScan = async () => {
     try {
-      await fetch('/api/v1/sync/stop', { method: 'POST' });
+      const auditRunning = syncState.systemAudit && ['queued', 'waiting_for_worker', 'running'].includes(syncState.systemAudit.status);
+      await fetch(auditRunning ? '/api/v1/sync/system-audit/cancel' : '/api/v1/sync/stop', { method: 'POST' });
       fetchState();
       fetchLogs();
     } catch (e) {}
+  };
+
+  const handleRunNow = async () => {
+    setIsActionRunning('run_now');
+    try {
+      const response = await fetch('/api/v1/sync/run-now', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Synchronisierung konnte nicht gestartet werden.');
+      fetchState(); fetchLogs();
+    } catch (error: any) { alert(error.message); }
+    finally { setIsActionRunning(null); }
+  };
+
+  const handleSystemAudit = async () => {
+    setIsActionRunning('system_audit');
+    try {
+      const response = await fetch('/api/v1/sync/system-audit/start', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'System-Audit konnte nicht gestartet werden.');
+      fetchState(); fetchLogs();
+    } catch (error: any) { alert(error.message); }
+    finally { setIsActionRunning(null); }
+  };
+
+  const handleCancelSystemAudit = async () => {
+    await fetch('/api/v1/sync/system-audit/cancel', { method: 'POST' }).catch(() => {});
+    fetchState(); fetchLogs();
+  };
+
+  const handleCopyAudit = async () => {
+    try {
+      const response = await fetch('/api/v1/sync/system-audit/latest/download');
+      if (!response.ok) throw new Error('Bericht ist noch nicht verfügbar.');
+      await navigator.clipboard.writeText(await response.text());
+      alert('System-Audit wurde in die Zwischenablage kopiert.');
+    } catch (error: any) { alert(error.message); }
   };
 
   const handleResetAsins = async () => {
@@ -281,6 +336,9 @@ export const DatabaseView: React.FC = () => {
             <div className="text-xs font-semibold text-slate-200">
               {syncState.lastStatusMessage}
             </div>
+            {syncState.isScanning && syncState.activeScanType && (
+              <div className="text-[10px] text-slate-500 mt-0.5">Aktiver Worker: {syncState.activeScanType} · nur unvereinbare Einzelaktionen sind vorübergehend gesperrt.</div>
+            )}
           </div>
         </div>
 
@@ -290,7 +348,7 @@ export const DatabaseView: React.FC = () => {
             className="flex items-center justify-center space-x-1.5 px-4 py-2 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-semibold hover:bg-rose-500/30 transition-all"
           >
             <Square className="w-3.5 h-3.5 fill-current" />
-            <span>Laufenden Scan abbrechen</span>
+            <span>{syncState.systemAudit && ['queued', 'waiting_for_worker', 'running'].includes(syncState.systemAudit.status) ? 'System-Audit abbrechen' : 'Laufenden Scan abbrechen'}</span>
           </button>
         )}
       </div>
@@ -300,6 +358,72 @@ export const DatabaseView: React.FC = () => {
         
         {/* Left Column: Sync Modules (7 Cols) */}
         <div className="lg:col-span-7 space-y-4">
+
+          <div className="p-5 rounded-2xl bg-surface/70 border border-slate-800/80 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-primary-400" />
+                  Sync-Gesundheit
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Dauerhafte Überwachung von Produkten, Listingtexten, SNAP-Resolver und Full Refresh.</p>
+              </div>
+              <span className={`px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase ${
+                syncState.health?.overall === 'healthy' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' :
+                syncState.health?.overall === 'critical' ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' :
+                syncState.health?.overall === 'paused' ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300' :
+                'bg-amber-500/10 border-amber-500/30 text-amber-300'
+              }`}>{syncState.health?.overall || 'unknown'}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(syncState.health?.components || []).map(component => (
+                <div key={component.key} className="rounded-xl bg-slate-900/60 border border-slate-800/80 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-semibold text-slate-200">{component.label}</span>
+                    <span className={`w-2 h-2 rounded-full ${component.status === 'healthy' ? 'bg-emerald-400' : component.status === 'critical' ? 'bg-rose-400' : component.status === 'paused' ? 'bg-cyan-400' : 'bg-amber-400'}`} />
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1">{component.message}</div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button onClick={handleRunNow} disabled={isActionRunning === 'run_now'} title={syncState.actionAvailability?.runNow.reason || 'Produkt-, Text- und Resolver-Catch-up einreihen'}
+                className="px-3 py-2.5 rounded-xl bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 text-xs font-semibold disabled:opacity-50">
+                {syncState.actionAvailability?.runNow.queued ? 'Synchronisierung vorgemerkt' : 'Jetzt synchronisieren'}
+              </button>
+              <button onClick={handleSystemAudit} disabled={!syncState.actionAvailability?.systemAudit.enabled || isActionRunning === 'system_audit'} title={syncState.actionAvailability?.systemAudit.reason || 'Vollständigen read-only Diagnosebericht erstellen'}
+                className="px-3 py-2.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 text-violet-300 border border-violet-500/30 text-xs font-semibold disabled:opacity-50">
+                System-Audit erstellen
+              </button>
+            </div>
+            {syncState.systemAudit && (
+              <div className="rounded-xl border border-violet-500/25 bg-violet-950/15 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs font-semibold text-violet-200">System-Audit · {syncState.systemAudit.status.replaceAll('_', ' ')}</div>
+                  <div className="text-[10px] text-slate-400">{syncState.systemAudit.progress.completedPhases}/{syncState.systemAudit.progress.totalPhases} Phasen</div>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div className="h-full bg-violet-400 transition-all" style={{ width: `${Math.min(100, (syncState.systemAudit.progress.completedPhases / syncState.systemAudit.progress.totalPhases) * 100)}%` }} />
+                </div>
+                <div className="text-[10px] text-slate-300">{syncState.systemAudit.progress.message}</div>
+                {(syncState.systemAudit.progress.pages > 0 || syncState.systemAudit.progress.records > 0) && <div className="text-[10px] text-slate-500">{syncState.systemAudit.progress.pages} Amazon-Seiten · {syncState.systemAudit.progress.records.toLocaleString('de-DE')} Datensätze</div>}
+                {syncState.systemAudit.autoSync.pauseActive && <div className="text-[10px] text-cyan-300">Auto-Sync kontrolliert pausiert; der vorherige Zustand wird danach automatisch wiederhergestellt.</div>}
+                {syncState.systemAudit.error && <div className="text-[10px] text-rose-300">{syncState.systemAudit.error}</div>}
+                <div className="flex gap-2 pt-1">
+                  {['queued', 'waiting_for_worker', 'running'].includes(syncState.systemAudit.status) ? (
+                    <button onClick={handleCancelSystemAudit} className="text-[10px] px-2.5 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300">Audit abbrechen</button>
+                  ) : (
+                    <>
+                      <a href="/api/v1/sync/system-audit/latest/download" className="inline-flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-lg bg-violet-500/15 border border-violet-500/30 text-violet-300">
+                        <Download className="w-3 h-3" /> Bericht herunterladen
+                      </a>
+                      <button onClick={handleCopyAudit} className="text-[10px] px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300">In Zwischenablage kopieren</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           
           <div className="p-5 rounded-2xl bg-surface/70 border border-slate-800/80 space-y-3">
             <div className="text-sm font-bold text-white">Datenübertragung reduzieren</div>
@@ -473,7 +597,7 @@ export const DatabaseView: React.FC = () => {
               {!!syncState.childAsinValidation?.observed && (
                 <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/10 px-2.5 py-2 text-[10px] leading-relaxed text-cyan-100/70">
                   <div className="font-semibold text-cyan-300">Gesammelte SNAP-Ergebnisse</div>
-                  <div>{syncState.childAsinValidation.resolved}/{syncState.childAsinValidation.observed} eindeutig aufgelöst · {syncState.childAsinValidation.confirmedTwice} zweimal identisch bestätigt</div>
+                  <div>{syncState.childAsinValidation.resolved}/{syncState.childAsinValidation.observed} eindeutig aufgelöst</div>
                   <div className="text-cyan-200/50">{syncState.childAsinValidation.statuses.slice(0, 5).map(entry => `${entry.status}: ${entry.count}`).join(' · ')}</div>
                 </div>
               )}
