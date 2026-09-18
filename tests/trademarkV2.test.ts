@@ -949,8 +949,8 @@ async function runAcceptanceTests() {
     niche2: 'none',
     subniche: 'none'
   });
-  assert(e6Suffix === '111' && e6SuffixFallbackN1 === 'Angel Numbers',
-    'Test E6: Design Pipeline #056-artige Daten wählen korrekten Fallback-Suffix (niche2 "111" wenn subniche="none", sonst niche1).');
+  assert(e6Suffix === 'Angel Numbers' && e6SuffixFallbackN1 === 'Angel Numbers',
+    'Test E6: Niche2 bleibt Kontext; ohne Subniche wird deterministisch Niche1 als Title-Tail gewählt.');
 
   // E7: Update Pipeline mit niche2/subniche="none" bleibt korrekt
   const e7Suffix = ListingValidationService.resolveExpectedTitleSuffix({
@@ -975,7 +975,7 @@ async function runAcceptanceTests() {
     niche2: '111 Numerology',
     subniche: 'none'
   });
-  assert(e8Res.listing.title.length <= 60 && e8Res.listing.title.endsWith('111 Numerology') && e8Res.repaired === true,
+  assert(e8Res.listing.title.length <= 60 && e8Res.listing.title.endsWith('Angel Numbers') && e8Res.repaired === true,
     `Test E8: Title >60 (${e8LongTitle.length} Zeichen) wird von Hard Validation erkannt und auf <= 60 (${e8Res.listing.title.length} Zeichen) unter Beibehaltung des Suffixes gekürzt.`);
 
   // E9: Brand/Bullets/Description Limits werden erkannt und durchgesetzt
@@ -1011,7 +1011,7 @@ async function runAcceptanceTests() {
     niche2: '111',
     subniche: 'none'
   });
-  assert(!e10Validated.listing.title.toLowerCase().endsWith('none') && e10Validated.listing.title.endsWith('111'),
+  assert(!e10Validated.listing.title.toLowerCase().endsWith('none') && e10Validated.listing.title.endsWith('Angel Numbers'),
     'Test E10: Validation nach Master Listing entfernt trailing Placeholders und stellt korrekten Suffix sicher.');
 
   // E11: Validation läuft nach jedem TM Rewrite
@@ -1028,7 +1028,7 @@ async function runAcceptanceTests() {
     niche2: '111 Numerology',
     subniche: 'none'
   });
-  assert(!e11Validated.listing.title.toLowerCase().endsWith('none') && e11Validated.listing.title.endsWith('111 Numerology'),
+  assert(!e11Validated.listing.title.toLowerCase().endsWith('none') && e11Validated.listing.title.endsWith('Angel Numbers'),
     'Test E11: Validation nach TM Rewrite bereinigt den Titel deterministisch auf den gültigen Suffix ohne "none".');
 
   // E12: TM forbiddenTerms werden durch Repair nicht wieder eingeführt

@@ -598,6 +598,7 @@ Style Preset: ${stylePreset}`;
     const n1 = ListingValidationService.normalizeOptionalText(params.niche1) || 'Graphic Art';
     const n2 = ListingValidationService.normalizeOptionalText(params.niche2) || '';
     const sub = ListingValidationService.normalizeOptionalText(params.subniche) || '';
+    const titleTail = ListingValidationService.resolveExpectedTitleSuffix({ niche1: n1, niche2: n2, subniche: sub });
     const quote = params.quote || '';
     const allKw = [
       ...(params.hermesKeywords || []),
@@ -608,6 +609,7 @@ Style Preset: ${stylePreset}`;
 - Primary Niche (niche1): ${n1}
 - Secondary Niche (niche2): ${n2 || 'none'}
 - Subniche: ${sub || 'none'}
+- Immutable TITLE_TAIL: ${titleTail}
 - Quote / Slogan: "${quote}"
 - Keywords Pool: ${allKw.length > 0 ? allKw.join(', ') : 'none provided'}
 - Style Preset: ${params.stylePreset || 'vintage retro vector'}
@@ -621,7 +623,7 @@ Style Preset: ${stylePreset}`;
 - Old Bullets: "${[params.oldListing.bullet1, params.oldListing.bullet2].filter(Boolean).join(' | ')}"`;
     }
 
-    userMessage += `\n\nGenerate the optimized 100% English Amazon Merch on Demand listing now. Ensure Title ends strictly with subniche/niche without trailing punctuation!`;
+    userMessage += `\n\nGenerate the compact 100% English Amazon Merch on Demand listing now. The Title must end literally with TITLE_TAIL and no trailing punctuation.`;
 
     const userContent: any[] = [
       { type: 'text', text: userMessage }
@@ -667,18 +669,29 @@ Style Preset: ${stylePreset}`;
       const rawBullet2 = parsed.bullet2 || parsed.Bullet2 || parsed.bullet_2 || parsed.bulletPoint2 || parsed.bullet_point_2;
       const rawDesc = parsed.description || parsed.Description || parsed.product_description;
 
+      const missingFields = [
+        ['brand', rawBrand],
+        ['title', rawTitle],
+        ['bullet1', rawBullet1],
+        ['bullet2', rawBullet2],
+        ['description', rawDesc]
+      ].filter(([, value]) => typeof value !== 'string' || !value.trim()).map(([name]) => name);
+      if (missingFields.length > 0) {
+        const error = new Error(`LISTING_VALIDATION_FAILED: missing fields: ${missingFields.join(', ')}`) as Error & { code?: string };
+        error.code = 'LISTING_VALIDATION_FAILED';
+        throw error;
+      }
+
       // Clean Title: ensure no trailing punctuation
       let cleanTitle = (rawTitle || '').trim();
       cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, '').trim();
 
-      const targetEnd = sub || n2 || n1;
-
       const rawListing: EnglishListing = {
-        brand: (rawBrand || `${n1} ${sub ? sub + ' ' : ''}Apparel Collection`).trim().slice(0, 50),
-        title: cleanTitle || `${n1} ${quote ? quote + ' ' : ''}${targetEnd}`.trim().slice(0, 60),
-        bullet1: (rawBullet1 || `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`).trim().slice(0, 256),
-        bullet2: (rawBullet2 || `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`).trim().slice(0, 256),
-        description: (rawDesc || `High quality ${n1} graphic design celebrating authentic vintage aesthetics and community passion.`).trim().slice(0, 600)
+        brand: String(rawBrand || '').trim(),
+        title: cleanTitle,
+        bullet1: String(rawBullet1 || '').trim(),
+        bullet2: String(rawBullet2 || '').trim(),
+        description: String(rawDesc || '').trim()
       };
 
       const validated = ListingValidationService.validateAndRepairListing({
@@ -688,6 +701,12 @@ Style Preset: ${stylePreset}`;
         subniche: sub
       });
 
+      if (!validated.isValid) {
+        const error = new Error(`LISTING_VALIDATION_FAILED: ${validated.issues.join(' | ') || 'missing or invalid required fields'}`) as Error & { code?: string };
+        error.code = 'LISTING_VALIDATION_FAILED';
+        throw error;
+      }
+
       return {
         ...validated.listing,
         _rawRequest: requestPayload,
@@ -695,27 +714,11 @@ Style Preset: ${stylePreset}`;
       };
     } catch (err: any) {
       console.error('[LLMService] Error generating master English listing:', err);
-      const targetEnd = sub || n2 || n1;
-      const fallbackListing: EnglishListing = {
-        brand: `${n1} ${sub ? sub + ' ' : ''}Apparel Collection`.trim().slice(0, 50),
-        title: `Vintage Retro ${quote ? quote + ' ' : ''}${targetEnd}`.trim().slice(0, 60),
-        bullet1: `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`,
-        bullet2: `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`,
-        description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`
-      };
-
-      const validated = ListingValidationService.validateAndRepairListing({
-        listing: fallbackListing,
-        niche1: n1,
-        niche2: n2,
-        subniche: sub
-      });
-
-      return {
-        ...validated.listing,
-        _rawRequest: requestPayload,
-        _rawResponse: err.message
-      };
+      if (err?.code === 'LISTING_VALIDATION_FAILED') throw err;
+      const failure = new Error(`LISTING_GENERATION_FAILED: ${err?.message || String(err)}`) as Error & { code?: string; cause?: unknown };
+      failure.code = 'LISTING_GENERATION_FAILED';
+      failure.cause = err;
+      throw failure;
     }
   }
 
@@ -1110,13 +1113,13 @@ CRITICAL CONSTRAINTS:
 1. STRICTLY FORBIDDEN TERMS (DO NOT USE THESE OR CLOSE VARIANTS):
    ${JSON.stringify(params.forbiddenTermsForTask)}
 2. LOCKED TITLE SUFFIX: Title MUST end literally with "${expectedSuffix}"
-3. EXACT CHARACTER LIMITS:
-   - Brand: 40-50 chars
-   - Title: 50-60 chars (ending with locked suffix)
-   - Bullet 1: 230-256 chars
-   - Bullet 2: 230-256 chars
-   - Description: 300-600 chars
-4. MINIMAL INVASIVENESS: Repair only the fields and terms affected by trademark issues. Keep all unaffected keywords, structures, and phrasing completely intact.
+3. CHARACTER LIMITS (NO MINIMUM LENGTH TARGETS):
+   - Brand: required, max 50 chars
+   - Title: required, max 60 chars (ending with locked suffix)
+   - Bullet 1: max 256 chars
+   - Bullet 2: max 256 chars
+   - Description: max 600 chars
+4. MINIMAL INVASIVENESS: Repair only the fields and terms affected by trademark issues. Keep all unaffected keywords, structures, and phrasing completely intact. Never expand a compliant field merely to make it longer.
 
 Return ONLY valid JSON:
 {
@@ -1176,6 +1179,12 @@ Return ONLY valid JSON:
         forbiddenTerms: params.forbiddenTermsForTask
       });
 
+      if (!validated.isValid) {
+        const error = new Error(`TRADEMARK_REWRITE_VALIDATION_FAILED: ${validated.issues.join(' | ') || 'invalid rewritten listing'}`) as Error & { code?: string };
+        error.code = 'TRADEMARK_REWRITE_VALIDATION_FAILED';
+        throw error;
+      }
+
       const actionsTaken = Array.isArray(parsed.actions_taken) ? parsed.actions_taken : (Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : ['Automated trademark rewrite applied']);
       if (validated.repaired) {
         actionsTaken.push(`Deterministic validation repair: ${validated.issues.join('; ')}`);
@@ -1189,20 +1198,11 @@ Return ONLY valid JSON:
       };
     } catch (err: any) {
       console.error('[LLMService] Error in rewriteListingForTrademarkV2:', err);
-      const validated = ListingValidationService.validateAndRepairListing({
-        listing: params.currentListing,
-        niche1: normN1,
-        niche2: normN2,
-        subniche: normSub,
-        forbiddenTerms: params.forbiddenTermsForTask
-      });
-
-      return {
-        refinedListing: validated.listing,
-        actionsTaken: ['Failed to rewrite: network/timeout error'],
-        _rawRequest: requestPayload,
-        _rawResponse: err.message
-      };
+      if (err?.code === 'TRADEMARK_REWRITE_VALIDATION_FAILED') throw err;
+      const failure = new Error(`TRADEMARK_REWRITE_FAILED: ${err?.message || String(err)}`) as Error & { code?: string; cause?: unknown };
+      failure.code = 'TRADEMARK_REWRITE_FAILED';
+      failure.cause = err;
+      throw failure;
     }
   }
 

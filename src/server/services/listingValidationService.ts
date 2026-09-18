@@ -44,8 +44,10 @@ export class ListingValidationService {
   /**
    * Deterministically resolve the expected Title suffix:
    * 1. Valid normalized Subniche (if present)
-   * 2. Otherwise valid normalized Niche2 (if present)
-   * 3. Otherwise Niche1 (fallback to 'Graphic Art')
+   * 2. Otherwise Niche1 (fallback to 'Graphic Art')
+   *
+   * Niche2 is supporting context only. It is never selected implicitly as the
+   * title tail because that would make the final buyer keyword unpredictable.
    */
   public static resolveExpectedTitleSuffix(params: {
     niche1?: string;
@@ -54,8 +56,6 @@ export class ListingValidationService {
   }): string {
     const normSub = this.normalizeOptionalText(params.subniche);
     if (normSub) return normSub;
-    const normN2 = this.normalizeOptionalText(params.niche2);
-    if (normN2) return normN2;
     const normN1 = this.normalizeOptionalText(params.niche1);
     return normN1 || 'Graphic Art';
   }
@@ -122,11 +122,7 @@ export class ListingValidationService {
       niche2: params.niche2,
       subniche: params.subniche
     });
-    const fallbackSuffixes = [
-      this.normalizeOptionalText(params.subniche),
-      this.normalizeOptionalText(params.niche2),
-      this.normalizeOptionalText(params.niche1)
-    ].filter((s): s is string => !!s);
+    const fallbackSuffixes: string[] = [];
 
     // 2. Clean trailing placeholders from title
     const titleBeforePlaceholderClean = title;
@@ -180,7 +176,7 @@ export class ListingValidationService {
       repaired = true;
     }
 
-    // 5. Brand Hard Limits (Max 50 chars, target 40-50)
+    // 5. Brand Hard Limit (concise copy is explicitly allowed)
     brand = brand.replace(/[,.!?:;'"\-–—]+$/, '').trim();
     // Clean trailing placeholder tokens from Brand if any
     brand = this.cleanTrailingPlaceholders(brand);
@@ -193,7 +189,7 @@ export class ListingValidationService {
       repaired = true;
     }
 
-    // 6. Bullet 1 & Bullet 2 Limits (Max 256 chars, target 230-256)
+    // 6. Bullet 1 & Bullet 2 Limits (no artificial minimum length)
     if (bullet1.length > 256) {
       issues.push(`Bullet 1 exceeded 256 chars (${bullet1.length} chars). Trimming.`);
       let cut = bullet1.slice(0, 256).trim();
@@ -222,7 +218,7 @@ export class ListingValidationService {
       repaired = true;
     }
 
-    // 7. Description Limit (Max 600 chars, target 300-600)
+    // 7. Description Limit (no artificial minimum length)
     if (description.length > 600) {
       issues.push(`Description exceeded 600 chars (${description.length} chars). Trimming.`);
       let cut = description.slice(0, 600).trim();
@@ -256,13 +252,24 @@ export class ListingValidationService {
     // 9. Forbidden terms from TM Referee (Must not be present)
     if (params.forbiddenTerms && params.forbiddenTerms.length > 0) {
       const normForbidden = params.forbiddenTerms.map(t => t.toLowerCase().trim()).filter(Boolean);
-      for (const f of fieldsToClean) {
+      // Re-read current values after banned-word cleanup so a later TM cleanup
+      // can never restore text that the previous pass already removed.
+      const fieldsForForbidden = [
+        { name: 'brand', val: brand, set: (v: string) => { brand = v; } },
+        { name: 'title', val: title, set: (v: string) => { title = v; } },
+        { name: 'bullet1', val: bullet1, set: (v: string) => { bullet1 = v; } },
+        { name: 'bullet2', val: bullet2, set: (v: string) => { bullet2 = v; } },
+        { name: 'description', val: description, set: (v: string) => { description = v; } }
+      ];
+      for (const f of fieldsForForbidden) {
+        let fieldValue = f.val;
         for (const term of normForbidden) {
           const esc = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
           const regex = new RegExp(`\\b${esc}\\b`, 'i');
-          if (regex.test(f.val)) {
+          if (regex.test(fieldValue)) {
             issues.push(`Forbidden TM term "${term}" found in ${f.name}. Removing.`);
-            f.set(f.val.replace(regex, '').replace(/\s+/g, ' ').trim());
+            fieldValue = fieldValue.replace(regex, '').replace(/\s+/g, ' ').trim();
+            f.set(fieldValue);
             repaired = true;
           }
         }
@@ -282,17 +289,14 @@ export class ListingValidationService {
     };
 
     const isValid =
-      finalListing.brand.length >= 40 &&
+      finalListing.brand.length > 0 &&
       finalListing.brand.length <= 50 &&
-      finalListing.title.length >= 50 &&
+      finalListing.title.length > 0 &&
       finalListing.title.length <= 60 &&
       this.titleEndsWithSuffix(finalListing.title, expectedSuffix, fallbackSuffixes) &&
       !finalListing.title.toLowerCase().endsWith(' none') &&
-      finalListing.bullet1.length >= 230 &&
       finalListing.bullet1.length <= 256 &&
-      finalListing.bullet2.length >= 230 &&
       finalListing.bullet2.length <= 256 &&
-      finalListing.description.length >= 300 &&
       finalListing.description.length <= 600;
 
     return {

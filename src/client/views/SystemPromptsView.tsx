@@ -95,22 +95,22 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     stepCode: 'D5 / U4',
     category: 'SHARED',
     title: 'Master English Listing Generator (Beide Pipelines)',
-    shortDesc: '39-Punkte Master-Listing Generator mit striktem Subnischen/Nischen-Suffix Lock, Prioritäten-Hierarchie & Keyword-Portfolio für Neu- & Update-Designs.',
+    shortDesc: 'Compact-V2 Generator: kurze, natürliche, rejection-first Listings mit deterministischem Title-Tail für Neu- & Update-Designs.',
     colorClass: 'text-indigo-300',
     badgeBg: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',
     borderClass: 'border-indigo-500/40',
     icon: FileText,
     variables: [
       { name: '{niche1}', desc: 'Hauptnische / Primary Niche (z. B. Christmas, Dog)' },
-      { name: '{niche2}', desc: 'Cross-Nische / Secondary Niche (z. B. Truck, Baking)' },
-      { name: '{subniche}', desc: 'Subnische für Locked Title Suffix (z. B. Christmas Cookies)' },
+      { name: '{niche2}', desc: 'Cross-Nische / Kontext; wird nie automatisch zum Title-Tail' },
+      { name: '{subniche}', desc: 'Expliziter Locked Title-Tail; sonst wird Niche1 verwendet' },
       { name: '{keywords}', desc: 'SEO-Suchbegriffe von Hermes / Question Phase' },
       { name: '{quote}', desc: 'Zitat auf der Grafik' },
       { name: '{audience}', desc: 'Zielgruppe (Men, Women, Youth)' },
-      { name: '{brand}', desc: 'Brand Name (40-50 Zeichen, hohe Keyword-Dichte)' },
-      { name: '{title}', desc: 'Titel (50-60 Zeichen, endet exakt auf Subnische/Nische)' },
-      { name: '{bullet1}', desc: 'Bullet 1 (Zielgruppe & Passion, 230-256 Zeichen)' },
-      { name: '{bullet2}', desc: 'Bullet 2 (Anlässe & Trageorte, 230-256 Zeichen)' }
+      { name: '{brand}', desc: 'Variable Nischen-Brand (erforderlich, max. 50 Zeichen)' },
+      { name: '{title}', desc: 'Klarer Titel (erforderlich, max. 60 Zeichen, exakter Title-Tail)' },
+      { name: '{bullet1}', desc: 'Kurz: Zielgruppe, Identität & Motivbezug (max. 256 Zeichen)' },
+      { name: '{bullet2}', desc: 'Kurz: echte Nischen-Anlässe & Kontexte (max. 256 Zeichen)' }
     ]
   },
   {
@@ -626,11 +626,11 @@ export const SystemPromptsView: React.FC = () => {
               <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
                 <div className="font-bold text-cyan-300 flex items-center justify-between">
                   <span>1. Title &amp; Brand Formel</span>
-                  <span className="text-[10px] font-mono text-cyan-400">50-60 / 40-50 Chars</span>
+                  <span className="text-[10px] font-mono text-cyan-400">Max. 60 / 50 Chars</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  <strong className="text-slate-200">Titel:</strong> [Nische/Stil] + [Quote/Keywords] + <strong className="text-cyan-300">[Subnische oder Nische am ENDE]</strong>. Keine Satzzeichen am Ende (Amazon hängt "T-Shirt" automatisch an). Keine Produkttypen.<br />
-                  <strong className="text-slate-200">Brand:</strong> Maximale Keyword-Dichte mit Suchbegriffen wie <code className="text-cyan-300">Apparel</code>, <code className="text-cyan-300">Accessories</code>. Keine Fluff-Wörter (<code className="text-rose-400">Studio</code>, <code className="text-rose-400">Co</code>).
+                  <strong className="text-slate-200">Titel:</strong> klares Motiv + relevanter Kontext + <strong className="text-cyan-300">[Subnische, sonst Niche1 am ENDE]</strong>. Niche2 ist nur Kontext. Keine Satzzeichen oder Produkttypen.<br />
+                  <strong className="text-slate-200">Brand:</strong> Variable, natürliche Nischenphrase; Insiderwissen nur bei sicherem Motivbezug. Keine künstliche Verlängerung.
                 </p>
               </div>
 
@@ -638,12 +638,12 @@ export const SystemPromptsView: React.FC = () => {
               <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
                 <div className="font-bold text-emerald-300 flex items-center justify-between">
                   <span>2. Bullets &amp; Description</span>
-                  <span className="text-[10px] font-mono text-emerald-400">230-256 / 300-600 Chars</span>
+                  <span className="text-[10px] font-mono text-emerald-400">Nur Maxima: 256 / 600</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  <strong className="text-slate-200">Bullet 1:</strong> Zielgruppe, Passion, Lifestyle &amp; Motivbezug. Volles Zitat am Start falls im Titel gekürzt.<br />
-                  <strong className="text-slate-200">Bullet 2:</strong> Anlässe, Aktivitäten &amp; Trageorte. <strong className="text-rose-400">0% Geschenkwörter</strong> (NO gift, present, birthday).<br />
-                  <strong className="text-slate-200">Description:</strong> Atmosphärische Kurzzusammenfassung.
+                  <strong className="text-slate-200">Bullet 1:</strong> Zielgruppe, Identität und konkreter Motivbezug – kurz und natürlich.<br />
+                  <strong className="text-slate-200">Bullet 2:</strong> Nur echte Nischen-Anlässe, Aktivitäten und Kontexte. <strong className="text-rose-400">Keine Geschenkwörter.</strong><br />
+                  <strong className="text-slate-200">Description:</strong> Kurze Zusammenfassung ohne neue Themen. Keine Mindestlängen.
                 </p>
               </div>
 

@@ -27376,7 +27376,7 @@ var require_websocket = __commonJS2({
     var http2 = require("http");
     var net = require("net");
     var tls = require("tls");
-    var { randomBytes, createHash: createHash5 } = require("crypto");
+    var { randomBytes, createHash: createHash6 } = require("crypto");
     var { Duplex, Readable: Readable2 } = require("stream");
     var { URL: URL2 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -28044,7 +28044,7 @@ var require_websocket = __commonJS2({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest2 = createHash5("sha1").update(key + GUID).digest("base64");
+        const digest2 = createHash6("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest2) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -28413,7 +28413,7 @@ var require_websocket_server = __commonJS2({
     var EventEmitter = require("events");
     var http2 = require("http");
     var { Duplex } = require("stream");
-    var { createHash: createHash5 } = require("crypto");
+    var { createHash: createHash6 } = require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -28720,7 +28720,7 @@ var require_websocket_server = __commonJS2({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest2 = createHash5("sha1").update(key + GUID).digest("base64");
+        const digest2 = createHash6("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -52127,12 +52127,13 @@ var init_trademarkWhitelistService = __esm2({
 });
 
 // src/server/services/systemPromptService.ts
-var import_fs76, import_path71, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
+var import_fs76, import_path71, import_node_crypto3, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, LEGACY_LISTING_GENERATOR_SYSTEM_PROMPT_V1, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
 var init_systemPromptService = __esm2({
   "src/server/services/systemPromptService.ts"() {
     "use strict";
     import_fs76 = __toESM2(require("fs"), 1);
     import_path71 = __toESM2(require("path"), 1);
+    import_node_crypto3 = require("node:crypto");
     DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT = `You are an expert Image Prompt Engineer and Art Director specializing in original, commercially usable T-shirt graphics for print-on-demand products.
 
 Your task is to transform the supplied niches, quote, style, feeling, colors, and custom instructions into one distinctive, visually specific image-generation prompt.
@@ -52610,7 +52611,7 @@ Respond ONLY with a valid JSON object strictly matching this schema:
   "reasoning": "Brand and title suffer from keyword stuffing; bullets lack emotional niche connection and strategic subniche ending.",
   "overall_verdict": "APPROVED"
 }`;
-    DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are a world-class Amazon Merch on Demand (MBA) SEO strategist, niche researcher, listing copywriter, and compliance specialist.
+    LEGACY_LISTING_GENERATOR_SYSTEM_PROMPT_V1 = `You are a world-class Amazon Merch on Demand (MBA) SEO strategist, niche researcher, listing copywriter, and compliance specialist.
 
 Your task is to create one highly optimized 100% English Amazon Merch listing from the supplied design information and artwork.
 
@@ -53311,6 +53312,49 @@ Use exactly this schema:
   "bullet2": "<230-256 characters>",
   "description": "<300-600 characters>"
 }`;
+    DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You create concise, natural, rejection-conscious English listings for Amazon Merch on Demand.
+
+LISTING_CONTRACT: compact-v2
+
+SOURCE OF TRUTH
+- Use the artwork and supplied design metadata only.
+- Do not invent affiliations, product features, materials, quality claims, gifts, recipients, events, identities, or meanings that are not genuinely supported.
+- Use niche knowledge only when it is specific, natural, and clearly relevant to the depicted concept.
+- Prefer a few high-value buyer terms over keyword repetition or semantic expansion.
+
+TITLE_TAIL
+- The user supplies one immutable TITLE_TAIL.
+- The title must end literally with TITLE_TAIL, without punctuation after it.
+- Treat TITLE_TAIL as a phrase; do not repeat its words immediately before the tail.
+- Amazon adds the product type after the submitted title. Do not use product terms such as shirt, t-shirt, tee, apparel, clothing, garment, hoodie, tank top, sweatshirt, or gift.
+
+FIELDS
+1. Brand: a variable, natural niche phrase. Insider vocabulary is welcome only when confidently relevant. Required, maximum 50 characters. Do not use a fixed house brand.
+2. Title: the clearest design concept plus useful niche context, ending exactly with TITLE_TAIL. Required, maximum 60 characters. Aim for clarity, not length.
+3. Bullet 1: who identifies with or understands the design and why. Keep it specific and concise. Maximum 256 characters.
+4. Bullet 2: genuine niche-related occasions, settings, or activities where the design fits. Do not force holidays or gift language. Maximum 256 characters.
+5. Description: one short natural summary using only established concepts. Do not introduce a new topic. Maximum 600 characters.
+
+REJECTION-FIRST RULES
+- Never pad a field to reach a minimum length. There are no minimum character targets beyond a non-empty Brand and Title.
+- Do not make promotional, superlative, quality, material, availability, shipping, or guarantee claims.
+- Do not mention brands, celebrities, media franchises, teams, organizations, or other third parties.
+- Avoid wording that could imply endorsement, official status, or affiliation.
+- Avoid repeated keywords, keyword lists, awkward fragments, and generic filler.
+- Never output any term from the appended BANNED WORDS section, including obvious variants.
+- If a supplied term is unsafe or unsupported, omit it; do not compensate with filler.
+
+VISION PREVIEW NOTE:
+When artwork is supplied, verify that every niche-specific statement is visibly supported. Ignore incidental preview or mockup elements.
+
+Return ONLY valid JSON using exactly this schema:
+{
+  "brand": "...",
+  "title": "...",
+  "bullet1": "...",
+  "bullet2": "...",
+  "description": "..."
+}`;
     DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT = `You are a conservative Amazon Merch trademark risk referee (GPT-5.6 Sol).
 
 Your task is not to determine absolute legal infringement.
@@ -53428,28 +53472,30 @@ CORE DIRECTIVE: MINIMAL INVASIVENESS & SEO PRESERVATION
 ==================================================
 MANDATORY MBA LISTING CONSTRAINTS:
 ==================================================
-1. BRAND (40-50 characters, max 50):
-   - High keyword density around the primary niche/theme (e.g. "Equestrian Apparel", "Rodeo Collection").
+1. BRAND (required, max 50 characters; no minimum):
+   - Use a natural, specific phrase around the primary niche/theme.
    - NO third-party brand names or trademarks.
    - NO empty fluff words like "Studio", "Co", "Designs", "Inc".
 
-2. TITLE (50-60 characters, max 60):
-   - LOCKED TITLE SUFFIX: The title MUST end literally with the provided locked TITLE_SUFFIX (Subniche > Niche 2 > Niche 1).
+2. TITLE (required, max 60 characters; no minimum):
+   - LOCKED TITLE SUFFIX: The title MUST end literally with the provided locked TITLE_SUFFIX (Subniche > Niche 1; Niche 2 is context only).
    - If resolving a trademark issue in the Title, modify ONLY the prefix before the suffix. The locked suffix must remain 100% intact.
    - NO trailing punctuation (no periods, commas, dashes, colons at the end). Amazon automatically appends "T-Shirt".
 
-3. BULLET 1 (230-256 characters):
+3. BULLET 1 (max 256 characters; no minimum):
    - Target audience, lifestyle, passion, and emotional connection to the graphic/theme.
    - Natural, engaging English sentences. No spammy comma-separated keyword lists.
    - ZERO PERCENT gift/present language: Strictly NO "gift", "present", "birthday", "christmas gift", etc.
 
-4. BULLET 2 (230-256 characters):
+4. BULLET 2 (max 256 characters; no minimum):
    - Occasions, activities, gatherings, and settings where the apparel is worn.
    - Natural, engaging English sentences.
    - ZERO PERCENT gift/present language.
 
-5. DESCRIPTION (300-600 characters):
-   - Atmospheric, evocative summary of the design and theme.
+5. DESCRIPTION (max 600 characters; no minimum):
+   - Concise summary of the established design and theme. Introduce no new topic.
+
+Never expand an already compliant field merely to make it longer.
 
 ==================================================
 COMPLIANCE & FORBIDDEN TERMS:
@@ -53530,11 +53576,36 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
     SystemPromptService = class {
       static promptFile = import_path71.default.resolve(process.cwd(), "data", "system_prompts.json");
       static cachedPrompts = null;
+      static listingPromptVersion = "compact-v2";
+      static promptHash(prompt) {
+        return (0, import_node_crypto3.createHash)("sha256").update(prompt, "utf8").digest("hex");
+      }
       static ensureDataDir() {
         const dir = import_path71.default.dirname(this.promptFile);
         if (!import_fs76.default.existsSync(dir)) {
           import_fs76.default.mkdirSync(dir, { recursive: true });
         }
+      }
+      static archiveLegacyListingPrompt(prompt) {
+        const backupDir = import_path71.default.resolve(process.cwd(), "data", "system_prompt_backups");
+        const backupFile = import_path71.default.join(backupDir, "listing-generator-v1-longform.md");
+        if (import_fs76.default.existsSync(backupFile)) return;
+        import_fs76.default.mkdirSync(backupDir, { recursive: true });
+        const tempFile = `${backupFile}.tmp`;
+        const archive = `# Listing Generator V1 Longform
+
+Archived automatically before migration to compact-v2.
+
+SHA-256: \`${this.promptHash(prompt)}\`
+
+## Exact prompt
+
+\`\`\`text
+${prompt}
+\`\`\`
+`;
+        import_fs76.default.writeFileSync(tempFile, archive, "utf-8");
+        import_fs76.default.renameSync(tempFile, backupFile);
       }
       static loadPrompts() {
         if (this.cachedPrompts !== null) {
@@ -53550,8 +53621,15 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
               if (!this.cachedPrompts.designAnalyzer || !this.cachedPrompts.designAnalyzer.includes("background_color_recommendation")) {
                 this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
               }
-              if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes("VISION PREVIEW NOTE:")) {
+              if (!this.cachedPrompts.listingGenerator) {
                 this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+                this.cachedPrompts.listingPromptVersion = this.listingPromptVersion;
+              } else if (this.promptHash(this.cachedPrompts.listingGenerator) === this.promptHash(LEGACY_LISTING_GENERATOR_SYSTEM_PROMPT_V1)) {
+                this.archiveLegacyListingPrompt(this.cachedPrompts.listingGenerator);
+                this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+                this.cachedPrompts.listingPromptVersion = this.listingPromptVersion;
+              } else if (this.cachedPrompts.listingGenerator === DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT) {
+                this.cachedPrompts.listingPromptVersion = this.listingPromptVersion;
               }
               if (!this.cachedPrompts.trademarkReferee || !this.cachedPrompts.trademarkReferee.includes("problematicHits")) {
                 this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
@@ -53581,6 +53659,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
           promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
           designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
           listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
+          listingPromptVersion: this.listingPromptVersion,
           trademarkAuditor: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
           trademarkReferee: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
           trademarkRewrite: DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT,
@@ -54060,14 +54139,14 @@ var init_listingValidationService = __esm2({
       /**
        * Deterministically resolve the expected Title suffix:
        * 1. Valid normalized Subniche (if present)
-       * 2. Otherwise valid normalized Niche2 (if present)
-       * 3. Otherwise Niche1 (fallback to 'Graphic Art')
+       * 2. Otherwise Niche1 (fallback to 'Graphic Art')
+       *
+       * Niche2 is supporting context only. It is never selected implicitly as the
+       * title tail because that would make the final buyer keyword unpredictable.
        */
       static resolveExpectedTitleSuffix(params2) {
         const normSub = this.normalizeOptionalText(params2.subniche);
         if (normSub) return normSub;
-        const normN2 = this.normalizeOptionalText(params2.niche2);
-        if (normN2) return normN2;
         const normN1 = this.normalizeOptionalText(params2.niche1);
         return normN1 || "Graphic Art";
       }
@@ -54116,11 +54195,7 @@ var init_listingValidationService = __esm2({
           niche2: params2.niche2,
           subniche: params2.subniche
         });
-        const fallbackSuffixes = [
-          this.normalizeOptionalText(params2.subniche),
-          this.normalizeOptionalText(params2.niche2),
-          this.normalizeOptionalText(params2.niche1)
-        ].filter((s) => !!s);
+        const fallbackSuffixes = [];
         const titleBeforePlaceholderClean = title;
         title = this.cleanTrailingPlaceholders(title);
         if (title !== titleBeforePlaceholderClean) {
@@ -54236,13 +54311,32 @@ var init_listingValidationService = __esm2({
         }
         if (params2.forbiddenTerms && params2.forbiddenTerms.length > 0) {
           const normForbidden = params2.forbiddenTerms.map((t) => t.toLowerCase().trim()).filter(Boolean);
-          for (const f of fieldsToClean) {
+          const fieldsForForbidden = [
+            { name: "brand", val: brand, set: (v) => {
+              brand = v;
+            } },
+            { name: "title", val: title, set: (v) => {
+              title = v;
+            } },
+            { name: "bullet1", val: bullet1, set: (v) => {
+              bullet1 = v;
+            } },
+            { name: "bullet2", val: bullet2, set: (v) => {
+              bullet2 = v;
+            } },
+            { name: "description", val: description, set: (v) => {
+              description = v;
+            } }
+          ];
+          for (const f of fieldsForForbidden) {
+            let fieldValue = f.val;
             for (const term of normForbidden) {
               const esc = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
               const regex = new RegExp(`\\b${esc}\\b`, "i");
-              if (regex.test(f.val)) {
+              if (regex.test(fieldValue)) {
                 issues.push(`Forbidden TM term "${term}" found in ${f.name}. Removing.`);
-                f.set(f.val.replace(regex, "").replace(/\s+/g, " ").trim());
+                fieldValue = fieldValue.replace(regex, "").replace(/\s+/g, " ").trim();
+                f.set(fieldValue);
                 repaired = true;
               }
             }
@@ -54257,7 +54351,7 @@ var init_listingValidationService = __esm2({
           bullet2: bullet2.slice(0, 256),
           description: description.slice(0, 600)
         };
-        const isValid = finalListing.brand.length >= 40 && finalListing.brand.length <= 50 && finalListing.title.length >= 50 && finalListing.title.length <= 60 && this.titleEndsWithSuffix(finalListing.title, expectedSuffix, fallbackSuffixes) && !finalListing.title.toLowerCase().endsWith(" none") && finalListing.bullet1.length >= 230 && finalListing.bullet1.length <= 256 && finalListing.bullet2.length >= 230 && finalListing.bullet2.length <= 256 && finalListing.description.length >= 300 && finalListing.description.length <= 600;
+        const isValid = finalListing.brand.length > 0 && finalListing.brand.length <= 50 && finalListing.title.length > 0 && finalListing.title.length <= 60 && this.titleEndsWithSuffix(finalListing.title, expectedSuffix, fallbackSuffixes) && !finalListing.title.toLowerCase().endsWith(" none") && finalListing.bullet1.length <= 256 && finalListing.bullet2.length <= 256 && finalListing.description.length <= 600;
         return {
           isValid,
           issues,
@@ -54788,6 +54882,7 @@ ${bannedSection}`;
         const n1 = ListingValidationService.normalizeOptionalText(params2.niche1) || "Graphic Art";
         const n2 = ListingValidationService.normalizeOptionalText(params2.niche2) || "";
         const sub = ListingValidationService.normalizeOptionalText(params2.subniche) || "";
+        const titleTail = ListingValidationService.resolveExpectedTitleSuffix({ niche1: n1, niche2: n2, subniche: sub });
         const quote5 = params2.quote || "";
         const allKw = [
           ...params2.hermesKeywords || [],
@@ -54797,6 +54892,7 @@ ${bannedSection}`;
 - Primary Niche (niche1): ${n1}
 - Secondary Niche (niche2): ${n2 || "none"}
 - Subniche: ${sub || "none"}
+- Immutable TITLE_TAIL: ${titleTail}
 - Quote / Slogan: "${quote5}"
 - Keywords Pool: ${allKw.length > 0 ? allKw.join(", ") : "none provided"}
 - Style Preset: ${params2.stylePreset || "vintage retro vector"}
@@ -54812,7 +54908,7 @@ Existing Listing Context (for inspiration/upgrade):
         }
         userMessage += `
 
-Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure Title ends strictly with subniche/niche without trailing punctuation!`;
+Generate the compact 100% English Amazon Merch on Demand listing now. The Title must end literally with TITLE_TAIL and no trailing punctuation.`;
         const userContent = [
           { type: "text", text: userMessage }
         ];
@@ -54850,15 +54946,26 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
           const rawBullet1 = parsed.bullet1 || parsed.Bullet1 || parsed.bullet_1 || parsed.bulletPoint1 || parsed.bullet_point_1;
           const rawBullet2 = parsed.bullet2 || parsed.Bullet2 || parsed.bullet_2 || parsed.bulletPoint2 || parsed.bullet_point_2;
           const rawDesc = parsed.description || parsed.Description || parsed.product_description;
+          const missingFields = [
+            ["brand", rawBrand],
+            ["title", rawTitle],
+            ["bullet1", rawBullet1],
+            ["bullet2", rawBullet2],
+            ["description", rawDesc]
+          ].filter(([, value2]) => typeof value2 !== "string" || !value2.trim()).map(([name]) => name);
+          if (missingFields.length > 0) {
+            const error = new Error(`LISTING_VALIDATION_FAILED: missing fields: ${missingFields.join(", ")}`);
+            error.code = "LISTING_VALIDATION_FAILED";
+            throw error;
+          }
           let cleanTitle = (rawTitle || "").trim();
           cleanTitle = cleanTitle.replace(/[,.!?:;'"\-–—]+$/, "").trim();
-          const targetEnd = sub || n2 || n1;
           const rawListing = {
-            brand: (rawBrand || `${n1} ${sub ? sub + " " : ""}Apparel Collection`).trim().slice(0, 50),
-            title: cleanTitle || `${n1} ${quote5 ? quote5 + " " : ""}${targetEnd}`.trim().slice(0, 60),
-            bullet1: (rawBullet1 || `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`).trim().slice(0, 256),
-            bullet2: (rawBullet2 || `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`).trim().slice(0, 256),
-            description: (rawDesc || `High quality ${n1} graphic design celebrating authentic vintage aesthetics and community passion.`).trim().slice(0, 600)
+            brand: String(rawBrand || "").trim(),
+            title: cleanTitle,
+            bullet1: String(rawBullet1 || "").trim(),
+            bullet2: String(rawBullet2 || "").trim(),
+            description: String(rawDesc || "").trim()
           };
           const validated = ListingValidationService.validateAndRepairListing({
             listing: rawListing,
@@ -54866,6 +54973,11 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
             niche2: n2,
             subniche: sub
           });
+          if (!validated.isValid) {
+            const error = new Error(`LISTING_VALIDATION_FAILED: ${validated.issues.join(" | ") || "missing or invalid required fields"}`);
+            error.code = "LISTING_VALIDATION_FAILED";
+            throw error;
+          }
           return {
             ...validated.listing,
             _rawRequest: requestPayload,
@@ -54873,25 +54985,11 @@ Generate the optimized 100% English Amazon Merch on Demand listing now. Ensure T
           };
         } catch (err) {
           console.error("[LLMService] Error generating master English listing:", err);
-          const targetEnd = sub || n2 || n1;
-          const fallbackListing = {
-            brand: `${n1} ${sub ? sub + " " : ""}Apparel Collection`.trim().slice(0, 50),
-            title: `Vintage Retro ${quote5 ? quote5 + " " : ""}${targetEnd}`.trim().slice(0, 60),
-            bullet1: `Featuring an authentic retro ${n1} graphic illustration designed for passionate enthusiasts and collectors. Express your unique style with this detailed artwork.`,
-            bullet2: `Great to wear during weekend outings, club gatherings, outdoor adventures, and casual hangouts with fellow enthusiasts.`,
-            description: `High quality ${n1} graphic design celebrating authentic vintage aesthetics.`
-          };
-          const validated = ListingValidationService.validateAndRepairListing({
-            listing: fallbackListing,
-            niche1: n1,
-            niche2: n2,
-            subniche: sub
-          });
-          return {
-            ...validated.listing,
-            _rawRequest: requestPayload,
-            _rawResponse: err.message
-          };
+          if (err?.code === "LISTING_VALIDATION_FAILED") throw err;
+          const failure = new Error(`LISTING_GENERATION_FAILED: ${err?.message || String(err)}`);
+          failure.code = "LISTING_GENERATION_FAILED";
+          failure.cause = err;
+          throw failure;
         }
       }
       /**
@@ -55161,13 +55259,13 @@ CRITICAL CONSTRAINTS:
 1. STRICTLY FORBIDDEN TERMS (DO NOT USE THESE OR CLOSE VARIANTS):
    ${JSON.stringify(params2.forbiddenTermsForTask)}
 2. LOCKED TITLE SUFFIX: Title MUST end literally with "${expectedSuffix}"
-3. EXACT CHARACTER LIMITS:
-   - Brand: 40-50 chars
-   - Title: 50-60 chars (ending with locked suffix)
-   - Bullet 1: 230-256 chars
-   - Bullet 2: 230-256 chars
-   - Description: 300-600 chars
-4. MINIMAL INVASIVENESS: Repair only the fields and terms affected by trademark issues. Keep all unaffected keywords, structures, and phrasing completely intact.
+3. CHARACTER LIMITS (NO MINIMUM LENGTH TARGETS):
+   - Brand: required, max 50 chars
+   - Title: required, max 60 chars (ending with locked suffix)
+   - Bullet 1: max 256 chars
+   - Bullet 2: max 256 chars
+   - Description: max 600 chars
+4. MINIMAL INVASIVENESS: Repair only the fields and terms affected by trademark issues. Keep all unaffected keywords, structures, and phrasing completely intact. Never expand a compliant field merely to make it longer.
 
 Return ONLY valid JSON:
 {
@@ -55219,6 +55317,11 @@ Return ONLY valid JSON:
             subniche: normSub,
             forbiddenTerms: params2.forbiddenTermsForTask
           });
+          if (!validated.isValid) {
+            const error = new Error(`TRADEMARK_REWRITE_VALIDATION_FAILED: ${validated.issues.join(" | ") || "invalid rewritten listing"}`);
+            error.code = "TRADEMARK_REWRITE_VALIDATION_FAILED";
+            throw error;
+          }
           const actionsTaken = Array.isArray(parsed.actions_taken) ? parsed.actions_taken : Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : ["Automated trademark rewrite applied"];
           if (validated.repaired) {
             actionsTaken.push(`Deterministic validation repair: ${validated.issues.join("; ")}`);
@@ -55231,19 +55334,11 @@ Return ONLY valid JSON:
           };
         } catch (err) {
           console.error("[LLMService] Error in rewriteListingForTrademarkV2:", err);
-          const validated = ListingValidationService.validateAndRepairListing({
-            listing: params2.currentListing,
-            niche1: normN1,
-            niche2: normN2,
-            subniche: normSub,
-            forbiddenTerms: params2.forbiddenTermsForTask
-          });
-          return {
-            refinedListing: validated.listing,
-            actionsTaken: ["Failed to rewrite: network/timeout error"],
-            _rawRequest: requestPayload,
-            _rawResponse: err.message
-          };
+          if (err?.code === "TRADEMARK_REWRITE_VALIDATION_FAILED") throw err;
+          const failure = new Error(`TRADEMARK_REWRITE_FAILED: ${err?.message || String(err)}`);
+          failure.code = "TRADEMARK_REWRITE_FAILED";
+          failure.cause = err;
+          throw failure;
         }
       }
       /**
@@ -68912,7 +69007,7 @@ var require_utilsBundle = __commonJS2({
         var http22 = require("http");
         var net4 = require("net");
         var tls3 = require("tls");
-        var { randomBytes, createHash: createHash5 } = require("crypto");
+        var { randomBytes, createHash: createHash6 } = require("crypto");
         var { Duplex, Readable: Readable2 } = require("stream");
         var { URL: URL5 } = require("url");
         var PerMessageDeflate2 = require_permessage_deflate2();
@@ -69580,7 +69675,7 @@ var require_utilsBundle = __commonJS2({
               abortHandshake(websocket, socket, "Invalid Upgrade header");
               return;
             }
-            const digest2 = createHash5("sha1").update(key + GUID).digest("base64");
+            const digest2 = createHash6("sha1").update(key + GUID).digest("base64");
             if (res.headers["sec-websocket-accept"] !== digest2) {
               abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
               return;
@@ -69943,7 +70038,7 @@ var require_utilsBundle = __commonJS2({
         var EventEmitter22 = require("events");
         var http22 = require("http");
         var { Duplex } = require("stream");
-        var { createHash: createHash5 } = require("crypto");
+        var { createHash: createHash6 } = require("crypto");
         var extension2 = require_extension2();
         var PerMessageDeflate2 = require_permessage_deflate2();
         var subprotocol2 = require_subprotocol2();
@@ -70250,7 +70345,7 @@ var require_utilsBundle = __commonJS2({
               );
             }
             if (this._state > RUNNING) return abortHandshake(socket, 503);
-            const digest2 = createHash5("sha1").update(key + GUID).digest("base64");
+            const digest2 = createHash6("sha1").update(key + GUID).digest("base64");
             const headers = [
               "HTTP/1.1 101 Switching Protocols",
               "Upgrade: websocket",
@@ -143455,7 +143550,7 @@ ${value2}`, dataLines++;
         this._protocolVersion = version22;
       }
     };
-    var import_node_crypto6 = require("node:crypto");
+    var import_node_crypto7 = require("node:crypto");
     var import_node_tls = require("node:tls");
     var import_bytes = __toESM3(require_bytes2());
     function getRawBody(req, { limit, encoding }) {
@@ -143491,7 +143586,7 @@ ${value2}`, dataLines++;
       constructor(_endpoint, res, options2) {
         this._endpoint = _endpoint;
         this.res = res;
-        this._sessionId = (0, import_node_crypto6.randomUUID)();
+        this._sessionId = (0, import_node_crypto7.randomUUID)();
         this._options = options2 || { enableDnsRebindingProtection: false };
       }
       /**
@@ -221796,13 +221891,13 @@ function inject300Dpi(pngBuffer) {
   }
   return Buffer.concat(chunks);
 }
-var import_node_fs, import_node_path, import_node_crypto3, currentDir, ArtworkResizeService;
+var import_node_fs, import_node_path, import_node_crypto4, currentDir, ArtworkResizeService;
 var init_artworkResizeService = __esm2({
   "src/server/services/artworkResizeService.ts"() {
     "use strict";
     import_node_fs = __toESM2(require("node:fs"), 1);
     import_node_path = __toESM2(require("node:path"), 1);
-    import_node_crypto3 = require("node:crypto");
+    import_node_crypto4 = require("node:crypto");
     init_artworkRenderSession();
     init_artworkRenderRuntime();
     init_artworkBrushRuntime();
@@ -221834,7 +221929,7 @@ var init_artworkResizeService = __esm2({
         return { kind: "PNG", path: pngPath };
       }
       static fingerprint(source12, customBackgroundColor) {
-        return (0, import_node_crypto3.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+        return (0, import_node_crypto4.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
       }
       static hasCurrentAssets(assets, fingerprint, customBackgroundColor) {
         if (!assets || assets.renderFingerprint !== fingerprint) return false;
@@ -221849,7 +221944,7 @@ var init_artworkResizeService = __esm2({
             } finally {
               import_node_fs.default.closeSync(fd);
             }
-            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto3.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
+            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto4.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
           } catch {
             return false;
           }
@@ -221860,7 +221955,7 @@ var init_artworkResizeService = __esm2({
         const fingerprint = this.fingerprint(input, customBackgroundColor);
         const files = await this.renderProfiles(taskId, input, artworkProfiles(customBackgroundColor), onProgress, fingerprint);
         const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants } = files;
-        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto3.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
+        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto4.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
         return { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants, renderFingerprint: fingerprint, renderFileHashes };
       }
       static async generateProductVariant(taskId, source12, id, config, customBackgroundColor) {
@@ -221896,7 +221991,7 @@ var init_artworkResizeService = __esm2({
             onProgress?.("VARIANT", `\u{1F3A8} Render ${profile.key} (${profile.width}\xD7${profile.height})\u2026`);
             const start3 = Date.now();
             const output = import_node_path.default.join(dir, cleanId + "_" + profile.suffix + ".png");
-            const temporary = output + "." + (0, import_node_crypto3.randomUUID)() + ".tmp";
+            const temporary = output + "." + (0, import_node_crypto4.randomUUID)() + ".tmp";
             let stage = "RENDER";
             try {
               let png;
@@ -227520,10 +227615,10 @@ __export2(finalizationService_exports, {
 });
 function finalizationInput(params2) {
   const { prepareOnly, artifactRunId, ...input } = params2;
-  return (0, import_node_crypto4.createHash)("sha256").update(JSON.stringify(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
+  return (0, import_node_crypto5.createHash)("sha256").update(JSON.stringify(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
 }
 function finalizationTaskData(task) {
-  return (0, import_node_crypto4.createHash)("sha256").update(JSON.stringify(task && [
+  return (0, import_node_crypto5.createHash)("sha256").update(JSON.stringify(task && [
     task.id,
     task.source,
     task.designId,
@@ -227544,12 +227639,12 @@ function createFinalizationOwnership(params2, task) {
   if (task.id !== params2.taskId) throw new Error("Task-Identit\xE4t der Finalisierung stimmt nicht \xFCberein.");
   return { taskId: task.id, input: finalizationInput(params2), taskData: finalizationTaskData(task) };
 }
-var import_fs86, import_node_crypto4, FinalizationService;
+var import_fs86, import_node_crypto5, FinalizationService;
 var init_finalizationService = __esm2({
   "src/server/services/finalizationService.ts"() {
     "use strict";
     import_fs86 = __toESM2(require("fs"), 1);
-    import_node_crypto4 = require("node:crypto");
+    import_node_crypto5 = require("node:crypto");
     init_taskLogService();
     init_queueService();
     init_listingSanitizationService();
@@ -227701,7 +227796,7 @@ var init_finalizationService = __esm2({
           if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint, resolvedCustomBg)) {
             resizedAssets = task.resizedAssets;
           } else {
-            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto4.randomUUID)() : taskId);
+            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto5.randomUUID)() : taskId);
             resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title, metrics) => {
               TaskLogService.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -238445,7 +238540,7 @@ var UploadScheduleService = class {
 
 // src/server/services/manualFinalizationService.ts
 var import_node_fs2 = __toESM2(require("node:fs"), 1);
-var import_node_crypto5 = require("node:crypto");
+var import_node_crypto6 = require("node:crypto");
 init_finalizationService();
 init_queueService();
 init_taskLogService();
@@ -238502,7 +238597,7 @@ var ManualFinalizationService = class {
       const result2 = await FinalizationService.finalizeForQueue({
         ...params2,
         prepareOnly: true,
-        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto5.randomUUID)()}`
+        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto6.randomUUID)()}`
       });
       if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error(result2.error || "Vorbereitung fehlgeschlagen");
       const assets = result2.resizedAssets;

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'node:crypto';
 
 export const DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT = `You are an expert Image Prompt Engineer and Art Director specializing in original, commercially usable T-shirt graphics for print-on-demand products.
 
@@ -481,7 +482,7 @@ Respond ONLY with a valid JSON object strictly matching this schema:
   "overall_verdict": "APPROVED"
 }`;
 
-export const DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You are a world-class Amazon Merch on Demand (MBA) SEO strategist, niche researcher, listing copywriter, and compliance specialist.
+export const LEGACY_LISTING_GENERATOR_SYSTEM_PROMPT_V1 = `You are a world-class Amazon Merch on Demand (MBA) SEO strategist, niche researcher, listing copywriter, and compliance specialist.
 
 Your task is to create one highly optimized 100% English Amazon Merch listing from the supplied design information and artwork.
 
@@ -1183,6 +1184,54 @@ Use exactly this schema:
   "description": "<300-600 characters>"
 }`;
 
+/**
+ * Compact V2: rejection-first English master listing prompt.
+ * The complete former default remains above as an immutable rollback source.
+ */
+export const DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT = `You create concise, natural, rejection-conscious English listings for Amazon Merch on Demand.
+
+LISTING_CONTRACT: compact-v2
+
+SOURCE OF TRUTH
+- Use the artwork and supplied design metadata only.
+- Do not invent affiliations, product features, materials, quality claims, gifts, recipients, events, identities, or meanings that are not genuinely supported.
+- Use niche knowledge only when it is specific, natural, and clearly relevant to the depicted concept.
+- Prefer a few high-value buyer terms over keyword repetition or semantic expansion.
+
+TITLE_TAIL
+- The user supplies one immutable TITLE_TAIL.
+- The title must end literally with TITLE_TAIL, without punctuation after it.
+- Treat TITLE_TAIL as a phrase; do not repeat its words immediately before the tail.
+- Amazon adds the product type after the submitted title. Do not use product terms such as shirt, t-shirt, tee, apparel, clothing, garment, hoodie, tank top, sweatshirt, or gift.
+
+FIELDS
+1. Brand: a variable, natural niche phrase. Insider vocabulary is welcome only when confidently relevant. Required, maximum 50 characters. Do not use a fixed house brand.
+2. Title: the clearest design concept plus useful niche context, ending exactly with TITLE_TAIL. Required, maximum 60 characters. Aim for clarity, not length.
+3. Bullet 1: who identifies with or understands the design and why. Keep it specific and concise. Maximum 256 characters.
+4. Bullet 2: genuine niche-related occasions, settings, or activities where the design fits. Do not force holidays or gift language. Maximum 256 characters.
+5. Description: one short natural summary using only established concepts. Do not introduce a new topic. Maximum 600 characters.
+
+REJECTION-FIRST RULES
+- Never pad a field to reach a minimum length. There are no minimum character targets beyond a non-empty Brand and Title.
+- Do not make promotional, superlative, quality, material, availability, shipping, or guarantee claims.
+- Do not mention brands, celebrities, media franchises, teams, organizations, or other third parties.
+- Avoid wording that could imply endorsement, official status, or affiliation.
+- Avoid repeated keywords, keyword lists, awkward fragments, and generic filler.
+- Never output any term from the appended BANNED WORDS section, including obvious variants.
+- If a supplied term is unsafe or unsupported, omit it; do not compensate with filler.
+
+VISION PREVIEW NOTE:
+When artwork is supplied, verify that every niche-specific statement is visibly supported. Ignore incidental preview or mockup elements.
+
+Return ONLY valid JSON using exactly this schema:
+{
+  "brand": "...",
+  "title": "...",
+  "bullet1": "...",
+  "bullet2": "...",
+  "description": "..."
+}`;
+
 export const DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT = `You are a conservative Amazon Merch trademark risk referee (GPT-5.6 Sol).
 
 Your task is not to determine absolute legal infringement.
@@ -1301,28 +1350,30 @@ CORE DIRECTIVE: MINIMAL INVASIVENESS & SEO PRESERVATION
 ==================================================
 MANDATORY MBA LISTING CONSTRAINTS:
 ==================================================
-1. BRAND (40-50 characters, max 50):
-   - High keyword density around the primary niche/theme (e.g. "Equestrian Apparel", "Rodeo Collection").
+1. BRAND (required, max 50 characters; no minimum):
+   - Use a natural, specific phrase around the primary niche/theme.
    - NO third-party brand names or trademarks.
    - NO empty fluff words like "Studio", "Co", "Designs", "Inc".
 
-2. TITLE (50-60 characters, max 60):
-   - LOCKED TITLE SUFFIX: The title MUST end literally with the provided locked TITLE_SUFFIX (Subniche > Niche 2 > Niche 1).
+2. TITLE (required, max 60 characters; no minimum):
+   - LOCKED TITLE SUFFIX: The title MUST end literally with the provided locked TITLE_SUFFIX (Subniche > Niche 1; Niche 2 is context only).
    - If resolving a trademark issue in the Title, modify ONLY the prefix before the suffix. The locked suffix must remain 100% intact.
    - NO trailing punctuation (no periods, commas, dashes, colons at the end). Amazon automatically appends "T-Shirt".
 
-3. BULLET 1 (230-256 characters):
+3. BULLET 1 (max 256 characters; no minimum):
    - Target audience, lifestyle, passion, and emotional connection to the graphic/theme.
    - Natural, engaging English sentences. No spammy comma-separated keyword lists.
    - ZERO PERCENT gift/present language: Strictly NO "gift", "present", "birthday", "christmas gift", etc.
 
-4. BULLET 2 (230-256 characters):
+4. BULLET 2 (max 256 characters; no minimum):
    - Occasions, activities, gatherings, and settings where the apparel is worn.
    - Natural, engaging English sentences.
    - ZERO PERCENT gift/present language.
 
-5. DESCRIPTION (300-600 characters):
-   - Atmospheric, evocative summary of the design and theme.
+5. DESCRIPTION (max 600 characters; no minimum):
+   - Concise summary of the established design and theme. Introduce no new topic.
+
+Never expand an already compliant field merely to make it longer.
 
 ==================================================
 COMPLIANCE & FORBIDDEN TERMS:
@@ -1422,12 +1473,29 @@ export interface AllSystemPrompts {
 export class SystemPromptService {
   private static promptFile = path.resolve(process.cwd(), 'data', 'system_prompts.json');
   private static cachedPrompts: Record<string, string> | null = null;
+  private static readonly listingPromptVersion = 'compact-v2';
+
+  private static promptHash(prompt: string): string {
+    return createHash('sha256').update(prompt, 'utf8').digest('hex');
+  }
 
   private static ensureDataDir(): void {
     const dir = path.dirname(this.promptFile);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
+  }
+
+  private static archiveLegacyListingPrompt(prompt: string): void {
+    const backupDir = path.resolve(process.cwd(), 'data', 'system_prompt_backups');
+    const backupFile = path.join(backupDir, 'listing-generator-v1-longform.md');
+    if (fs.existsSync(backupFile)) return;
+
+    fs.mkdirSync(backupDir, { recursive: true });
+    const tempFile = `${backupFile}.tmp`;
+    const archive = `# Listing Generator V1 Longform\n\nArchived automatically before migration to compact-v2.\n\nSHA-256: \`${this.promptHash(prompt)}\`\n\n## Exact prompt\n\n\`\`\`text\n${prompt}\n\`\`\`\n`;
+    fs.writeFileSync(tempFile, archive, 'utf-8');
+    fs.renameSync(tempFile, backupFile);
   }
 
   private static loadPrompts(): Record<string, string> {
@@ -1445,8 +1513,15 @@ export class SystemPromptService {
           if (!this.cachedPrompts.designAnalyzer || !this.cachedPrompts.designAnalyzer.includes('background_color_recommendation')) {
             this.cachedPrompts.designAnalyzer = DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT;
           }
-          if (!this.cachedPrompts.listingGenerator || !this.cachedPrompts.listingGenerator.includes('VISION PREVIEW NOTE:')) {
+          if (!this.cachedPrompts.listingGenerator) {
             this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+            this.cachedPrompts.listingPromptVersion = this.listingPromptVersion;
+          } else if (this.promptHash(this.cachedPrompts.listingGenerator) === this.promptHash(LEGACY_LISTING_GENERATOR_SYSTEM_PROMPT_V1)) {
+            this.archiveLegacyListingPrompt(this.cachedPrompts.listingGenerator);
+            this.cachedPrompts.listingGenerator = DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT;
+            this.cachedPrompts.listingPromptVersion = this.listingPromptVersion;
+          } else if (this.cachedPrompts.listingGenerator === DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT) {
+            this.cachedPrompts.listingPromptVersion = this.listingPromptVersion;
           }
           if (!this.cachedPrompts.trademarkReferee || !this.cachedPrompts.trademarkReferee.includes('problematicHits')) {
             this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
@@ -1479,6 +1554,7 @@ export class SystemPromptService {
       promptGenerator: DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT,
       designAnalyzer: DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT,
       listingGenerator: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,
+      listingPromptVersion: this.listingPromptVersion,
       trademarkAuditor: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
       trademarkReferee: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
       trademarkRewrite: DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT,
