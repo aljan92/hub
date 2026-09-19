@@ -1021,6 +1021,7 @@ export class UploadWorkerService {
           cardId: string;
           colorMode: string;
           fitTypes: string[];
+          youthEnabled: boolean;
           avoidColor: string;
           customBgColor: string;
           expectsFitControls: boolean;
@@ -1128,7 +1129,10 @@ export class UploadWorkerService {
             (inputContainer.querySelector('fit-type, .fit-type-container')?.textContent || '').toLowerCase().includes('adult unisex')
           );
 
-          const visibleFitCandidates = (params.expectsFitControls && !hasDefaultFitLabel) ? Array.from(inputContainer.querySelectorAll(
+          // Youth is a global rejection-safety policy. When disabled we must inspect
+          // the live DOM even if the catalog incorrectly claims there are no fit controls.
+          const mustEnforceYouthBlock = params.youthEnabled === false;
+          const visibleFitCandidates = ((params.expectsFitControls || mustEnforceYouthBlock) && !hasDefaultFitLabel) ? Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, ' +
             'flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, ' +
             'label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, ' +
@@ -1181,7 +1185,9 @@ export class UploadWorkerService {
           }
 
           for (const item of fitElements) {
-            const shouldBeChecked = desiredFits.includes(item.matchedFit) || item.matchedFit === 'adult_unisex' || item.matchedFit === 'unisex';
+            const shouldBeChecked = item.matchedFit === 'youth'
+              ? params.youthEnabled && desiredFits.includes('youth')
+              : desiredFits.includes(item.matchedFit) || item.matchedFit === 'adult_unisex' || item.matchedFit === 'unisex';
             let isChecked = isElementChecked(item.element);
 
             if (isChecked !== shouldBeChecked) {
@@ -1208,6 +1214,9 @@ export class UploadWorkerService {
           const failedFitStates = Object.entries(fitDebugSummary)
             .filter(([, state]) => state.target !== state.final)
             .map(([fit, state]) => `${fit} erwartet=${state.target ? 'aktiv' : 'inaktiv'} tatsächlich=${state.final ? 'aktiv' : 'inaktiv'}`);
+          if (!params.youthEnabled && fitDebugSummary.youth?.final) {
+            failedFitStates.push('youth ist global deaktiviert, blieb im Live-DOM aber aktiv');
+          }
           const expectsCheckboxes = params.expectsFitControls && !hasDefaultFitLabel;
           if ((expectsCheckboxes && fitElements.length === 0) || failedFitStates.length > 0) {
             return {
@@ -1472,6 +1481,7 @@ export class UploadWorkerService {
           cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`,
           colorMode: product.colorMode,
           fitTypes,
+          youthEnabled: uploadPolicy.youthEnabled,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
           expectsFitControls: fitPolicy.required,

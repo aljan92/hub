@@ -411,13 +411,27 @@ export class ProductScannerService {
             catalog[amazonKey].fits = [];
             catalog[amazonKey].fitDiscoveryStatus = 'SUCCESS';
           } else {
-            const fitElements = Array.from(activeEditor.querySelectorAll(
-              'fit-type flowcheckbox, fit-type input[type="checkbox"], .fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"]'
+            const rawFitElements = Array.from(activeEditor.querySelectorAll(
+              'fit-type flowcheckbox, fit-type input[type="checkbox"], fit-type label[class*="-label"], ' +
+              '.fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"], .fit-type-container label[class*="-label"]'
             )).filter(el => !el.closest('.default-fit-type-label'));
+            // Angular exposes the same control as flowcheckbox + nested input/label.
+            // Collapse those nodes before classification so a readable checkbox is not
+            // downgraded to FAILED by an unlabelled nested input from the same control.
+            const fitElements = Array.from(new Set(rawFitElements.map(el => el.closest('flowcheckbox') || el.closest('label') || el)));
             const detectedFits: string[] = [];
             let unknownFitControl = false;
             for (const fe of fitElements) {
-              const labelText = [fe.textContent, fe.closest('label')?.textContent, fe.getAttribute('aria-label'), fe.getAttribute('class'), fe.closest('flowcheckbox')?.getAttribute('class')].filter(Boolean).join(' ').toLowerCase().trim();
+              const labelText = [
+                fe.textContent,
+                fe.closest('label')?.textContent,
+                fe.getAttribute('aria-label'),
+                fe.getAttribute('formcontrolname'),
+                fe.getAttribute('class'),
+                fe.closest('flowcheckbox')?.getAttribute('class'),
+                fe.querySelector('input')?.getAttribute('formcontrolname'),
+                fe.querySelector('input')?.getAttribute('aria-label')
+              ].filter(Boolean).join(' ').toLowerCase().trim();
               if (labelText.includes('men') && !labelText.includes('women')) detectedFits.push('men');
               else if (labelText.includes('women')) detectedFits.push('women');
               else if (labelText.includes('youth') || labelText.includes('kids')) detectedFits.push('youth');

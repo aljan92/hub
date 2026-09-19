@@ -237621,13 +237621,23 @@ var ProductScannerService = class {
             catalog[amazonKey].fits = [];
             catalog[amazonKey].fitDiscoveryStatus = "SUCCESS";
           } else {
-            const fitElements = Array.from(activeEditor.querySelectorAll(
-              'fit-type flowcheckbox, fit-type input[type="checkbox"], .fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"]'
+            const rawFitElements = Array.from(activeEditor.querySelectorAll(
+              'fit-type flowcheckbox, fit-type input[type="checkbox"], fit-type label[class*="-label"], .fit-type-container flowcheckbox, .fit-type-container input[type="checkbox"], .fit-type-container label[class*="-label"]'
             )).filter((el) => !el.closest(".default-fit-type-label"));
+            const fitElements = Array.from(new Set(rawFitElements.map((el) => el.closest("flowcheckbox") || el.closest("label") || el)));
             const detectedFits = [];
             let unknownFitControl = false;
             for (const fe of fitElements) {
-              const labelText = [fe.textContent, fe.closest("label")?.textContent, fe.getAttribute("aria-label"), fe.getAttribute("class"), fe.closest("flowcheckbox")?.getAttribute("class")].filter(Boolean).join(" ").toLowerCase().trim();
+              const labelText = [
+                fe.textContent,
+                fe.closest("label")?.textContent,
+                fe.getAttribute("aria-label"),
+                fe.getAttribute("formcontrolname"),
+                fe.getAttribute("class"),
+                fe.closest("flowcheckbox")?.getAttribute("class"),
+                fe.querySelector("input")?.getAttribute("formcontrolname"),
+                fe.querySelector("input")?.getAttribute("aria-label")
+              ].filter(Boolean).join(" ").toLowerCase().trim();
               if (labelText.includes("men") && !labelText.includes("women")) detectedFits.push("men");
               else if (labelText.includes("women")) detectedFits.push("women");
               else if (labelText.includes("youth") || labelText.includes("kids")) detectedFits.push("youth");
@@ -238787,7 +238797,8 @@ var UploadWorkerService = class _UploadWorkerService {
           const hasDefaultFitLabel = Boolean(
             defaultFitLabelEl || inputContainer.innerText?.toLowerCase().includes("adult unisex") || (inputContainer.querySelector("fit-type, .fit-type-container")?.textContent || "").toLowerCase().includes("adult unisex")
           );
-          const visibleFitCandidates = params2.expectsFitControls && !hasDefaultFitLabel ? Array.from(inputContainer.querySelectorAll(
+          const mustEnforceYouthBlock = params2.youthEnabled === false;
+          const visibleFitCandidates = (params2.expectsFitControls || mustEnforceYouthBlock) && !hasDefaultFitLabel ? Array.from(inputContainer.querySelectorAll(
             '.fit-type-container label, .fit-type-container flowcheckbox, flowcheckbox.men-checkbox, flowcheckbox.women-checkbox, flowcheckbox.youth-checkbox, flowcheckbox.girls-checkbox, flowcheckbox.unisex-checkbox, label.men-label, label.women-label, label.youth-label, label.girls-label, label.unisex-label, flowcheckbox[class*="-checkbox"], label[class*="-label"]'
           )).filter((el) => {
             const rect = el.getBoundingClientRect();
@@ -238827,7 +238838,7 @@ var UploadWorkerService = class _UploadWorkerService {
             activeFitsApplied.push("adult_unisex");
           }
           for (const item2 of fitElements) {
-            const shouldBeChecked = desiredFits.includes(item2.matchedFit) || item2.matchedFit === "adult_unisex" || item2.matchedFit === "unisex";
+            const shouldBeChecked = item2.matchedFit === "youth" ? params2.youthEnabled && desiredFits.includes("youth") : desiredFits.includes(item2.matchedFit) || item2.matchedFit === "adult_unisex" || item2.matchedFit === "unisex";
             let isChecked = isElementChecked(item2.element);
             if (isChecked !== shouldBeChecked) {
               clickTargetElement(item2.element);
@@ -238848,6 +238859,9 @@ var UploadWorkerService = class _UploadWorkerService {
             }
           }
           const failedFitStates = Object.entries(fitDebugSummary).filter(([, state]) => state.target !== state.final).map(([fit, state]) => `${fit} erwartet=${state.target ? "aktiv" : "inaktiv"} tats\xE4chlich=${state.final ? "aktiv" : "inaktiv"}`);
+          if (!params2.youthEnabled && fitDebugSummary.youth?.final) {
+            failedFitStates.push("youth ist global deaktiviert, blieb im Live-DOM aber aktiv");
+          }
           const expectsCheckboxes = params2.expectsFitControls && !hasDefaultFitLabel;
           if (expectsCheckboxes && fitElements.length === 0 || failedFitStates.length > 0) {
             return {
@@ -239063,6 +239077,7 @@ var UploadWorkerService = class _UploadWorkerService {
           cardId: product.amazon?.cardId || `${product.amazon?.key || product.id}-card`,
           colorMode: product.colorMode,
           fitTypes,
+          youthEnabled: uploadPolicy.youthEnabled,
           avoidColor: String(avoidColor).toLowerCase(),
           customBgColor,
           expectsFitControls: fitPolicy.required,

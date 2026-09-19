@@ -46,6 +46,7 @@ interface MerchProduct {
   colorMode: 'predefined' | 'customPicker' | 'none' | 'failed';
   colors: MerchColorDef[];
   fitTypes: MerchFitTypeDef[];
+  fitDiscoveryStatus?: 'SUCCESS' | 'FAILED';
   availableMarketplaces: string[];
   sortOrder: number;
   presetHexColors?: string[];
@@ -969,7 +970,7 @@ export const ProductsView: React.FC = () => {
                 </div>
 
                 {/* Fit Types (if available) */}
-                {selectedProduct.fitTypes.length > 0 && (
+                {(selectedProduct.fitTypes.length > 0 || selectedProduct.fitDiscoveryStatus === 'FAILED') && (
                   <div className="space-y-3">
                     <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                       <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
@@ -987,6 +988,12 @@ export const ProductsView: React.FC = () => {
                         </span>
                       ))}
                     </div>
+                    {selectedProduct.fitDiscoveryStatus === 'FAILED' && (
+                      <div className="text-[11px] text-amber-300 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Der letzte Fit-Scan war unvollständig; angezeigt werden die letzten verlässlich gespeicherten Werte. Der Upload erzwingt globale Sperren direkt im Live-DOM.
+                      </div>
+                    )}
                   </div>
                 )}
 
