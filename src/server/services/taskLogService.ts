@@ -6,6 +6,7 @@ import { IdeogramService } from './ideogramService';
 import { IdeogramV4Service } from './ideogramV4Service';
 import { OpenRouterImageService } from './openRouterImageService';
 import { TrademarkService } from './trademarkService';
+import { TrademarkPolicyService } from './trademarkPolicyService';
 import { BannedWordsService } from './bannedWordsService';
 import { VectorizerService } from './vectorizerService';
 import { SvgRenderService } from './svgRenderService';
@@ -412,13 +413,32 @@ export class TaskLogService {
 
       const preStart = Date.now();
       try {
-        const preCheckResult = await TrademarkService.checkBatchFields({
-          offices: ['USPTO'],
-          fields: { quote }
-        });
-
-        const preHits = preCheckResult.summary?.totalHits ?? 0;
-        const preHasCls25 = preCheckResult.hasInfringementClass25 || false;
+        const normalizedQuote = TrademarkPolicyService.normalizePhrase(quote);
+        const productScope = TrademarkPolicyService.resolveProductScope();
+        const preQuery = await TrademarkService.queryUsptoBatch([normalizedQuote], productScope.niceClasses);
+        const preExactHits = TrademarkService.normalizeAndClassifyMatches(
+          preQuery.hitsByTerm, { [normalizedQuote]: ['quote'] }, quote, undefined, preQuery.integrity
+        ).filter(hit => hit.isFullQuoteMatch);
+        if (preQuery.integrity.unknownStatusCount > 0 || preQuery.integrity.unknownClassCount > 0) preQuery.integrity.status = 'INCOMPLETE';
+        if (preQuery.integrity.status !== 'COMPLETE') {
+          const retryCount = (task.trademarkWorkflowState?.technicalRetryCount || 0) + 1;
+          const delayMinutes = [15, 60, 360][Math.min(retryCount - 1, 2)];
+          this.updateTaskStatus(taskId, {
+            status: 'AWAITING_TM_TECHNICAL_RETRY', checkpoint: undefined, hasError: false,
+            errorDetails: 'USPTO_SCAN_INCOMPLETE',
+            trademarkWorkflowState: {
+              phase: 'TECHNICAL_RETRY_WAIT', rewriteAttemptsCompleted: 0,
+              currentListing: { brand: '', title: '', bullet1: '', bullet2: '', description: '' },
+              forbiddenTermsForTask: [], rewriteIterations: [], policyVersion: 'us-tm-v3',
+              scanIntegrity: preQuery.integrity, catalogFingerprint: productScope.catalogFingerprint,
+              technicalRetryCount: retryCount,
+              nextTechnicalRetryAt: retryCount <= 3 ? new Date(Date.now() + delayMinutes * 60_000).toISOString() : undefined
+            }
+          });
+          return;
+        }
+        const preHits = preExactHits.length;
+        const preHasCls25 = preExactHits.some(hit => hit.classes.includes(25) && hit.wordCount >= 2 && hit.markFeature === 'Word');
         const preLatencyMs = Date.now() - preStart;
 
         this.addEvent(taskId, {
@@ -429,9 +449,9 @@ export class TaskLogService {
             isPreFlight: true,
             totalHits: preHits,
             hasInfringementClass25: preHasCls25,
-            blockedProducts: preCheckResult.blockedProducts,
-            fieldSummaries: preCheckResult.fieldResults,
-            summary: preCheckResult.summary
+            blockedProducts: [],
+            fieldSummaries: { quote: preExactHits },
+            summary: { totalHits: preHits, scanIntegrity: preQuery.integrity }
           },
           metadata: { provider: 'Productor USPTO', latencyMs: preLatencyMs }
         });
@@ -449,7 +469,7 @@ export class TaskLogService {
               reason: rejectionReason,
               quote,
               totalHits: preHits,
-              fieldSummaries: preCheckResult.fieldResults
+              fieldSummaries: { quote: preExactHits }
             }
           });
 
@@ -462,7 +482,7 @@ export class TaskLogService {
               totalHits: preHits,
               hasInfringementClass25: true,
               blockedProducts: ['ALL_PRODUCTS_BLOCKED'],
-              fieldSummaries: preCheckResult.fieldResults
+              fieldSummaries: { quote: preExactHits }
             }
           });
 
@@ -470,7 +490,27 @@ export class TaskLogService {
           return;
         }
       } catch (tmErr: any) {
-        console.warn(`[TaskLogService] Pre-Flight TM-Check Warnung (wird fortgesetzt):`, tmErr.message || tmErr);
+        console.warn(`[TaskLogService] Pre-Flight TM-Check technisch fehlgeschlagen:`, tmErr.message || tmErr);
+        const retryCount = (task.trademarkWorkflowState?.technicalRetryCount || 0) + 1;
+        const delayMinutes = [15, 60, 360][Math.min(retryCount - 1, 2)];
+        this.updateTaskStatus(taskId, {
+          status: 'AWAITING_TM_TECHNICAL_RETRY', checkpoint: undefined, hasError: false,
+          errorDetails: `USPTO_PREFLIGHT_ERROR: ${tmErr.message || String(tmErr)}`,
+          trademarkWorkflowState: {
+            phase: 'TECHNICAL_RETRY_WAIT', rewriteAttemptsCompleted: 0,
+            currentListing: { brand: '', title: '', bullet1: '', bullet2: '', description: '' },
+            forbiddenTermsForTask: [], rewriteIterations: [], policyVersion: 'us-tm-v3',
+            scanIntegrity: {
+              status: 'FAILED', provider: 'PRODUCTOR_USPTO', requestedClasses: [], plannedTerms: 1,
+              plannedBatches: 1, successfulBatches: 0, failedBatches: 1, attempts: 0,
+              ignoredPendingCount: 0, unknownStatusCount: 0, unknownClassCount: 0, startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(), errors: [{ batchIndex: 0, code: 'USPTO_PREFLIGHT_ERROR', message: tmErr.message || String(tmErr) }]
+            },
+            technicalRetryCount: retryCount,
+            nextTechnicalRetryAt: retryCount <= 3 ? new Date(Date.now() + delayMinutes * 60_000).toISOString() : undefined
+          }
+        });
+        return;
       }
     }
 
@@ -1291,13 +1331,13 @@ export class TaskLogService {
     const subniche = ListingValidationService.normalizeOptionalText(task.subniche || task.customAnswers?.subniche || task.payload?.subniche) || '';
 
     try {
-      console.log(`[TaskLogService] 🛡️ Starte Trademark Workflow V2 für Task ${taskId}...`);
+      console.log(`[TaskLogService] 🛡️ Starte Trademark Workflow V3 für Task ${taskId}...`);
 
       const currentSettings = loadSettings();
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TM_CHECK_REQUEST',
-        title: 'Starte Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)',
+        title: 'Starte Trademark Workflow V3 (USPTO Live Scan + bedingte KI-Prüfung)',
         content: { quote, niche1, niche2, subniche, fields: initialFields },
         metadata: { provider: 'OpenRouter', model: currentSettings.llmModel }
       });
@@ -1310,10 +1350,11 @@ export class TaskLogService {
         subniche,
         maxRewriteCycles: 3,
         taskId,
+        initialWorkflowState: task.trademarkWorkflowState,
         onEvent: (ev) => {
           this.addEvent(taskId, {
             timestamp: new Date().toISOString(),
-            type: ev.type,
+            type: ev.type as any,
             title: ev.title,
             content: ev.content,
             metadata: ev.metadata
@@ -1324,14 +1365,15 @@ export class TaskLogService {
       // 1. WENN ESKALATION (Core Quote Class 25 Conflict, Famous Brand in design, oder Limit erreicht)
       if (auditV2.finalDecision === 'ESCALATE' || !auditV2.isSafe) {
         const reason = auditV2.reasonCode || 'Trademark-Konflikt erfordert manuelle Freigabe.';
-        console.warn(`[TaskLogService] 🚨 Task ${taskId} eskaliert zu AWAITING_TM_REVIEW (${reason})`);
+        const isTechnicalHold = reason === 'USPTO_SCAN_INCOMPLETE';
+        console.warn(`[TaskLogService] Task ${taskId} wartet auf ${isTechnicalHold ? 'USPTO-Technik-Retry' : 'TM-Review'} (${reason})`);
 
         this.addEvent(taskId, {
           timestamp: new Date().toISOString(),
-          type: 'TASK_HANDOFF',
-          title: `Übergeben an Tasks (Eskalation: ${reason})`,
+          type: isTechnicalHold ? 'TM_CHECK_RESPONSE' : 'TASK_HANDOFF',
+          title: isTechnicalHold ? 'USPTO-Prüfung technisch unvollständig – automatischer Retry geplant' : `Übergeben an Tasks (Eskalation: ${reason})`,
           content: {
-            checkpoint: 'TM_REVIEW',
+            checkpoint: isTechnicalHold ? undefined : 'TM_REVIEW',
             reason,
             recommendedAction: auditV2.recommendedAction,
             finalDecision: auditV2.finalDecision,
@@ -1341,8 +1383,8 @@ export class TaskLogService {
         });
 
         this.updateTaskStatus(taskId, {
-          status: 'AWAITING_TM_REVIEW',
-          checkpoint: 'TM_REVIEW',
+          status: isTechnicalHold ? 'AWAITING_TM_TECHNICAL_RETRY' : 'AWAITING_TM_REVIEW',
+          checkpoint: isTechnicalHold ? undefined : 'TM_REVIEW',
           blockedNiceClasses: auditV2.blockedNiceClasses,
           blockedProducts: auditV2.blockedProducts,
           trademarkCheckResult: {
@@ -1360,18 +1402,19 @@ export class TaskLogService {
           },
           hasError: false,
           errorDetails: reason,
+          trademarkClearance: auditV2.clearanceProof,
           ...( { tmAuditV2: auditV2 } as any )
         });
         return;
       }
 
       // 2. WENN FREIGEGEBEN (SAFE / APPROVED / APPROVE_WITH_BLOCKED_PRODUCTS)
-      console.log(`[TaskLogService] 🛡️ Master English Listing durch V2 freigegeben (${auditV2.finalDecision})! Starte Lokalisierung...`);
+      console.log(`[TaskLogService] 🛡️ Master English Listing durch V3 freigegeben (${auditV2.finalDecision})! Starte Lokalisierung...`);
 
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TM_CHECK_RESPONSE',
-        title: `Trademark Workflow V2 freigegeben (${auditV2.finalTrademarkHits.length} Treffer, ${auditV2.blockedProducts.length} Produkte gesperrt)`,
+        title: `Trademark Workflow V3 freigegeben (${auditV2.finalTrademarkHits.length} Treffer, ${auditV2.blockedProducts.length} Produkte gesperrt)`,
         content: {
           auditV2,
           refinedListing: auditV2.finalListing,
@@ -1381,7 +1424,7 @@ export class TaskLogService {
           finalDecision: auditV2.finalDecision
         },
         metadata: {
-          provider: `Productor USPTO / ${currentSettings.llmModel || 'GPT-5.6 Sol'}`,
+          provider: `Productor USPTO / ${currentSettings.llmModel || 'konfiguriertes Modell'}`,
           model: currentSettings.llmModel
         }
       });
@@ -1389,7 +1432,7 @@ export class TaskLogService {
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TRANSLATION_REQUEST',
-        title: 'Master English Listing V2 freigegeben -> Starte Multi-Marketplace Lokalisierung',
+        title: 'Master English Listing V3 freigegeben -> Starte Multi-Marketplace Lokalisierung',
         content: {
           approvedEnglish: auditV2.finalListing,
           blockedNiceClasses: auditV2.blockedNiceClasses,
@@ -1446,6 +1489,7 @@ export class TaskLogService {
         listingResult: sanitizedListings,
         blockedNiceClasses: auditV2.blockedNiceClasses,
         blockedProducts: auditV2.blockedProducts,
+        trademarkClearance: auditV2.clearanceProof,
         trademarkCheckResult: {
           totalHits: auditV2.finalTrademarkHits.length,
           hasInfringementClass25: false,
@@ -2474,6 +2518,63 @@ export class TaskLogService {
       }
 
       const isUpdate = task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U');
+      const rawApprovedListing = task.listingResult?.en || task.listingResult || {};
+      const listingToApprove: EnglishListing = {
+        brand: rawApprovedListing.brand || '', title: rawApprovedListing.title || '',
+        bullet1: rawApprovedListing.bullet1 || '', bullet2: rawApprovedListing.bullet2 || '',
+        description: rawApprovedListing.description || ''
+      };
+      const additionalProductIds = isUpdate ? [
+        ...Object.keys(task.payload?.productSummary || task.payload?.liveProductSummary || task.payload?.liveStats?.productSummary || {}),
+        ...(Array.isArray(task.payload?.productTypes || task.payload?.liveProductTypes) ? (task.payload?.productTypes || task.payload?.liveProductTypes) : [])
+      ] : [];
+      let approvedListing = listingToApprove;
+      let trademarkClearance = task.trademarkClearance;
+      let approvedWorkflowState = task.trademarkWorkflowState;
+      const isV3Review = task.trademarkWorkflowState?.policyVersion === 'us-tm-v3';
+      if (isV3Review) {
+        let scanIntegrity = task.trademarkWorkflowState?.scanIntegrity;
+        let finalHits = task.trademarkWorkflowState?.lastTrademarkHits
+          || (task as any).tmAuditV2?.finalTrademarkHits
+          || task.trademarkWorkflowState?.initialTrademarkHits
+          || [];
+        const listingChangedSinceScan = !task.trademarkWorkflowState?.lastCheckedListing
+          || TrademarkPolicyService.listingFingerprint(task.trademarkWorkflowState.lastCheckedListing)
+            !== TrademarkPolicyService.listingFingerprint(listingToApprove);
+        if (listingChangedSinceScan) {
+          const manualAudit = await TrademarkService.executeTrademarkAuditV2({
+            listing: listingToApprove, quote: task.payload?.quote || '',
+            niche1: task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || '',
+            niche2: task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || '',
+            subniche: task.subniche || task.customAnswers?.subniche || task.payload?.subniche || '',
+            maxRewriteCycles: 0, taskId, additionalProductIds
+          });
+          scanIntegrity = manualAudit.scanIntegrity;
+          finalHits = manualAudit.finalTrademarkHits;
+          approvedListing = manualAudit.finalListing;
+        }
+        if (scanIntegrity?.status !== 'COMPLETE') {
+          this.updateTaskStatus(taskId, {
+            status: 'AWAITING_TM_TECHNICAL_RETRY', checkpoint: undefined, hasError: false,
+            errorDetails: 'USPTO_SCAN_INCOMPLETE'
+          });
+          return { success: false, message: 'USPTO-Prüfung technisch unvollständig; Freigabe wurde nicht übernommen.' };
+        }
+        const manualScope = TrademarkPolicyService.resolveProductScope(additionalProductIds);
+        trademarkClearance = TrademarkPolicyService.buildHumanApprovedProof({
+          listing: approvedListing, productScope: manualScope, scanIntegrity,
+          hits: finalHits, blockedNiceClasses: task.blockedNiceClasses
+        });
+        approvedWorkflowState = {
+          ...task.trademarkWorkflowState!, phase: 'COMPLETED', currentListing: approvedListing,
+          lastCheckedListing: approvedListing, scanIntegrity, catalogFingerprint: manualScope.catalogFingerprint,
+          classVerdicts: trademarkClearance.classVerdicts, clearanceProof: trademarkClearance,
+          lastTrademarkHits: finalHits
+        };
+      }
+      task.listingResult = task.listingResult?.en
+        ? { ...task.listingResult, en: approvedListing }
+        : { en: approvedListing };
       const translate = isUpdate || (loadSettings().translationDesignEnabled ?? true);
       // SQLite reads are detached objects: persist the changed fields explicitly,
       // before announcing approval or starting downstream work.
@@ -2482,7 +2583,9 @@ export class TaskLogService {
         checkpoint: undefined, hasError: false, errorDetails: undefined,
         listingResult: task.listingResult,
         blockedProducts: task.blockedProducts,
-        blockedNiceClasses: task.blockedNiceClasses
+        blockedNiceClasses: task.blockedNiceClasses,
+        ...(trademarkClearance ? { trademarkClearance } : {}),
+        ...(approvedWorkflowState ? { trademarkWorkflowState: approvedWorkflowState } : {})
       });
       if (!saved) throw new Error('TM-Freigabe konnte nicht gespeichert werden.');
 

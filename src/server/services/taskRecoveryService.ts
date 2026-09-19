@@ -43,6 +43,43 @@ export class TaskRecoveryService {
   private static reservedRecoveryJobs: ReservedRecoveryJob[] = [];
   private static reservedDesignIds: Set<string> = new Set();
   private static isWorkerRunning = false;
+  private static technicalTrademarkRetriesInFlight = new Set<string>();
+
+  /** Runs only due provider retries. Legal/manual TM reviews are never touched. */
+  public static async processDueTrademarkTechnicalRetries(now = Date.now()): Promise<number> {
+    const tasks = TaskRepository.getTasksByStatuses(['AWAITING_TM_TECHNICAL_RETRY']);
+    let started = 0;
+    for (const task of tasks) {
+      const state = task.trademarkWorkflowState;
+      const retryCount = state?.technicalRetryCount || 0;
+      const dueAt = state?.nextTechnicalRetryAt ? Date.parse(state.nextTechnicalRetryAt) : NaN;
+      if (retryCount < 1 || retryCount > 3 || !Number.isFinite(dueAt) || dueAt > now) continue;
+      if (this.technicalTrademarkRetriesInFlight.has(task.id)) continue;
+      this.technicalTrademarkRetriesInFlight.add(task.id);
+      started++;
+      void (async () => {
+        try {
+          TaskLogService.addEvent(task.id, {
+            timestamp: new Date().toISOString(), type: 'TM_CHECK_REQUEST',
+            title: `Automatischer USPTO-Technik-Retry ${retryCount} von 3`,
+            content: { retryCount, previousIntegrity: state?.scanIntegrity }
+          });
+          const isUpdate = task.source === 'UPDATE' || task.id.endsWith('-U');
+          if (isUpdate) await UpdatePipelineService.runFromStep(task.id, 'U5', 'RECOVERY');
+          else await DesignPipelineService.runFromStep(task.id, 'D6', 'RECOVERY');
+        } catch (error: any) {
+          TaskLogService.addEvent(task.id, {
+            timestamp: new Date().toISOString(), type: 'RECOVERY_FAILED',
+            title: 'Automatischer USPTO-Technik-Retry fehlgeschlagen',
+            content: { error: error?.message || String(error), retryCount }
+          });
+        } finally {
+          this.technicalTrademarkRetriesInFlight.delete(task.id);
+        }
+      })();
+    }
+    return started;
+  }
 
   public static readonly CANDIDATE_ZOMBIE_STATUSES: TaskStatus[] = [
     'RECEIVED',

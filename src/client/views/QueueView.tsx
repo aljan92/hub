@@ -55,7 +55,7 @@ interface QueueItem {
   status: QueueItemStatus;
   isLocked: boolean;
   isPaused?: boolean;
-  pauseKind?: 'MANUAL' | 'AMAZON_PROCESSING';
+  pauseKind?: 'MANUAL' | 'AMAZON_PROCESSING' | 'TM_RECHECK_REQUIRED';
   pausedUntil?: string;
   pauseReason?: string;
   allocatedSlots: number;

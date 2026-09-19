@@ -529,9 +529,9 @@ export class UpdatePipelineService {
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
       type: 'TM_CHECK_REQUEST',
-      title: 'Trademark Workflow V2 (USPTO Live Scan + Dual-LLM Referee/Verifier)',
+      title: 'Trademark Workflow V3 (USPTO Live Scan + bedingte KI-Prüfung)',
       content: { fields: listing, niche1, niche2, subniche, quote },
-      metadata: { provider: 'Productor USPTO / GPT-5.6 Sol' }
+      metadata: { provider: `Productor USPTO / ${loadSettings().llmModel || 'konfiguriertes Modell'}` }
     });
 
     const auditV2 = await TrademarkService.executeTrademarkAuditV2({
@@ -542,10 +542,15 @@ export class UpdatePipelineService {
       subniche,
       maxRewriteCycles: 3,
       taskId,
+      initialWorkflowState: task.trademarkWorkflowState,
+      additionalProductIds: [
+        ...Object.keys(task.payload?.productSummary || task.payload?.liveProductSummary || task.payload?.liveStats?.productSummary || {}),
+        ...(Array.isArray(task.payload?.productTypes || task.payload?.liveProductTypes) ? (task.payload?.productTypes || task.payload?.liveProductTypes) : [])
+      ],
       onEvent: (ev) => {
         TaskLogService.addEvent(taskId, {
           timestamp: new Date().toISOString(),
-          type: ev.type,
+          type: ev.type as any,
           title: ev.title,
           content: ev.content
         });
@@ -554,9 +559,10 @@ export class UpdatePipelineService {
 
     if (auditV2.finalDecision === 'ESCALATE' || !auditV2.isSafe) {
       const reason = auditV2.reasonCode || 'Trademark-Konflikt erfordert manuelle Freigabe.';
+      const isTechnicalHold = reason === 'USPTO_SCAN_INCOMPLETE';
       TaskLogService.updateTaskStatus(taskId, {
-        status: 'AWAITING_TM_REVIEW',
-        checkpoint: 'TM_REVIEW',
+        status: isTechnicalHold ? 'AWAITING_TM_TECHNICAL_RETRY' : 'AWAITING_TM_REVIEW',
+        checkpoint: isTechnicalHold ? undefined : 'TM_REVIEW',
         blockedNiceClasses: auditV2.blockedNiceClasses,
         blockedProducts: auditV2.blockedProducts,
         trademarkCheckResult: {
@@ -574,15 +580,16 @@ export class UpdatePipelineService {
         },
         hasError: false,
         errorDetails: reason,
+        trademarkClearance: auditV2.clearanceProof,
         ...( { tmAuditV2: auditV2 } as any )
       });
 
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
-        type: 'TASK_HANDOFF',
-        title: `Übergeben an Tasks (Update TM Eskalation: ${reason})`,
+        type: isTechnicalHold ? 'TM_CHECK_RESPONSE' : 'TASK_HANDOFF',
+        title: isTechnicalHold ? 'USPTO-Prüfung technisch unvollständig – automatischer Retry geplant' : `Übergeben an Tasks (Update TM Eskalation: ${reason})`,
         content: {
-          checkpoint: 'TM_REVIEW',
+          checkpoint: isTechnicalHold ? undefined : 'TM_REVIEW',
           reason,
           finalDecision: auditV2.finalDecision,
           totalHits: auditV2.finalTrademarkHits.length,
@@ -598,6 +605,7 @@ export class UpdatePipelineService {
       listingResult: { en: auditV2.finalListing },
       blockedNiceClasses: auditV2.blockedNiceClasses,
       blockedProducts: auditV2.blockedProducts,
+      trademarkClearance: auditV2.clearanceProof,
       trademarkCheckResult: {
         totalHits: auditV2.finalTrademarkHits.length,
         hasInfringementClass25: false,
@@ -629,7 +637,7 @@ export class UpdatePipelineService {
         finalDecision: auditV2.finalDecision
       },
       metadata: {
-        provider: `Productor USPTO / ${currentSettings.llmModel || 'GPT-5.6 Sol'}`,
+        provider: `Productor USPTO / ${currentSettings.llmModel || 'konfiguriertes Modell'}`,
         model: currentSettings.llmModel
       }
     });

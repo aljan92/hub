@@ -1,3 +1,5 @@
+import type { TrademarkClearanceProofV3, TrademarkClassVerdict, TrademarkScanIntegrity } from '../server/services/trademarkPolicyService';
+
 export type TaskSource = 'HERMES' | 'TEST' | 'DESIGNER' | 'UPDATE';
 export type TaskSuffix = 'H' | 'T' | 'D' | 'U';
 
@@ -35,6 +37,7 @@ export type TaskStatus =
   | 'AWAITING_DESIGN_REVIEW'
   | 'GENERATING_LISTING'
   | 'CHECKING_TRADEMARKS'
+  | 'AWAITING_TM_TECHNICAL_RETRY'
   | 'AWAITING_TM_REVIEW'
   | 'TRANSLATING_LISTING'
   | 'VECTORIZING_DESIGN'
@@ -229,6 +232,7 @@ export interface DesignTaskLog {
     remoteVerificationResult?: RemoteVerificationResult;
   };
   trademarkWorkflowState?: TrademarkWorkflowState;
+  trademarkClearance?: TrademarkClearanceProofV3;
 }
 
 export type RemoteVerificationResult =
@@ -286,15 +290,17 @@ export interface UploadRecoveryHistoryEntry {
 
 export type TrademarkWorkflowPhase =
   | 'INITIAL_SCAN'
+  | 'TECHNICAL_RETRY_WAIT'
   | 'REFEREE'
   | 'REWRITE'
   | 'VERIFY'
+  | 'FINAL_SCAN'
   | 'COMPLETED'
   | 'ESCALATED';
 
 export interface TrademarkWorkflowState {
   phase: TrademarkWorkflowPhase;
-  rewriteAttemptsCompleted: number; // 0, 1, 2, 3 (strictly max 3 rewrites)
+  rewriteAttemptsCompleted: number; // usually 0..3; optional fourth only for progressing secondary-class cleanup
   currentListing: {
     brand: string;
     title: string;
@@ -320,6 +326,15 @@ export interface TrademarkWorkflowState {
   blockedProducts?: string[];
   blockedNiceClasses?: number[];
   initialTrademarkHits?: any[];
+  lastTrademarkHits?: any[];
+  policyVersion?: string;
+  scanIntegrity?: TrademarkScanIntegrity;
+  catalogFingerprint?: string;
+  classVerdicts?: Record<string, TrademarkClassVerdict>;
+  approvedHitContexts?: string[];
+  technicalRetryCount?: number;
+  nextTechnicalRetryAt?: string;
+  clearanceProof?: TrademarkClearanceProofV3;
   lastCheckedListing?: {
     brand: string;
     title: string;

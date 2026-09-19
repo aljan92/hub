@@ -4,6 +4,14 @@ import { TrademarkWhitelistService } from './trademarkWhitelistService';
 import { LLMService, EnglishListing } from './llmService';
 import { ListingValidationService } from './listingValidationService';
 import { TrademarkWorkflowState, TrademarkWorkflowPhase } from '../../types/tasks';
+import {
+  TrademarkPolicyService,
+  TrademarkScanIntegrity,
+  TrademarkClearanceProofV3,
+  TrademarkClassVerdict,
+  TrademarkSourceRole,
+  US_TM_POLICY_VERSION
+} from './trademarkPolicyService';
 
 export type TrademarkOffice = 'USPTO' | 'EUIPO' | 'DPMA';
 
@@ -15,7 +23,13 @@ export type MatchTypeV2 =
   | 'QUERY_INSIDE_LONGER_MARK'
   | 'FUZZY_OR_SIMILAR';
 
+export type TrademarkMatchScope =
+  | 'FULL_QUOTE_EXACT' | 'LOCKED_TAIL_EXACT' | 'FULL_BRAND_EXACT'
+  | 'EXACT_NGRAM' | 'SINGLE_WORD_EXACT' | 'CONTAINS_MARK'
+  | 'QUERY_INSIDE_MARK' | 'FUZZY_OR_SIMILAR';
+
 export interface TrademarkHitV2 {
+  id?: string;
   searchedTerm: string;
   registeredMark: string;
   field?: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description' | 'quote' | string;
@@ -33,11 +47,16 @@ export interface TrademarkHitV2 {
   applicant?: string;
   filingDate?: string;
   registrationDate?: string;
+  goodsServices?: string;
+  sourceRole?: TrademarkSourceRole;
+  matchScope?: TrademarkMatchScope;
 }
 
 export interface CompactOccurrence {
   field: string;
   matchedTerm?: string;
+  sourceRole?: TrademarkSourceRole;
+  matchScope?: TrademarkMatchScope;
 }
 
 export interface CompactTrademarkHit {
@@ -50,6 +69,7 @@ export interface CompactTrademarkHit {
   matchType: MatchTypeV2;
   fullQuoteMatch: boolean;
   occurrences: CompactOccurrence[];
+  goodsServices?: string[];
 }
 
 export interface TrademarkAuditResultV2 {
@@ -72,6 +92,14 @@ export interface TrademarkAuditResultV2 {
   blockedProducts: string[];
   blockedNiceClasses: number[];
   finalListing: EnglishListing;
+  scanIntegrity?: TrademarkScanIntegrity;
+  classVerdicts?: Record<string, TrademarkClassVerdict>;
+  clearanceProof?: TrademarkClearanceProofV3;
+}
+
+export interface UsptoBatchQueryResult {
+  hitsByTerm: Record<string, any[]>;
+  integrity: TrademarkScanIntegrity;
 }
 
 export interface TrademarkHit {
@@ -861,7 +889,8 @@ export class TrademarkService {
   static extractTermsFromTextV2(params: {
     listing: { brand?: string; title?: string; bullet1?: string; bullet2?: string; description?: string };
     quote?: string;
-  }): { terms: string[]; termToFieldsMap: Record<string, string[]> } {
+    lockedTitleTail?: string;
+  }): { terms: string[]; termToFieldsMap: Record<string, string[]>; droppedTermsCount: number } {
     const stopWords = new Set([
       'the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'for', 'with', 'on', 'at', 'by', 'from',
       'up', 'about', 'into', 'over', 'after', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
@@ -869,11 +898,13 @@ export class TrademarkService {
     ]);
 
     const termToFieldsMap: Record<string, Set<string>> = {};
-    const addTerm = (term: string, field: string) => {
-      const clean = term.trim().toLowerCase();
+    const priorities = new Map<string, number>();
+    const addTerm = (term: string, field: string, priority = 10) => {
+      const clean = TrademarkPolicyService.normalizePhrase(term);
       if (clean.length < 2) return;
       if (!termToFieldsMap[clean]) termToFieldsMap[clean] = new Set();
       termToFieldsMap[clean].add(field);
+      priorities.set(clean, Math.max(priorities.get(clean) || 0, priority));
     };
 
     const fields: Array<[string, string | undefined]> = [
@@ -882,7 +913,8 @@ export class TrademarkService {
       ['bullet1', params.listing.bullet1],
       ['bullet2', params.listing.bullet2],
       ['description', params.listing.description],
-      ['quote', params.quote]
+      ['quote', params.quote],
+      ['lockedTitleTail', params.lockedTitleTail]
     ];
 
     for (const [field, text] of fields) {
@@ -895,48 +927,84 @@ export class TrademarkService {
         .map(w => w.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '').trim().toLowerCase())
         .filter(Boolean);
 
-      // For quote, always include the full quote phrase
-      if (field === 'quote' && rawTokens.length > 0) {
-        addTerm(rawTokens.join(' '), 'quote');
+      // Quote and locked tail are immutable exact-source terms. Their component
+      // words remain ordinary listing occurrences where they actually appear.
+      if ((field === 'quote' || field === 'lockedTitleTail') && rawTokens.length > 0) {
+        addTerm(rawTokens.join(' '), field, field === 'quote' ? 100 : 99);
+        continue;
+      }
+
+      if ((field === 'brand' && rawTokens.length > 0 || field === 'title' && rawTokens.length > 1) && trimmed.length <= 60) {
+        addTerm(rawTokens.join(' '), field === 'brand' ? 'brandFull' : field, field === 'brand' ? 98 : 80);
       }
 
       // 1-Grams: add word if length >= 3 and not a single stopword
       for (const w of rawTokens) {
+        if (field === 'brand' && rawTokens.length === 1) continue;
         if (w.length >= 3 && !stopWords.has(w)) {
-          addTerm(w, field);
+          addTerm(w, field, field === 'brand' ? 70 : field === 'title' ? 55 : 25);
         }
       }
 
       // 2-Grams to 5-Grams (preserve stopwords inside multi-word phrases!)
-      for (let len = 2; len <= 5; len++) {
+      const maxGram = field === 'brand' || field === 'title' ? 5 : 3;
+      for (let len = 2; len <= maxGram; len++) {
         for (let i = 0; i <= rawTokens.length - len; i++) {
           const nGramTokens = rawTokens.slice(i, i + len);
+          if (field === 'brand' && len === rawTokens.length && i === 0) continue;
           const hasSubstantialWord = nGramTokens.some(tok => !stopWords.has(tok) && tok.length >= 3);
           if (hasSubstantialWord) {
-            addTerm(nGramTokens.join(' '), field);
+            addTerm(nGramTokens.join(' '), field, (field === 'brand' ? 75 : field === 'title' ? 60 : 30) + len);
           }
         }
       }
     }
 
+    const orderedTerms = Object.keys(termToFieldsMap).sort((a, b) =>
+      (priorities.get(b) || 0) - (priorities.get(a) || 0) || a.localeCompare(b)
+    );
+    const maxTerms = 200;
+    const selectedTerms = orderedTerms.slice(0, maxTerms);
     const result: Record<string, string[]> = {};
-    for (const [t, set] of Object.entries(termToFieldsMap)) {
+    for (const t of selectedTerms) {
+      const set = termToFieldsMap[t];
       result[t] = Array.from(set);
     }
 
     return {
       terms: Object.keys(result),
-      termToFieldsMap: result
+      termToFieldsMap: result,
+      droppedTermsCount: Math.max(0, orderedTerms.length - selectedTerms.length)
     };
   }
 
   /**
    * Query USPTO batch endpoint (batching up to 50 terms per request)
    */
-  static async queryUsptoBatch(terms: string[]): Promise<Record<string, any[]>> {
+  static async queryUsptoBatch(terms: string[], niceClasses: number[] = [25]): Promise<UsptoBatchQueryResult> {
     const settings = loadSettings();
     const allResults: Record<string, any[]> = {};
-    if (terms.length === 0) return allResults;
+    const startedAt = new Date().toISOString();
+    const classes = [...new Set(niceClasses.filter(Number.isInteger))].sort((a, b) => a - b);
+    const chunkSize = 50;
+    const plannedBatches = Math.ceil(terms.length / chunkSize);
+    const integrity: TrademarkScanIntegrity = {
+      status: 'COMPLETE', provider: 'PRODUCTOR_USPTO', requestedClasses: classes,
+      plannedTerms: terms.length, plannedBatches, successfulBatches: 0, failedBatches: 0,
+      attempts: 0, ignoredPendingCount: 0, unknownStatusCount: 0, unknownClassCount: 0,
+      startedAt, errors: []
+    };
+    if (terms.length === 0) {
+      integrity.completedAt = new Date().toISOString();
+      return { hitsByTerm: allResults, integrity };
+    }
+    if (classes.length === 0) {
+      integrity.status = 'FAILED';
+      integrity.failedBatches = plannedBatches;
+      integrity.errors.push({ batchIndex: 0, code: 'NO_NICE_CLASSES', message: 'No configured Nice classes available for USPTO scan' });
+      integrity.completedAt = new Date().toISOString();
+      return { hitsByTerm: allResults, integrity };
+    }
 
     const defaultHeaders = {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -944,34 +1012,48 @@ export class TrademarkService {
       'Authorization': settings.productorUsptoAuth || 'Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=='
     };
 
-    const chunkSize = 50;
     for (let i = 0; i < terms.length; i += chunkSize) {
       const chunk = terms.slice(i, i + chunkSize);
-      try {
-        const fd = new FormData();
-        fd.append('trademarks', JSON.stringify(chunk));
-
-        const res = await fetch('https://uspto-tm-api2.productor.io/search-batch?classes=25,9,18,20,35,16,24,41,40,21', {
-          method: 'POST',
-          headers: defaultHeaders,
-          body: fd,
-          signal: AbortSignal.timeout(10000)
-        });
-
-        if (res.ok) {
+      const batchIndex = Math.floor(i / chunkSize);
+      let succeeded = false;
+      for (let attempt = 1; attempt <= 3 && !succeeded; attempt++) {
+        integrity.attempts++;
+        try {
+          if (attempt > 1) await new Promise(resolve => setTimeout(resolve, attempt === 2 ? 350 : 1200));
+          const fd = new FormData();
+          fd.append('trademarks', JSON.stringify(chunk));
+          const res = await fetch(`https://uspto-tm-api2.productor.io/search-batch?classes=${classes.join(',')}`, {
+            method: 'POST', headers: defaultHeaders, body: fd, signal: AbortSignal.timeout(10000)
+          });
+          if (!res.ok) {
+            const error: any = new Error(`USPTO HTTP ${res.status}`);
+            error.httpStatus = res.status;
+            throw error;
+          }
           const data = await res.json();
+          if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('USPTO response has invalid schema');
           for (const [k, v] of Object.entries(data)) {
-            if (Array.isArray(v) && v.length > 0) {
-              allResults[k.toLowerCase()] = v;
-            }
+            if (!Array.isArray(v)) throw new Error(`USPTO response has invalid hit list for "${k}"`);
+            if (v.length > 0) allResults[TrademarkPolicyService.normalizePhrase(k)] = v;
+          }
+          succeeded = true;
+          integrity.successfulBatches++;
+        } catch (err: any) {
+          if (attempt === 3) {
+            integrity.failedBatches++;
+            integrity.errors.push({
+              batchIndex,
+              code: err?.httpStatus ? 'USPTO_HTTP_ERROR' : (err?.name === 'TimeoutError' ? 'USPTO_TIMEOUT' : 'USPTO_REQUEST_FAILED'),
+              httpStatus: err?.httpStatus,
+              message: err?.message || String(err)
+            });
           }
         }
-      } catch (err: any) {
-        console.warn('[TrademarkService] USPTO query error chunk:', err.message || err);
       }
     }
-
-    return allResults;
+    integrity.status = integrity.failedBatches === 0 ? 'COMPLETE' : (integrity.successfulBatches > 0 ? 'INCOMPLETE' : 'FAILED');
+    integrity.completedAt = new Date().toISOString();
+    return { hitsByTerm: allResults, integrity };
   }
 
   /**
@@ -980,10 +1062,13 @@ export class TrademarkService {
   static normalizeAndClassifyMatches(
     rawHits: Record<string, any[]>,
     termToFieldsMap: Record<string, string[]>,
-    quote?: string
+    quote?: string,
+    lockedTitleTail?: string,
+    integrity?: TrademarkScanIntegrity
   ): TrademarkHitV2[] {
     const normalizedHits: TrademarkHitV2[] = [];
-    const cleanQuote = quote ? quote.trim().toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, '') : '';
+    const cleanQuote = TrademarkPolicyService.normalizePhrase(quote);
+    const cleanTail = TrademarkPolicyService.normalizePhrase(lockedTitleTail);
     const seenKeys = new Set<string>();
 
     for (const [term, records] of Object.entries(rawHits)) {
@@ -991,13 +1076,26 @@ export class TrademarkService {
       const fields = termToFieldsMap[termLower] || ['listing'];
 
       for (const r of records) {
-        const rawStatus = r.status || r.status_code || 'LIVE';
-        if (!this.isLiveStatus(rawStatus)) continue;
+        const rawStatus = r.status ?? r.status_code ?? r.markCurrentStatusCode ?? r.MarkCurrentStatusCode;
+        const statusGroup = TrademarkPolicyService.classifyRegistryStatus(rawStatus);
+        if (statusGroup === 'LIVE_PENDING') {
+          if (integrity) integrity.ignoredPendingCount++;
+          continue;
+        }
+        if (statusGroup === 'INACTIVE') continue;
+        if (statusGroup === 'UNKNOWN') {
+          if (integrity) integrity.unknownStatusCount++;
+          continue;
+        }
 
         const registeredMark = String(r.mark_identification || r.trademark || r.MarkVerbalElementText || term).trim();
-        const regMarkClean = registeredMark.toLowerCase().replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, '').trim();
+        const regMarkClean = TrademarkPolicyService.normalizePhrase(registeredMark);
         const rawClasses = this.extractNiceClasses(r);
         const classes = rawClasses.map(c => parseInt(c, 10)).filter(n => !isNaN(n));
+        if (classes.length === 0) {
+          if (integrity) integrity.unknownClassCount++;
+          continue;
+        }
 
         const wordCount = regMarkClean.split(/\s+/).filter(Boolean).length;
 
@@ -1017,7 +1115,7 @@ export class TrademarkService {
           matchType = 'QUERY_INSIDE_LONGER_MARK';
         }
 
-        const isFullQuoteMatch = Boolean(cleanQuote && (regMarkClean === cleanQuote || matchType === 'FULL_EXACT'));
+        const isFullQuoteMatch = Boolean(cleanQuote && termLower === cleanQuote && regMarkClean === cleanQuote);
         const isKnownPhraseMatch = wordCount >= 2 && (matchType === 'EXACT_NGRAM' || matchType === 'FULL_EXACT' || matchType === 'CONTAINS_REGISTERED_MARK');
 
         const drawing = String(r.mark_drawing || r.MarkFeature || r.markFeature || '').toUpperCase();
@@ -1027,16 +1125,37 @@ export class TrademarkService {
         }
 
         for (const f of fields) {
-          const uniqueKey = `USPTO-${registeredMark}-${classes.join(',')}-${termLower}-${f}`;
+          if (f === 'quote' && !isFullQuoteMatch) continue;
+          const isLockedTailExact = f === 'lockedTitleTail' && Boolean(cleanTail && termLower === cleanTail && regMarkClean === cleanTail);
+          if (f === 'lockedTitleTail' && !isLockedTailExact) continue;
+          const outputField = f === 'brandFull' ? 'brand' : f;
+          const uniqueKey = `USPTO-${registeredMark}-${classes.join(',')}-${termLower}-${outputField}-${f === 'brandFull' ? 'full' : 'part'}`;
           if (seenKeys.has(uniqueKey)) continue;
           seenKeys.add(uniqueKey);
 
+          const sourceRole: TrademarkSourceRole = (f === 'brand' || f === 'brandFull') ? 'BRAND'
+            : f === 'quote' ? 'PRINTED_QUOTE'
+            : f === 'lockedTitleTail' ? 'LOCKED_TITLE_TAIL'
+            : f === 'title' ? 'TITLE_PREFIX'
+            : f === 'bullet1' ? 'BULLET_1'
+            : f === 'bullet2' ? 'BULLET_2'
+            : 'DESCRIPTION';
+          const matchScope: TrademarkMatchScope = isFullQuoteMatch && sourceRole === 'PRINTED_QUOTE' ? 'FULL_QUOTE_EXACT'
+            : isLockedTailExact ? 'LOCKED_TAIL_EXACT'
+            : f === 'brandFull' && regMarkClean === termLower ? 'FULL_BRAND_EXACT'
+            : matchType === 'EXACT_NGRAM' || matchType === 'FULL_EXACT' ? 'EXACT_NGRAM'
+              : matchType === 'SINGLE_WORD_EXACT' ? 'SINGLE_WORD_EXACT'
+              : matchType === 'CONTAINS_REGISTERED_MARK' ? 'CONTAINS_MARK'
+              : matchType === 'QUERY_INSIDE_LONGER_MARK' ? 'QUERY_INSIDE_MARK'
+              : 'FUZZY_OR_SIMILAR';
+
           normalizedHits.push({
+            id: `hit_${normalizedHits.length + 1}`,
             searchedTerm: termLower,
             registeredMark,
-            field: f,
+            field: outputField,
             office: 'USPTO',
-            status: 'LIVE',
+            status: statusGroup,
             markFeature,
             classes,
             classNumber: classes.join(', ') || 'N/A',
@@ -1048,6 +1167,9 @@ export class TrademarkService {
             registrationNumber: r.registration_number || r.registration_date,
             filingDate: r.filing_date || r.ApplicationDate,
             registrationDate: r.registration_date || r.RegistrationDate
+            ,goodsServices: r.goods_and_services || r.goods_services || r.GoodsServices
+            ,sourceRole
+            ,matchScope
           });
         }
       }
@@ -1091,6 +1213,7 @@ export class TrademarkService {
       offices: Set<string>;
       matchTypes: Set<MatchTypeV2>;
       fullQuoteMatch: boolean;
+      goodsServices: Set<string>;
       occurrencesMap: Map<string, CompactOccurrence>;
     }>();
 
@@ -1108,6 +1231,7 @@ export class TrademarkService {
           offices: new Set(),
           matchTypes: new Set(),
           fullQuoteMatch: false,
+          goodsServices: new Set(),
           occurrencesMap: new Map()
         };
         markMap.set(cleanMark, entry);
@@ -1120,14 +1244,15 @@ export class TrademarkService {
       if (h.office) entry.offices.add(h.office);
       if (h.matchType) entry.matchTypes.add(h.matchType);
       if (h.isFullQuoteMatch) entry.fullQuoteMatch = true;
+      if (h.goodsServices) entry.goodsServices.add(String(h.goodsServices).slice(0, 300));
 
       const field = h.field || 'listing';
       const rawMatched = String((h as any).matchedTerm || h.searchedTerm || '').trim();
       const matchedTerm = rawMatched.length > 0 ? rawMatched : undefined;
-      const occKey = `${field.toLowerCase()}|${matchedTerm ? matchedTerm.toLowerCase() : ''}`;
+      const occKey = `${field.toLowerCase()}|${matchedTerm ? matchedTerm.toLowerCase() : ''}|${h.matchScope || ''}`;
 
       if (!entry.occurrencesMap.has(occKey)) {
-        const occ: CompactOccurrence = { field };
+        const occ: CompactOccurrence = { field, sourceRole: h.sourceRole, matchScope: h.matchScope };
         if (matchedTerm) {
           occ.matchedTerm = matchedTerm;
         }
@@ -1167,7 +1292,8 @@ export class TrademarkService {
         offices: Array.from(entry.offices).sort(),
         matchType: bestMatchType,
         fullQuoteMatch: entry.fullQuoteMatch,
-        occurrences: Array.from(entry.occurrencesMap.values())
+        occurrences: Array.from(entry.occurrencesMap.values()),
+        goodsServices: Array.from(entry.goodsServices).slice(0, 3)
       });
     }
 
@@ -1175,8 +1301,8 @@ export class TrademarkService {
   }
 
   /**
-   * Complete V2 Trademark Audit Orchestrator:
-   * Scan ➔ Match Normalization ➔ Compact LLM Payload ➔ Referee (GPT-5.6 Sol) ➔ Rewrite Loop (up to 3x) ➔ Final Verifier Gate
+   * Complete V3 Trademark Audit Orchestrator:
+   * Scan ➔ normalization ➔ conditional configured-model review ➔ bounded rewrite ➔ proof
    */
   static async executeTrademarkAuditV2(params: {
     listing: EnglishListing;
@@ -1184,6 +1310,7 @@ export class TrademarkService {
     niche1?: string;
     niche2?: string;
     subniche?: string;
+    additionalProductIds?: string[];
     maxRewriteCycles?: number;
     taskId?: string;
     sessionId?: string;
@@ -1194,6 +1321,13 @@ export class TrademarkService {
     const normN1 = ListingValidationService.normalizeOptionalText(params.niche1);
     const normN2 = ListingValidationService.normalizeOptionalText(params.niche2);
     const normSub = ListingValidationService.normalizeOptionalText(params.subniche);
+    const lockedTitleTail = ListingValidationService.resolveExpectedTitleSuffix({ niche1: normN1, niche2: normN2, subniche: normSub });
+    const productScope = TrademarkPolicyService.resolveProductScope(params.additionalProductIds);
+    if (!productScope.niceClasses.includes(25)) {
+      const error: any = new Error('REQUIRED_CLASS_25_UNCONFIGURED: No enabled product is assigned to Nice Class 25');
+      error.code = 'REQUIRED_CLASS_25_UNCONFIGURED';
+      throw error;
+    }
 
     const initState = params.initialWorkflowState;
 
@@ -1214,20 +1348,30 @@ export class TrademarkService {
     }> = initState?.rewriteIterations ? [...initState.rewriteIterations] : [];
 
     const tmSessionId = params.sessionId || (params.taskId ? `tm:${params.taskId}` : `tm:${Date.now()}`);
-    const approvedHitContexts = new Set<string>();
+    const approvedHitContexts = new Set<string>(initState?.approvedHitContexts || []);
 
     const getHitContextKey = (mark: string, markFeature: string, classes: number[], matchType: string, field: string, text: string) => {
       const normText = (text || '').trim().toLowerCase().replace(/\s+/g, ' ');
       const normFeature = (markFeature || 'word').trim().toLowerCase();
-      return `${mark.toLowerCase()}|${normFeature}|${classes.slice().sort((a, b) => a - b).join(',')}|${matchType}|${field}|${normText}`;
+      const configuredModel = loadSettings().llmModel || 'configured-model';
+      return `${US_TM_POLICY_VERSION}|tm-referee-v3|${configuredModel}|${mark.toLowerCase()}|${normFeature}|${classes.slice().sort((a, b) => a - b).join(',')}|${matchType}|${field}|${normText}`;
     };
 
     let initialTrademarkHits: TrademarkHitV2[] = (initState?.initialTrademarkHits as any) || [];
+    let lastTrademarkHits: TrademarkHitV2[] = (initState?.lastTrademarkHits as any) || [];
     let finalRefereeResult: any = initState?.lastRefereeResult || null;
     let finalVerifierResult: any = initState?.lastVerifierResult || null;
-    let blockedProducts: string[] = initState?.blockedProducts ? [...initState.blockedProducts] : [];
+    let blockedProducts: string[] = [...new Set([
+      ...(initState?.blockedProducts || []),
+      ...productScope.unconfiguredProductIds
+    ])].sort();
     let blockedNiceClasses: number[] = initState?.blockedNiceClasses ? [...initState.blockedNiceClasses] : [];
-    const maxCycles = params.maxRewriteCycles ?? 3;
+    let lastScanIntegrity: TrademarkScanIntegrity | undefined = initState?.scanIntegrity;
+    let finalClearanceProof: TrademarkClearanceProofV3 | undefined = initState?.clearanceProof;
+    let technicalRetryCount = initState?.technicalRetryCount || 0;
+    let nextTechnicalRetryAt = initState?.nextTechnicalRetryAt;
+    let maxCycles = params.maxRewriteCycles ?? 3;
+    if (rewriteIterations.length >= 4) maxCycles = Math.max(maxCycles, 4);
 
     // Helper to persist state to disk immediately before and after external decisions
     const saveState = (phase: TrademarkWorkflowPhase) => {
@@ -1241,7 +1385,17 @@ export class TrademarkService {
         lastVerifierResult: finalVerifierResult,
         blockedProducts: [...blockedProducts],
         blockedNiceClasses: [...blockedNiceClasses],
-        initialTrademarkHits: [...initialTrademarkHits]
+        initialTrademarkHits: [...initialTrademarkHits],
+        lastTrademarkHits: [...lastTrademarkHits],
+        policyVersion: US_TM_POLICY_VERSION,
+        catalogFingerprint: productScope.catalogFingerprint,
+        approvedHitContexts: [...approvedHitContexts],
+        scanIntegrity: lastScanIntegrity,
+        classVerdicts: finalClearanceProof?.classVerdicts,
+        clearanceProof: finalClearanceProof,
+        technicalRetryCount,
+        nextTechnicalRetryAt
+        ,lastCheckedListing: { ...currentListing }
       };
       if (params.onPersistState) {
         params.onPersistState(state);
@@ -1253,6 +1407,53 @@ export class TrademarkService {
       }
     };
 
+    const scheduleTechnicalRetry = () => {
+      technicalRetryCount += 1;
+      const delaysMinutes = [15, 60, 360];
+      const delay = delaysMinutes[Math.min(technicalRetryCount - 1, delaysMinutes.length - 1)];
+      nextTechnicalRetryAt = technicalRetryCount <= delaysMinutes.length
+        ? new Date(Date.now() + delay * 60 * 1000).toISOString()
+        : undefined;
+      saveState('TECHNICAL_RETRY_WAIT');
+    };
+
+    const buildClearanceProof = (hits: TrademarkHitV2[], referee: any): TrademarkClearanceProofV3 => {
+      const classVerdicts = TrademarkPolicyService.buildClassVerdicts({
+        niceClasses: productScope.niceClasses,
+        products: productScope.products,
+        hits,
+        problematicHits: [],
+        blockedNiceClasses
+      });
+      const blockedProductIds = [...new Set([
+        ...productScope.unconfiguredProductIds,
+        ...TrademarkPolicyService.productsForClasses(productScope.products, blockedNiceClasses)
+      ])].sort();
+      const blockedSet = new Set(blockedProductIds);
+      const sourceStatus = (role: TrademarkSourceRole) => hits.some(hit => hit.sourceRole === role)
+        ? 'FAIR_USE_CLEAR' as const : 'CLEAR' as const;
+      return {
+        schemaVersion: 3,
+        policyVersion: US_TM_POLICY_VERSION,
+        marketplace: 'US',
+        finalDecision: blockedProductIds.length > 0 ? 'APPROVED_WITH_BLOCKED_PRODUCTS' : 'APPROVED',
+        scanIntegrity: lastScanIntegrity!,
+        model: referee?._rawRequest?.model || (hits.length === 0 ? 'deterministic/no-llm' : (loadSettings().llmModel || 'configured-model')),
+        promptVersion: 'tm-referee-v3',
+        evaluatedAt: new Date().toISOString(),
+        listingFingerprint: TrademarkPolicyService.listingFingerprint(currentListing as any),
+        catalogFingerprint: productScope.catalogFingerprint,
+        queriedNiceClasses: productScope.niceClasses,
+        classVerdicts,
+        allowedProductIds: productScope.productIds.filter(id => !blockedSet.has(id)),
+        blockedProductIds,
+        blockedNiceClasses: [...blockedNiceClasses].sort((a, b) => a - b),
+        brandStatus: 'CLEAR',
+        quoteStatus: sourceStatus('PRINTED_QUOTE'),
+        lockedTailStatus: sourceStatus('LOCKED_TITLE_TAIL')
+      };
+    };
+
     // Determine starting cycle and initial action
     const startCycle = rewriteIterations.length;
     let resumePhase: TrademarkWorkflowPhase | null = initState?.phase || null;
@@ -1261,9 +1462,26 @@ export class TrademarkService {
     saveState(resumePhase || 'INITIAL_SCAN');
 
     if (resumePhase === 'REWRITE' && rewriteIterations.length >= maxCycles) {
-      console.warn(`[TrademarkServiceV2] 🚨 Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
-      saveState('ESCALATED');
-      return {
+      const unresolvedClasses = [...new Set((finalRefereeResult?.hits || []).flatMap((hit: any) => Array.isArray(hit.classes) ? hit.classes : []))]
+        .filter((value): value is number => Number.isInteger(value));
+      const unresolvedBrand = (finalRefereeResult?.hits || []).some((hit: any) =>
+        String(hit.field || '').toLowerCase() === 'brand'
+        && ['REWRITE', 'ESCALATE', 'MANUAL_REVIEW'].includes(String(hit.action || hit.decision || '').toUpperCase())
+      );
+      const progressCounts = [
+        ...rewriteIterations.map(iteration => iteration.hitsFound),
+        lastTrademarkHits.length
+      ];
+      const resumeFourthSecondaryAttempt = maxCycles === 3 && rewriteIterations.length === 3
+        && unresolvedClasses.length > 0 && !unresolvedClasses.includes(25) && !unresolvedBrand
+        && Array.isArray(initState?.lastTrademarkHits)
+        && TrademarkPolicyService.hasStrictHitCountProgress(progressCounts);
+      if (resumeFourthSecondaryAttempt) {
+        maxCycles = 4;
+      } else {
+        console.warn(`[TrademarkServiceV2] 🚨 Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
+        saveState('ESCALATED');
+        return {
         finalDecision: 'ESCALATE',
         isSafe: false,
         canBeFixedByListingRewrite: true,
@@ -1284,23 +1502,63 @@ export class TrademarkService {
           subniche: normSub,
           forbiddenTerms: forbiddenTermsForTask
         }).listing
-      };
+        };
+      }
     }
 
     for (let cycle = startCycle; cycle <= maxCycles; cycle++) {
       console.log(`[TrademarkServiceV2] 🔍 Starte USPTO Scan (Zyklus ${cycle} von ${maxCycles}, Session: ${tmSessionId}, Completed Rewrites: ${rewriteIterations.length})...`);
 
       // 1. Term extraction V2
-      const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
+      const { terms, termToFieldsMap, droppedTermsCount } = this.extractTermsFromTextV2({
         listing: currentListing,
-        quote: params.quote
+        quote: params.quote,
+        lockedTitleTail
       });
+      if (droppedTermsCount > 0) {
+        params.onEvent?.({
+          type: 'TM_SEARCH_PLAN_BUDGET',
+          title: `USPTO-Suchplan priorisiert (${terms.length} Begriffe)`,
+          content: { selectedTerms: terms.length, droppedLowPriorityTerms: droppedTermsCount }
+        });
+      }
 
       // 2. USPTO Live query
-      const rawHits = await this.queryUsptoBatch(terms);
+      const queryResult = await this.queryUsptoBatch(terms, productScope.niceClasses);
+      lastScanIntegrity = queryResult.integrity;
+      const rawHits = queryResult.hitsByTerm;
+
+      if (queryResult.integrity.status !== 'COMPLETE') {
+        finalRefereeResult = null;
+        scheduleTechnicalRetry();
+        return {
+          finalDecision: 'ESCALATE', isSafe: false, canBeFixedByListingRewrite: false,
+          reasonCode: 'USPTO_SCAN_INCOMPLETE', recommendedAction: 'AUTOMATIC_TECHNICAL_RETRY',
+          initialTrademarkHits, finalTrademarkHits: [], rewriteIterations,
+          refereeResult: null, verifierResult: null, forbiddenTermsForTask,
+          blockedProducts, blockedNiceClasses, finalListing: currentListing,
+          scanIntegrity: queryResult.integrity
+        };
+      }
+      nextTechnicalRetryAt = undefined;
 
       // 3. Match classification (Full internal details preserved for audit & UI)
-      const normalizedHits = this.normalizeAndClassifyMatches(rawHits, termToFieldsMap, params.quote);
+      const normalizedHits = this.normalizeAndClassifyMatches(rawHits, termToFieldsMap, params.quote, lockedTitleTail, queryResult.integrity);
+      lastTrademarkHits = [...normalizedHits];
+      if (queryResult.integrity.unknownStatusCount > 0 || queryResult.integrity.unknownClassCount > 0) {
+        queryResult.integrity.status = 'INCOMPLETE';
+      }
+      if (queryResult.integrity.status !== 'COMPLETE') {
+        scheduleTechnicalRetry();
+        return {
+          finalDecision: 'ESCALATE', isSafe: false, canBeFixedByListingRewrite: false,
+          reasonCode: 'USPTO_SCAN_INCOMPLETE', recommendedAction: 'AUTOMATIC_TECHNICAL_RETRY',
+          initialTrademarkHits, finalTrademarkHits: normalizedHits, rewriteIterations,
+          refereeResult: null, verifierResult: null, forbiddenTermsForTask,
+          blockedProducts, blockedNiceClasses, finalListing: currentListing,
+          scanIntegrity: queryResult.integrity
+        };
+      }
 
       if (cycle === 0) {
         initialTrademarkHits = [...normalizedHits];
@@ -1309,10 +1567,26 @@ export class TrademarkService {
       // Compact representation for LLM evaluation
       const compactHits = this.buildCompactTrademarkHits(normalizedHits, currentListing, params.quote);
 
+      const immutableClass25Conflict = compactHits.find(hit =>
+        hit.classes.includes(25) && hit.feature === 'Word' && hit.mark.trim().split(/\s+/).length >= 2
+        && (hit.fullQuoteMatch || hit.occurrences.some(occ => occ.sourceRole === 'LOCKED_TITLE_TAIL'))
+      );
+      if (immutableClass25Conflict) {
+        saveState('ESCALATED');
+        return {
+          finalDecision: 'ESCALATE', isSafe: false, canBeFixedByListingRewrite: false,
+          reasonCode: immutableClass25Conflict.fullQuoteMatch ? 'CORE_QUOTE_CLASS25_CONFLICT' : 'LOCKED_TAIL_CLASS25_CONFLICT',
+          recommendedAction: 'DO_NOT_SUBMIT', initialTrademarkHits,
+          finalTrademarkHits: normalizedHits, rewriteIterations, refereeResult: null,
+          verifierResult: null, forbiddenTermsForTask, blockedProducts, blockedNiceClasses,
+          finalListing: currentListing, scanIntegrity: lastScanIntegrity
+        };
+      }
+
       params.onEvent?.({
         type: 'TM_SCAN_RESPONSE',
         title: cycle === 0 ? `USPTO TM Scan abgeschlossen (${normalizedHits.length} Treffer, ${compactHits.length} kompakt)` : `USPTO TM Scan (Runde ${cycle}: ${normalizedHits.length} Treffer, ${compactHits.length} kompakt)`,
-        content: { cycle, totalHits: normalizedHits.length, compactHitsCount: compactHits.length, termsCheckedCount: terms.length, hits: normalizedHits }
+        content: { cycle, totalHits: normalizedHits.length, compactHitsCount: compactHits.length, termsCheckedCount: terms.length, scanIntegrity: queryResult.integrity, hits: normalizedHits }
       });
 
       // Check which hits are genuinely new or in a modified context (Hit-Re-Use optimization)
@@ -1324,10 +1598,12 @@ export class TrademarkService {
       });
 
       let refereeRes: any;
+      let resumedDirectlyAtVerifier = false;
 
       if (skipToVerifier) {
         console.log(`[TrademarkServiceV2] ⚡ Resuming directly at VERIFY phase for rewrite iteration ${rewriteIterations.length}. Skipping scan/referee.`);
         skipToVerifier = false;
+        resumedDirectlyAtVerifier = true;
         refereeRes = finalRefereeResult || {
           decision: 'APPROVE',
           canBeFixedByListingRewrite: true,
@@ -1348,7 +1624,7 @@ export class TrademarkService {
         };
       } else {
         saveState('REFEREE');
-        // 4. GPT-5.6 Sol Trademark Referee Pass (with compact hits & stable session_id)
+        // 4. Trademark Referee Pass using the generally configured model
         refereeRes = await LLMService.evaluateTrademarkReferee({
           currentListing,
           niche1: normN1,
@@ -1366,6 +1642,90 @@ export class TrademarkService {
 
       finalRefereeResult = refereeRes;
 
+      const brandHitIds = new Set(compactHits.filter(hit => hit.occurrences.some(occ => occ.sourceRole === 'BRAND')).map(hit => hit.id));
+      const hitsUnderReview = new Set(hitsToReview.map(hit => hit.id));
+      const requiredHitIds = new Set(compactHits.filter(hit => hitsUnderReview.has(hit.id) && (
+        hit.classes.includes(25) || hit.feature === 'Combined' || hit.fullQuoteMatch
+        || hit.occurrences.some(occ => occ.sourceRole === 'BRAND' || occ.sourceRole === 'LOCKED_TITLE_TAIL')
+      )).map(hit => hit.id));
+      const semanticErrors = resumedDirectlyAtVerifier ? [] : TrademarkPolicyService.validateSemanticDecisions(
+        refereeRes.hits || [], new Set(compactHits.map(hit => hit.id)), brandHitIds, requiredHitIds
+      );
+      const compactHitsById = new Map(compactHits.map(hit => [hit.id, hit]));
+      for (const evaluatedHit of refereeRes.hits || []) {
+        const factualHit = compactHitsById.get(evaluatedHit.id);
+        if (!factualHit) continue;
+        const reportedClasses = Array.isArray(evaluatedHit.classes)
+          ? evaluatedHit.classes.filter(Number.isInteger).sort((a: number, b: number) => a - b)
+          : [];
+        const factualClasses = [...factualHit.classes].sort((a, b) => a - b);
+        if (JSON.stringify(reportedClasses) !== JSON.stringify(factualClasses)) {
+          semanticErrors.push(`Invented or missing classes for ${evaluatedHit.id}`);
+        }
+        const factualFields = new Set(factualHit.occurrences.map(occurrence => occurrence.field));
+        if (!factualFields.has(evaluatedHit.field)) {
+          semanticErrors.push(`Invented or missing field for ${evaluatedHit.id}`);
+        }
+      }
+      const knownBrandSignals = Array.isArray(refereeRes.knownBrandSignals) ? refereeRes.knownBrandSignals : [];
+      const validSignalFields = new Set(['brand', 'title', 'bullet1', 'bullet2', 'description', 'quote']);
+      for (const signal of knownBrandSignals) {
+        const fieldText = signal.field === 'quote'
+          ? String(params.quote || '')
+          : validSignalFields.has(signal.field) ? String((currentListing as any)[signal.field] || '') : '';
+        if (!signal.term || !validSignalFields.has(signal.field)
+          || !Number.isFinite(signal.confidence) || signal.confidence < 0.9 || signal.confidence > 1
+          || !['REWRITE', 'MANUAL_REVIEW'].includes(signal.action)
+          || (signal.field === 'quote' && signal.action !== 'MANUAL_REVIEW')
+          || !TrademarkPolicyService.normalizePhrase(fieldText).includes(TrademarkPolicyService.normalizePhrase(signal.term))) {
+          semanticErrors.push('Invalid known-brand signal');
+        }
+      }
+      const semanticActions = [
+        ...(refereeRes.hits || []).map((hit: any) => String(hit.action || hit.decision || '').toUpperCase()),
+        ...knownBrandSignals.map((signal: any) => String(signal.action || '').toUpperCase())
+      ];
+      if ((refereeRes.decision === 'APPROVE' || refereeRes.decision === 'APPROVE_WITH_BLOCKED_PRODUCTS')
+        && semanticActions.some((action: string) => action === 'REWRITE' || action === 'MANUAL_REVIEW' || action === 'ESCALATE')) {
+        semanticErrors.push('Approval contradicts unresolved semantic actions');
+      }
+      if (refereeRes.decision === 'REWRITE' && !semanticActions.includes('REWRITE')) {
+        semanticErrors.push('Rewrite decision has no supplied hit requiring rewrite');
+      }
+      const blockedHitIds = new Set((refereeRes.hits || [])
+        .filter((hit: any) => String(hit.action || hit.decision || '').toUpperCase() === 'BLOCK_CLASS')
+        .map((hit: any) => hit.id));
+      if (refereeRes.decision === 'APPROVE_WITH_BLOCKED_PRODUCTS' && blockedHitIds.size === 0) {
+        semanticErrors.push('Blocked-products decision has no supplied class-block action');
+      }
+      const requestedBlockedClasses = compactHits
+        .filter(hit => blockedHitIds.has(hit.id))
+        .flatMap(hit => hit.classes);
+      if (requestedBlockedClasses.includes(25)) {
+        semanticErrors.push('Class 25 cannot be product-blocked by the semantic referee');
+      }
+      if (semanticErrors.length > 0) {
+        refereeRes = {
+          ...refereeRes,
+          decision: 'ESCALATE', canBeFixedByListingRewrite: false,
+          reasonCode: 'INVALID_AI_RESPONSE', recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
+          escalation: { errors: semanticErrors }
+        };
+        finalRefereeResult = refereeRes;
+      } else if (requestedBlockedClasses.length > 0) {
+        blockedNiceClasses = [...new Set([...blockedNiceClasses, ...requestedBlockedClasses])].sort((a, b) => a - b);
+        blockedProducts = [...new Set([
+          ...productScope.unconfiguredProductIds,
+          ...TrademarkPolicyService.productsForClasses(productScope.products, blockedNiceClasses)
+        ])].sort();
+      }
+      for (const signal of knownBrandSignals) {
+        if (signal.action === 'REWRITE' && signal.term) {
+          forbiddenTermsForTask.push(TrademarkPolicyService.normalizePhrase(signal.term));
+          refereeRes.rewriteInstructions = [...(refereeRes.rewriteInstructions || []), `Remove known third-party brand/IP term "${signal.term}" from ${signal.field}.`];
+        }
+      }
+
       // Update approvedHitContexts with hits from this round that were not flagged as problematic
       const problematicMarks = new Set(
         (refereeRes.hits || [])
@@ -1381,16 +1741,14 @@ export class TrademarkService {
         }
       }
 
-      // Accumulate blocked products from referee
-      if (Array.isArray(refereeRes.blockedProducts) && refereeRes.blockedProducts.length > 0) {
-        blockedProducts = Array.from(new Set([...blockedProducts, ...refereeRes.blockedProducts]));
-      }
+      // Product IDs are never accepted from the LLM. They are resolved only
+      // from Nice classes through the effective Product Catalog.
 
       params.onEvent?.({
         type: 'TM_REFEREE_RESPONSE',
         title: `Trademark Referee: ${refereeRes.decision} (Zyklus ${cycle})`,
         content: { decision: refereeRes.decision, canBeFixedByListingRewrite: refereeRes.canBeFixedByListingRewrite, reasonCode: refereeRes.reasonCode, actions: refereeRes.hits },
-        metadata: { provider: 'OpenRouter', model: refereeRes._rawRequest?.model }
+        metadata: { provider: 'OpenRouter', model: refereeRes._rawRequest?.model, usage: refereeRes._usage }
       });
 
       // A. Check for Immediate Escalation (Only if decision is ESCALATE, or if REWRITE is unfixable due to core quote)
@@ -1424,6 +1782,26 @@ export class TrademarkService {
 
       // B. If Referee approves (APPROVE or APPROVE_WITH_BLOCKED_PRODUCTS) ➔ Run Adversarial Verifier Pass as FINAL GATE!
       if (refereeRes.decision === 'APPROVE' || refereeRes.decision === 'APPROVE_WITH_BLOCKED_PRODUCTS') {
+        const requiresVerifier = rewriteIterations.length > 0 || compactHits.some(hit =>
+          hit.fullQuoteMatch || hit.classes.includes(25) || hit.feature === 'Combined'
+          || hit.occurrences.some(occ => occ.sourceRole === 'LOCKED_TITLE_TAIL')
+        ) || knownBrandSignals.length > 0
+          || (refereeRes.hits || []).some((hit: any) => Number(hit.confidence) < 0.9 || hit.usageClassification === 'KNOWN_BRAND_OR_IP');
+        if (!requiresVerifier) {
+          finalClearanceProof = buildClearanceProof(normalizedHits, refereeRes);
+          saveState('COMPLETED');
+          return {
+            finalDecision: finalClearanceProof.finalDecision === 'APPROVED' ? 'APPROVED' : 'APPROVE_WITH_BLOCKED_PRODUCTS',
+            isSafe: true, canBeFixedByListingRewrite: true, reasonCode: null, recommendedAction: null,
+            initialTrademarkHits, finalTrademarkHits: normalizedHits, rewriteIterations,
+            refereeResult: refereeRes, verifierResult: null, forbiddenTermsForTask,
+            blockedProducts: finalClearanceProof.blockedProductIds,
+            blockedNiceClasses: finalClearanceProof.blockedNiceClasses,
+            finalListing: currentListing, scanIntegrity: lastScanIntegrity,
+            classVerdicts: finalClearanceProof.classVerdicts,
+            clearanceProof: finalClearanceProof
+          };
+        }
         console.log(`[TrademarkServiceV2] 🛡️ Referee hat genehmigt (${refereeRes.decision}). Starte Verifier als Final Gate...`);
         saveState('VERIFY');
         
@@ -1436,6 +1814,7 @@ export class TrademarkService {
           compactHits, // Final Verifier receives the FULL compact hits of the candidate
           normalizedHits,
           refereeDecision: refereeRes.decision,
+          refereeHits: refereeRes.hits || [],
           blockedProducts,
           sessionId: tmSessionId
         });
@@ -1446,14 +1825,15 @@ export class TrademarkService {
           type: 'TM_VERIFIER_RESPONSE',
           title: `Amazon Rejection Verifier: ${verifierRes.verdict}`,
           content: { verdict: verifierRes.verdict, recommendation: verifierRes.recommendation, risks: verifierRes.identifiedRisks },
-          metadata: { provider: 'OpenRouter', model: verifierRes._rawRequest?.model }
+          metadata: { provider: 'OpenRouter', model: verifierRes._rawRequest?.model, usage: verifierRes._usage }
         });
 
         if (verifierRes.verdict === 'SAFE') {
           console.log(`[TrademarkServiceV2] ✅ Verifier bestätigt SAFE. Listing endgültig freigegeben!`);
+          finalClearanceProof = buildClearanceProof(normalizedHits, refereeRes);
           saveState('COMPLETED');
           return {
-            finalDecision: refereeRes.decision,
+            finalDecision: finalClearanceProof.finalDecision === 'APPROVED' ? 'APPROVED' : 'APPROVE_WITH_BLOCKED_PRODUCTS',
             isSafe: true,
             canBeFixedByListingRewrite: true,
             reasonCode: null,
@@ -1464,8 +1844,8 @@ export class TrademarkService {
             refereeResult: refereeRes,
             verifierResult: verifierRes,
             forbiddenTermsForTask,
-            blockedProducts,
-            blockedNiceClasses,
+            blockedProducts: finalClearanceProof.blockedProductIds,
+            blockedNiceClasses: finalClearanceProof.blockedNiceClasses,
             finalListing: ListingValidationService.validateAndRepairListing({
               listing: currentListing,
               niche1: normN1,
@@ -1473,6 +1853,9 @@ export class TrademarkService {
               subniche: normSub,
               forbiddenTerms: forbiddenTermsForTask
             }).listing
+            ,scanIntegrity: lastScanIntegrity
+            ,classVerdicts: finalClearanceProof.classVerdicts
+            ,clearanceProof: finalClearanceProof
           };
         }
 
@@ -1543,9 +1926,52 @@ export class TrademarkService {
 
       // C. If Rewrite is required (either from Referee or Verifier):
       if (rewriteIterations.length >= maxCycles) {
-        console.warn(`[TrademarkServiceV2] 🚨 Rewrite-Limit von ${maxCycles} erreicht. Eskaliere zu Human Review.`);
-        saveState('ESCALATED');
-        return {
+        const unresolvedClasses = [...new Set((refereeRes.hits || []).flatMap((hit: any) => Array.isArray(hit.classes) ? hit.classes : []))]
+          .filter((value): value is number => Number.isInteger(value));
+        const unresolvedBrand = (refereeRes.hits || []).some((hit: any) =>
+          String(hit.field || '').toLowerCase() === 'brand'
+          && ['REWRITE', 'ESCALATE', 'MANUAL_REVIEW'].includes(String(hit.action || hit.decision || '').toUpperCase())
+        ) || knownBrandSignals.some((signal: any) => String(signal.field || '').toLowerCase() === 'brand');
+        const progressCounts = [
+          ...rewriteIterations.map(iteration => iteration.hitsFound),
+          normalizedHits.length
+        ];
+        const previousHitCount = progressCounts[progressCounts.length - 2] ?? Number.POSITIVE_INFINITY;
+        const qualifiesForFourthSecondaryAttempt = maxCycles === 3
+          && rewriteIterations.length === 3
+          && unresolvedClasses.length > 0
+          && !unresolvedClasses.includes(25)
+          && !unresolvedBrand
+          && TrademarkPolicyService.hasStrictHitCountProgress(progressCounts);
+        if (qualifiesForFourthSecondaryAttempt) {
+          maxCycles = 4;
+          params.onEvent?.({
+            type: 'TM_REWRITE_EXTENSION',
+            title: 'Ein vierter Rewrite nur für fortschreitenden Nebenklassen-Konflikt',
+            content: { previousHitCount, currentHitCount: normalizedHits.length, unresolvedClasses }
+          });
+        } else if (unresolvedClasses.length > 0 && !unresolvedClasses.includes(25) && !unresolvedBrand) {
+          blockedNiceClasses = [...new Set([...blockedNiceClasses, ...unresolvedClasses])].sort((a, b) => a - b);
+          blockedProducts = [...new Set([
+            ...productScope.unconfiguredProductIds,
+            ...TrademarkPolicyService.productsForClasses(productScope.products, blockedNiceClasses)
+          ])].sort();
+          finalClearanceProof = buildClearanceProof(normalizedHits, refereeRes);
+          saveState('COMPLETED');
+          return {
+            finalDecision: 'APPROVE_WITH_BLOCKED_PRODUCTS', isSafe: true,
+            canBeFixedByListingRewrite: false, reasonCode: 'SECONDARY_CLASSES_BLOCKED_AFTER_REWRITE_LIMIT',
+            recommendedAction: 'PUBLISH_ALLOWED_PRODUCTS', initialTrademarkHits,
+            finalTrademarkHits: normalizedHits, rewriteIterations, refereeResult: refereeRes,
+            verifierResult: finalVerifierResult, forbiddenTermsForTask,
+            blockedProducts, blockedNiceClasses, finalListing: currentListing,
+            scanIntegrity: lastScanIntegrity, classVerdicts: finalClearanceProof.classVerdicts,
+            clearanceProof: finalClearanceProof
+          };
+        } else {
+          console.warn(`[TrademarkServiceV2] 🚨 Rewrite-Limit von ${maxCycles} erreicht. Class 25/Brand bleibt manuell zu prüfen.`);
+          saveState('ESCALATED');
+          return {
           finalDecision: 'ESCALATE',
           isSafe: false,
           canBeFixedByListingRewrite: true,
@@ -1566,7 +1992,8 @@ export class TrademarkService {
             subniche: normSub,
             forbiddenTerms: forbiddenTermsForTask
           }).listing
-        };
+          };
+        }
       }
 
       // Collect terms that need fixing into forbidden list
@@ -1579,6 +2006,25 @@ export class TrademarkService {
 
       console.log(`[TrademarkServiceV2] ✍️ Führe SEO-Rewrite durch (Runde ${rewriteIterations.length + 1}). Verbotene Begriffe: [${forbiddenTermsForTask.join(', ')}]`);
       saveState('REWRITE');
+
+      const listingFields = ['brand', 'title', 'bullet1', 'bullet2', 'description'] as const;
+      const affectedFields = new Set<string>([
+        ...(refereeRes.hits || []).map((hit: any) => hit.field),
+        ...knownBrandSignals.map((signal: any) => signal.field),
+        ...(finalVerifierResult?.identifiedRisks || []).map((risk: any) => risk.field)
+      ].filter((field: any) => listingFields.includes(field)));
+      if (affectedFields.size === 0) {
+        saveState('ESCALATED');
+        return {
+          finalDecision: 'ESCALATE', isSafe: false, canBeFixedByListingRewrite: false,
+          reasonCode: 'INVALID_AI_RESPONSE', recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
+          initialTrademarkHits, finalTrademarkHits: normalizedHits, rewriteIterations,
+          refereeResult: refereeRes, verifierResult: finalVerifierResult,
+          forbiddenTermsForTask, blockedProducts, blockedNiceClasses, finalListing: currentListing,
+          scanIntegrity: lastScanIntegrity
+        };
+      }
+      const listingBeforeRewrite = { ...currentListing };
 
       const rewriteRes = await LLMService.rewriteListingForTrademarkV2({
         currentListing,
@@ -1594,6 +2040,21 @@ export class TrademarkService {
       });
 
       currentListing = rewriteRes.refinedListing;
+      const changedOutsideContract = listingFields.filter(field =>
+        !affectedFields.has(field) && currentListing[field] !== listingBeforeRewrite[field]
+      );
+      if (changedOutsideContract.length > 0
+        || TrademarkPolicyService.listingFingerprint(currentListing) === TrademarkPolicyService.listingFingerprint(listingBeforeRewrite)) {
+        const reasonCode = changedOutsideContract.length > 0 ? 'REWRITE_SCOPE_VIOLATION' : 'REWRITE_STAGNATION';
+        saveState('ESCALATED');
+        return {
+          finalDecision: 'ESCALATE', isSafe: false, canBeFixedByListingRewrite: false,
+          reasonCode, recommendedAction: 'HUMAN_REVIEW_RECOMMENDED', initialTrademarkHits,
+          finalTrademarkHits: normalizedHits, rewriteIterations, refereeResult: refereeRes,
+          verifierResult: finalVerifierResult, forbiddenTermsForTask, blockedProducts,
+          blockedNiceClasses, finalListing: listingBeforeRewrite, scanIntegrity: lastScanIntegrity
+        };
+      }
 
       const postRewriteValidation = ListingValidationService.validateAndRepairListing({
         listing: currentListing,
@@ -1617,7 +2078,7 @@ export class TrademarkService {
         type: 'TM_REWRITE_RESPONSE',
         title: `SEO-Rewrite Runde ${rewriteIterations.length} abgeschlossen`,
         content: { iteration: rewriteIterations.length, actionsTaken: rewriteRes.actionsTaken, listing: currentListing },
-        metadata: { provider: 'OpenRouter', model: rewriteRes._rawRequest?.model }
+        metadata: { provider: 'OpenRouter', model: rewriteRes._rawRequest?.model, usage: rewriteRes._usage }
       });
     }
 
@@ -1646,4 +2107,3 @@ export class TrademarkService {
     };
   }
 }
-

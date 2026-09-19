@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
 import { getEnabledMarketplacesForProduct, isProductUploadEnabled, resolveEffectiveFitTypes } from './productAvailabilityPolicy';
+import { TrademarkClearanceProofV3, TrademarkPolicyService, US_TM_POLICY_VERSION } from './trademarkPolicyService';
 import { ListingSanitizationService } from './listingSanitizationService';
 import { loadSettings, saveSettings } from './settingsService';
 import { getSchedulerClock, UPLOAD_SCHEDULER_TIME_ZONE } from './schedulerClock';
@@ -128,7 +129,7 @@ export interface QueueItem {
   status: QueueItemStatus;
   isLocked: boolean; // Hero-Design Lock: protects from dynamic slot dropping
   isPaused?: boolean; // Paused by user: excluded from balancing and auto-upload
-  pauseKind?: 'MANUAL' | 'AMAZON_PROCESSING';
+  pauseKind?: 'MANUAL' | 'AMAZON_PROCESSING' | 'TM_RECHECK_REQUIRED';
   pausedUntil?: string;
   pauseReason?: string;
   allocatedSlots: number;
@@ -136,6 +137,8 @@ export interface QueueItem {
   activeProductsMap: Record<string, string[]>; // productId -> array of active marketplaces (e.g. ['US', 'DE', 'GB'])
   droppedSlotsMap: Record<string, string[]>;   // productId -> array of dropped marketplaces (e.g. ['JP', 'ES', 'IT'])
   tmBlockedProductIds: string[];              // Product IDs blocked by TM
+  tmAllowedProductIds?: string[];             // V3 upper boundary: only cleared products may be selected
+  trademarkClearance?: TrademarkClearanceProofV3;
   uploadResultSummary?: UploadResultSummary;  // Per-product upload summary from UploadWorker V2
   errorMessage?: string;
   sortOrder: number;
@@ -372,7 +375,7 @@ export class QueueService {
           }
 
           // Check if update item
-          const isUpdate = (item.type === 'update' || item.type === 'UPDATE' || item.source === 'UPDATE' || (item.id && String(item.id).startsWith('update_')) || (item.taskId && String(item.taskId).endsWith('-U')));
+          const isUpdate = (item.type === 'update' || item.source === 'UPDATE' || (item.id && String(item.id).startsWith('update_')) || (item.taskId && String(item.taskId).endsWith('-U')));
           if (isUpdate) {
             if (item.publishedProductsCount === undefined) {
               const pCount = task.payload?.liveStats?.publishedCount ?? task.payload?.liveVariantsCount ?? task.payload?.publishedCount;
@@ -406,6 +409,12 @@ export class QueueService {
               item.tmBlockedProductIds = rawBlocked.map(p => typeof p === 'object' && p ? String((p as any).id || (p as any).name || '') : String(p)).filter(Boolean);
               hasChanges = true;
             }
+          }
+          if (!item.trademarkClearance && task.trademarkWorkflowState?.policyVersion === US_TM_POLICY_VERSION && task.trademarkClearance) {
+            item.trademarkClearance = task.trademarkClearance;
+            item.tmAllowedProductIds = [...task.trademarkClearance.allowedProductIds];
+            item.tmBlockedProductIds = [...task.trademarkClearance.blockedProductIds];
+            hasChanges = true;
           }
         }
       }
@@ -649,6 +658,8 @@ export class QueueService {
       productVariants?: Record<string, string>;
     };
     tmBlockedProductIds?: string[];
+    tmAllowedProductIds?: string[];
+    trademarkClearance?: TrademarkClearanceProofV3;
     source?: string;
     type?: 'new' | 'update';
     designId?: string;
@@ -719,6 +730,8 @@ export class QueueService {
       if (item.fitTypes !== undefined) existing.fitTypes = normalizeFitTypes(item.fitTypes);
       if (item.avoidColor !== undefined) existing.avoidColor = normalizeAvoidColor(item.avoidColor);
       if (item.tmBlockedProductIds !== undefined) existing.tmBlockedProductIds = normalizeTmBlocked(item.tmBlockedProductIds);
+      if (item.tmAllowedProductIds !== undefined) existing.tmAllowedProductIds = normalizeTmBlocked(item.tmAllowedProductIds);
+      if (item.trademarkClearance !== undefined) existing.trademarkClearance = item.trademarkClearance;
       const normalizedBg = normalizeCustomBg(item.customBackgroundColor);
       if (normalizedBg) existing.customBackgroundColor = normalizedBg;
       if (item.pngPath) existing.pngPath = item.pngPath;
@@ -740,6 +753,7 @@ export class QueueService {
     const uploadPolicy = ProductCatalogService.getUploadPolicy();
     const cleanBlockedList = normalizeTmBlocked(item.tmBlockedProductIds);
     const tmBlocked = new Set(cleanBlockedList.map(id => id.toUpperCase()));
+    const tmAllowed = item.tmAllowedProductIds ? new Set(normalizeTmBlocked(item.tmAllowedProductIds).map(id => id.toUpperCase())) : null;
     
     // Build initial activeProductsMap with non-blocked products and compute exact net slots
     const activeProductsMap: Record<string, string[]> = {};
@@ -751,6 +765,7 @@ export class QueueService {
     if (isUpdate && hasLiveDetail) {
       for (const prod of catalog.products) {
         if (!isProductUploadEnabled(prod)) continue;
+        if (tmAllowed && !tmAllowed.has(prod.id.toUpperCase())) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const prodId = prod.id;
         const catalogMps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
@@ -779,6 +794,7 @@ export class QueueService {
     } else {
       for (const prod of catalog.products) {
         if (!isProductUploadEnabled(prod)) continue;
+        if (tmAllowed && !tmAllowed.has(prod.id.toUpperCase())) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const mps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
         activeProductsMap[prod.id] = mps;
@@ -823,6 +839,8 @@ export class QueueService {
       activeProductsMap,
       droppedSlotsMap: {},
       tmBlockedProductIds: cleanBlockedList,
+      tmAllowedProductIds: item.tmAllowedProductIds ? normalizeTmBlocked(item.tmAllowedProductIds) : undefined,
+      trademarkClearance: item.trademarkClearance,
       sortOrder: this.items.length,
       source: item.source || (isUpdate ? 'UPDATE' : 'NEW'),
       type: item.type || (isUpdate ? 'update' : 'new'),
@@ -867,6 +885,8 @@ export class QueueService {
       productVariants?: Record<string, string>;
     };
     tmBlockedProductIds?: string[];
+    tmAllowedProductIds?: string[];
+    trademarkClearance?: TrademarkClearanceProofV3;
     source?: string;
     type?: 'new' | 'update';
     designId?: string;
@@ -893,6 +913,17 @@ export class QueueService {
       throw new Error('Queue-Eintrag wurde geändert oder hat einen Remote-Vorgang; keine Übernahme.');
     }
     const updated = { ...previous, ...patch };
+    if (previous.trademarkClearance) {
+      const errors = TrademarkPolicyService.validateClearanceProof({
+        proof: previous.trademarkClearance,
+        listing: updated,
+        productScope: TrademarkPolicyService.resolveProductScope([
+          ...previous.trademarkClearance.allowedProductIds,
+          ...previous.trademarkClearance.blockedProductIds
+        ])
+      });
+      if (errors.length > 0) throw new Error(`FAILED_TM_POLICY_INTEGRITY: ${errors.join('; ')}`);
+    }
     this.items[index] = updated;
     try { this.saveQueue(); } catch (error) { this.items[index] = previous; throw error; }
     return updated;
@@ -1210,6 +1241,23 @@ export class QueueService {
     const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
     const catalog = ProductCatalogService.getCatalog();
     const uploadPolicy = ProductCatalogService.getUploadPolicy();
+    for (const item of this.items.filter(candidate => candidate.status === 'WAITING' && candidate.trademarkClearance)) {
+      const proof = item.trademarkClearance!;
+      const errors = TrademarkPolicyService.validateClearanceProof({
+        proof,
+        listing: item,
+        productScope: TrademarkPolicyService.resolveProductScope([...proof.allowedProductIds, ...proof.blockedProductIds])
+      });
+      if (errors.length > 0) {
+        item.isPaused = true;
+        item.pauseKind = 'TM_RECHECK_REQUIRED';
+        item.pauseReason = `TM_RECHECK_REQUIRED: ${errors.join('; ')}`;
+      } else if (item.pauseKind === 'TM_RECHECK_REQUIRED') {
+        item.isPaused = false;
+        item.pauseKind = undefined;
+        item.pauseReason = undefined;
+      }
+    }
     const maxNewDesignsAllowed = freeDesignsOverride !== undefined
       ? Math.max(0, freeDesignsOverride)
       : (this.accountTierInfo.freeDesignsCount !== undefined ? Math.max(0, this.accountTierInfo.freeDesignsCount) : Infinity);
@@ -1266,11 +1314,13 @@ export class QueueService {
     // 4. Reset & populate each waiting NEW item from latest catalog
     for (const item of allWaitingNewItems) {
       const tmBlocked = new Set((item.tmBlockedProductIds || []).map(id => id.toUpperCase()));
+      const tmAllowed = item.tmAllowedProductIds ? new Set(item.tmAllowedProductIds.map(id => id.toUpperCase())) : null;
       const activeMap: Record<string, string[]> = {};
       let baseSlots = 0;
 
       for (const prod of catalog.products) {
         if (!isProductUploadEnabled(prod)) continue;
+        if (tmAllowed && !tmAllowed.has(prod.id.toUpperCase())) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const mps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
         activeMap[prod.id] = mps;
@@ -1286,11 +1336,13 @@ export class QueueService {
     // 5. Reset & populate each waiting UPDATE item from latest catalog & compute net slots
     for (const uItem of allWaitingUpdateItems) {
       const tmBlocked = new Set((uItem.tmBlockedProductIds || []).map(id => id.toUpperCase()));
+      const tmAllowed = uItem.tmAllowedProductIds ? new Set(uItem.tmAllowedProductIds.map(id => id.toUpperCase())) : null;
       const activeMap: Record<string, string[]> = {};
       let baseCatalogSlots = 0;
 
       for (const prod of catalog.products) {
         if (!isProductUploadEnabled(prod)) continue;
+        if (tmAllowed && !tmAllowed.has(prod.id.toUpperCase())) continue;
         if (tmBlocked.has(prod.id.toUpperCase())) continue;
         const mps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
         activeMap[prod.id] = mps;
@@ -1328,6 +1380,7 @@ export class QueueService {
       if (hasLiveDetail) {
         for (const prod of catalog.products) {
           if (!isProductUploadEnabled(prod)) continue;
+          if (tmAllowed && !tmAllowed.has(prod.id.toUpperCase())) continue;
           if (tmBlocked.has(prod.id.toUpperCase())) continue;
           const prodId = prod.id;
           const catalogMps = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
@@ -1358,6 +1411,7 @@ export class QueueService {
         netSlots = Math.max(0, baseCatalogSlots - (alreadyPublished ?? 0));
         for (const prod of catalog.products) {
           if (!isProductUploadEnabled(prod)) continue;
+          if (tmAllowed && !tmAllowed.has(prod.id.toUpperCase())) continue;
           if (tmBlocked.has(prod.id.toUpperCase())) continue;
           calculatedActiveMap[prod.id] = getEnabledMarketplacesForProduct(prod, uploadPolicy).map(normalizeMarketplaceCode);
         }

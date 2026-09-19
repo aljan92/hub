@@ -23,6 +23,7 @@ import { TaskExecutionLock } from './taskExecutionLock';
 import { buildListingExpectations, verifyListingReadback } from './listingReadback';
 import { UpdateMetadataService } from './updateMetadataService';
 import { filterActiveProductsMap, getEnabledMarketplacesForProduct, isProductUploadEnabled, resolveEffectiveFitTypes } from './productAvailabilityPolicy';
+import { TrademarkPolicyService } from './trademarkPolicyService';
 
 export interface UploadProgressState {
   isUploading: boolean;
@@ -370,6 +371,38 @@ export class UploadWorkerService {
       : 'https://merch.amazon.com/designs/new';
 
     try {
+      if (item.trademarkClearance) {
+        const tmErrors = TrademarkPolicyService.validateClearanceProof({
+          proof: item.trademarkClearance,
+          listing: {
+            brand: item.brand,
+            title: item.title,
+            bullet1: item.bullet1,
+            bullet2: item.bullet2,
+            description: item.description
+          },
+          productScope: TrademarkPolicyService.resolveProductScope([
+            ...item.trademarkClearance.allowedProductIds,
+            ...item.trademarkClearance.blockedProductIds
+          ])
+        });
+        const allowed = new Set((item.tmAllowedProductIds || []).map(id => normalizeCatalogProductId(id)));
+        const blocked = new Set((item.tmBlockedProductIds || []).map(id => normalizeCatalogProductId(id)));
+        const proofAllowed = new Set(item.trademarkClearance.allowedProductIds.map(id => normalizeCatalogProductId(id)));
+        const proofBlocked = new Set(item.trademarkClearance.blockedProductIds.map(id => normalizeCatalogProductId(id)));
+        if (allowed.size !== proofAllowed.size || [...allowed].some(id => !proofAllowed.has(id))) {
+          tmErrors.push('Queue allowlist differs from trademark clearance proof');
+        }
+        if (blocked.size !== proofBlocked.size || [...blocked].some(id => !proofBlocked.has(id))) {
+          tmErrors.push('Queue blocklist differs from trademark clearance proof');
+        }
+        for (const productId of Object.keys(item.activeProductsMap || {})) {
+          const normalized = normalizeCatalogProductId(productId);
+          if (!allowed.has(normalized)) tmErrors.push(`Active product was not trademark-cleared: ${productId}`);
+          if (blocked.has(normalized)) tmErrors.push(`Blocked product is active: ${productId}`);
+        }
+        if (tmErrors.length > 0) throw new Error(`FAILED_TM_POLICY_INTEGRITY: ${[...new Set(tmErrors)].join('; ')}`);
+      }
       this.log(`🚀 Starte Upload für Task #${item.taskId} ("${item.title || item.designTitle}")${isUpdate ? ' [UPDATE-MODUS]' : ''}`, 'Initialisiere Session 2...', 5, 100);
 
       // Set initial STARTING phase
@@ -567,8 +600,16 @@ export class UploadWorkerService {
 
           const fullCatalogSelection: Record<string, string[]> = {};
           const blocked = new Set((item.tmBlockedProductIds || []).map(id => normalizeCatalogProductId(id)));
+          const immutableBlockedSelections = modalSnapshot.filter(entry =>
+            entry.checked && entry.readonly && blocked.has(normalizeCatalogProductId(entry.productId))
+          );
+          if (immutableBlockedSelections.length > 0) {
+            throw new Error(`FAILED_TM_BLOCK_ENFORCEMENT: Amazon has immutable live selections for blocked products: ${immutableBlockedSelections.map(entry => `${entry.productId}/${entry.marketplace}`).join(', ')}`);
+          }
+          const allowed = item.tmAllowedProductIds ? new Set(item.tmAllowedProductIds.map(id => normalizeCatalogProductId(id))) : null;
           for (const product of catalog.products) {
             if (!isProductUploadEnabled(product) || blocked.has(normalizeCatalogProductId(product.id))) continue;
+            if (allowed && !allowed.has(normalizeCatalogProductId(product.id))) continue;
             fullCatalogSelection[product.id] = getEnabledMarketplacesForProduct(product, uploadPolicy);
           }
           const reconciled = reconcileUpdateSelectionFromDom(modalSnapshot, fullCatalogSelection);

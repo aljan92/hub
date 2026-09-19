@@ -726,7 +726,7 @@ Style Preset: ${stylePreset}`;
    * 2. Rewrite Listing with Specific Trademark Feedback (Feedback Loop, Class Distinctions)
    */
   /**
-   * V2 Trademark Referee (GPT-5.6 Sol)
+   * V3 Trademark Referee (uses the generally configured model)
    * Semantic risk analysis, distinction between common descriptive words vs distinctive/famous marks
    */
   static async evaluateTrademarkReferee(params: {
@@ -752,20 +752,23 @@ Style Preset: ${stylePreset}`;
       registeredMark: string;
       field?: string;
       classes?: number[];
+      usageClassification?: string;
+      confidence?: number;
       markNature?: string;
       usageType?: string;
       knownBrand?: boolean;
       amazonRejectionRisk?: string;
       decision?: string;
-      confidence?: number;
       reason?: string;
     }>;
     blockedProducts: string[];
     rewriteRequired: boolean;
     rewriteInstructions: string[];
+    knownBrandSignals?: Array<{ term: string; field: string; confidence: number; action: string; reason?: string }>;
     escalation?: any;
     _rawRequest?: any;
     _rawResponse?: any;
+    _usage?: any;
   }> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
     const systemPrompt = SystemPromptService.getTrademarkRefereePrompt();
@@ -792,7 +795,7 @@ Rewrite Context:
 - Forbidden Terms for Task: ${JSON.stringify(params.forbiddenTermsForTask || [])}
 - Currently Blocked Products: ${JSON.stringify(params.blockedProducts || [])}
 
-Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/descriptive words are implicitly KEEP and must NOT be output in problematicHits. Return valid JSON only.`;
+Evaluate all hits against the supplied policy. Return evaluatedHits for every Brand, Class 25, exact Quote, locked-tail, and Combined-Mark hit. Safe secondary-class hits may be omitted. Return valid JSON only.`;
 
     const settings = loadSettings();
     const requestPayload: any = {
@@ -802,7 +805,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
         { role: 'user', content: userMessage }
       ],
       temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-      max_tokens: settings.llmMaxTokens || 2500
+      max_tokens: Math.min(settings.llmMaxTokens || 2500, 1000)
     };
 
     if (params.sessionId) {
@@ -845,6 +848,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
           blockedProducts: params.blockedProducts || [],
           rewriteRequired: false,
           rewriteInstructions: [],
+          knownBrandSignals: [],
           escalation: { error: errorDetail },
           _rawRequest: requestPayload,
           _rawResponse: content
@@ -856,8 +860,10 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
         ? Boolean(parsed.canBeFixedByListingRewrite) 
         : (decision !== 'ESCALATE');
 
-      const rawProblematic = Array.isArray(parsed.problematicHits)
-        ? parsed.problematicHits
+      const rawProblematic = Array.isArray(parsed.evaluatedHits)
+        ? parsed.evaluatedHits
+        : Array.isArray(parsed.problematicHits)
+          ? parsed.problematicHits
         : (Array.isArray(parsed.hits) ? parsed.hits : []);
 
       const mappedHits = rawProblematic.map((h: any) => ({
@@ -865,14 +871,24 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
         searchedTerm: h.term || h.searchedTerm || h.mark || '',
         registeredMark: h.mark || h.registeredMark || '',
         field: h.field || (Array.isArray(h.occurrences) && h.occurrences.length > 0 ? h.occurrences[0].field : 'all'),
-        classes: h.classes || [],
+        classes: Array.isArray(h.classes) ? h.classes : undefined,
+        usageClassification: h.usageClassification || h.usage_classification || h.markNature,
+        confidence: typeof h.confidence === 'number' ? h.confidence : Number.NaN,
         markNature: h.markNature || 'DISTINCTIVE_OR_BRAND',
         usageType: h.usageType || 'POTENTIAL_RISK',
         amazonRejectionRisk: h.amazonRejectionRisk || (h.action === 'REWRITE' ? 'HIGH' : 'LOW'),
-        decision: h.action || h.decision || 'REWRITE',
+        decision: h.action || h.decision,
         reasonCode: h.reasonCode || h.reason_code || null,
         reason: h.reason || h.explanation || 'Identified trademark risk'
       }));
+      const knownBrandSignals = (Array.isArray(parsed.knownBrandSignals) ? parsed.knownBrandSignals : [])
+        .map((signal: any) => ({
+          term: String(signal.term || '').trim(),
+          field: String(signal.field || '').trim(),
+          confidence: Number(signal.confidence),
+          action: String(signal.action || '').trim().toUpperCase(),
+          reason: String(signal.reason || '').trim() || undefined
+        }));
 
       return {
         decision,
@@ -883,9 +899,11 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
         blockedProducts: Array.isArray(parsed.blockedProducts) ? parsed.blockedProducts : (Array.isArray(parsed.blocked_products) ? parsed.blocked_products : (params.blockedProducts || [])),
         rewriteRequired: parsed.rewriteRequired !== undefined ? Boolean(parsed.rewriteRequired) : (decision === 'REWRITE'),
         rewriteInstructions: Array.isArray(parsed.rewriteInstructions) ? parsed.rewriteInstructions : (Array.isArray(parsed.rewrite_instructions) ? parsed.rewrite_instructions : []),
+        knownBrandSignals,
         escalation: parsed.escalation || null,
         _rawRequest: requestPayload,
-        _rawResponse: content
+        _rawResponse: content,
+        _usage: data.usage
       };
     } catch (err: any) {
       console.error('[LLMService] Error in evaluateTrademarkReferee:', err);
@@ -898,6 +916,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
         blockedProducts: params.blockedProducts || [],
         rewriteRequired: false,
         rewriteInstructions: [],
+        knownBrandSignals: [],
         escalation: { error: err.message },
         _rawRequest: requestPayload,
         _rawResponse: err.message
@@ -906,7 +925,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
   }
 
   /**
-   * V2 Amazon Rejection Verifier (GPT-5.6 Sol - Adversarial Reviewer)
+   * V3 Amazon Rejection Verifier (configured-model adversarial reviewer)
    */
   static async evaluateTrademarkVerifier(params: {
     currentListing: EnglishListing;
@@ -917,6 +936,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
     compactHits?: any[];
     normalizedHits?: any[];
     refereeDecision?: string;
+    refereeHits?: any[];
     blockedProducts?: string[];
     sessionId?: string;
   }): Promise<{
@@ -931,6 +951,7 @@ Please evaluate all hits against Amazon Merch risk rules. Unproblematic generic/
     recommendation: string;
     _rawRequest?: any;
     _rawResponse?: any;
+    _usage?: any;
   }> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
     const systemPrompt = SystemPromptService.getTrademarkVerifierPrompt();
@@ -953,6 +974,7 @@ Compact Trademark Hits Data:
 ${JSON.stringify(hitsData)}
 
 Previous Referee Verdict: "${params.refereeDecision || 'APPROVE'}"
+Previous Referee Classifications: ${JSON.stringify(params.refereeHits || [])}
 Blocked Products: ${JSON.stringify(params.blockedProducts || [])}
 
 Act as the final adversarial Amazon Merch reviewer. Do you see any plausible trademark, brand, or policy reasons why Amazon Merch might reject this submission or penalize the account? Return valid JSON.`;
@@ -965,7 +987,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
         { role: 'user', content: userMessage }
       ],
       temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-      max_tokens: settings.llmMaxTokens || 2500
+      max_tokens: Math.min(settings.llmMaxTokens || 2500, 900)
     };
 
     if (params.sessionId) {
@@ -1012,7 +1034,8 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
           canBeFixedByListingRewrite: parsed.canBeFixedByListingRewrite !== undefined ? Boolean(parsed.canBeFixedByListingRewrite) : true,
           recommendation: parsed.recommendation || 'SAFE_TO_PUBLISH',
           _rawRequest: requestPayload,
-          _rawResponse: content
+          _rawResponse: content,
+          _usage: data.usage
         };
       }
 
@@ -1023,7 +1046,8 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
           canBeFixedByListingRewrite: parsed.canBeFixedByListingRewrite !== undefined ? Boolean(parsed.canBeFixedByListingRewrite) : false,
           recommendation: parsed.recommendation || 'REWRITE_NEEDED',
           _rawRequest: requestPayload,
-          _rawResponse: content
+          _rawResponse: content,
+          _usage: data.usage
         };
       }
 
@@ -1078,6 +1102,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
     actionsTaken: string[];
     _rawRequest?: any;
     _rawResponse?: any;
+    _usage?: any;
   }> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
     const systemPrompt = SystemPromptService.getTrademarkRewritePrompt();
@@ -1091,7 +1116,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
       subniche: normSub
     });
 
-    const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params.rewriteIteration} of 3).
+    const userMessage = `You are performing an automated SEO-preserving Trademark Rewrite for Merch by Amazon (Iteration ${params.rewriteIteration}, normally max 3; an explicitly authorized fourth round is secondary-class-only).
 
 Current Listing:
 - Brand: "${params.currentListing.brand}"
@@ -1139,7 +1164,7 @@ Return ONLY valid JSON:
         { role: 'user', content: userMessage }
       ],
       temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
-      max_tokens: settings.llmMaxTokens || 2500
+      max_tokens: Math.min(settings.llmMaxTokens || 2500, 1200)
     };
 
     if (params.sessionId) {
@@ -1194,7 +1219,8 @@ Return ONLY valid JSON:
         refinedListing: validated.listing,
         actionsTaken,
         _rawRequest: requestPayload,
-        _rawResponse: content
+        _rawResponse: content,
+        _usage: data.usage
       };
     } catch (err: any) {
       console.error('[LLMService] Error in rewriteListingForTrademarkV2:', err);

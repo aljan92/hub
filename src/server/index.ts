@@ -2572,6 +2572,16 @@ server.listen(Number(PORT), HOST, () => {
     console.warn('[MBA Hub] TaskRecoveryService.startRecoveryQueueWorker warning:', err.message);
   }
 
+  // Provider/network failures are retried separately from legal Manual Review.
+  TaskRecoveryService.processDueTrademarkTechnicalRetries().catch(err =>
+    console.warn('[MBA Hub] USPTO technical retry warning:', err?.message || err)
+  );
+  setInterval(() => {
+    TaskRecoveryService.processDueTrademarkTechnicalRetries().catch(err =>
+      console.warn('[MBA Hub] USPTO technical retry warning:', err?.message || err)
+    );
+  }, 60_000);
+
   // Pre-warm browser sessions in background so they are immediately ready
   setTimeout(async () => {
     try {

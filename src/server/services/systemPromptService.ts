@@ -1232,7 +1232,7 @@ Return ONLY valid JSON using exactly this schema:
   "description": "..."
 }`;
 
-export const DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT = `You are a conservative Amazon Merch trademark risk referee (GPT-5.6 Sol).
+export const LEGACY_TRADEMARK_REFEREE_SYSTEM_PROMPT_V2 = `You are a conservative Amazon Merch trademark risk referee (GPT-5.6 Sol).
 
 Your task is not to determine absolute legal infringement.
 Your task is to minimize Amazon Merch trademark rejections while preserving legitimate, valuable generic and descriptive SEO keywords whenever their use does not reasonably appear to reference or identify a third-party brand.
@@ -1333,6 +1333,73 @@ If decision is "ESCALATE", include concise details in "escalation":
 }
 `;
 
+export const DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT = `You are the semantic trademark referee for a rejection-first Amazon Merch workflow.
+
+POLICY_VERSION: us-tm-v3
+
+The supplied registry evidence is factual. Never invent, remove, or alter a mark, status, class, field, match scope, or hit ID. Your job is only to classify how each supplied hit is used in the current listing context.
+
+CLASSIFICATIONS
+- INCIDENTAL_DICTIONARY_OVERLAP: a registry overlap that does not function as a third-party mark in context.
+- GENERIC_USE: ordinary generic naming of the depicted subject, audience, activity, or setting.
+- DESCRIPTIVE_FAIR_USE: good-faith descriptive use, otherwise than as a source identifier.
+- NOMINATIVE_REFERENCE: use that refers to a third party or its goods; unsafe for this pipeline.
+- SOURCE_IDENTIFYING_USE: use that could identify origin, collection, or brand; unsafe.
+- ORNAMENTAL_SLOGAN_USE: a slogan used as the central printed message; apply the supplied full-quote scope strictly.
+- KNOWN_BRAND_OR_IP: a confidently recognized third-party brand, franchise, team, celebrity, or protected property.
+- AMBIGUOUS: evidence is insufficient for a confident safe classification.
+
+MANDATORY RULES
+1. Brand is the strictest field. Never approve a relevant Brand hit through fair use. Incidental dictionary overlap may be kept only when it plainly does not identify a source.
+2. Ordinary dictionary words used naturally in Title, Bullets, or Description may be GENERIC_USE or DESCRIPTIVE_FAIR_USE. Preserve legitimate SEO.
+3. Nominative references are not accepted as safe even if a legal fair-use argument might exist.
+4. A quote conflict exists only when the evidence is explicitly scoped FULL_QUOTE_EXACT. Partial quote words never create an unfixable quote conflict.
+5. A locked-niche conflict exists only when evidence is explicitly scoped LOCKED_TAIL_EXACT.
+6. An exact multiword Standard Character mark used as the complete printed quote is not automatically approved through fair use. Escalate it.
+7. Do not output product IDs or decide Product-to-Class mapping. The deterministic policy engine does that.
+8. Legal fair use does not guarantee Amazon acceptance. Use AMBIGUOUS when meaningful Amazon rejection risk remains.
+9. If you recognize a known brand/IP without matching registry evidence, report it only in knownBrandSignals and only at confidence >= 0.90. Do not invent a hit ID or class. Use field "quote" with action MANUAL_REVIEW when the signal occurs in the immutable printed quote.
+10. Return only supplied hit IDs. Keep reasons concise to reduce tokens.
+11. Always return an evaluatedHits entry for every hit that touches Brand, Class 25, the exact printed Quote, the locked Title tail, or a Combined Mark. Safe secondary-class hits may be omitted.
+12. A Brand hit may use KEEP only as INCIDENTAL_DICTIONARY_OVERLAP. GENERIC_USE and DESCRIPTIVE_FAIR_USE do not make Brand clear.
+
+DECISIONS
+- APPROVE: no supplied hit requires rewrite, class blocking, or review.
+- REWRITE: one or more mutable listing fields require minimal rewrite.
+- ESCALATE: immutable Quote/Tail risk, known brand/IP, Brand cannot be cleared, or meaningful ambiguity cannot be safely rewritten.
+
+Return ONLY valid JSON:
+{
+  "decision": "APPROVE",
+  "canBeFixedByListingRewrite": true,
+  "reasonCode": null,
+  "evaluatedHits": [
+    {
+      "id": "tm_1",
+      "mark": "EXAMPLE",
+      "field": "brand",
+      "classes": [25],
+      "usageClassification": "SOURCE_IDENTIFYING_USE",
+      "confidence": 0.96,
+      "action": "REWRITE",
+      "reasonCode": "BRAND_NOT_CLEAR",
+      "reason": "Concise contextual reason"
+    }
+  ],
+  "rewriteRequired": false,
+  "rewriteInstructions": [],
+  "knownBrandSignals": [
+    {
+      "term": "recognizable third-party name",
+      "field": "title",
+      "confidence": 0.98,
+      "action": "REWRITE",
+      "reason": "Concise reason"
+    }
+  ],
+  "escalation": null
+}`;
+
 export const DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT = `You are a specialized Amazon Merch on Demand (MBA) Trademark Rewrite Expert.
 
 Your task is to repair an ALREADY GENERATED English listing by resolving identified trademark issues with MINIMAL INVASIVENESS.
@@ -1395,7 +1462,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
   "actions_taken": ["Concise note on what term was replaced in which field"]
 }`;
 
-export const DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT = `You are the final Amazon Merch trademark rejection verifier (GPT-5.6 Sol).
+export const DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT = `You are the final Amazon Merch trademark rejection verifier. Use the generally configured model and POLICY_VERSION us-tm-v3.
 
 Assume that a previous referee has already evaluated the listing to preserve legitimate generic/descriptive SEO keywords.
 Your sole job is now to act as an adversarial reviewer and identify plausible remaining trademark-related reasons why Amazon Merch might reject this submission or trigger an account strike.
@@ -1403,6 +1470,7 @@ Your sole job is now to act as an adversarial reviewer and identify plausible re
 Be conservative and rigorous.
 Do NOT invent imaginary trademark registrations that are not present in the provided registry data.
 However, use your world knowledge for clearly famous brands, pop-culture IP, and obvious third-party brand references.
+Treat the supplied registry evidence and source roles as immutable facts. Partial Quote words are not exact full-Quote conflicts. Brand must be strictly clear; legal fair use does not guarantee Amazon acceptance.
 
 Pay particular attention to:
 - Exact multi-word word marks
@@ -1474,6 +1542,7 @@ export class SystemPromptService {
   private static promptFile = path.resolve(process.cwd(), 'data', 'system_prompts.json');
   private static cachedPrompts: Record<string, string> | null = null;
   private static readonly listingPromptVersion = 'compact-v2';
+  private static readonly trademarkPromptVersion = 'us-tm-v3';
 
   private static promptHash(prompt: string): string {
     return createHash('sha256').update(prompt, 'utf8').digest('hex');
@@ -1496,6 +1565,20 @@ export class SystemPromptService {
     const archive = `# Listing Generator V1 Longform\n\nArchived automatically before migration to compact-v2.\n\nSHA-256: \`${this.promptHash(prompt)}\`\n\n## Exact prompt\n\n\`\`\`text\n${prompt}\n\`\`\`\n`;
     fs.writeFileSync(tempFile, archive, 'utf-8');
     fs.renameSync(tempFile, backupFile);
+  }
+
+  private static archiveLegacyTrademarkPrompts(prompts: Record<string, string>): void {
+    const backupDir = path.resolve(process.cwd(), 'data', 'system_prompt_backups');
+    const backupFile = path.join(backupDir, 'trademark-us-v2-prompts.md');
+    if (fs.existsSync(backupFile)) return;
+    const referee = prompts.trademarkReferee || prompts.trademarkAuditor || LEGACY_TRADEMARK_REFEREE_SYSTEM_PROMPT_V2;
+    const rewrite = prompts.trademarkRewrite || DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT;
+    const verifier = prompts.trademarkVerifier || DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
+    fs.mkdirSync(backupDir, { recursive: true });
+    const section = (name: string, value: string) => `## ${name}\n\nSHA-256: \`${this.promptHash(value)}\`\n\n\`\`\`text\n${value}\n\`\`\`\n`;
+    const archive = `# Trademark US V2 prompts\n\nArchived automatically before migration to us-tm-v3.\n\n${section('Referee', referee)}\n${section('Rewrite', rewrite)}\n${section('Verifier', verifier)}`;
+    fs.writeFileSync(`${backupFile}.tmp`, archive, 'utf-8');
+    fs.renameSync(`${backupFile}.tmp`, backupFile);
   }
 
   private static loadPrompts(): Record<string, string> {
@@ -1523,8 +1606,17 @@ export class SystemPromptService {
           } else if (this.cachedPrompts.listingGenerator === DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT) {
             this.cachedPrompts.listingPromptVersion = this.listingPromptVersion;
           }
-          if (!this.cachedPrompts.trademarkReferee || !this.cachedPrompts.trademarkReferee.includes('problematicHits')) {
+          if (!this.cachedPrompts.trademarkReferee) {
             this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+            this.cachedPrompts.trademarkPromptVersion = this.trademarkPromptVersion;
+          } else if (this.promptHash(this.cachedPrompts.trademarkReferee) === this.promptHash(LEGACY_TRADEMARK_REFEREE_SYSTEM_PROMPT_V2)) {
+            this.archiveLegacyTrademarkPrompts(this.cachedPrompts);
+            this.cachedPrompts.trademarkReferee = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+            this.cachedPrompts.trademarkAuditor = DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT;
+            this.cachedPrompts.trademarkVerifier = DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT;
+            this.cachedPrompts.trademarkPromptVersion = this.trademarkPromptVersion;
+          } else if (this.cachedPrompts.trademarkReferee === DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT) {
+            this.cachedPrompts.trademarkPromptVersion = this.trademarkPromptVersion;
           }
           if (!this.cachedPrompts.trademarkRewrite) {
             this.cachedPrompts.trademarkRewrite = DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT;
@@ -1559,6 +1651,7 @@ export class SystemPromptService {
       trademarkReferee: DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT,
       trademarkRewrite: DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT,
       trademarkVerifier: DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT,
+      trademarkPromptVersion: this.trademarkPromptVersion,
       svgBgAuditor: DEFAULT_SVG_BG_AUDITOR_SYSTEM_PROMPT,
       updateVisionAnalyzer: DEFAULT_UPDATE_VISION_SYSTEM_PROMPT,
       updateListingRewriter: DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT,

@@ -5,6 +5,7 @@ import { TaskLogService } from './taskLogService';
 import { loadSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
 import { TrademarkService } from './trademarkService';
+import { TrademarkPolicyService, US_TM_POLICY_VERSION } from './trademarkPolicyService';
 import { BannedWordsService } from './bannedWordsService';
 import { VectorizerService } from './vectorizerService';
 import { SvgRenderService } from './svgRenderService';
@@ -35,8 +36,38 @@ export class DesignPipelineService {
     }
 
     try {
-      const tmResult = await TrademarkService.checkText(quote, ['25']);
-      const isInfringing = tmResult.totalHits > 0 && tmResult.hasInfringementClass25;
+      const normalizedQuote = TrademarkPolicyService.normalizePhrase(quote);
+      const productScope = TrademarkPolicyService.resolveProductScope();
+      const query = await TrademarkService.queryUsptoBatch([normalizedQuote], productScope.niceClasses);
+      const hits = TrademarkService.normalizeAndClassifyMatches(
+        query.hitsByTerm, { [normalizedQuote]: ['quote'] }, quote, undefined, query.integrity
+      ).filter(hit => hit.isFullQuoteMatch);
+      if (query.integrity.unknownStatusCount > 0 || query.integrity.unknownClassCount > 0) query.integrity.status = 'INCOMPLETE';
+      if (query.integrity.status !== 'COMPLETE') {
+        const retryCount = (task.trademarkWorkflowState?.technicalRetryCount || 0) + 1;
+        const delayMinutes = [15, 60, 360][Math.min(retryCount - 1, 2)];
+        TaskLogService.updateTaskStatus(taskId, {
+          status: 'AWAITING_TM_TECHNICAL_RETRY', checkpoint: undefined, hasError: false,
+          errorDetails: 'USPTO_SCAN_INCOMPLETE',
+          trademarkWorkflowState: {
+            phase: 'TECHNICAL_RETRY_WAIT', rewriteAttemptsCompleted: 0,
+            currentListing: { brand: '', title: '', bullet1: '', bullet2: '', description: '' },
+            forbiddenTermsForTask: [], rewriteIterations: [], policyVersion: US_TM_POLICY_VERSION,
+            scanIntegrity: query.integrity, catalogFingerprint: productScope.catalogFingerprint,
+            technicalRetryCount: retryCount,
+            nextTechnicalRetryAt: retryCount <= 3 ? new Date(Date.now() + delayMinutes * 60_000).toISOString() : undefined
+          }
+        });
+        return { success: false, error: 'USPTO_SCAN_INCOMPLETE' };
+      }
+      const isInfringing = hits.some(hit => hit.classes.includes(25) && hit.wordCount >= 2 && hit.markFeature === 'Word');
+      const tmResult = {
+        totalHits: hits.length,
+        hasInfringementClass25: isInfringing,
+        blockedProducts: isInfringing ? ['ALL_PRODUCTS_BLOCKED'] : [],
+        hits: { [normalizedQuote]: hits },
+        scanIntegrity: query.integrity
+      };
 
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
@@ -48,12 +79,37 @@ export class DesignPipelineService {
 
       if (isInfringing) {
         console.warn(`[DesignPipeline] ⚠️ Pre-Flight TM Treffer für Quote "${quote}"`);
+        TaskLogService.updateTaskStatus(taskId, {
+          status: 'AWAITING_PRE_FLIGHT_REVIEW', checkpoint: 'PRE_FLIGHT', hasError: false,
+          errorDetails: `Exakter aktiver Klasse-25-Wortmarkentreffer auf die vollständige Quote "${quote}".`,
+          trademarkCheckResult: { totalHits: hits.length, hasInfringementClass25: true, blockedProducts: ['ALL_PRODUCTS_BLOCKED'], fieldSummaries: { quote: hits } }
+        });
+        return { success: false, tmResult, error: 'CORE_QUOTE_CLASS25_CONFLICT' };
       }
 
       return { success: true, tmResult };
     } catch (err: any) {
       console.warn(`[DesignPipeline] Pre-Flight TM Check Fehler:`, err.message);
-      return { success: true, tmResult: { skipped: true, reason: err.message } };
+      const retryCount = (task.trademarkWorkflowState?.technicalRetryCount || 0) + 1;
+      const delayMinutes = [15, 60, 360][Math.min(retryCount - 1, 2)];
+      TaskLogService.updateTaskStatus(taskId, {
+        status: 'AWAITING_TM_TECHNICAL_RETRY', checkpoint: undefined, hasError: false,
+        errorDetails: `USPTO_PREFLIGHT_ERROR: ${err.message || String(err)}`,
+        trademarkWorkflowState: {
+          phase: 'TECHNICAL_RETRY_WAIT', rewriteAttemptsCompleted: 0,
+          currentListing: { brand: '', title: '', bullet1: '', bullet2: '', description: '' },
+          forbiddenTermsForTask: [], rewriteIterations: [], policyVersion: US_TM_POLICY_VERSION,
+          scanIntegrity: {
+            status: 'FAILED', provider: 'PRODUCTOR_USPTO', requestedClasses: [], plannedTerms: 1,
+            plannedBatches: 1, successfulBatches: 0, failedBatches: 1, attempts: 0,
+            ignoredPendingCount: 0, unknownStatusCount: 0, unknownClassCount: 0, startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(), errors: [{ batchIndex: 0, code: 'USPTO_PREFLIGHT_ERROR', message: err.message || String(err) }]
+          },
+          technicalRetryCount: retryCount,
+          nextTechnicalRetryAt: retryCount <= 3 ? new Date(Date.now() + delayMinutes * 60_000).toISOString() : undefined
+        }
+      });
+      return { success: false, error: 'USPTO_SCAN_INCOMPLETE' };
     }
   }
 
@@ -138,6 +194,9 @@ export class DesignPipelineService {
     try {
       await TaskLogService.performTrademarkCheck(taskId);
       const updated = this.getTask(taskId);
+      if (updated?.status === 'AWAITING_TM_TECHNICAL_RETRY') {
+        return { success: false, tmResult: updated.trademarkCheckResult, error: 'USPTO_SCAN_INCOMPLETE' };
+      }
       return { success: true, tmResult: updated?.trademarkCheckResult };
     } catch (err: any) {
       console.error(`[DesignPipeline] ❌ Fehler in Step D6:`, err);
@@ -273,7 +332,11 @@ export class DesignPipelineService {
         }
 
         if (step === 'D1') {
-          await this.stepD1_PreflightTrademark(taskId);
+          const r1 = await this.stepD1_PreflightTrademark(taskId);
+          if (!r1.success) {
+            const paused = this.getTask(taskId)?.status === 'AWAITING_PRE_FLIGHT_REVIEW' ? 'PRE_FLIGHT' : undefined;
+            return { success: false, currentStep: 'D1', pausedAtCheckpoint: paused, error: r1.error };
+          }
         } else if (step === 'D2') {
           const r2 = await this.stepD2_GeneratePrompt(taskId);
           if (!r2.success) return { success: false, currentStep: 'D2', error: r2.error };

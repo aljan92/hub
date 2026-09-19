@@ -6,6 +6,7 @@ import { QueueService, QueueItem } from './queueService';
 import { ListingSanitizationService } from './listingSanitizationService';
 import { ListingValidationService } from './listingValidationService';
 import { ArtworkResizeService, ResizedArtworksResult } from './artworkResizeService';
+import { TrademarkClearanceProofV3, TrademarkPolicyService, US_TM_POLICY_VERSION } from './trademarkPolicyService';
 
 export interface FinalizationParams {
   taskId: string;
@@ -28,6 +29,7 @@ export interface FinalizationParams {
   liveProductSummary?: any;
   liveProductTypes?: string[];
   tmBlockedProductIds?: string[];
+  trademarkClearance?: TrademarkClearanceProofV3;
   /** Manual preparation only: generate a separate immutable file set, no enqueue. */
   artifactRunId?: string;
   prepareOnly?: boolean;
@@ -51,7 +53,8 @@ function finalizationInput(params: FinalizationParams): string {
 function finalizationTaskData(task: DesignTaskLog | undefined): string {
   return createHash('sha256').update(JSON.stringify(task && [task.id, task.source, task.designId,
     task.status, task.checkpoint, task.inQueue, task.listingResult, task.customAnswers, task.svgContent,
-    task.localSvgPath, task.localMbaPngPath, task.localImagePath, task.fitTypes, task.blockedProducts])).digest('hex');
+    task.localSvgPath, task.localMbaPngPath, task.localImagePath, task.fitTypes, task.blockedProducts,
+    task.trademarkWorkflowState?.policyVersion, task.trademarkClearance])).digest('hex');
 }
 
 export function createFinalizationOwnership(params: FinalizationParams, task: DesignTaskLog) {
@@ -111,6 +114,28 @@ export class FinalizationService {
       ...sanitizedRoot,
       ...(sanitizedListings.en || {})
     };
+
+    const trademarkClearance = params.trademarkClearance || task.trademarkClearance;
+    if (task.trademarkWorkflowState?.policyVersion === US_TM_POLICY_VERSION && !trademarkClearance) {
+      const error = 'FAILED_TM_POLICY_INTEGRITY: V3 clearance proof is missing';
+      TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: error });
+      return { success: false, error };
+    }
+    if (trademarkClearance) {
+      const tmErrors = TrademarkPolicyService.validateClearanceProof({
+        proof: trademarkClearance,
+        listing: sanitizedRoot,
+        productScope: TrademarkPolicyService.resolveProductScope([
+          ...trademarkClearance.allowedProductIds,
+          ...trademarkClearance.blockedProductIds
+        ])
+      });
+      if (tmErrors.length > 0) {
+        const error = `FAILED_TM_POLICY_INTEGRITY: ${tmErrors.join('; ')}`;
+        TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: error });
+        return { success: false, error };
+      }
+    }
 
     TaskLogService.addEvent(taskId, {
       timestamp: new Date().toISOString(),
@@ -322,6 +347,28 @@ export class FinalizationService {
     this.assertPreparedOwnership(params, result, task);
     const resizedAssets = result.resizedAssets;
     const { root: sanitizedRoot, listings: sanitizedListings } = result.preparedListing;
+    const trademarkClearance = params.trademarkClearance || task.trademarkClearance;
+    const isV3Task = task.trademarkWorkflowState?.policyVersion === US_TM_POLICY_VERSION;
+    if (isV3Task && !trademarkClearance) {
+      const error = 'FAILED_TM_POLICY_INTEGRITY: V3 clearance proof is missing';
+      TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: error });
+      return { success: false, error };
+    }
+    if (trademarkClearance) {
+      const tmErrors = TrademarkPolicyService.validateClearanceProof({
+        proof: trademarkClearance,
+        listing: sanitizedRoot,
+        productScope: TrademarkPolicyService.resolveProductScope([
+          ...trademarkClearance.allowedProductIds,
+          ...trademarkClearance.blockedProductIds
+        ])
+      });
+      if (tmErrors.length > 0) {
+        const error = `FAILED_TM_POLICY_INTEGRITY: ${tmErrors.join('; ')}`;
+        TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: error });
+        return { success: false, error };
+      }
+    }
 
     const rawBgHex = params.customBackgroundColor
       || result.customBackgroundColor
@@ -364,7 +411,9 @@ export class FinalizationService {
         imagePath: params.localImagePath || '',
         pngPath: params.masterPngPath,
         resizedAssets,
-        tmBlockedProductIds: params.tmBlockedProductIds || []
+        tmBlockedProductIds: params.tmBlockedProductIds || [],
+        tmAllowedProductIds: trademarkClearance?.allowedProductIds,
+        trademarkClearance
       });
 
       // Preserve Design Task Completion Side Effects
@@ -418,8 +467,10 @@ export class FinalizationService {
         publishedProductsCount: params.publishedProductsCount ?? 0,
         liveStats: params.liveStats || null,
         liveProductSummary: params.liveProductSummary || null,
-        liveProductTypes: params.liveProductTypes || null,
-        tmBlockedProductIds: params.tmBlockedProductIds || []
+        liveProductTypes: params.liveProductTypes || undefined,
+        tmBlockedProductIds: params.tmBlockedProductIds || [],
+        tmAllowedProductIds: trademarkClearance?.allowedProductIds,
+        trademarkClearance
       });
 
       // Preserve Update Task Completion Side Effects
