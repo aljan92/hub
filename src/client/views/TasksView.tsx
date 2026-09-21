@@ -2082,10 +2082,23 @@ export const TasksView: React.FC = () => {
                 {/* ========================================================================= */}
                 {activeTask.status === 'AWAITING_TM_REVIEW' && (() => {
                   const auditV2 = liveTmResult?.auditV2 || (activeTask as any).tmAuditV2;
-                  const hitsList = auditV2?.finalTrademarkHits || auditV2?.initialTrademarkHits || [];
-                  const forbiddenTerms: string[] = auditV2?.forbiddenTermsForTask || [];
-                  const refereeDecision = auditV2?.refereeResult?.decision || auditV2?.finalDecision;
+                  const hitsList = auditV2?.finalTrademarkHits
+                    || auditV2?.initialTrademarkHits
+                    || activeTask.trademarkWorkflowState?.lastTrademarkHits
+                    || [];
+                  const forbiddenTerms: string[] = auditV2?.forbiddenTermsForTask
+                    || activeTask.trademarkWorkflowState?.forbiddenTerms
+                    || [];
+                  const refereeDecision = auditV2?.refereeResult?.decision
+                    || auditV2?.finalDecision
+                    || activeTask.trademarkWorkflowState?.refereeAudit?.decision;
                   const verifierVerdict = auditV2?.verifierResult?.verdict;
+                  const brandHits = hitsList.filter((h: any) =>
+                    h.sourceRole === 'BRAND' || h.field === 'brand'
+                  );
+                  const brandHasK25 = brandHits.some((h: any) =>
+                    (h.classes || []).includes(25) || h.classNumber === '25'
+                  );
 
                   return (
                     <div className="space-y-5">
@@ -2121,7 +2134,9 @@ export const TasksView: React.FC = () => {
                                 )}
                               </div>
                               <p className="text-[11px] text-slate-400">
-                                {activeTask.errorDetails || 'Passe das Listing an, um Markentreffer in Klasse 25 (Bekleidung) zu eliminieren.'}
+                                {activeTask.errorDetails === 'INVALID_AI_RESPONSE'
+                                  ? 'Hohe Trefferzahl: Die KI konnte nicht alle Treffer abschließen. Bitte Listing und Brand manuell prüfen.'
+                                  : (activeTask.errorDetails || 'Passe das Listing an, um Markentreffer in Klasse 25 (Bekleidung) zu eliminieren.')}
                               </p>
                             </div>
                           </div>
@@ -2223,6 +2238,19 @@ export const TasksView: React.FC = () => {
                             placeholder="Brand Name eingeben..."
                           />
                           <FieldTmWordChips label="Brand" fieldData={fieldSummaries.brand} />
+                          {brandHits.length > 0 && (
+                            <div className="p-2.5 rounded-lg bg-rose-950/30 border border-rose-500/40 text-[11px] text-rose-200 flex items-start gap-2 mt-1.5">
+                              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-bold text-rose-300">Brand enthält geschützte Marken: </span>
+                                <span>
+                                  {brandHits.map((h: any) => h.registeredMark || h.searchedTerm).filter(Boolean).join(', ')}.
+                                  {brandHasK25 ? ' Mindestens ein Treffer liegt in Klasse 25 (Bekleidung).' : ''}
+                                  {' '}Amazon verbietet geschützte Marken im Brand. Bitte ändere den Brand-Namen, bevor du den Task freigibst.
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {/* Title */}

@@ -55152,7 +55152,8 @@ Rewrite Context:
 - Forbidden Terms for Task: ${JSON.stringify(params2.forbiddenTermsForTask || [])}
 - Currently Blocked Products: ${JSON.stringify(params2.blockedProducts || [])}
 
-Evaluate all hits against the supplied policy. Return evaluatedHits for every Brand, Class 25, exact Quote, locked-tail, and Combined-Mark hit. Safe secondary-class hits may be omitted. Return valid JSON only.`;
+Evaluate all hits against the supplied policy. Return evaluatedHits for every Brand, Class 25, exact Quote, locked-tail, and Combined-Mark hit.
+CRITICAL: You MUST include an evaluatedHits entry for every hit that involves Class 25, Brand, Quote, or Locked-Tail, even if it is a common dictionary word (classify as INCIDENTAL_DICTIONARY_OVERLAP or DESCRIPTIVE_FAIR_USE with action KEEP). Safe secondary-class hits (not in Class 25, not Brand, not Quote) may be omitted. Return valid JSON only.`;
         const settings = loadSettings();
         const requestPayload = {
           model,
@@ -55161,7 +55162,7 @@ Evaluate all hits against the supplied policy. Return evaluatedHits for every Br
             { role: "user", content: userMessage }
           ],
           temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-          max_tokens: Math.min(settings.llmMaxTokens || 2500, 1e3)
+          max_tokens: Math.min(Math.max(settings.llmMaxTokens || 3500, 2500), 4e3)
         };
         if (params2.sessionId) {
           requestPayload.session_id = params2.sessionId;
@@ -55295,7 +55296,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
             { role: "user", content: userMessage }
           ],
           temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-          max_tokens: Math.min(settings.llmMaxTokens || 2500, 900)
+          max_tokens: Math.min(Math.max(settings.llmMaxTokens || 2500, 1500), 2500)
         };
         if (params2.sessionId) {
           requestPayload.session_id = params2.sessionId;
@@ -55428,7 +55429,7 @@ Return ONLY valid JSON:
             { role: "user", content: userMessage }
           ],
           temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
-          max_tokens: Math.min(settings.llmMaxTokens || 2500, 1200)
+          max_tokens: Math.min(Math.max(settings.llmMaxTokens || 2500, 2e3), 3e3)
         };
         if (params2.sessionId) {
           requestPayload.session_id = params2.sessionId;
@@ -235022,13 +235023,22 @@ Beantworte die Analysefragen streng als JSON!`;
                 return { success: false, message: "USPTO-Pr\xFCfung technisch unvollst\xE4ndig; Freigabe wurde nicht \xFCbernommen." };
               }
               const manualScope = TrademarkPolicyService.resolveProductScope(additionalProductIds);
-              trademarkClearance = TrademarkPolicyService.buildHumanApprovedProof({
-                listing: approvedListing,
-                productScope: manualScope,
-                scanIntegrity,
-                hits: finalHits,
-                blockedNiceClasses: task.blockedNiceClasses
-              });
+              try {
+                trademarkClearance = TrademarkPolicyService.buildHumanApprovedProof({
+                  listing: approvedListing,
+                  productScope: manualScope,
+                  scanIntegrity,
+                  hits: finalHits,
+                  blockedNiceClasses: task.blockedNiceClasses
+                });
+              } catch (proofErr) {
+                if (String(proofErr?.message || proofErr).includes("Brand registry hits")) {
+                  const brandHits = finalHits.filter((h) => h.sourceRole === "BRAND");
+                  const marks = [...new Set(brandHits.map((h) => h.registeredMark || h.mark || h.searchedTerm || "Marke"))].join(", ");
+                  throw new Error(`Brand-Konflikt: Das Feld "Brand" darf keine gesch\xFCtzten Marken enthalten (Gefunden: ${marks}). Bitte passe den Brand-Namen an, bevor du freigibst.`);
+                }
+                throw proofErr;
+              }
               approvedWorkflowState = {
                 ...task.trademarkWorkflowState,
                 phase: "COMPLETED",

@@ -801,7 +801,8 @@ Rewrite Context:
 - Forbidden Terms for Task: ${JSON.stringify(params.forbiddenTermsForTask || [])}
 - Currently Blocked Products: ${JSON.stringify(params.blockedProducts || [])}
 
-Evaluate all hits against the supplied policy. Return evaluatedHits for every Brand, Class 25, exact Quote, locked-tail, and Combined-Mark hit. Safe secondary-class hits may be omitted. Return valid JSON only.`;
+Evaluate all hits against the supplied policy. Return evaluatedHits for every Brand, Class 25, exact Quote, locked-tail, and Combined-Mark hit.
+CRITICAL: You MUST include an evaluatedHits entry for every hit that involves Class 25, Brand, Quote, or Locked-Tail, even if it is a common dictionary word (classify as INCIDENTAL_DICTIONARY_OVERLAP or DESCRIPTIVE_FAIR_USE with action KEEP). Safe secondary-class hits (not in Class 25, not Brand, not Quote) may be omitted. Return valid JSON only.`;
 
     const settings = loadSettings();
     const requestPayload: any = {
@@ -811,7 +812,7 @@ Evaluate all hits against the supplied policy. Return evaluatedHits for every Br
         { role: 'user', content: userMessage }
       ],
       temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-      max_tokens: Math.min(settings.llmMaxTokens || 2500, 1000)
+      max_tokens: Math.min(Math.max(settings.llmMaxTokens || 3500, 2500), 4000)
     };
 
     if (params.sessionId) {
@@ -993,7 +994,7 @@ Act as the final adversarial Amazon Merch reviewer. Do you see any plausible tra
         { role: 'user', content: userMessage }
       ],
       temperature: Math.min(settings.llmTemperature ?? 0.35, 0.2),
-      max_tokens: Math.min(settings.llmMaxTokens || 2500, 900)
+      max_tokens: Math.min(Math.max(settings.llmMaxTokens || 2500, 1500), 2500)
     };
 
     if (params.sessionId) {
@@ -1170,7 +1171,7 @@ Return ONLY valid JSON:
         { role: 'user', content: userMessage }
       ],
       temperature: Math.min(settings.llmTemperature ?? 0.35, 0.25),
-      max_tokens: Math.min(settings.llmMaxTokens || 2500, 1200)
+      max_tokens: Math.min(Math.max(settings.llmMaxTokens || 2500, 2000), 3000)
     };
 
     if (params.sessionId) {
