@@ -122,6 +122,10 @@ async function run() {
     globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({}) })) as any;
     const emptySuccess = await TrademarkService.queryUsptoBatch(['horse'], [25]);
     assert(emptySuccess.integrity.status === 'COMPLETE' && emptySuccess.integrity.failedBatches === 0, 'Zero hits are accepted only with complete scan integrity');
+
+    globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ([]) })) as any;
+    const emptyArraySuccess = await TrademarkService.queryUsptoBatch(['horse'], [25]);
+    assert(emptyArraySuccess.integrity.status === 'COMPLETE' && emptyArraySuccess.integrity.failedBatches === 0 && Object.keys(emptyArraySuccess.hitsByTerm).length === 0, 'Productor zero-hit empty array response is accepted with complete scan integrity');
   } finally {
     globalThis.fetch = originalFetch;
   }

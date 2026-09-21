@@ -229517,7 +229517,7 @@ var init_designPipelineService = __esm2({
       static async stepD6_TrademarkCheck(taskId) {
         console.log(`[DesignPipeline] \u2696\uFE0F Starte Step D6 (Trademark Check & Refine Loop) f\xFCr Task ${taskId}...`);
         try {
-          await TaskLogService.performTrademarkCheck(taskId);
+          await TaskLogService.auditListingTrademarks(taskId);
           const updated = this.getTask(taskId);
           if (updated?.status === "AWAITING_TM_TECHNICAL_RETRY") {
             return { success: false, tmResult: updated.trademarkCheckResult, error: "USPTO_SCAN_INCOMPLETE" };
@@ -230294,8 +230294,16 @@ var init_taskRecoveryService = __esm2({
                 content: { retryCount, previousIntegrity: state?.scanIntegrity }
               });
               const isUpdate = task.source === "UPDATE" || task.id.endsWith("-U");
-              if (isUpdate) await UpdatePipelineService.runFromStep(task.id, "U5", "RECOVERY");
-              else await DesignPipelineService.runFromStep(task.id, "D6", "RECOVERY");
+              if (isUpdate) {
+                await UpdatePipelineService.runFromStep(task.id, "U5", "RECOVERY");
+              } else {
+                const isPreFlight = !task.listingResult && !task.imageUrl;
+                if (isPreFlight) {
+                  await TaskLogService.processTaskWithOpenRouter(task.id);
+                } else {
+                  await DesignPipelineService.runFromStep(task.id, "D6", "RECOVERY");
+                }
+              }
             } catch (error) {
               TaskLogService.addEvent(task.id, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -236086,7 +236094,15 @@ var init_trademarkService = __esm2({
                 throw error;
               }
               const data = await res.json();
-              if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("USPTO response has invalid schema");
+              if (!data || typeof data !== "object") throw new Error("USPTO response has invalid schema");
+              if (Array.isArray(data)) {
+                if (data.length === 0) {
+                  succeeded = true;
+                  integrity.successfulBatches++;
+                  continue;
+                }
+                throw new Error("USPTO response has invalid non-empty array schema");
+              }
               for (const [k, v] of Object.entries(data)) {
                 if (!Array.isArray(v)) throw new Error(`USPTO response has invalid hit list for "${k}"`);
                 if (v.length > 0) allResults[TrademarkPolicyService.normalizePhrase(k)] = v;

@@ -192,7 +192,7 @@ export class DesignPipelineService {
   static async stepD6_TrademarkCheck(taskId: string): Promise<{ success: boolean; tmResult?: any; error?: string }> {
     console.log(`[DesignPipeline] ⚖️ Starte Step D6 (Trademark Check & Refine Loop) für Task ${taskId}...`);
     try {
-      await TaskLogService.performTrademarkCheck(taskId);
+      await TaskLogService.auditListingTrademarks(taskId);
       const updated = this.getTask(taskId);
       if (updated?.status === 'AWAITING_TM_TECHNICAL_RETRY') {
         return { success: false, tmResult: updated.trademarkCheckResult, error: 'USPTO_SCAN_INCOMPLETE' };

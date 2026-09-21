@@ -65,8 +65,16 @@ export class TaskRecoveryService {
             content: { retryCount, previousIntegrity: state?.scanIntegrity }
           });
           const isUpdate = task.source === 'UPDATE' || task.id.endsWith('-U');
-          if (isUpdate) await UpdatePipelineService.runFromStep(task.id, 'U5', 'RECOVERY');
-          else await DesignPipelineService.runFromStep(task.id, 'D6', 'RECOVERY');
+          if (isUpdate) {
+            await UpdatePipelineService.runFromStep(task.id, 'U5', 'RECOVERY');
+          } else {
+            const isPreFlight = !task.listingResult && !task.imageUrl;
+            if (isPreFlight) {
+              await TaskLogService.processTaskWithOpenRouter(task.id);
+            } else {
+              await DesignPipelineService.runFromStep(task.id, 'D6', 'RECOVERY');
+            }
+          }
         } catch (error: any) {
           TaskLogService.addEvent(task.id, {
             timestamp: new Date().toISOString(), type: 'RECOVERY_FAILED',

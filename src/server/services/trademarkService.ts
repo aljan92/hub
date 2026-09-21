@@ -1031,7 +1031,15 @@ export class TrademarkService {
             throw error;
           }
           const data = await res.json();
-          if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('USPTO response has invalid schema');
+          if (!data || typeof data !== 'object') throw new Error('USPTO response has invalid schema');
+          if (Array.isArray(data)) {
+            if (data.length === 0) {
+              succeeded = true;
+              integrity.successfulBatches++;
+              continue;
+            }
+            throw new Error('USPTO response has invalid non-empty array schema');
+          }
           for (const [k, v] of Object.entries(data)) {
             if (!Array.isArray(v)) throw new Error(`USPTO response has invalid hit list for "${k}"`);
             if (v.length > 0) allResults[TrademarkPolicyService.normalizePhrase(k)] = v;
