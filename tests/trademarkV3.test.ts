@@ -269,6 +269,58 @@ async function run() {
 
   assert(SystemPromptService.getTrademarkRefereePrompt().includes('POLICY_VERSION: us-tm-v3'), 'Persisted default Referee prompt migrates to us-tm-v3');
 
+  // Test: Blank preflight initialWorkflowState cannot wipe incoming candidate listing
+  {
+    const originalQuery = TrademarkService.queryUsptoBatch;
+    const originalReferee = LLMService.evaluateTrademarkReferee;
+    try {
+      TrademarkService.queryUsptoBatch = (async (_terms: string[], classes: number[]) => ({
+        hitsByTerm: {},
+        integrity: completeIntegrity(classes)
+      })) as any;
+      LLMService.evaluateTrademarkReferee = (async () => ({
+        decision: 'APPROVE',
+        canBeFixedByListingRewrite: true,
+        hits: [],
+        blockedProducts: [],
+        rewriteRequired: false,
+        rewriteInstructions: [],
+        knownBrandSignals: [],
+        _rawRequest: { model: 'test-model' }
+      })) as any;
+
+      const fullListing = {
+        brand: 'Brave Hearts Classroom Progress',
+        title: 'Small Steps Brave Hearts Big Breakthroughs Special Education',
+        bullet1: 'Support dedicated educators and students.',
+        bullet2: 'Inspirational classroom apparel.',
+        description: 'Celebrate special education triumphs.'
+      };
+
+      const audit = await TrademarkService.executeTrademarkAuditV2({
+        listing: fullListing,
+        quote: 'Small Steps Brave Hearts Big Breakthroughs',
+        niche1: 'Special Education',
+        initialWorkflowState: {
+          phase: 'TECHNICAL_RETRY_WAIT',
+          rewriteAttemptsCompleted: 0,
+          currentListing: { brand: '', title: '', bullet1: '', bullet2: '', description: '' },
+          forbiddenTermsForTask: [],
+          rewriteIterations: [],
+          policyVersion: 'us-tm-v3',
+          scanIntegrity: completeIntegrity([25])
+        } as any
+      });
+
+      assert(audit.finalListing.brand === 'Brave Hearts Classroom Progress', 'Empty preflight currentListing does not overwrite candidate brand');
+      assert(audit.finalListing.title.includes('Small Steps Brave Hearts'), 'Candidate title is preserved and validated instead of reduced to suffix');
+      assert(audit.finalListing.bullet1.length > 0, 'Candidate bullet1 is preserved');
+    } finally {
+      TrademarkService.queryUsptoBatch = originalQuery;
+      LLMService.evaluateTrademarkReferee = originalReferee;
+    }
+  }
+
   console.log(`\nTrademark V3: ${passed}/${total} tests passed`);
   if (passed !== total) process.exitCode = 1;
 }

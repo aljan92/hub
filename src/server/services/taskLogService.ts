@@ -297,7 +297,11 @@ export class TaskLogService {
   /** Existing approved inputs only; no generation, audit, translation or side effects. */
   static finalizationParams(task: DesignTaskLog): FinalizationParams {
       const listing = task.listingResult || task.trademarkRefineResult || {};
-      const enListing = listing.en || (listing.title || listing.brand ? listing : {});
+      const enListing = (task.trademarkRefineResult?.refined_listing?.brand ? task.trademarkRefineResult.refined_listing : undefined)
+        || listing.en
+        || (listing.title || listing.brand ? listing : undefined)
+        || task.trademarkRefineResult?.refined_listing
+        || {};
       const brand = enListing.brand || task.payload?.brand || '';
       const title = enListing.title || task.payload?.title || task.payload?.quote || 'Design #' + task.id;
       const bullet1 = enListing.bullet1 || enListing.bullet_1 || '';
@@ -1289,6 +1293,16 @@ export class TaskLogService {
             description: enListing.description
           }
         },
+        trademarkWorkflowState: task.trademarkWorkflowState ? {
+          ...task.trademarkWorkflowState,
+          currentListing: {
+            brand: enListing.brand,
+            title: enListing.title,
+            bullet1: enListing.bullet1,
+            bullet2: enListing.bullet2,
+            description: enListing.description
+          }
+        } : undefined,
         localU4PreviewPath: task.localU4PreviewPath,
         u4PreviewUrl: task.u4PreviewUrl,
         niche1,

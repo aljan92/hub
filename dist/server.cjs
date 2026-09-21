@@ -233037,7 +233037,7 @@ var init_taskLogService = __esm2({
       /** Existing approved inputs only; no generation, audit, translation or side effects. */
       static finalizationParams(task) {
         const listing = task.listingResult || task.trademarkRefineResult || {};
-        const enListing = listing.en || (listing.title || listing.brand ? listing : {});
+        const enListing = (task.trademarkRefineResult?.refined_listing?.brand ? task.trademarkRefineResult.refined_listing : void 0) || listing.en || (listing.title || listing.brand ? listing : void 0) || task.trademarkRefineResult?.refined_listing || {};
         const brand = enListing.brand || task.payload?.brand || "";
         const title = enListing.title || task.payload?.title || task.payload?.quote || "Design #" + task.id;
         const bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
@@ -233925,6 +233925,16 @@ Beantworte die Analysefragen streng als JSON!`;
                 description: enListing.description
               }
             },
+            trademarkWorkflowState: task.trademarkWorkflowState ? {
+              ...task.trademarkWorkflowState,
+              currentListing: {
+                brand: enListing.brand,
+                title: enListing.title,
+                bullet1: enListing.bullet1,
+                bullet2: enListing.bullet2,
+                description: enListing.description
+              }
+            } : void 0,
             localU4PreviewPath: task.localU4PreviewPath,
             u4PreviewUrl: task.u4PreviewUrl,
             niche1,
@@ -236363,8 +236373,13 @@ var init_trademarkService = __esm2({
           throw error;
         }
         const initState = params2.initialWorkflowState;
+        const hasMeaningfulContent = (l) => {
+          if (!l) return false;
+          return Boolean(l.brand && l.brand.trim() || l.title && l.title.trim());
+        };
+        const candidateListing = initState?.currentListing && hasMeaningfulContent(initState.currentListing) ? initState.currentListing : params2.listing;
         const initialValidation = ListingValidationService.validateAndRepairListing({
-          listing: initState?.currentListing ? initState.currentListing : params2.listing,
+          listing: candidateListing,
           niche1: normN1,
           niche2: normN2,
           subniche: normSub

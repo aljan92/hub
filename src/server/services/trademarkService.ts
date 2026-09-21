@@ -1339,9 +1339,18 @@ export class TrademarkService {
 
     const initState = params.initialWorkflowState;
 
-    // Validate and sanitize incoming candidate listing
+    // Validate and sanitize incoming candidate listing.
+    // Ensure an empty or blank currentListing from preflight state cannot overwrite a valid candidate listing.
+    const hasMeaningfulContent = (l?: EnglishListing) => {
+      if (!l) return false;
+      return Boolean((l.brand && l.brand.trim()) || (l.title && l.title.trim()));
+    };
+    const candidateListing = (initState?.currentListing && hasMeaningfulContent(initState.currentListing))
+      ? initState.currentListing
+      : params.listing;
+
     const initialValidation = ListingValidationService.validateAndRepairListing({
-      listing: initState?.currentListing ? initState.currentListing : params.listing,
+      listing: candidateListing,
       niche1: normN1,
       niche2: normN2,
       subniche: normSub
