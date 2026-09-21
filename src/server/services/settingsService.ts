@@ -24,9 +24,13 @@ export interface AppSettings {
   ideogramV4RenderingSpeed: 'DEFAULT' | 'TURBO';
   ideogramV4AspectRatio: string;
   ideogramV4OutputResolution?: 'DEFAULT' | '4K';
+  gptImageModel: 'openai/gpt-image-2' | 'openai/gpt-image-2.5-sunburst';
   gptImageQuality: 'auto' | 'low' | 'medium' | 'high';
   gptImageAspectRatio: '1:1' | '3:2' | '2:3' | '4:3' | '3:4' | '16:9' | '9:16' | '21:9' | 'auto';
   gptImageBackground: 'auto' | 'opaque' | 'transparent';
+  gptImage25Quality: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  gptImage25AspectRatio: string;
+  gptImage25Background: 'auto' | 'opaque' | 'transparent';
   designerImageProvider: 'IDEOGRAM' | 'IDEOGRAM_V4' | 'GPT_IMAGE_2';
   designerPromptPoolEnabled: boolean;
   vectorizerApiKey: string;
@@ -92,6 +96,29 @@ export function resolveImageProvider(
   return (configuredProvider === 'GPT_IMAGE_2' || configuredProvider === 'IDEOGRAM_V4') ? configuredProvider : 'IDEOGRAM';
 }
 
+export function getEffectiveGptImageSettings(settings: Partial<AppSettings>): {
+  model: 'openai/gpt-image-2' | 'openai/gpt-image-2.5-sunburst';
+  quality: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  aspectRatio: string;
+  background: 'auto' | 'opaque' | 'transparent';
+} {
+  const model = settings.gptImageModel === 'openai/gpt-image-2' ? 'openai/gpt-image-2' : 'openai/gpt-image-2.5-sunburst';
+  if (model === 'openai/gpt-image-2.5-sunburst') {
+    return {
+      model,
+      quality: settings.gptImage25Quality || settings.gptImageQuality || 'high',
+      aspectRatio: settings.gptImage25AspectRatio || settings.gptImageAspectRatio || '3:4',
+      background: settings.gptImage25Background || settings.gptImageBackground || 'transparent'
+    };
+  }
+  return {
+    model: 'openai/gpt-image-2',
+    quality: settings.gptImageQuality || 'high',
+    aspectRatio: settings.gptImageAspectRatio || '3:4',
+    background: settings.gptImageBackground || 'transparent'
+  };
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
   llmProvider: (process.env.LLM_PROVIDER as 'openrouter' | 'openai') || 'openrouter',
@@ -111,9 +138,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   ideogramV4Transparent: true,
   ideogramV4RenderingSpeed: 'DEFAULT',
   ideogramV4AspectRatio: '10x16',
+  gptImageModel: 'openai/gpt-image-2.5-sunburst',
   gptImageQuality: 'high',
   gptImageAspectRatio: '3:4',
   gptImageBackground: 'transparent',
+  gptImage25Quality: 'high',
+  gptImage25AspectRatio: '3:4',
+  gptImage25Background: 'transparent',
   designerImageProvider: 'IDEOGRAM',
   designerPromptPoolEnabled: false,
   vectorizerApiKey: process.env.VECTORIZER_API_KEY || '',

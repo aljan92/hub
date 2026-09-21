@@ -491,12 +491,18 @@ export class LLMService {
     quote: string,
     stylePreset: string,
     imageProvider: 'IDEOGRAM' | 'IDEOGRAM_V4' | 'GPT_IMAGE_2' = 'IDEOGRAM',
-    background: 'auto' | 'opaque' | 'transparent' = 'opaque'
+    background: 'auto' | 'opaque' | 'transparent' = 'opaque',
+    gptModel?: string
   ): Promise<string> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
 
-    const providerName = imageProvider === 'GPT_IMAGE_2' ? 'OpenAI GPT Image 2' : (imageProvider === 'IDEOGRAM_V4' ? 'Ideogram 4.0' : 'Ideogram 3.0');
-    const backgroundInstruction = background === 'transparent' && imageProvider === 'GPT_IMAGE_2'
+    const currentSettings = loadSettings();
+    const effectiveGptModel = gptModel || currentSettings.gptImageModel || 'openai/gpt-image-2.5-sunburst';
+    const isGpt25 = imageProvider === 'GPT_IMAGE_2' && effectiveGptModel === 'openai/gpt-image-2.5-sunburst';
+    const providerName = imageProvider === 'GPT_IMAGE_2'
+      ? (isGpt25 ? 'OpenAI GPT Image 2.5 Sunburst' : 'OpenAI GPT Image 2')
+      : (imageProvider === 'IDEOGRAM_V4' ? 'Ideogram 4.0' : 'Ideogram 3.0');
+    const backgroundInstruction = background === 'transparent' && imageProvider === 'GPT_IMAGE_2' && !isGpt25
       ? 'Request a perfectly uniform, flat, solid deep blue chroma-key background behind the isolated artwork. Reserve deep blue exclusively for that removable background: never use it in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decoration. Do not request transparency and do not draw a checkerboard or transparency-grid pattern.'
       : background === 'transparent'
       ? 'Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, or background texture.'

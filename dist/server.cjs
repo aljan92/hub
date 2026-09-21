@@ -50985,6 +50985,23 @@ function resolveImageProvider(requestedProvider, configuredProvider) {
   if (requestedProvider === "GPT_IMAGE_2" || requestedProvider === "IDEOGRAM_V4" || requestedProvider === "IDEOGRAM") return requestedProvider;
   return configuredProvider === "GPT_IMAGE_2" || configuredProvider === "IDEOGRAM_V4" ? configuredProvider : "IDEOGRAM";
 }
+function getEffectiveGptImageSettings(settings) {
+  const model = settings.gptImageModel === "openai/gpt-image-2" ? "openai/gpt-image-2" : "openai/gpt-image-2.5-sunburst";
+  if (model === "openai/gpt-image-2.5-sunburst") {
+    return {
+      model,
+      quality: settings.gptImage25Quality || settings.gptImageQuality || "high",
+      aspectRatio: settings.gptImage25AspectRatio || settings.gptImageAspectRatio || "3:4",
+      background: settings.gptImage25Background || settings.gptImageBackground || "transparent"
+    };
+  }
+  return {
+    model: "openai/gpt-image-2",
+    quality: settings.gptImageQuality || "high",
+    aspectRatio: settings.gptImageAspectRatio || "3:4",
+    background: settings.gptImageBackground || "transparent"
+  };
+}
 function getSettingsFilePath() {
   const dataDir = import_path68.default.resolve(process.cwd(), "data");
   if (!import_fs73.default.existsSync(dataDir)) {
@@ -51099,9 +51116,13 @@ var init_settingsService = __esm2({
       ideogramV4Transparent: true,
       ideogramV4RenderingSpeed: "DEFAULT",
       ideogramV4AspectRatio: "10x16",
+      gptImageModel: "openai/gpt-image-2.5-sunburst",
       gptImageQuality: "high",
       gptImageAspectRatio: "3:4",
       gptImageBackground: "transparent",
+      gptImage25Quality: "high",
+      gptImage25AspectRatio: "3:4",
+      gptImage25Background: "transparent",
       designerImageProvider: "IDEOGRAM",
       designerPromptPoolEnabled: false,
       vectorizerApiKey: process.env.VECTORIZER_API_KEY || "",
@@ -54908,10 +54929,13 @@ var init_llmService = __esm2({
       /**
        * Optimize niches & quote into a high-converting Ideogram 3.0 prompt
        */
-      static async generateIdeogramPrompt(niche1, niche2, quote5, stylePreset, imageProvider = "IDEOGRAM", background = "opaque") {
+      static async generateIdeogramPrompt(niche1, niche2, quote5, stylePreset, imageProvider = "IDEOGRAM", background = "opaque", gptModel) {
         const { url, headers, model } = this.getBaseUrlAndHeaders();
-        const providerName = imageProvider === "GPT_IMAGE_2" ? "OpenAI GPT Image 2" : imageProvider === "IDEOGRAM_V4" ? "Ideogram 4.0" : "Ideogram 3.0";
-        const backgroundInstruction = background === "transparent" && imageProvider === "GPT_IMAGE_2" ? "Request a perfectly uniform, flat, solid deep blue chroma-key background behind the isolated artwork. Reserve deep blue exclusively for that removable background: never use it in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decoration. Do not request transparency and do not draw a checkerboard or transparency-grid pattern." : background === "transparent" ? "Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, or background texture." : background === "auto" ? "Keep the design isolated with no mockup, shirt, person, or realistic scene; allow the image provider to choose the background treatment." : "Request an isolated design on a clean, flat, solid contrasting background with no mockup, shirt, person, or realistic scene.";
+        const currentSettings = loadSettings();
+        const effectiveGptModel = gptModel || currentSettings.gptImageModel || "openai/gpt-image-2.5-sunburst";
+        const isGpt25 = imageProvider === "GPT_IMAGE_2" && effectiveGptModel === "openai/gpt-image-2.5-sunburst";
+        const providerName = imageProvider === "GPT_IMAGE_2" ? isGpt25 ? "OpenAI GPT Image 2.5 Sunburst" : "OpenAI GPT Image 2" : imageProvider === "IDEOGRAM_V4" ? "Ideogram 4.0" : "Ideogram 3.0";
+        const backgroundInstruction = background === "transparent" && imageProvider === "GPT_IMAGE_2" && !isGpt25 ? "Request a perfectly uniform, flat, solid deep blue chroma-key background behind the isolated artwork. Reserve deep blue exclusively for that removable background: never use it in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decoration. Do not request transparency and do not draw a checkerboard or transparency-grid pattern." : background === "transparent" ? "Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, or background texture." : background === "auto" ? "Keep the design isolated with no mockup, shirt, person, or realistic scene; allow the image provider to choose the background treatment." : "Request an isolated design on a clean, flat, solid contrasting background with no mockup, shirt, person, or realistic scene.";
         const systemPrompt = `You are an expert prompt engineer specializing in ${providerName} T-shirt graphics for Merch by Amazon.
 Your goal is to craft a highly descriptive, visually stunning, clean vector prompt that produces high-converting apparel designs.
 Requirements:
@@ -56469,12 +56493,15 @@ var init_openRouterImageService = __esm2({
     "use strict";
     init_settingsService();
     OpenRouterImageService = class {
+      static MODEL_V2 = "openai/gpt-image-2";
+      static MODEL_V25 = "openai/gpt-image-2.5-sunburst";
       static MODEL = "openai/gpt-image-2";
       static TIMEOUT_MS = 18e4;
       static buildRequestBody(options2) {
-        const transportBackground = options2.background === "transparent" ? "opaque" : options2.background;
+        const model = options2.model || this.MODEL;
+        const transportBackground = model === this.MODEL_V25 ? options2.background : options2.background === "transparent" ? "opaque" : options2.background;
         const requestBody = {
-          model: this.MODEL,
+          model,
           prompt: options2.prompt,
           quality: options2.quality,
           aspect_ratio: options2.aspectRatio,
@@ -56488,6 +56515,7 @@ var init_openRouterImageService = __esm2({
         const apiKey = (loadSettings().openRouterApiKey || "").trim();
         if (!apiKey) throw new Error("OpenRouter API Key fehlt in den Einstellungen.");
         const requestBody = this.buildRequestBody(options2);
+        const modelName = requestBody.model === this.MODEL_V25 ? "GPT Image 2.5 Sunburst" : "GPT Image 2";
         let lastError = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
@@ -56505,7 +56533,7 @@ var init_openRouterImageService = __esm2({
             const json = await response2.json().catch(() => ({}));
             if (!response2.ok) {
               const detail = json?.error?.message || response2.statusText || "Unbekannter API-Fehler";
-              const error = new Error(`GPT Image 2 \xFCber OpenRouter: HTTP ${response2.status} \u2013 ${detail}.`);
+              const error = new Error(`${modelName} \xFCber OpenRouter: HTTP ${response2.status} \u2013 ${detail}.`);
               error.status = response2.status;
               if (response2.status === 429 && attempt < 3) {
                 lastError = error;
@@ -56517,20 +56545,20 @@ var init_openRouterImageService = __esm2({
             const encoded = json?.data?.[0]?.b64_json;
             const mediaType = String(json?.data?.[0]?.media_type || "image/png").toLowerCase();
             if (!encoded || typeof encoded !== "string") {
-              throw new Error("GPT Image 2 lieferte keine Bilddaten zur\xFCck.");
+              throw new Error(`${modelName} lieferte keine Bilddaten zur\xFCck.`);
             }
             if (mediaType !== "image/png") {
-              throw new Error(`GPT Image 2 lieferte den nicht unterst\xFCtzten Medientyp ${mediaType}; erwartet wurde image/png.`);
+              throw new Error(`${modelName} lieferte den nicht unterst\xFCtzten Medientyp ${mediaType}; erwartet wurde image/png.`);
             }
             const bytes = Buffer.from(encoded, "base64");
-            if (bytes.length === 0) throw new Error("GPT Image 2 lieferte leere Bilddaten zur\xFCck.");
+            if (bytes.length === 0) throw new Error(`${modelName} lieferte leere Bilddaten zur\xFCck.`);
             return { bytes, mediaType };
           } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
             if (error?.status !== 429 || attempt === 3) throw lastError;
           }
         }
-        throw lastError || new Error("GPT Image 2 konnte nicht ausgef\xFChrt werden.");
+        throw lastError || new Error(`${modelName} konnte nicht ausgef\xFChrt werden.`);
       }
     };
   }
@@ -232892,12 +232920,13 @@ var init_taskLogService = __esm2({
         const now = (/* @__PURE__ */ new Date()).toISOString();
         const settings = loadSettings();
         const requestedProvider = resolveImageProvider(params2.payload?.imageProvider, settings.designerImageProvider);
+        const effectiveGpt = getEffectiveGptImageSettings(settings);
         const imageGeneration = params2.source === "UPDATE" ? void 0 : requestedProvider === "GPT_IMAGE_2" ? {
           provider: "GPT_IMAGE_2",
-          model: OpenRouterImageService.MODEL,
-          quality: settings.gptImageQuality,
-          aspectRatio: settings.gptImageAspectRatio,
-          background: settings.gptImageBackground
+          model: effectiveGpt.model,
+          quality: effectiveGpt.quality,
+          aspectRatio: effectiveGpt.aspectRatio,
+          background: effectiveGpt.background
         } : requestedProvider === "IDEOGRAM_V4" ? {
           provider: "IDEOGRAM_V4",
           model: "V_4",
@@ -233251,9 +233280,13 @@ var init_taskLogService = __esm2({
           return;
         }
         const imageGeneration = task.imageGeneration;
-        const providerDirective = imageGeneration?.provider === "GPT_IMAGE_2" ? `
+        const isGptImage = imageGeneration?.provider === "GPT_IMAGE_2";
+        const isGptImage25 = isGptImage && imageGeneration?.model === "openai/gpt-image-2.5-sunburst";
+        const providerDirective = isGptImage25 ? `
 
-CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || "transparent"}. ${imageGeneration.background === "transparent" ? "Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement." : "Keep the artwork isolated and free of product mockups or scenes."}` : imageGeneration?.provider === "IDEOGRAM_V4" ? "\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics." : "\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.";
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: ${imageGeneration?.background || "transparent"}. ${imageGeneration?.background === "transparent" ? "Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, or extra solid backdrops." : "Keep the artwork isolated and free of product mockups or scenes."}` : isGptImage ? `
+
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration?.background || "transparent"}. ${imageGeneration?.background === "transparent" ? "Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement." : "Keep the artwork isolated and free of product mockups or scenes."}` : imageGeneration?.provider === "IDEOGRAM_V4" ? "\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics." : "\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.";
         const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
         const referenceSection = task.promptPool?.enabled ? PromptPoolService.buildReferenceSection(task.promptPool.selectedReferences) : "";
         const userMessage = `Input:
@@ -233386,12 +233419,13 @@ ${referenceSection}` : ""}`;
       static refreshImageGenerationSettings(task) {
         const settings = loadSettings();
         const provider = task.imageGeneration?.provider || task.payload?.imageGeneration?.provider || (task.payload?.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : task.payload?.imageProvider === "IDEOGRAM_V4" ? "IDEOGRAM_V4" : "IDEOGRAM");
+        const effectiveGpt = getEffectiveGptImageSettings(settings);
         const snapshot3 = provider === "GPT_IMAGE_2" ? {
           provider: "GPT_IMAGE_2",
-          model: OpenRouterImageService.MODEL,
-          quality: settings.gptImageQuality,
-          aspectRatio: settings.gptImageAspectRatio,
-          background: settings.gptImageBackground
+          model: effectiveGpt.model,
+          quality: effectiveGpt.quality,
+          aspectRatio: effectiveGpt.aspectRatio,
+          background: effectiveGpt.background
         } : provider === "IDEOGRAM_V4" ? {
           provider: "IDEOGRAM_V4",
           model: IdeogramV4Service.MODEL,
@@ -233429,8 +233463,9 @@ ${referenceSection}` : ""}`;
         const prompt = promptText || task.resultPrompt || task.payload?.prompt || task.payload?.quote || "";
         const isGptImage = snapshot3.provider === "GPT_IMAGE_2";
         const isIdeogramV4 = snapshot3.provider === "IDEOGRAM_V4";
-        const providerLabel = isGptImage ? "GPT Image 2" : isIdeogramV4 ? "Ideogram 4.0" : "Ideogram";
-        const model = snapshot3.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? OpenRouterImageService.MODEL : "V_3");
+        const isGptImage25 = isGptImage && snapshot3.model === "openai/gpt-image-2.5-sunburst";
+        const providerLabel = isGptImage25 ? "GPT Image 2.5 Sunburst" : isGptImage ? "GPT Image 2" : isIdeogramV4 ? "Ideogram 4.0" : "Ideogram";
+        const model = snapshot3.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? settings.gptImageModel || OpenRouterImageService.MODEL_V25 : "V_3");
         this.updateTaskStatus(taskId, { status: "GENERATING_IMAGE" });
         const ideogramKey = isIdeogramV4 ? IdeogramV4Service.getApiKey() : settings.ideogramApiKey;
         if (isGptImage && !settings.openRouterApiKey || !isGptImage && !ideogramKey) {
@@ -233478,6 +233513,7 @@ ${referenceSection}` : ""}`;
           let sourceUrl = localUrl;
           if (isGptImage) {
             const result2 = await OpenRouterImageService.generateImage({
+              model,
               prompt,
               quality: snapshot3.quality || "high",
               aspectRatio: snapshot3.aspectRatio || "3:4",

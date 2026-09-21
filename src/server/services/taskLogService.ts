@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { loadSettings, resolveImageProvider } from './settingsService';
+import { loadSettings, resolveImageProvider, getEffectiveGptImageSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
 import { IdeogramService } from './ideogramService';
 import { IdeogramV4Service } from './ideogramV4Service';
@@ -154,13 +154,14 @@ export class TaskLogService {
     const now = new Date().toISOString();
     const settings = loadSettings();
     const requestedProvider = resolveImageProvider(params.payload?.imageProvider, settings.designerImageProvider);
+    const effectiveGpt = getEffectiveGptImageSettings(settings);
     const imageGeneration: ImageGenerationSnapshot | undefined = params.source === 'UPDATE' ? undefined : requestedProvider === 'GPT_IMAGE_2'
       ? {
           provider: 'GPT_IMAGE_2',
-          model: OpenRouterImageService.MODEL,
-          quality: settings.gptImageQuality,
-          aspectRatio: settings.gptImageAspectRatio,
-          background: settings.gptImageBackground
+          model: effectiveGpt.model,
+          quality: effectiveGpt.quality,
+          aspectRatio: effectiveGpt.aspectRatio,
+          background: effectiveGpt.background
         }
       : requestedProvider === 'IDEOGRAM_V4'
       ? {
@@ -542,8 +543,12 @@ export class TaskLogService {
 
     // 2. Prepare System Prompt & User Message
     const imageGeneration = task.imageGeneration;
-    const providerDirective = imageGeneration?.provider === 'GPT_IMAGE_2'
-      ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration.background || 'transparent'}. ${imageGeneration.background === 'transparent' ? 'Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
+    const isGptImage = imageGeneration?.provider === 'GPT_IMAGE_2';
+    const isGptImage25 = isGptImage && imageGeneration?.model === 'openai/gpt-image-2.5-sunburst';
+    const providerDirective = isGptImage25
+      ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: ${imageGeneration?.background || 'transparent'}. ${imageGeneration?.background === 'transparent' ? 'Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, or extra solid backdrops.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
+      : isGptImage
+      ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration?.background || 'transparent'}. ${imageGeneration?.background === 'transparent' ? 'Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
       : imageGeneration?.provider === 'IDEOGRAM_V4'
       ? '\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics.'
       : '\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.';
@@ -706,13 +711,14 @@ export class TaskLogService {
     const provider = task.imageGeneration?.provider
       || task.payload?.imageGeneration?.provider
       || (task.payload?.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : task.payload?.imageProvider === 'IDEOGRAM_V4' ? 'IDEOGRAM_V4' : 'IDEOGRAM');
+    const effectiveGpt = getEffectiveGptImageSettings(settings);
     const snapshot: ImageGenerationSnapshot = provider === 'GPT_IMAGE_2'
       ? {
           provider: 'GPT_IMAGE_2',
-          model: OpenRouterImageService.MODEL,
-          quality: settings.gptImageQuality,
-          aspectRatio: settings.gptImageAspectRatio,
-          background: settings.gptImageBackground
+          model: effectiveGpt.model,
+          quality: effectiveGpt.quality,
+          aspectRatio: effectiveGpt.aspectRatio,
+          background: effectiveGpt.background
         }
       : provider === 'IDEOGRAM_V4'
       ? {
@@ -755,8 +761,9 @@ export class TaskLogService {
     const prompt = promptText || task.resultPrompt || task.payload?.prompt || task.payload?.quote || '';
     const isGptImage = snapshot.provider === 'GPT_IMAGE_2';
     const isIdeogramV4 = snapshot.provider === 'IDEOGRAM_V4';
-    const providerLabel = isGptImage ? 'GPT Image 2' : isIdeogramV4 ? 'Ideogram 4.0' : 'Ideogram';
-    const model = snapshot.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? OpenRouterImageService.MODEL : 'V_3');
+    const isGptImage25 = isGptImage && snapshot.model === 'openai/gpt-image-2.5-sunburst';
+    const providerLabel = isGptImage25 ? 'GPT Image 2.5 Sunburst' : isGptImage ? 'GPT Image 2' : isIdeogramV4 ? 'Ideogram 4.0' : 'Ideogram';
+    const model = snapshot.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? (settings.gptImageModel || OpenRouterImageService.MODEL_V25) : 'V_3');
 
     this.updateTaskStatus(taskId, { status: 'GENERATING_IMAGE' });
 
@@ -806,6 +813,7 @@ export class TaskLogService {
 
       if (isGptImage) {
         const result = await OpenRouterImageService.generateImage({
+          model,
           prompt,
           quality: snapshot.quality || 'high',
           aspectRatio: snapshot.aspectRatio || '3:4',

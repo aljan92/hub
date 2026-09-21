@@ -319,8 +319,14 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
     }
   };
 
+  const gptModel = providerSettings.gptImageModel || 'openai/gpt-image-2.5-sunburst';
+  const isGpt25 = gptModel === 'openai/gpt-image-2.5-sunburst';
+  const gptEffectiveSettings = isGpt25
+    ? `2.5 Sunburst · ${String(providerSettings.gptImage25Quality || providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImage25AspectRatio || providerSettings.gptImageAspectRatio || '3:4'} · ${(providerSettings.gptImage25Background || providerSettings.gptImageBackground) === 'transparent' ? 'TRANSPARENT (NATIV)' : String(providerSettings.gptImage25Background || providerSettings.gptImageBackground || 'opaque').toUpperCase()}`
+    : `2.0 · ${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${providerSettings.gptImageBackground === 'transparent' ? 'FREISTELLUNG (DEEP BLUE)' : String(providerSettings.gptImageBackground || 'opaque').toUpperCase()}`;
+
   const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
-    ? `${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${providerSettings.gptImageBackground === 'transparent' ? 'FREISTELLUNG (DEEP BLUE)' : String(providerSettings.gptImageBackground || 'opaque').toUpperCase()}`
+    ? gptEffectiveSettings
     : imageProvider === 'IDEOGRAM_V4'
     ? `V_4 · ${providerSettings.ideogramV4AspectRatio || '10x16'} · ${providerSettings.ideogramV4Transparent !== false ? 'TRANSPARENT' : 'OPAQUE'} · Magic Prompt ${providerSettings.ideogramV4MagicPrompt !== false ? 'ON' : 'OFF'}`
     : `${providerSettings.ideogramModel || 'V_3'} · ${providerSettings.ideogramAspectRatio || '10x16'} · Magic Prompt ${providerSettings.ideogramMagicPromptOption || 'AUTO'}`;
@@ -328,7 +334,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
   const providerLabels: Record<ImageProvider, string> = {
     IDEOGRAM: 'Ideogram 3.0',
     IDEOGRAM_V4: 'Ideogram 4.0',
-    GPT_IMAGE_2: 'GPT Image 2'
+    GPT_IMAGE_2: 'GPT Image'
   };
 
   const manualFields: Array<{ key: SuggestionField; label: string; placeholder: string; icon: React.ReactNode }> = [
