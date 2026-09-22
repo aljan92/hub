@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
 import { getEnabledMarketplacesForProduct, isProductUploadEnabled } from './productAvailabilityPolicy';
+import { ListingSanitizationService } from './listingSanitizationService';
 
 export const US_TM_POLICY_VERSION = 'us-tm-v3' as const;
 export const US_TM_PROOF_SCHEMA_VERSION = 3 as const;
@@ -119,7 +120,7 @@ export class TrademarkPolicyService {
     description?: unknown;
   }): string {
     const projection = (['brand', 'title', 'bullet1', 'bullet2', 'description'] as const)
-      .map(key => [key, String(listing?.[key] || '').trim()]);
+      .map(key => [key, ListingSanitizationService.sanitizeText(String(listing?.[key] || ''))]);
     return createHash('sha256').update(JSON.stringify(projection)).digest('hex');
   }
 

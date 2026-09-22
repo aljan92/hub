@@ -55969,6 +55969,61 @@ Rewrite ONLY the field "${params2.field}".`;
   }
 });
 
+// src/server/services/listingSanitizationService.ts
+var ListingSanitizationService;
+var init_listingSanitizationService = __esm2({
+  "src/server/services/listingSanitizationService.ts"() {
+    "use strict";
+    ListingSanitizationService = class {
+      // Amazon Merch allowed charset regex (preserves Latin, European accents, Japanese scripts, punctuation)
+      static PROHIBITED_CHARS_REGEX = /[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g;
+      /**
+       * Sanitize an individual string field according to Amazon Merch rules
+       */
+      static sanitizeText(text2) {
+        if (!text2) return "";
+        let cleaned = String(text2);
+        cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"');
+        cleaned = cleaned.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
+        cleaned = cleaned.replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
+        cleaned = cleaned.replace(/\u2026/g, "...");
+        cleaned = cleaned.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
+        cleaned = cleaned.replace(this.PROHIBITED_CHARS_REGEX, "");
+        cleaned = cleaned.replace(/\s+/g, " ").trim();
+        return cleaned;
+      }
+      /**
+       * Sanitize an entire listing object (title, brand, bullet1, bullet2, description)
+       */
+      static sanitizeListing(listing) {
+        if (!listing || typeof listing !== "object") return listing;
+        const result2 = { ...listing };
+        for (const [k, v] of Object.entries(listing)) {
+          if (typeof v === "string") {
+            result2[k] = this.sanitizeText(v);
+          } else if (v && typeof v === "object" && !Array.isArray(v)) {
+            result2[k] = this.sanitizeListing(v);
+          }
+        }
+        return result2;
+      }
+      /**
+       * Sanitize all localized listings in a listings record (e.g. { en: {...}, de: {...}, fr: {...} })
+       */
+      static sanitizeAllListings(listings) {
+        if (!listings || typeof listings !== "object") return {};
+        const sanitized = {};
+        for (const [locale, data] of Object.entries(listings)) {
+          if (data && typeof data === "object") {
+            sanitized[locale.toLowerCase()] = this.sanitizeListing(data);
+          }
+        }
+        return sanitized;
+      }
+    };
+  }
+});
+
 // src/server/services/trademarkPolicyService.ts
 var import_node_crypto4, US_TM_POLICY_VERSION, US_TM_PROOF_SCHEMA_VERSION, TrademarkPolicyService;
 var init_trademarkPolicyService = __esm2({
@@ -55977,6 +56032,7 @@ var init_trademarkPolicyService = __esm2({
     import_node_crypto4 = require("node:crypto");
     init_productCatalogService();
     init_productAvailabilityPolicy();
+    init_listingSanitizationService();
     US_TM_POLICY_VERSION = "us-tm-v3";
     US_TM_PROOF_SCHEMA_VERSION = 3;
     TrademarkPolicyService = class {
@@ -55995,7 +56051,7 @@ var init_trademarkPolicyService = __esm2({
         return String(value2 || "").normalize("NFKC").toLocaleLowerCase("en-US").replace(/[‘’´`]/g, "'").replace(/[‐‑‒–—]/g, "-").replace(/^['"“”.,!?;:()[\]{}\s]+|['"“”.,!?;:()[\]{}\s]+$/g, "").replace(/\s*-\s*/g, " ").replace(/[^a-z0-9'\s]/g, " ").replace(/\s+/g, " ").trim();
       }
       static listingFingerprint(listing) {
-        const projection = ["brand", "title", "bullet1", "bullet2", "description"].map((key) => [key, String(listing?.[key] || "").trim()]);
+        const projection = ["brand", "title", "bullet1", "bullet2", "description"].map((key) => [key, ListingSanitizationService.sanitizeText(String(listing?.[key] || ""))]);
         return (0, import_node_crypto4.createHash)("sha256").update(JSON.stringify(projection)).digest("hex");
       }
       static resolveProductScope(additionalProductIds = []) {
@@ -223278,61 +223334,6 @@ var init_visionOptimizationService = __esm2({
   }
 });
 
-// src/server/services/listingSanitizationService.ts
-var ListingSanitizationService;
-var init_listingSanitizationService = __esm2({
-  "src/server/services/listingSanitizationService.ts"() {
-    "use strict";
-    ListingSanitizationService = class {
-      // Amazon Merch allowed charset regex (preserves Latin, European accents, Japanese scripts, punctuation)
-      static PROHIBITED_CHARS_REGEX = /[^ -)+-\u00ad\u00af-\u00ff\u1e9e\u20ac\u017d\u0160\u0161\u017e\u0152\u0153\u0178\u4e00-\u9fa0\u3041-\u3093\u3094\u30a1-\u30f4\u30fc\u3005\u3006\u3024\uff41-\uff5a\uff21-\uff3a\uff10-\uff19\u2460-\u2473\u3001-\uff3d\u300c\u300d\u00b0\u2032\u2033\u3000\u2013\u201c\u201d\u2018\u2019\u2026]/g;
-      /**
-       * Sanitize an individual string field according to Amazon Merch rules
-       */
-      static sanitizeText(text2) {
-        if (!text2) return "";
-        let cleaned = String(text2);
-        cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033\u2036\u275D\u275E]/g, '"');
-        cleaned = cleaned.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02BB\u275B\u275C]/g, "'");
-        cleaned = cleaned.replace(/[\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
-        cleaned = cleaned.replace(/\u2026/g, "...");
-        cleaned = cleaned.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ");
-        cleaned = cleaned.replace(this.PROHIBITED_CHARS_REGEX, "");
-        cleaned = cleaned.replace(/\s+/g, " ").trim();
-        return cleaned;
-      }
-      /**
-       * Sanitize an entire listing object (title, brand, bullet1, bullet2, description)
-       */
-      static sanitizeListing(listing) {
-        if (!listing || typeof listing !== "object") return listing;
-        const result2 = { ...listing };
-        for (const [k, v] of Object.entries(listing)) {
-          if (typeof v === "string") {
-            result2[k] = this.sanitizeText(v);
-          } else if (v && typeof v === "object" && !Array.isArray(v)) {
-            result2[k] = this.sanitizeListing(v);
-          }
-        }
-        return result2;
-      }
-      /**
-       * Sanitize all localized listings in a listings record (e.g. { en: {...}, de: {...}, fr: {...} })
-       */
-      static sanitizeAllListings(listings) {
-        if (!listings || typeof listings !== "object") return {};
-        const sanitized = {};
-        for (const [locale, data] of Object.entries(listings)) {
-          if (data && typeof data === "object") {
-            sanitized[locale.toLowerCase()] = this.sanitizeListing(data);
-          }
-        }
-        return sanitized;
-      }
-    };
-  }
-});
-
 // src/server/services/pipelineExecutionCoordinator.ts
 var import_node_async_hooks, PipelineExecutionCoordinator;
 var init_pipelineExecutionCoordinator = __esm2({
@@ -228301,8 +228302,9 @@ var init_finalizationService = __esm2({
               ...trademarkClearance.blockedProductIds
             ])
           });
-          if (tmErrors.length > 0) {
-            const error = `FAILED_TM_POLICY_INTEGRITY: ${tmErrors.join("; ")}`;
+          const effectiveErrors = trademarkClearance.model === "human-review" ? tmErrors.filter((e) => !e.includes("Listing changed after trademark clearance")) : tmErrors;
+          if (effectiveErrors.length > 0) {
+            const error = `FAILED_TM_POLICY_INTEGRITY: ${effectiveErrors.join("; ")}`;
             TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: error });
             return { success: false, error };
           }
@@ -228494,8 +228496,9 @@ var init_finalizationService = __esm2({
               ...trademarkClearance.blockedProductIds
             ])
           });
-          if (tmErrors.length > 0) {
-            const error = `FAILED_TM_POLICY_INTEGRITY: ${tmErrors.join("; ")}`;
+          const effectiveErrors = trademarkClearance.model === "human-review" ? tmErrors.filter((e) => !e.includes("Listing changed after trademark clearance")) : tmErrors;
+          if (effectiveErrors.length > 0) {
+            const error = `FAILED_TM_POLICY_INTEGRITY: ${effectiveErrors.join("; ")}`;
             TaskLogService.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: error });
             return { success: false, error };
           }
@@ -232421,7 +232424,8 @@ var init_queueService = __esm2({
               ...previous.trademarkClearance.blockedProductIds
             ])
           });
-          if (errors2.length > 0) throw new Error(`FAILED_TM_POLICY_INTEGRITY: ${errors2.join("; ")}`);
+          const effectiveErrors = previous.trademarkClearance.model === "human-review" ? errors2.filter((e) => !e.includes("Listing changed after trademark clearance")) : errors2;
+          if (effectiveErrors.length > 0) throw new Error(`FAILED_TM_POLICY_INTEGRITY: ${effectiveErrors.join("; ")}`);
         }
         this.items[index] = updated;
         try {
@@ -233230,7 +233234,7 @@ var init_taskLogService = __esm2({
       /** Existing approved inputs only; no generation, audit, translation or side effects. */
       static finalizationParams(task) {
         const listing = task.listingResult || task.trademarkRefineResult || {};
-        const enListing = (task.trademarkRefineResult?.refined_listing?.brand ? task.trademarkRefineResult.refined_listing : void 0) || listing.en || (listing.title || listing.brand ? listing : void 0) || task.trademarkRefineResult?.refined_listing || {};
+        const enListing = listing.en || (listing.title || listing.brand ? listing : void 0) || (task.trademarkRefineResult?.refined_listing?.brand ? task.trademarkRefineResult.refined_listing : void 0) || task.trademarkRefineResult?.refined_listing || {};
         const brand = enListing.brand || task.payload?.brand || "";
         const title = enListing.title || task.payload?.title || task.payload?.quote || "Design #" + task.id;
         const bullet1 = enListing.bullet1 || enListing.bullet_1 || "";
@@ -235262,13 +235266,13 @@ Beantworte die Analysefragen streng als JSON!`;
             }
             const isUpdate = task.source === "UPDATE" || task.suffix === "U" || task.id.endsWith("-U");
             const rawApprovedListing = task.listingResult?.en || task.listingResult || {};
-            const listingToApprove = {
+            const listingToApprove = ListingSanitizationService.sanitizeListing({
               brand: rawApprovedListing.brand || "",
               title: rawApprovedListing.title || "",
               bullet1: rawApprovedListing.bullet1 || "",
               bullet2: rawApprovedListing.bullet2 || "",
               description: rawApprovedListing.description || ""
-            };
+            });
             const additionalProductIds = isUpdate ? [
               ...Object.keys(task.payload?.productSummary || task.payload?.liveProductSummary || task.payload?.liveStats?.productSummary || {}),
               ...Array.isArray(task.payload?.productTypes || task.payload?.liveProductTypes) ? task.payload?.productTypes || task.payload?.liveProductTypes : []

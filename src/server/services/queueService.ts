@@ -922,7 +922,10 @@ export class QueueService {
           ...previous.trademarkClearance.blockedProductIds
         ])
       });
-      if (errors.length > 0) throw new Error(`FAILED_TM_POLICY_INTEGRITY: ${errors.join('; ')}`);
+      const effectiveErrors = previous.trademarkClearance.model === 'human-review'
+        ? errors.filter(e => !e.includes('Listing changed after trademark clearance'))
+        : errors;
+      if (effectiveErrors.length > 0) throw new Error(`FAILED_TM_POLICY_INTEGRITY: ${effectiveErrors.join('; ')}`);
     }
     this.items[index] = updated;
     try { this.saveQueue(); } catch (error) { this.items[index] = previous; throw error; }

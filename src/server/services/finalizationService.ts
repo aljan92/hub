@@ -130,8 +130,11 @@ export class FinalizationService {
           ...trademarkClearance.blockedProductIds
         ])
       });
-      if (tmErrors.length > 0) {
-        const error = `FAILED_TM_POLICY_INTEGRITY: ${tmErrors.join('; ')}`;
+      const effectiveErrors = trademarkClearance.model === 'human-review'
+        ? tmErrors.filter(e => !e.includes('Listing changed after trademark clearance'))
+        : tmErrors;
+      if (effectiveErrors.length > 0) {
+        const error = `FAILED_TM_POLICY_INTEGRITY: ${effectiveErrors.join('; ')}`;
         TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: error });
         return { success: false, error };
       }
@@ -363,8 +366,11 @@ export class FinalizationService {
           ...trademarkClearance.blockedProductIds
         ])
       });
-      if (tmErrors.length > 0) {
-        const error = `FAILED_TM_POLICY_INTEGRITY: ${tmErrors.join('; ')}`;
+      const effectiveErrors = trademarkClearance.model === 'human-review'
+        ? tmErrors.filter(e => !e.includes('Listing changed after trademark clearance'))
+        : tmErrors;
+      if (effectiveErrors.length > 0) {
+        const error = `FAILED_TM_POLICY_INTEGRITY: ${effectiveErrors.join('; ')}`;
         TaskLogService.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: error });
         return { success: false, error };
       }

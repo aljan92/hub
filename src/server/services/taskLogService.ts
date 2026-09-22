@@ -298,9 +298,9 @@ export class TaskLogService {
   /** Existing approved inputs only; no generation, audit, translation or side effects. */
   static finalizationParams(task: DesignTaskLog): FinalizationParams {
       const listing = task.listingResult || task.trademarkRefineResult || {};
-      const enListing = (task.trademarkRefineResult?.refined_listing?.brand ? task.trademarkRefineResult.refined_listing : undefined)
-        || listing.en
+      const enListing = listing.en
         || (listing.title || listing.brand ? listing : undefined)
+        || (task.trademarkRefineResult?.refined_listing?.brand ? task.trademarkRefineResult.refined_listing : undefined)
         || task.trademarkRefineResult?.refined_listing
         || {};
       const brand = enListing.brand || task.payload?.brand || '';
@@ -2666,11 +2666,11 @@ export class TaskLogService {
 
       const isUpdate = task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U');
       const rawApprovedListing = task.listingResult?.en || task.listingResult || {};
-      const listingToApprove: EnglishListing = {
+      const listingToApprove: EnglishListing = ListingSanitizationService.sanitizeListing({
         brand: rawApprovedListing.brand || '', title: rawApprovedListing.title || '',
         bullet1: rawApprovedListing.bullet1 || '', bullet2: rawApprovedListing.bullet2 || '',
         description: rawApprovedListing.description || ''
-      };
+      });
       const additionalProductIds = isUpdate ? [
         ...Object.keys(task.payload?.productSummary || task.payload?.liveProductSummary || task.payload?.liveStats?.productSummary || {}),
         ...(Array.isArray(task.payload?.productTypes || task.payload?.liveProductTypes) ? (task.payload?.productTypes || task.payload?.liveProductTypes) : [])
