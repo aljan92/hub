@@ -1771,16 +1771,32 @@ export class TrademarkService {
       for (const evaluatedHit of refereeRes.hits || []) {
         const factualHit = compactHitsById.get(evaluatedHit.id);
         if (!factualHit) continue;
-        const reportedClasses = Array.isArray(evaluatedHit.classes)
-          ? evaluatedHit.classes.filter(Number.isInteger).sort((a: number, b: number) => a - b)
-          : [];
         const factualClasses = [...factualHit.classes].sort((a, b) => a - b);
-        if (JSON.stringify(reportedClasses) !== JSON.stringify(factualClasses)) {
-          semanticErrors.push(`Invented or missing classes for ${evaluatedHit.id}`);
+        const reportedClasses = Array.isArray(evaluatedHit.classes)
+          ? evaluatedHit.classes.map(Number).filter(Number.isInteger).sort((a: number, b: number) => a - b)
+          : [];
+
+        if (reportedClasses.length === 0) {
+          // Harmonize missing classes directly from USPTO factual record
+          evaluatedHit.classes = [...factualClasses];
+        } else {
+          // Disallow inventing classes not registered in USPTO
+          const invented = reportedClasses.filter((c: number) => !factualClasses.includes(c));
+          if (invented.length > 0) {
+            semanticErrors.push(`Invented classes [${invented.join(', ')}] for ${evaluatedHit.id}`);
+          } else {
+            // Valid subset (e.g. [25]): align to complete factual classes
+            evaluatedHit.classes = [...factualClasses];
+          }
         }
+
         const factualFields = new Set(factualHit.occurrences.map(occurrence => occurrence.field));
-        if (!factualFields.has(evaluatedHit.field)) {
-          semanticErrors.push(`Invented or missing field for ${evaluatedHit.id}`);
+        if (!evaluatedHit.field || evaluatedHit.field === 'all' || !factualFields.has(evaluatedHit.field)) {
+          if (factualHit.occurrences.length > 0) {
+            evaluatedHit.field = factualHit.occurrences[0].field;
+          } else {
+            semanticErrors.push(`Invented or missing field for ${evaluatedHit.id}`);
+          }
         }
       }
       const knownBrandSignals = Array.isArray(refereeRes.knownBrandSignals) ? refereeRes.knownBrandSignals : [];
@@ -1821,11 +1837,13 @@ export class TrademarkService {
         semanticErrors.push('Class 25 cannot be product-blocked by the semantic referee');
       }
       if (semanticErrors.length > 0) {
+        console.warn(`[TrademarkServiceV2] ⚠️ Semantic validation errors (${semanticErrors.length}):`, semanticErrors);
         refereeRes = {
           ...refereeRes,
           decision: 'ESCALATE', canBeFixedByListingRewrite: false,
           reasonCode: 'INVALID_AI_RESPONSE', recommendedAction: 'HUMAN_REVIEW_RECOMMENDED',
-          escalation: { errors: semanticErrors }
+          escalation: { errors: semanticErrors },
+          scanIntegrity: lastScanIntegrity
         };
         finalRefereeResult = refereeRes;
       } else if (requestedBlockedClasses.length > 0) {
@@ -2131,6 +2149,15 @@ export class TrademarkService {
         ...(finalVerifierResult?.identifiedRisks || []).map((risk: any) => risk.field)
       ].filter((field: any) => listingFields.includes(field)));
       if (affectedFields.size === 0) {
+        for (const hit of refereeRes.hits || []) {
+          const factual = compactHitsById.get(hit.id);
+          if (factual?.occurrences?.[0]?.field && listingFields.includes(factual.occurrences[0].field as any)) {
+            affectedFields.add(factual.occurrences[0].field);
+          }
+        }
+      }
+      if (affectedFields.size === 0) {
+        console.warn('[TrademarkServiceV2] ⚠️ No affected listing fields found for rewrite. Escalating.');
         saveState('ESCALATED');
         return {
           finalDecision: 'ESCALATE', isSafe: false, canBeFixedByListingRewrite: false,

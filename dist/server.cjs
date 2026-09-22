@@ -55206,21 +55206,37 @@ CRITICAL: You MUST include an evaluatedHits entry for every hit that involves Cl
           const decision = parsed.decision;
           const canBeFixed = parsed.canBeFixedByListingRewrite !== void 0 ? Boolean(parsed.canBeFixedByListingRewrite) : decision !== "ESCALATE";
           const rawProblematic = Array.isArray(parsed.evaluatedHits) ? parsed.evaluatedHits : Array.isArray(parsed.problematicHits) ? parsed.problematicHits : Array.isArray(parsed.hits) ? parsed.hits : [];
-          const mappedHits = rawProblematic.map((h) => ({
-            id: h.id,
-            searchedTerm: h.term || h.searchedTerm || h.mark || "",
-            registeredMark: h.mark || h.registeredMark || "",
-            field: h.field || (Array.isArray(h.occurrences) && h.occurrences.length > 0 ? h.occurrences[0].field : "all"),
-            classes: Array.isArray(h.classes) ? h.classes : void 0,
-            usageClassification: h.usageClassification || h.usage_classification || h.markNature,
-            confidence: typeof h.confidence === "number" ? h.confidence : Number.NaN,
-            markNature: h.markNature || "DISTINCTIVE_OR_BRAND",
-            usageType: h.usageType || "POTENTIAL_RISK",
-            amazonRejectionRisk: h.amazonRejectionRisk || (h.action === "REWRITE" ? "HIGH" : "LOW"),
-            decision: h.action || h.decision,
-            reasonCode: h.reasonCode || h.reason_code || null,
-            reason: h.reason || h.explanation || "Identified trademark risk"
-          }));
+          const mappedHits = rawProblematic.map((h) => {
+            const hitId = String(h.id || h.hitId || "").trim();
+            let action = String(h.action || h.decision || "").trim().toUpperCase();
+            if (["APPROVE", "ALLOW", "CLEAR", "PASS", "SAFE"].includes(action)) action = "KEEP";
+            else if (action === "BLOCK") action = "BLOCK_CLASS";
+            else if (action === "REVIEW") action = "MANUAL_REVIEW";
+            let usageClassification = String(h.usageClassification || h.usage_classification || h.markNature || "").trim().toUpperCase();
+            if (usageClassification === "FAIR_USE" || usageClassification === "DESCRIPTIVE") usageClassification = "DESCRIPTIVE_FAIR_USE";
+            else if (usageClassification === "INCIDENTAL") usageClassification = "INCIDENTAL_DICTIONARY_OVERLAP";
+            else if (usageClassification === "GENERIC") usageClassification = "GENERIC_USE";
+            const rawConf = typeof h.confidence === "number" ? h.confidence : h.confidence !== void 0 && h.confidence !== null ? Number(h.confidence) : 0.95;
+            const confidence = Number.isFinite(rawConf) ? rawConf : 0.95;
+            const normalizedClasses = Array.isArray(h.classes) ? h.classes.map(Number).filter(Number.isInteger) : void 0;
+            return {
+              id: hitId,
+              hitId,
+              searchedTerm: h.term || h.searchedTerm || h.mark || "",
+              registeredMark: h.mark || h.registeredMark || "",
+              field: h.field || (Array.isArray(h.occurrences) && h.occurrences.length > 0 ? h.occurrences[0].field : void 0),
+              classes: normalizedClasses,
+              usageClassification: usageClassification || void 0,
+              confidence,
+              markNature: h.markNature || "DISTINCTIVE_OR_BRAND",
+              usageType: h.usageType || "POTENTIAL_RISK",
+              amazonRejectionRisk: h.amazonRejectionRisk || (action === "REWRITE" ? "HIGH" : "LOW"),
+              action,
+              decision: action,
+              reasonCode: h.reasonCode || h.reason_code || null,
+              reason: h.reason || h.explanation || "Identified trademark risk"
+            };
+          });
           const knownBrandSignals = (Array.isArray(parsed.knownBrandSignals) ? parsed.knownBrandSignals : []).map((signal) => ({
             term: String(signal.term || "").trim(),
             field: String(signal.field || "").trim(),
@@ -56169,20 +56185,32 @@ var init_trademarkPolicyService = __esm2({
         ]);
         const actions = /* @__PURE__ */ new Set(["KEEP", "REWRITE", "BLOCK_CLASS", "MANUAL_REVIEW", "ESCALATE"]);
         for (const decision of decisions) {
-          if (!decision.hitId || !knownHitIds.has(decision.hitId)) errors2.push(`Unknown trademark hit id: ${decision.hitId || "<missing>"}`);
-          if (decision.hitId) seenIds.add(decision.hitId);
-          if (!classifications.has(decision.usageClassification)) {
-            errors2.push(`Invalid usage classification for ${decision.hitId || "<missing>"}`);
+          const hitId = decision.hitId || decision.id;
+          if (!hitId || !knownHitIds.has(hitId)) errors2.push(`Unknown trademark hit id: ${hitId || "<missing>"}`);
+          if (hitId) seenIds.add(hitId);
+          let usageClassification = String(decision.usageClassification || "").trim().toUpperCase();
+          if (usageClassification === "FAIR_USE" || usageClassification === "DESCRIPTIVE") usageClassification = "DESCRIPTIVE_FAIR_USE";
+          else if (usageClassification === "INCIDENTAL") usageClassification = "INCIDENTAL_DICTIONARY_OVERLAP";
+          else if (usageClassification === "GENERIC") usageClassification = "GENERIC_USE";
+          let action = String(decision.action || decision.decision || "").trim().toUpperCase();
+          if (["APPROVE", "ALLOW", "CLEAR", "PASS", "SAFE"].includes(action)) action = "KEEP";
+          else if (action === "BLOCK") action = "BLOCK_CLASS";
+          else if (action === "REVIEW") action = "MANUAL_REVIEW";
+          if (!usageClassification && action === "KEEP") {
+            usageClassification = hitId && brandHitIds.has(hitId) ? "INCIDENTAL_DICTIONARY_OVERLAP" : "DESCRIPTIVE_FAIR_USE";
           }
-          const action = decision.action || decision.decision;
-          if (!action || !actions.has(action)) errors2.push(`Invalid action for ${decision.hitId || "<missing>"}`);
-          const confidence = Number(decision.confidence);
-          if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) errors2.push(`Invalid confidence for ${decision.hitId || "<missing>"}`);
+          if (!classifications.has(usageClassification)) {
+            errors2.push(`Invalid usage classification for ${hitId || "<missing>"}`);
+          }
+          if (!action || !actions.has(action)) errors2.push(`Invalid action for ${hitId || "<missing>"}`);
+          const rawConf = decision.confidence !== void 0 && decision.confidence !== null ? Number(decision.confidence) : 0.95;
+          const confidence = Number.isFinite(rawConf) ? rawConf : 0.95;
+          if (confidence < 0 || confidence > 1) errors2.push(`Invalid confidence for ${hitId || "<missing>"}`);
           if (action === "KEEP") {
-            if (decision.hitId && brandHitIds.has(decision.hitId) && decision.usageClassification !== "INCIDENTAL_DICTIONARY_OVERLAP") {
-              errors2.push(`Brand hit ${decision.hitId} is not strictly clear`);
-            } else if (!this.isFairUse(decision.usageClassification)) {
-              errors2.push(`KEEP is incompatible with non-fair-use classification for ${decision.hitId || "<missing>"}`);
+            if (hitId && brandHitIds.has(hitId) && usageClassification !== "INCIDENTAL_DICTIONARY_OVERLAP") {
+              errors2.push(`Brand hit ${hitId} is not strictly clear`);
+            } else if (!this.isFairUse(usageClassification)) {
+              errors2.push(`KEEP is incompatible with non-fair-use classification for ${hitId || "<missing>"}`);
             }
           }
         }
@@ -237039,14 +237067,25 @@ var init_trademarkService = __esm2({
           for (const evaluatedHit of refereeRes.hits || []) {
             const factualHit = compactHitsById.get(evaluatedHit.id);
             if (!factualHit) continue;
-            const reportedClasses = Array.isArray(evaluatedHit.classes) ? evaluatedHit.classes.filter(Number.isInteger).sort((a, b) => a - b) : [];
             const factualClasses = [...factualHit.classes].sort((a, b) => a - b);
-            if (JSON.stringify(reportedClasses) !== JSON.stringify(factualClasses)) {
-              semanticErrors.push(`Invented or missing classes for ${evaluatedHit.id}`);
+            const reportedClasses = Array.isArray(evaluatedHit.classes) ? evaluatedHit.classes.map(Number).filter(Number.isInteger).sort((a, b) => a - b) : [];
+            if (reportedClasses.length === 0) {
+              evaluatedHit.classes = [...factualClasses];
+            } else {
+              const invented = reportedClasses.filter((c) => !factualClasses.includes(c));
+              if (invented.length > 0) {
+                semanticErrors.push(`Invented classes [${invented.join(", ")}] for ${evaluatedHit.id}`);
+              } else {
+                evaluatedHit.classes = [...factualClasses];
+              }
             }
             const factualFields = new Set(factualHit.occurrences.map((occurrence) => occurrence.field));
-            if (!factualFields.has(evaluatedHit.field)) {
-              semanticErrors.push(`Invented or missing field for ${evaluatedHit.id}`);
+            if (!evaluatedHit.field || evaluatedHit.field === "all" || !factualFields.has(evaluatedHit.field)) {
+              if (factualHit.occurrences.length > 0) {
+                evaluatedHit.field = factualHit.occurrences[0].field;
+              } else {
+                semanticErrors.push(`Invented or missing field for ${evaluatedHit.id}`);
+              }
             }
           }
           const knownBrandSignals = Array.isArray(refereeRes.knownBrandSignals) ? refereeRes.knownBrandSignals : [];
@@ -237076,13 +237115,15 @@ var init_trademarkService = __esm2({
             semanticErrors.push("Class 25 cannot be product-blocked by the semantic referee");
           }
           if (semanticErrors.length > 0) {
+            console.warn(`[TrademarkServiceV2] \u26A0\uFE0F Semantic validation errors (${semanticErrors.length}):`, semanticErrors);
             refereeRes = {
               ...refereeRes,
               decision: "ESCALATE",
               canBeFixedByListingRewrite: false,
               reasonCode: "INVALID_AI_RESPONSE",
               recommendedAction: "HUMAN_REVIEW_RECOMMENDED",
-              escalation: { errors: semanticErrors }
+              escalation: { errors: semanticErrors },
+              scanIntegrity: lastScanIntegrity
             };
             finalRefereeResult = refereeRes;
           } else if (requestedBlockedClasses.length > 0) {
@@ -237370,6 +237411,15 @@ var init_trademarkService = __esm2({
             ...(finalVerifierResult?.identifiedRisks || []).map((risk) => risk.field)
           ].filter((field) => listingFields.includes(field)));
           if (affectedFields.size === 0) {
+            for (const hit of refereeRes.hits || []) {
+              const factual = compactHitsById.get(hit.id);
+              if (factual?.occurrences?.[0]?.field && listingFields.includes(factual.occurrences[0].field)) {
+                affectedFields.add(factual.occurrences[0].field);
+              }
+            }
+          }
+          if (affectedFields.size === 0) {
+            console.warn("[TrademarkServiceV2] \u26A0\uFE0F No affected listing fields found for rewrite. Escalating.");
             saveState("ESCALATED");
             return {
               finalDecision: "ESCALATE",

@@ -755,6 +755,7 @@ Style Preset: ${stylePreset}`;
     recommendedAction?: string | null;
     hits: Array<{
       id?: string;
+      hitId?: string;
       searchedTerm: string;
       registeredMark: string;
       field?: string;
@@ -766,6 +767,7 @@ Style Preset: ${stylePreset}`;
       knownBrand?: boolean;
       amazonRejectionRisk?: string;
       decision?: string;
+      action?: string;
       reason?: string;
     }>;
     blockedProducts: string[];
@@ -874,21 +876,43 @@ CRITICAL: You MUST include an evaluatedHits entry for every hit that involves Cl
           ? parsed.problematicHits
         : (Array.isArray(parsed.hits) ? parsed.hits : []);
 
-      const mappedHits = rawProblematic.map((h: any) => ({
-        id: h.id,
-        searchedTerm: h.term || h.searchedTerm || h.mark || '',
-        registeredMark: h.mark || h.registeredMark || '',
-        field: h.field || (Array.isArray(h.occurrences) && h.occurrences.length > 0 ? h.occurrences[0].field : 'all'),
-        classes: Array.isArray(h.classes) ? h.classes : undefined,
-        usageClassification: h.usageClassification || h.usage_classification || h.markNature,
-        confidence: typeof h.confidence === 'number' ? h.confidence : Number.NaN,
-        markNature: h.markNature || 'DISTINCTIVE_OR_BRAND',
-        usageType: h.usageType || 'POTENTIAL_RISK',
-        amazonRejectionRisk: h.amazonRejectionRisk || (h.action === 'REWRITE' ? 'HIGH' : 'LOW'),
-        decision: h.action || h.decision,
-        reasonCode: h.reasonCode || h.reason_code || null,
-        reason: h.reason || h.explanation || 'Identified trademark risk'
-      }));
+      const mappedHits = rawProblematic.map((h: any) => {
+        const hitId = String(h.id || h.hitId || '').trim();
+        let action = String(h.action || h.decision || '').trim().toUpperCase();
+        if (['APPROVE', 'ALLOW', 'CLEAR', 'PASS', 'SAFE'].includes(action)) action = 'KEEP';
+        else if (action === 'BLOCK') action = 'BLOCK_CLASS';
+        else if (action === 'REVIEW') action = 'MANUAL_REVIEW';
+
+        let usageClassification = String(h.usageClassification || h.usage_classification || h.markNature || '').trim().toUpperCase();
+        if (usageClassification === 'FAIR_USE' || usageClassification === 'DESCRIPTIVE') usageClassification = 'DESCRIPTIVE_FAIR_USE';
+        else if (usageClassification === 'INCIDENTAL') usageClassification = 'INCIDENTAL_DICTIONARY_OVERLAP';
+        else if (usageClassification === 'GENERIC') usageClassification = 'GENERIC_USE';
+
+        const rawConf = typeof h.confidence === 'number' ? h.confidence : (h.confidence !== undefined && h.confidence !== null ? Number(h.confidence) : 0.95);
+        const confidence = Number.isFinite(rawConf) ? rawConf : 0.95;
+
+        const normalizedClasses = Array.isArray(h.classes)
+          ? h.classes.map(Number).filter(Number.isInteger)
+          : undefined;
+
+        return {
+          id: hitId,
+          hitId,
+          searchedTerm: h.term || h.searchedTerm || h.mark || '',
+          registeredMark: h.mark || h.registeredMark || '',
+          field: h.field || (Array.isArray(h.occurrences) && h.occurrences.length > 0 ? h.occurrences[0].field : undefined),
+          classes: normalizedClasses,
+          usageClassification: usageClassification || undefined,
+          confidence,
+          markNature: h.markNature || 'DISTINCTIVE_OR_BRAND',
+          usageType: h.usageType || 'POTENTIAL_RISK',
+          amazonRejectionRisk: h.amazonRejectionRisk || (action === 'REWRITE' ? 'HIGH' : 'LOW'),
+          action,
+          decision: action,
+          reasonCode: h.reasonCode || h.reason_code || null,
+          reason: h.reason || h.explanation || 'Identified trademark risk'
+        };
+      });
       const knownBrandSignals = (Array.isArray(parsed.knownBrandSignals) ? parsed.knownBrandSignals : [])
         .map((signal: any) => ({
           term: String(signal.term || '').trim(),

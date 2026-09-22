@@ -316,6 +316,80 @@ async function run() {
     }
   }
 
+  {
+    const originalQuery = TrademarkService.queryUsptoBatch;
+    const originalReferee = LLMService.evaluateTrademarkReferee;
+    const originalVerifier = LLMService.evaluateTrademarkVerifier;
+    try {
+      TrademarkService.queryUsptoBatch = (async (_terms: string[], classes: number[]) => ({
+        hitsByTerm: {
+          brave: [{
+            term: 'brave',
+            mark: 'BRAVE',
+            status: 'LIVE',
+            classes: [25, 35],
+            feature: 'Standard Character Mark',
+            goodsServices: 'Clothing, namely t-shirts'
+          }]
+        },
+        integrity: completeIntegrity(classes)
+      })) as any;
+
+      // Realistic OpenRouter LLM response returning id (not hitId), action: APPROVE (not KEEP), and classes: [25] (not [25, 35])
+      LLMService.evaluateTrademarkReferee = (async () => ({
+        decision: 'APPROVE',
+        canBeFixedByListingRewrite: true,
+        hits: [{
+          id: 'tm_1',
+          searchedTerm: 'brave',
+          registeredMark: 'BRAVE',
+          field: 'title',
+          classes: [25],
+          usageClassification: 'INCIDENTAL_DICTIONARY_OVERLAP',
+          confidence: 0.95,
+          action: 'APPROVE',
+          decision: 'APPROVE',
+          reasonCode: null,
+          reason: 'Common dictionary word used in generic context'
+        }],
+        blockedProducts: [],
+        rewriteRequired: false,
+        rewriteInstructions: [],
+        knownBrandSignals: [],
+        _rawRequest: { model: 'test-model' }
+      })) as any;
+
+      LLMService.evaluateTrademarkVerifier = (async () => ({
+        verdict: 'SAFE',
+        identifiedRisks: [],
+        canBeFixedByListingRewrite: true,
+        recommendation: 'SAFE_TO_PUBLISH'
+      })) as any;
+
+      const fullListing = {
+        brand: 'Classroom Progress Apparel',
+        title: 'Small Steps Brave Hearts Big Breakthroughs Special Education',
+        bullet1: 'Support dedicated educators and students.',
+        bullet2: 'Inspirational classroom apparel.',
+        description: 'Celebrate special education triumphs.'
+      };
+
+      const audit = await TrademarkService.executeTrademarkAuditV2({
+        listing: fullListing,
+        quote: 'Small Steps Big Breakthroughs',
+        niche1: 'Special Education'
+      });
+
+      assert(audit.finalDecision !== 'ESCALATE', 'Audit does not escalate to INVALID_AI_RESPONSE on realistic LLM output');
+      assert(audit.reasonCode !== 'INVALID_AI_RESPONSE', 'Audit reasonCode is not INVALID_AI_RESPONSE');
+      assert(audit.isSafe === true, 'Listing with approved incidental overlap is marked safe');
+    } finally {
+      TrademarkService.queryUsptoBatch = originalQuery;
+      LLMService.evaluateTrademarkReferee = originalReferee;
+      LLMService.evaluateTrademarkVerifier = originalVerifier;
+    }
+  }
+
   console.log(`\nTrademark V3: ${passed}/${total} tests passed`);
   if (passed !== total) process.exitCode = 1;
 }

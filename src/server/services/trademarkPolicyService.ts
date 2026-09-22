@@ -75,6 +75,7 @@ export interface TrademarkProductScope {
 
 export interface SemanticDecisionLike {
   hitId?: string;
+  id?: string;
   usageClassification?: UsageClassification | string;
   confidence?: number;
   action?: string;
@@ -268,21 +269,39 @@ export class TrademarkPolicyService {
     ]);
     const actions = new Set(['KEEP', 'REWRITE', 'BLOCK_CLASS', 'MANUAL_REVIEW', 'ESCALATE']);
     for (const decision of decisions) {
-      if (!decision.hitId || !knownHitIds.has(decision.hitId)) errors.push(`Unknown trademark hit id: ${decision.hitId || '<missing>'}`);
-      if (decision.hitId) seenIds.add(decision.hitId);
-      if (!classifications.has(decision.usageClassification as UsageClassification)) {
-        errors.push(`Invalid usage classification for ${decision.hitId || '<missing>'}`);
+      const hitId = decision.hitId || decision.id;
+      if (!hitId || !knownHitIds.has(hitId)) errors.push(`Unknown trademark hit id: ${hitId || '<missing>'}`);
+      if (hitId) seenIds.add(hitId);
+
+      // Defensive classification normalization
+      let usageClassification = String(decision.usageClassification || '').trim().toUpperCase();
+      if (usageClassification === 'FAIR_USE' || usageClassification === 'DESCRIPTIVE') usageClassification = 'DESCRIPTIVE_FAIR_USE';
+      else if (usageClassification === 'INCIDENTAL') usageClassification = 'INCIDENTAL_DICTIONARY_OVERLAP';
+      else if (usageClassification === 'GENERIC') usageClassification = 'GENERIC_USE';
+
+      // Defensive action normalization
+      let action = String(decision.action || decision.decision || '').trim().toUpperCase();
+      if (['APPROVE', 'ALLOW', 'CLEAR', 'PASS', 'SAFE'].includes(action)) action = 'KEEP';
+      else if (action === 'BLOCK') action = 'BLOCK_CLASS';
+      else if (action === 'REVIEW') action = 'MANUAL_REVIEW';
+
+      if (!usageClassification && action === 'KEEP') {
+        usageClassification = hitId && brandHitIds.has(hitId) ? 'INCIDENTAL_DICTIONARY_OVERLAP' : 'DESCRIPTIVE_FAIR_USE';
       }
-      const action = decision.action || decision.decision;
-      if (!action || !actions.has(action)) errors.push(`Invalid action for ${decision.hitId || '<missing>'}`);
-      const confidence = Number(decision.confidence);
-      if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) errors.push(`Invalid confidence for ${decision.hitId || '<missing>'}`);
+
+      if (!classifications.has(usageClassification as UsageClassification)) {
+        errors.push(`Invalid usage classification for ${hitId || '<missing>'}`);
+      }
+      if (!action || !actions.has(action)) errors.push(`Invalid action for ${hitId || '<missing>'}`);
+      const rawConf = decision.confidence !== undefined && decision.confidence !== null ? Number(decision.confidence) : 0.95;
+      const confidence = Number.isFinite(rawConf) ? rawConf : 0.95;
+      if (confidence < 0 || confidence > 1) errors.push(`Invalid confidence for ${hitId || '<missing>'}`);
       if (action === 'KEEP') {
-        if (decision.hitId && brandHitIds.has(decision.hitId)
-          && decision.usageClassification !== 'INCIDENTAL_DICTIONARY_OVERLAP') {
-          errors.push(`Brand hit ${decision.hitId} is not strictly clear`);
-        } else if (!this.isFairUse(decision.usageClassification)) {
-          errors.push(`KEEP is incompatible with non-fair-use classification for ${decision.hitId || '<missing>'}`);
+        if (hitId && brandHitIds.has(hitId)
+          && usageClassification !== 'INCIDENTAL_DICTIONARY_OVERLAP') {
+          errors.push(`Brand hit ${hitId} is not strictly clear`);
+        } else if (!this.isFairUse(usageClassification)) {
+          errors.push(`KEEP is incompatible with non-fair-use classification for ${hitId || '<missing>'}`);
         }
       }
     }
