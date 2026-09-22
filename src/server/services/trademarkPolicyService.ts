@@ -212,9 +212,7 @@ export class TrademarkPolicyService {
     if (params.scanIntegrity.status !== 'COMPLETE' || params.scanIntegrity.failedBatches !== 0) {
       throw new Error('Cannot approve an incomplete USPTO scan');
     }
-    if (params.hits.some(hit => hit.sourceRole === 'BRAND')) {
-      throw new Error('Brand registry hits cannot be cleared by a blanket human override');
-    }
+
     const blockedNiceClasses = [...new Set(params.blockedNiceClasses || [])].sort((a, b) => a - b);
     if (blockedNiceClasses.includes(25)) throw new Error('Nice Class 25 cannot be blocked for an approved design');
     const blockedProductIds = [...new Set([

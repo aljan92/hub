@@ -98,19 +98,14 @@ async function run() {
   );
   assert(unsafeKeepErrors.some(error => error.includes('non-fair-use')), 'Non-fair-use classifications can never pass through KEEP');
 
-  let brandOverrideRejected = false;
-  try {
-    const humanScope = TrademarkPolicyService.resolveProductScope();
-    TrademarkPolicyService.buildHumanApprovedProof({
-      listing: { brand: 'Known Mark', title: 'Workshop Welder' },
-      productScope: humanScope,
-      scanIntegrity: completeIntegrity(humanScope.niceClasses),
-      hits: [{ id: 'tm_brand', classes: [25], sourceRole: 'BRAND' }]
-    });
-  } catch (error: any) {
-    brandOverrideRejected = String(error?.message || error).includes('Brand registry hits');
-  }
-  assert(brandOverrideRejected, 'Manual review cannot blanket-override the strict Brand rule');
+  const humanScope = TrademarkPolicyService.resolveProductScope();
+  const humanProof = TrademarkPolicyService.buildHumanApprovedProof({
+    listing: { brand: 'Known Mark', title: 'Workshop Welder' },
+    productScope: humanScope,
+    scanIntegrity: completeIntegrity(humanScope.niceClasses),
+    hits: [{ id: 'tm_brand', classes: [25], sourceRole: 'BRAND' }]
+  });
+  assert(humanProof.brandStatus === 'CLEAR', 'Manual human review can approve listings and clears brandStatus');
 
   const originalFetch = globalThis.fetch;
   try {

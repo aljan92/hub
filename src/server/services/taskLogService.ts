@@ -2705,19 +2705,10 @@ export class TaskLogService {
           return { success: false, message: 'USPTO-Live-Prüfung konnte nicht vollständig abgeschlossen werden (Netzwerkfehler). Bitte versuche es in wenigen Augenblicken erneut.' };
         }
         const manualScope = TrademarkPolicyService.resolveProductScope(additionalProductIds);
-        try {
-          trademarkClearance = TrademarkPolicyService.buildHumanApprovedProof({
-            listing: approvedListing, productScope: manualScope, scanIntegrity,
-            hits: finalHits, blockedNiceClasses: task.blockedNiceClasses
-          });
-        } catch (proofErr: any) {
-          if (String(proofErr?.message || proofErr).includes('Brand registry hits')) {
-            const brandHits = finalHits.filter(h => h.sourceRole === 'BRAND');
-            const marks = [...new Set(brandHits.map(h => (h as any).registeredMark || (h as any).mark || (h as any).searchedTerm || 'Marke'))].join(', ');
-            throw new Error(`Brand-Konflikt: Das Feld "Brand" darf keine geschützten Marken enthalten (Gefunden: ${marks}). Bitte passe den Brand-Namen an, bevor du freigibst.`);
-          }
-          throw proofErr;
-        }
+        trademarkClearance = TrademarkPolicyService.buildHumanApprovedProof({
+          listing: approvedListing, productScope: manualScope, scanIntegrity,
+          hits: finalHits, blockedNiceClasses: task.blockedNiceClasses
+        });
         approvedWorkflowState = {
           ...task.trademarkWorkflowState!, phase: 'COMPLETED', currentListing: approvedListing,
           lastCheckedListing: approvedListing, scanIntegrity, catalogFingerprint: manualScope.catalogFingerprint,
