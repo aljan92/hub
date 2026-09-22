@@ -657,8 +657,14 @@ export const TasksView: React.FC = () => {
   const [checkingField, setCheckingField] = useState<string | null>(null);
   const [evaluatingField, setEvaluatingField] = useState<string | null>(null);
   const [rewritingField, setRewritingField] = useState<string | null>(null);
+  const [isBulkFairUse, setIsBulkFairUse] = useState(false);
+  const [bulkFairUseProgress, setBulkFairUseProgress] = useState<string | null>(null);
+  const [isBulkRewrite, setIsBulkRewrite] = useState(false);
+  const [bulkRewriteProgress, setBulkRewriteProgress] = useState<string | null>(null);
   const [singleFieldResults, setSingleFieldResults] = useState<Record<string, any>>({});
   const [fieldFairUse, setFieldFairUse] = useState<Record<string, any>>({});
+
+  const isAnyTmBusy = isCheckingTm || isBulkFairUse || isBulkRewrite || checkingField !== null || evaluatingField !== null || rewritingField !== null || isSubmitting;
 
   useEffect(() => {
     setSingleFieldResults({});
@@ -666,6 +672,10 @@ export const TasksView: React.FC = () => {
     setCheckingField(null);
     setEvaluatingField(null);
     setRewritingField(null);
+    setIsBulkFairUse(false);
+    setBulkFairUseProgress(null);
+    setIsBulkRewrite(false);
+    setBulkRewriteProgress(null);
   }, [activeTask?.id]);
 
   useEffect(() => {
@@ -1063,6 +1073,146 @@ export const TasksView: React.FC = () => {
 
   // Extract field summaries for Checkpoint 3
   const fieldSummaries = liveTmResult?.fieldSummaries || liveTmResult?.fieldResults || activeTask?.trademarkCheckResult?.fieldSummaries || activeTask?.trademarkCheckResult?.fieldResults || {};
+
+  const getFieldTmInfo = useCallback((field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description') => {
+    if (singleFieldResults[field]) return singleFieldResults[field];
+    const existing = fieldSummaries[field];
+    if (existing && (existing.totalHits !== undefined || existing.hits || existing.detectedTrademarks)) {
+      return existing;
+    }
+    const auditV2 = liveTmResult?.auditV2 || (activeTask as any)?.tmAuditV2;
+    const hitsList = auditV2?.finalTrademarkHits
+      || auditV2?.initialTrademarkHits
+      || activeTask?.trademarkWorkflowState?.lastTrademarkHits
+      || [];
+    const fieldHits = hitsList.filter((h: any) => h.field === field);
+    if (fieldHits.length > 0) {
+      return {
+        totalHits: fieldHits.length,
+        hasInfringementClass25: fieldHits.some((h: any) => (h.classes || []).includes(25)),
+        hits: fieldHits
+      };
+    }
+    return existing || null;
+  }, [singleFieldResults, fieldSummaries, liveTmResult, activeTask]);
+
+  const handleBulkFairUse = async () => {
+    if (!activeTask || isAnyTmBusy) return;
+    const fields: Array<'brand' | 'title' | 'bullet1' | 'bullet2' | 'description'> = [
+      'brand', 'title', 'bullet1', 'bullet2', 'description'
+    ];
+    const fieldLabels: Record<string, string> = {
+      brand: 'Brand',
+      title: 'Title',
+      bullet1: 'Bullet 1',
+      bullet2: 'Bullet 2',
+      description: 'Description'
+    };
+
+    const fieldsToEvaluate = fields.filter(f => {
+      const text = editableListing[f]?.trim();
+      const data = getFieldTmInfo(f);
+      return Boolean(text && data?.totalHits && data.totalHits > 0);
+    });
+
+    if (fieldsToEvaluate.length === 0) {
+      showNotification('info', 'Keine Felder mit Markentreffern vorhanden (alle Felder sauber).');
+      return;
+    }
+
+    setIsBulkFairUse(true);
+    let count = 0;
+    try {
+      for (const f of fieldsToEvaluate) {
+        setBulkFairUseProgress(fieldLabels[f] || f);
+        const text = editableListing[f];
+        const data = getFieldTmInfo(f);
+        const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/evaluate-field-tm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field: f, text, hits: data?.hits })
+        });
+        const evalData = await res.json();
+        if (evalData.success) {
+          setFieldFairUse(prev => ({ ...prev, [f]: evalData }));
+          count++;
+        }
+      }
+      showNotification('success', `Bulk Fair Use abgeschlossen: ${count} Feld(er) erfolgreich bewertet.`);
+    } catch (err: any) {
+      showNotification('error', err.message || 'Verbindungsfehler bei Bulk Fair Use');
+    } finally {
+      setIsBulkFairUse(false);
+      setBulkFairUseProgress(null);
+    }
+  };
+
+  const handleBulkRewrite = async () => {
+    if (!activeTask || isAnyTmBusy) return;
+    const fields: Array<'brand' | 'title' | 'bullet1' | 'bullet2' | 'description'> = [
+      'brand', 'title', 'bullet1', 'bullet2', 'description'
+    ];
+    const fieldLabels: Record<string, string> = {
+      brand: 'Brand',
+      title: 'Title',
+      bullet1: 'Bullet 1',
+      bullet2: 'Bullet 2',
+      description: 'Description'
+    };
+
+    // Filter fields: skip clean fields and fields positively approved as Fair Use
+    const fieldsToRewrite = fields.filter(f => {
+      const text = editableListing[f]?.trim();
+      if (!text) return false;
+      const data = getFieldTmInfo(f);
+      if (!data?.totalHits || data.totalHits === 0) return false;
+      const fairUse = fieldFairUse[f];
+      if (fairUse?.overallVerdict === 'SAFE_FAIR_USE') return false;
+      return true;
+    });
+
+    if (fieldsToRewrite.length === 0) {
+      showNotification('info', 'Kein Rewrite erforderlich – alle Felder sind sauber oder als Fair Use freigegeben.');
+      return;
+    }
+
+    setIsBulkRewrite(true);
+    let count = 0;
+    try {
+      for (const f of fieldsToRewrite) {
+        setBulkRewriteProgress(fieldLabels[f] || f);
+        const text = editableListing[f];
+        const data = getFieldTmInfo(f);
+        const fairUseEvaluation = fieldFairUse[f];
+        const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/rewrite-field-tm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field: f, text, hits: data?.hits, fairUseEvaluation })
+        });
+        const rwData = await res.json();
+        if (rwData.success) {
+          if (rwData.rewrittenText) {
+            setEditableListing(prev => ({ ...prev, [f]: rwData.rewrittenText }));
+          }
+          if (rwData.usptoResult) {
+            setSingleFieldResults(prev => ({ ...prev, [f]: rwData.usptoResult }));
+          }
+          setFieldFairUse(prev => {
+            const next = { ...prev };
+            delete next[f];
+            return next;
+          });
+          count++;
+        }
+      }
+      showNotification('success', `Bulk Rewrite abgeschlossen: ${count} Feld(er) erfolgreich umgeschrieben & per USPTO geprüft.`);
+    } catch (err: any) {
+      showNotification('error', err.message || 'Verbindungsfehler bei Bulk Rewrite');
+    } finally {
+      setIsBulkRewrite(false);
+      setBulkRewriteProgress(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -2267,22 +2417,7 @@ export const TasksView: React.FC = () => {
                     || activeTask.trademarkWorkflowState?.refereeAudit?.decision;
                   const verifierVerdict = auditV2?.verifierResult?.verdict;
 
-                  const getFieldData = (field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description') => {
-                    if (singleFieldResults[field]) return singleFieldResults[field];
-                    const existing = fieldSummaries[field];
-                    if (existing && (existing.totalHits !== undefined || existing.hits || existing.detectedTrademarks)) {
-                      return existing;
-                    }
-                    const fieldHits = hitsList.filter((h: any) => h.field === field);
-                    if (fieldHits.length > 0) {
-                      return {
-                        totalHits: fieldHits.length,
-                        hasInfringementClass25: fieldHits.some((h: any) => (h.classes || []).includes(25)),
-                        hits: fieldHits
-                      };
-                    }
-                    return existing || null;
-                  };
+                  const getFieldData = (field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description') => getFieldTmInfo(field);
 
                   const brandData = getFieldData('brand');
                   const brandHits = brandData?.hits || hitsList.filter((h: any) =>
@@ -2335,14 +2470,42 @@ export const TasksView: React.FC = () => {
                               </p>
                             </div>
                           </div>
-                          <button
-                            onClick={handleTmRecheck}
-                            disabled={isCheckingTm || isSubmitting || checkingField !== null}
-                            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm shrink-0"
-                          >
-                            <Search className={`w-3.5 h-3.5 ${isCheckingTm ? 'animate-spin' : ''}`} />
-                            <span>{isCheckingTm ? 'Prüfe USPTO...' : 'Neu prüfen (USPTO)'}</span>
-                          </button>
+
+                          {/* 3 Bulk Action Buttons */}
+                          <div className="flex items-center flex-wrap gap-2 shrink-0">
+                            {/* 1. Neu prüfen (USPTO) */}
+                            <button
+                              onClick={handleTmRecheck}
+                              disabled={isAnyTmBusy}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm shrink-0"
+                              title="Gesamtes Listing erneut gegen USPTO prüfen"
+                            >
+                              <Search className={`w-3.5 h-3.5 ${isCheckingTm ? 'animate-spin' : ''}`} />
+                              <span>{isCheckingTm ? 'Prüfe USPTO...' : 'Neu prüfen (USPTO)'}</span>
+                            </button>
+
+                            {/* 2. Bulk Fair Use */}
+                            <button
+                              onClick={handleBulkFairUse}
+                              disabled={isAnyTmBusy}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-700 hover:bg-emerald-600 text-white flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm border border-emerald-500/40 shrink-0"
+                              title="Alle Felder mit Markentreffern automatisch nacheinander auf Fair Use prüfen"
+                            >
+                              <Scale className={`w-3.5 h-3.5 ${isBulkFairUse ? 'animate-spin' : ''}`} />
+                              <span>{isBulkFairUse ? (bulkFairUseProgress ? `Fair Use (${bulkFairUseProgress})...` : 'Prüfe Fair Use...') : 'Bulk Fair Use'}</span>
+                            </button>
+
+                            {/* 3. Bulk Rewrite */}
+                            <button
+                              onClick={handleBulkRewrite}
+                              disabled={isAnyTmBusy}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm border border-indigo-400/40 shrink-0"
+                              title="Alle Felder mit echten Konflikten (nicht freigegeben durch Fair Use) per KI umschreiben"
+                            >
+                              <Sparkles className={`w-3.5 h-3.5 ${isBulkRewrite ? 'animate-spin' : ''}`} />
+                              <span>{isBulkRewrite ? (bulkRewriteProgress ? `Rewrite (${bulkRewriteProgress})...` : 'Schreibe um...') : 'Bulk Rewrite'}</span>
+                            </button>
+                          </div>
                         </div>
 
                         {/* Forbidden Terms Chips */}
@@ -2424,7 +2587,7 @@ export const TasksView: React.FC = () => {
                           const isChecking = checkingField === field;
                           const isEvaluating = evaluatingField === field;
                           const isRewriting = rewritingField === field;
-                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          const isBusy = isAnyTmBusy;
                           return (
                             <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                               <div className="flex items-center justify-between text-[11px]">
@@ -2497,7 +2660,7 @@ export const TasksView: React.FC = () => {
                           const isChecking = checkingField === field;
                           const isEvaluating = evaluatingField === field;
                           const isRewriting = rewritingField === field;
-                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          const isBusy = isAnyTmBusy;
                           return (
                             <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                               <div className="flex items-center justify-between text-[11px]">
@@ -2557,7 +2720,7 @@ export const TasksView: React.FC = () => {
                           const isChecking = checkingField === field;
                           const isEvaluating = evaluatingField === field;
                           const isRewriting = rewritingField === field;
-                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          const isBusy = isAnyTmBusy;
                           return (
                             <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                               <div className="flex items-center justify-between text-[11px]">
@@ -2617,7 +2780,7 @@ export const TasksView: React.FC = () => {
                           const isChecking = checkingField === field;
                           const isEvaluating = evaluatingField === field;
                           const isRewriting = rewritingField === field;
-                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          const isBusy = isAnyTmBusy;
                           return (
                             <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                               <div className="flex items-center justify-between text-[11px]">
@@ -2677,7 +2840,7 @@ export const TasksView: React.FC = () => {
                           const isChecking = checkingField === field;
                           const isEvaluating = evaluatingField === field;
                           const isRewriting = rewritingField === field;
-                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          const isBusy = isAnyTmBusy;
                           return (
                             <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                               <div className="flex items-center justify-between text-[11px]">
