@@ -62,7 +62,7 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
   if (Array.isArray(rawHits)) {
     const grouped: Record<string, any[]> = {};
     rawHits.forEach((h: any) => {
-      const t = h.term || h.wordmark || h.trademark || 'term';
+      const t = (h.searchedTerm || h.term || h.registeredMark || h.mark || h.wordmark || h.trademark || 'Marke').toLowerCase().trim();
       grouped[t] = grouped[t] || [];
       grouped[t].push(h);
     });
@@ -101,7 +101,7 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
         {termList.map(({ term, hits }, i) => {
           const isK25 = hits.some(h => {
             const clsArr = (h.classes && h.classes.length > 0)
-              ? h.classes
+              ? h.classes.map((c: any) => String(c))
               : String(h.classNumber || '').split(/[,;\s]+/).map((c: string) => c.trim().replace(/^0+/, ''));
             return clsArr.includes('25');
           });
@@ -110,9 +110,9 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
             return String(h.classNumber || '').split(/[,;\s]+/).map((c: string) => c.trim().replace(/^0+/, ''));
           }))).filter(Boolean).join(', ') || 'N/A';
           const firstHit = hits[0] || {};
-          const markName = firstHit.trademark || firstHit.wordmark || firstHit.mark || term;
+          const markName = firstHit.registeredMark || firstHit.mark || firstHit.trademark || firstHit.wordmark || firstHit.searchedTerm || term;
           const status = firstHit.status || 'LIVE';
-          const regOrSerial = firstHit.registrationNumber || firstHit.serialNumber || '';
+          const regOrSerial = firstHit.serialNumber ? `SN: ${firstHit.serialNumber}` : (firstHit.registrationNumber ? `#${firstHit.registrationNumber}` : '');
 
           return (
             <div
@@ -135,7 +135,7 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
               </div>
               <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
                 <span className="truncate max-w-[180px]" title={markName}>Marke: {markName}</span>
-                <span className="shrink-0">{status} {regOrSerial ? `• #${regOrSerial}` : ''}</span>
+                <span className="shrink-0">{status} {regOrSerial ? `• ${regOrSerial}` : ''}</span>
               </div>
             </div>
           );
