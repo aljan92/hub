@@ -2689,23 +2689,17 @@ export class TaskLogService {
           || TrademarkPolicyService.listingFingerprint(task.trademarkWorkflowState.lastCheckedListing)
             !== TrademarkPolicyService.listingFingerprint(listingToApprove);
         if (listingChangedSinceScan) {
-          const manualAudit = await TrademarkService.executeTrademarkAuditV2({
-            listing: listingToApprove, quote: task.payload?.quote || '',
-            niche1: task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || '',
-            niche2: task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || '',
-            subniche: task.subniche || task.customAnswers?.subniche || task.payload?.subniche || '',
-            maxRewriteCycles: 0, taskId, additionalProductIds
+          const scanResult = await TrademarkService.scanFullListingTermsOnly({
+            listing: listingToApprove,
+            quote: task.payload?.quote || '',
+            additionalProductIds
           });
-          scanIntegrity = manualAudit.scanIntegrity;
-          finalHits = manualAudit.finalTrademarkHits;
-          approvedListing = manualAudit.finalListing;
+          scanIntegrity = scanResult.scanIntegrity;
+          finalHits = scanResult.hits;
+          approvedListing = scanResult.finalListing;
         }
         if (scanIntegrity?.status !== 'COMPLETE') {
-          this.updateTaskStatus(taskId, {
-            status: 'AWAITING_TM_TECHNICAL_RETRY', checkpoint: undefined, hasError: false,
-            errorDetails: 'USPTO_SCAN_INCOMPLETE'
-          });
-          return { success: false, message: 'USPTO-Prüfung technisch unvollständig; Freigabe wurde nicht übernommen.' };
+          return { success: false, message: 'USPTO-Live-Prüfung konnte nicht vollständig abgeschlossen werden (Netzwerkfehler). Bitte versuche es in wenigen Augenblicken erneut.' };
         }
         const manualScope = TrademarkPolicyService.resolveProductScope(additionalProductIds);
         try {

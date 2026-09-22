@@ -235285,28 +235285,17 @@ Beantworte die Analysefragen streng als JSON!`;
               let finalHits = task.trademarkWorkflowState?.lastTrademarkHits || task.tmAuditV2?.finalTrademarkHits || task.trademarkWorkflowState?.initialTrademarkHits || [];
               const listingChangedSinceScan = !task.trademarkWorkflowState?.lastCheckedListing || TrademarkPolicyService.listingFingerprint(task.trademarkWorkflowState.lastCheckedListing) !== TrademarkPolicyService.listingFingerprint(listingToApprove);
               if (listingChangedSinceScan) {
-                const manualAudit = await TrademarkService.executeTrademarkAuditV2({
+                const scanResult = await TrademarkService.scanFullListingTermsOnly({
                   listing: listingToApprove,
                   quote: task.payload?.quote || "",
-                  niche1: task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || "",
-                  niche2: task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || "",
-                  subniche: task.subniche || task.customAnswers?.subniche || task.payload?.subniche || "",
-                  maxRewriteCycles: 0,
-                  taskId,
                   additionalProductIds
                 });
-                scanIntegrity = manualAudit.scanIntegrity;
-                finalHits = manualAudit.finalTrademarkHits;
-                approvedListing = manualAudit.finalListing;
+                scanIntegrity = scanResult.scanIntegrity;
+                finalHits = scanResult.hits;
+                approvedListing = scanResult.finalListing;
               }
               if (scanIntegrity?.status !== "COMPLETE") {
-                this.updateTaskStatus(taskId, {
-                  status: "AWAITING_TM_TECHNICAL_RETRY",
-                  checkpoint: void 0,
-                  hasError: false,
-                  errorDetails: "USPTO_SCAN_INCOMPLETE"
-                });
-                return { success: false, message: "USPTO-Pr\xFCfung technisch unvollst\xE4ndig; Freigabe wurde nicht \xFCbernommen." };
+                return { success: false, message: "USPTO-Live-Pr\xFCfung konnte nicht vollst\xE4ndig abgeschlossen werden (Netzwerkfehler). Bitte versuche es in wenigen Augenblicken erneut." };
               }
               const manualScope = TrademarkPolicyService.resolveProductScope(additionalProductIds);
               try {
@@ -236607,6 +236596,33 @@ var init_trademarkService = __esm2({
         };
       }
       /**
+       * Scans an entire listing against USPTO without triggering the LLM Referee or Verifier.
+       * Used for Human Checkpoint 3 approvals to verify live USPTO hits and scan integrity
+       * without re-subjecting the human decision to AI referee escalation.
+       */
+      static async scanFullListingTermsOnly(params2) {
+        const productScope = TrademarkPolicyService.resolveProductScope(params2.additionalProductIds);
+        const lockedTitleTail = params2.listing.title ? TrademarkPolicyService.extractLockedTitleTail(params2.listing.title) : void 0;
+        const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
+          listing: params2.listing,
+          quote: params2.quote,
+          lockedTitleTail
+        });
+        const queryResult = await this.queryUsptoBatch(terms, productScope.niceClasses);
+        const hits = this.normalizeAndClassifyMatches(
+          queryResult.hitsByTerm,
+          termToFieldsMap,
+          params2.quote,
+          lockedTitleTail,
+          queryResult.integrity
+        );
+        return {
+          scanIntegrity: queryResult.integrity,
+          hits,
+          finalListing: params2.listing
+        };
+      }
+      /**
        * Compacts hundreds of raw/normalized hits into deduplicated mark entities.
        * Significantly reduces token payload by omitting full field text repetition
        * while preserving exact field locations and actual matched terms.
@@ -237112,7 +237128,8 @@ var init_trademarkService = __esm2({
                 niche2: normN2,
                 subniche: normSub,
                 forbiddenTerms: forbiddenTermsForTask
-              }).listing
+              }).listing,
+              scanIntegrity: lastScanIntegrity
             };
           }
           if (refereeRes.decision === "APPROVE" || refereeRes.decision === "APPROVE_WITH_BLOCKED_PRODUCTS") {

@@ -1258,6 +1258,47 @@ export class TrademarkService {
   }
 
   /**
+   * Scans an entire listing against USPTO without triggering the LLM Referee or Verifier.
+   * Used for Human Checkpoint 3 approvals to verify live USPTO hits and scan integrity
+   * without re-subjecting the human decision to AI referee escalation.
+   */
+  static async scanFullListingTermsOnly(params: {
+    listing: EnglishListing;
+    quote?: string;
+    additionalProductIds?: string[];
+  }): Promise<{
+    scanIntegrity: TrademarkScanIntegrity;
+    hits: TrademarkHitV2[];
+    finalListing: EnglishListing;
+  }> {
+    const productScope = TrademarkPolicyService.resolveProductScope(params.additionalProductIds);
+    const lockedTitleTail = params.listing.title
+      ? TrademarkPolicyService.extractLockedTitleTail(params.listing.title)
+      : undefined;
+
+    const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
+      listing: params.listing,
+      quote: params.quote,
+      lockedTitleTail
+    });
+
+    const queryResult = await this.queryUsptoBatch(terms, productScope.niceClasses);
+    const hits = this.normalizeAndClassifyMatches(
+      queryResult.hitsByTerm,
+      termToFieldsMap,
+      params.quote,
+      lockedTitleTail,
+      queryResult.integrity
+    );
+
+    return {
+      scanIntegrity: queryResult.integrity,
+      hits,
+      finalListing: params.listing
+    };
+  }
+
+  /**
    * Compacts hundreds of raw/normalized hits into deduplicated mark entities.
    * Significantly reduces token payload by omitting full field text repetition
    * while preserving exact field locations and actual matched terms.
@@ -1847,7 +1888,8 @@ export class TrademarkService {
             niche2: normN2,
             subniche: normSub,
             forbiddenTerms: forbiddenTermsForTask
-          }).listing
+          }).listing,
+          scanIntegrity: lastScanIntegrity
         };
       }
 
