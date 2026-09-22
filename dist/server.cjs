@@ -56060,9 +56060,6 @@ var init_trademarkPolicyService = __esm2({
         if (params2.scanIntegrity.status !== "COMPLETE" || params2.scanIntegrity.failedBatches !== 0) {
           throw new Error("Cannot approve an incomplete USPTO scan");
         }
-        if (params2.hits.some((hit) => hit.sourceRole === "BRAND")) {
-          throw new Error("Brand registry hits cannot be cleared by a blanket human override");
-        }
         const blockedNiceClasses = [...new Set(params2.blockedNiceClasses || [])].sort((a, b) => a - b);
         if (blockedNiceClasses.includes(25)) throw new Error("Nice Class 25 cannot be blocked for an approved design");
         const blockedProductIds = [.../* @__PURE__ */ new Set([
@@ -235288,7 +235285,10 @@ Beantworte die Analysefragen streng als JSON!`;
                 const scanResult = await TrademarkService.scanFullListingTermsOnly({
                   listing: listingToApprove,
                   quote: task.payload?.quote || "",
-                  additionalProductIds
+                  additionalProductIds,
+                  niche1: task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || "",
+                  niche2: task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || "",
+                  subniche: task.subniche || task.customAnswers?.subniche || task.payload?.subniche || ""
                 });
                 scanIntegrity = scanResult.scanIntegrity;
                 finalHits = scanResult.hits;
@@ -235298,22 +235298,13 @@ Beantworte die Analysefragen streng als JSON!`;
                 return { success: false, message: "USPTO-Live-Pr\xFCfung konnte nicht vollst\xE4ndig abgeschlossen werden (Netzwerkfehler). Bitte versuche es in wenigen Augenblicken erneut." };
               }
               const manualScope = TrademarkPolicyService.resolveProductScope(additionalProductIds);
-              try {
-                trademarkClearance = TrademarkPolicyService.buildHumanApprovedProof({
-                  listing: approvedListing,
-                  productScope: manualScope,
-                  scanIntegrity,
-                  hits: finalHits,
-                  blockedNiceClasses: task.blockedNiceClasses
-                });
-              } catch (proofErr) {
-                if (String(proofErr?.message || proofErr).includes("Brand registry hits")) {
-                  const brandHits = finalHits.filter((h) => h.sourceRole === "BRAND");
-                  const marks = [...new Set(brandHits.map((h) => h.registeredMark || h.mark || h.searchedTerm || "Marke"))].join(", ");
-                  throw new Error(`Brand-Konflikt: Das Feld "Brand" darf keine gesch\xFCtzten Marken enthalten (Gefunden: ${marks}). Bitte passe den Brand-Namen an, bevor du freigibst.`);
-                }
-                throw proofErr;
-              }
+              trademarkClearance = TrademarkPolicyService.buildHumanApprovedProof({
+                listing: approvedListing,
+                productScope: manualScope,
+                scanIntegrity,
+                hits: finalHits,
+                blockedNiceClasses: task.blockedNiceClasses
+              });
               approvedWorkflowState = {
                 ...task.trademarkWorkflowState,
                 phase: "COMPLETED",
@@ -236602,7 +236593,10 @@ var init_trademarkService = __esm2({
        */
       static async scanFullListingTermsOnly(params2) {
         const productScope = TrademarkPolicyService.resolveProductScope(params2.additionalProductIds);
-        const lockedTitleTail = params2.listing.title ? TrademarkPolicyService.extractLockedTitleTail(params2.listing.title) : void 0;
+        const normN1 = ListingValidationService.normalizeOptionalText(params2.niche1);
+        const normN2 = ListingValidationService.normalizeOptionalText(params2.niche2);
+        const normSub = ListingValidationService.normalizeOptionalText(params2.subniche);
+        const lockedTitleTail = ListingValidationService.resolveExpectedTitleSuffix({ niche1: normN1, niche2: normN2, subniche: normSub });
         const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
           listing: params2.listing,
           quote: params2.quote,
